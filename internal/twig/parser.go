@@ -65,19 +65,12 @@ type TwigBlock struct {
 }
 
 // findBlocks recursively traverses the tree to find all blocks.
-// It handles both proper "block" nodes and "ERROR" nodes that occur when
-// the tree-sitter grammar fails to parse blocks containing HTML tags.
+// It only handles proper "block" nodes; blocks that tree-sitter fails to parse
+// (e.g. those containing HTML tags, which produce ERROR nodes) are recovered
+// separately by recoverMissingBlocksFromTags, which captures their full text.
 func findBlocks(node *tree_sitter.Node, content []byte, file *TwigFile) {
 	if node.Kind() == "block" {
 		extractBlockFromNode(node, content, file)
-	} else if node.Kind() == "ERROR" {
-		// Tree-sitter produces ERROR nodes for blocks that contain HTML tags.
-		// These have the structure: ERROR > identifier where the ERROR text
-		// starts with "{% block ".
-		nodeText := string(node.Utf8Text(content))
-		if strings.HasPrefix(strings.TrimSpace(nodeText), "{% block ") {
-			extractBlockFromNode(node, content, file)
-		}
 	}
 
 	// Recursively process all named children
