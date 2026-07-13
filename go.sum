@@ -8,12 +8,16 @@ github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e h1:ijClszYn+mADRFY17k
 github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e/go.mod h1:boTsfXsheKC2y+lKOCMpSfarhxDeIzfZG1jqGcPl3cA=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
-github.com/gorilla/websocket v1.4.1 h1:q7AeDBpnBk8AogcD4DSag/Ukw/KV+YhzLj2bP5HvKCM=
-github.com/gorilla/websocket v1.4.1/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
+github.com/gumeniukcom/golang-jsonrpc2/v2 v2.7.0 h1:oY11FFrRYcKS7c6lz5Rnl9rHIS55Pdg0sMH0iAPw/1U=
+github.com/gumeniukcom/golang-jsonrpc2/v2 v2.7.0/go.mod h1:6HXRlmLyIbjV031PjtUKXhlSbd94Rx7yuVhlUrXPjm0=
 github.com/hashicorp/golang-lru/v2 v2.0.7 h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs4luLUK2k=
 github.com/hashicorp/golang-lru/v2 v2.0.7/go.mod h1:QeFd9opnmA6QUJc5vARoKUSoFhyfM2/ZepoAG6RGpeM=
+github.com/josharian/intern v1.0.0 h1:vlS4z54oSdjm0bgjRigI+G1HpF+tI+9rE5LLzOg8HmY=
+github.com/josharian/intern v1.0.0/go.mod h1:5DoeVV0s6jJacbCEi61lwdGj/aVlrQvzHFFd8Hwg//Y=
 github.com/justinMBullard/tree-sitter-xml v0.0.0-20250305015746-03d1af911bbd h1:klVxnCnz3yffX99ZHXG0EZSCEHWzmR6lDtCb2RZ63U4=
 github.com/justinMBullard/tree-sitter-xml v0.0.0-20250305015746-03d1af911bbd/go.mod h1:shxC3S8mp1r2gihmQGEGQDfnBIkM4GZ6hXYEcWCw3xE=
+github.com/mailru/easyjson v0.9.1 h1:LbtsOm5WAswyWbvTEOqhypdPeZzHavpZx96/n553mR8=
+github.com/mailru/easyjson v0.9.1/go.mod h1:1+xMtQp2MRNVL/V1bOzuP3aP8VNwRW55fQUto+XFtTU=
 github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=
 github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
 github.com/mattn/go-pointer v0.0.1 h1:n+XhsuGeVO6MEAp7xyEukFINEa+Quek5psIR/ylA6o0=
@@ -28,8 +32,6 @@ github.com/shyim/tree-sitter-scss v0.0.0-20250502122635-ca898ab73795 h1:DQCCsdEf
 github.com/shyim/tree-sitter-scss v0.0.0-20250502122635-ca898ab73795/go.mod h1:tE8mbrBAnn+N3JDzU35uG6gKQZ00IXoRJsKCnYH0lio=
 github.com/smacker/go-tree-sitter v0.0.0-20230720070738-0d0a9f78d8f8 h1:DxgjlvWYsb80WEN2Zv3WqJFAg2DKjUQJO6URGdf1x6Y=
 github.com/smacker/go-tree-sitter v0.0.0-20230720070738-0d0a9f78d8f8/go.mod h1:q99oHDsbP0xRwmn7Vmob8gbSMNyvJ83OauXPSuHQuKE=
-github.com/sourcegraph/jsonrpc2 v0.2.1 h1:2GtljixMQYUYCmIg7W9aF2dFmniq/mOr2T9tFRh6zSQ=
-github.com/sourcegraph/jsonrpc2 v0.2.1/go.mod h1:ZafdZgk/axhT1cvZAPOhw+95nz2I/Ra5qMlU4gTRwIo=
 github.com/stretchr/testify v1.10.0 h1:Xv5erBjTwe/5IxqUQTdXv5kgmIvbHo3QQyRwhJsOfJA=
 github.com/stretchr/testify v1.10.0/go.mod h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf8C91i36aY=
 github.com/tidwall/gjson v1.14.2/go.mod h1:/wbyibRr2FHMks5tjHJ5F8dMZh3AcwJEMf5vlfC0lxk=

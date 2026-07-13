@@ -3,6 +3,7 @@ package lsp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -12,15 +13,27 @@ import (
 	"sync"
 	"time"
 
+	jsonrpc "github.com/gumeniukcom/golang-jsonrpc2/v2"
+	"github.com/gumeniukcom/golang-jsonrpc2/v2/jsonrpcstdio"
 	"github.com/shopware/shopware-lsp/internal/indexer"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
-	"github.com/sourcegraph/jsonrpc2"
 )
+
+// defaultRequestTimeout bounds a single LSP request. Indexing-heavy requests
+// (e.g. the first textDocument/didOpen on a large project) can be slow, so
+// this is deliberately generous.
+const defaultRequestTimeout = 15 * time.Minute
+
+// maxInboundFrameSize bounds a single inbound frame. The server uses
+// full-document sync, so didOpen/didChange frames carry whole files; the
+// pre-migration codec accepted them unbounded, and breaching the transport
+// limit is fatal to the stream, so the cap must sit far above any real
+// document an editor will sync.
+const maxInboundFrameSize = 256 << 20 // 256 MiB
 
 // Server represents the LSP server
 type Server struct {
 	rootPath             string
-	conn                 *jsonrpc2.Conn
 	completionProviders  []CompletionProvider
 	definitionProviders  []GotoDefinitionProvider
 	referencesProviders  []ReferencesProvider
@@ -36,6 +49,20 @@ type Server struct {
 	fileScanner          *indexer.FileScanner
 	cacheDir             string
 	version              string
+
+	// pusher sends server-initiated notifications to the client. It is
+	// captured from the first request's context (the transport injects one
+	// per connection) and stays valid for the whole connection, so
+	// background goroutines may use it after the capturing request returned.
+	pusherMu sync.RWMutex
+	pusher   jsonrpc.Pusher
+
+	// serveCtx lives for the whole connection; background work spawned by
+	// handlers must use it instead of the request context, which is
+	// canceled when the handler returns. serveCancel stops Serve — the
+	// "exit" notification triggers it.
+	serveCtx    context.Context
+	serveCancel context.CancelFunc
 }
 
 // NewServer creates a new LSP server
@@ -156,12 +183,10 @@ func (s *Server) indexAll(ctx context.Context, forceReindex bool) error {
 	startTime := time.Now()
 
 	// Send notification that indexing has started
-	if s.conn != nil {
-		if err := s.conn.Notify(ctx, "shopware/indexingStarted", map[string]interface{}{
-			"message": "Indexing started",
-		}); err != nil {
-			return err
-		}
+	if err := s.notify(ctx, "shopware/indexingStarted", map[string]interface{}{
+		"message": "Indexing started",
+	}); err != nil {
+		return err
 	}
 
 	if forceReindex {
@@ -177,16 +202,52 @@ func (s *Server) indexAll(ctx context.Context, forceReindex bool) error {
 	elapsedTime := time.Since(startTime)
 
 	// Send notification that indexing has completed
-	if s.conn != nil {
-		if err := s.conn.Notify(ctx, "shopware/indexingCompleted", map[string]interface{}{
-			"message":       "Indexing completed",
-			"timeInSeconds": elapsedTime.Seconds(),
-		}); err != nil {
-			return err
-		}
+	if err := s.notify(ctx, "shopware/indexingCompleted", map[string]interface{}{
+		"message":       "Indexing completed",
+		"timeInSeconds": elapsedTime.Seconds(),
+	}); err != nil {
+		return err
 	}
 
 	return nil
+}
+
+// capturePusher stores the connection's pusher the first time a request
+// carries one, so background goroutines (indexing, diagnostics) can notify
+// the client outside any request context.
+func (s *Server) capturePusher(ctx context.Context) {
+	p, ok := jsonrpc.PusherFromContext(ctx)
+	if !ok {
+		return
+	}
+	s.pusherMu.Lock()
+	if s.pusher == nil {
+		s.pusher = p
+	}
+	s.pusherMu.Unlock()
+}
+
+// notify sends a server-initiated notification to the client. It is a no-op
+// before the first request has been received (no pusher captured yet),
+// mirroring the previous nil-connection check.
+func (s *Server) notify(ctx context.Context, method string, params interface{}) error {
+	s.pusherMu.RLock()
+	p := s.pusher
+	s.pusherMu.RUnlock()
+	if p == nil {
+		return nil
+	}
+	return p.Notify(ctx, method, params)
+}
+
+// backgroundContext returns a context that lives for the whole connection.
+// Handlers must hand it (never their request context, which is canceled when
+// the handler returns) to goroutines they spawn.
+func (s *Server) backgroundContext() context.Context {
+	if s.serveCtx != nil {
+		return s.serveCtx
+	}
+	return context.Background()
 }
 
 // CloseAll closes all registered indexers and resources
@@ -216,315 +277,347 @@ func (s *Server) Start(in io.Reader, out io.Writer) error {
 		}
 	}
 
-	// Create a new JSON-RPC connection
-	stream := jsonrpc2.NewBufferedStream(rwc{in, out}, jsonrpc2.VSCodeObjectCodec{})
-	conn := jsonrpc2.NewConn(context.Background(), stream, jsonrpc2.HandlerWithError(s.handle))
-	s.conn = conn
+	// A pusher captured on a previous Start belongs to a dead connection.
+	s.pusherMu.Lock()
+	s.pusher = nil
+	s.pusherMu.Unlock()
 
-	// Wait for the connection to close
-	<-conn.DisconnectNotify()
+	rpc := jsonrpc.New()
+	rpc.SetDefaultTimeOut(defaultRequestTimeout)
 
-	return nil
+	// Capture the connection's pusher from the first request so background
+	// goroutines can send notifications outside any request context.
+	rpc.RegisterGlobalInterceptorCall(func(ctx context.Context, _ string, _ json.RawMessage, _ interface{}) (context.Context, int, error) {
+		s.capturePusher(ctx)
+		return ctx, jsonrpc.OK, nil
+	})
+
+	s.registerMethods(rpc)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.serveCtx = ctx
+	s.serveCancel = cancel
+
+	// Serve blocks until the client closes stdin (clean EOF, returns nil),
+	// the "exit" notification cancels the context, or the stream fails.
+	// The server advertises full-document sync, so didOpen/didChange frames
+	// carry entire file contents; the previous codec had no size limit, so
+	// the transport default (8 MiB, fatal on breach) must be raised.
+	err := jsonrpcstdio.Serve(ctx, rpc, jsonrpcstdio.FramingContentLength, in, out,
+		jsonrpcstdio.WithMaxMessageSize(maxInboundFrameSize))
+	if errors.Is(err, context.Canceled) {
+		// Canceled by the "exit" notification: an orderly shutdown.
+		return nil
+	}
+	return err
 }
 
-// rwc combines a reader and writer into a single ReadWriteCloser
-type rwc struct {
-	io.Reader
-	io.Writer
-}
-
-// Close implements io.Closer
-func (rwc) Close() error {
-	return nil
-}
-
-// handle processes incoming JSON-RPC requests and notifications
-func (s *Server) handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) (interface{}, error) {
-	// Handle exit notification after shutdown
-	if req.Method == "exit" {
-		log.Println("Received exit notification, exiting")
-		if err := conn.Close(); err != nil {
-			log.Printf("error closing connection: %v", err)
+// registerMethods installs all handlers into the dispatcher. Registration
+// order preserves the pre-migration dispatch precedence (exit, then
+// commands, then built-in LSP methods): a duplicate name keeps the earlier
+// registration and is logged.
+func (s *Server) registerMethods(rpc *jsonrpc.JSONRPC) {
+	register := func(name string, method jsonrpc.RPCMethod) {
+		if err := rpc.RegisterMethod(name, method); err != nil {
+			log.Printf("Skipping registration of method %q: %v", name, err)
 		}
-		return nil, nil
 	}
 
-	if cmd, ok := s.commandMap[req.Method]; ok {
-		return cmd(ctx, req.Params)
+	register("exit", jsonrpc.Typed(s.handleExit))
+
+	for command, fn := range s.commandMap {
+		register(command, commandMethod(fn))
 	}
 
-	switch req.Method {
-	case "initialize":
-		var params protocol.InitializeParams
-		if err := json.Unmarshal(*req.Params, &params); err != nil {
-			return nil, &jsonrpc2.Error{Code: jsonrpc2.CodeParseError, Message: err.Error()}
+	register("initialize", jsonrpc.Typed(s.handleInitialize))
+	register("initialized", jsonrpc.Typed(s.handleInitialized))
+	register("textDocument/didOpen", jsonrpc.Typed(s.handleDidOpen))
+	register("textDocument/didChange", jsonrpc.Typed(s.handleDidChange))
+	register("textDocument/didClose", jsonrpc.Typed(s.handleDidClose))
+	register("textDocument/completion", jsonrpc.Typed(s.handleCompletion))
+	register("textDocument/definition", jsonrpc.Typed(s.handleDefinition))
+	register("textDocument/references", jsonrpc.Typed(s.handleReferences))
+	register("textDocument/codeLens", jsonrpc.Typed(s.handleCodeLens))
+	register("textDocument/hover", jsonrpc.Typed(s.handleHover))
+	register("textDocument/diagnostic", jsonrpc.Typed(s.handleDiagnostic))
+	register("codeLens/resolve", jsonrpc.Typed(s.handleResolveCodeLens))
+	register("textDocument/codeAction", jsonrpc.Typed(s.handleCodeAction))
+	register("shopware/forceReindex", jsonrpc.Typed(s.handleForceReindex))
+	register("shutdown", jsonrpc.Typed(s.handleShutdown))
+	register("workspace/didCreateFiles", jsonrpc.Typed(s.handleDidCreateFiles))
+	register("workspace/didRenameFiles", jsonrpc.Typed(s.handleDidRenameFiles))
+	register("workspace/didDeleteFiles", jsonrpc.Typed(s.handleDidDeleteFiles))
+	register("workspace/didChangeWatchedFiles", jsonrpc.Typed(s.handleDidChangeWatchedFiles))
+}
+
+// commandMethod adapts a CommandFunc to the dispatcher's method signature,
+// preserving the raw-params contract commands had before the migration.
+func commandMethod(fn CommandFunc) jsonrpc.RPCMethod {
+	return func(ctx context.Context, data json.RawMessage) (json.RawMessage, int, error) {
+		var args *json.RawMessage
+		if len(data) > 0 {
+			args = &data
 		}
-		return s.initialize(ctx, &params), nil
-
-	case "initialized":
-		// Build the index when the client is initialized
-		go func() {
-			// Check if we need to force reindex due to version change
-			forceReindex, err := s.shouldForceReindex()
-			if err != nil {
-				log.Printf("Warning: Failed to check version for reindex: %v", err)
-			}
-
-			if forceReindex {
-				log.Printf("Version changed to %s, forcing reindex", s.version)
-			}
-
-			// Index all registered indexers
-			if err := s.indexAll(ctx, forceReindex); err != nil {
-				log.Printf("Error indexing: %v", err)
-			} else if forceReindex {
-				log.Println("Force reindex completed successfully")
-			}
-
-			// Start the file watcher after the initial index build to avoid
-			// paying for two recursive traversals during startup.
-			if err := s.fileScanner.StartWatcher(); err != nil {
-				log.Printf("Error starting file watcher: %v", err)
-			} else {
-				log.Println("File watcher started successfully")
-			}
-		}()
-		return nil, nil
-
-	case "textDocument/didOpen":
-		var params struct {
-			TextDocument struct {
-				URI     string `json:"uri"`
-				Text    string `json:"text"`
-				Version int    `json:"version"`
-			} `json:"textDocument"`
+		result, err := fn(ctx, args)
+		if err != nil {
+			// Command errors were client-visible before the migration; keep
+			// the detail on the wire via the error's data field (the
+			// dispatcher never serializes plain error text).
+			return nil, jsonrpc.InternalErrorCode, jsonrpc.NewRPCError(jsonrpc.InternalErrorCode, err).WithData(err.Error())
 		}
-		if err := json.Unmarshal(*req.Params, &params); err != nil {
-			return nil, err
+		raw, err := json.Marshal(result)
+		if err != nil {
+			return nil, jsonrpc.InternalErrorCode, fmt.Errorf("failed to marshal command result: %w", err)
 		}
-		s.documentManager.OpenDocument(params.TextDocument.URI, params.TextDocument.Text, params.TextDocument.Version)
+		return raw, jsonrpc.OK, nil
+	}
+}
 
-		// Run diagnostics on the opened document
-		go s.publishDiagnostics(ctx, params.TextDocument.URI, params.TextDocument.Version)
-		return nil, nil
+// emptyParams is the parameter type for methods that take no parameters
+// (or whose parameters are ignored).
+type emptyParams struct{}
 
-	case "textDocument/didChange":
-		var params struct {
-			TextDocument struct {
-				URI     string `json:"uri"`
-				Version int    `json:"version"`
-			} `json:"textDocument"`
-			ContentChanges []struct {
-				Text string `json:"text"`
-			} `json:"contentChanges"`
-		}
-		if err := json.Unmarshal(*req.Params, &params); err != nil {
-			return nil, err
-		}
-		if len(params.ContentChanges) > 0 {
-			s.documentManager.UpdateDocument(params.TextDocument.URI, params.ContentChanges[0].Text, params.TextDocument.Version)
+// didOpenParams mirrors the subset of LSP DidOpenTextDocumentParams we use.
+type didOpenParams struct {
+	TextDocument struct {
+		URI     string `json:"uri"`
+		Text    string `json:"text"`
+		Version int    `json:"version"`
+	} `json:"textDocument"`
+}
 
-			// Run diagnostics on the updated document
-			go s.publishDiagnostics(ctx, params.TextDocument.URI, params.TextDocument.Version)
-		}
-		return nil, nil
+// didChangeParams mirrors the subset of LSP DidChangeTextDocumentParams we use.
+type didChangeParams struct {
+	TextDocument struct {
+		URI     string `json:"uri"`
+		Version int    `json:"version"`
+	} `json:"textDocument"`
+	ContentChanges []struct {
+		Text string `json:"text"`
+	} `json:"contentChanges"`
+}
 
-	case "textDocument/didClose":
-		var params struct {
-			TextDocument struct {
-				URI string `json:"uri"`
-			} `json:"textDocument"`
-		}
-		if err := json.Unmarshal(*req.Params, &params); err != nil {
-			return nil, err
-		}
-		s.documentManager.CloseDocument(params.TextDocument.URI)
-		return nil, nil
+// didCloseParams mirrors the subset of LSP DidCloseTextDocumentParams we use.
+type didCloseParams struct {
+	TextDocument struct {
+		URI string `json:"uri"`
+	} `json:"textDocument"`
+}
 
-	case "textDocument/completion":
-		var params protocol.CompletionParams
-		if err := json.Unmarshal(*req.Params, &params); err != nil {
-			return nil, err
-		}
+// handleExit handles the exit notification: it stops the server loop.
+func (s *Server) handleExit(context.Context, emptyParams) (interface{}, error) {
+	log.Println("Received exit notification, exiting")
+	if s.serveCancel != nil {
+		s.serveCancel()
+	}
+	return nil, nil
+}
 
-		return s.completion(ctx, &params), nil
+// handleInitialize handles the LSP initialize request.
+func (s *Server) handleInitialize(ctx context.Context, params protocol.InitializeParams) (interface{}, error) {
+	return s.initialize(ctx, &params), nil
+}
 
-	case "textDocument/definition":
-		var params protocol.DefinitionParams
-		if err := json.Unmarshal(*req.Params, &params); err != nil {
-			return nil, err
-		}
-		return s.definition(ctx, &params), nil
-
-	case "textDocument/references":
-		var params protocol.ReferenceParams
-		if err := json.Unmarshal(*req.Params, &params); err != nil {
-			return nil, err
-		}
-		return s.references(ctx, &params), nil
-
-	case "textDocument/codeLens":
-		var params protocol.CodeLensParams
-		if err := json.Unmarshal(*req.Params, &params); err != nil {
-			return nil, err
-		}
-		return s.codeLens(ctx, &params), nil
-
-	case "textDocument/hover":
-		var params protocol.HoverParams
-		if err := json.Unmarshal(*req.Params, &params); err != nil {
-			return nil, err
-		}
-		return s.hover(ctx, &params)
-
-	case "textDocument/diagnostic":
-		var params protocol.DiagnosticParams
-		if err := json.Unmarshal(*req.Params, &params); err != nil {
-			return nil, err
-		}
-		return s.diagnostic(ctx, &params), nil
-
-	case "codeLens/resolve":
-		var codeLens protocol.CodeLens
-		if err := json.Unmarshal(*req.Params, &codeLens); err != nil {
-			return nil, err
-		}
-		return s.resolveCodeLens(ctx, &codeLens)
-
-	case "textDocument/codeAction":
-		var params protocol.CodeActionParams
-		if err := json.Unmarshal(*req.Params, &params); err != nil {
-			return nil, err
-		}
-		return s.codeAction(ctx, &params), nil
-
-	case "shopware/forceReindex":
-		// Force reindex all indexers
-		go func() {
-			if err := s.indexAll(ctx, true); err != nil {
-				log.Printf("Error force reindexing: %v", err)
-			}
-		}()
-		return map[string]interface{}{
-			"message": "Force reindexing started",
-		}, nil
-
-	case "shutdown":
-		// Clean up resources
-		if err := s.CloseAll(); err != nil {
-			log.Printf("Error closing indexers: %v", err)
+// handleInitialized builds the index when the client is initialized.
+func (s *Server) handleInitialized(context.Context, emptyParams) (interface{}, error) {
+	ctx := s.backgroundContext()
+	go func() {
+		// Check if we need to force reindex due to version change
+		forceReindex, err := s.shouldForceReindex()
+		if err != nil {
+			log.Printf("Warning: Failed to check version for reindex: %v", err)
 		}
 
-		log.Println("Received shutdown request, waiting for exit notification")
-		return nil, nil
-
-	case "workspace/didCreateFiles":
-		var params protocol.CreateFilesParams
-		if err := json.Unmarshal(*req.Params, &params); err != nil {
-			return nil, err
+		if forceReindex {
+			log.Printf("Version changed to %s, forcing reindex", s.version)
 		}
 
-		files := make([]string, len(params.Files))
-		for i, file := range params.Files {
-			files[i] = strings.TrimPrefix(file.URI, "file://")
+		// Index all registered indexers
+		if err := s.indexAll(ctx, forceReindex); err != nil {
+			log.Printf("Error indexing: %v", err)
+		} else if forceReindex {
+			log.Println("Force reindex completed successfully")
 		}
-		if err := s.fileScanner.IndexFiles(ctx, files); err != nil {
+
+		// Start the file watcher after the initial index build to avoid
+		// paying for two recursive traversals during startup.
+		if err := s.fileScanner.StartWatcher(); err != nil {
+			log.Printf("Error starting file watcher: %v", err)
+		} else {
+			log.Println("File watcher started successfully")
+		}
+	}()
+	return nil, nil
+}
+
+func (s *Server) handleDidOpen(_ context.Context, params didOpenParams) (interface{}, error) {
+	s.documentManager.OpenDocument(params.TextDocument.URI, params.TextDocument.Text, params.TextDocument.Version)
+
+	// Run diagnostics on the opened document
+	go s.publishDiagnostics(s.backgroundContext(), params.TextDocument.URI, params.TextDocument.Version)
+	return nil, nil
+}
+
+func (s *Server) handleDidChange(_ context.Context, params didChangeParams) (interface{}, error) {
+	if len(params.ContentChanges) > 0 {
+		s.documentManager.UpdateDocument(params.TextDocument.URI, params.ContentChanges[0].Text, params.TextDocument.Version)
+
+		// Run diagnostics on the updated document
+		go s.publishDiagnostics(s.backgroundContext(), params.TextDocument.URI, params.TextDocument.Version)
+	}
+	return nil, nil
+}
+
+func (s *Server) handleDidClose(_ context.Context, params didCloseParams) (interface{}, error) {
+	s.documentManager.CloseDocument(params.TextDocument.URI)
+	return nil, nil
+}
+
+func (s *Server) handleCompletion(ctx context.Context, params protocol.CompletionParams) (*protocol.CompletionList, error) {
+	return s.completion(ctx, &params), nil
+}
+
+func (s *Server) handleDefinition(ctx context.Context, params protocol.DefinitionParams) ([]protocol.Location, error) {
+	return s.definition(ctx, &params), nil
+}
+
+func (s *Server) handleReferences(ctx context.Context, params protocol.ReferenceParams) ([]protocol.Location, error) {
+	return s.references(ctx, &params), nil
+}
+
+func (s *Server) handleCodeLens(ctx context.Context, params protocol.CodeLensParams) ([]protocol.CodeLens, error) {
+	return s.codeLens(ctx, &params), nil
+}
+
+func (s *Server) handleHover(ctx context.Context, params protocol.HoverParams) (*protocol.Hover, error) {
+	h, err := s.hover(ctx, &params)
+	if err != nil {
+		return nil, jsonrpc.NewRPCError(jsonrpc.InternalErrorCode, err).WithData(err.Error())
+	}
+	return h, nil
+}
+
+func (s *Server) handleDiagnostic(ctx context.Context, params protocol.DiagnosticParams) (interface{}, error) {
+	return s.diagnostic(ctx, &params), nil
+}
+
+func (s *Server) handleResolveCodeLens(ctx context.Context, codeLens protocol.CodeLens) (*protocol.CodeLens, error) {
+	cl, err := s.resolveCodeLens(ctx, &codeLens)
+	if err != nil {
+		return nil, jsonrpc.NewRPCError(jsonrpc.InternalErrorCode, err).WithData(err.Error())
+	}
+	return cl, nil
+}
+
+func (s *Server) handleCodeAction(ctx context.Context, params protocol.CodeActionParams) ([]protocol.CodeAction, error) {
+	return s.codeAction(ctx, &params), nil
+}
+
+// handleForceReindex forces a reindex of all indexers in the background.
+func (s *Server) handleForceReindex(context.Context, emptyParams) (map[string]interface{}, error) {
+	ctx := s.backgroundContext()
+	go func() {
+		if err := s.indexAll(ctx, true); err != nil {
+			log.Printf("Error force reindexing: %v", err)
+		}
+	}()
+	return map[string]interface{}{
+		"message": "Force reindexing started",
+	}, nil
+}
+
+func (s *Server) handleShutdown(context.Context, emptyParams) (interface{}, error) {
+	// Clean up resources
+	if err := s.CloseAll(); err != nil {
+		log.Printf("Error closing indexers: %v", err)
+	}
+
+	log.Println("Received shutdown request, waiting for exit notification")
+	return nil, nil
+}
+
+func (s *Server) handleDidCreateFiles(ctx context.Context, params protocol.CreateFilesParams) (interface{}, error) {
+	files := make([]string, len(params.Files))
+	for i, file := range params.Files {
+		files[i] = strings.TrimPrefix(file.URI, "file://")
+	}
+	if err := s.fileScanner.IndexFiles(ctx, files); err != nil {
+		log.Printf("Error indexing new files: %v", err)
+	}
+
+	log.Printf("Watcher Client: Created files: %v", files)
+
+	return nil, nil
+}
+
+func (s *Server) handleDidRenameFiles(ctx context.Context, params protocol.RenameFilesParams) (interface{}, error) {
+	oldFiles := make([]string, len(params.Files))
+	newFiles := make([]string, len(params.Files))
+	for i, file := range params.Files {
+		oldFiles[i] = strings.TrimPrefix(file.OldURI, "file://")
+		newFiles[i] = strings.TrimPrefix(file.NewURI, "file://")
+	}
+
+	if err := s.fileScanner.IndexFiles(ctx, newFiles); err != nil {
+		log.Printf("Error indexing new files: %v", err)
+	}
+	if err := s.fileScanner.RemoveFiles(ctx, oldFiles); err != nil {
+		log.Printf("Error removing old files: %v", err)
+	}
+
+	log.Printf("Watcher Client: Renamed files: %v", oldFiles)
+
+	return nil, nil
+}
+
+func (s *Server) handleDidDeleteFiles(ctx context.Context, params protocol.DeleteFilesParams) (interface{}, error) {
+	files := make([]string, len(params.Files))
+	for i, file := range params.Files {
+		files[i] = strings.TrimPrefix(file.URI, "file://")
+	}
+
+	log.Printf("Watcher Client: Deleting files: %v", files)
+
+	if err := s.fileScanner.RemoveFiles(ctx, files); err != nil {
+		log.Printf("Error removing old files: %v", err)
+	}
+	return nil, nil
+}
+
+func (s *Server) handleDidChangeWatchedFiles(ctx context.Context, params protocol.DidChangeWatchedFilesParams) (interface{}, error) {
+	createFiles := []string{}
+	deleteFiles := []string{}
+
+	// Handle file change events
+	for _, change := range params.Changes {
+		switch change.Type {
+		case int(protocol.FileCreated):
+			createFiles = append(createFiles, strings.TrimPrefix(change.URI, "file://"))
+		case int(protocol.FileChanged):
+			createFiles = append(createFiles, strings.TrimPrefix(change.URI, "file://"))
+		case int(protocol.FileDeleted):
+			deleteFiles = append(deleteFiles, strings.TrimPrefix(change.URI, "file://"))
+		}
+	}
+
+	if len(createFiles) > 0 {
+		log.Printf("Watcher Client: Creating files: %v", createFiles)
+
+		if err := s.fileScanner.IndexFiles(ctx, createFiles); err != nil {
 			log.Printf("Error indexing new files: %v", err)
 		}
-
-		log.Printf("Watcher Client: Created files: %v", files)
-
-		return nil, nil
-
-	case "workspace/didRenameFiles":
-		var params protocol.RenameFilesParams
-		if err := json.Unmarshal(*req.Params, &params); err != nil {
-			return nil, err
-		}
-
-		oldFiles := make([]string, len(params.Files))
-		newFiles := make([]string, len(params.Files))
-		for i, file := range params.Files {
-			oldFiles[i] = strings.TrimPrefix(file.OldURI, "file://")
-			newFiles[i] = strings.TrimPrefix(file.NewURI, "file://")
-		}
-
-		if err := s.fileScanner.IndexFiles(ctx, newFiles); err != nil {
-			log.Printf("Error indexing new files: %v", err)
-		}
-		if err := s.fileScanner.RemoveFiles(ctx, oldFiles); err != nil {
-			log.Printf("Error removing old files: %v", err)
-		}
-
-		log.Printf("Watcher Client: Renamed files: %v", oldFiles)
-
-		return nil, nil
-
-	case "workspace/didDeleteFiles":
-		var params protocol.DeleteFilesParams
-		if err := json.Unmarshal(*req.Params, &params); err != nil {
-			return nil, err
-		}
-
-		files := make([]string, len(params.Files))
-		for i, file := range params.Files {
-			files[i] = strings.TrimPrefix(file.URI, "file://")
-		}
-
-		log.Printf("Watcher Client: Deleting files: %v", files)
-
-		if err := s.fileScanner.RemoveFiles(ctx, files); err != nil {
-			log.Printf("Error removing old files: %v", err)
-		}
-		return nil, nil
-
-	case "workspace/didChangeWatchedFiles":
-		var params protocol.DidChangeWatchedFilesParams
-		if err := json.Unmarshal(*req.Params, &params); err != nil {
-			return nil, err
-		}
-
-		createFiles := []string{}
-		deleteFiles := []string{}
-
-		// Handle file change events
-		for _, change := range params.Changes {
-			switch change.Type {
-			case int(protocol.FileCreated):
-				createFiles = append(createFiles, strings.TrimPrefix(change.URI, "file://"))
-			case int(protocol.FileChanged):
-				createFiles = append(createFiles, strings.TrimPrefix(change.URI, "file://"))
-			case int(protocol.FileDeleted):
-				deleteFiles = append(deleteFiles, strings.TrimPrefix(change.URI, "file://"))
-			}
-		}
-
-		if len(createFiles) > 0 {
-			log.Printf("Watcher Client: Creating files: %v", createFiles)
-
-			if err := s.fileScanner.IndexFiles(ctx, createFiles); err != nil {
-				log.Printf("Error indexing new files: %v", err)
-			}
-		}
-
-		if len(deleteFiles) > 0 {
-			log.Printf("Watcher Client: Deleting files: %v", deleteFiles)
-
-			if err := s.fileScanner.RemoveFiles(ctx, deleteFiles); err != nil {
-				log.Printf("Error removing old files: %v", err)
-			}
-		}
-
-		return nil, nil
-
-	default:
-		// Check if this is a notification (no ID)
-		if req.ID == (jsonrpc2.ID{}) {
-			// This is a notification, no response needed
-			return nil, nil
-		}
-		return nil, &jsonrpc2.Error{Code: jsonrpc2.CodeMethodNotFound, Message: "Method not implemented: " + req.Method}
 	}
+
+	if len(deleteFiles) > 0 {
+		log.Printf("Watcher Client: Deleting files: %v", deleteFiles)
+
+		if err := s.fileScanner.RemoveFiles(ctx, deleteFiles); err != nil {
+			log.Printf("Error removing old files: %v", err)
+		}
+	}
+
+	return nil, nil
 }
 
 // initialize handles the LSP initialize request
@@ -703,7 +796,10 @@ func (s *Server) PublishDiagnostics(ctx context.Context, files []string) {
 
 // publishDiagnostics collects and publishes diagnostics for a document
 func (s *Server) publishDiagnostics(ctx context.Context, uri string, version int) {
-	if s.conn == nil {
+	s.pusherMu.RLock()
+	hasPusher := s.pusher != nil
+	s.pusherMu.RUnlock()
+	if !hasPusher {
 		return
 	}
 
@@ -739,7 +835,7 @@ func (s *Server) publishDiagnostics(ctx context.Context, uri string, version int
 		Diagnostics: allDiagnostics,
 	}
 
-	if err := s.conn.Notify(ctx, "textDocument/publishDiagnostics", params); err != nil {
+	if err := s.notify(ctx, "textDocument/publishDiagnostics", params); err != nil {
 		log.Printf("Error publishing diagnostics: %v", err)
 	}
 }
