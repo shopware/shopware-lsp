@@ -88,6 +88,54 @@ func TestNestedBlock(t *testing.T) {
 	assert.Equal(t, 4, blockC.Line)
 }
 
+func TestBlocksWithHTMLContent(t *testing.T) {
+	tpl := `{% block base_body %}
+    <body>
+        {% block base_header %}
+            <header>
+                {% block base_header_inner %}{% endblock %}
+            </header>
+        {% endblock %}
+
+        {% block base_content %}
+            <div class="content">
+                content here
+            </div>
+        {% endblock %}
+    </body>
+{% endblock %}`
+
+	parser := tree_sitter.NewParser()
+	assert.NoError(t, parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_twig.Language())))
+	defer parser.Close()
+
+	tree := parser.Parse([]byte(tpl), nil)
+	defer tree.Close()
+
+	file, err := ParseTwig("test", tree.RootNode(), []byte(tpl))
+	assert.NoError(t, err)
+
+	blockBody, existsBody := file.Blocks["base_body"]
+	assert.True(t, existsBody, "Should find base_body block with HTML content")
+	assert.Equal(t, "base_body", blockBody.Name)
+	assert.Equal(t, 1, blockBody.Line)
+	assert.Contains(t, blockBody.Text, "<body>")
+	assert.Contains(t, blockBody.Text, "{% endblock %}")
+
+	blockHeader, existsHeader := file.Blocks["base_header"]
+	assert.True(t, existsHeader, "Should find base_header block")
+	assert.Equal(t, "base_header", blockHeader.Name)
+
+	blockInner, existsInner := file.Blocks["base_header_inner"]
+	assert.True(t, existsInner, "Should find base_header_inner block")
+	assert.Equal(t, "base_header_inner", blockInner.Name)
+
+	blockContent, existsContent := file.Blocks["base_content"]
+	assert.True(t, existsContent, "Should find base_content block with HTML content")
+	assert.Equal(t, "base_content", blockContent.Name)
+	assert.Contains(t, blockContent.Text, `<div class="content">`)
+}
+
 func TestBlockWithVersionComment(t *testing.T) {
 	tpl := `{% sw_extends '@Storefront/storefront/base.html.twig' %}
 

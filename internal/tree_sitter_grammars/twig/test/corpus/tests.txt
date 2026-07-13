@@ -5,6 +5,7 @@ Divisible by
   ...
 {% endif %}
 ---
+
 (template
   (if
     (binary_expression
@@ -16,7 +17,7 @@ Divisible by
         (arguments
           (number))))
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 Same as
@@ -25,6 +26,7 @@ Same as
   ...
 {% endif %}
 ---
+
 (template
   (if
     (binary_expression
@@ -36,4 +38,4 @@ Same as
         (arguments
           (boolean))))
     (source_elements
-      (content))))
+      (html_content))))
