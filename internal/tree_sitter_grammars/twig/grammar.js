@@ -604,10 +604,9 @@ function source_elements($, fieldName = 'body') {
     optional(
       field(
         fieldName,
-        alias(
-          repeat(choice($._statement, $.output, $.comment, $.content)),
-          $.source_elements,
-        ),
+        // Reuse _source_element so statement bodies accept the same nodes as
+        // the template root (including html_tag / html_content).
+        alias(repeat($._source_element), $.source_elements),
       ),
     ),
     $._statement_start,

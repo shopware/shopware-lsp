@@ -1,7 +1,9 @@
 ==================
 Empty template
 ==================
+
 ---
+
 (template)
 
 ==================
@@ -9,8 +11,9 @@ Content one line
 ==================
 Lorem ipsum
 ---
+
 (template
-  (content))
+  (html_content))
 
 ==================
 Content two line
@@ -18,15 +21,18 @@ Content two line
 Lorem ipsum
 
 ---
+
 (template
-  (content))
+  (html_content))
 
 ==================
 Content with curly brace
 ==================
 Lorem { ipsum
 ---
+
 (template
+  (html_content)
   (content))
 
 ==================
@@ -34,6 +40,7 @@ Comment single line
 ==================
 {# сomment #}
 ---
+
 (template
   (comment))
 
@@ -46,6 +53,7 @@ Comment multi line
   {% endfor %}
 #}
 ---
+
 (template
   (comment))
 
@@ -54,19 +62,21 @@ Comment multi line
 ==================
 Lorem {# сomment #} ipsum
 ---
+
 (template
-  (content)
+  (html_content)
   (comment)
-  (content))
+  (html_content))
 
 ==================
 Comment content  Comment
 ==================
 {# сomment #} Lorem  {# сomment #}
 ---
+
 (template
   (comment)
-  (content)
+  (html_content)
   (comment))
 
 ==================
@@ -78,6 +88,7 @@ Inline comments
     # this is an inline comment
 }}
 ---
+
 (template
   (output
     (inline_comment)
@@ -97,6 +108,7 @@ Inline comments 2
     }|join(', ')
 }}
 ---
+
 (template
   (output
     (filter_expression
@@ -119,6 +131,7 @@ Output directive
 ==================
 {{ user }}
 ---
+
 (template
   (output
     (variable)))

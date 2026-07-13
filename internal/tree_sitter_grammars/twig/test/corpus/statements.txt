@@ -3,6 +3,7 @@ Tag empty
 ==================
 {% unknown_tag %}
 ---
+
 (template
   (tag))
 
@@ -11,6 +12,7 @@ Tag with expression
 ==================
 {% unknown_tag 2 + 3 %}
 ---
+
 (template
   (tag
     (binary_expression
@@ -22,6 +24,7 @@ Tag with expressions
 ==================
 {% unknown_tag arg1 2 + 3 %}
 ---
+
 (template
   (tag
     (variable)
@@ -36,11 +39,12 @@ Apply
   his text becomes uppercase
 {% endapply %}
 ---
+
 (template
   (apply
     (function)
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 Apply multiple filters
@@ -49,6 +53,7 @@ Apply multiple filters
   <strong>SOME TEXT</strong>
 {% endapply %}
 ---
+
 (template
   (apply
     (filter_expression
@@ -57,7 +62,13 @@ Apply multiple filters
       (arguments
         (string)))
     (source_elements
-      (content))))
+      (html_tag
+        (html_start_tag
+          (html_tag_name)))
+      (html_content)
+      (html_tag
+        (html_end_tag
+          (html_tag_name))))))
 
 ==================
 Autoescape
@@ -67,10 +78,11 @@ Autoescape
   using the HTML strategy
 {% endautoescape %}
 ---
+
 (template
   (autoescape
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 Autoescape string argument
@@ -80,11 +92,12 @@ Autoescape string argument
   using the HTML strategy
 {% endautoescape %}
 ---
+
 (template
   (autoescape
     (string)
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 Autoescape boolean argument
@@ -94,38 +107,78 @@ Autoescape boolean argument
   using the HTML strategy
 {% endautoescape %}
 ---
+
 (template
   (autoescape
     (boolean)
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 Block
 ==================
 {% block title %}Index{% endblock %}
 ---
+
 (template
   (block
     (identifier)
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 Block with end-tag
 ==================
 {% block sidebar %}{% endblock sidebar %}
 ---
+
 (template
   (block
     (identifier)
     (identifier)))
 
 ==================
+Block with HTML body
+==================
+{% block buy_widget_delivery_informations %}
+    <div class="product-availability">
+        {% if true %}
+            <span>ok</span>
+        {% endif %}
+    </div>
+{% endblock %}
+---
+
+(template
+  (block
+    (identifier)
+    (source_elements
+      (html_tag
+        (html_start_tag
+          (html_tag_name)
+          (html_attribute
+            (html_attribute_name)
+            (html_attribute_value))))
+      (if
+        (boolean)
+        (source_elements
+          (html_tag
+            (html_start_tag
+              (html_tag_name)))
+          (html_content)
+          (html_tag
+            (html_end_tag
+              (html_tag_name)))))
+      (html_tag
+        (html_end_tag
+          (html_tag_name))))))
+
+==================
 Block shortcut
 ==================
 {% block title page_title|title %}
 ---
+
 (template
   (block
     (identifier)
@@ -140,11 +193,12 @@ Cache
     Cached forever (depending on the cache implementation)
 {% endcache %}
 ---
+
 (template
   (cache
     (string)
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 Cache with key and expiration
@@ -153,6 +207,7 @@ Cache with key and expiration
     Cached for 300 seconds
 {% endcache %}
 ---
+
 (template
   (cache
     (string)
@@ -161,13 +216,14 @@ Cache with key and expiration
       (arguments
         (number)))
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 Deprecated
 ==================
 {% deprecated 'The "base.twig" template is deprecated, use "layout.twig" instead.' %}
 ---
+
 (template
   (deprecated
     (string)))
@@ -177,6 +233,7 @@ Do
 ==================
 {% do 1 + 2 %}
 ---
+
 (template
   (do
     (binary_expression
@@ -188,6 +245,7 @@ Embed
 ==================
 {% embed "teasers_skeleton.twig" %}{% endembed %}
 ---
+
 (template
   (embed
     (string)))
@@ -199,6 +257,7 @@ Embed with variable
     ...
 {% endembed %}
 ---
+
 (template
   (embed
     (string)
@@ -207,7 +266,7 @@ Embed with variable
         (string)
         (string)))
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 Embed with variable only
@@ -216,6 +275,7 @@ Embed with variable only
     ...
 {% endembed %}
 ---
+
 (template
   (embed
     (string)
@@ -224,7 +284,7 @@ Embed with variable only
         (string)
         (string)))
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 Embed ignore missing
@@ -233,17 +293,19 @@ Embed ignore missing
     ...
 {% endembed %}
 ---
+
 (template
   (embed
     (string)
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 Extends
 ==================
 {% extends "base.twig" %}
 ---
+
 (template
   (extends
     (string)))
@@ -253,6 +315,7 @@ Extends with ternary operator
 ==================
 {% extends standalone ? "minimum.html" : "base.html" %}
 ---
+
 (template
   (extends
     (ternary_expression
@@ -265,6 +328,7 @@ Flush
 ==================
 {% flush %}
 ---
+
 (template
   (flush))
 
@@ -275,6 +339,7 @@ For
   {{ user.username }}
 {% endfor %}
 ---
+
 (template
   (for
     (variable)
@@ -292,6 +357,7 @@ For with sequence of numbers
   {{ i }}
 {% endfor %}
 ---
+
 (template
   (for
     (variable)
@@ -311,6 +377,7 @@ For with else
   no user found
 {% endfor %}
 ---
+
 (template
   (for
     (variable)
@@ -321,7 +388,7 @@ For with else
           (variable)
           (property))))
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 For with kye, value
@@ -330,29 +397,35 @@ For with kye, value
   <li>{{ key }}: {{ user.username|e }}</li>
 {% endfor %}
 ---
+
 (template
   (for
     (variable)
     (variable)
     (variable)
     (source_elements
-      (content)
+      (html_tag
+        (html_start_tag
+          (html_tag_name)))
       (output
         (variable))
-      (content)
+      (html_content)
       (output
         (filter_expression
           (member_expression
             (variable)
             (property))
           (function)))
-      (content))))
+      (html_tag
+        (html_end_tag
+          (html_tag_name))))))
 
 ==================
 From
 ==================
 {% from "macros.twig" import hello %}
 ---
+
 (template
   (from
     (string)
@@ -363,6 +436,7 @@ From multiple
 ==================
 {% from "macros.twig" import hello, world %}
 ---
+
 (template
   (from
     (string)
@@ -374,6 +448,7 @@ From as operator
 ==================
 {% from "macros.twig" import input as input_field %}
 ---
+
 (template
   (from
     (string)
@@ -388,13 +463,14 @@ If
   Our website is in maintenance mode
 {% endif %}
 ---
+
 (template
   (if
     (binary_expression
       (variable)
       (boolean))
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 If else
@@ -405,6 +481,7 @@ If else
    Sold-out!
 {% endif %}
 ---
+
 (template
   (if
     (binary_expression
@@ -413,9 +490,9 @@ If else
         (property))
       (number))
     (source_elements
-      (content))
+      (html_content))
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 If elseif
@@ -426,6 +503,7 @@ If elseif
    Only {{ product.stock }} left!
 {% endif %}
 ---
+
 (template
   (if
     (binary_expression
@@ -434,7 +512,7 @@ If elseif
         (property))
       (number))
     (source_elements
-      (content))
+      (html_content))
     (elseif
       (binary_expression
         (member_expression
@@ -442,12 +520,12 @@ If elseif
           (property))
         (number))
       (source_elements
-        (content)
+        (html_content)
         (output
           (member_expression
             (variable)
             (property)))
-        (content)))))
+        (html_content)))))
 
 ==================
 If elseif else
@@ -460,6 +538,7 @@ If elseif else
    Sold-out!
 {% endif %}
 ---
+
 (template
   (if
     (binary_expression
@@ -468,7 +547,7 @@ If elseif else
         (property))
       (number))
     (source_elements
-      (content))
+      (html_content))
     (elseif
       (binary_expression
         (member_expression
@@ -476,20 +555,21 @@ If elseif else
           (property))
         (number))
       (source_elements
-        (content)
+        (html_content)
         (output
           (member_expression
             (variable)
             (property)))
-        (content)))
+        (html_content)))
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 Import
 ==================
 {% import "macros.twig" as macros %}
 ---
+
 (template
   (import
     (string)
@@ -500,6 +580,7 @@ Include
 ==================
 {% include 'header.html' %}
 ---
+
 (template
   (include
     (string)))
@@ -509,6 +590,7 @@ Include with variable
 ==================
 {% include 'template.html' with {'foo': 'bar'} %}
 ---
+
 (template
   (include
     (string)
@@ -522,6 +604,7 @@ Include with variable only
 ==================
 {% include 'template.html' with {'foo': 'bar'} only %}
 ---
+
 (template
   (include
     (string)
@@ -535,6 +618,7 @@ Include ignore missing
 ==================
 {% include 'sidebar.html' ignore missing %}
 ---
+
 (template
   (include
     (string)))
@@ -546,16 +630,19 @@ Macro
   <input name="{{ name }}"/>
 {% endmacro %}
 ---
+
 (template
   (macro
     (identifier)
     (arguments
       (variable))
     (source_elements
-      (content)
-      (output
-        (variable))
-      (content))))
+      (html_tag
+        (html_start_tag
+          (html_tag_name)
+          (html_attribute
+            (html_attribute_name)
+            (html_attribute_value)))))))
 
 ==================
 Macro with end name
@@ -564,12 +651,13 @@ Macro with end name
     ...
 {% endmacro input %}
 ---
+
 (template
   (macro
     (identifier)
     (arguments)
     (source_elements
-      (content))
+      (html_content))
     (identifier)))
 
 ==================
@@ -579,16 +667,18 @@ Sandbox
   ...
 {% endsandbox %}
 ---
+
 (template
   (sandbox
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 Set
 ==================
 {% set foo = [1, 2] %}
 ---
+
 (template
   (set
     (variable)
@@ -601,6 +691,7 @@ Set several variables
 ==================
 {% set foo, bar = 'foo', 'bar' %}
 ---
+
 (template
   (set
     (variable)
@@ -615,19 +706,22 @@ Set block
   Hello {{ username }}!
 {% endset %}
 ---
+
 (template
   (set_block
     (variable)
     (source_elements
-      (content)
+      (html_content)
       (output
         (variable))
-      (content))))
+      (html_content))))
+
 ==================
 Use
 ==================
 {% use "blocks.html" %}
 ---
+
 (template
   (use
     (string)))
@@ -637,6 +731,7 @@ Use with variable
 ==================
 {% use "blocks.html" with sidebar as base_sidebar, title as base_title %}
 ---
+
 (template
   (use
     (string)
@@ -654,10 +749,11 @@ Verbatim
   ...
 {% endverbatim %}
 ---
+
 (template
   (verbatim
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 With
@@ -666,10 +762,11 @@ With
   ...
 {% endwith %}
 ---
+
 (template
   (with
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 With variables
@@ -678,6 +775,7 @@ With variables
   ...
 {% endwith %}
 ---
+
 (template
   (with
     (object
@@ -685,7 +783,7 @@ With variables
         (variable)
         (number)))
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 With variables only
@@ -694,6 +792,7 @@ With variables only
   ...
 {% endwith %}
 ---
+
 (template
   (with
     (object
@@ -701,7 +800,7 @@ With variables only
         (variable)
         (number)))
     (source_elements
-      (content))))
+      (html_content))))
 
 ==================
 Trans
@@ -712,10 +811,11 @@ Trans
   {% endtrans %}
 {% endif %}
 ---
+
 (template
   (if
     (variable)
     (source_elements
       (tag)
-      (content)
+      (html_content)
       (tag))))
