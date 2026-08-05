@@ -11,7 +11,6 @@ import (
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
 	phpsyntax "github.com/shopware/shopware-lsp/internal/parser/php/syntax"
-	twigquery "github.com/shopware/shopware-lsp/internal/parser/twig/query"
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/php/semantic"
 	"github.com/shopware/shopware-lsp/internal/php/types"
@@ -25,6 +24,11 @@ const missingTemplateCode lsp.DiagnosticID = "twig.template.missing"
 type templateDiagnosticCandidate struct {
 	name   string
 	range_ cst.TextRange
+}
+
+type templateDiagnosticGroup struct {
+	candidates []templateDiagnosticCandidate
+	range_     cst.TextRange
 }
 
 type TemplateAnalyzer struct {
@@ -51,26 +55,43 @@ func (p *TemplateAnalyzer) Analyze(
 		return nil, nil
 	}
 
-	var candidates []templateDiagnosticCandidate
+	var groups []templateDiagnosticGroup
 	switch strings.ToLower(filepath.Ext(document.URI)) {
 	case ".twig":
-		for _, literal := range twig.TwigTemplateStrings(
+		for _, targetGroup := range twig.TwigTemplateTargetGroups(
 			document.SyntaxTree.Root,
 		) {
-			name := strings.TrimSpace(twigquery.StringValue(literal))
-			if name == "" {
+			if !targetGroup.Exact || targetGroup.IgnoreMissing ||
+				len(targetGroup.Targets) == 0 {
 				continue
 			}
-			candidates = append(candidates, templateDiagnosticCandidate{
-				name:   name,
-				range_: valueNodeTextRange(literal, name),
-			})
+			group := templateDiagnosticGroup{range_: targetGroup.Range}
+			for _, target := range targetGroup.Targets {
+				if target.Template == "" {
+					continue
+				}
+				group.candidates = append(
+					group.candidates,
+					templateDiagnosticCandidate{
+						name:   target.Template,
+						range_: target.Range,
+					},
+				)
+			}
+			if len(group.candidates) != 0 {
+				groups = append(groups, group)
+			}
 		}
 	case ".php":
-		var err error
-		candidates, err = p.phpCandidates(ctx, document)
+		candidates, err := p.phpCandidates(ctx, document)
 		if err != nil {
 			return nil, err
+		}
+		for _, candidate := range candidates {
+			groups = append(groups, templateDiagnosticGroup{
+				candidates: []templateDiagnosticCandidate{candidate},
+				range_:     candidate.range_,
+			})
 		}
 	default:
 		return nil, nil
@@ -80,51 +101,96 @@ func (p *TemplateAnalyzer) Analyze(
 	seen := make(map[string]struct{})
 	var candidateNames []string
 	candidatesLoaded := false
-	for _, candidate := range candidates {
+	for _, group := range groups {
 		if ctx.Err() != nil {
 			return nil, nil
 		}
-		name := candidate.name
-		files, err := p.twigIndex.GetTwigFilesByRelPath(name)
-		if err != nil {
-			return nil, fmt.Errorf("query Twig template %q: %w", name, err)
+		found := false
+		for _, candidate := range group.candidates {
+			files, err := p.twigIndex.GetTwigFilesByRelPath(candidate.name)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"query Twig template %q: %w",
+					candidate.name,
+					err,
+				)
+			}
+			if len(files) != 0 {
+				found = true
+				break
+			}
 		}
-		if len(files) != 0 {
+		if found {
 			continue
 		}
 		if !candidatesLoaded {
+			var err error
 			candidateNames, err = p.twigIndex.GetAllTemplateFiles()
 			if err != nil {
 				return nil, fmt.Errorf("query Twig templates: %w", err)
 			}
 			candidatesLoaded = true
 		}
+		missingNames := make([]string, 0, len(group.candidates))
+		for _, candidate := range group.candidates {
+			missingNames = append(missingNames, candidate.name)
+		}
 		key := fmt.Sprintf(
 			"%d:%d:%s",
-			candidate.range_.Start,
-			candidate.range_.End,
-			name,
+			group.range_.Start,
+			group.range_.End,
+			strings.Join(missingNames, "\x00"),
 		)
 		if _, exists := seen[key]; exists {
 			continue
 		}
 		seen[key] = struct{}{}
+		message := fmt.Sprintf(
+			"Template '%s' not found",
+			missingNames[0],
+		)
+		if len(missingNames) > 1 {
+			message = fmt.Sprintf(
+				"None of the fallback templates were found: '%s'",
+				strings.Join(missingNames, "', '"),
+			)
+		}
+		suggestions := similarTemplateNames(missingNames, candidateNames)
+		payload := map[string]any{
+			"templateName": missingNames[0],
+			"suggestions":  suggestions,
+		}
+		if len(missingNames) > 1 {
+			payload["templateNames"] = missingNames
+		}
 		result = append(result, lsp.Problem{
-			Range:    candidate.range_,
-			Message:  fmt.Sprintf("Template '%s' not found", name),
+			Range:    group.range_,
+			Message:  message,
 			Source:   "twig",
 			Severity: protocol.DiagnosticSeverityError,
 			ID:       missingTemplateCode,
-			Payload: map[string]any{
-				"templateName": name,
-				"suggestions": suggestion.SimilarTemplates(
-					name,
-					candidateNames,
-				),
-			},
+			Payload:  payload,
 		})
 	}
 	return result, nil
+}
+
+func similarTemplateNames(
+	missingNames []string,
+	candidates []string,
+) []string {
+	seen := make(map[string]struct{})
+	var result []string
+	for _, name := range missingNames {
+		for _, candidate := range suggestion.SimilarTemplates(name, candidates) {
+			if _, duplicate := seen[candidate]; duplicate {
+				continue
+			}
+			seen[candidate] = struct{}{}
+			result = append(result, candidate)
+		}
+	}
+	return result
 }
 
 func (p *TemplateAnalyzer) phpCandidates(

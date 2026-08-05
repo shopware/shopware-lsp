@@ -9,6 +9,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
 	phpsyntax "github.com/shopware/shopware-lsp/internal/parser/php/syntax"
+	twigast "github.com/shopware/shopware-lsp/internal/parser/twig/ast"
 	twigquery "github.com/shopware/shopware-lsp/internal/parser/twig/query"
 	twigsyntax "github.com/shopware/shopware-lsp/internal/parser/twig/syntax"
 )
@@ -69,6 +70,28 @@ type TemplateReference struct {
 type TemplateReferenceCatalog struct {
 	FilePath   string
 	References []TemplateReference
+}
+
+// TwigTemplateTarget is one statically known candidate produced by a Twig
+// template expression. Range covers the string contents for a direct literal
+// and the complete expression for a constant-folded value.
+type TwigTemplateTarget struct {
+	Template string
+	Range    cst.TextRange
+
+	directLiteral bool
+}
+
+// TwigTemplateTargetGroup describes all possible templates produced by one
+// Twig template expression. Exact is false when any runtime value participates
+// in the expression. Fallback arrays are represented as one group so callers
+// can apply Twig's "first existing template" semantics.
+type TwigTemplateTargetGroup struct {
+	Targets       []TwigTemplateTarget
+	Range         cst.TextRange
+	Exact         bool
+	IgnoreMissing bool
+	Kind          TemplateReferenceKind
 }
 
 func IsTwigTemplateString(node *twigsyntax.Node) bool {
@@ -174,19 +197,420 @@ func TwigTemplateReferences(
 		return nil
 	}
 	var result []TemplateReference
-	for _, literal := range TwigTemplateStrings(root) {
-		template := twigquery.StringValue(literal)
-		if template == "" {
-			continue
+	for _, group := range TwigTemplateTargetGroups(root) {
+		for _, target := range group.Targets {
+			// A constant concatenation is useful for validation, but its range
+			// is not safe for reference rename or file-move edits.
+			if !target.directLiteral || target.Template == "" {
+				continue
+			}
+			result = append(result, TemplateReference{
+				Template: target.Template,
+				FilePath: path,
+				Range:    target.Range,
+				Kind:     group.Kind,
+			})
 		}
-		result = append(result, TemplateReference{
-			Template: normalizeTemplateReference(template),
-			FilePath: path,
-			Range:    stringContentRange(literal.Text(), literal.Range()),
-			Kind:     twigTemplateReferenceKind(literal),
-		})
 	}
 	return uniqueTemplateReferences(result)
+}
+
+// TwigTemplateTargetGroups evaluates template-bearing Twig expressions. It
+// folds static string concatenations, preserves fallback arrays as groups, and
+// marks expressions involving runtime values as inexact. Literal fragments of
+// dynamic expressions are intentionally not exposed as template targets.
+func TwigTemplateTargetGroups(
+	root *twigsyntax.Node,
+) []TwigTemplateTargetGroup {
+	if root == nil {
+		return nil
+	}
+
+	kinds := []twigsyntax.Kind{
+		twigsyntax.TwigExtends,
+		twigsyntax.TwigInclude,
+		twigsyntax.TwigUse,
+		twigsyntax.TwigEmbed,
+		twigsyntax.TwigFrom,
+		twigsyntax.TwigImport,
+		twigsyntax.TwigFormTheme,
+		twigsyntax.ShopwareTwigSwExtends,
+		twigsyntax.ShopwareTwigSwInclude,
+		twigsyntax.TwigFunctionCall,
+	}
+	var result []TwigTemplateTargetGroup
+	for _, node := range twigquery.Nodes(root, kinds...) {
+		if node.Kind() == twigsyntax.TwigFunctionCall {
+			if group, ok := twigFunctionTemplateTargetGroup(node); ok {
+				result = append(result, group)
+			}
+			continue
+		}
+		result = append(result, twigTagTemplateTargetGroups(node)...)
+	}
+	return result
+}
+
+type twigTemplateEvaluation struct {
+	targets     []TwigTemplateTarget
+	exact       bool
+	scalar      string
+	scalarKnown bool
+}
+
+func twigTagTemplateTargetGroups(
+	tag *twigsyntax.Node,
+) []TwigTemplateTargetGroup {
+	name := twigquery.TagName(tag)
+	if !slices.Contains(templateTagNames, name) {
+		return nil
+	}
+
+	scope := tag
+	if name == "embed" {
+		for child := range tag.ChildNodes() {
+			if child.Kind() == twigsyntax.TwigEmbedStartingBlock {
+				scope = child
+				break
+			}
+		}
+	}
+
+	var targetNodes []*twigsyntax.Node
+	if name == "use" {
+		for child := range scope.ChildNodes() {
+			if child.Kind() == twigsyntax.TwigLiteralString {
+				targetNodes = append(targetNodes, child)
+				break
+			}
+		}
+	} else {
+		var expressions []*twigsyntax.Node
+		for child := range scope.ChildNodes() {
+			if child.Kind() == twigsyntax.TwigExpression {
+				expressions = append(expressions, child)
+			}
+		}
+		if name == "form_theme" {
+			if len(expressions) > 1 {
+				targetNodes = append(targetNodes, expressions[1:]...)
+			}
+		} else if len(expressions) != 0 {
+			targetNodes = append(targetNodes, expressions[0])
+		}
+	}
+
+	if name == "sw_extends" && len(targetNodes) != 0 {
+		if value := twigHashValueForKey(targetNodes[0], "template"); value != nil {
+			targetNodes[0] = value
+		}
+	}
+	if name == "form_theme" {
+		var expanded []*twigsyntax.Node
+		for _, targetNode := range targetNodes {
+			items := twigArrayExpressionItems(targetNode)
+			if len(items) == 0 {
+				expanded = append(expanded, targetNode)
+				continue
+			}
+			expanded = append(expanded, items...)
+		}
+		targetNodes = expanded
+	}
+
+	ignoreMissing := twigNodeContainsToken(scope, twigsyntax.TkIgnoreMissing)
+	kind := twigTemplateReferenceKindForName(name)
+	result := make([]TwigTemplateTargetGroup, 0, len(targetNodes))
+	for _, targetNode := range targetNodes {
+		result = append(result, newTwigTemplateTargetGroup(
+			targetNode,
+			kind,
+			ignoreMissing,
+		))
+	}
+	return result
+}
+
+func twigFunctionTemplateTargetGroup(
+	call *twigsyntax.Node,
+) (TwigTemplateTargetGroup, bool) {
+	name := twigquery.FunctionName(call)
+	var target *twigsyntax.Node
+	var kind TemplateReferenceKind
+	var ignoreMissing bool
+	switch name {
+	case "include":
+		target = twigFunctionArgument(call, 0, "template")
+		kind = TemplateIncludeReference
+		ignoreMissing = twigFunctionArgumentIsTrue(
+			twigFunctionArgument(call, 3, "ignore_missing"),
+		)
+	case "source":
+		target = twigFunctionArgument(call, 0, "name")
+		kind = TemplateSourceReference
+		ignoreMissing = twigFunctionArgumentIsTrue(
+			twigFunctionArgument(call, 1, "ignore_missing"),
+		)
+	case "block":
+		target = twigFunctionArgument(call, 1, "template")
+		kind = TemplateBlockReference
+	default:
+		return TwigTemplateTargetGroup{}, false
+	}
+	if target == nil {
+		return TwigTemplateTargetGroup{}, false
+	}
+	return newTwigTemplateTargetGroup(target, kind, ignoreMissing), true
+}
+
+func twigFunctionArgument(
+	call *twigsyntax.Node,
+	position int,
+	name string,
+) *twigsyntax.Node {
+	for index := 0; ; index++ {
+		argument := twigquery.FunctionArgument(call, index)
+		if argument == nil {
+			break
+		}
+		if argument.Kind() != twigsyntax.TwigNamedArgument {
+			continue
+		}
+		nameToken := argument.ChildTokenOfKind(twigsyntax.TkWord)
+		if nameToken != nil && strings.EqualFold(nameToken.Text(), name) {
+			return argument
+		}
+	}
+	return twigquery.FunctionArgument(call, position)
+}
+
+func twigFunctionArgumentIsTrue(argument *twigsyntax.Node) bool {
+	if argument == nil {
+		return false
+	}
+	if argument.Kind() == twigsyntax.TwigNamedArgument {
+		for child := range argument.ChildNodes() {
+			if child.Kind() == twigsyntax.TwigExpression {
+				argument = child
+				break
+			}
+		}
+	}
+	return strings.EqualFold(strings.TrimSpace(argument.Text()), "true")
+}
+
+func newTwigTemplateTargetGroup(
+	node *twigsyntax.Node,
+	kind TemplateReferenceKind,
+	ignoreMissing bool,
+) TwigTemplateTargetGroup {
+	evaluation := evaluateTwigTemplateTarget(node)
+	rng := node.RangeTrimmedTrivia()
+	if len(evaluation.targets) == 1 && evaluation.targets[0].directLiteral {
+		rng = evaluation.targets[0].Range
+	}
+	return TwigTemplateTargetGroup{
+		Targets:       evaluation.targets,
+		Range:         rng,
+		Exact:         evaluation.exact,
+		IgnoreMissing: ignoreMissing,
+		Kind:          kind,
+	}
+}
+
+func evaluateTwigTemplateTarget(
+	node *twigsyntax.Node,
+) twigTemplateEvaluation {
+	if node == nil {
+		return twigTemplateEvaluation{}
+	}
+	switch node.Kind() {
+	case twigsyntax.TwigExpression,
+		twigsyntax.TwigParenthesesExpression,
+		twigsyntax.TwigNamedArgument,
+		twigsyntax.TwigLiteralHashValue:
+		for child := range node.ChildNodes() {
+			return evaluateTwigTemplateTarget(child)
+		}
+		return twigTemplateEvaluation{}
+	case twigsyntax.TwigLiteralString:
+		if !twigquery.StringIsStatic(node) {
+			return twigTemplateEvaluation{}
+		}
+		value := twigquery.StringValue(node)
+		name := normalizeTemplateReference(value)
+		if name == "" {
+			return twigTemplateEvaluation{
+				exact:       true,
+				scalar:      value,
+				scalarKnown: true,
+			}
+		}
+		return twigTemplateEvaluation{
+			targets: []TwigTemplateTarget{{
+				Template:      name,
+				Range:         stringContentRange(node.Text(), node.Range()),
+				directLiteral: true,
+			}},
+			exact:       true,
+			scalar:      value,
+			scalarKnown: true,
+		}
+	case twigsyntax.TwigBinaryExpression:
+		binary, ok := twigast.CastTwigBinaryExpression(node)
+		if !ok || binary.Operator() == nil ||
+			strings.TrimSpace(binary.Operator().Text()) != "~" {
+			return twigTemplateEvaluation{}
+		}
+		lhs, lhsOK := binary.LhsExpression()
+		rhs, rhsOK := binary.RhsExpression()
+		if !lhsOK || !rhsOK {
+			return twigTemplateEvaluation{}
+		}
+		left := evaluateTwigTemplateTarget(lhs.Syntax())
+		right := evaluateTwigTemplateTarget(rhs.Syntax())
+		if !left.scalarKnown || !right.scalarKnown {
+			return twigTemplateEvaluation{}
+		}
+		value := left.scalar + right.scalar
+		name := normalizeTemplateReference(value)
+		var targets []TwigTemplateTarget
+		if name != "" {
+			targets = []TwigTemplateTarget{{
+				Template: name,
+				Range:    node.RangeTrimmedTrivia(),
+			}}
+		}
+		return twigTemplateEvaluation{
+			targets:     targets,
+			exact:       true,
+			scalar:      value,
+			scalarKnown: true,
+		}
+	case twigsyntax.TwigLiteralArray:
+		var inner *twigsyntax.Node
+		for child := range node.ChildNodes() {
+			if child.Kind() == twigsyntax.TwigLiteralArrayInner {
+				inner = child
+				break
+			}
+		}
+		if inner == nil {
+			return twigTemplateEvaluation{}
+		}
+		result := twigTemplateEvaluation{exact: true}
+		for child := range inner.ChildNodes() {
+			if child.Kind() != twigsyntax.TwigExpression {
+				continue
+			}
+			item := evaluateTwigTemplateTarget(child)
+			if !item.scalarKnown {
+				result.exact = false
+			}
+			result.targets = append(result.targets, item.targets...)
+		}
+		return result
+	default:
+		return twigTemplateEvaluation{}
+	}
+}
+
+func twigHashValueForKey(
+	node *twigsyntax.Node,
+	key string,
+) *twigsyntax.Node {
+	for _, pair := range twigquery.Nodes(
+		node,
+		twigsyntax.TwigLiteralHashPair,
+	) {
+		var keyNode, valueNode *twigsyntax.Node
+		for child := range pair.ChildNodes() {
+			switch child.Kind() {
+			case twigsyntax.TwigLiteralHashKey:
+				keyNode = child
+			case twigsyntax.TwigLiteralHashValue, twigsyntax.TwigExpression:
+				valueNode = child
+			}
+		}
+		if keyNode == nil || valueNode == nil {
+			continue
+		}
+		keyText := strings.Trim(
+			strings.TrimSpace(keyNode.Text()),
+			`"'`+"`",
+		)
+		if strings.EqualFold(keyText, key) {
+			return valueNode
+		}
+	}
+	return nil
+}
+
+func twigArrayExpressionItems(node *twigsyntax.Node) []*twigsyntax.Node {
+	for node != nil {
+		switch node.Kind() {
+		case twigsyntax.TwigExpression,
+			twigsyntax.TwigParenthesesExpression,
+			twigsyntax.TwigNamedArgument,
+			twigsyntax.TwigLiteralHashValue:
+			var child *twigsyntax.Node
+			for candidate := range node.ChildNodes() {
+				child = candidate
+				break
+			}
+			node = child
+			continue
+		}
+		break
+	}
+	if node == nil || node.Kind() != twigsyntax.TwigLiteralArray {
+		return nil
+	}
+	for child := range node.ChildNodes() {
+		if child.Kind() != twigsyntax.TwigLiteralArrayInner {
+			continue
+		}
+		var result []*twigsyntax.Node
+		for item := range child.ChildNodes() {
+			if item.Kind() == twigsyntax.TwigExpression {
+				result = append(result, item)
+			}
+		}
+		return result
+	}
+	return nil
+}
+
+func twigNodeContainsToken(node *twigsyntax.Node, kind twigsyntax.Kind) bool {
+	if node == nil {
+		return false
+	}
+	for descendant := range node.Descendants() {
+		token, ok := descendant.(*twigsyntax.Token)
+		if ok && token.Kind() == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func twigTemplateReferenceKindForName(name string) TemplateReferenceKind {
+	switch name {
+	case "extends", "sw_extends":
+		return TemplateExtendsReference
+	case "include", "sw_include":
+		return TemplateIncludeReference
+	case "embed":
+		return TemplateEmbedReference
+	case "use":
+		return TemplateUseReference
+	case "from", "import":
+		return TemplateImportReference
+	case "form_theme":
+		return TemplateFormThemeReference
+	default:
+		return TemplateIncludeReference
+	}
 }
 
 func IsPHPTemplateString(node *phpsyntax.Node) bool {

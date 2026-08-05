@@ -30,6 +30,51 @@ func TestTemplateDiagnosticsForTwig(t *testing.T) {
 	}
 }
 
+func TestTemplateDiagnosticsForTwigTemplateExpressions(t *testing.T) {
+	provider := templateDiagnosticsFixture(t)
+	document := lsp.NewTextDocument(
+		"file:///project/templates/page.html.twig",
+		`{% include '@Storefront/storefront/section/cms-section-' ~ section.type ~ '.html.twig' %}
+{% include 'ignored-by-tag.html.twig' ignore missing %}
+{{ include('ignored-by-function.html.twig', ignore_missing: true) }}
+{{ source('ignored-source.html.twig', true) }}
+{% include ['missing-fallback.html.twig', 'base.html.twig'] %}
+{% include ['missing-one.html.twig', 'missing-two.html.twig'] %}
+{% include 'base' ~ '.html.twig' %}
+{% include 'missing/' ~ 'card.html.twig' %}
+{% form_theme form with ['base.html.twig', 'missing-theme.html.twig'] %}`,
+		1,
+	)
+	result, err := provider.Analyze(context.Background(), document)
+	require.NoError(t, err)
+	require.Len(t, result, 3)
+
+	assert.Equal(
+		t,
+		"None of the fallback templates were found: 'missing-one.html.twig', 'missing-two.html.twig'",
+		result[0].Message,
+	)
+	assert.Equal(t, []string{
+		"missing-one.html.twig",
+		"missing-two.html.twig",
+	}, result[0].Payload.(map[string]any)["templateNames"])
+	assert.Equal(
+		t,
+		"Template 'missing/card.html.twig' not found",
+		result[1].Message,
+	)
+	assert.Equal(
+		t,
+		"'missing/' ~ 'card.html.twig'",
+		problemRangeText(document, result[1].Range),
+	)
+	assert.Equal(
+		t,
+		"Template 'missing-theme.html.twig' not found",
+		result[2].Message,
+	)
+}
+
 func TestTemplateDiagnosticsForTypedPHPRender(t *testing.T) {
 	provider := templateDiagnosticsFixture(t)
 	document := lsp.NewTextDocument(
