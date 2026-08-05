@@ -2090,6 +2090,8 @@ func TestAdminAnalyzer_UnknownThisMember(t *testing.T) {
             this.repositoryFactory.create('product');
             this.freshMethod();
             this.$emit('save');
+			this.runtimeValue = 1;
+			this.runtimeValue;
 			this.freshMethd;
         },
     },
@@ -2105,6 +2107,103 @@ func TestAdminAnalyzer_UnknownThisMember(t *testing.T) {
 	assert.Contains(
 		t, problems[0].Payload.(map[string]any)["suggestions"], "freshMethod",
 	)
+}
+
+func TestAdminAnalyzerTreatsInheritedAssignmentsAsInstanceMembers(t *testing.T) {
+	root := t.TempDir()
+	adminIndexer, err := admin.NewAdminComponentIndexer(filepath.Join(root, "cache"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, adminIndexer.Close()) })
+	adminRoot := filepath.Join(root, "src/Resources/app/administration/src")
+	basePath := filepath.Join(adminRoot, "component/sw-card/index.js")
+	overridePath := filepath.Join(adminRoot, "extension/sw-card/index.js")
+	require.NoError(t, adminIndexer.Index(indexer.NewParsedFile(
+		basePath,
+		[]byte(`Component.register('sw-card', {
+    mounted() { this.runtimeHandle = window.setInterval(() => {}, 1000); },
+});`),
+	)))
+	source := []byte(`Component.override('sw-card', {
+    methods: {
+        stop() {
+            window.clearInterval(this.runtimeHandle);
+            this.runtimeHandel;
+        },
+    },
+});`)
+	require.NoError(t, adminIndexer.Index(indexer.NewParsedFile(
+		overridePath, source,
+	)))
+
+	problems, err := NewAdminAnalyzer(adminIndexer).Analyze(
+		context.Background(),
+		diagnosticsDocument("file://"+overridePath, source),
+	)
+	require.NoError(t, err)
+	require.Len(t, problems, 1)
+	assert.Equal(t, "admin.component.unknown-instance-member", string(problems[0].ID))
+	assert.Contains(t, problems[0].Message, "runtimeHandel")
+	assert.Contains(
+		t, problems[0].Payload.(map[string]any)["suggestions"], "runtimeHandle",
+	)
+}
+
+func TestAdminAnalyzerScopesUnknownInstanceMembersPerComponent(t *testing.T) {
+	root := t.TempDir()
+	adminIndexer, err := admin.NewAdminComponentIndexer(filepath.Join(root, "cache"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, adminIndexer.Close()) })
+	definitionPath := filepath.Join(
+		root, "src/Resources/app/administration/src/component/index.js",
+	)
+	source := []byte(`Component.register('sw-first', {
+    methods: {
+        firstOnly() {},
+        run() { this.secondOnly(); },
+    },
+});
+Component.register('sw-second', {
+    methods: {
+        secondOnly() {},
+        run() { this.firstOnly(); },
+    },
+});`)
+	require.NoError(t, adminIndexer.Index(indexer.NewParsedFile(
+		definitionPath, source,
+	)))
+
+	problems, err := NewAdminAnalyzer(adminIndexer).Analyze(
+		context.Background(),
+		diagnosticsDocument("file://"+definitionPath, source),
+	)
+	require.NoError(t, err)
+	require.Len(t, problems, 2)
+	assert.Contains(t, problems[0].Message, "secondOnly")
+	assert.Contains(t, problems[1].Message, "firstOnly")
+}
+
+func TestAdminAnalyzerSuppressesUnknownMembersForOpenRuntimeComponent(t *testing.T) {
+	root := t.TempDir()
+	adminIndexer, err := admin.NewAdminComponentIndexer(filepath.Join(root, "cache"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, adminIndexer.Close()) })
+	definitionPath := filepath.Join(
+		root, "src/Resources/app/administration/src/component/sw-card/index.js",
+	)
+	require.NoError(t, adminIndexer.SaveComponent(admin.VueComponent{
+		Name: "sw-card", FilePath: definitionPath, DefinitionPath: definitionPath,
+		OpenRuntimeMembers: true,
+	}))
+	source := []byte(`export default {
+    methods: { run() { this.runtimePluginMember(); } },
+};`)
+
+	problems, err := NewAdminAnalyzer(adminIndexer).Analyze(
+		context.Background(),
+		diagnosticsDocument("file://"+definitionPath, source),
+	)
+	require.NoError(t, err)
+	assert.Empty(t, problems)
 }
 
 func TestAdminAnalyzerUnknownTemplateRootMemberWithSuggestion(t *testing.T) {

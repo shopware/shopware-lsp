@@ -568,46 +568,26 @@ func (p *AdminAnalyzer) unknownInstanceMemberDiagnostics(
 	if err != nil || len(components) == 0 {
 		return nil
 	}
-
-	// Spread-generated computed values and arbitrary imported mixins require
-	// dedicated inference. Suppress this diagnostic for those configurations so
-	// a useful typo check does not become noisy on valid Shopware components.
-	source := string(document.Text)
-	current := admin.ParseComponentDefinitionWithLineIndex(
+	scopes := adminInstanceMemberScopes(
 		document.SyntaxTree.Root,
 		document.LineIndex,
+		path,
+		analysis,
+		components,
 	)
-	if strings.Contains(source, "...") ||
-		(strings.Contains(source, "mixins:") && len(current.Mixins) == 0) {
+	if len(scopes) == 0 {
 		return nil
-	}
-
-	known := make(map[string]bool)
-	var knownNames []string
-	addKnown := func(name string) {
-		if name == "" || known[name] {
-			return
-		}
-		known[name] = true
-		knownNames = append(knownNames, name)
-	}
-	for _, component := range components {
-		for _, member := range component.TemplateMembers() {
-			addKnown(member.Name)
-		}
-	}
-	for _, member := range current.Members {
-		addKnown(member.Name)
-	}
-	for _, member := range admin.VueBuiltinMembers() {
-		addKnown(member.Name)
 	}
 
 	var diagnostics []lsp.Problem
 	seen := make(map[string]bool)
 	for _, memberExpression := range analysis.Nodes(jssyntax.JsMemberExpression) {
 		name, matched := jsquery.ThisMember(memberExpression)
-		if !matched || name == "" || known[name] || strings.HasPrefix(name, "$") {
+		if !matched || name == "" || strings.HasPrefix(name, "$") {
+			continue
+		}
+		scope := smallestAdminInstanceMemberScope(memberExpression, scopes)
+		if scope == nil || scope.open || scope.known[name] {
 			continue
 		}
 		nameNode := jsquery.ThisMemberNameNode(memberExpression)
@@ -631,12 +611,177 @@ func (p *AdminAnalyzer) unknownInstanceMemberDiagnostics(
 			Payload: map[string]any{
 				"memberName": name,
 				"suggestions": adminNearbySuggestions(
-					name, knownNames,
+					name, scope.knownNames,
 				),
 			},
 		})
 	}
 	return diagnostics
+}
+
+type adminInstanceMemberScope struct {
+	object     *jssyntax.Node
+	components []admin.VueComponent
+	current    *admin.ComponentDefinition
+	known      map[string]bool
+	knownNames []string
+	open       bool
+}
+
+func adminInstanceMemberScopes(
+	root *jssyntax.Node,
+	lineIndex *cst.LineIndex,
+	filePath string,
+	analysis *admin.JavaScriptDocumentAnalysis,
+	components []admin.VueComponent,
+) []adminInstanceMemberScope {
+	byName := make(map[string][]admin.VueComponent, len(components))
+	for _, component := range components {
+		byName[component.Name] = append(byName[component.Name], component)
+	}
+
+	var scopes []adminInstanceMemberScope
+	seen := make(map[string]bool)
+	add := func(object *jssyntax.Node, effective []admin.VueComponent) {
+		if object == nil {
+			return
+		}
+		key := object.RangeTrimmedTrivia().String()
+		if seen[key] {
+			return
+		}
+		current := admin.ParseComponentObject(object, filePath, lineIndex)
+		if current == nil {
+			return
+		}
+		seen[key] = true
+		scope := adminInstanceMemberScope{
+			object: object, components: effective, current: current,
+		}
+		populateAdminInstanceMemberScope(&scope)
+		scopes = append(scopes, scope)
+	}
+
+	for _, call := range analysis.Calls(
+		"Component.register",
+		"Shopware.Component.register",
+		"Component.extend",
+		"Shopware.Component.extend",
+		"Component.override",
+		"Shopware.Component.override",
+	) {
+		definitionIndex := 1
+		if strings.HasSuffix(jsquery.CallName(call), ".extend") {
+			definitionIndex = 2
+		}
+		object := admin.ComponentDefinitionObject(
+			jsquery.ArgumentExpression(call, definitionIndex),
+		)
+		name := jsquery.StringValue(jsquery.StringArgument(call, 0))
+		add(object, byName[name])
+	}
+	for _, export := range jsquery.ExportDefaults(root) {
+		object := admin.ComponentDefinitionObject(
+			jsquery.ExportDefaultExpression(export),
+		)
+		add(object, components)
+	}
+	return scopes
+}
+
+func populateAdminInstanceMemberScope(scope *adminInstanceMemberScope) {
+	if scope == nil {
+		return
+	}
+	scope.known = make(map[string]bool)
+	add := func(name string) {
+		if name == "" || scope.known[name] {
+			return
+		}
+		scope.known[name] = true
+		scope.knownNames = append(scope.knownNames, name)
+	}
+	for _, member := range admin.VueBuiltinMembers() {
+		add(member.Name)
+	}
+	if scope.current != nil {
+		scope.open = scope.current.OpenRuntimeMembers
+		for _, member := range scope.current.Members {
+			add(member.Name)
+		}
+		for _, assignment := range scope.current.Assignments {
+			add(assignment.Target)
+		}
+	}
+	if len(scope.components) == 0 {
+		return
+	}
+
+	common := adminComponentInstanceMemberNames(scope.components[0])
+	for _, component := range scope.components {
+		scope.open = scope.open || component.OpenRuntimeMembers
+	}
+	for _, component := range scope.components[1:] {
+		names := adminComponentInstanceMemberNames(component)
+		for name := range common {
+			if !names[name] {
+				delete(common, name)
+			}
+		}
+	}
+	for _, member := range scope.components[0].TemplateMembers() {
+		if common[member.Name] {
+			add(member.Name)
+		}
+	}
+	for _, assignment := range scope.components[0].Assignments {
+		if common[assignment.Target] {
+			add(assignment.Target)
+		}
+	}
+}
+
+func adminComponentInstanceMemberNames(
+	component admin.VueComponent,
+) map[string]bool {
+	result := make(map[string]bool)
+	for _, member := range component.TemplateMembers() {
+		if member.Name != "" {
+			result[member.Name] = true
+		}
+	}
+	for _, assignment := range component.Assignments {
+		if assignment.Target != "" {
+			result[assignment.Target] = true
+		}
+	}
+	return result
+}
+
+func smallestAdminInstanceMemberScope(
+	node *jssyntax.Node,
+	scopes []adminInstanceMemberScope,
+) *adminInstanceMemberScope {
+	if node == nil {
+		return nil
+	}
+	nodeRange := node.RangeTrimmedTrivia()
+	var result *adminInstanceMemberScope
+	for index := range scopes {
+		scopeRange := scopes[index].object.RangeTrimmedTrivia()
+		if nodeRange.Start < scopeRange.Start || nodeRange.End > scopeRange.End {
+			continue
+		}
+		if result == nil {
+			result = &scopes[index]
+			continue
+		}
+		resultRange := result.object.RangeTrimmedTrivia()
+		if scopeRange.End-scopeRange.Start < resultRange.End-resultRange.Start {
+			result = &scopes[index]
+		}
+	}
+	return result
 }
 
 // twigDiagnostics checks Twig templates for missing required props on components
