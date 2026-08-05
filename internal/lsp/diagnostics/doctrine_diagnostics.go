@@ -13,6 +13,7 @@ import (
 	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
 	phpsyntax "github.com/shopware/shopware-lsp/internal/parser/php/syntax"
 	"github.com/shopware/shopware-lsp/internal/php"
+	shopwaredal "github.com/shopware/shopware-lsp/internal/shopware/dal"
 	"github.com/shopware/shopware-lsp/internal/suggestion"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
@@ -37,15 +38,18 @@ const (
 type DoctrineAnalyzer struct {
 	index    *doctrine.Index
 	phpIndex *php.PHPIndex
+	dalIndex *shopwaredal.Index
 }
 
 func NewDoctrineAnalyzer(
 	index *doctrine.Index,
 	phpIndex *php.PHPIndex,
+	dalIndex *shopwaredal.Index,
 ) *DoctrineAnalyzer {
 	return &DoctrineAnalyzer{
 		index:    index,
 		phpIndex: phpIndex,
+		dalIndex: dalIndex,
 	}
 }
 
@@ -83,12 +87,11 @@ func (p *DoctrineAnalyzer) Analyze(
 	if err != nil {
 		return nil, err
 	}
-	var tableNames []string
-	for _, model := range models {
-		if model.Table != "" {
-			tableNames = append(tableNames, model.Table)
-		}
-	}
+	dbalSchema := newDBALSchemaCatalog(
+		p.index,
+		p.dalIndex,
+		models,
+	)
 	seen := make(map[string]struct{})
 	for _, literal := range phpquery.Nodes(
 		document.SyntaxTree.Root,
@@ -135,11 +138,22 @@ func (p *DoctrineAnalyzer) Analyze(
 		); found {
 			switch reference.Role {
 			case doctrine.DBALTableReference:
-				if _, exists, tableErr := p.index.ModelForTable(
-					reference.Name,
-				); tableErr != nil {
+				tableExists, tableErr := dbalSchema.HasTable(reference.Name)
+				if tableErr != nil {
 					return nil, tableErr
-				} else if !exists {
+				}
+				if !tableExists {
+					tableNames, namesErr := dbalSchema.TableNames()
+					if namesErr != nil {
+						return nil, namesErr
+					}
+					suggestions := adminNearbySuggestions(
+						reference.Name,
+						tableNames,
+					)
+					if len(suggestions) == 0 {
+						continue
+					}
 					result = append(result, doctrineDiagnostic(
 						document,
 						reference.Range,
@@ -148,31 +162,23 @@ func (p *DoctrineAnalyzer) Analyze(
 							"Doctrine DBAL table '%s' not found",
 							reference.Name,
 						),
-						suggestion.Similar(reference.Name, tableNames),
+						suggestions,
 					))
 				}
 			case doctrine.DBALColumnReference:
-				model, _, exists, columnErr := p.index.FieldForColumn(
+				columns, tableExists, columnErr := dbalSchema.Columns(
 					reference.Table,
-					reference.Name,
 				)
 				if columnErr != nil {
 					return nil, columnErr
 				}
-				if !exists && model.Class != "" {
-					fields, fieldErr := p.index.Fields(model.Class)
-					if fieldErr != nil {
-						return nil, fieldErr
-					}
-					var columns []string
-					for _, field := range fields {
-						name := field.Column
-						if name == "" {
-							name = field.Name
-						}
-						if name != "" {
-							columns = append(columns, name)
-						}
+				if tableExists && !hasDBALSchemaName(columns, reference.Name) {
+					suggestions := adminNearbySuggestions(
+						reference.Name,
+						columns,
+					)
+					if len(suggestions) == 0 {
+						continue
 					}
 					result = append(result, doctrineDiagnostic(
 						document,
@@ -183,7 +189,7 @@ func (p *DoctrineAnalyzer) Analyze(
 							reference.Name,
 							reference.Table,
 						),
-						suggestion.Similar(reference.Name, columns),
+						suggestions,
 					))
 				}
 			}

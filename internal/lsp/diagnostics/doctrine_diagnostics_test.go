@@ -8,6 +8,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/indexer"
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/php"
+	shopwaredal "github.com/shopware/shopware-lsp/internal/shopware/dal"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -73,6 +74,7 @@ class ProductRepository {
 	result, err := NewDoctrineAnalyzer(
 		doctrineIndex,
 		phpIndex,
+		nil,
 	).Analyze(
 		context.Background(),
 		diagnosticsDocument("file:///project/src/Usage.php", source),
@@ -138,6 +140,7 @@ resolve_entity('App\Product');
 	result, err := NewDoctrineAnalyzer(
 		doctrineIndex,
 		phpIndex,
+		nil,
 	).Analyze(context.Background(), document)
 	require.NoError(t, err)
 	require.Len(t, result, 1)
@@ -182,6 +185,7 @@ $dql = "SELECT p FROM App\\Product p WHERE p.name = $dynamic";
 	result, err := NewDoctrineAnalyzer(
 		doctrineIndex,
 		phpIndex,
+		nil,
 	).Analyze(
 		context.Background(),
 		diagnosticsDocument("file:///project/src/Search.php", source),
@@ -242,6 +246,7 @@ function write(Connection $connection): void {
 	result, err := NewDoctrineAnalyzer(
 		doctrineIndex,
 		phpIndex,
+		nil,
 	).Analyze(
 		context.Background(),
 		diagnosticsDocument("file:///project/src/Database.php", source),
@@ -265,6 +270,67 @@ function write(Connection $connection): void {
 		t,
 		columnDiagnostic.Payload.(map[string]any)["suggestions"],
 		"product_name",
+	)
+}
+
+func TestDoctrineDiagnosticsValidateShopwareDALTablesAndColumns(t *testing.T) {
+	doctrineIndex, err := doctrine.NewIndex(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, doctrineIndex.Close()) })
+	phpIndex, err := php.NewPHPIndex(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, phpIndex.Close()) })
+	dalIndex, err := shopwaredal.NewIndex(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, dalIndex.Close()) })
+	require.NoError(t, dalIndex.Index(indexer.NewParsedFile(
+		"/project/src/ScheduledTaskDefinition.php",
+		[]byte(`<?php
+class ScheduledTaskDefinition extends EntityDefinition
+{
+    public const ENTITY_NAME = 'scheduled_task';
+    protected function defineFields(): FieldCollection
+    {
+        return new FieldCollection([
+            new IdField('id', 'id'),
+            new StringField('scheduled_task_class', 'scheduledTaskClass'),
+        ]);
+    }
+}`),
+	)))
+	require.NoError(t, phpIndex.Index(indexer.NewParsedFile(
+		"/project/vendor/doctrine-dbal.php",
+		[]byte(`<?php
+namespace Doctrine\DBAL;
+class Connection { public function insert(string $table, array $data): void {} }
+`),
+	)))
+	source := []byte(`<?php
+use Doctrine\DBAL\Connection;
+function write(Connection $connection): void {
+    $connection->insert('scheduled_task', [
+        'scheduled_task_class' => 'Task',
+        'scheduled_task_clas' => 'Task',
+    ]);
+    $connection->insert('migration_audit_log', ['payload' => 'value']);
+}`)
+
+	result, err := NewDoctrineAnalyzer(
+		doctrineIndex,
+		phpIndex,
+		dalIndex,
+	).Analyze(
+		context.Background(),
+		diagnosticsDocument("file:///project/src/Database.php", source),
+	)
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	assert.Equal(t, missingDoctrineColumnCode, result[0].ID)
+	assert.Contains(t, result[0].Message, "scheduled_task_clas")
+	assert.Contains(
+		t,
+		result[0].Payload.(map[string]any)["suggestions"],
+		"scheduled_task_class",
 	)
 }
 
@@ -311,6 +377,7 @@ class Product {
 	result, err := NewDoctrineAnalyzer(
 		doctrineIndex,
 		phpIndex,
+		nil,
 	).Analyze(
 		context.Background(),
 		diagnosticsDocument(
@@ -396,6 +463,7 @@ class MongoMoneyType extends \Doctrine\ODM\MongoDB\Types\Type {
 	diagnostics, err := NewDoctrineAnalyzer(
 		doctrineIndex,
 		phpIndex,
+		nil,
 	).Analyze(
 		context.Background(),
 		diagnosticsDocument(
@@ -438,6 +506,7 @@ class NotAType {}`,
 	diagnostics, err := NewDoctrineAnalyzer(
 		doctrineIndex,
 		phpIndex,
+		nil,
 	).Analyze(
 		context.Background(),
 		diagnosticsDocument(
@@ -496,6 +565,7 @@ class Product
 	diagnostics, err := NewDoctrineAnalyzer(
 		doctrineIndex,
 		phpIndex,
+		nil,
 	).Analyze(
 		context.Background(),
 		diagnosticsDocument(
@@ -544,6 +614,7 @@ class OtherModel {}
 	diagnostics, err := NewDoctrineAnalyzer(
 		doctrineIndex,
 		phpIndex,
+		nil,
 	).Analyze(
 		context.Background(),
 		diagnosticsDocument(

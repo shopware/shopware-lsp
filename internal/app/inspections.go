@@ -64,7 +64,11 @@ func registerDiagnosticInspections(
 		"symfony.doctrine.type.unknown",
 		"symfony.doctrine.type_class.invalid",
 		"symfony.doctrine.type_class.missing",
-	}, diagnostics.NewDoctrineAnalyzer(services.doctrine, services.php))
+	}, diagnostics.NewDoctrineAnalyzer(
+		services.doctrine,
+		services.php,
+		services.dal,
+	))
 	registerProblemInspection(server, "symfony.asset", phpTwig, "symfony", []string{
 		"symfony.asset.missing",
 		"symfony.asset.package.missing",
