@@ -28,6 +28,7 @@ import (
 	shopwaredal "github.com/shopware/shopware-lsp/internal/shopware/dal"
 	"github.com/shopware/shopware-lsp/internal/snippet"
 	"github.com/shopware/shopware-lsp/internal/stimulus"
+	"github.com/shopware/shopware-lsp/internal/style"
 	"github.com/shopware/shopware-lsp/internal/symfony"
 	"github.com/shopware/shopware-lsp/internal/symfonyconfig"
 	"github.com/shopware/shopware-lsp/internal/systemconfig"
@@ -194,6 +195,11 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 		return nil, fmt.Errorf("create Stimulus index: %w", err)
 	}
 	workspace.indexers = append(workspace.indexers, stimulusIndex)
+	styleIndex, err := style.NewIndex(cacheDir, workspace.store)
+	if err != nil {
+		return nil, fmt.Errorf("create style index: %w", err)
+	}
+	workspace.indexers = append(workspace.indexers, styleIndex)
 	twigIndex, err := twig.NewTwigIndexer(cacheDir, workspace.store)
 	if err != nil {
 		return nil, fmt.Errorf("create Twig index: %w", err)
@@ -282,6 +288,7 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 		configuration:   configurationIndex,
 		serializer:      serializerIndex,
 		stimulus:        stimulusIndex,
+		styles:          styleIndex,
 		php:             phpIndex,
 		twig:            twigIndex,
 		twigComponents:  twigComponentIndex,

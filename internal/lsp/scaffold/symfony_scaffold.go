@@ -191,22 +191,24 @@ func namespaceForDirectory(
 	}
 	var candidates []candidate
 	canonicalDirectory := resolvedDirectoryPath(directory)
-	for namespace, roots := range model.PSR4 {
-		for _, root := range roots {
-			root = resolvedDirectoryPath(filepath.Clean(root))
-			relative, err := filepath.Rel(root, canonicalDirectory)
-			if err != nil || relative == ".." ||
-				strings.HasPrefix(
-					relative,
-					".."+string(filepath.Separator),
-				) {
-				continue
-			}
-			candidates = append(candidates, candidate{
-				namespace: strings.Trim(namespace, `\`),
-				root:      root,
-			})
+	mappings, err := model.PSR4MappingsForDirectory(directory)
+	if err != nil {
+		return "", err
+	}
+	for _, mapping := range mappings {
+		root := resolvedDirectoryPath(filepath.Clean(mapping.Root))
+		relative, err := filepath.Rel(root, canonicalDirectory)
+		if err != nil || relative == ".." ||
+			strings.HasPrefix(
+				relative,
+				".."+string(filepath.Separator),
+			) {
+			continue
 		}
+		candidates = append(candidates, candidate{
+			namespace: strings.Trim(mapping.Namespace, `\`),
+			root:      root,
+		})
 	}
 	if len(candidates) == 0 {
 		return "", fmt.Errorf(
@@ -534,7 +536,13 @@ func (p *Provider) serviceScaffold(
 	if err := ensureScaffoldTargetAvailable(target); err != nil {
 		return Response{}, err
 	}
-	namespace, sourceRoot := primaryProjectPSR4(p.phpIndex.Project())
+	namespace, sourceRoot, err := primaryProjectPSR4(
+		p.phpIndex.Project(),
+		directory,
+	)
+	if err != nil {
+		return Response{}, err
+	}
 	relativeSource := "../src/"
 	if sourceRoot != "" {
 		if relative, err := filepath.Rel(directory, sourceRoot); err == nil {
@@ -582,26 +590,31 @@ func (p *Provider) serviceScaffold(
 	}, nil
 }
 
-func primaryProjectPSR4(model *project.Model) (string, string) {
+func primaryProjectPSR4(
+	model *project.Model,
+	directory string,
+) (string, string, error) {
 	if model == nil {
-		return "App\\", ""
+		return "App\\", "", nil
 	}
 	type entry struct {
 		namespace string
 		path      string
 	}
 	var entries []entry
-	for namespace, paths := range model.PSR4 {
-		for _, path := range paths {
-			namespace = strings.Trim(namespace, `\`)
-			if namespace != "" {
-				namespace += `\`
-			}
-			entries = append(entries, entry{
-				namespace: namespace,
-				path:      filepath.Clean(path),
-			})
+	mappings, err := model.PSR4MappingsForDirectory(directory)
+	if err != nil {
+		return "", "", err
+	}
+	for _, mapping := range mappings {
+		namespace := strings.Trim(mapping.Namespace, `\`)
+		if namespace != "" {
+			namespace += `\`
 		}
+		entries = append(entries, entry{
+			namespace: namespace,
+			path:      filepath.Clean(mapping.Root),
+		})
 	}
 	sort.SliceStable(entries, func(left, right int) bool {
 		leftTest := strings.Contains(
@@ -621,9 +634,9 @@ func primaryProjectPSR4(model *project.Model) (string, string) {
 		return entries[left].namespace < entries[right].namespace
 	})
 	if len(entries) == 0 {
-		return "App\\", ""
+		return "App\\", "", nil
 	}
-	return entries[0].namespace, entries[0].path
+	return entries[0].namespace, entries[0].path, nil
 }
 
 func ensureScaffoldTargetAvailable(target string) error {

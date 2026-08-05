@@ -40,6 +40,46 @@ func TestLoadComposerModel(t *testing.T) {
 	require.Equal(t, []string{"imagick"}, model.DisabledExtensions)
 }
 
+func TestPSR4MappingsForDirectoryUsesNearestComposerPackage(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(
+		filepath.Join(root, "src"),
+		0o755,
+	))
+	pluginRoot := filepath.Join(root, "custom", "plugins", "FroshTools")
+	commandDirectory := filepath.Join(pluginRoot, "src", "Command")
+	require.NoError(t, os.MkdirAll(commandDirectory, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "composer.json"),
+		[]byte(`{"autoload":{"psr-4":{"Shopware\\":"src/"}}}`),
+		0o644,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(pluginRoot, "composer.json"),
+		[]byte(`{
+  "autoload": {"psr-4": {"Frosh\\Tools\\": "src/"}},
+  "autoload-dev": {"psr-4": {"Frosh\\Tools\\Tests\\": ["tests/"]}}
+}`),
+		0o644,
+	))
+
+	model, err := Load(root)
+	require.NoError(t, err)
+	mappings, err := model.PSR4MappingsForDirectory(commandDirectory)
+	require.NoError(t, err)
+	require.Equal(t, []PSR4Mapping{
+		{
+			Namespace: "Frosh\\Tools\\",
+			Root:      filepath.Join(pluginRoot, "src"),
+		},
+		{
+			Namespace: "Frosh\\Tools\\Tests\\",
+			Root:      filepath.Join(pluginRoot, "tests"),
+		},
+	}, mappings)
+}
+
 func TestComposerExtensionSelectionAndOverrides(t *testing.T) {
 	t.Parallel()
 	model := &Model{

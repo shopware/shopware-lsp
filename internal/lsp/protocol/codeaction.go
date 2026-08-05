@@ -105,5 +105,5 @@ type ChangeAnnotation struct {
 // OptionalVersionedTextDocumentIdentifier represents a text document identifier with an optional version
 type OptionalVersionedTextDocumentIdentifier struct {
 	URI     string `json:"uri"`
-	Version *int   `json:"version,omitempty"`
+	Version *int   `json:"version"`
 }

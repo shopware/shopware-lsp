@@ -60,6 +60,32 @@ func TestWorkspacePlanEmitsVersionedUTF16DocumentEdit(t *testing.T) {
 	require.Equal(t, 9, change.Edits[0].Range.End.Character)
 }
 
+func TestWorkspacePlanMarshalsCreatedFileEditWithNullVersion(t *testing.T) {
+	plan := rewrite.WorkspacePlan{Creates: []rewrite.CreateFilePlan{{
+		URI:     "file:///project/Generated.php",
+		Content: "<?php\n",
+	}}}
+	wire, err := plan.WorkspaceEdit()
+	require.NoError(t, err)
+
+	encoded, err := json.Marshal(wire)
+	require.NoError(t, err)
+
+	var payload struct {
+		DocumentChanges []json.RawMessage `json:"documentChanges"`
+	}
+	require.NoError(t, json.Unmarshal(encoded, &payload))
+	require.Len(t, payload.DocumentChanges, 2)
+
+	var textEdit struct {
+		TextDocument map[string]any `json:"textDocument"`
+	}
+	require.NoError(t, json.Unmarshal(payload.DocumentChanges[1], &textEdit))
+	version, exists := textEdit.TextDocument["version"]
+	require.True(t, exists, "unversioned LSP document edits must include version")
+	require.Nil(t, version)
+}
+
 func TestElementHandleRejectsChangedDocumentVersion(t *testing.T) {
 	document := lsp.NewTextDocument("file:///project/test.yaml", "value: bad\n", 3)
 	element := document.SyntaxTree.Root.DescendantForRange(cst.TextRange{Start: 7, End: 10})

@@ -48,6 +48,7 @@ import (
 	shopwaredal "github.com/shopware/shopware-lsp/internal/shopware/dal"
 	"github.com/shopware/shopware-lsp/internal/snippet"
 	"github.com/shopware/shopware-lsp/internal/stimulus"
+	"github.com/shopware/shopware-lsp/internal/style"
 	"github.com/shopware/shopware-lsp/internal/symfony"
 	"github.com/shopware/shopware-lsp/internal/symfonyconfig"
 	"github.com/shopware/shopware-lsp/internal/systemconfig"
@@ -74,6 +75,7 @@ type workspaceServices struct {
 	configuration   *symfonyconfig.Index
 	serializer      *serializer.Index
 	stimulus        *stimulus.Index
+	styles          *style.Index
 	php             *php.PHPIndex
 	twig            *twig.TwigIndexer
 	twigComponents  *twigcomponent.Index
@@ -309,6 +311,9 @@ func registerFeatures(server *lsp.Server, root string, services workspaceService
 	server.RegisterDefinitionProvider(
 		definition.NewStimulusDefinitionProvider(services.stimulus),
 	)
+	server.RegisterDefinitionProvider(
+		definition.NewStyleClassDefinitionProvider(services.styles),
+	)
 	server.RegisterDefinitionProvider(definition.NewEventDefinitionProvider(
 		services.events,
 		services.php,
@@ -512,6 +517,9 @@ func registerFeatures(server *lsp.Server, root string, services workspaceService
 	))
 	server.RegisterReferencesProvider(
 		reference.NewStimulusReferenceProvider(services.stimulus),
+	)
+	server.RegisterReferencesProvider(
+		reference.NewStyleClassReferenceProvider(services.styles),
 	)
 	server.RegisterReferencesProvider(reference.NewTwigMacroReferenceProvider(
 		services.twig,

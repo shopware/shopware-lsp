@@ -98,12 +98,8 @@
         "title": "Shopware: Force Reindex"
       },
       {
-        "command": "shopware.symfony.createScaffold",
-        "title": "Symfony: New File…"
-      },
-      {
-        "command": "shopware.createScaffold",
-        "title": "Shopware: New File or Feature…"
+        "command": "shopware.createFile",
+        "title": "Shopware: New File…"
       },
       {
         "command": "shopware.insertUuid",
@@ -178,13 +174,8 @@
       "explorer/context": [
         {
           "when": "explorerResourceIsFolder",
-          "command": "shopware.createScaffold",
+          "command": "shopware.createFile",
           "group": "navigation@89"
-        },
-        {
-          "when": "explorerResourceIsFolder",
-          "command": "shopware.symfony.createScaffold",
-          "group": "navigation@90"
         }
       ],
       "editor/context": [

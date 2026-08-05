@@ -83,6 +83,12 @@ type Package struct {
 	InstallPath string
 }
 
+// PSR4Mapping is one namespace-to-source-root mapping from a Composer package.
+type PSR4Mapping struct {
+	Namespace string
+	Root      string
+}
+
 // DependencyVersion returns the installed Composer version for the first
 // matching package name.
 func (m *Model) DependencyVersion(names ...string) (Version, bool) {
@@ -186,6 +192,138 @@ func Load(root string) (*Model, error) {
 	model.addPHPUnitBootstrapAutoloads(root)
 	model.Dependencies = loadPackages(root)
 	return model, nil
+}
+
+// PSR4MappingsForDirectory returns the mappings owned by the nearest Composer
+// package containing directory. This matters in monorepos and Shopware
+// workspaces where an uninstalled custom plugin has its own composer.json and
+// therefore does not appear in the workspace root's composer.lock.
+func (m *Model) PSR4MappingsForDirectory(
+	directory string,
+) ([]PSR4Mapping, error) {
+	if m == nil {
+		return nil, nil
+	}
+	workspaceRoot, err := filepath.Abs(m.Root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve Composer workspace root: %w", err)
+	}
+	directory, err = filepath.Abs(directory)
+	if err != nil {
+		return nil, fmt.Errorf("resolve Composer directory: %w", err)
+	}
+	relative, err := filepath.Rel(workspaceRoot, directory)
+	if err != nil || relative == ".." ||
+		strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return nil, fmt.Errorf(
+			"composer directory %q is outside project root %q",
+			directory,
+			workspaceRoot,
+		)
+	}
+
+	packageRoot, composer, found, err := nearestComposerPackage(
+		workspaceRoot,
+		directory,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if found && filepath.Clean(packageRoot) != filepath.Clean(workspaceRoot) {
+		return composerPSR4Mappings(packageRoot, composer), nil
+	}
+	return modelPSR4Mappings(m.PSR4), nil
+}
+
+func nearestComposerPackage(
+	workspaceRoot,
+	directory string,
+) (string, composerFile, bool, error) {
+	for current := filepath.Clean(directory); ; current = filepath.Dir(current) {
+		path := filepath.Join(current, "composer.json")
+		content, err := os.ReadFile(path)
+		if err == nil {
+			var composer composerFile
+			if err := json.Unmarshal(content, &composer); err != nil {
+				return "", composerFile{}, false, fmt.Errorf(
+					"parse %s: %w",
+					path,
+					err,
+				)
+			}
+			return current, composer, true, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", composerFile{}, false, fmt.Errorf(
+				"read %s: %w",
+				path,
+				err,
+			)
+		}
+		if current == workspaceRoot {
+			return "", composerFile{}, false, nil
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", composerFile{}, false, nil
+		}
+	}
+}
+
+func composerPSR4Mappings(
+	packageRoot string,
+	composer composerFile,
+) []PSR4Mapping {
+	var result []PSR4Mapping
+	appendAutoload := func(autoload composerAutoload) {
+		for namespace, paths := range autoload.PSR4 {
+			for _, path := range paths {
+				result = append(result, PSR4Mapping{
+					Namespace: namespace,
+					Root: filepath.Clean(filepath.Join(
+						packageRoot,
+						path,
+					)),
+				})
+			}
+		}
+	}
+	appendAutoload(composer.Autoload)
+	appendAutoload(composer.AutoloadDev)
+	return uniquePSR4Mappings(result)
+}
+
+func modelPSR4Mappings(values map[string][]string) []PSR4Mapping {
+	var result []PSR4Mapping
+	for namespace, roots := range values {
+		for _, root := range roots {
+			result = append(result, PSR4Mapping{
+				Namespace: namespace,
+				Root:      filepath.Clean(root),
+			})
+		}
+	}
+	return uniquePSR4Mappings(result)
+}
+
+func uniquePSR4Mappings(values []PSR4Mapping) []PSR4Mapping {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]PSR4Mapping, 0, len(values))
+	for _, value := range values {
+		key := value.Namespace + "\x00" + value.Root
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, value)
+	}
+	sort.Slice(result, func(left, right int) bool {
+		if result[left].Root != result[right].Root {
+			return result[left].Root < result[right].Root
+		}
+		return result[left].Namespace < result[right].Namespace
+	})
+	return result
 }
 
 func composerPlatformString(raw json.RawMessage) (string, bool) {

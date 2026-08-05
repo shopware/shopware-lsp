@@ -350,6 +350,56 @@ func TestSymfonyScaffoldUsesMostSpecificComposerMapping(t *testing.T) {
 	assert.Equal(t, "App\\Feature\\Command", result.Namespace)
 }
 
+func TestSymfonyScaffoldUsesCustomPluginComposerMapping(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "src"), 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "composer.json"),
+		[]byte(`{"autoload":{"psr-4":{"Shopware\\":"src/"}}}`),
+		0o600,
+	))
+	pluginRoot := filepath.Join(root, "custom", "plugins", "FroshTools")
+	commandDirectory := filepath.Join(pluginRoot, "src", "Command")
+	configDirectory := filepath.Join(pluginRoot, "src", "Resources", "config")
+	for _, directory := range []string{commandDirectory, configDirectory} {
+		require.NoError(t, os.MkdirAll(directory, 0o755))
+	}
+	require.NoError(t, os.WriteFile(
+		filepath.Join(pluginRoot, "composer.json"),
+		[]byte(`{
+  "name": "frosh/tools",
+  "autoload": {"psr-4": {"Frosh\\Tools\\": "src/"}},
+  "autoload-dev": {"psr-4": {"Frosh\\Tools\\Tests\\": "tests/"}}
+}`),
+		0o600,
+	))
+	phpIndex, err := php.NewPHPIndex(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, phpIndex.Close()) })
+	require.NoError(t, phpIndex.ConfigureProject(root))
+	provider := NewProvider(root, phpIndex, nil)
+
+	command, err := createSymfonyScaffold(t, provider, Request{
+		Kind:         "command",
+		DirectoryURI: uriutil.FileURI(commandDirectory),
+		Name:         "Refresh",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "Frosh\\Tools\\Command", command.Namespace)
+	assert.Contains(t, command.Content, "namespace Frosh\\Tools\\Command;")
+	assert.Empty(t, phpparser.Parse(command.Content).Errors)
+
+	services, err := createSymfonyScaffold(t, provider, Request{
+		Kind:         "services-yaml",
+		DirectoryURI: uriutil.FileURI(configDirectory),
+		Name:         "services",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, services.Content, "  Frosh\\Tools\\:")
+	assert.Contains(t, services.Content, "resource: '../../'")
+	assert.Empty(t, yamlparser.Parse(services.Content).Errors)
+}
+
 func TestSymfonyScaffoldSupportsGlobalComposerMapping(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "src"), 0o755))
