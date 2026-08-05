@@ -7,7 +7,10 @@ import (
 	"regexp"
 	"strings"
 
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
+	"github.com/shopware/shopware-lsp/internal/parser/cst"
+	twigparser "github.com/shopware/shopware-lsp/internal/parser/twig"
+	twigast "github.com/shopware/shopware-lsp/internal/parser/twig/ast"
+	twigsyntax "github.com/shopware/shopware-lsp/internal/parser/twig/syntax"
 )
 
 var shopwareBlockCommentRegex = regexp.MustCompile(`\{#\s*` + VersionCommentPrefix + `\s*([a-f0-9]+)@([\w\.\-]+)\s*#\}`)
@@ -53,150 +56,150 @@ type TwigBlockHash struct {
 	AbsolutePath string
 	Hash         string
 	Text         string
+	Deprecation  string
 }
 
 type TwigBlock struct {
 	Name           string
+	NameRange      cst.TextRange
 	Line           int
 	Hash           string
 	Text           string
 	VersionComment *TwigVersionComment
+	Deprecation    string
 }
 
-// findBlocks recursively traverses the tree to find all blocks
-func findBlocks(node *tree_sitter.Node, content []byte, file *TwigFile) {
-	if node.Kind() == "block" {
-		for i := 0; i < int(node.NamedChildCount()); i++ {
-			child := node.NamedChild(uint(i))
-			if child.Kind() == "identifier" {
-				blockName := string(child.Utf8Text(content))
-				blockText := string(node.Utf8Text(content))
-				blockHash := calculateBlockHash(blockText)
+func findBlocks(root *twigsyntax.Node, source string, lineIndex *twigsyntax.LineIndex, file *TwigFile) {
+	for element := range root.Descendants() {
+		node, ok := element.(*twigsyntax.Node)
+		if !ok {
+			continue
+		}
 
-				var versionComment *TwigVersionComment
-				if prevSibling := findPreviousComment(node, content); prevSibling != nil {
-					commentText := string(prevSibling.Utf8Text(content))
-					versionComment = ParseVersionComment(commentText, int(prevSibling.Range().StartPoint.Row)+1)
-				}
+		block, ok := twigast.CastTwigBlock(node)
+		if !ok {
+			continue
+		}
 
-				file.Blocks[blockName] = TwigBlock{
-					Name:           blockName,
-					Line:           int(child.Range().StartPoint.Row) + 1,
-					Hash:           blockHash,
-					Text:           blockText,
-					VersionComment: versionComment,
-				}
-				break
+		name := block.Name()
+		if name == nil {
+			continue
+		}
+
+		blockRange := node.RangeTrimmedTrivia()
+		blockText := source[blockRange.Start:blockRange.End]
+		var versionComment *TwigVersionComment
+		deprecation := BlockDeprecation(node, source)
+		if previous := findPreviousBlockComment(node); previous != nil {
+			commentRange := previous.RangeTrimmedTrivia()
+			line, _ := lineIndex.Position(commentRange.Start)
+			comment := source[commentRange.Start:commentRange.End]
+			versionComment = ParseVersionComment(comment, int(line)+1)
+		}
+
+		line, _ := lineIndex.Position(name.Range().Start)
+		file.Blocks[name.Text()] = TwigBlock{
+			Name:           name.Text(),
+			NameRange:      name.Range(),
+			Line:           int(line) + 1,
+			Hash:           calculateBlockHash(blockText),
+			Text:           blockText,
+			VersionComment: versionComment,
+			Deprecation:    deprecation,
+		}
+	}
+}
+
+// BlockDeprecation returns normalized @deprecated documentation from the Twig
+// comment immediately preceding a block declaration. Administration component
+// templates and Storefront block versioning share this source convention.
+func BlockDeprecation(blockNode *twigsyntax.Node, source string) string {
+	previous := findPreviousBlockComment(blockNode)
+	if previous == nil {
+		return ""
+	}
+	commentRange := previous.RangeTrimmedTrivia()
+	if commentRange.End > uint32(len(source)) {
+		return ""
+	}
+	return parseBlockDeprecation(source[commentRange.Start:commentRange.End])
+}
+
+func findPreviousBlockComment(blockNode *twigsyntax.Node) *twigsyntax.Node {
+	for sibling := blockNode.PrevSibling(); sibling != nil; {
+		switch previous := sibling.(type) {
+		case *twigsyntax.Token:
+			sibling = previous.PrevSibling()
+		case *twigsyntax.Node:
+			if previous.Kind() == twigsyntax.TwigBlock {
+				return nil
 			}
+			if previous.Kind() == twigsyntax.TwigComment {
+				return previous
+			}
+			sibling = previous.PrevSibling()
 		}
 	}
 
-	// Recursively process all named children
-	for i := 0; i < int(node.NamedChildCount()); i++ {
-		findBlocks(node.NamedChild(uint(i)), content, file)
-	}
-}
-
-func findPreviousComment(blockNode *tree_sitter.Node, content []byte) *tree_sitter.Node {
-	parent := blockNode.Parent()
-	if parent == nil {
-		return nil
-	}
-
-	for i := 0; i < int(parent.NamedChildCount()); i++ {
-		child := parent.NamedChild(uint(i))
-
-		if child.Range().StartPoint.Row == blockNode.Range().StartPoint.Row &&
-			child.Range().StartPoint.Column == blockNode.Range().StartPoint.Column {
-			for j := i - 1; j >= 0; j-- {
-				prevSibling := parent.NamedChild(uint(j))
-				if prevSibling.Kind() == "comment" {
-					commentText := string(prevSibling.Utf8Text(content))
-					if strings.Contains(commentText, VersionCommentPrefix) {
-						return prevSibling
-					}
-				}
-				if prevSibling.Kind() == "block" {
-					return nil
-				}
-			}
-			break
-		}
-	}
 	return nil
 }
 
-func ParseTwig(filePath string, node *tree_sitter.Node, content []byte) (*TwigFile, error) {
-	file := &TwigFile{
+func parseBlockDeprecation(comment string) string {
+	lower := strings.ToLower(comment)
+	index := strings.Index(lower, "@deprecated")
+	if index < 0 {
+		return ""
+	}
+	message := strings.TrimSpace(comment[index+len("@deprecated"):])
+	message = strings.TrimSpace(strings.TrimSuffix(message, "#}"))
+	if message == "" {
+		return "This Twig block is deprecated"
+	}
+	return message
+}
+
+func ParseTwig(filePath string, content []byte) (*TwigFile, error) {
+	if !bytes.Contains(content, []byte("{%")) {
+		return newTwigFile(filePath), nil
+	}
+	result := twigparser.Parse(string(content))
+	return ParseTwigTree(filePath, result.Tree, twigsyntax.NewLineIndex(result.Tree.Source))
+}
+
+func newTwigFile(filePath string) *TwigFile {
+	return &TwigFile{
 		Path:       filePath,
 		BundleName: getBundleNameByPath(filePath),
 		RelPath:    ConvertToRelativePath(filePath),
 		Blocks:     make(map[string]TwigBlock),
 	}
+}
 
-	if !bytes.Contains(content, []byte("{%")) {
+func ParseTwigTree(filePath string, tree *twigsyntax.Tree, lineIndex *twigsyntax.LineIndex) (*TwigFile, error) {
+	file := newTwigFile(filePath)
+	if tree == nil || tree.Root == nil || !strings.Contains(tree.Source, "{%") {
 		return file, nil
 	}
+	root := tree.Root
 
 	// Find all blocks recursively
-	if bytes.Contains(content, []byte("block")) {
-		findBlocks(node, content, file)
+	if strings.Contains(tree.Source, "block") {
+		findBlocks(root, tree.Source, lineIndex, file)
 	}
 
 	// Find extends tag
-	if !bytes.Contains(content, []byte("extends")) && !bytes.Contains(content, []byte("sw_extends")) {
+	if !strings.Contains(tree.Source, "extends") && !strings.Contains(tree.Source, "sw_extends") {
 		return file, nil
 	}
 
-	var cursor = node.Walk()
-	defer cursor.Close()
-
-	if cursor.GotoFirstChild() {
-		for {
-			node := cursor.Node()
-
-			if node.Kind() == "tag" {
-				// Check if this is an extends tag by examining the tag text
-				isExtendsTag := false
-				tagName := ""
-				for i := 0; i < int(node.NamedChildCount()); i++ {
-					child := node.NamedChild(uint(i))
-					if child.Kind() == "name" {
-						tagName = string(child.Utf8Text(content))
-						break
-					}
-				}
-
-				// Check if the tag contains "extends" or "sw_extends"
-				if tagName == "extends" || tagName == "sw_extends" {
-					isExtendsTag = true
-				}
-
-				if !isExtendsTag && tagName == "" {
-					tagText := string(node.Utf8Text(content))
-					if strings.Contains(tagText, "extends") || strings.Contains(tagText, "sw_extends") {
-						isExtendsTag = true
-					}
-				}
-
-				// If it's an extends tag, look for the string parameter
-				if isExtendsTag {
-					for i := 0; i < int(node.NamedChildCount()); i++ {
-						child := node.NamedChild(uint(i))
-
-						if child.Kind() == "string" {
-							file.ExtendsFile = strings.Trim(strings.Trim(string(child.Utf8Text(content)), "\""), "'")
-							file.ExtendsTagLine = int(node.Range().StartPoint.Row) + 1
-							break
-						}
-					}
-				}
-			}
-
-			if !cursor.GotoNextSibling() {
-				break
-			}
+	for _, reference := range TwigTemplateReferences(filePath, root) {
+		if reference.Kind != TemplateExtendsReference {
+			continue
 		}
+		file.ExtendsFile = reference.Template
+		line, _ := lineIndex.Position(reference.Range.Start)
+		file.ExtendsTagLine = int(line) + 1
+		return file, nil
 	}
 
 	return file, nil

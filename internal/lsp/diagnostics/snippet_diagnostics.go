@@ -8,106 +8,129 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	jsquery "github.com/shopware/shopware-lsp/internal/parser/javascript/query"
+	twigquery "github.com/shopware/shopware-lsp/internal/parser/twig/query"
+	twigsyntax "github.com/shopware/shopware-lsp/internal/parser/twig/syntax"
 	"github.com/shopware/shopware-lsp/internal/snippet"
-	treesitterhelper "github.com/shopware/shopware-lsp/internal/tree_sitter_helper"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
+	"github.com/shopware/shopware-lsp/internal/translation"
 )
 
-type SnippetDiagnosticsProvider struct {
-	snippetIndex *snippet.SnippetIndexer
+type SnippetAnalyzer struct {
+	snippetIndex     *snippet.SnippetIndexer
+	translationIndex *translation.Index
 }
 
-func NewSnippetDiagnosticsProvider(lspServer *lsp.Server) *SnippetDiagnosticsProvider {
-	snippetIndexer, _ := lspServer.GetIndexer("snippet.indexer")
-	return &SnippetDiagnosticsProvider{
-		snippetIndex: snippetIndexer.(*snippet.SnippetIndexer),
+func NewSnippetAnalyzer(
+	snippetIndexer *snippet.SnippetIndexer,
+	translationIndexes ...*translation.Index,
+) *SnippetAnalyzer {
+	provider := &SnippetAnalyzer{snippetIndex: snippetIndexer}
+	if len(translationIndexes) != 0 {
+		provider.translationIndex = translationIndexes[0]
 	}
+	return provider
 }
 
-func (s *SnippetDiagnosticsProvider) GetDiagnostics(ctx context.Context, uri string, rootNode *tree_sitter.Node, content []byte) ([]protocol.Diagnostic, error) {
-	switch strings.ToLower(filepath.Ext(uri)) {
+func (s *SnippetAnalyzer) Analyze(ctx context.Context, document *lsp.TextDocument) ([]lsp.Problem, error) {
+	switch strings.ToLower(filepath.Ext(document.URI)) {
 	case ".twig":
-		return s.twigDiagnostics(ctx, uri, rootNode, content)
+		return s.twigDiagnostics(ctx, document)
 	case ".js", ".ts":
-		return s.jsDiagnostics(ctx, uri, rootNode, content)
+		return s.jsDiagnostics(ctx, document)
 	default:
-		return []protocol.Diagnostic{}, nil
+		return []lsp.Problem{}, nil
 	}
 }
 
-func (s *SnippetDiagnosticsProvider) twigDiagnostics(ctx context.Context, uri string, rootNode *tree_sitter.Node, content []byte) ([]protocol.Diagnostic, error) {
-	var diagnostics []protocol.Diagnostic
+func (s *SnippetAnalyzer) twigDiagnostics(ctx context.Context, document *lsp.TextDocument) ([]lsp.Problem, error) {
+	var diagnostics []lsp.Problem
+	root := document.SyntaxTree.Root
 
 	// Check if this is an admin file
-	isAdminFile := strings.Contains(uri, "/Resources/app/administration/")
+	isAdminFile := strings.Contains(document.URI, "/Resources/app/administration/")
 
 	if isAdminFile {
-		// Check for admin snippet pattern: {{ $tc('key') }} or {{ $t('key') }}
-		matches := treesitterhelper.FindAll(rootNode, treesitterhelper.TwigAdminSnippetPattern(), content)
-
-		for _, match := range matches {
-			snippetText := treesitterhelper.GetNodeText(match, content)
+		for _, reference := range snippet.AdminTwigReferences(root) {
+			if ctx.Err() != nil {
+				return nil, nil
+			}
+			snippetText := reference.Key
 
 			// Skip empty strings
 			if snippetText == "" {
 				continue
 			}
 
-			snippets, _ := s.snippetIndex.GetAdminSnippet(snippetText)
+			snippets, err := s.snippetIndex.GetAdminSnippet(snippetText)
+			if err != nil {
+				return nil, fmt.Errorf("query admin snippet %q: %w", snippetText, err)
+			}
 
 			if len(snippets) == 0 {
-				diagnostics = append(diagnostics, protocol.Diagnostic{
-					Range: protocol.Range{
-						Start: protocol.Position{
-							Line:      int(match.StartPosition().Row),
-							Character: int(match.StartPosition().Column),
-						},
-						End: protocol.Position{
-							Line:      int(match.EndPosition().Row),
-							Character: int(match.EndPosition().Column),
-						},
-					},
+				diagnostics = append(diagnostics, lsp.Problem{
+					Range:    reference.Range,
 					Message:  fmt.Sprintf("Admin snippet '%s' not found", snippetText),
 					Source:   "shopware",
 					Severity: protocol.DiagnosticSeverityError,
-					Code:     "admin.snippet.missing",
-					Data: map[string]any{
+					ID:       "admin.snippet.missing",
+					Payload: map[string]any{
 						"snippetText": snippetText,
 					},
 				})
 			}
 		}
 	} else {
+		var matches []*twigsyntax.Node
 		// Check for frontend snippet pattern: {{ 'key'|trans }}
-		matches := treesitterhelper.FindAll(rootNode, treesitterhelper.TwigTransPattern(), content)
+		for _, candidate := range twigquery.Nodes(root, twigsyntax.TwigLiteralString) {
+			if ctx.Err() != nil {
+				return nil, nil
+			}
+			if twigquery.StringInFilter(candidate, "trans") {
+				matches = append(matches, candidate)
+			}
+		}
 
 		for _, match := range matches {
-			snippetText := treesitterhelper.GetNodeText(match, content)
+			if ctx.Err() != nil {
+				return nil, nil
+			}
+			snippetText := twigquery.StringValue(match)
 
 			// Skip empty strings
 			if snippetText == "" {
 				continue
 			}
 
-			snippets, _ := s.snippetIndex.GetFrontendSnippet(snippetText)
+			snippets, err := s.snippetIndex.GetFrontendSnippet(snippetText)
+			if err != nil {
+				return nil, fmt.Errorf("query frontend snippet %q: %w", snippetText, err)
+			}
+			if len(snippets) == 0 && s.translationIndex != nil {
+				exists, translationErr := s.translationIndex.HasMessage(
+					"messages",
+					snippetText,
+				)
+				if translationErr != nil {
+					return nil, fmt.Errorf(
+						"query Symfony translation %q: %w",
+						snippetText,
+						translationErr,
+					)
+				}
+				if exists {
+					continue
+				}
+			}
 
 			if len(snippets) == 0 {
-				diagnostics = append(diagnostics, protocol.Diagnostic{
-					Range: protocol.Range{
-						Start: protocol.Position{
-							Line:      int(match.StartPosition().Row),
-							Character: int(match.StartPosition().Column),
-						},
-						End: protocol.Position{
-							Line:      int(match.EndPosition().Row),
-							Character: int(match.EndPosition().Column),
-						},
-					},
+				diagnostics = append(diagnostics, lsp.Problem{
+					Range:    match.RangeTrimmedTrivia(),
 					Message:  fmt.Sprintf("Snippet '%s' not found", snippetText),
 					Source:   "shopware",
 					Severity: protocol.DiagnosticSeverityError,
-					Code:     "frontend.snippet.missing",
-					Data: map[string]any{
+					ID:       "frontend.snippet.missing",
+					Payload: map[string]any{
 						"snippetText": snippetText,
 					},
 				})
@@ -118,39 +141,35 @@ func (s *SnippetDiagnosticsProvider) twigDiagnostics(ctx context.Context, uri st
 	return diagnostics, nil
 }
 
-func (s *SnippetDiagnosticsProvider) jsDiagnostics(ctx context.Context, uri string, rootNode *tree_sitter.Node, content []byte) ([]protocol.Diagnostic, error) {
-	var diagnostics []protocol.Diagnostic
+func (s *SnippetAnalyzer) jsDiagnostics(ctx context.Context, document *lsp.TextDocument) ([]lsp.Problem, error) {
+	var diagnostics []lsp.Problem
+	root := document.SyntaxTree.Root
 
-	// Check for admin snippet pattern: this.$tc('key') or this.$t('key')
-	matches := treesitterhelper.FindAll(rootNode, treesitterhelper.JSAdminSnippetPattern(), content)
-
-	for _, match := range matches {
-		snippetText := treesitterhelper.GetNodeText(match, content)
+	for _, match := range snippet.AdminJavaScriptStringReferences(root) {
+		if ctx.Err() != nil {
+			return nil, nil
+		}
+		snippetText := jsquery.StringValue(match)
 
 		// Skip empty strings
 		if snippetText == "" {
 			continue
 		}
 
-		snippets, _ := s.snippetIndex.GetAdminSnippet(snippetText)
+		snippets, err := s.snippetIndex.GetAdminSnippet(snippetText)
+		if err != nil {
+			return nil, fmt.Errorf("query admin snippet %q: %w", snippetText, err)
+		}
 
 		if len(snippets) == 0 {
-			diagnostics = append(diagnostics, protocol.Diagnostic{
-				Range: protocol.Range{
-					Start: protocol.Position{
-						Line:      int(match.StartPosition().Row),
-						Character: int(match.StartPosition().Column),
-					},
-					End: protocol.Position{
-						Line:      int(match.EndPosition().Row),
-						Character: int(match.EndPosition().Column),
-					},
-				},
+			matchRange := match.RangeTrimmedTrivia()
+			diagnostics = append(diagnostics, lsp.Problem{
+				Range:    matchRange,
 				Message:  fmt.Sprintf("Admin snippet '%s' not found", snippetText),
 				Source:   "shopware",
 				Severity: protocol.DiagnosticSeverityError,
-				Code:     "admin.snippet.missing",
-				Data: map[string]any{
+				ID:       "admin.snippet.missing",
+				Payload: map[string]any{
 					"snippetText": snippetText,
 				},
 			})

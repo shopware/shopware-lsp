@@ -1,55 +1,68 @@
 package diagnostics
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"path/filepath"
-	"unicode/utf8"
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	"github.com/shopware/shopware-lsp/internal/twig"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
-type TwigVersioningDiagnosticsProvider struct {
+const (
+	twigVersioningOriginalMissingCode lsp.DiagnosticID = "twig.versioning.original_missing"
+	twigVersioningOutdatedCode        lsp.DiagnosticID = "twig.versioning.outdated"
+	twigVersioningCommentMissingCode  lsp.DiagnosticID = "twig.versioning.comment_missing"
+)
+
+type TwigVersioningAnalyzer struct {
 	twigIndexer *twig.TwigIndexer
 }
 
-func NewTwigVersioningDiagnosticsProvider(lspServer *lsp.Server) *TwigVersioningDiagnosticsProvider {
-	indexer, ok := lspServer.GetIndexer("twig.indexer")
-	if !ok {
-		return &TwigVersioningDiagnosticsProvider{twigIndexer: nil}
-	}
-	twigIndexer, ok := indexer.(*twig.TwigIndexer)
-	if !ok {
-		return &TwigVersioningDiagnosticsProvider{twigIndexer: nil}
-	}
-	return &TwigVersioningDiagnosticsProvider{twigIndexer: twigIndexer}
+func NewTwigVersioningAnalyzer(twigIndexer *twig.TwigIndexer) *TwigVersioningAnalyzer {
+	return &TwigVersioningAnalyzer{twigIndexer: twigIndexer}
 }
 
-func (p *TwigVersioningDiagnosticsProvider) GetDiagnostics(ctx context.Context, uri string, rootNode *tree_sitter.Node, content []byte) ([]protocol.Diagnostic, error) {
+func (p *TwigVersioningAnalyzer) Analyze(ctx context.Context, document *lsp.TextDocument) ([]lsp.Problem, error) {
+	uri := document.URI
 	if filepath.Ext(uri) != ".twig" {
-		return []protocol.Diagnostic{}, nil
+		return []lsp.Problem{}, nil
 	}
 
 	if p.twigIndexer == nil {
-		return []protocol.Diagnostic{}, nil
+		return []lsp.Problem{}, nil
 	}
 
 	if twig.IsStorefrontTemplate(uri) {
-		return []protocol.Diagnostic{}, nil
+		return []lsp.Problem{}, nil
 	}
 
-	currentFile, err := twig.ParseTwig(uri, rootNode, content)
+	currentFile, err := twig.ParseTwigTree(uri, document.SyntaxTree, document.LineIndex)
 	if err != nil {
 		return nil, err
 	}
 
-	var diagnostics []protocol.Diagnostic
+	var diagnostics []lsp.Problem
 
 	for _, block := range currentFile.Blocks {
+		if ctx.Err() != nil {
+			return nil, nil
+		}
+		allBlockHashes, lookupErr := p.twigIndexer.GetTwigBlockHashes(block.Name)
+		if lookupErr == nil {
+			original := twig.FindOriginalStorefrontHashForExtends(allBlockHashes, currentFile.ExtendsFile)
+			if original != nil && original.Deprecation != "" {
+				diagnostics = append(diagnostics, lsp.Problem{
+					Range:    block.NameRange,
+					Severity: protocol.DiagnosticSeverityWarning,
+					ID:       "twig.block.deprecated",
+					Source:   "shopware-lsp",
+					Message:  original.Deprecation,
+				})
+			}
+		}
 		if block.VersionComment != nil {
 			allBlockHashes, err := p.twigIndexer.GetTwigBlockHashes(block.Name)
 			if err != nil {
@@ -59,12 +72,10 @@ func (p *TwigVersioningDiagnosticsProvider) GetDiagnostics(ctx context.Context, 
 			originalHash := twig.FindOriginalStorefrontHashForExtends(allBlockHashes, currentFile.ExtendsFile)
 			if originalHash == nil {
 				lineIdx := block.Line - 1
-				diagnostics = append(diagnostics, protocol.Diagnostic{
-					Range: protocol.Range{
-						Start: protocol.Position{Line: lineIdx, Character: 0},
-						End:   protocol.Position{Line: lineIdx, Character: endCharacterForLine(content, lineIdx)},
-					},
+				diagnostics = append(diagnostics, lsp.Problem{
+					Range:    diagnosticLineRange(document.LineIndex, lineIdx),
 					Severity: protocol.DiagnosticSeverityWarning,
+					ID:       twigVersioningOriginalMissingCode,
 					Source:   "shopware-lsp",
 					Message:  fmt.Sprintf("Original block not found in Storefront for block '%s'", block.Name),
 				})
@@ -73,12 +84,10 @@ func (p *TwigVersioningDiagnosticsProvider) GetDiagnostics(ctx context.Context, 
 
 			if originalHash.Hash != block.VersionComment.Hash {
 				lineIdx := block.VersionComment.Line - 1
-				diagnostics = append(diagnostics, protocol.Diagnostic{
-					Range: protocol.Range{
-						Start: protocol.Position{Line: lineIdx, Character: 0},
-						End:   protocol.Position{Line: lineIdx, Character: endCharacterForLine(content, lineIdx)},
-					},
+				diagnostics = append(diagnostics, lsp.Problem{
+					Range:    diagnosticLineRange(document.LineIndex, lineIdx),
 					Severity: protocol.DiagnosticSeverityWarning,
+					ID:       twigVersioningOutdatedCode,
 					Source:   "shopware-lsp",
 					Message:  fmt.Sprintf("The upstream block has been changed, please update the block (expected: %s, got: %s, source: %s)", truncateHash(originalHash.Hash, 12), truncateHash(block.VersionComment.Hash, 12), originalHash.RelativePath),
 				})
@@ -92,12 +101,10 @@ func (p *TwigVersioningDiagnosticsProvider) GetDiagnostics(ctx context.Context, 
 			originalHash := twig.FindOriginalStorefrontHashForExtends(allBlockHashes, currentFile.ExtendsFile)
 			if originalHash != nil {
 				lineIdx := block.Line - 1
-				diagnostics = append(diagnostics, protocol.Diagnostic{
-					Range: protocol.Range{
-						Start: protocol.Position{Line: lineIdx, Character: 0},
-						End:   protocol.Position{Line: lineIdx, Character: endCharacterForLine(content, lineIdx)},
-					},
+				diagnostics = append(diagnostics, lsp.Problem{
+					Range:    diagnosticLineRange(document.LineIndex, lineIdx),
 					Severity: protocol.DiagnosticSeverityWarning,
+					ID:       twigVersioningCommentMissingCode,
 					Source:   "shopware-lsp",
 					Message:  fmt.Sprintf("The block '%s' does not have a versioning comment", block.Name),
 				})
@@ -108,12 +115,15 @@ func (p *TwigVersioningDiagnosticsProvider) GetDiagnostics(ctx context.Context, 
 	return diagnostics, nil
 }
 
-func endCharacterForLine(content []byte, lineIndex int) int {
-	lines := bytes.Split(content, []byte("\n"))
-	if lineIndex < 0 || lineIndex >= len(lines) {
-		return 0
+func diagnosticLineRange(index *cst.LineIndex, line int) cst.TextRange {
+	if index == nil || line < 0 {
+		return cst.TextRange{}
 	}
-	return utf8.RuneCount(lines[lineIndex])
+	lineNumber := uint32(line)
+	return cst.TextRange{
+		Start: index.Offset(lineNumber, 0),
+		End:   index.LineEnd(lineNumber),
+	}
 }
 
 func truncateHash(hash string, length int) string {

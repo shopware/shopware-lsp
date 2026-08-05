@@ -5,25 +5,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
-	tree_sitter_json "github.com/tree-sitter/tree-sitter-json/bindings/go"
 )
 
 func TestParseThemeConfig(t *testing.T) {
 	bytes, err := os.ReadFile("testdata/theme.json")
 	assert.NoError(t, err)
 
-	parser := tree_sitter.NewParser()
-	assert.NoError(t, parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_json.Language())))
-
-	tree := parser.Parse(bytes, nil)
-	if tree == nil {
-		t.Fatalf("Failed to parse JSON")
-	}
-	defer tree.Close()
-
 	filePath := "testdata/theme.json"
-	fields, err := ParseThemeConfig(tree.RootNode(), bytes, filePath)
+	fields, err := ParseThemeConfig(bytes, filePath)
 	assert.NoError(t, err)
 
 	// Verify we got fields

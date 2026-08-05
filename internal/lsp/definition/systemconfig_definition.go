@@ -2,14 +2,15 @@ package definition
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
+	twigquery "github.com/shopware/shopware-lsp/internal/parser/twig/query"
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/systemconfig"
-	treesitterhelper "github.com/shopware/shopware-lsp/internal/tree_sitter_helper"
+	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
 type SystemConfigDefinitionProvider struct {
@@ -17,22 +18,19 @@ type SystemConfigDefinitionProvider struct {
 	phpIndex *php.PHPIndex
 }
 
-func NewSystemConfigDefinitionProvider(lspServer *lsp.Server) *SystemConfigDefinitionProvider {
-	indexer, _ := lspServer.GetIndexer("systemconfig.indexer")
-	phpIndex, _ := lspServer.GetIndexer("php.index")
+func NewSystemConfigDefinitionProvider(indexer *systemconfig.SystemConfigIndexer, phpIndex *php.PHPIndex) *SystemConfigDefinitionProvider {
 	return &SystemConfigDefinitionProvider{
-		indexer:  indexer.(*systemconfig.SystemConfigIndexer),
-		phpIndex: phpIndex.(*php.PHPIndex),
+		indexer:  indexer,
+		phpIndex: phpIndex,
 	}
 }
 
-func (s *SystemConfigDefinitionProvider) GetDefinition(ctx context.Context, params *protocol.DefinitionParams) []protocol.Location {
-	if params.Node == nil {
-		return nil
-	}
-
-	if treesitterhelper.TwigStringInFunctionPattern("config").Matches(params.Node, params.DocumentContent) {
-		value := treesitterhelper.GetNodeText(params.Node, params.DocumentContent)
+func (s *SystemConfigDefinitionProvider) GetDefinition(ctx context.Context, params *lsp.DefinitionRequest) []protocol.Location {
+	if filepath.Ext(params.TextDocument.URI) == ".twig" {
+		if params.Node == nil || !twigquery.StringInFunction(params.Node, "config") {
+			return nil
+		}
+		value := twigquery.StringValue(twigquery.LiteralStringAt(params.Node))
 
 		entries, err := s.indexer.GetSystemConfigEntry(value)
 		if err != nil {
@@ -42,7 +40,7 @@ func (s *SystemConfigDefinitionProvider) GetDefinition(ctx context.Context, para
 		locations := make([]protocol.Location, 0, len(entries))
 		for _, entry := range entries {
 			locations = append(locations, protocol.Location{
-				URI: fmt.Sprintf("file://%s", entry.FilePath),
+				URI: uriutil.FileURI(entry.FilePath),
 				Range: protocol.Range{
 					Start: protocol.Position{
 						Line:      entry.Line - 1, // LSP uses 0-based line numbers
@@ -60,16 +58,19 @@ func (s *SystemConfigDefinitionProvider) GetDefinition(ctx context.Context, para
 	}
 
 	if filepath.Ext(params.TextDocument.URI) == ".php" {
+		if params.Node == nil {
+			return nil
+		}
 		return s.phpDefinition(ctx, params)
 	}
 
 	return nil
 }
 
-func (s *SystemConfigDefinitionProvider) phpDefinition(ctx context.Context, params *protocol.DefinitionParams) []protocol.Location {
+func (s *SystemConfigDefinitionProvider) phpDefinition(ctx context.Context, params *lsp.DefinitionRequest) []protocol.Location {
 	if s.phpIndex.IsMethodCalledOnClass(ctx, params.Node, params.DocumentContent, "Shopware\\Core\\System\\SystemConfig\\SystemConfigService") {
 		if s.phpIndex.IsMethodCalledName(ctx, params.Node, params.DocumentContent, "get", "getInt", "getString", "getFloat", "getBool", "set") {
-			value := treesitterhelper.GetNodeText(params.Node, params.DocumentContent)
+			value := phpquery.StringValue(params.Node)
 
 			entries, err := s.indexer.GetSystemConfigEntry(value)
 			if err != nil {
@@ -79,7 +80,7 @@ func (s *SystemConfigDefinitionProvider) phpDefinition(ctx context.Context, para
 			locations := make([]protocol.Location, 0, len(entries))
 			for _, entry := range entries {
 				locations = append(locations, protocol.Location{
-					URI: fmt.Sprintf("file://%s", entry.FilePath),
+					URI: uriutil.FileURI(entry.FilePath),
 					Range: protocol.Range{
 						Start: protocol.Position{
 							Line:      entry.Line - 1, // LSP uses 0-based line numbers
@@ -97,7 +98,7 @@ func (s *SystemConfigDefinitionProvider) phpDefinition(ctx context.Context, para
 		}
 
 		if s.phpIndex.IsMethodCalledName(ctx, params.Node, params.DocumentContent, "getDomain") {
-			value := treesitterhelper.GetNodeText(params.Node, params.DocumentContent)
+			value := phpquery.StringValue(params.Node)
 
 			entries, err := s.indexer.GetAllSystemConfigEntries()
 			if err != nil {
@@ -111,7 +112,7 @@ func (s *SystemConfigDefinitionProvider) phpDefinition(ctx context.Context, para
 				}
 
 				locations = append(locations, protocol.Location{
-					URI: fmt.Sprintf("file://%s", entry.FilePath),
+					URI: uriutil.FileURI(entry.FilePath),
 					Range: protocol.Range{
 						Start: protocol.Position{
 							Line:      entry.Line - 1, // LSP uses 0-based line numbers

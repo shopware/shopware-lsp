@@ -4,11 +4,10 @@ import (
 	"os"
 	"testing"
 
-	treesitterhelper "github.com/shopware/shopware-lsp/internal/tree_sitter_helper"
+	xmlparser "github.com/shopware/shopware-lsp/internal/parser/xml"
+	xmlquery "github.com/shopware/shopware-lsp/internal/parser/xml/query"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	tree_sitter_xml "github.com/tree-sitter-grammars/tree-sitter-xml/bindings/go"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 func TestIsSystemConfigXML(t *testing.T) {
@@ -37,11 +36,7 @@ func TestIsSystemConfigXML(t *testing.T) {
 	}
 }
 
-func TestSystemConfigPattern(t *testing.T) {
-	parser := tree_sitter.NewParser()
-	err := parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_xml.LanguageXML()))
-	require.NoError(t, err)
-
+func TestSystemConfigElementQuery(t *testing.T) {
 	tests := []struct {
 		name     string
 		content  []byte
@@ -91,35 +86,26 @@ func TestSystemConfigPattern(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tree := parser.Parse(tt.content, nil)
-			nodes := treesitterhelper.FindAll(tree.RootNode(), SystemConfigPattern, tt.content)
+			tree := xmlparser.Parse(string(tt.content)).Tree
+			nodes := xmlquery.Elements(tree.Root, "input-field", "component")
 			assert.Equal(t, tt.expected, len(nodes))
 		})
 	}
 }
 
 func TestGetSystemConfigFieldName(t *testing.T) {
-	parser := tree_sitter.NewParser()
-	err := parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_xml.LanguageXML()))
-	require.NoError(t, err)
-
 	content := []byte(`<input-field type="text">
   <n>fieldName</n>
   <label>Field Label</label>
 </input-field>`)
 
-	tree := parser.Parse(content, nil)
-	node := tree.RootNode()
+	node := xmlparser.Parse(string(content)).Tree.Root
 
 	name := GetSystemConfigFieldName(node, content)
 	assert.Equal(t, "fieldName", name)
 }
 
 func TestGetSystemConfigFieldLabel(t *testing.T) {
-	parser := tree_sitter.NewParser()
-	err := parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_xml.LanguageXML()))
-	require.NoError(t, err)
-
 	tests := []struct {
 		name     string
 		content  []byte
@@ -146,8 +132,7 @@ func TestGetSystemConfigFieldLabel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tree := parser.Parse(tt.content, nil)
-			node := tree.RootNode()
+			node := xmlparser.Parse(string(tt.content)).Tree.Root
 
 			label := GetSystemConfigFieldLabel(node, tt.content)
 			assert.Equal(t, tt.expected, label)
@@ -156,44 +141,30 @@ func TestGetSystemConfigFieldLabel(t *testing.T) {
 }
 
 func TestGetSystemConfigFieldType(t *testing.T) {
-	parser := tree_sitter.NewParser()
-	err := parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_xml.LanguageXML()))
-	require.NoError(t, err)
-
 	content := []byte(`<input-field type="text">
   <n>fieldName</n>
   <label>Field Label</label>
 </input-field>`)
 
-	tree := parser.Parse(content, nil)
-	node := tree.RootNode()
+	node := xmlparser.Parse(string(content)).Tree.Root
 
 	fieldType := GetSystemConfigFieldType(node, content)
 	assert.Equal(t, "text", fieldType)
 }
 
 func TestGetSystemConfigComponent(t *testing.T) {
-	parser := tree_sitter.NewParser()
-	err := parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_xml.LanguageXML()))
-	require.NoError(t, err)
-
 	content := []byte(`<component name="custom-component">
   <n>componentName</n>
   <label>Component Label</label>
 </component>`)
 
-	tree := parser.Parse(content, nil)
-	node := tree.RootNode()
+	node := xmlparser.Parse(string(content)).Tree.Root
 
 	component := GetSystemConfigComponent(node, content)
 	assert.Equal(t, "custom-component", component)
 }
 
 func TestParseSystemConfigField(t *testing.T) {
-	parser := tree_sitter.NewParser()
-	err := parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_xml.LanguageXML()))
-	require.NoError(t, err)
-
 	tests := []struct {
 		name     string
 		content  []byte
@@ -231,8 +202,7 @@ func TestParseSystemConfigField(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tree := parser.Parse(tt.content, nil)
-			node := tree.RootNode()
+			node := xmlparser.Parse(string(tt.content)).Tree.Root
 
 			field := ParseSystemConfigField(node, tt.content, "test-file.xml")
 			assert.Equal(t, tt.expected, field)
@@ -266,16 +236,11 @@ func TestFindAllSystemConfigFields(t *testing.T) {
 	err := os.WriteFile(testFilePath, content, 0644)
 	require.NoError(t, err)
 
-	// Parse the XML
-	parser := tree_sitter.NewParser()
-	err = parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_xml.LanguageXML()))
-	require.NoError(t, err)
-
 	fileContent, err := os.ReadFile(testFilePath)
 	require.NoError(t, err)
 
-	tree := parser.Parse(fileContent, nil)
-	fields := FindAllSystemConfigFields(tree.RootNode(), fileContent, testFilePath)
+	tree := xmlparser.Parse(string(fileContent)).Tree
+	fields := FindAllSystemConfigFields(tree.Root, fileContent, testFilePath)
 
 	// Verify the results
 	assert.Equal(t, 3, len(fields))
@@ -307,13 +272,8 @@ func TestRealSystemConfigFile(t *testing.T) {
 	// Verify it's a system config file
 	assert.True(t, IsSystemConfigXML(content))
 
-	// Parse the XML
-	parser := tree_sitter.NewParser()
-	err = parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_xml.LanguageXML()))
-	require.NoError(t, err)
-
-	tree := parser.Parse(content, nil)
-	fields := FindAllSystemConfigFields(tree.RootNode(), content, "testdata/common.xml")
+	tree := xmlparser.Parse(string(content)).Tree
+	fields := FindAllSystemConfigFields(tree.Root, content, "testdata/common.xml")
 
 	// Verify we found fields
 	assert.Greater(t, len(fields), 0)

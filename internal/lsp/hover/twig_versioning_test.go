@@ -2,47 +2,42 @@ package hover
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
-	"github.com/shopware/shopware-lsp/internal/indexer"
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
-	tree_sitter_twig "github.com/shopware/shopware-lsp/internal/tree_sitter_grammars/twig/bindings/go"
+	"github.com/shopware/shopware-lsp/internal/parser/cst"
+	twigparser "github.com/shopware/shopware-lsp/internal/parser/twig"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 func TestTwigVersioningHoverProvider_nilIndexerNoPanic(t *testing.T) {
 	ctx := context.Background()
-	tempDir := t.TempDir()
-
-	fileScanner, err := indexer.NewFileScanner(tempDir, filepath.Join(tempDir, "scanner.db"))
-	require.NoError(t, err)
-
-	server := lsp.NewServer(fileScanner, tempDir, "test")
-
-	provider := NewTwigVersioningHoverProvider(server)
+	provider := NewTwigVersioningHoverProvider(nil)
 	require.NotNil(t, provider)
 
 	content := []byte(`{% block foo %}{% endblock %}`)
-	parser := tree_sitter.NewParser()
-	lang := tree_sitter.NewLanguage(tree_sitter_twig.Language())
-	require.NoError(t, parser.SetLanguage(lang))
-	tree := parser.Parse(content, nil)
-	defer tree.Close()
+	parsed := twigparser.Parse(string(content))
 
 	params := &protocol.HoverParams{
 		TextDocument: struct {
 			URI string `json:"uri"`
 		}{URI: "file:///tmp/foo.twig"},
-		Position:        protocol.Position{Line: 0, Character: 10},
-		DocumentContent: content,
-		Node:            tree.RootNode(),
+		Position: protocol.Position{Line: 0, Character: 10},
+	}
+	request := &lsp.HoverRequest{
+		HoverParams: params,
+		SyntaxContext: lsp.SyntaxContext{
+			DocumentContent: content,
+			DocumentTree:    parsed.Tree,
+			LineIndex:       cst.NewLineIndex(string(content)),
+			Root:            parsed.Tree.Root,
+			Node:            parsed.Tree.Root,
+		},
 	}
 
-	hover, err := provider.GetHover(ctx, params)
+	hover, err := provider.GetHover(ctx, request)
 	require.NoError(t, err)
 	assert.Nil(t, hover)
 }

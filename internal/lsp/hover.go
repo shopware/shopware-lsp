@@ -2,30 +2,27 @@ package lsp
 
 import (
 	"context"
-	"path/filepath"
+	"fmt"
 
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
-	"github.com/shopware/shopware-lsp/internal/php"
 )
 
 // hover handles textDocument/hover requests
 func (s *Server) hover(ctx context.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
-	node, docText, ok := s.documentManager.GetNodeAtPosition(params.TextDocument.URI, params.Position.Line, params.Position.Character)
-	if ok {
-		params.Node = node
-		params.DocumentContent = docText.Text
+	syntax, _ := s.documentManager.SyntaxContext(
+		params.TextDocument.URI,
+		params.Position.Line,
+		params.Position.Character,
+	)
+	request := &HoverRequest{HoverParams: params, SyntaxContext: syntax}
 
-		if filepath.Ext(params.TextDocument.URI) == ".php" {
-			phpIndex, _ := s.GetIndexer("php.index")
-			ctx = phpIndex.(*php.PHPIndex).AddContext(ctx, node, docText.Text)
-		}
-	}
+	ctx = s.enrichContext(ctx, syntax)
 
 	// Try each hover provider until one returns a result
 	for _, provider := range s.hoverProviders {
-		hover, err := provider.GetHover(ctx, params)
+		hover, err := provider.GetHover(ctx, request)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("hover provider %T: %w", provider, err)
 		}
 		if hover != nil {
 			return hover, nil

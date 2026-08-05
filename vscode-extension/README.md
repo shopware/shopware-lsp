@@ -75,3 +75,12 @@ Full intelligence for the Shopware Admin built with Vue.js:
 | Non-existent parent component | Error | JS/TS (admin) |
 | Outdated block version | Warning | Twig |
 | Missing block version comment | Warning | Twig |
+
+## Resource usage
+
+`shopwareLSP.memoryLimitMiB` applies a soft memory limit to the language-server
+process. Its default value of `0` uses the server's balanced GC policy. For
+large Shopware workspaces, `512` is an opt-in low-memory starting point when
+lower peak memory matters more than indexing CPU. Very low limits can cause
+frequent garbage collection and substantially increase CPU use. Restart the
+language server after changing this setting.

@@ -7,37 +7,36 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	twigquery "github.com/shopware/shopware-lsp/internal/parser/twig/query"
 	"github.com/shopware/shopware-lsp/internal/theme"
-	treesitterhelper "github.com/shopware/shopware-lsp/internal/tree_sitter_helper"
 )
 
 type ThemeCompletionProvider struct {
 	themeIndexer *theme.ThemeConfigIndexer
 }
 
-func NewThemeCompletionProvider(lspServer *lsp.Server) *ThemeCompletionProvider {
-	themeIndexer, _ := lspServer.GetIndexer("theme.indexer")
-	return &ThemeCompletionProvider{
-		themeIndexer: themeIndexer.(*theme.ThemeConfigIndexer),
-	}
+func NewThemeCompletionProvider(themeIndexer *theme.ThemeConfigIndexer) *ThemeCompletionProvider {
+	return &ThemeCompletionProvider{themeIndexer: themeIndexer}
 }
 
-func (p *ThemeCompletionProvider) GetCompletions(ctx context.Context, params *protocol.CompletionParams) []protocol.CompletionItem {
-	if params.Node == nil {
-		return []protocol.CompletionItem{}
-	}
-
+func (p *ThemeCompletionProvider) GetCompletions(ctx context.Context, params *lsp.CompletionRequest) []protocol.CompletionItem {
 	switch strings.ToLower(filepath.Ext(params.TextDocument.URI)) {
 	case ".scss":
+		if params.Node == nil {
+			return []protocol.CompletionItem{}
+		}
 		return p.scssCompletions(ctx, params)
 	case ".twig":
+		if params.Node == nil {
+			return []protocol.CompletionItem{}
+		}
 		return p.twigCompletions(ctx, params)
 	default:
 		return []protocol.CompletionItem{}
 	}
 }
 
-func (p *ThemeCompletionProvider) scssCompletions(ctx context.Context, params *protocol.CompletionParams) []protocol.CompletionItem {
+func (p *ThemeCompletionProvider) scssCompletions(ctx context.Context, params *lsp.CompletionRequest) []protocol.CompletionItem {
 	var completionItems []protocol.CompletionItem
 
 	elements, _ := p.themeIndexer.GetAllThemeConfigFields()
@@ -59,8 +58,8 @@ func (p *ThemeCompletionProvider) scssCompletions(ctx context.Context, params *p
 	return completionItems
 }
 
-func (p *ThemeCompletionProvider) twigCompletions(ctx context.Context, params *protocol.CompletionParams) []protocol.CompletionItem {
-	if treesitterhelper.TwigStringInFunctionPattern("theme_config").Matches(params.Node, params.DocumentContent) {
+func (p *ThemeCompletionProvider) twigCompletions(ctx context.Context, params *lsp.CompletionRequest) []protocol.CompletionItem {
+	if twigquery.StringInFunction(params.Node, "theme_config") {
 		themes, _ := p.themeIndexer.GetThemeConfigFields()
 
 		uniqueThemes := make(map[string]struct{})

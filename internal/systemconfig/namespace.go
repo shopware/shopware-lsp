@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	treesitterhelper "github.com/shopware/shopware-lsp/internal/tree_sitter_helper"
-	tree_sitter_xml "github.com/tree-sitter-grammars/tree-sitter-xml/bindings/go"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
+	xmlparser "github.com/shopware/shopware-lsp/internal/parser/xml"
+	xmlquery "github.com/shopware/shopware-lsp/internal/parser/xml/query"
+	xmlsyntax "github.com/shopware/shopware-lsp/internal/parser/xml/syntax"
 )
 
 // SystemConfigEntry represents a system config entry with namespace
@@ -107,43 +107,13 @@ func getNamespaceFromManifestXml(manifestPath string) (string, error) {
 		return "", err
 	}
 
-	// Parse manifest.xml using tree-sitter
-	parser := tree_sitter.NewParser()
-	if err := parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_xml.LanguageXML())); err != nil {
-		return "", fmt.Errorf("failed to set language: %w", err)
-	}
-
-	tree := parser.Parse(data, nil)
-	defer tree.Close()
-
-	// Find the name element
-	nameNode := treesitterhelper.FindFirst(tree.RootNode(), treesitterhelper.And(
-		treesitterhelper.NodeKind("element"),
-		treesitterhelper.HasChild(treesitterhelper.And(
-			treesitterhelper.NodeKind("STag"),
-			treesitterhelper.HasChild(treesitterhelper.And(
-				treesitterhelper.NodeKind("Name"),
-				treesitterhelper.NodeText("name"),
-			)),
-		)),
-	), data)
-
-	if nameNode == nil {
+	tree := xmlparser.Parse(string(data)).Tree
+	names := xmlquery.Elements(tree.Root, "name")
+	if len(names) == 0 {
 		return "", nil
 	}
 
-	// Extract the name value
-	contentNode := treesitterhelper.FindFirst(nameNode, treesitterhelper.NodeKind("content"), data)
-	if contentNode == nil {
-		return "", nil
-	}
-
-	charDataNode := treesitterhelper.FindFirst(contentNode, treesitterhelper.NodeKind("CharData"), data)
-	if charDataNode == nil {
-		return "", nil
-	}
-
-	namespace := strings.TrimSpace(string(charDataNode.Utf8Text(data)))
+	namespace := strings.TrimSpace(xmlquery.TextContent(names[0]))
 	if namespace == "" {
 		return "", nil
 	}
@@ -152,20 +122,26 @@ func getNamespaceFromManifestXml(manifestPath string) (string, error) {
 }
 
 // IndexSystemConfigFile indexes a system config file and returns the entries
-func IndexSystemConfigFile(filePath string, node *tree_sitter.Node, data []byte) ([]SystemConfigEntry, error) {
-	// Check if it's a system config file
+func IndexSystemConfigFile(filePath string, data []byte) ([]SystemConfigEntry, error) {
 	if !IsSystemConfigXML(data) {
 		return nil, fmt.Errorf("not a system config file")
 	}
 
-	// Get the namespace
+	tree := xmlparser.Parse(string(data)).Tree
+	return IndexSystemConfigTree(filePath, tree, xmlsyntax.NewLineIndex(tree.Source))
+}
+
+func IndexSystemConfigTree(filePath string, tree *xmlsyntax.Tree, lineIndex *xmlsyntax.LineIndex) ([]SystemConfigEntry, error) {
+	if tree == nil || tree.Root == nil || !strings.Contains(tree.Source, "SystemConfig/Schema/config.xsd") {
+		return nil, fmt.Errorf("not a system config file")
+	}
+
 	namespace, err := GetNamespaceFromPath(filePath)
 	if err != nil {
 		return nil, err
 	}
 
-	// Find all system config fields
-	fields := FindAllSystemConfigFields(node, data, filePath)
+	fields := findAllSystemConfigFields(tree.Root, nil, filePath, lineIndex)
 
 	// Create entries with namespace
 	entries := make([]SystemConfigEntry, 0, len(fields))

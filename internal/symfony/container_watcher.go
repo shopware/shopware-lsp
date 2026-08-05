@@ -9,8 +9,9 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	tree_sitter_xml "github.com/tree-sitter-grammars/tree-sitter-xml/bindings/go"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
+
+	xmlparser "github.com/shopware/shopware-lsp/internal/parser/xml"
+	xmlsyntax "github.com/shopware/shopware-lsp/internal/parser/xml/syntax"
 )
 
 // ContainerWatcher watches the Symfony container XML file and keeps services in memory
@@ -20,6 +21,10 @@ type ContainerWatcher struct {
 	watcher         *fsnotify.Watcher
 	services        map[string]Service
 	parameters      map[string]Parameter
+	twigGlobals     []ContainerTwigGlobal
+	twigComponents  []ContainerTwigComponent
+	doctrineAliases map[string][]string
+	revision        uint64
 	mu              sync.RWMutex
 	lastUpdated     time.Time
 	containerExists bool
@@ -33,10 +38,11 @@ func NewContainerWatcher(projectRoot string) (*ContainerWatcher, error) {
 	}
 
 	cw := &ContainerWatcher{
-		projectRoot: projectRoot,
-		watcher:     watcher,
-		services:    make(map[string]Service),
-		parameters:  make(map[string]Parameter),
+		projectRoot:     projectRoot,
+		watcher:         watcher,
+		services:        make(map[string]Service),
+		parameters:      make(map[string]Parameter),
+		doctrineAliases: make(map[string][]string),
 	}
 
 	// Find and load the container file initially
@@ -55,7 +61,9 @@ func (cw *ContainerWatcher) findAndLoadContainer() error {
 	// Look for the container file in the var/cache directory
 	containerPath, err := cw.findContainerFile()
 	if err != nil {
+		cw.mu.Lock()
 		cw.containerExists = false
+		cw.mu.Unlock()
 
 		// Even if we can't find the container file, watch the var/cache directory
 		// for when it might be created later
@@ -89,8 +97,10 @@ func (cw *ContainerWatcher) findAndLoadContainer() error {
 		return err
 	}
 
+	cw.mu.Lock()
 	cw.containerPath = containerPath
 	cw.containerExists = true
+	cw.mu.Unlock()
 
 	// Add the directory to the watcher
 	containerDir := filepath.Dir(containerPath)
@@ -136,16 +146,18 @@ func (cw *ContainerWatcher) loadContainer() error {
 		return err
 	}
 
-	parser := tree_sitter.NewParser()
-	_ = parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_xml.LanguageXML()))
-
-	rootNode := parser.Parse(content, nil)
-
-	// Parse the XML
-	services, params, err := ParseXMLServices(cw.containerPath, rootNode.RootNode(), content)
+	tree := xmlparser.Parse(string(content)).Tree
+	services, params, err := ParseXMLServicesTree(
+		cw.containerPath,
+		tree,
+		xmlsyntax.NewLineIndex(tree.Source),
+	)
 	if err != nil {
 		return err
 	}
+	twigGlobals := ParseXMLTwigGlobalsTree(cw.containerPath, tree)
+	twigComponents := ParseXMLTwigComponentsTree(cw.containerPath, tree)
+	doctrineAliases := ParseXMLDoctrineNamespaceAliasesTree(tree.Root)
 
 	// Update the in-memory cache
 	cw.mu.Lock()
@@ -154,6 +166,12 @@ func (cw *ContainerWatcher) loadContainer() error {
 	// Clear existing data
 	cw.services = make(map[string]Service, len(services))
 	cw.parameters = make(map[string]Parameter, len(params))
+	cw.twigGlobals = append([]ContainerTwigGlobal(nil), twigGlobals...)
+	cw.twigComponents = append(
+		[]ContainerTwigComponent(nil),
+		twigComponents...,
+	)
+	cw.doctrineAliases = cloneDoctrineNamespaceAliases(doctrineAliases)
 
 	// Store the new data
 	for _, service := range services {
@@ -164,6 +182,7 @@ func (cw *ContainerWatcher) loadContainer() error {
 		cw.parameters[param.Name] = param
 	}
 
+	cw.revision++
 	cw.lastUpdated = time.Now()
 	log.Printf("Loaded %d services and %d parameters from container XML",
 		len(services), len(params))
@@ -181,16 +200,19 @@ func (cw *ContainerWatcher) watchChanges() {
 			}
 
 			// Check if the event is for our container file
-			if cw.containerExists && event.Name == cw.containerPath && (event.Op&(fsnotify.Write|fsnotify.Create) != 0) {
+			containerPath, containerExists := cw.containerState()
+			if containerExists && event.Name == containerPath && (event.Op&(fsnotify.Write|fsnotify.Create) != 0) {
 				log.Printf("Container file changed, reloading")
 				if err := cw.loadContainer(); err != nil {
 					log.Printf("Failed to reload container: %v", err)
 				}
-			} else if !cw.containerExists && strings.HasSuffix(event.Name, "Shopware_Core_KernelDevDebugContainer.xml") && (event.Op&fsnotify.Create != 0) {
+			} else if !containerExists && strings.HasSuffix(event.Name, "Shopware_Core_KernelDevDebugContainer.xml") && (event.Op&fsnotify.Create != 0) {
 				// Container file was created
 				log.Printf("Container file created: %s", event.Name)
+				cw.mu.Lock()
 				cw.containerPath = event.Name
 				cw.containerExists = true
+				cw.mu.Unlock()
 				if err := cw.loadContainer(); err != nil {
 					log.Printf("Failed to load new container: %v", err)
 				}
@@ -234,6 +256,68 @@ func (cw *ContainerWatcher) GetAllServices() []string {
 	return result
 }
 
+func (cw *ContainerWatcher) GetAllServiceDefinitions() []Service {
+	cw.mu.RLock()
+	defer cw.mu.RUnlock()
+
+	result := make([]Service, 0, len(cw.services))
+	for _, service := range cw.services {
+		result = append(result, service)
+	}
+	return result
+}
+
+func (cw *ContainerWatcher) GetAllParameters() []Parameter {
+	cw.mu.RLock()
+	defer cw.mu.RUnlock()
+
+	result := make([]Parameter, 0, len(cw.parameters))
+	for _, parameter := range cw.parameters {
+		result = append(result, parameter)
+	}
+	return result
+}
+
+func (cw *ContainerWatcher) GetTwigComponents() []ContainerTwigComponent {
+	components, _ := cw.GetTwigComponentsState()
+	return components
+}
+
+func (cw *ContainerWatcher) GetTwigComponentsState() (
+	[]ContainerTwigComponent,
+	uint64,
+) {
+	cw.mu.RLock()
+	defer cw.mu.RUnlock()
+	return append([]ContainerTwigComponent(nil), cw.twigComponents...),
+		cw.revision
+}
+
+func (cw *ContainerWatcher) GetTwigGlobals() []ContainerTwigGlobal {
+	cw.mu.RLock()
+	defer cw.mu.RUnlock()
+	return append([]ContainerTwigGlobal(nil), cw.twigGlobals...)
+}
+
+func (cw *ContainerWatcher) GetDoctrineNamespaceAliasesState() (
+	map[string][]string,
+	uint64,
+) {
+	cw.mu.RLock()
+	defer cw.mu.RUnlock()
+	return cloneDoctrineNamespaceAliases(cw.doctrineAliases), cw.revision
+}
+
+func cloneDoctrineNamespaceAliases(
+	source map[string][]string,
+) map[string][]string {
+	result := make(map[string][]string, len(source))
+	for alias, namespaces := range source {
+		result[alias] = append([]string(nil), namespaces...)
+	}
+	return result
+}
+
 // Close stops the watcher and cleans up resources
 func (cw *ContainerWatcher) Close() error {
 	return cw.watcher.Close()
@@ -241,6 +325,8 @@ func (cw *ContainerWatcher) Close() error {
 
 // ContainerExists returns true if the container file exists
 func (cw *ContainerWatcher) ContainerExists() bool {
+	cw.mu.RLock()
+	defer cw.mu.RUnlock()
 	return cw.containerExists
 }
 
@@ -249,4 +335,10 @@ func (cw *ContainerWatcher) LastUpdated() time.Time {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
 	return cw.lastUpdated
+}
+
+func (cw *ContainerWatcher) containerState() (string, bool) {
+	cw.mu.RLock()
+	defer cw.mu.RUnlock()
+	return cw.containerPath, cw.containerExists
 }

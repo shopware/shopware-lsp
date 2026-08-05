@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/indexer"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 // SystemConfigIndexer is responsible for indexing system config XML files
@@ -14,8 +13,8 @@ type SystemConfigIndexer struct {
 }
 
 // NewSystemConfigIndexer creates a new system config indexer
-func NewSystemConfigIndexer(configDir string) (*SystemConfigIndexer, error) {
-	configIndexer, err := indexer.NewDataIndexer[SystemConfigEntry](filepath.Join(configDir, "system_config.db"))
+func NewSystemConfigIndexer(configDir string, stores ...*indexer.Store) (*SystemConfigIndexer, error) {
+	configIndexer, err := indexer.NewRepository[SystemConfigEntry](filepath.Join(configDir, "system_config.db"), "system_config", stores...)
 	if err != nil {
 		return nil, err
 	}
@@ -31,25 +30,31 @@ func (s *SystemConfigIndexer) ID() string {
 }
 
 // Index processes a file and indexes any system config entries found
-func (s *SystemConfigIndexer) Index(path string, node *tree_sitter.Node, fileContent []byte) error {
+func (s *SystemConfigIndexer) Index(file *indexer.ParsedFile) error {
+	path := file.Path
+	fileContent := file.Content
 	// Skip non-system config files
 	if !strings.HasSuffix(path, ".xml") || strings.Contains(path, "/_fixtures/") || strings.Contains(path, "/_fixture/") {
 		return nil
 	}
 
-	// Check if it's a system config XML file
+	// Replacing with an empty set clears entries when a file stops being a
+	// system-config document but keeps the same path.
 	if !IsSystemConfigXML(fileContent) {
-		return nil
+		return s.configIndex.BatchSaveItemsIn(
+			file.Mutation(),
+			map[string]map[string]SystemConfigEntry{path: {}},
+		)
 	}
 
 	// We already have the file content, so we can pass it directly
-	entries, err := IndexSystemConfigFile(path, node, fileContent)
+	entries, err := IndexSystemConfigTree(path, file.SyntaxTree(), file.LineIndex())
 	if err != nil {
 		return err
 	}
 
 	// Prepare batch save
-	batchSave := make(map[string]map[string]SystemConfigEntry)
+	batchSave := map[string]map[string]SystemConfigEntry{path: {}}
 
 	for _, entry := range entries {
 		if _, ok := batchSave[entry.FilePath]; !ok {
@@ -58,12 +63,16 @@ func (s *SystemConfigIndexer) Index(path string, node *tree_sitter.Node, fileCon
 		batchSave[entry.FilePath][entry.Name] = entry
 	}
 
-	return s.configIndex.BatchSaveItems(batchSave)
+	return s.configIndex.BatchSaveItemsIn(file.Mutation(), batchSave)
 }
 
 // RemovedFiles handles cleanup when files are removed
 func (s *SystemConfigIndexer) RemovedFiles(paths []string) error {
 	return s.configIndex.BatchDeleteByFilePaths(paths)
+}
+
+func (s *SystemConfigIndexer) RemovedFilesIn(paths []string, mutation *indexer.Mutation) error {
+	return s.configIndex.BatchDeleteByFilePathsIn(mutation, paths)
 }
 
 // Close closes the indexer
@@ -74,6 +83,10 @@ func (s *SystemConfigIndexer) Close() error {
 // Clear clears all indexed data
 func (s *SystemConfigIndexer) Clear() error {
 	return s.configIndex.Clear()
+}
+
+func (s *SystemConfigIndexer) ClearIn(mutation *indexer.Mutation) error {
+	return s.configIndex.ClearIn(mutation)
 }
 
 // GetSystemConfigEntries returns all system config entry keys

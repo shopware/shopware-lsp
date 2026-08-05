@@ -11,18 +11,23 @@ import (
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/uriutil"
 	"github.com/tidwall/pretty"
 	"github.com/tidwall/sjson"
 )
 
 type SnippetCommandProvider struct {
-	lsp *lsp.Server
+	snippetIndexer *SnippetIndexer
+	host           CommandHost
 }
 
-func NewSnippetCommandProvider(lsp *lsp.Server) *SnippetCommandProvider {
-	return &SnippetCommandProvider{
-		lsp: lsp,
-	}
+type CommandHost interface {
+	IndexFiles(context.Context, []string) error
+	PublishDiagnostics(context.Context, []string)
+}
+
+func NewSnippetCommandProvider(snippetIndexer *SnippetIndexer, host CommandHost) *SnippetCommandProvider {
+	return &SnippetCommandProvider{snippetIndexer: snippetIndexer, host: host}
 }
 
 func (s *SnippetCommandProvider) GetCommands(ctx context.Context) map[string]lsp.CommandFunc {
@@ -37,9 +42,6 @@ func (s *SnippetCommandProvider) GetCommands(ctx context.Context) map[string]lsp
 }
 
 func (s *SnippetCommandProvider) allSnippets(ctx context.Context, args *json.RawMessage) (interface{}, error) {
-	indexer, _ := s.lsp.GetIndexer("snippet.indexer")
-	snippetIndexer := indexer.(*SnippetIndexer)
-
 	type snippetItem struct {
 		Key  string `json:"key"`
 		Text string `json:"text"`
@@ -48,7 +50,7 @@ func (s *SnippetCommandProvider) allSnippets(ctx context.Context, args *json.Raw
 
 	var allSnippets = make(map[string]snippetItem)
 
-	storefrontSnippets, err := snippetIndexer.GetAllFrontendSnippets()
+	storefrontSnippets, err := s.snippetIndexer.GetAllFrontendSnippets()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get storefront snippets: %w", err)
 	}
@@ -86,9 +88,6 @@ func (s *SnippetCommandProvider) allSnippets(ctx context.Context, args *json.Raw
 }
 
 func (s *SnippetCommandProvider) allAdminSnippets(ctx context.Context, args *json.RawMessage) (interface{}, error) {
-	indexer, _ := s.lsp.GetIndexer("snippet.indexer")
-	snippetIndexer := indexer.(*SnippetIndexer)
-
 	type snippetItem struct {
 		Key  string `json:"key"`
 		Text string `json:"text"`
@@ -97,7 +96,7 @@ func (s *SnippetCommandProvider) allAdminSnippets(ctx context.Context, args *jso
 
 	var allSnippets = make(map[string]snippetItem)
 
-	adminSnippets, err := snippetIndexer.GetAllAdminSnippets()
+	adminSnippets, err := s.snippetIndexer.GetAllAdminSnippets()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get admin snippets: %w", err)
 	}
@@ -144,7 +143,10 @@ func (s *SnippetCommandProvider) getPossibleSnippets(ctx context.Context, args *
 	}
 
 	// Convert URI to file path
-	filePath := strings.TrimPrefix(params.FileURI, "file://")
+	filePath, err := uriutil.Path(params.FileURI)
+	if err != nil {
+		return nil, fmt.Errorf("resolve document URI: %w", err)
+	}
 
 	// // Find Resources directory
 	dirPath := filepath.Dir(filePath)
@@ -229,11 +231,11 @@ func (s *SnippetCommandProvider) createSnippet(ctx context.Context, args *json.R
 		files = append(files, snippet.Path)
 	}
 
-	if err := s.lsp.FileScanner().IndexFiles(ctx, files); err != nil {
+	if err := s.host.IndexFiles(ctx, files); err != nil {
 		return nil, fmt.Errorf("failed to index files: %w", err)
 	}
 
-	s.lsp.PublishDiagnostics(ctx, []string{params.FileURI})
+	s.host.PublishDiagnostics(ctx, []string{params.FileURI})
 
 	return nil, nil
 }
@@ -254,7 +256,10 @@ func (s *SnippetCommandProvider) getPossibleAdminSnippets(ctx context.Context, a
 	}
 
 	// Convert URI to file path
-	filePath := strings.TrimPrefix(params.FileURI, "file://")
+	filePath, err := uriutil.Path(params.FileURI)
+	if err != nil {
+		return nil, fmt.Errorf("resolve document URI: %w", err)
+	}
 
 	// Find Resources/app/administration directory
 	dirPath := filepath.Dir(filePath)
@@ -349,11 +354,11 @@ func (s *SnippetCommandProvider) createAdminSnippet(ctx context.Context, args *j
 		files = append(files, snippet.Path)
 	}
 
-	if err := s.lsp.FileScanner().IndexFiles(ctx, files); err != nil {
+	if err := s.host.IndexFiles(ctx, files); err != nil {
 		return nil, fmt.Errorf("failed to index files: %w", err)
 	}
 
-	s.lsp.PublishDiagnostics(ctx, []string{params.FileURI})
+	s.host.PublishDiagnostics(ctx, []string{params.FileURI})
 
 	return nil, nil
 }

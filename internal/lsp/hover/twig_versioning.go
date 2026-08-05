@@ -7,27 +7,20 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	twigquery "github.com/shopware/shopware-lsp/internal/parser/twig/query"
+	twigsyntax "github.com/shopware/shopware-lsp/internal/parser/twig/syntax"
 	"github.com/shopware/shopware-lsp/internal/twig"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 type TwigVersioningHoverProvider struct {
 	twigIndexer *twig.TwigIndexer
 }
 
-func NewTwigVersioningHoverProvider(lspServer *lsp.Server) *TwigVersioningHoverProvider {
-	indexer, ok := lspServer.GetIndexer("twig.indexer")
-	if !ok {
-		return &TwigVersioningHoverProvider{twigIndexer: nil}
-	}
-	twigIndexer, ok := indexer.(*twig.TwigIndexer)
-	if !ok {
-		return &TwigVersioningHoverProvider{twigIndexer: nil}
-	}
+func NewTwigVersioningHoverProvider(twigIndexer *twig.TwigIndexer) *TwigVersioningHoverProvider {
 	return &TwigVersioningHoverProvider{twigIndexer: twigIndexer}
 }
 
-func (p *TwigVersioningHoverProvider) GetHover(ctx context.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
+func (p *TwigVersioningHoverProvider) GetHover(ctx context.Context, params *lsp.HoverRequest) (*protocol.Hover, error) {
 	if !strings.HasSuffix(strings.ToLower(params.TextDocument.URI), ".twig") {
 		return nil, nil
 	}
@@ -40,38 +33,39 @@ func (p *TwigVersioningHoverProvider) GetHover(ctx context.Context, params *prot
 		return nil, nil
 	}
 
-	if p.isBlockIdentifier(params.Node, string(params.DocumentContent)) {
-		return p.hoverBlockIdentifier(params.Node, string(params.DocumentContent), params.TextDocument.URI)
+	if block := p.blockAtIdentifier(params.Node, params.Token); block != nil {
+		return p.hoverBlockIdentifier(twigquery.BlockName(block), params.TextDocument.URI)
 	}
 
-	if p.isVersionComment(params.Node, string(params.DocumentContent)) {
-		return p.hoverVersionComment(params.Node, string(params.DocumentContent), params.TextDocument.URI)
+	if comment := p.versionCommentAt(params.Node); comment != nil {
+		return p.hoverVersionComment(
+			comment,
+			string(params.DocumentContent),
+			params.TextDocument.URI,
+			params.LineIndex,
+		)
 	}
 
 	return nil, nil
 }
 
-func (p *TwigVersioningHoverProvider) isBlockIdentifier(node *tree_sitter.Node, content string) bool {
-	if node.Kind() != "identifier" {
-		return false
+func (p *TwigVersioningHoverProvider) blockAtIdentifier(node *twigsyntax.Node, token *twigsyntax.Token) *twigsyntax.Node {
+	block := twigquery.BlockAt(node)
+	if block == nil || token == nil || token.Text() != twigquery.BlockName(block) {
+		return nil
 	}
-
-	parent := node.Parent()
-	return parent != nil && parent.Kind() == "block"
+	return block
 }
 
-func (p *TwigVersioningHoverProvider) isVersionComment(node *tree_sitter.Node, content string) bool {
-	if node.Kind() != "comment" {
-		return false
+func (p *TwigVersioningHoverProvider) versionCommentAt(node *twigsyntax.Node) *twigsyntax.Node {
+	comment := twigquery.ClosestNodeOfKind(node, twigsyntax.TwigComment)
+	if comment == nil || !strings.Contains(comment.Text(), twig.VersionCommentPrefix) {
+		return nil
 	}
-
-	commentText := string(node.Utf8Text([]byte(content)))
-	return strings.Contains(commentText, twig.VersionCommentPrefix)
+	return comment
 }
 
-func (p *TwigVersioningHoverProvider) hoverBlockIdentifier(node *tree_sitter.Node, content string, uri string) (*protocol.Hover, error) {
-	blockName := string(node.Utf8Text([]byte(content)))
-
+func (p *TwigVersioningHoverProvider) hoverBlockIdentifier(blockName string, uri string) (*protocol.Hover, error) {
 	allBlockHashes, err := p.twigIndexer.GetTwigBlockHashes(blockName)
 	if err != nil {
 		return nil, err
@@ -111,10 +105,20 @@ func (p *TwigVersioningHoverProvider) hoverBlockIdentifier(node *tree_sitter.Nod
 	}, nil
 }
 
-func (p *TwigVersioningHoverProvider) hoverVersionComment(node *tree_sitter.Node, content string, uri string) (*protocol.Hover, error) {
-	commentText := string(node.Utf8Text([]byte(content)))
+func (p *TwigVersioningHoverProvider) hoverVersionComment(
+	node *twigsyntax.Node,
+	content string,
+	uri string,
+	lineIndex *twigsyntax.LineIndex,
+) (*protocol.Hover, error) {
+	commentRange := node.RangeTrimmedTrivia()
+	commentText := content[commentRange.Start:commentRange.End]
 
-	versionComment := twig.ParseVersionComment(commentText, int(node.Range().StartPoint.Row)+1)
+	if lineIndex == nil {
+		lineIndex = twigsyntax.NewLineIndex(content)
+	}
+	line, _ := lineIndex.Position(commentRange.Start)
+	versionComment := twig.ParseVersionComment(commentText, int(line)+1)
 	if versionComment == nil {
 		return nil, nil
 	}
@@ -148,29 +152,17 @@ func (p *TwigVersioningHoverProvider) hoverVersionComment(node *tree_sitter.Node
 	}, nil
 }
 
-func (p *TwigVersioningHoverProvider) findBlockNameAfterComment(commentNode *tree_sitter.Node, content string) string {
-	parent := commentNode.Parent()
-	if parent == nil {
-		return ""
-	}
-
-	for i := 0; i < int(parent.NamedChildCount()); i++ {
-		child := parent.NamedChild(uint(i))
-		if child == commentNode {
-			for j := i + 1; j < int(parent.NamedChildCount()); j++ {
-				nextChild := parent.NamedChild(uint(j))
-				if nextChild.Kind() == "block" {
-					for k := 0; k < int(nextChild.NamedChildCount()); k++ {
-						blockChild := nextChild.NamedChild(uint(k))
-						if blockChild.Kind() == "identifier" {
-							return string(blockChild.Utf8Text([]byte(content)))
-						}
-					}
-				}
+func (p *TwigVersioningHoverProvider) findBlockNameAfterComment(commentNode *twigsyntax.Node, content string) string {
+	for sibling := commentNode.NextSibling(); sibling != nil; {
+		switch next := sibling.(type) {
+		case *twigsyntax.Token:
+			sibling = next.NextSibling()
+		case *twigsyntax.Node:
+			if next.Kind() == twigsyntax.TwigBlock {
+				return twigquery.BlockName(next)
 			}
-			break
+			sibling = next.NextSibling()
 		}
 	}
-
 	return ""
 }

@@ -2,7 +2,7 @@
 
 Shopware LSP is a Language Server Protocol implementation for Shopware and Symfony development. It provides IDE features (completion, go-to-definition, hover, diagnostics) for PHP, Twig, XML, and YAML files.
 
-**Tech Stack:** Go backend with tree-sitter parsing, BBolt embedded database for indexes, TypeScript VSCode extension.
+**Tech Stack:** Go backend with native lossless CST parsers, a shared SQLite index store, TypeScript VSCode extension.
 
 ## Build & Test Commands
 
@@ -29,7 +29,9 @@ npm run check-types               # Type check only
 ## Architecture
 
 ### Entry Point
-`main.go` initializes the LSP server, registers all indexers and providers, then starts on stdin/stdout (JSON-RPC).
+`main.go` starts the process-level application on stdin/stdout (JSON-RPC).
+`internal/app` constructs the workspace indexes and providers after the LSP
+`initialize` request supplies the workspace root.
 
 ### Key Packages (`internal/`)
 
@@ -38,7 +40,10 @@ npm run check-types               # Type check only
 | `lsp/` | LSP protocol, server.go is the main handler |
 | `lsp/completion/` | 7 completion providers (services, routes, twig, snippets, features, system config, theme) |
 | `lsp/definition/` | 7 go-to-definition providers (same domains) |
-| `indexer/` | FileScanner for file watching, DataIndexer for BBolt persistence |
+| `app/` | Initialize-time application/workspace composition and resource ownership |
+| `language/` | Registry of language frontends and file extensions |
+| `indexer/` | Serialized file indexing coordinator and namespaced SQLite repositories |
+| `uriutil/` | LSP file URI conversion |
 | `symfony/` | Service container and route indexing from XML/YAML/PHP |
 | `php/` | PHP class/method indexing, type inference, alias resolution |
 | `twig/` | Template indexing, block tracking, extends/include parsing |
@@ -52,9 +57,13 @@ All LSP features use a provider interface pattern. Multiple providers can handle
 
 ### Indexing Flow
 1. `FileScanner` detects file changes (fsnotify)
-2. Files parsed with tree-sitter based on type
+2. Files parsed with the native lossless CST frontend for their language
 3. Each registered indexer processes AST nodes
-4. Data persisted to BBolt databases in cache directory
+4. Data is persisted in one namespaced SQLite store in the workspace cache
+
+The server intentionally supports one workspace folder per process. It rejects
+multi-root initialization explicitly; clients should launch one server process
+per workspace. `fsnotify` is the single source of index file events.
 
 ## Testing Patterns
 

@@ -9,9 +9,9 @@ import (
 	"github.com/shopware/shopware-lsp/internal/extension"
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	twigquery "github.com/shopware/shopware-lsp/internal/parser/twig/query"
+	twigsyntax "github.com/shopware/shopware-lsp/internal/parser/twig/syntax"
 	"github.com/shopware/shopware-lsp/internal/theme"
-	treesitterhelper "github.com/shopware/shopware-lsp/internal/tree_sitter_helper"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 // IconProvider is an interface for getting icon information
@@ -21,54 +21,41 @@ type IconProvider interface {
 	GetIcon(pack, icon string) string
 }
 
-type ThemeDiagnosticsProvider struct {
+type ThemeAnalyzer struct {
 	iconProvider IconProvider
 }
 
-func NewThemeDiagnosticsProvider(projectRoot string, lspServer *lsp.Server) *ThemeDiagnosticsProvider {
-	extensionIndexer, _ := lspServer.GetIndexer("extension.indexer")
-	iconProvider := theme.NewIconProvider(projectRoot, extensionIndexer.(*extension.ExtensionIndexer))
-	
-	return &ThemeDiagnosticsProvider{
-		iconProvider: iconProvider,
+func NewThemeAnalyzer(projectRoot string, extensionIndexer *extension.ExtensionIndexer) *ThemeAnalyzer {
+	return &ThemeAnalyzer{
+		iconProvider: theme.NewIconProvider(projectRoot, extensionIndexer),
 	}
 }
 
-func (t *ThemeDiagnosticsProvider) GetDiagnostics(ctx context.Context, uri string, rootNode *tree_sitter.Node, content []byte) ([]protocol.Diagnostic, error) {
-	switch strings.ToLower(filepath.Ext(uri)) {
+func (t *ThemeAnalyzer) Analyze(ctx context.Context, document *lsp.TextDocument) ([]lsp.Problem, error) {
+	switch strings.ToLower(filepath.Ext(document.URI)) {
 	case ".twig":
-		return t.twigDiagnostics(ctx, uri, rootNode, content)
+		return t.twigDiagnostics(ctx, document)
 	default:
-		return []protocol.Diagnostic{}, nil
+		return []lsp.Problem{}, nil
 	}
 }
 
-func (t *ThemeDiagnosticsProvider) twigDiagnostics(ctx context.Context, uri string, rootNode *tree_sitter.Node, content []byte) ([]protocol.Diagnostic, error) {
-	var diagnostics []protocol.Diagnostic
+func (t *ThemeAnalyzer) twigDiagnostics(ctx context.Context, document *lsp.TextDocument) ([]lsp.Problem, error) {
+	var diagnostics []lsp.Problem
 
 	// Find all sw_icon tags
-	swIconTags := treesitterhelper.FindAll(rootNode, treesitterhelper.And(
-		treesitterhelper.NodeKind("tag"),
-		treesitterhelper.HasChild(
-			treesitterhelper.And(
-				treesitterhelper.NodeKind("keyword"),
-				treesitterhelper.NodeText("sw_icon"),
-			),
-		),
-	), content)
+	swIconTags := twigquery.Nodes(document.SyntaxTree.Root, twigsyntax.ShopwareIcon)
 
 	for _, tagNode := range swIconTags {
+		if ctx.Err() != nil {
+			return nil, nil
+		}
 		// Find the first string that's not in a pair (the icon name)
-		var iconNameNode *tree_sitter.Node
-		for i := 0; i < int(tagNode.ChildCount()); i++ {
-			child := tagNode.Child(uint(i))
-			if child != nil && child.Kind() == "string" {
-				// Check if this string is part of a pair
-				parent := child.Parent()
-				if parent == nil || parent.Kind() != "pair" {
-					iconNameNode = child
-					break
-				}
+		var iconNameNode *twigsyntax.Node
+		for _, literal := range twigquery.Nodes(tagNode, twigsyntax.TwigLiteralString) {
+			if twigquery.ClosestNodeOfKind(literal, twigsyntax.TwigLiteralHashPair) == nil {
+				iconNameNode = literal
+				break
 			}
 		}
 
@@ -76,10 +63,10 @@ func (t *ThemeDiagnosticsProvider) twigDiagnostics(ctx context.Context, uri stri
 			continue
 		}
 
-		iconName := strings.Trim(treesitterhelper.GetNodeText(iconNameNode, content), "'\"")
-		
+		iconName := twigquery.StringValue(iconNameNode)
+
 		// Extract configuration from the tag
-		cfg := treesitterhelper.ExtractSwIconObjectToMap(tagNode, content)
+		cfg := twigquery.HashStringMap(tagNode)
 		pack, ok := cfg["pack"]
 		if !ok {
 			pack = "default"
@@ -88,22 +75,13 @@ func (t *ThemeDiagnosticsProvider) twigDiagnostics(ctx context.Context, uri stri
 		// Check if the icon exists
 		iconPath := t.iconProvider.GetIcon(pack, iconName)
 		if iconPath == "" {
-			diagnostics = append(diagnostics, protocol.Diagnostic{
-				Range: protocol.Range{
-					Start: protocol.Position{
-						Line:      int(iconNameNode.StartPosition().Row),
-						Character: int(iconNameNode.StartPosition().Column),
-					},
-					End: protocol.Position{
-						Line:      int(iconNameNode.EndPosition().Row),
-						Character: int(iconNameNode.EndPosition().Column),
-					},
-				},
+			diagnostics = append(diagnostics, lsp.Problem{
+				Range:    iconNameNode.RangeTrimmedTrivia(),
 				Message:  fmt.Sprintf("Icon '%s' not found in pack '%s'", iconName, pack),
 				Source:   "shopware",
 				Severity: protocol.DiagnosticSeverityError,
-				Code:     "theme.icon.missing",
-				Data: map[string]any{
+				ID:       "theme.icon.missing",
+				Payload: map[string]any{
 					"iconName": iconName,
 					"pack":     pack,
 				},

@@ -48,6 +48,36 @@ func TestIndexer(t *testing.T) {
 	assert.Empty(t, values)
 }
 
+func TestDataIndexerHasAnyKeyExceptFold(t *testing.T) {
+	tmpDir := t.TempDir()
+	idx, err := NewDataIndexer[TestItem](path.Join(tmpDir, "existence.db"))
+	assert.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, idx.Close()) })
+
+	present, err := idx.HasAnyKeyExceptFold("current.twig")
+	assert.NoError(t, err)
+	assert.False(t, present)
+	assert.NoError(t, idx.SaveItem(
+		"current.twig", "current.twig", TestItem{Name: "current"},
+	))
+	present, err = idx.HasAnyKeyExceptFold("CURRENT.TWIG")
+	assert.NoError(t, err)
+	assert.False(t, present)
+	assert.NoError(t, idx.SaveItem(
+		"other.twig", "other.twig", TestItem{Name: "other"},
+	))
+	present, err = idx.HasAnyKeyExceptFold("Current.twig")
+	assert.NoError(t, err)
+	assert.True(t, present)
+
+	// Exercise the cached-key path as well as the direct existence query.
+	_, err = idx.GetAllKeys()
+	assert.NoError(t, err)
+	present, err = idx.HasAnyKeyExceptFold("current.twig", "OTHER.TWIG")
+	assert.NoError(t, err)
+	assert.False(t, present)
+}
+
 func TestBatchWrite(t *testing.T) {
 	// Create a temporary directory for the test
 	tmpDir := t.TempDir()

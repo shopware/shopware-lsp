@@ -8,12 +8,30 @@ import (
 	"strings"
 )
 
-// IndexVersion is the current version of the index schema.
-// Bump this number whenever you make breaking changes to any indexer's schema.
-// This will cause all existing caches to be invalidated and rebuilt.
-const IndexVersion = 1
+// IndexVersion is the current version of persisted index contents. Bump it
+// whenever a schema change or extraction-semantics change requires existing
+// workspace caches to be rebuilt.
+const IndexVersion = 157
 
 const versionFileName = "index_version"
+
+// CacheVersionCurrent performs the read-only half of cache migration. It lets
+// lightweight CLI commands reject stale catalogs without constructing a
+// workspace (which will perform the actual migration when needed).
+func CacheVersionCurrent(cacheDir string) (bool, error) {
+	data, err := os.ReadFile(filepath.Join(cacheDir, versionFileName))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	storedVersion, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return false, nil
+	}
+	return storedVersion == IndexVersion, nil
+}
 
 // CheckAndMigrateCache checks the cache version and clears it if outdated.
 // Returns true if the cache was cleared and needs to be rebuilt.

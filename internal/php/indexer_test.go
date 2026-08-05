@@ -1,176 +1,437 @@
 package php
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/shopware/shopware-lsp/internal/indexer"
+	phpparser "github.com/shopware/shopware-lsp/internal/parser/php"
+	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
+	"github.com/shopware/shopware-lsp/internal/php/semantic"
+	"github.com/stretchr/testify/require"
 )
 
-func TestGetClassesOfFile(t *testing.T) {
-	index, err := NewPHPIndex(t.TempDir())
-	assert.NoError(t, err)
+func TestPHPIndexPublishesHierarchyAndMembers(t *testing.T) {
+	idx, err := NewPHPIndex(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, idx.Close()) })
 
-	classes := index.GetClassesOfFile("testdata/01.php")
+	source := []byte(`<?php
+namespace App;
+interface Marker {}
+interface ChildMarker extends Marker {}
+abstract class Base implements ChildMarker {
+    protected string $name;
+}
+final class Concrete extends Base {
+    public function name(): string { return $this->name; }
+}`)
+	require.NoError(t, idx.Index(indexer.NewParsedFile("/project/types.php", source)))
 
-	assert.Len(t, classes, 1)
-
-	expectedClassName := "Shopware\\Core\\Content\\Category\\Service\\NavigationLoader"
-
-	assert.Contains(t, classes, expectedClassName)
-
-	assert.Equal(t, expectedClassName, classes[expectedClassName].Name)
-	assert.Equal(t, "testdata/01.php", classes[expectedClassName].Path)
-	assert.Equal(t, 20, classes[expectedClassName].Line)
-
-	// Check that the constructor method was found
-	assert.Contains(t, classes[expectedClassName].Methods, "__construct")
-	assert.Equal(t, "__construct", classes[expectedClassName].Methods["__construct"].Name)
-	assert.Equal(t, 27, classes[expectedClassName].Methods["__construct"].Line)
-
-	// Check that the property was found
-	assert.Contains(t, classes[expectedClassName].Properties, "treeItem")
-	assert.Equal(t, "treeItem", classes[expectedClassName].Properties["treeItem"].Name)
-	assert.Equal(t, 22, classes[expectedClassName].Properties["treeItem"].Line)
-	assert.Equal(t, Private, classes[expectedClassName].Properties["treeItem"].Visibility)
-	assert.Equal(t, "Shopware\\Core\\Content\\Category\\Tree\\TreeItem", classes[expectedClassName].Properties["treeItem"].Type.Name())
+	class, found := idx.FindClass("App\\Concrete")
+	require.True(t, found)
+	require.Equal(t, semantic.ClassSymbol, class.Kind)
+	require.True(t, idx.SemanticSnapshot().IsSubtypeOf("App\\Concrete", "App\\Marker"))
+	require.Contains(t, idx.ClassNames(), "App\\Concrete")
+	require.NotEmpty(t, idx.ClassSymbolsIn("/project/types.php"))
 }
 
-func TestGetClassesWithMethodsAndProperties(t *testing.T) {
-	// Create a new context for the test
-	index, err := NewPHPIndex(t.TempDir())
-	assert.NoError(t, err)
+func TestPHPIndexPersistsPhpStormMetaCallContracts(t *testing.T) {
+	configDir := t.TempDir()
+	metaPath := filepath.Join(t.TempDir(), ".phpstorm.meta.php")
+	metaSource := []byte(`<?php
+namespace PHPSTORM_META;
+override(\identity(0), type(0));
+`)
 
-	// Parse the test file with multiple methods
-	classes := index.GetClassesOfFile("testdata/02.php")
+	idx, err := NewPHPIndex(configDir)
+	require.NoError(t, err)
+	require.NoError(t, idx.Index(indexer.NewParsedFile(metaPath, metaSource)))
 
-	// Verify we found the class
-	assert.Len(t, classes, 1)
+	assertContract := func(index *PHPIndex) {
+		t.Helper()
+		parsed := phpparser.Parse(`<?php
+class Product {}
+$product = identity(new Product());
+`)
+		document := index.AnalyzeDocument("/consumer.php", 1, parsed.Tree.Root)
+		for _, call := range phpquery.Calls(parsed.Tree.Root) {
+			if phpquery.CallMethodName(call) != "identity" {
+				continue
+			}
+			require.Equal(t, "Product", document.TypeOf(call).Type.String())
+			return
+		}
+		t.Fatal("identity call not found")
+	}
+	assertContract(idx)
+	require.NoError(t, idx.Close())
 
-	expectedClassName := "Shopware\\Core\\Content\\Product\\Service\\ProductLoader"
-	assert.Contains(t, classes, expectedClassName)
-
-	// Verify the class properties
-	assert.Equal(t, expectedClassName, classes[expectedClassName].Name)
-	assert.Equal(t, "testdata/02.php", classes[expectedClassName].Path)
-	assert.Equal(t, 9, classes[expectedClassName].Line)
-
-	// Verify the methods were extracted correctly
-	methods := classes[expectedClassName].Methods
-	assert.Len(t, methods, 4)
-
-	// Check constructor
-	assert.Contains(t, methods, "__construct")
-	assert.Equal(t, "__construct", methods["__construct"].Name)
-	assert.Equal(t, 16, methods["__construct"].Line)
-	assert.Equal(t, Public, methods["__construct"].Visibility)
-	assert.Equal(t, "void", methods["__construct"].ReturnType.Name()) // Constructor has no return type
-
-	// Check public method
-	assert.Contains(t, methods, "load")
-	assert.Equal(t, "load", methods["load"].Name)
-	assert.Equal(t, 22, methods["load"].Line)
-	assert.Equal(t, Public, methods["load"].Visibility)
-	assert.Equal(t, "array", methods["load"].ReturnType.Name())
-
-	// Check protected method
-	assert.Contains(t, methods, "validateId")
-	assert.Equal(t, "validateId", methods["validateId"].Name)
-	assert.Equal(t, 27, methods["validateId"].Line)
-	assert.Equal(t, Protected, methods["validateId"].Visibility)
-	assert.Equal(t, "bool", methods["validateId"].ReturnType.Name())
-
-	// Check private method
-	assert.Contains(t, methods, "getRepository")
-	assert.Equal(t, "getRepository", methods["getRepository"].Name)
-	assert.Equal(t, 32, methods["getRepository"].Line)
-	assert.Equal(t, Private, methods["getRepository"].Visibility)
-	assert.Equal(t, "string", methods["getRepository"].ReturnType.Name())
-
-	// Verify the properties were extracted correctly
-	properties := classes[expectedClassName].Properties
-	assert.Len(t, properties, 2)
-
-	// Check readonly property
-	assert.Contains(t, properties, "request")
-	assert.Equal(t, "request", properties["request"].Name)
-	assert.Equal(t, 11, properties["request"].Line)
-	assert.Equal(t, Private, properties["request"].Visibility)
-	assert.Equal(t, "Symfony\\Component\\HttpFoundation\\Request", properties["request"].Type.Name())
-
-	// Check property from constructor
-	assert.Contains(t, properties, "productRepository")
-	assert.Equal(t, "productRepository", properties["productRepository"].Name)
-	assert.Equal(t, 17, properties["productRepository"].Line)
-	assert.Equal(t, Private, properties["productRepository"].Visibility)
-	assert.Equal(t, "string", properties["productRepository"].Type.Name())
+	reopened, err := NewPHPIndex(configDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+	assertContract(reopened)
 }
 
-func TestNamespaceAliases(t *testing.T) {
-	// Create a new context for the test
-	index, err := NewPHPIndex(t.TempDir())
-	assert.NoError(t, err)
+func TestPHPIndexReopensComposerAutoloadDevRoots(t *testing.T) {
+	projectRoot := t.TempDir()
+	testsRoot := filepath.Join(projectRoot, "tests", "unit")
+	require.NoError(t, os.MkdirAll(testsRoot, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "composer.json"),
+		[]byte(`{"autoload-dev":{"psr-4":{"App\\Tests\\":"tests/unit/"}}}`),
+		0o600,
+	))
 
-	// Parse the test file with namespace aliases
-	classes := index.GetClassesOfFile("testdata/03.php")
+	idx, err := NewPHPIndex(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, idx.Close()) })
+	require.NoError(t, idx.ConfigureProject(projectRoot))
 
-	// Verify we found the class
-	assert.Len(t, classes, 1)
+	require.True(t, idx.ShouldEnterDirectory(filepath.Join(projectRoot, "tests")))
+	require.True(t, idx.ShouldEnterDirectory(testsRoot))
+	require.False(t, idx.ShouldEnterDirectory(filepath.Join(projectRoot, "tests", "fixtures")))
+	require.True(t, idx.ShouldIndexPath(filepath.Join(testsRoot, "ExampleTest.php")))
+	require.False(t, idx.ShouldIndexPath(filepath.Join(testsRoot, "fixture.json")))
+	require.False(t, idx.ShouldIndexPath(filepath.Join(projectRoot, "tests", "fixtures", "Example.php")))
+}
 
-	expectedClassName := "Shopware\\Core\\Content\\Product\\Test\\ProductTest"
-	assert.Contains(t, classes, expectedClassName)
+func TestPHPIndexSelectsRuntimeStubsFromComposerAndOverrides(t *testing.T) {
+	t.Parallel()
+	projectRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "composer.json"),
+		[]byte(`{
+  "require": {"php": "^8.3", "ext-curl": "*"},
+  "config": {"platform": {"ext-imagick": false}}
+}`),
+		0o600,
+	))
+	idx, err := NewPHPIndex(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, idx.Close()) })
+	require.NoError(t, idx.ConfigureProjectWithExtensions(
+		projectRoot,
+		[]string{"redis"},
+		nil,
+	))
 
-	// Verify the class properties
-	assert.Equal(t, expectedClassName, classes[expectedClassName].Name)
-	assert.Equal(t, "testdata/03.php", classes[expectedClassName].Path)
-	assert.Equal(t, 11, classes[expectedClassName].Line)
+	snapshot := idx.SemanticSnapshot()
+	require.Len(t, snapshot.Functions("strlen"), 1)
+	require.Len(t, snapshot.Functions("curl_init"), 1)
+	require.Len(t, snapshot.Classes("Redis"), 1)
+	require.Empty(t, snapshot.Classes("Imagick"))
+	require.Empty(t, snapshot.Classes("SoapClient"))
+}
 
-	// Verify the properties with aliased types are correctly resolved
-	properties := classes[expectedClassName].Properties
-	assert.Len(t, properties, 4)
+func TestCompareFoldMatchesCaseInsensitiveNameOrder(t *testing.T) {
+	t.Parallel()
+	require.Negative(t, compareFold("App\\Alpha", "app\\Beta"))
+	require.Zero(t, compareFold("APP\\Service", "app\\service"))
+	require.Positive(t, compareFold("App\\Zulu", "app\\Beta"))
+	require.Negative(t, compareFold("Äpfel", "Öl"))
+}
 
-	// Check property with aliased type (SymfonyRequest)
-	assert.Contains(t, properties, "request")
-	assert.Equal(t, "request", properties["request"].Name)
-	assert.Equal(t, 13, properties["request"].Line)
-	assert.Equal(t, Private, properties["request"].Visibility)
-	assert.Equal(t, "Symfony\\Component\\HttpFoundation\\Request", properties["request"].Type.Name())
+func TestPHPIndexRebuildsSemanticDocumentsOnDemand(t *testing.T) {
+	configDir := t.TempDir()
+	path := filepath.Join(t.TempDir(), "Product.php")
+	source := []byte(`<?php
+namespace App;
+class Product {
+    #[\Deprecated]
+    public string $legacy;
 
-	// Check property with aliased type (Loader)
-	assert.Contains(t, properties, "productLoader")
-	assert.Equal(t, "productLoader", properties["productLoader"].Name)
-	assert.Equal(t, 14, properties["productLoader"].Line)
-	assert.Equal(t, Private, properties["productLoader"].Visibility)
-	assert.Equal(t, "Shopware\\Core\\Content\\Product\\Service\\ProductLoader", properties["productLoader"].Type.Name())
+    /** @deprecated */
+    public function name(): string { return 'product'; }
+}`)
+	require.NoError(t, os.WriteFile(path, source, 0o600))
 
-	// Check property with non-aliased type (Connection)
-	assert.Contains(t, properties, "connection")
-	assert.Equal(t, "connection", properties["connection"].Name)
-	assert.Equal(t, 15, properties["connection"].Line)
-	assert.Equal(t, Private, properties["connection"].Visibility)
-	assert.Equal(t, "Doctrine\\DBAL\\Connection", properties["connection"].Type.Name())
+	idx, err := NewPHPIndex(configDir)
+	require.NoError(t, err)
+	require.NoError(t, idx.Index(indexer.NewParsedFile(path, source)))
+	document, ok := idx.SemanticDocument(path)
+	require.True(t, ok)
+	require.NotEmpty(t, document.Symbols)
+	require.NotEmpty(t, document.Scopes)
+	require.Positive(t, document.TypeFactCount())
+	require.True(
+		t,
+		idx.FindMethods("App\\Product", "name")[0].
+			Flags.Has(semantic.DeprecatedFlag),
+	)
+	require.True(
+		t,
+		idx.FindProperties("App\\Product", "legacy")[0].
+			Flags.Has(semantic.DeprecatedFlag),
+	)
+	require.NoError(t, idx.Close())
 
-	// Verify the methods with aliased return types are correctly resolved
-	methods := classes[expectedClassName].Methods
-	assert.Len(t, methods, 4)
+	reopened, err := NewPHPIndex(configDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+	document, ok = reopened.SemanticDocument(path)
+	require.True(t, ok)
+	require.NotEmpty(t, document.Symbols)
+	require.NotEmpty(t, document.Scopes)
+	require.Positive(t, document.TypeFactCount())
+	require.Len(t, reopened.SemanticSnapshot().Classes("App\\Product"), 1)
+	require.True(
+		t,
+		reopened.FindMethods("App\\Product", "name")[0].
+			Flags.Has(semantic.DeprecatedFlag),
+	)
+	require.True(
+		t,
+		reopened.FindProperties("App\\Product", "legacy")[0].
+			Flags.Has(semantic.DeprecatedFlag),
+	)
+}
 
-	// Check method with aliased return type (Loader)
-	assert.Contains(t, methods, "getLoader")
-	assert.Equal(t, "getLoader", methods["getLoader"].Name)
-	assert.Equal(t, 28, methods["getLoader"].Line)
-	assert.Equal(t, Public, methods["getLoader"].Visibility)
-	assert.Equal(t, "Shopware\\Core\\Content\\Product\\Service\\ProductLoader", methods["getLoader"].ReturnType.Name())
+func TestPHPIndexPersistsCompactWorkspaceGraph(t *testing.T) {
+	configDir := t.TempDir()
+	path := filepath.Join(t.TempDir(), "Product.php")
+	source := []byte(`<?php
+namespace App;
+class Product {
+    public function label(string $prefix): string {
+        $suffix = 'product';
+        return $prefix . $suffix;
+    }
+}`)
+	require.NoError(t, os.WriteFile(path, source, 0o600))
 
-	// Check method with aliased parameter type (SymfonyRequest)
-	assert.Contains(t, methods, "validateRequest")
-	assert.Equal(t, "validateRequest", methods["validateRequest"].Name)
-	assert.Equal(t, 33, methods["validateRequest"].Line)
-	assert.Equal(t, Protected, methods["validateRequest"].Visibility)
-	assert.Equal(t, "bool", methods["validateRequest"].ReturnType.Name())
+	idx, err := NewPHPIndex(configDir)
+	require.NoError(t, err)
+	require.NoError(t, idx.Index(indexer.NewParsedFile(path, source)))
 
-	// Check method with non-aliased return type (Connection)
-	assert.Contains(t, methods, "getConnection")
-	assert.Equal(t, "getConnection", methods["getConnection"].Name)
-	assert.Equal(t, 38, methods["getConnection"].Line)
-	assert.Equal(t, Private, methods["getConnection"].Visibility)
-	assert.Equal(t, "Doctrine\\DBAL\\Connection", methods["getConnection"].ReturnType.Name())
+	graphValues, err := idx.workspaceGraphs.GetValuesByPath(path)
+	require.NoError(t, err)
+	require.Len(t, graphValues, 1)
+	persistedGraph, err := graphValues[0].decode()
+	require.NoError(t, err)
+	graph := persistedGraph.Document()
+	require.Empty(t, graph.Scopes)
+	require.Zero(t, graph.TypeFactCount())
+	require.Empty(t, graph.TypeAliases)
+	require.Empty(t, graph.Issues)
+	for _, symbol := range graph.Symbols {
+		require.NotEqual(t, semantic.ParameterSymbol, symbol.Kind)
+		require.NotEqual(t, semantic.LocalSymbol, symbol.Kind)
+		require.NotEqual(t, semantic.ClosureSymbol, symbol.Kind)
+	}
+	for _, reference := range graph.References {
+		require.NotEqual(t, semantic.VariableName, reference.Kind)
+	}
+
+	require.NoError(t, idx.Close())
+	reopened, err := NewPHPIndex(configDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+	require.Len(t, reopened.FindMethods("App\\Product", "label"), 1)
+	restored, ok := reopened.SemanticDocument(path)
+	require.True(t, ok)
+	require.NotEmpty(t, restored.Scopes)
+	require.Positive(t, restored.TypeFactCount())
+	hasLocal := false
+	for _, symbol := range restored.Symbols {
+		if symbol.Kind == semantic.LocalSymbol && symbol.Name == "$suffix" {
+			hasLocal = true
+			break
+		}
+	}
+	require.True(t, hasLocal)
+}
+
+func TestPHPIndexPersistsConstantArrayMetadata(t *testing.T) {
+	configDir := t.TempDir()
+	path := "/project/HttpClientInterface.php"
+	source := []byte(`<?php
+namespace Symfony\Contracts\HttpClient;
+interface HttpClientInterface {
+    public const OPTIONS_DEFAULTS = [
+        'timeout' => null,
+        'headers' => [],
+    ];
+}`)
+	idx, err := NewPHPIndex(configDir)
+	require.NoError(t, err)
+	require.NoError(t, idx.Index(indexer.NewParsedFile(path, source)))
+	constants := idx.FindConstants(
+		"Symfony\\Contracts\\HttpClient\\HttpClientInterface",
+		"OPTIONS_DEFAULTS",
+	)
+	require.Len(t, constants, 1)
+	require.Len(t, constants[0].ConstantArray, 2)
+	require.Equal(t, "timeout", constants[0].ConstantArray[0].Key)
+	require.NoError(t, idx.Close())
+
+	reopened, err := NewPHPIndex(configDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+	constants = reopened.FindConstants(
+		"Symfony\\Contracts\\HttpClient\\HttpClientInterface",
+		"OPTIONS_DEFAULTS",
+	)
+	require.Len(t, constants, 1)
+	require.Len(t, constants[0].ConstantArray, 2)
+	require.Equal(t, "array", constants[0].ConstantArray[1].Type.String())
+	require.Equal(t, "[]", constants[0].ConstantArray[1].Value)
+}
+
+func TestPHPIndexPersistsLiteralMethodReturns(t *testing.T) {
+	configDir := t.TempDir()
+	source := []byte(`<?php
+namespace App;
+class Helper {
+    public function getName(): string {
+        return 'question';
+    }
+}`)
+	idx, err := NewPHPIndex(configDir)
+	require.NoError(t, err)
+	require.NoError(t, idx.Index(indexer.NewParsedFile(
+		"/project/Helper.php",
+		source,
+	)))
+	methods := idx.FindMethods("App\\Helper", "getName")
+	require.Len(t, methods, 1)
+	require.Len(t, methods[0].LiteralReturns, 1)
+	require.Equal(t, "question", methods[0].LiteralReturns[0].Value)
+	require.NoError(t, idx.Close())
+
+	reopened, err := NewPHPIndex(configDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+	methods = reopened.FindMethods("App\\Helper", "getName")
+	require.Len(t, methods, 1)
+	require.Len(t, methods[0].LiteralReturns, 1)
+	require.Equal(t, `"question"`, methods[0].LiteralReturns[0].Type.String())
+}
+
+func TestPHPIndexPersistsClassConstantMethodReturns(t *testing.T) {
+	configDir := t.TempDir()
+	source := []byte(`<?php
+namespace App;
+class Helper {
+    private const NAME = 'question';
+    public function getName(): string {
+        return self::NAME;
+    }
+}`)
+	idx, err := NewPHPIndex(configDir)
+	require.NoError(t, err)
+	require.NoError(t, idx.Index(indexer.NewParsedFile(
+		"/project/Helper.php",
+		source,
+	)))
+	methods := idx.FindMethods("App\\Helper", "getName")
+	require.Len(t, methods, 1)
+	require.Len(t, methods[0].ConstantReturns, 1)
+	require.Equal(t, "self", methods[0].ConstantReturns[0].Receiver)
+	require.Equal(t, "NAME", methods[0].ConstantReturns[0].Name)
+	require.NoError(t, idx.Close())
+
+	reopened, err := NewPHPIndex(configDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+	methods = reopened.FindMethods("App\\Helper", "getName")
+	require.Len(t, methods, 1)
+	require.Len(t, methods[0].ConstantReturns, 1)
+	require.Equal(t, "self", methods[0].ConstantReturns[0].Receiver)
+	require.Equal(t, "NAME", methods[0].ConstantReturns[0].Name)
+}
+
+func TestSemanticContextResolvesCallReceiver(t *testing.T) {
+	idx, err := NewPHPIndex(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, idx.Close()) })
+	source := `<?php
+namespace App;
+use Shopware\Core\System\SystemConfig\SystemConfigService;
+class Demo {
+    public function __construct(private SystemConfigService $config) {}
+    public function run(): void { $this->config->get('key'); }
+}`
+	root := phpparser.Parse(source).Tree.Root
+	calls := phpquery.Calls(root, "$this->config->get")
+	require.Len(t, calls, 1)
+	ctx := idx.AddDocumentContext(
+		context.Background(),
+		"/project/Demo.php",
+		1,
+		calls[0],
+		root,
+	)
+	require.True(t, idx.IsMethodCalledOnClass(
+		ctx,
+		calls[0],
+		[]byte(source),
+		"Shopware\\Core\\System\\SystemConfig\\SystemConfigService",
+	))
+}
+
+func TestPHPIndexResolvesReferencesWhenTargetArrivesLater(t *testing.T) {
+	idx, err := NewPHPIndex(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, idx.Close()) })
+
+	consumer := []byte(`<?php
+namespace App;
+class Consumer {
+    public function run(): void {
+        (new Service())->execute();
+    }
+}`)
+	require.NoError(t, idx.Index(indexer.NewParsedFile("/project/Consumer.php", consumer)))
+	service := []byte(`<?php
+namespace App;
+class Service {
+    public function execute(): void {}
+}`)
+	require.NoError(t, idx.Index(indexer.NewParsedFile("/project/Service.php", service)))
+
+	class, found := idx.FindClass("App\\Service")
+	require.True(t, found)
+	require.NotEmpty(t, idx.SemanticSnapshot().ReferencesTo(class.ID))
+	methods := idx.SemanticSnapshot().Members(class.ID, "execute")
+	require.Len(t, methods, 1)
+	require.NotEmpty(t, idx.SemanticSnapshot().ReferencesTo(methods[0].ID))
+}
+
+func TestPHPIndexPublishesScannerBatchAsOneGeneration(t *testing.T) {
+	idx, err := NewPHPIndex(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, idx.Close()) })
+
+	idx.BeginIndexingBatch([]string{
+		"/project/Consumer.php",
+		"/project/Service.php",
+	})
+	require.NoError(t, idx.Index(indexer.NewParsedFile(
+		"/project/Consumer.php",
+		[]byte(`<?php
+namespace App;
+class Consumer {
+    public function run(Service $service): void { $service->execute(); }
+}`),
+	)))
+	require.Empty(t, idx.SemanticSnapshot().Classes("App\\Consumer"))
+	require.NoError(t, idx.Index(indexer.NewParsedFile(
+		"/project/Service.php",
+		[]byte(`<?php
+namespace App;
+class Service {
+    public function execute(): void {}
+}`),
+	)))
+	require.NoError(t, idx.EndIndexingBatch())
+
+	snapshot := idx.SemanticSnapshot()
+	require.Equal(t, uint64(1), snapshot.Revision)
+	require.Len(t, snapshot.Classes("App\\Consumer"), 1)
+	services := snapshot.Classes("App\\Service")
+	require.Len(t, services, 1)
+	require.NotEmpty(t, snapshot.ReferencesTo(services[0].ID))
 }

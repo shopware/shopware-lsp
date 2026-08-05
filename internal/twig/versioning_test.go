@@ -12,14 +12,14 @@ func TestCalculateBlockHash(t *testing.T) {
 {% endblock %}`
 
 	hash := calculateBlockHash(content)
-	
+
 	assert.NotEmpty(t, hash)
 	assert.Equal(t, hash, calculateBlockHash(content))
-	
+
 	otherContent := `{% block test %}
     <p>Different content</p>
 {% endblock %}`
-	
+
 	otherHash := calculateBlockHash(otherContent)
 	assert.NotEqual(t, hash, otherHash)
 }
@@ -78,7 +78,7 @@ func TestTwigBlockHashStructure(t *testing.T) {
 		Hash:         "abc123def456",
 		Text:         "{% block test_block %}content{% endblock %}",
 	}
-	
+
 	assert.Equal(t, "test_block", blockHash.Name)
 	assert.Equal(t, "storefront/page/checkout/cart/index.html.twig", blockHash.RelativePath)
 	assert.Equal(t, "abc123def456", blockHash.Hash)

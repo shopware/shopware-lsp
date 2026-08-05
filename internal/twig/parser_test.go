@@ -3,49 +3,47 @@ package twig
 import (
 	"testing"
 
-	tree_sitter_twig "github.com/shopware/shopware-lsp/internal/tree_sitter_grammars/twig/bindings/go"
 	"github.com/stretchr/testify/assert"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 func TestTwigParse(t *testing.T) {
-	parser := tree_sitter.NewParser()
-
-	assert.NoError(t, parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_twig.Language())))
-
 	content := []byte(`{% block foo %}{% endblock %}`)
 
-	tree := parser.Parse(content, nil)
-	defer tree.Close()
-
-	file, err := ParseTwig("test", tree.RootNode(), content)
+	file, err := ParseTwig("test", content)
 	assert.NoError(t, err)
 
 	assert.Equal(t, "test", file.Path)
-	
+
 	block, exists := file.Blocks["foo"]
 	assert.True(t, exists)
 	assert.Equal(t, "foo", block.Name)
+	assert.Equal(t, "foo", string(content[block.NameRange.Start:block.NameRange.End]))
 	assert.Equal(t, 1, block.Line)
 	assert.NotEmpty(t, block.Hash)
 	assert.Equal(t, "{% block foo %}{% endblock %}", block.Text)
 }
 
 func TestTwigParseSwExtends(t *testing.T) {
-	parser := tree_sitter.NewParser()
-
-	assert.NoError(t, parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_twig.Language())))
-
 	content := []byte(`{% sw_extends '@Storefront/storefront/base.html.twig' %}`)
 
-	tree := parser.Parse(content, nil)
-	defer tree.Close()
-
-	file, err := ParseTwig("test", tree.RootNode(), content)
+	file, err := ParseTwig("test", content)
 	assert.NoError(t, err)
 
 	assert.Equal(t, "test", file.Path)
 	assert.Equal(t, "@Storefront/storefront/base.html.twig", file.ExtendsFile)
+}
+
+func TestTwigParseScopedSwExtends(t *testing.T) {
+	content := []byte(
+		`{% sw_extends { template: '@Storefront/storefront/base.html.twig', scopes: ['default'] } %}`,
+	)
+	file, err := ParseTwig("test", content)
+	assert.NoError(t, err)
+	assert.Equal(
+		t,
+		"@Storefront/storefront/base.html.twig",
+		file.ExtendsFile,
+	)
 }
 
 func TestNestedBlock(t *testing.T) {
@@ -58,30 +56,23 @@ func TestNestedBlock(t *testing.T) {
 {% endblock %}
 `
 
-	parser := tree_sitter.NewParser()
-
-	assert.NoError(t, parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_twig.Language())))
-
-	tree := parser.Parse([]byte(tpl), nil)
-	defer tree.Close()
-
-	file, err := ParseTwig("test", tree.RootNode(), []byte(tpl))
+	file, err := ParseTwig("test", []byte(tpl))
 	assert.NoError(t, err)
 
 	assert.Equal(t, "test", file.Path)
 	assert.Len(t, file.Blocks, 3)
-	
+
 	blockA, existsA := file.Blocks["a"]
 	assert.True(t, existsA)
 	assert.Equal(t, "a", blockA.Name)
 	assert.Equal(t, 2, blockA.Line)
 	assert.NotEmpty(t, blockA.Hash)
-	
+
 	blockB, existsB := file.Blocks["b"]
 	assert.True(t, existsB)
 	assert.Equal(t, "b", blockB.Name)
 	assert.Equal(t, 3, blockB.Line)
-	
+
 	blockC, existsC := file.Blocks["c"]
 	assert.True(t, existsC)
 	assert.Equal(t, "c", blockC.Name)
@@ -105,14 +96,7 @@ func TestBlocksWithHTMLContent(t *testing.T) {
     </body>
 {% endblock %}`
 
-	parser := tree_sitter.NewParser()
-	assert.NoError(t, parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_twig.Language())))
-	defer parser.Close()
-
-	tree := parser.Parse([]byte(tpl), nil)
-	defer tree.Close()
-
-	file, err := ParseTwig("test", tree.RootNode(), []byte(tpl))
+	file, err := ParseTwig("test", []byte(tpl))
 	assert.NoError(t, err)
 
 	blockBody, existsBody := file.Blocks["base_body"]
@@ -145,13 +129,7 @@ func TestBlockWithVersionComment(t *testing.T) {
 {% endblock %}
 `
 
-	parser := tree_sitter.NewParser()
-	assert.NoError(t, parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_twig.Language())))
-
-	tree := parser.Parse([]byte(tpl), nil)
-	defer tree.Close()
-
-	file, err := ParseTwig("test", tree.RootNode(), []byte(tpl))
+	file, err := ParseTwig("test", []byte(tpl))
 	assert.NoError(t, err)
 
 	block, exists := file.Blocks["foo"]
@@ -160,4 +138,16 @@ func TestBlockWithVersionComment(t *testing.T) {
 	assert.Equal(t, "abc123def456", block.VersionComment.Hash)
 	assert.Equal(t, "6.4.15.0", block.VersionComment.Version)
 	assert.Equal(t, 3, block.VersionComment.Line)
+}
+
+func TestBlockDeprecationPreservesVersionAndMigrationHint(t *testing.T) {
+	tpl := `{# @deprecated tag:v6.7.0 - use page_new #}
+{% block page_old %}content{% endblock %}`
+
+	file, err := ParseTwig("test", []byte(tpl))
+	assert.NoError(t, err)
+
+	block, exists := file.Blocks["page_old"]
+	assert.True(t, exists)
+	assert.Equal(t, "tag:v6.7.0 - use page_new", block.Deprecation)
 }

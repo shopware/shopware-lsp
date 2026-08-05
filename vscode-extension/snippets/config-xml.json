@@ -1,0 +1,67 @@
+{
+  "Shopware system config": {
+    "prefix": "sw-config-base",
+    "description": "Create a Shopware system configuration document",
+    "body": [
+      "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+      "<config xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"",
+      "        xsi:noNamespaceSchemaLocation=\"https://raw.githubusercontent.com/shopware/shopware/trunk/src/Core/System/SystemConfig/Schema/config.xsd\">",
+      "    <card>",
+      "        <title>${1:Configuration}</title>",
+      "        $0",
+      "    </card>",
+      "</config>"
+    ]
+  },
+  "Shopware system config text field": {
+    "prefix": "sw-config-element-text",
+    "description": "Add a text input to Shopware system configuration",
+    "body": [
+      "<input-field type=\"${1|text,textarea,password,url|}\">",
+      "    <name>${2:fieldName}</name>",
+      "    <label>${3:Field label}</label>",
+      "</input-field>$0"
+    ]
+  },
+  "Shopware system config numeric field": {
+    "prefix": "sw-config-element-number",
+    "description": "Add a numeric input to Shopware system configuration",
+    "body": [
+      "<input-field type=\"${1|int,float|}\">",
+      "    <name>${2:fieldName}</name>",
+      "    <label>${3:Field label}</label>",
+      "</input-field>$0"
+    ]
+  },
+  "Shopware system config boolean field": {
+    "prefix": "sw-config-element-bool",
+    "description": "Add a boolean input to Shopware system configuration",
+    "body": [
+      "<input-field type=\"bool\">",
+      "    <name>${1:fieldName}</name>",
+      "    <label>${2:Field label}</label>",
+      "</input-field>$0"
+    ]
+  },
+  "Shopware system config date field": {
+    "prefix": "sw-config-element-date",
+    "description": "Add a date or time input to Shopware system configuration",
+    "body": [
+      "<input-field type=\"${1|date,datetime,time|}\">",
+      "    <name>${2:fieldName}</name>",
+      "    <label>${3:Field label}</label>",
+      "</input-field>$0"
+    ]
+  },
+  "Shopware system config entity select": {
+    "prefix": "sw-config-element-entity",
+    "description": "Add an entity select to Shopware system configuration",
+    "body": [
+      "<input-field type=\"${1|single-select,multi-select|}\">",
+      "    <name>${2:fieldName}</name>",
+      "    <label>${3:Field label}</label>",
+      "    <entity>${4:product}</entity>",
+      "</input-field>$0"
+    ]
+  }
+}

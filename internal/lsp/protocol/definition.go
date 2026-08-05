@@ -1,7 +1,5 @@
 package protocol
 
-import tree_sitter "github.com/tree-sitter/go-tree-sitter"
-
 // DefinitionParams represents the parameters for a definition request
 type DefinitionParams struct {
 	TextDocument struct {
@@ -11,10 +9,6 @@ type DefinitionParams struct {
 		Line      int `json:"line"`
 		Character int `json:"character"`
 	} `json:"position"`
-	// Custom fields for internal use (not part of LSP spec)
-	// These fields are used to pass document content to definition providers
-	DocumentContent []byte            `json:"-"`
-	Node            *tree_sitter.Node `json:"-"`
 }
 
 // Location represents a location in a document

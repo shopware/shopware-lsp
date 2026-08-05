@@ -11,12 +11,8 @@ type ExtensionCommandProvider struct {
 	extensionIndex *ExtensionIndexer
 }
 
-func NewExtensionCommandProvider(lsp *lsp.Server) *ExtensionCommandProvider {
-	extensionIndex, _ := lsp.GetIndexer("extension.indexer")
-
-	return &ExtensionCommandProvider{
-		extensionIndex: extensionIndex.(*ExtensionIndexer),
-	}
+func NewExtensionCommandProvider(extensionIndex *ExtensionIndexer) *ExtensionCommandProvider {
+	return &ExtensionCommandProvider{extensionIndex: extensionIndex}
 }
 func (e *ExtensionCommandProvider) GetCommands(ctx context.Context) map[string]lsp.CommandFunc {
 	return map[string]lsp.CommandFunc{

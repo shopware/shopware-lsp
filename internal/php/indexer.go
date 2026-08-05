@@ -1,406 +1,678 @@
 package php
 
 import (
-	"context"
+	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/shopware/shopware-lsp/internal/indexer"
-	treesitterhelper "github.com/shopware/shopware-lsp/internal/tree_sitter_helper"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
-	tree_sitter_php "github.com/tree-sitter/tree-sitter-php/bindings/go"
-	"github.com/vmihailenco/msgpack/v5"
+	"github.com/shopware/shopware-lsp/internal/parser/cst"
+	"github.com/shopware/shopware-lsp/internal/php/binder"
+	"github.com/shopware/shopware-lsp/internal/php/inference"
+	"github.com/shopware/shopware-lsp/internal/php/project"
+	"github.com/shopware/shopware-lsp/internal/php/semantic"
+	"github.com/shopware/shopware-lsp/internal/php/stubs"
 )
 
-// findChildByKind finds the first child node of the given kind
-func findChildByKind(node *tree_sitter.Node, kind string) *tree_sitter.Node {
-	if node == nil {
-		return nil
-	}
-
-	// Check regular children
-	childCount := node.ChildCount()
-	for i := uint(0); i < uint(childCount); i++ {
-		child := node.Child(i)
-		if child != nil && child.Kind() == kind {
-			return child
-		}
-	}
-
-	// If not found in direct children, try to find in named children
-	for i := uint(0); i < node.NamedChildCount(); i++ {
-		child := node.NamedChild(i)
-		if child != nil && child.Kind() == kind {
-			return child
-		}
-	}
-
-	return nil
-}
-
-type PHPClass struct {
-	Name        string
-	Path        string
-	Line        int
-	Methods     map[string]PHPMethod
-	Properties  map[string]PHPProperty
-	Parent      string   // The class this class extends from
-	Interfaces  []string // Interfaces this class implements
-	IsInterface bool     // Whether this is an interface or a class
-}
-
-type PHPMethod struct {
-	Name       string
-	Line       int
-	Visibility Visibility
-	ReturnType PHPType
-	// Serialization helpers
-	ReturnTypeName string
-}
-
-// marshalMethod creates a serializable version of PHPMethod
-type marshalMethod struct {
-	Name           string     `msgpack:"name"`
-	Line           int        `msgpack:"line"`
-	Visibility     Visibility `msgpack:"visibility"`
-	ReturnTypeName string     `msgpack:"return_type_name,omitempty"`
-}
-
-// MarshalMsgpack implements msgpack.Marshaler interface
-func (m PHPMethod) MarshalMsgpack() ([]byte, error) {
-	mm := marshalMethod{
-		Name:       m.Name,
-		Line:       m.Line,
-		Visibility: m.Visibility,
-	}
-
-	if m.ReturnType != nil {
-		mm.ReturnTypeName = m.ReturnType.Name()
-	}
-
-	return msgpack.Marshal(mm)
-}
-
-// UnmarshalMsgpack implements msgpack.Unmarshaler interface
-func (m *PHPMethod) UnmarshalMsgpack(data []byte) error {
-	var mm marshalMethod
-	if err := msgpack.Unmarshal(data, &mm); err != nil {
-		return err
-	}
-
-	m.Name = mm.Name
-	m.Line = mm.Line
-	m.Visibility = mm.Visibility
-
-	// Reconstruct the return type from the type name
-	if mm.ReturnTypeName != "" {
-		m.ReturnType = NewPHPType(mm.ReturnTypeName)
-	}
-
-	return nil
-}
-
-// Visibility constants for PHP properties and methods
 const (
-	Public Visibility = iota
-	Protected
-	Private
+	workspaceRestoreStringsPerDocument = 18
+	workspaceRestoreTypeNumerator      = 5
+	workspaceRestoreTypeDenominator    = 4
 )
 
-// Visibility represents the visibility level of a PHP element
-type Visibility int
-
-type PHPProperty struct {
-	Name       string
-	Line       int
-	Visibility Visibility
-	Type       PHPType // The PHP type of the property
-	// Serialization helpers
-	TypeName string
-}
-
-// marshalProperty creates a serializable version of PHPProperty
-type marshalProperty struct {
-	Name       string     `msgpack:"name"`
-	Line       int        `msgpack:"line"`
-	Visibility Visibility `msgpack:"visibility"`
-	TypeName   string     `msgpack:"type_name,omitempty"`
-}
-
-// MarshalMsgpack implements msgpack.Marshaler interface
-func (p PHPProperty) MarshalMsgpack() ([]byte, error) {
-	mp := marshalProperty{
-		Name:       p.Name,
-		Line:       p.Line,
-		Visibility: p.Visibility,
-	}
-
-	if p.Type != nil {
-		mp.TypeName = p.Type.Name()
-	}
-
-	return msgpack.Marshal(mp)
-}
-
-// UnmarshalMsgpack implements msgpack.Unmarshaler interface
-func (p *PHPProperty) UnmarshalMsgpack(data []byte) error {
-	var mp marshalProperty
-	if err := msgpack.Unmarshal(data, &mp); err != nil {
-		return err
-	}
-
-	p.Name = mp.Name
-	p.Line = mp.Line
-	p.Visibility = mp.Visibility
-
-	// Reconstruct the type from the type name
-	if mp.TypeName != "" {
-		p.Type = NewPHPType(mp.TypeName)
-	}
-
-	return nil
-}
-
+// PHPIndex owns the persisted compact workspace graphs and publishes immutable
+// workspace snapshots. A document update becomes visible only after the shared
+// index transaction commits.
 type PHPIndex struct {
-	dataIndexer *indexer.DataIndexer[PHPClass]
+	workspaceGraphs      *indexer.DataIndexer[persistedWorkspaceGraph]
+	twigContextIndexer   *indexer.DataIndexer[TwigTemplateContext]
+	semanticStore        *semantic.Store
+	binder               *binder.Binder
+	ownedStore           *indexer.Store
+	extensionMu          sync.RWMutex
+	extensions           []inference.Extension
+	project              *project.Model
+	supplementalRoots    []string
+	supplementalFiles    []string
+	revision             atomic.Uint64
+	batchMu              sync.Mutex
+	batchDepth           int
+	pending              map[string]*semantic.WorkspaceGraph
+	graphDetacher        *semantic.WorkspaceGraphDetacher
+	twigContextCacheMu   sync.Mutex
+	twigContextCacheAt   uint64
+	twigContextCache     map[string][]TwigTemplateVariable
+	classCatalogMu       sync.Mutex
+	classCatalogSnapshot *semantic.Snapshot
+	classCatalogSymbols  []semantic.Symbol
+	classCatalogNames    []string
 }
 
-func NewPHPIndex(configDir string) (*PHPIndex, error) {
-	dataIndexer, err := indexer.NewDataIndexer[PHPClass](filepath.Join(configDir, "php.db"))
+type preparedPHPDocument struct {
+	graph        *semantic.WorkspaceGraph
+	graphStorage persistedWorkspaceGraph
+	twigContexts map[string]map[string]TwigTemplateContext
+}
+
+func NewPHPIndex(configDir string, stores ...*indexer.Store) (*PHPIndex, error) {
+	repositoryStores := stores
+	var ownedStore *indexer.Store
+	if len(repositoryStores) == 0 || repositoryStores[0] == nil {
+		var err error
+		ownedStore, err = indexer.NewStore(filepath.Join(configDir, "php.db"))
+		if err != nil {
+			return nil, fmt.Errorf("create PHP index store: %w", err)
+		}
+		repositoryStores = []*indexer.Store{ownedStore}
+	}
+
+	workspaceGraphs, err := indexer.NewRepository[persistedWorkspaceGraph](
+		filepath.Join(configDir, "php.db"),
+		"php.semantic.workspace_graphs",
+		repositoryStores...,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create data indexer: %w", err)
+		if ownedStore != nil {
+			_ = ownedStore.Close()
+		}
+		return nil, fmt.Errorf("create PHP workspace graph repository: %w", err)
+	}
+	twigContextIndexer, err := indexer.NewRepository[TwigTemplateContext](
+		filepath.Join(configDir, "php.db"),
+		"php.twig.template_contexts",
+		repositoryStores...,
+	)
+	if err != nil {
+		_ = workspaceGraphs.Close()
+		if ownedStore != nil {
+			_ = ownedStore.Close()
+		}
+		return nil, fmt.Errorf("create PHP Twig context repository: %w", err)
 	}
 
 	idx := &PHPIndex{
-		dataIndexer: dataIndexer,
+		workspaceGraphs:    workspaceGraphs,
+		twigContextIndexer: twigContextIndexer,
+		semanticStore:      semantic.NewStore(),
+		binder:             binder.New(),
+		ownedStore:         ownedStore,
+		extensions:         []inference.Extension{inference.Builtins},
 	}
-
+	workspaceGraphCount, err := workspaceGraphs.CountAllValues()
+	if err != nil {
+		_ = workspaceGraphs.Close()
+		_ = twigContextIndexer.Close()
+		if ownedStore != nil {
+			_ = ownedStore.Close()
+		}
+		return nil, fmt.Errorf(
+			"count PHP workspace graph repository: %w",
+			err,
+		)
+	}
+	restoreCapacity := semantic.WorkspaceRestoreCapacity{
+		Documents: workspaceGraphCount,
+		Strings: workspaceGraphCount *
+			workspaceRestoreStringsPerDocument,
+		Types: (workspaceGraphCount*workspaceRestoreTypeNumerator +
+			workspaceRestoreTypeDenominator - 1) /
+			workspaceRestoreTypeDenominator,
+	}
+	_, err = idx.semanticStore.RestoreWorkspaceGraphsDecodedWithCapacity(
+		restoreCapacity,
+		func(
+			decoder *semantic.WorkspaceGraphDecoder,
+			accept func(*semantic.WorkspaceGraph),
+		) error {
+			return workspaceGraphs.VisitAllEncodedValues(func(
+				encoded []byte,
+			) error {
+				persisted, err :=
+					decodePersistedWorkspaceGraphBorrowed(encoded)
+				if err != nil {
+					return err
+				}
+				graph, err := persisted.decodeWith(decoder)
+				if err != nil {
+					return err
+				}
+				accept(graph)
+				return nil
+			})
+		},
+	)
+	// Workspace restoration is the only high-volume decode phase. Release the
+	// reusable DEFLATE dictionary and MessagePack buffer while the LSP is idle.
+	semanticValueDecompressorPool.clear()
+	if err != nil {
+		_ = workspaceGraphs.Close()
+		_ = twigContextIndexer.Close()
+		if ownedStore != nil {
+			_ = ownedStore.Close()
+		}
+		return nil, fmt.Errorf("load PHP workspace graph repository: %w", err)
+	}
 	return idx, nil
+}
+
+// ConfigureProject loads Composer roots/version information and publishes the
+// matching runtime stub document.
+func (idx *PHPIndex) ConfigureProject(root string) error {
+	return idx.ConfigureProjectWithExtensions(root, nil, nil)
+}
+
+func (idx *PHPIndex) ConfigureProjectWithExtensions(
+	root string,
+	enabled,
+	disabled []string,
+) error {
+	model, err := project.Load(root)
+	if err != nil {
+		return err
+	}
+	model.ConfigureExtensions(enabled, disabled)
+	model.LoadedExtensions = stubs.SelectedExtensions(
+		model.StubExtensions(),
+		model.DisabledExtensions,
+	)
+	supplementalRoots := model.SourceRoots()
+	for index := range supplementalRoots {
+		supplementalRoots[index] = filepath.Clean(supplementalRoots[index])
+	}
+	supplementalFiles := make([]string, len(model.Files))
+	for index, file := range model.Files {
+		supplementalFiles[index] = filepath.Clean(file)
+	}
+	idx.extensionMu.Lock()
+	idx.project = model
+	idx.supplementalRoots = supplementalRoots
+	idx.supplementalFiles = supplementalFiles
+	idx.extensionMu.Unlock()
+	idx.semanticStore.Replace(stubs.DocumentForExtensions(
+		model.PHPVersion,
+		model.StubExtensions(),
+		model.DisabledExtensions,
+	))
+	idx.revision.Add(1)
+	return nil
+}
+
+// ShouldEnterDirectory selectively reopens Composer source roots that live in
+// globally skipped directories such as tests/. Only the PHP index opts into
+// these paths; generated assets and unrelated test trees remain excluded.
+func (idx *PHPIndex) ShouldEnterDirectory(path string) bool {
+	idx.extensionMu.RLock()
+	configured := idx.project != nil
+	roots := idx.supplementalRoots
+	files := idx.supplementalFiles
+	idx.extensionMu.RUnlock()
+	if !configured {
+		return false
+	}
+	path = filepath.Clean(path)
+	for _, root := range roots {
+		if pathsOverlap(root, path) {
+			return true
+		}
+	}
+	for _, file := range files {
+		if pathsOverlap(filepath.Dir(file), path) {
+			return true
+		}
+	}
+	return false
+}
+
+func (idx *PHPIndex) ShouldIndexPath(path string) bool {
+	if !strings.EqualFold(filepath.Ext(path), ".php") {
+		return false
+	}
+	idx.extensionMu.RLock()
+	configured := idx.project != nil
+	roots := idx.supplementalRoots
+	files := idx.supplementalFiles
+	idx.extensionMu.RUnlock()
+	if !configured {
+		return false
+	}
+	path = filepath.Clean(path)
+	for _, root := range roots {
+		if pathWithinRoot(root, path) {
+			return true
+		}
+	}
+	for _, file := range files {
+		if path == file {
+			return true
+		}
+	}
+	return false
+}
+
+func (idx *PHPIndex) ShouldPreparsePath(path string) bool {
+	return idx.ShouldIndexPath(path)
+}
+
+func pathsOverlap(left, right string) bool {
+	return pathWithinRoot(left, right) || pathWithinRoot(right, left)
+}
+
+func pathWithinRoot(root, path string) bool {
+	root = filepath.Clean(root)
+	path = filepath.Clean(path)
+	if root == path {
+		return true
+	}
+	if len(path) > len(root) && strings.HasPrefix(path, root) &&
+		(root[len(root)-1] == os.PathSeparator ||
+			path[len(root)] == os.PathSeparator) {
+		return true
+	}
+	if os.PathSeparator == '/' && filepath.IsAbs(root) && filepath.IsAbs(path) {
+		return false
+	}
+	relative, err := filepath.Rel(root, path)
+	if err != nil || relative == ".." ||
+		strings.HasPrefix(relative, ".."+string(os.PathSeparator)) {
+		return false
+	}
+	return true
+}
+
+var _ indexer.SupplementalPathIndexer = (*PHPIndex)(nil)
+var _ indexer.SupplementalSyntaxIndexer = (*PHPIndex)(nil)
+var _ indexer.WorkspaceSymbolContributor = (*PHPIndex)(nil)
+
+func (idx *PHPIndex) Project() *project.Model {
+	idx.extensionMu.RLock()
+	defer idx.extensionMu.RUnlock()
+	return idx.project
 }
 
 func (idx *PHPIndex) ID() string {
 	return "php.index"
 }
 
-func (idx *PHPIndex) Index(path string, node *tree_sitter.Node, fileContent []byte) error {
-	classes := GetClassesOfFileWithParser(path, node, fileContent)
-
-	batchSave := make(map[string]map[string]PHPClass)
-
-	for _, class := range classes {
-		if _, ok := batchSave[class.Path]; !ok {
-			batchSave[class.Path] = make(map[string]PHPClass)
-		}
-		batchSave[class.Path][class.Name] = class
-	}
-
-	return idx.dataIndexer.BatchSaveItems(batchSave)
-}
-
-func (idx *PHPIndex) GetClassesOfFile(path string) map[string]PHPClass {
-	fileContent, err := os.ReadFile(path)
+func (idx *PHPIndex) Index(file *indexer.ParsedFile) error {
+	prepared, err := idx.Prepare(file)
 	if err != nil {
-		return nil
+		return err
 	}
-
-	parser := tree_sitter.NewParser()
-	if err := parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_php.LanguagePHP())); err != nil {
-		panic(err)
-	}
-
-	defer parser.Close()
-
-	tree := parser.Parse(fileContent, nil)
-
-	return GetClassesOfFileWithParser(path, tree.RootNode(), fileContent)
+	return idx.IndexPrepared(file, prepared)
 }
 
-// GetTypeOfNode determines the PHP type of a given AST node.
-// This is used for type inference in PHP code to provide accurate completions.
-// The implementation is defined below as a method on PHPIndex.
+func (idx *PHPIndex) Prepare(file *indexer.ParsedFile) (any, error) {
+	if file.Extension() != ".php" {
+		return (*preparedPHPDocument)(nil), nil
+	}
 
-// searchParentClassMethod recursively searches for a method in parent classes
-// and returns the method's return type if found
-func (idx *PHPIndex) searchParentClassMethod(parentClassName, methodName string) PHPType {
-	if parentClassName == "" || methodName == "" {
+	path := file.Path
+	root := file.SyntaxTree().Root
+	document := idx.AnalyzeParsedFile(file)
+
+	workspaceGraph := semantic.ProjectWorkspaceGraphBorrowed(document)
+	persistedGraph, err := encodeWorkspaceGraph(workspaceGraph)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"encode PHP workspace graph for %s: %w",
+			path,
+			err,
+		)
+	}
+	twigContexts := map[string]map[string]TwigTemplateContext{path: {}}
+	for _, context := range extractTwigTemplateContexts(path, root, document) {
+		twigContexts[path][context.Template] = context
+	}
+	return &preparedPHPDocument{
+		graph:        workspaceGraph,
+		graphStorage: persistedGraph,
+		twigContexts: twigContexts,
+	}, nil
+}
+
+func (idx *PHPIndex) IndexPrepared(
+	file *indexer.ParsedFile,
+	value any,
+) error {
+	if file.Extension() != ".php" {
 		return nil
 	}
-
-	// Get the parent class individually - more efficient than getting all classes
-	parentClass := idx.GetClass(parentClassName)
-	if parentClass == nil {
-		return nil
+	prepared, ok := value.(*preparedPHPDocument)
+	if !ok || prepared == nil || prepared.graph == nil {
+		return fmt.Errorf("prepared PHP document is required for %s", file.Path)
 	}
-
-	// Check if the method exists in the parent class
-	method, ok := parentClass.Methods[methodName]
-	if ok {
-		return method.ReturnType
+	path := file.Path
+	if err := idx.workspaceGraphs.BatchSaveItemsIn(
+		file.Mutation(),
+		map[string]map[string]persistedWorkspaceGraph{
+			path: {path: prepared.graphStorage},
+		},
+	); err != nil {
+		return err
 	}
-
-	// If method not found in parent class, check the parent's parent
-	if parentClass.Parent != "" {
-		return idx.searchParentClassMethod(parentClass.Parent, methodName)
+	if err := idx.twigContextIndexer.BatchSaveItemsIn(
+		file.Mutation(),
+		prepared.twigContexts,
+	); err != nil {
+		return err
 	}
-
-	// Also check interfaces implemented by the parent class
-	for _, interfaceName := range parentClass.Interfaces {
-		interface_ := idx.GetClass(interfaceName)
-		if interface_ == nil || !interface_.IsInterface {
-			continue
-		}
-
-		method, ok := interface_.Methods[methodName]
-		if ok {
-			return method.ReturnType
-		}
+	publish := func() {
+		idx.publishWorkspaceGraph(prepared.graph)
+		idx.revision.Add(1)
 	}
-
+	if mutation := file.Mutation(); mutation != nil {
+		return mutation.AfterCommit(publish)
+	}
+	publish()
 	return nil
 }
 
-// searchParentClassProperty recursively searches for a property in parent classes
-// and returns the property's type if found. It respects visibility rules, so private
-// properties from parent classes are not accessible.
-func (idx *PHPIndex) searchParentClassProperty(parentClassName, propertyName string) PHPType {
-	if parentClassName == "" || propertyName == "" {
-		return nil
+// WorkspaceSymbols reuses the compact semantic graph produced by Prepare.
+// It deliberately runs before the graph is released, avoiding a decode from
+// SQLite and keeping symbol catalog population part of the file transaction.
+func (idx *PHPIndex) WorkspaceSymbols(
+	file *indexer.ParsedFile,
+	value any,
+) ([]indexer.WorkspaceSymbol, error) {
+	if file.Extension() != ".php" {
+		return nil, nil
 	}
-
-	// Get the parent class individually - more efficient than getting all classes
-	parentClass := idx.GetClass(parentClassName)
-	if parentClass == nil {
-		return nil
+	prepared, ok := value.(*preparedPHPDocument)
+	if !ok || prepared == nil || prepared.graph == nil {
+		return nil, fmt.Errorf("prepared PHP document is required for %s", file.Path)
 	}
-
-	// Check if the property exists in the parent class
-	property, ok := parentClass.Properties[propertyName]
-	if ok {
-		// For the current class, we can access any property regardless of visibility
-		// For parent classes, we can only access public and protected properties
-		if property.Visibility != Private {
-			return property.Type
+	containers := make(map[semantic.SymbolID]string)
+	prepared.graph.VisitSymbolViews(func(view semantic.SymbolView) bool {
+		if phpWorkspaceSymbolIsContainer(view.Kind()) {
+			name := strings.TrimPrefix(view.FullyQualified(), `\`)
+			if name == "" {
+				name = view.Name()
+			}
+			containers[view.ID()] = name
 		}
-	}
+		return true
+	})
 
-	// If property not found or not accessible in parent class, check the parent's parent
-	if parentClass.Parent != "" {
-		return idx.searchParentClassProperty(parentClass.Parent, propertyName)
-	}
+	lineIndex := file.LineIndex()
+	result := make([]indexer.WorkspaceSymbol, 0, len(containers)*2)
+	prepared.graph.VisitSymbolViews(func(view semantic.SymbolView) bool {
+		kind, priority, include := phpWorkspaceSymbolKind(view.Kind())
+		if !include || view.Name() == "" {
+			return true
+		}
+		rangeValue := view.SelectionRange()
+		if rangeValue == (cst.TextRange{}) {
+			rangeValue = view.Range()
+		}
+		startLine, startCharacter := lineIndex.PositionUTF16(rangeValue.Start)
+		endLine, endCharacter := lineIndex.PositionUTF16(rangeValue.End)
+		fullyQualified := strings.TrimPrefix(view.FullyQualified(), `\`)
+		container := containers[view.Container()]
+		if container == "" && phpWorkspaceSymbolIsContainer(view.Kind()) {
+			if separator := strings.LastIndex(fullyQualified, `\`); separator >= 0 {
+				container = fullyQualified[:separator]
+			}
+		}
+		var aliases []string
+		if phpWorkspaceSymbolIsContainer(view.Kind()) ||
+			view.Kind() == semantic.FunctionSymbol ||
+			view.Kind() == semantic.GlobalConstantSymbol {
+			aliases = []string{fullyQualified}
+		}
+		result = append(result, indexer.WorkspaceSymbol{
+			Name:          view.Name(),
+			ContainerName: container,
+			Aliases:       aliases,
+			Path:          file.Path,
+			Domain:        "php",
+			Kind:          kind,
+			Priority:      priority,
+			Range: indexer.WorkspaceSymbolRange{
+				Start: indexer.WorkspaceSymbolPosition{
+					Line:      int(startLine),
+					Character: int(startCharacter),
+				},
+				End: indexer.WorkspaceSymbolPosition{
+					Line:      int(endLine),
+					Character: int(endCharacter),
+				},
+			},
+		})
+		return true
+	})
+	return result, nil
+}
 
+func phpWorkspaceSymbolIsContainer(kind semantic.SymbolKind) bool {
+	switch kind {
+	case semantic.ClassSymbol,
+		semantic.InterfaceSymbol,
+		semantic.TraitSymbol,
+		semantic.EnumSymbol:
+		return true
+	default:
+		return false
+	}
+}
+
+func phpWorkspaceSymbolKind(
+	kind semantic.SymbolKind,
+) (indexer.WorkspaceSymbolKind, int, bool) {
+	switch kind {
+	case semantic.ClassSymbol:
+		return indexer.WorkspaceSymbolClass,
+			indexer.WorkspaceSymbolPriorityPHPType,
+			true
+	case semantic.InterfaceSymbol:
+		return indexer.WorkspaceSymbolInterface,
+			indexer.WorkspaceSymbolPriorityPHPType,
+			true
+	case semantic.TraitSymbol:
+		return indexer.WorkspaceSymbolStruct,
+			indexer.WorkspaceSymbolPriorityPHPType,
+			true
+	case semantic.EnumSymbol:
+		return indexer.WorkspaceSymbolEnum,
+			indexer.WorkspaceSymbolPriorityPHPType,
+			true
+	case semantic.FunctionSymbol:
+		return indexer.WorkspaceSymbolFunction,
+			indexer.WorkspaceSymbolPriorityPHPGlobal,
+			true
+	case semantic.GlobalConstantSymbol:
+		return indexer.WorkspaceSymbolConstant,
+			indexer.WorkspaceSymbolPriorityPHPGlobal,
+			true
+	case semantic.MethodSymbol:
+		return indexer.WorkspaceSymbolMethod,
+			indexer.WorkspaceSymbolPriorityPHPMember,
+			true
+	case semantic.PropertySymbol:
+		return indexer.WorkspaceSymbolProperty,
+			indexer.WorkspaceSymbolPriorityPHPMember,
+			true
+	case semantic.ClassConstantSymbol:
+		return indexer.WorkspaceSymbolConstant,
+			indexer.WorkspaceSymbolPriorityPHPMember,
+			true
+	case semantic.EnumCaseSymbol:
+		return indexer.WorkspaceSymbolEnumMember,
+			indexer.WorkspaceSymbolPriorityPHPMember,
+			true
+	case semantic.TypeAliasSymbol:
+		return indexer.WorkspaceSymbolTypeParameter,
+			indexer.WorkspaceSymbolPriorityPHPMember,
+			true
+	default:
+		return 0, 0, false
+	}
+}
+
+// BeginIndexingBatch defers immutable workspace publication until all file
+// transactions in the scanner run have either committed or rolled back.
+func (idx *PHPIndex) BeginIndexingBatch(candidateFiles []string) {
+	idx.batchMu.Lock()
+	defer idx.batchMu.Unlock()
+	if idx.batchDepth == 0 {
+		phpFiles := 0
+		for _, path := range candidateFiles {
+			if strings.EqualFold(filepath.Ext(path), ".php") {
+				phpFiles++
+			}
+		}
+		idx.pending = make(map[string]*semantic.WorkspaceGraph)
+		idx.graphDetacher = semantic.NewWorkspaceGraphDetacherCapacity(
+			phpFiles * workspaceRestoreStringsPerDocument,
+		)
+	}
+	idx.batchDepth++
+}
+
+// EndIndexingBatch publishes every successfully committed PHP document in one
+// generation. Nested batches are supported for direct coordinator reuse.
+func (idx *PHPIndex) EndIndexingBatch() error {
+	idx.batchMu.Lock()
+	if idx.batchDepth == 0 {
+		idx.batchMu.Unlock()
+		return fmt.Errorf("PHP indexing batch is not active")
+	}
+	idx.batchDepth--
+	if idx.batchDepth > 0 {
+		idx.batchMu.Unlock()
+		return nil
+	}
+	graphs := make([]*semantic.WorkspaceGraph, 0, len(idx.pending))
+	for _, graph := range idx.pending {
+		graphs = append(graphs, graph)
+	}
+	idx.pending = nil
+	idx.graphDetacher.Finish()
+	idx.graphDetacher = nil
+	idx.batchMu.Unlock()
+
+	// Compression is frequent during a scanner batch but rare while the LSP is
+	// idle. Release the bounded writer pool once the batch is published.
+	semanticValueCompressorPool.clear()
+	idx.semanticStore.ReplaceCanonicalWorkspaceGraphsOwned(graphs...)
 	return nil
 }
 
-// GetClasses returns all classes indexed by name for legacy compatibility
-func (idx *PHPIndex) GetClasses() map[string]PHPClass {
-	allClasses := make(map[string]PHPClass)
-	classValues, err := idx.dataIndexer.GetAllValues()
-	if err != nil {
-		log.Printf("Error fetching classes: %v", err)
-		return allClasses
+func (idx *PHPIndex) publishWorkspaceGraph(graph *semantic.WorkspaceGraph) {
+	if graph == nil {
+		return
 	}
-
-	// Create a map of classes indexed by class name
-	for _, class := range classValues {
-		allClasses[class.Name] = class
+	idx.batchMu.Lock()
+	if idx.batchDepth > 0 {
+		idx.graphDetacher.DetachOwned(graph)
+		idx.pending[graph.Path()] = graph
+		idx.batchMu.Unlock()
+		return
 	}
-
-	return allClasses
-}
-
-// GetTypeOfNode determines the PHP type of a given AST node.
-// This is used for type inference in PHP code to provide accurate completions.
-// Currently supports:
-// - $this->method() expressions
-// - $this->property expressions
-func (idx *PHPIndex) GetTypeOfNode(ctx context.Context, node *tree_sitter.Node, fileContent []byte) PHPType {
-	if node == nil {
-		return nil
-	}
-
-	// Get the PHP context safely
-	phpCtx, ok := ctx.Value(PHPContextKey).(*PHPContext)
-	if !ok || phpCtx == nil || phpCtx.InsideClass == nil {
-		// If we don't have the necessary context, return a mixed type
-		return NewMixedType()
-	}
-
-	nodeKind := node.Kind()
-
-	// Handle member call expression: $this->method()
-	if nodeKind == "member_call_expression" {
-		return idx.handleMemberCallExpression(node, fileContent, phpCtx.InsideClass.Name)
-	}
-
-	// Default to mixed type if we can't determine a specific type
-	return NewMixedType()
-}
-
-// handleMemberCallExpression processes $this->method() calls and returns the return type of that method
-func (idx *PHPIndex) handleMemberCallExpression(node *tree_sitter.Node, fileContent []byte, currentClass string) PHPType {
-	// Extract the object part of the expression (should be $this)
-	memberAccessExpression := treesitterhelper.GetFirstNodeOfKind(node, "member_access_expression")
-
-	if memberAccessExpression == nil {
-		return NewPHPType("mixed")
-	}
-
-	variableName := treesitterhelper.GetFirstNodeOfKind(memberAccessExpression, "variable_name")
-
-	if variableName == nil {
-		return NewPHPType("mixed")
-	}
-
-	propertyName := string(treesitterhelper.GetFirstNodeOfKind(memberAccessExpression, "name").Utf8Text(fileContent))
-
-	// Not a $this call
-	if string(treesitterhelper.GetFirstNodeOfKind(variableName, "name").Utf8Text(fileContent)) != "this" {
-		return NewPHPType("mixed")
-	}
-
-	property := idx.GetProperty(currentClass, propertyName)
-	if property != nil {
-		return property.Type
-	}
-
-	// Default to mixed if we couldn't determine the type
-	return NewPHPType("mixed")
+	idx.batchMu.Unlock()
+	detacher := semantic.NewWorkspaceGraphDetacher()
+	detacher.DetachOwned(graph)
+	detacher.Finish()
+	idx.semanticStore.ReplaceCanonicalWorkspaceGraphsOwned(graph)
 }
 
 func (idx *PHPIndex) RemovedFiles(paths []string) error {
-	return idx.dataIndexer.BatchDeleteByFilePaths(paths)
+	if err := errors.Join(
+		idx.workspaceGraphs.BatchDeleteByFilePaths(paths),
+		idx.twigContextIndexer.BatchDeleteByFilePaths(paths),
+	); err != nil {
+		return err
+	}
+	idx.semanticStore.Remove(paths...)
+	idx.revision.Add(1)
+	return nil
+}
+
+func (idx *PHPIndex) RemovedFilesIn(paths []string, mutation *indexer.Mutation) error {
+	if err := errors.Join(
+		idx.workspaceGraphs.BatchDeleteByFilePathsIn(mutation, paths),
+		idx.twigContextIndexer.BatchDeleteByFilePathsIn(mutation, paths),
+	); err != nil {
+		return err
+	}
+	publish := func() {
+		idx.semanticStore.Remove(paths...)
+		idx.revision.Add(1)
+	}
+	if mutation != nil {
+		return mutation.AfterCommit(publish)
+	}
+	publish()
+	return nil
 }
 
 func (idx *PHPIndex) Close() error {
-	return idx.dataIndexer.Close()
+	idx.batchMu.Lock()
+	idx.batchDepth = 0
+	idx.pending = nil
+	idx.graphDetacher = nil
+	idx.batchMu.Unlock()
+	idx.semanticStore.Clear()
+	var storeErr error
+	if idx.ownedStore != nil {
+		storeErr = idx.ownedStore.Close()
+	}
+	return errors.Join(
+		idx.workspaceGraphs.Close(),
+		idx.twigContextIndexer.Close(),
+		storeErr,
+	)
 }
 
 func (idx *PHPIndex) Clear() error {
-	return idx.dataIndexer.Clear()
+	if err := errors.Join(
+		idx.workspaceGraphs.Clear(),
+		idx.twigContextIndexer.Clear(),
+	); err != nil {
+		return err
+	}
+	idx.resetSemanticStore()
+	return nil
 }
 
-func (idx *PHPIndex) GetClass(className string) *PHPClass {
-	values, err := idx.dataIndexer.GetValues(className)
-	if err != nil {
-		log.Printf("Error retrieving class: %v", err)
-		return nil
+func (idx *PHPIndex) ClearIn(mutation *indexer.Mutation) error {
+	if err := errors.Join(
+		idx.workspaceGraphs.ClearIn(mutation),
+		idx.twigContextIndexer.ClearIn(mutation),
+	); err != nil {
+		return err
 	}
-
-	if len(values) == 0 {
-		return nil
+	if mutation != nil {
+		return mutation.AfterCommit(idx.resetSemanticStore)
 	}
-
-	return &values[0]
+	idx.resetSemanticStore()
+	return nil
 }
 
-func (idx *PHPIndex) GetClassNames() []string {
-	keys, err := idx.dataIndexer.GetAllKeys()
-	if err != nil {
-		log.Printf("Error retrieving class names: %v", err)
-		return nil
+func (idx *PHPIndex) resetSemanticStore() {
+	idx.semanticStore.Clear()
+	if model := idx.Project(); model != nil {
+		idx.semanticStore.Replace(stubs.DocumentForExtensions(
+			model.PHPVersion,
+			model.StubExtensions(),
+			model.DisabledExtensions,
+		))
 	}
+	idx.revision.Add(1)
+}
 
-	return keys
+func (idx *PHPIndex) Revision() uint64 {
+	return idx.revision.Load()
+}
+
+// IsSubtypeOf reports whether className is targetName, extends it, or
+// implements it through the workspace hierarchy.
+func (idx *PHPIndex) IsSubtypeOf(className, targetName string) (bool, error) {
+	if className == "" || targetName == "" {
+		return false, nil
+	}
+	return idx.SemanticSnapshot().IsSubtypeOf(className, targetName), nil
 }

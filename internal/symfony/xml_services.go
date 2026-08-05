@@ -1,412 +1,389 @@
 package symfony
 
 import (
-	"bytes"
+	"path/filepath"
 	"strings"
 
-	treesitterhelper "github.com/shopware/shopware-lsp/internal/tree_sitter_helper"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
+	"github.com/shopware/shopware-lsp/internal/parser/cst"
+	xmlparser "github.com/shopware/shopware-lsp/internal/parser/xml"
+	xmlquery "github.com/shopware/shopware-lsp/internal/parser/xml/query"
+	xmlsyntax "github.com/shopware/shopware-lsp/internal/parser/xml/syntax"
 )
 
-// Service represents a Symfony service definition
+// Service represents a Symfony service definition.
 type Service struct {
-	ID          string            // Service ID
-	Class       string            // Service class
-	AliasTarget string            // Service alias target
-	Tags        map[string]string // Service tags
-	Path        string            // Source file path
-	Line        int               // Line number in source file
+	ID              string
+	Class           string
+	AliasTarget     string
+	Decorates       string
+	Parent          string
+	Autowire        bool
+	AutowireSet     bool
+	Deprecated      bool
+	Deprecation     string
+	Tags            map[string]string
+	InstanceofTags  map[string]string
+	Path            string
+	Line            int
+	Range           cst.TextRange
+	IDRange         cst.TextRange
+	ClassRange      cst.TextRange
+	DecoratesRange  cst.TextRange
+	ParentRange     cst.TextRange
+	DeprecatedRange cst.TextRange
 }
 
-// Parameter represents a Symfony container parameter
+// Parameter represents a Symfony container parameter.
 type Parameter struct {
-	Name  string // Parameter name
-	Value string // Parameter value
-	Path  string // Source file path
-	Line  int    // Line number in source file
+	Name  string
+	Value string
+	Path  string
+	Line  int
 }
 
-// ParseXMLServices parses Symfony XML service definitions and returns a list of services, aliases, and parameters.
-// It can accept either a file path or direct content with a path.
-func ParseXMLServices(path string, rootNode *tree_sitter.Node, data []byte) ([]Service, []Parameter, error) {
-	// Pre-allocate with reasonable capacity
+// ParseXMLServices parses Symfony XML service definitions. Malformed editor
+// input is tolerated and any structurally complete definitions are returned.
+func ParseXMLServices(path string, data []byte) ([]Service, []Parameter, error) {
+	tree := xmlparser.Parse(string(data)).Tree
+	return ParseXMLServicesTree(path, tree, xmlsyntax.NewLineIndex(tree.Source))
+}
+
+func ParseXMLServicesTree(path string, tree *xmlsyntax.Tree, lineIndex *xmlsyntax.LineIndex) ([]Service, []Parameter, error) {
+	services, parameters, _, err := parseXMLServiceConfigTree(
+		path,
+		tree,
+		lineIndex,
+	)
+	return services, parameters, err
+}
+
+func parseXMLServiceConfigTree(
+	path string,
+	tree *xmlsyntax.Tree,
+	lineIndex *xmlsyntax.LineIndex,
+) ([]Service, []Parameter, []ServicePrototype, error) {
+	if tree == nil || tree.Root == nil {
+		return []Service{}, []Parameter{}, []ServicePrototype{}, nil
+	}
+	containers := xmlquery.Elements(tree.Root, "container")
+	if len(containers) == 0 {
+		return []Service{}, []Parameter{}, []ServicePrototype{}, nil
+	}
+
 	services := make([]Service, 0, 50)
 	parameters := make([]Parameter, 0, 20)
+	prototypes := make([]ServicePrototype, 0, 4)
 
-	// Process container node
-	containerNode := findContainerNode(rootNode, data)
-	if containerNode == nil {
-		return []Service{}, []Parameter{}, nil
-	}
-
-	// Process content node directly for better handling of different XML structures
-	if containerNode.NamedChildCount() > 1 {
-		contentNode := containerNode.NamedChild(1)
-		if contentNode != nil && contentNode.Kind() == "content" {
-			// Process all elements in content
-			childCount := int(contentNode.NamedChildCount())
-			for i := 0; i < childCount; i++ {
-				child := contentNode.NamedChild(uint(i))
-				if child.Kind() == "element" {
-					// Get element's STag or EmptyElemTag
-					elementTag := child.NamedChild(0)
-					if elementTag == nil {
-						continue
-					}
-
-					// Get element name
-					nameNode := treesitterhelper.GetFirstNodeOfKind(elementTag, "Name")
-					if nameNode == nil {
-						continue
-					}
-
-					elementName := nameNode.Utf8Text(data)
-					switch string(elementName) {
-					case "service":
-						service := processServiceNode(child, data, path)
-						if service.ID != "" {
-							services = append(services, service)
-						}
-					case "alias":
-						alias := processAliasNode(child, data, path)
-						if alias.ID != "" {
-							services = append(services, alias)
-						}
-					case "services":
-						// Process services inside the services tag
-						nestedServices := processServicesNode(child, data, path)
-						services = append(services, nestedServices...)
-					case "parameters":
-						// Process parameters inside the parameters tag
-						nestedParams := processParametersNode(child, data, path)
-						parameters = append(parameters, nestedParams...)
-					case "parameter":
-						param := processParameterNode(child, data, path)
-						if param.Name != "" {
-							parameters = append(parameters, param)
-						}
-					}
-				}
-			}
-
-			return services, parameters, nil
-		}
-	}
-
-	// Fall back to the original approach if needed
-	for i := 0; i < int(containerNode.NamedChildCount()); i++ {
-		child := containerNode.NamedChild(uint(i))
-
-		// Skip non-element nodes
-		if child.Kind() != "element" {
-			continue
-		}
-
-		// Get the element name - element has either STag or EmptyElemTag
-		elementStartTag := child.NamedChild(0)
-		if elementStartTag == nil {
-			continue
-		}
-
-		nameNode := treesitterhelper.GetFirstNodeOfKind(elementStartTag, "Name")
-		if nameNode == nil {
-			continue
-		}
-
-		elementName := nameNode.Utf8Text(data)
-
-		switch string(elementName) {
+	for _, child := range xmlquery.ChildElements(containers[0]) {
+		switch xmlquery.ElementName(child) {
 		case "service":
-			service := processServiceNode(child, data, path)
-			if service.ID != "" {
+			if service := processXMLService(
+				child,
+				lineIndex,
+				path,
+				false,
+				false,
+			); service.ID != "" {
 				services = append(services, service)
 			}
 		case "alias":
-			alias := processAliasNode(child, data, path)
-			if alias.ID != "" && alias.AliasTarget != "" {
+			if alias := processXMLAlias(child, lineIndex, path); alias.ID != "" {
 				services = append(services, alias)
 			}
 		case "services":
-			// Process services inside the services tag
-			nestedServices := processServicesNode(child, data, path)
-			services = append(services, nestedServices...)
+			defaultAutowire, defaultAutowireSet := xmlServiceAutowire(
+				xmlquery.ChildElement(child, "defaults"),
+			)
+			for _, serviceNode := range xmlquery.ChildElements(child, "service") {
+				if service := processXMLService(
+					serviceNode,
+					lineIndex,
+					path,
+					defaultAutowire,
+					defaultAutowireSet,
+				); service.ID != "" {
+					services = append(services, service)
+				}
+			}
+			for _, aliasNode := range xmlquery.ChildElements(child, "alias") {
+				if alias := processXMLAlias(aliasNode, lineIndex, path); alias.ID != "" {
+					services = append(services, alias)
+				}
+			}
+			for _, prototypeNode := range xmlquery.ChildElements(
+				child,
+				"prototype",
+			) {
+				if prototype := processXMLPrototype(
+					prototypeNode,
+					lineIndex,
+					path,
+					defaultAutowire,
+					defaultAutowireSet,
+				); prototype.Namespace != "" &&
+					prototype.Resource != "" {
+					prototypes = append(prototypes, prototype)
+				}
+			}
 		case "parameters":
-			// Process parameters inside the parameters tag
-			nestedParams := processParametersNode(child, data, path)
-			parameters = append(parameters, nestedParams...)
+			for _, parameterNode := range xmlquery.ChildElements(child, "parameter") {
+				if parameter := processXMLParameter(parameterNode, lineIndex, path); parameter.Name != "" {
+					parameters = append(parameters, parameter)
+				}
+			}
 		case "parameter":
-			param := processParameterNode(child, data, path)
-			if param.Name != "" {
-				parameters = append(parameters, param)
+			if parameter := processXMLParameter(child, lineIndex, path); parameter.Name != "" {
+				parameters = append(parameters, parameter)
 			}
 		}
 	}
 
-	return services, parameters, nil
+	return services, parameters, prototypes, nil
 }
 
-// findContainerNode finds the container node in the XML tree
-func findContainerNode(rootNode *tree_sitter.Node, data []byte) *tree_sitter.Node {
-	// For Symfony XML files, the container is usually the document element
-	for i := 0; i < int(rootNode.NamedChildCount()); i++ {
-		child := rootNode.NamedChild(uint(i))
-		if child.Kind() == "element" {
-			elementStartTag := child.NamedChild(0)
-			if elementStartTag == nil {
-				continue
-			}
-			nameNode := treesitterhelper.GetFirstNodeOfKind(elementStartTag, "Name")
-			if nameNode != nil && string(nameNode.Utf8Text(data)) == "container" {
-				return child
-			}
-		}
-	}
-	return nil
-}
-
-// processServiceNode extracts service information from a service element node
-func processServiceNode(node *tree_sitter.Node, data []byte, path string) Service {
-	service := Service{
-		Tags: make(map[string]string, 5), // Pre-allocate with typical capacity
-		Path: path,
-	}
-
-	// Get start tag node (either STag or EmptyElemTag)
-	startTag := node.NamedChild(0)
-	if startTag == nil {
-		return service
-	}
-
-	// Get attributes
-	attrs := treesitterhelper.GetXmlAttributeValues(startTag, data)
-	service.ID = attrs["id"]
-
-	// Skip processing if missing ID or ID contains spaces
-	if service.ID == "" || strings.Contains(service.ID, " ") {
+func processXMLService(
+	node *xmlsyntax.Node,
+	lineIndex *xmlsyntax.LineIndex,
+	path string,
+	defaultAutowire bool,
+	defaultAutowireSet bool,
+) Service {
+	attributes := xmlquery.AttributeValues(node)
+	id := attributes["id"]
+	if id == "" || strings.Contains(id, " ") {
 		return Service{}
 	}
 
-	service.Class = attrs["class"]
-
-	// If service has no class, use ID as class (Symfony default behavior)
-	if service.Class == "" {
-		service.Class = service.ID
+	class := attributes["class"]
+	classRange := xmlAttributeContentRange(
+		xmlquery.Attribute(node, "class"),
+	)
+	if class == "" && attributes["alias"] == "" {
+		class = id
+		classRange = xmlAttributeContentRange(
+			xmlquery.Attribute(node, "id"),
+		)
 	}
+	deprecatedValue, deprecatedRange := xmlServiceDeprecation(
+		node,
+		attributes,
+	)
 
-	// Fast line number calculation - just count newlines in the byte range
-	startByte := int(node.StartByte())
-	lineNum := 1 + bytes.Count(data[:startByte], []byte{'\n'})
-	service.Line = lineNum
-
-	// Only process tags if this isn't an empty element (has content)
-	if startTag.Kind() == "STag" && node.NamedChildCount() > 2 {
-		// Get content node (index 1 if we have STag, content, ETag)
-		contentNode := node.NamedChild(1)
-		if contentNode != nil && contentNode.Kind() == "content" {
-			// Process all elements in the content
-			childCount := int(contentNode.NamedChildCount())
-			for i := 0; i < childCount; i++ {
-				child := contentNode.NamedChild(uint(i))
-				if child.Kind() != "element" {
-					continue
-				}
-
-				// Get tag's STag or EmptyElemTag
-				tagElement := child.NamedChild(0)
-				if tagElement == nil {
-					continue
-				}
-
-				// Get tag name
-				tagNameNode := treesitterhelper.GetFirstNodeOfKind(tagElement, "Name")
-				if tagNameNode == nil {
-					continue
-				}
-
-				// Fast string comparison
-				tagElementName := tagNameNode.Utf8Text(data)
-				if string(tagElementName) == "tag" {
-					// Get attributes on tag
-					tagAttrs := treesitterhelper.GetXmlAttributeValues(tagElement, data)
-					if tagName := tagAttrs["name"]; tagName != "" {
-						service.Tags[tagName] = ""
-					}
-				}
-			}
+	service := Service{
+		ID:              id,
+		Class:           class,
+		AliasTarget:     attributes["alias"],
+		Decorates:       attributes["decorates"],
+		Parent:          attributes["parent"],
+		Autowire:        defaultAutowire,
+		AutowireSet:     defaultAutowireSet,
+		Deprecated:      deprecatedConfigValue(deprecatedValue),
+		Deprecation:     deprecationMessage(deprecatedValue),
+		Tags:            make(map[string]string, 5),
+		Path:            path,
+		Line:            xmlLine(lineIndex, node),
+		Range:           node.RangeTrimmedTrivia(),
+		IDRange:         xmlAttributeContentRange(xmlquery.Attribute(node, "id")),
+		ClassRange:      classRange,
+		DecoratesRange:  xmlAttributeContentRange(xmlquery.Attribute(node, "decorates")),
+		ParentRange:     xmlAttributeContentRange(xmlquery.Attribute(node, "parent")),
+		DeprecatedRange: deprecatedRange,
+	}
+	if value, exists := attributes["autowire"]; exists {
+		service.Autowire, _ = configuredServiceBool(value)
+		service.AutowireSet = true
+	}
+	for _, tag := range xmlquery.ChildElements(node, "tag") {
+		if name := xmlquery.AttributeValue(xmlquery.Attribute(tag, "name")); name != "" {
+			service.Tags[name] = ""
 		}
 	}
-
 	return service
 }
 
-// processAliasNode extracts alias information from an alias element node
-func processAliasNode(node *tree_sitter.Node, data []byte, path string) Service {
-	alias := Service{
-		Path: path,
-	}
-
-	// Get start tag node
-	startTag := node.NamedChild(0)
-	if startTag == nil {
-		return alias
-	}
-
-	// Get attributes
-	attrs := treesitterhelper.GetXmlAttributeValues(startTag, data)
-	alias.ID = attrs["id"]
-	alias.AliasTarget = attrs["service"]
-
-	// Skip if missing required attributes
-	if alias.ID == "" || alias.AliasTarget == "" {
-		return Service{} // Return empty service if missing required attributes
-	}
-
-	// Fast line number calculation
-	startByte := int(node.StartByte())
-	lineNum := 1 + bytes.Count(data[:startByte], []byte{'\n'})
-	alias.Line = lineNum
-
-	return alias
+func deprecatedConfigValue(value string) bool {
+	value = strings.TrimSpace(value)
+	return value != "" &&
+		!strings.EqualFold(value, "false") &&
+		value != "0"
 }
 
-// processServicesNode processes services inside a services element
-func processServicesNode(node *tree_sitter.Node, data []byte, path string) []Service {
-	// Pre-allocate with reasonable capacity
-	services := make([]Service, 0, 20)
-
-	// Get the content node
-	if node.NamedChildCount() < 2 {
-		return services
+func deprecationMessage(value string) string {
+	value = strings.TrimSpace(value)
+	if !deprecatedConfigValue(value) ||
+		strings.EqualFold(value, "true") ||
+		strings.EqualFold(value, "null") ||
+		value == "~" ||
+		value == "1" {
+		return ""
 	}
-
-	contentNode := node.NamedChild(1)
-	if contentNode == nil || contentNode.Kind() != "content" {
-		return services
-	}
-
-	// Process all elements in content
-	childCount := int(contentNode.NamedChildCount())
-	for i := 0; i < childCount; i++ {
-		child := contentNode.NamedChild(uint(i))
-		if child.Kind() != "element" {
-			continue
-		}
-
-		// Get element's STag or EmptyElemTag
-		elementTag := child.NamedChild(0)
-		if elementTag == nil {
-			continue
-		}
-
-		// Get element name
-		nameNode := treesitterhelper.GetFirstNodeOfKind(elementTag, "Name")
-		if nameNode == nil {
-			continue
-		}
-
-		// Fast string comparison
-		elementName := nameNode.Utf8Text(data)
-		if string(elementName) == "service" {
-			service := processServiceNode(child, data, path)
-			if service.ID != "" {
-				services = append(services, service)
-			}
-		}
-	}
-
-	return services
+	return value
 }
 
-// processParameterNode extracts parameter information from a parameter element node
-func processParameterNode(node *tree_sitter.Node, data []byte, path string) Parameter {
-	param := Parameter{
-		Path: path,
-	}
-
-	// Get start tag node (either STag or EmptyElemTag)
-	startTag := node.NamedChild(0)
-	if startTag == nil {
-		return param
-	}
-
-	// Get attributes
-	attrs := treesitterhelper.GetXmlAttributeValues(startTag, data)
-	param.Name = attrs["key"] // In Symfony XML, parameters use "key" as attribute
-
-	// Skip if missing required name attribute
-	if param.Name == "" {
-		return param
-	}
-
-	// Handle different types of parameter content
-	// If it's an empty element tag with 'type' and 'id' attributes, it's a service reference
-	if paramType, hasType := attrs["type"]; hasType && paramType == "service" {
-		if serviceId, hasServiceId := attrs["id"]; hasServiceId {
-			param.Value = "@" + serviceId // Symfony convention for service references
+func xmlServiceDeprecation(
+	node *xmlsyntax.Node,
+	attributes map[string]string,
+) (string, cst.TextRange) {
+	value := attributes["deprecated"]
+	valueRange := xmlAttributeContentRange(
+		xmlquery.Attribute(node, "deprecated"),
+	)
+	if deprecatedNode := xmlquery.ChildElement(
+		node,
+		"deprecated",
+	); deprecatedNode != nil {
+		if text, textRange := xmlElementText(deprecatedNode); text != "" {
+			return text, textRange
 		}
-	} else if value, hasValue := attrs["value"]; hasValue {
-		// Simple value attribute
-		param.Value = value
-	} else if startTag.Kind() == "STag" && node.NamedChildCount() > 1 {
-		// Parameter has content
-		contentNode := node.NamedChild(1)
-		if contentNode != nil && contentNode.Kind() == "content" {
-			// Extract text value from content
-			param.Value = strings.TrimSpace(string(contentNode.Utf8Text(data)))
-		}
+		return "true", deprecatedNode.RangeTrimmedTrivia()
 	}
-
-	// Fast line number calculation
-	startByte := int(node.StartByte())
-	param.Line = 1 + bytes.Count(data[:startByte], []byte{'\n'})
-
-	return param
+	return value, valueRange
 }
 
-// processParametersNode processes parameters inside a parameters element
-func processParametersNode(node *tree_sitter.Node, data []byte, path string) []Parameter {
-	// Pre-allocate with reasonable capacity
-	parameters := make([]Parameter, 0, 10)
+func processXMLAlias(node *xmlsyntax.Node, lineIndex *xmlsyntax.LineIndex, path string) Service {
+	attributes := xmlquery.AttributeValues(node)
+	if attributes["id"] == "" || attributes["service"] == "" {
+		return Service{}
+	}
+	deprecatedValue, deprecatedRange := xmlServiceDeprecation(
+		node,
+		attributes,
+	)
+	return Service{
+		ID:              attributes["id"],
+		AliasTarget:     attributes["service"],
+		Deprecated:      deprecatedConfigValue(deprecatedValue),
+		Deprecation:     deprecationMessage(deprecatedValue),
+		Path:            path,
+		Line:            xmlLine(lineIndex, node),
+		Range:           node.RangeTrimmedTrivia(),
+		IDRange:         xmlAttributeContentRange(xmlquery.Attribute(node, "id")),
+		DeprecatedRange: deprecatedRange,
+	}
+}
 
-	// Get the content node
-	if node.NamedChildCount() < 2 {
-		return parameters
+func processXMLPrototype(
+	node *xmlsyntax.Node,
+	lineIndex *xmlsyntax.LineIndex,
+	path string,
+	defaultAutowire bool,
+	defaultAutowireSet bool,
+) ServicePrototype {
+	namespaceAttribute := xmlquery.Attribute(node, "namespace")
+	resourceAttribute := xmlquery.Attribute(node, "resource")
+	excludeAttribute := xmlquery.Attribute(node, "exclude")
+	namespace := strings.TrimPrefix(
+		strings.TrimSpace(xmlquery.AttributeValue(namespaceAttribute)),
+		"\\",
+	)
+	resource := serviceConfigPath(
+		path,
+		xmlquery.AttributeValue(resourceAttribute),
+	)
+	prototype := ServicePrototype{
+		Namespace:      namespace,
+		Resource:       resource,
+		Autowire:       defaultAutowire,
+		AutowireSet:    defaultAutowireSet,
+		Tags:           make(map[string]string),
+		Path:           path,
+		Line:           xmlLine(lineIndex, node),
+		Range:          node.RangeTrimmedTrivia(),
+		NamespaceRange: xmlAttributeContentRange(namespaceAttribute),
+		ResourceRange:  xmlAttributeContentRange(resourceAttribute),
+	}
+	if value := xmlquery.Attribute(node, "autowire"); value != nil {
+		prototype.Autowire, _ = configuredServiceBool(
+			xmlquery.AttributeValue(value),
+		)
+		prototype.AutowireSet = true
+	}
+	if exclude := strings.TrimSpace(
+		xmlquery.AttributeValue(excludeAttribute),
+	); exclude != "" {
+		prototype.Excludes = []string{serviceConfigPath(path, exclude)}
+	}
+	for _, tag := range xmlquery.ChildElements(node, "tag") {
+		if name := xmlquery.AttributeValue(
+			xmlquery.Attribute(tag, "name"),
+		); name != "" {
+			prototype.Tags[name] = ""
+		}
+	}
+	return prototype
+}
+
+func xmlServiceAutowire(node *xmlsyntax.Node) (bool, bool) {
+	if node == nil {
+		return false, false
+	}
+	attribute := xmlquery.Attribute(node, "autowire")
+	if attribute == nil {
+		return false, false
+	}
+	value, _ := configuredServiceBool(xmlquery.AttributeValue(attribute))
+	return value, true
+}
+
+func processXMLParameter(node *xmlsyntax.Node, lineIndex *xmlsyntax.LineIndex, path string) Parameter {
+	attributes := xmlquery.AttributeValues(node)
+	name := attributes["key"]
+	if name == "" {
+		return Parameter{}
 	}
 
-	contentNode := node.NamedChild(1)
-	if contentNode == nil || contentNode.Kind() != "content" {
-		return parameters
+	value := ""
+	switch {
+	case attributes["type"] == "service" && attributes["id"] != "":
+		value = "@" + attributes["id"]
+	case attributes["value"] != "":
+		value = attributes["value"]
+	default:
+		value = strings.TrimSpace(xmlquery.TextContent(node))
 	}
 
-	// Process all elements in content
-	childCount := int(contentNode.NamedChildCount())
-	for i := 0; i < childCount; i++ {
-		child := contentNode.NamedChild(uint(i))
-		if child.Kind() != "element" {
-			continue
-		}
-
-		// Get element's STag or EmptyElemTag
-		elementTag := child.NamedChild(0)
-		if elementTag == nil {
-			continue
-		}
-
-		// Get element name
-		nameNode := treesitterhelper.GetFirstNodeOfKind(elementTag, "Name")
-		if nameNode == nil {
-			continue
-		}
-
-		// Fast string comparison
-		elementName := nameNode.Utf8Text(data)
-		if string(elementName) == "parameter" {
-			param := processParameterNode(child, data, path)
-			if param.Name != "" {
-				parameters = append(parameters, param)
-			}
-		}
+	return Parameter{
+		Name:  name,
+		Value: value,
+		Path:  path,
+		Line:  xmlLine(lineIndex, node),
 	}
+}
 
-	return parameters
+func xmlLine(lineIndex *xmlsyntax.LineIndex, node *xmlsyntax.Node) int {
+	line, _ := lineIndex.Position(node.Range().Start)
+	return int(line) + 1
+}
+
+func xmlAttributeContentRange(attribute *xmlsyntax.Node) cst.TextRange {
+	if attribute == nil {
+		return cst.TextRange{}
+	}
+	for child := range attribute.ChildNodes() {
+		if child.Kind() != xmlsyntax.XmlAttributeValue {
+			continue
+		}
+		rng := child.RangeTrimmedTrivia()
+		text := strings.TrimSpace(child.Text())
+		if len(text) >= 2 &&
+			(text[0] == '\'' || text[0] == '"') &&
+			text[len(text)-1] == text[0] &&
+			rng.End > rng.Start+1 {
+			rng.Start++
+			rng.End--
+		}
+		return rng
+	}
+	return cst.TextRange{}
+}
+
+func serviceConfigPath(configPath, value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if filepath.IsAbs(value) {
+		return filepath.Clean(value)
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(configPath), value))
 }

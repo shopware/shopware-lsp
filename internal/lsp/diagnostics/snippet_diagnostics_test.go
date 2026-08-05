@@ -1,14 +1,19 @@
 package diagnostics
 
 import (
+	"context"
+	"path/filepath"
 	"testing"
 
-	treesitterhelper "github.com/shopware/shopware-lsp/internal/tree_sitter_helper"
+	"github.com/shopware/shopware-lsp/internal/indexer"
+	"github.com/shopware/shopware-lsp/internal/lsp"
+	twigparser "github.com/shopware/shopware-lsp/internal/parser/twig"
+	twigquery "github.com/shopware/shopware-lsp/internal/parser/twig/query"
+	twigsyntax "github.com/shopware/shopware-lsp/internal/parser/twig/syntax"
+	"github.com/shopware/shopware-lsp/internal/snippet"
 	"github.com/stretchr/testify/assert"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
+	"github.com/stretchr/testify/require"
 )
-
-// parseTwig is defined in admin_diagnostics_test.go
 
 func TestSnippetDiagnosticsPatternDetection(t *testing.T) {
 	tests := []struct {
@@ -74,23 +79,16 @@ func TestSnippetDiagnosticsPatternDetection(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tree, parser := parseTwig(t, tt.code)
-			defer tree.Close()
-			defer parser.Close()
+			parsed := twigparser.Parse(tt.code)
 
-			// Find all frontend snippet matches
-			frontendMatches := treesitterhelper.FindAll(
-				tree.RootNode(),
-				treesitterhelper.TwigTransPattern(),
-				[]byte(tt.code),
-			)
+			var frontendMatches []*twigsyntax.Node
+			for _, candidate := range twigquery.Nodes(parsed.Tree.Root, twigsyntax.TwigLiteralString) {
+				if twigquery.StringInFilter(candidate, "trans") {
+					frontendMatches = append(frontendMatches, candidate)
+				}
+			}
 
-			// Find all admin snippet matches
-			adminMatches := treesitterhelper.FindAll(
-				tree.RootNode(),
-				treesitterhelper.TwigAdminSnippetPattern(),
-				[]byte(tt.code),
-			)
+			adminMatches := twigquery.StringArgumentsInFunctions(parsed.Tree.Root, "$tc", "$t")
 
 			assert.Len(t, frontendMatches, tt.expectedFrontendCount,
 				"Frontend snippet count for: %s", tt.code)
@@ -98,6 +96,79 @@ func TestSnippetDiagnosticsPatternDetection(t *testing.T) {
 				"Admin snippet count for: %s", tt.code)
 		})
 	}
+}
+
+func TestAdminSnippetDiagnosticsCoverVueBoundTwigAttributes(t *testing.T) {
+	root := t.TempDir()
+	snippetIndex, err := snippet.NewSnippetIndexer(filepath.Join(root, "cache"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, snippetIndex.Close()) })
+	require.NoError(t, snippetIndex.Index(indexer.NewParsedFile(
+		filepath.Join(
+			root,
+			"src/Resources/app/administration/src/module/demo/snippet/en-GB.json",
+		),
+		[]byte(`{"admin":{"known":"Known"}}`),
+	)))
+	source := `<div
+    :title="$t('admin.known')"
+    :label="$tc('admin.missing')"
+    title="$t('admin.plain-attribute')"
+/>`
+	document := lsp.NewTextDocument(
+		"file:///project/src/Resources/app/administration/view.html.twig",
+		source,
+		1,
+	)
+	problems, err := NewSnippetAnalyzer(snippetIndex).Analyze(
+		context.Background(),
+		document,
+	)
+	require.NoError(t, err)
+	require.Len(t, problems, 1)
+	assert.Equal(t, "admin.snippet.missing", string(problems[0].ID))
+	assert.Equal(t, "admin.missing", source[problems[0].Range.Start:problems[0].Range.End])
+}
+
+func TestAdminSnippetDiagnosticsCoverJavaScriptTranslatorForms(t *testing.T) {
+	root := t.TempDir()
+	snippetIndex, err := snippet.NewSnippetIndexer(filepath.Join(root, "cache"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, snippetIndex.Close()) })
+	require.NoError(t, snippetIndex.Index(indexer.NewParsedFile(
+		filepath.Join(
+			root,
+			"src/Resources/app/administration/src/module/demo/snippet/en-GB.json",
+		),
+		[]byte(`{"admin":{"known":"Known"}}`),
+	)))
+	source := `
+translator.$t('admin.known');
+this.$root.$tc('admin.missing-root');
+Shopware.Snippet.t('admin.missing-service');
+other.t('admin.not-a-translation');
+this.$t(dynamicKey);
+Module.register('demo', {
+    title: 'admin.known',
+    description: 'admin.missing-module',
+    navigation: [{ label: 'admin.known' }],
+    routes: { index: { meta: { label: 'admin.not-a-module-label' } } },
+});
+`
+	document := lsp.NewTextDocument(
+		"file:///project/src/Resources/app/administration/index.ts",
+		source,
+		1,
+	)
+	problems, err := NewSnippetAnalyzer(snippetIndex).Analyze(
+		context.Background(),
+		document,
+	)
+	require.NoError(t, err)
+	require.Len(t, problems, 3)
+	assert.Equal(t, "'admin.missing-root'", source[problems[0].Range.Start:problems[0].Range.End])
+	assert.Equal(t, "'admin.missing-service'", source[problems[1].Range.Start:problems[1].Range.End])
+	assert.Equal(t, "'admin.missing-module'", source[problems[2].Range.Start:problems[2].Range.End])
 }
 
 func TestSnippetDiagnosticsAdminFileDetection(t *testing.T) {
@@ -184,29 +255,22 @@ func TestSnippetKeyExtraction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tree, parser := parseTwig(t, tt.code)
-			defer tree.Close()
-			defer parser.Close()
+			parsed := twigparser.Parse(tt.code)
 
-			// Find the first string node matching either pattern
-			var matches []*tree_sitter.Node
-			matches = treesitterhelper.FindAll(
-				tree.RootNode(),
-				treesitterhelper.TwigTransPattern(),
-				[]byte(tt.code),
-			)
+			var matches []*twigsyntax.Node
+			for _, candidate := range twigquery.Nodes(parsed.Tree.Root, twigsyntax.TwigLiteralString) {
+				if twigquery.StringInFilter(candidate, "trans") {
+					matches = append(matches, candidate)
+				}
+			}
 			if len(matches) == 0 {
-				matches = treesitterhelper.FindAll(
-					tree.RootNode(),
-					treesitterhelper.TwigAdminSnippetPattern(),
-					[]byte(tt.code),
-				)
+				matches = twigquery.StringArgumentsInFunctions(parsed.Tree.Root, "$tc", "$t")
 			}
 
 			assert.NotEmpty(t, matches, "Should find at least one match")
 
 			if len(matches) > 0 {
-				extractedKey := treesitterhelper.GetNodeText(matches[0], []byte(tt.code))
+				extractedKey := twigquery.StringValue(matches[0])
 				assert.Equal(t, tt.expectedKey, extractedKey, "Extracted key for: %s", tt.code)
 			}
 		})

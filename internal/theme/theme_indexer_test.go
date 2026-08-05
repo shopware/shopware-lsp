@@ -4,10 +4,9 @@ import (
 	"os"
 	"testing"
 
+	indexerpkg "github.com/shopware/shopware-lsp/internal/indexer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
-	tree_sitter_json "github.com/tree-sitter/tree-sitter-json/bindings/go"
 )
 
 func TestThemeConfigIndexer(t *testing.T) {
@@ -22,18 +21,9 @@ func TestThemeConfigIndexer(t *testing.T) {
 	bytes, err := os.ReadFile("testdata/theme.json")
 	require.NoError(t, err)
 
-	// Create parser
-	parser := tree_sitter.NewParser()
-	require.NoError(t, parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_json.Language())))
-
-	// Parse file
-	tree := parser.Parse(bytes, nil)
-	require.NotNil(t, tree)
-	defer tree.Close()
-
 	// Index the file
 	filePath := "testdata/theme.json"
-	err = indexer.Index(filePath, tree.RootNode(), bytes)
+	err = indexer.Index(indexerpkg.NewParsedFile(filePath, bytes))
 	require.NoError(t, err)
 
 	// Test GetThemeConfigFields

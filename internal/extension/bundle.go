@@ -5,26 +5,25 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/shopware/shopware-lsp/internal/php"
+	"github.com/shopware/shopware-lsp/internal/php/semantic"
 )
 
 // isShopwareBundle checks if a class extends Shopware\Core\Framework\Bundle or Shopware\Core\Framework\Plugin
-func isShopwareBundle(class php.PHPClass) bool {
-	if class.IsInterface || class.Parent == "" {
+func isShopwareBundle(class semantic.Symbol) bool {
+	if class.Kind != semantic.ClassSymbol || len(class.Extends) == 0 {
 		return false
 	}
 
-	return class.Parent == "\\Shopware\\Core\\Framework\\Bundle" ||
-		class.Parent == "Shopware\\Core\\Framework\\Bundle" ||
-		class.Parent == "\\Shopware\\Core\\Framework\\Plugin" ||
-		class.Parent == "Shopware\\Core\\Framework\\Plugin"
+	parent := strings.TrimPrefix(class.Extends[0], "\\")
+	return parent == "Shopware\\Core\\Framework\\Bundle" ||
+		parent == "Shopware\\Core\\Framework\\Plugin"
 }
 
 // createBundleFromClass creates a ShopwareExtension instance from a PHP class
-func createBundleFromClass(class php.PHPClass) ShopwareExtension {
+func createBundleFromClass(class semantic.Symbol) ShopwareExtension {
 	// Extract the last part of the fully qualified class name
-	nameParts := strings.Split(class.Name, "\\")
-	name := class.Name
+	nameParts := strings.Split(class.FullyQualified, "\\")
+	name := class.FullyQualified
 	if len(nameParts) > 0 {
 		name = nameParts[len(nameParts)-1]
 	}
@@ -53,15 +52,8 @@ var coreBundles = []string{
 
 // isValidForIndex checks if a file should be indexed
 func isValidForIndex(filePath string) bool {
-	// Handle test directories in the path
-	pathParts := strings.Split(filepath.ToSlash(filePath), "/")
-	for _, part := range pathParts {
-		partLower := strings.ToLower(part)
-		if partLower == "tests" || partLower == "test" ||
-			partLower == "fixtures" || partLower == "_fixture" ||
-			partLower == "_fixtures" {
-			return false
-		}
+	if hasExcludedBundlePathComponent(filePath) {
+		return false
 	}
 
 	// Skip hidden files
@@ -76,14 +68,52 @@ func isValidForIndex(filePath string) bool {
 	}
 
 	// Handle test files but make exceptions for bundle and plugin classes
-	fileNameLower := strings.ToLower(fileName)
-	if strings.Contains(fileNameLower, "test") {
+	if containsFold(fileName, "test") {
 		// Skip all test files except TestBundle.php and TestPlugin.php (which may be valid bundle classes)
-		if !strings.HasSuffix(fileNameLower, "bundle.php") && !strings.HasSuffix(fileNameLower, "plugin.php") {
+		if !hasSuffixFold(fileName, "bundle.php") &&
+			!hasSuffixFold(fileName, "plugin.php") {
 			return false
 		}
 	}
 
 	// If we got this far, the file should be indexed
 	return true
+}
+
+func hasExcludedBundlePathComponent(path string) bool {
+	componentStart := 0
+	for componentEnd := 0; componentEnd <= len(path); componentEnd++ {
+		if componentEnd < len(path) &&
+			path[componentEnd] != '/' &&
+			path[componentEnd] != '\\' {
+			continue
+		}
+		component := path[componentStart:componentEnd]
+		if strings.EqualFold(component, "tests") ||
+			strings.EqualFold(component, "test") ||
+			strings.EqualFold(component, "fixtures") ||
+			strings.EqualFold(component, "_fixture") ||
+			strings.EqualFold(component, "_fixtures") {
+			return true
+		}
+		componentStart = componentEnd + 1
+	}
+	return false
+}
+
+func containsFold(source, needle string) bool {
+	if len(needle) == 0 {
+		return true
+	}
+	for index := 0; index+len(needle) <= len(source); index++ {
+		if strings.EqualFold(source[index:index+len(needle)], needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasSuffixFold(source, suffix string) bool {
+	return len(source) >= len(suffix) &&
+		strings.EqualFold(source[len(source)-len(suffix):], suffix)
 }

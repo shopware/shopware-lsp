@@ -5,8 +5,6 @@ import (
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/indexer"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
-	tree_sitter_json "github.com/tree-sitter/tree-sitter-json/bindings/go"
 )
 
 // ThemeConfigIndexer is responsible for indexing theme.json files
@@ -15,8 +13,8 @@ type ThemeConfigIndexer struct {
 }
 
 // NewThemeConfigIndexer creates a new theme config indexer
-func NewThemeConfigIndexer(configDir string) (*ThemeConfigIndexer, error) {
-	configIndexer, err := indexer.NewDataIndexer[ThemeConfigField](filepath.Join(configDir, "theme_config.db"))
+func NewThemeConfigIndexer(configDir string, stores ...*indexer.Store) (*ThemeConfigIndexer, error) {
+	configIndexer, err := indexer.NewRepository[ThemeConfigField](filepath.Join(configDir, "theme_config.db"), "theme.config", stores...)
 	if err != nil {
 		return nil, err
 	}
@@ -32,32 +30,21 @@ func (t *ThemeConfigIndexer) ID() string {
 }
 
 // Index processes a file and indexes any theme config fields found
-func (t *ThemeConfigIndexer) Index(path string, node *tree_sitter.Node, fileContent []byte) error {
+func (t *ThemeConfigIndexer) Index(file *indexer.ParsedFile) error {
+	path := file.Path
 	// Skip non-theme.json files
 	if !strings.HasSuffix(path, "theme.json") {
 		return nil
 	}
 
-	// Parse the theme.json file
-	parser := tree_sitter.NewParser()
-	if err := parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_json.Language())); err != nil {
-		return err
-	}
-
-	tree := parser.Parse(fileContent, nil)
-	if tree == nil {
-		return nil
-	}
-	defer tree.Close()
-
 	// Extract theme config fields
-	fields, err := ParseThemeConfig(tree.RootNode(), fileContent, path)
+	fields, err := ParseThemeConfigTree(file.SyntaxTree(), file.LineIndex(), path)
 	if err != nil {
 		return err
 	}
 
 	// Prepare batch save
-	batchSave := make(map[string]map[string]ThemeConfigField)
+	batchSave := map[string]map[string]ThemeConfigField{path: {}}
 
 	for _, field := range fields {
 		if _, ok := batchSave[field.Path]; !ok {
@@ -66,12 +53,16 @@ func (t *ThemeConfigIndexer) Index(path string, node *tree_sitter.Node, fileCont
 		batchSave[field.Path][field.Key] = field
 	}
 
-	return t.configIndex.BatchSaveItems(batchSave)
+	return t.configIndex.BatchSaveItemsIn(file.Mutation(), batchSave)
 }
 
 // RemovedFiles handles cleanup when files are removed
 func (t *ThemeConfigIndexer) RemovedFiles(paths []string) error {
 	return t.configIndex.BatchDeleteByFilePaths(paths)
+}
+
+func (t *ThemeConfigIndexer) RemovedFilesIn(paths []string, mutation *indexer.Mutation) error {
+	return t.configIndex.BatchDeleteByFilePathsIn(mutation, paths)
 }
 
 // Close closes the indexer
@@ -82,6 +73,10 @@ func (t *ThemeConfigIndexer) Close() error {
 // Clear clears all indexed data
 func (t *ThemeConfigIndexer) Clear() error {
 	return t.configIndex.Clear()
+}
+
+func (t *ThemeConfigIndexer) ClearIn(mutation *indexer.Mutation) error {
+	return t.configIndex.ClearIn(mutation)
 }
 
 // GetThemeConfigFields returns all theme config field keys

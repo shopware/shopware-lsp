@@ -1,12 +1,20 @@
 package hover
 
 import (
+	"context"
+	"path/filepath"
+	"strings"
 	"testing"
 
-	tree_sitter_twig "github.com/shopware/shopware-lsp/internal/tree_sitter_grammars/twig/bindings/go"
-	treesitterhelper "github.com/shopware/shopware-lsp/internal/tree_sitter_helper"
+	"github.com/shopware/shopware-lsp/internal/indexer"
+	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	twigparser "github.com/shopware/shopware-lsp/internal/parser/twig"
+	twigquery "github.com/shopware/shopware-lsp/internal/parser/twig/query"
+	twigsyntax "github.com/shopware/shopware-lsp/internal/parser/twig/syntax"
+	"github.com/shopware/shopware-lsp/internal/snippet"
 	"github.com/stretchr/testify/assert"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
+	"github.com/stretchr/testify/require"
 )
 
 func TestExtractLocaleFromPath(t *testing.T) {
@@ -222,34 +230,6 @@ func TestNormalizeLocale(t *testing.T) {
 	}
 }
 
-func parseTwig(t *testing.T, code string) (*tree_sitter.Tree, *tree_sitter.Parser) {
-	parser := tree_sitter.NewParser()
-	if err := parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_twig.Language())); err != nil {
-		t.Fatal(err)
-	}
-	tree := parser.Parse([]byte(code), nil)
-	return tree, parser
-}
-
-func findStringNode(root *tree_sitter.Node, content []byte) *tree_sitter.Node {
-	var result *tree_sitter.Node
-	var visit func(node *tree_sitter.Node)
-	visit = func(node *tree_sitter.Node) {
-		if node.Kind() == "string" {
-			result = node
-			return
-		}
-		for i := uint(0); i < node.ChildCount(); i++ {
-			visit(node.Child(i))
-			if result != nil {
-				return
-			}
-		}
-	}
-	visit(root)
-	return result
-}
-
 func TestSnippetHoverPatternMatching(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -285,20 +265,115 @@ func TestSnippetHoverPatternMatching(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tree, parser := parseTwig(t, tt.code)
-			defer tree.Close()
-			defer parser.Close()
-
-			stringNode := findStringNode(tree.RootNode(), []byte(tt.code))
-			if stringNode == nil {
+			result := twigparser.Parse(tt.code)
+			strings := twigquery.Nodes(result.Tree.Root, twigsyntax.TwigLiteralString)
+			if len(strings) == 0 {
 				t.Fatal("Could not find string node")
 			}
 
-			frontendMatch := treesitterhelper.TwigTransPattern().Matches(stringNode, []byte(tt.code))
-			adminMatch := treesitterhelper.TwigAdminSnippetPattern().Matches(stringNode, []byte(tt.code))
+			frontendMatch := twigquery.StringInFilter(strings[0], "trans")
+			adminMatch := twigquery.StringInFunction(strings[0], "$tc", "$t")
 
 			assert.Equal(t, tt.expectFrontend, frontendMatch, "Frontend pattern for: %s", tt.code)
 			assert.Equal(t, tt.expectAdmin, adminMatch, "Admin pattern for: %s", tt.code)
+		})
+	}
+}
+
+func TestAdminSnippetHoverInsideVueBoundTwigAttribute(t *testing.T) {
+	root := t.TempDir()
+	snippetIndex, err := snippet.NewSnippetIndexer(filepath.Join(root, "cache"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, snippetIndex.Close()) })
+	require.NoError(t, snippetIndex.Index(indexer.NewParsedFile(
+		filepath.Join(
+			root,
+			"src/Resources/app/administration/src/module/demo/snippet/en-GB.json",
+		),
+		[]byte(`{"admin":{"settings":{"title":"Settings"}}}`),
+	)))
+	source := `<mt-button :label="$t('admin.settings.title')" />`
+	document := lsp.NewTextDocument(
+		"file:///project/src/Resources/app/administration/view.html.twig",
+		source,
+		1,
+	)
+	offset := uint32(strings.Index(source, "admin.settings.title") + 3)
+	line, character := document.LineIndex.PositionUTF16(offset)
+	params := &protocol.HoverParams{}
+	params.TextDocument.URI = document.URI
+	params.Position.Line = int(line)
+	params.Position.Character = int(character)
+	result, err := NewSnippetHoverProvider(root, snippetIndex).GetHover(
+		context.Background(),
+		&lsp.HoverRequest{
+			HoverParams: params,
+			SyntaxContext: lsp.SyntaxContext{
+				Document: document, DocumentContent: document.Text,
+				DocumentTree: document.SyntaxTree,
+				LineIndex:    document.LineIndex,
+				Root:         document.SyntaxTree.Root,
+				Node: document.SyntaxTree.Root.NodeAtOffset(
+					offset,
+				),
+			},
+		},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Contains(t, result.Contents.Value, "admin.settings.title")
+	assert.Contains(t, result.Contents.Value, "Settings")
+}
+
+func TestAdminSnippetHoverInJavaScriptReferences(t *testing.T) {
+	root := t.TempDir()
+	snippetIndex, err := snippet.NewSnippetIndexer(filepath.Join(root, "cache"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, snippetIndex.Close()) })
+	require.NoError(t, snippetIndex.Index(indexer.NewParsedFile(
+		filepath.Join(
+			root,
+			"src/Resources/app/administration/src/module/demo/snippet/en-GB.json",
+		),
+		[]byte(`{"admin":{"settings":{"title":"Settings"}}}`),
+	)))
+	for name, source := range map[string]string{
+		"root translator": `this.$root.$t('admin.settings.title')`,
+		"navigation label": `Module.register('demo', {
+            navigation: [{ label: 'admin.settings.title' }],
+        });`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			document := lsp.NewTextDocument(
+				"file:///project/src/Resources/app/administration/index.js",
+				source,
+				1,
+			)
+			offset := uint32(strings.Index(source, "admin.settings.title") + 3)
+			line, character := document.LineIndex.PositionUTF16(offset)
+			params := &protocol.HoverParams{}
+			params.TextDocument.URI = document.URI
+			params.Position.Line = int(line)
+			params.Position.Character = int(character)
+			result, err := NewSnippetHoverProvider(root, snippetIndex).GetHover(
+				context.Background(),
+				&lsp.HoverRequest{
+					HoverParams: params,
+					SyntaxContext: lsp.SyntaxContext{
+						Document: document, DocumentContent: document.Text,
+						DocumentTree: document.SyntaxTree,
+						LineIndex:    document.LineIndex,
+						Root:         document.SyntaxTree.Root,
+						Node: document.SyntaxTree.Root.NodeAtOffset(
+							offset,
+						),
+					},
+				},
+			)
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.Contains(t, result.Contents.Value, "admin.settings.title")
+			assert.Contains(t, result.Contents.Value, "Settings")
 		})
 	}
 }

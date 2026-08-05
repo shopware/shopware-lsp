@@ -9,5 +9,5 @@ import (
 // GotoDefinitionProvider is an interface for providing definition locations
 type GotoDefinitionProvider interface {
 	// GetDefinition returns location(s) for the definition of the symbol at the given position
-	GetDefinition(ctx context.Context, params *protocol.DefinitionParams) []protocol.Location
+	GetDefinition(ctx context.Context, request *DefinitionRequest) []protocol.Location
 }

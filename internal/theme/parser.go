@@ -2,183 +2,86 @@ package theme
 
 import (
 	"fmt"
-	"strings"
 
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
+	jsonparser "github.com/shopware/shopware-lsp/internal/parser/json"
+	jsonquery "github.com/shopware/shopware-lsp/internal/parser/json/query"
+	jsonsyntax "github.com/shopware/shopware-lsp/internal/parser/json/syntax"
 )
 
-// ParseThemeConfig parses the config section from a theme.json file and returns a slice of ThemeConfigField
-func ParseThemeConfig(root *tree_sitter.Node, document []byte, filePath string) ([]ThemeConfigField, error) {
-	// Find the object node which is the first child of the document node
-	if root.Kind() == "document" && root.NamedChildCount() > 0 {
-		root = root.NamedChild(0) // Get the object node
+// ParseThemeConfig parses the config.fields section from a theme.json file.
+func ParseThemeConfig(document []byte, filePath string) ([]ThemeConfigField, error) {
+	result := jsonparser.Parse(string(document))
+	return ParseThemeConfigTree(result.Tree, jsonsyntax.NewLineIndex(result.Tree.Source), filePath)
+}
+
+func ParseThemeConfigTree(tree *jsonsyntax.Tree, lineIndex *jsonsyntax.LineIndex, filePath string) ([]ThemeConfigField, error) {
+	root := jsonquery.RootValue(tree.Root)
+	if root == nil || root.Kind() != jsonsyntax.JsonObject {
+		return nil, fmt.Errorf("JSON root is not an object")
 	}
 
-	if root.Kind() != "object" {
-		return nil, fmt.Errorf("root node is not an object: %s", root.Kind())
+	config := jsonquery.Property(root, "config")
+	if config == nil || config.Kind() != jsonsyntax.JsonObject {
+		return []ThemeConfigField{}, nil
+	}
+	fieldsNode := jsonquery.Property(config, "fields")
+	if fieldsNode == nil || fieldsNode.Kind() != jsonsyntax.JsonObject {
+		return []ThemeConfigField{}, nil
 	}
 
-	// Final result with all fields
-	var fields []ThemeConfigField
+	fields := make([]ThemeConfigField, 0, len(jsonquery.Pairs(fieldsNode)))
+	for _, pair := range jsonquery.Pairs(fieldsNode) {
+		key := jsonquery.PairKey(pair)
+		value := jsonquery.PairValue(pair)
+		if key == nil || value == nil || value.Kind() != jsonsyntax.JsonObject {
+			continue
+		}
 
-	// Find the config section in the theme.json
-	configNode := findConfigNode(root, document)
-	if configNode == nil {
-		return fields, nil // Return empty slice if no config section found
-	}
+		line, _ := lineIndex.Position(key.RangeTrimmedTrivia().Start)
+		field := ThemeConfigField{
+			Key:   jsonquery.StringValue(key),
+			Label: make(map[string]string),
+			Scss:  true,
+			Path:  filePath,
+			Line:  int(line) + 1,
+		}
 
-	// Parse blocks and fields
-	for i := 0; i < int(configNode.NamedChildCount()); i++ {
-		pair := configNode.NamedChild(uint(i))
-
-		if pair.Kind() == "pair" {
-			key := pair.NamedChild(0)
-			value := pair.NamedChild(1)
-
-			if key != nil && key.Kind() == "string" {
-				keyText := extractStringContent(key, document)
-
-				if keyText == "fields" && value.Kind() == "object" {
-					// Parse fields and append to result
-					fields = parseFields(value, document, filePath)
+		if labels := jsonquery.Property(value, "label"); labels != nil && labels.Kind() == jsonsyntax.JsonObject {
+			for _, labelPair := range jsonquery.Pairs(labels) {
+				labelKey := jsonquery.PairKey(labelPair)
+				labelValue := jsonquery.PairValue(labelPair)
+				if labelKey != nil && labelValue != nil && labelValue.Kind() == jsonsyntax.JsonString {
+					field.Label[jsonquery.StringValue(labelKey)] = jsonquery.StringValue(labelValue)
 				}
 			}
 		}
+		if property := jsonquery.Property(value, "type"); property != nil {
+			field.Type = jsonquery.StringValue(property)
+		}
+		if property := jsonquery.Property(value, "value"); property != nil {
+			field.Value = jsonquery.StringValue(property)
+		}
+		if property := jsonquery.Property(value, "editable"); property != nil {
+			if editable, ok := jsonquery.BooleanValue(property); ok {
+				field.Editable = editable
+			}
+		}
+		if property := jsonquery.Property(value, "scss"); property != nil {
+			if scss, ok := jsonquery.BooleanValue(property); ok {
+				field.Scss = scss
+			}
+		}
+		if property := jsonquery.Property(value, "order"); property != nil {
+			if order, ok := jsonquery.IntegerValue(property); ok {
+				field.Order = order
+			}
+		}
+		if property := jsonquery.Property(value, "block"); property != nil {
+			field.Block = jsonquery.StringValue(property)
+		}
+
+		fields = append(fields, field)
 	}
 
 	return fields, nil
-}
-
-// findConfigNode finds the config section in the theme.json
-func findConfigNode(root *tree_sitter.Node, document []byte) *tree_sitter.Node {
-	for i := 0; i < int(root.NamedChildCount()); i++ {
-		pair := root.NamedChild(uint(i))
-
-		if pair.Kind() == "pair" {
-			key := pair.NamedChild(0)
-			value := pair.NamedChild(1)
-
-			if key != nil && key.Kind() == "string" {
-				keyText := extractStringContent(key, document)
-
-				if keyText == "config" && value.Kind() == "object" {
-					return value
-				}
-			}
-		}
-	}
-	return nil
-}
-
-// extractStringContent extracts a string content from a string node
-func extractStringContent(node *tree_sitter.Node, content []byte) string {
-	if node.NamedChildCount() > 0 && node.NamedChild(0).Kind() == "string_content" {
-		stringContent := node.NamedChild(0)
-		return string(stringContent.Utf8Text(content))
-	}
-
-	// Fallback
-	str := string(node.Utf8Text(content))
-	return strings.Trim(str, "\"")
-}
-
-// parseFields parses the fields in the config section and returns a slice of ThemeConfigField
-func parseFields(node *tree_sitter.Node, content []byte, filePath string) []ThemeConfigField {
-	var fields []ThemeConfigField
-
-	for i := 0; i < int(node.NamedChildCount()); i++ {
-		pair := node.NamedChild(uint(i))
-
-		if pair.Kind() == "pair" {
-			key := pair.NamedChild(0)
-			value := pair.NamedChild(1)
-
-			if key != nil && key.Kind() == "string" && value.Kind() == "object" {
-				fieldKey := extractStringContent(key, content)
-				field := ThemeConfigField{
-					Key:   fieldKey,
-					Label: make(map[string]string),
-					Scss:  true,
-					Path:  filePath,
-					Line:  int(pair.Range().StartPoint.Row) + 1, // Convert to 1-based line number
-				}
-
-				// Parse the field properties
-				for j := 0; j < int(value.NamedChildCount()); j++ {
-					fieldPair := value.NamedChild(uint(j))
-
-					if fieldPair.Kind() == "pair" {
-						fieldPropKey := fieldPair.NamedChild(0)
-						fieldPropValue := fieldPair.NamedChild(1)
-
-						if fieldPropKey != nil && fieldPropKey.Kind() == "string" {
-							fieldPropKeyText := extractStringContent(fieldPropKey, content)
-
-							switch fieldPropKeyText {
-							case "label":
-								if fieldPropValue.Kind() == "object" {
-									extractLabels(fieldPropValue, content, field.Label)
-								}
-							case "type":
-								if fieldPropValue.Kind() == "string" {
-									field.Type = extractStringContent(fieldPropValue, content)
-								}
-							case "value":
-								if fieldPropValue.Kind() == "string" {
-									field.Value = extractStringContent(fieldPropValue, content)
-								}
-							case "editable":
-								if fieldPropValue.Kind() == "true" {
-									field.Editable = true
-								} else if fieldPropValue.Kind() == "false" {
-									field.Editable = false
-								}
-							case "scss":
-								if fieldPropValue.Kind() == "true" {
-									field.Scss = true
-								} else if fieldPropValue.Kind() == "false" {
-									field.Scss = false
-								}
-							case "order":
-								if fieldPropValue.Kind() == "number" {
-									// For simplicity, we assume its an integer
-									orderStr := string(fieldPropValue.Utf8Text(content))
-									var order int
-									if _, err := fmt.Sscanf(orderStr, "%d", &order); err == nil {
-										field.Order = order
-									}
-								}
-							case "block":
-								if fieldPropValue.Kind() == "string" {
-									field.Block = extractStringContent(fieldPropValue, content)
-								}
-							}
-						}
-					}
-				}
-
-				fields = append(fields, field)
-			}
-		}
-	}
-
-	return fields
-}
-
-// extractLabels extracts localized labels from an object
-func extractLabels(node *tree_sitter.Node, content []byte, result map[string]string) {
-	for i := 0; i < int(node.NamedChildCount()); i++ {
-		pair := node.NamedChild(uint(i))
-
-		if pair.Kind() == "pair" {
-			key := pair.NamedChild(0)
-			value := pair.NamedChild(1)
-
-			if key != nil && key.Kind() == "string" && value.Kind() == "string" {
-				locale := extractStringContent(key, content)
-				label := extractStringContent(value, content)
-				result[locale] = label
-			}
-		}
-	}
 }

@@ -13,9 +13,16 @@ const (
 )
 
 type ShopwareExtension struct {
-	Name string
-	Type ShopwareExtensionType
-	Path string
+	Name        string
+	Type        ShopwareExtensionType
+	Path        string
+	Permissions []AppPermission
+}
+
+type AppPermission struct {
+	Operation string
+	Entity    string
+	Line      int
 }
 
 func (e ShopwareExtension) GetStorefrontViewsPath() string {

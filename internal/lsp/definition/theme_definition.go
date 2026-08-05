@@ -2,51 +2,50 @@ package definition
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	scssquery "github.com/shopware/shopware-lsp/internal/parser/scss/query"
+	twigquery "github.com/shopware/shopware-lsp/internal/parser/twig/query"
 	"github.com/shopware/shopware-lsp/internal/theme"
-	treesitterhelper "github.com/shopware/shopware-lsp/internal/tree_sitter_helper"
+	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
 type ThemeDefinitionProvider struct {
 	themeIndexer *theme.ThemeConfigIndexer
 }
 
-func NewThemeDefinitionProvider(lspServer *lsp.Server) *ThemeDefinitionProvider {
-	themeIndexer, _ := lspServer.GetIndexer("theme.indexer")
-	return &ThemeDefinitionProvider{
-		themeIndexer: themeIndexer.(*theme.ThemeConfigIndexer),
-	}
+func NewThemeDefinitionProvider(themeIndexer *theme.ThemeConfigIndexer) *ThemeDefinitionProvider {
+	return &ThemeDefinitionProvider{themeIndexer: themeIndexer}
 }
 
-func (p *ThemeDefinitionProvider) GetDefinition(ctx context.Context, params *protocol.DefinitionParams) []protocol.Location {
-	if params.Node == nil {
-		return []protocol.Location{}
-	}
-
+func (p *ThemeDefinitionProvider) GetDefinition(ctx context.Context, params *lsp.DefinitionRequest) []protocol.Location {
 	switch strings.ToLower(filepath.Ext(params.TextDocument.URI)) {
 	case ".scss":
+		if params.Node == nil {
+			return []protocol.Location{}
+		}
 		return p.scssDefinition(ctx, params)
 	case ".twig":
+		if params.Node == nil {
+			return []protocol.Location{}
+		}
 		return p.twigDefinition(ctx, params)
 	default:
 		return []protocol.Location{}
 	}
 }
 
-func (p *ThemeDefinitionProvider) scssDefinition(ctx context.Context, params *protocol.DefinitionParams) []protocol.Location {
-	if params.Node.Kind() == "variable" {
-		nodeText := treesitterhelper.GetNodeText(params.Node, params.DocumentContent)
-		locations, _ := p.themeIndexer.GetThemeConfigField(strings.TrimPrefix(nodeText, "$"))
+func (p *ThemeDefinitionProvider) scssDefinition(ctx context.Context, params *lsp.DefinitionRequest) []protocol.Location {
+	if variable := scssquery.VariableAt(params.Node); variable != nil {
+		locations, _ := p.themeIndexer.GetThemeConfigField(scssquery.VariableName(variable))
 
 		var result []protocol.Location
 		for _, location := range locations {
 			result = append(result, protocol.Location{
-				URI: fmt.Sprintf("file://%s", location.Path),
+				URI: uriutil.FileURI(location.Path),
 				Range: protocol.Range{
 					Start: protocol.Position{
 						Line:      location.Line - 1,
@@ -66,16 +65,16 @@ func (p *ThemeDefinitionProvider) scssDefinition(ctx context.Context, params *pr
 	return []protocol.Location{}
 }
 
-func (p *ThemeDefinitionProvider) twigDefinition(ctx context.Context, params *protocol.DefinitionParams) []protocol.Location {
+func (p *ThemeDefinitionProvider) twigDefinition(ctx context.Context, params *lsp.DefinitionRequest) []protocol.Location {
 
-	if treesitterhelper.TwigStringInFunctionPattern("theme_config").Matches(params.Node, params.DocumentContent) {
-		nodeText := treesitterhelper.GetNodeText(params.Node, params.DocumentContent)
+	if twigquery.StringInFunction(params.Node, "theme_config") {
+		nodeText := twigquery.StringValue(twigquery.LiteralStringAt(params.Node))
 		locations, _ := p.themeIndexer.GetThemeConfigField(nodeText)
 
 		var result []protocol.Location
 		for _, location := range locations {
 			result = append(result, protocol.Location{
-				URI: fmt.Sprintf("file://%s", location.Path),
+				URI: uriutil.FileURI(location.Path),
 				Range: protocol.Range{
 					Start: protocol.Position{
 						Line:      location.Line - 1,

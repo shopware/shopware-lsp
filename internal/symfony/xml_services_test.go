@@ -1,12 +1,12 @@
 package symfony
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	tree_sitter_xml "github.com/tree-sitter-grammars/tree-sitter-xml/bindings/go"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 func TestParseXMLServices(t *testing.T) {
@@ -254,19 +254,13 @@ func TestParseXMLServices(t *testing.T) {
 			expectedAliases:    0,
 			expectedParameters: 0,
 			expectedTags:       map[string][]string{},
-			expectError:        false, // Tree-sitter can still parse malformed XML without errors
+			expectError:        false, // The tolerant parser still returns partial results.
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			parser := tree_sitter.NewParser()
-			_ = parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_xml.LanguageXML()))
-
-			rootNode := parser.Parse([]byte(tc.xmlContent), nil)
-
-			// Parse the XML file
-			services, parameters, err := ParseXMLServices("test.xml", rootNode.RootNode(), []byte(tc.xmlContent))
+			services, parameters, err := ParseXMLServices("test.xml", []byte(tc.xmlContent))
 
 			if tc.expectError {
 				require.Error(t, err, "Expected ParseXMLServices to fail")
@@ -318,6 +312,70 @@ func TestParseXMLServices(t *testing.T) {
 
 				// Check that there are no unexpected tags
 				assert.Len(t, service.Tags, len(expectedTags), "Expected %d tags for service %s, got %d", len(expectedTags), serviceID, len(service.Tags))
+			}
+		})
+	}
+}
+
+func TestParseXMLDeprecatedServiceMetadata(t *testing.T) {
+	services, _, err := ParseXMLServices(
+		"services.xml",
+		[]byte(`<container><services>
+<service id="legacy" class="App\Legacy" deprecated="Use App\Modern instead"/>
+<service id="flagged" class="App\Flagged" deprecated="true"/>
+<service id="active" class="App\Active" deprecated="false"/>
+<service id="compiled.legacy" class="App\CompiledLegacy">
+  <deprecated package="app/package" version="2.0">The "%service_id%" service is deprecated.</deprecated>
+</service>
+<service id="compiled.alias" alias="modern.service">
+  <deprecated package="app/package" version="2.0">Replace %alias_id% with modern.service.</deprecated>
+</service>
+<alias id="legacy.alias" service="modern.service" deprecated="Use modern.service"/>
+</services></container>`),
+	)
+	require.NoError(t, err)
+	require.Len(t, services, 6)
+	assert.True(t, services[0].Deprecated)
+	assert.Equal(t, "Use App\\Modern instead", services[0].Deprecation)
+	assert.NotZero(t, services[0].DeprecatedRange.Len())
+	assert.True(t, services[1].Deprecated)
+	assert.Empty(t, services[1].Deprecation)
+	assert.False(t, services[2].Deprecated)
+	assert.True(t, services[3].Deprecated)
+	assert.Equal(
+		t,
+		`The "%service_id%" service is deprecated.`,
+		services[3].Deprecation,
+	)
+	assert.NotZero(t, services[3].DeprecatedRange.Len())
+	assert.True(t, services[4].Deprecated)
+	assert.Equal(t, "modern.service", services[4].AliasTarget)
+	assert.Empty(t, services[4].Class)
+	assert.True(t, services[5].Deprecated)
+	assert.Equal(t, "Use modern.service", services[5].Deprecation)
+}
+
+func BenchmarkParseXMLServices(b *testing.B) {
+	for _, serviceCount := range []int{100, 1000, 5000} {
+		b.Run(fmt.Sprintf("services_%d", serviceCount), func(b *testing.B) {
+			var source strings.Builder
+			source.Grow(serviceCount*80 + 50)
+			source.WriteString("<container><services>\n")
+			for i := 0; i < serviceCount; i++ {
+				fmt.Fprintf(
+					&source,
+					"<service id=\"app.service.%d\" class=\"App\\Service\\Service%d\"/>\n",
+					i,
+					i,
+				)
+			}
+			source.WriteString("</services></container>")
+			content := []byte(source.String())
+
+			b.ReportAllocs()
+			b.SetBytes(int64(len(content)))
+			for b.Loop() {
+				_, _, _ = ParseXMLServices("services.xml", content)
 			}
 		})
 	}

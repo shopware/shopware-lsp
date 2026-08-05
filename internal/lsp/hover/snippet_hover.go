@@ -9,8 +9,10 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	jsquery "github.com/shopware/shopware-lsp/internal/parser/javascript/query"
+	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
+	twigquery "github.com/shopware/shopware-lsp/internal/parser/twig/query"
 	"github.com/shopware/shopware-lsp/internal/snippet"
-	treesitterhelper "github.com/shopware/shopware-lsp/internal/tree_sitter_helper"
 )
 
 type SnippetHoverProvider struct {
@@ -18,66 +20,81 @@ type SnippetHoverProvider struct {
 	projectRoot    string
 }
 
-func NewSnippetHoverProvider(projectRoot string, lspServer *lsp.Server) *SnippetHoverProvider {
-	snippetIndexer, _ := lspServer.GetIndexer("snippet.indexer")
+func NewSnippetHoverProvider(projectRoot string, snippetIndexer *snippet.SnippetIndexer) *SnippetHoverProvider {
 	return &SnippetHoverProvider{
-		snippetIndexer: snippetIndexer.(*snippet.SnippetIndexer),
+		snippetIndexer: snippetIndexer,
 		projectRoot:    projectRoot,
 	}
 }
 
-func (p *SnippetHoverProvider) GetHover(ctx context.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
-	if params.Node == nil {
-		return nil, nil
-	}
-
+func (p *SnippetHoverProvider) GetHover(ctx context.Context, params *lsp.HoverRequest) (*protocol.Hover, error) {
 	// Handle .twig, .php, .js, and .ts files
 	switch strings.ToLower(filepath.Ext(params.TextDocument.URI)) {
 	case ".twig":
+		if params.Node == nil {
+			return nil, nil
+		}
 		return p.twigHover(ctx, params)
 	case ".php":
+		if params.Node == nil {
+			return nil, nil
+		}
 		return p.phpHover(ctx, params)
 	case ".js", ".ts":
+		if params.Node == nil {
+			return nil, nil
+		}
 		return p.jsHover(ctx, params)
 	default:
 		return nil, nil
 	}
 }
 
-func (p *SnippetHoverProvider) twigHover(_ context.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
+func (p *SnippetHoverProvider) twigHover(_ context.Context, params *lsp.HoverRequest) (*protocol.Hover, error) {
+	if params.Root != nil && params.LineIndex != nil && params.HoverParams != nil {
+		offset := params.LineIndex.OffsetUTF16(
+			uint32(params.Position.Line),
+			uint32(params.Position.Character),
+		)
+		if reference, found := snippet.AdminTwigReferenceAtOffset(
+			params.Root,
+			offset,
+		); found && reference.Key != "" {
+			return p.createHoverForSnippet(reference.Key, params, true)
+		}
+	}
 	// Check for frontend snippet pattern: {{ 'key'|trans }}
-	if treesitterhelper.TwigTransPattern().Matches(params.Node, params.DocumentContent) {
-		snippetKey := treesitterhelper.GetNodeText(params.Node, params.DocumentContent)
+	if twigquery.StringInFilter(params.Node, "trans") {
+		snippetKey := twigquery.StringValue(twigquery.LiteralStringAt(params.Node))
 		return p.createHoverForSnippet(snippetKey, params, false)
 	}
 
 	// Check for admin snippet pattern: {{ $tc('key') }} or {{ $t('key') }}
-	if treesitterhelper.TwigAdminSnippetPattern().Matches(params.Node, params.DocumentContent) {
-		snippetKey := treesitterhelper.GetNodeText(params.Node, params.DocumentContent)
+	if twigquery.StringInFunction(params.Node, "$tc", "$t") {
+		snippetKey := twigquery.StringValue(twigquery.LiteralStringAt(params.Node))
 		return p.createHoverForSnippet(snippetKey, params, true)
 	}
 
 	return nil, nil
 }
 
-func (p *SnippetHoverProvider) phpHover(_ context.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
-	if treesitterhelper.IsPHPThisMethodCall("trans").Matches(params.Node, params.DocumentContent) {
-		snippetKey := treesitterhelper.GetNodeText(params.Node, params.DocumentContent)
+func (p *SnippetHoverProvider) phpHover(_ context.Context, params *lsp.HoverRequest) (*protocol.Hover, error) {
+	if phpquery.StringInCall(params.Node, 0, "trans") {
+		snippetKey := phpquery.StringValue(params.Node)
 		return p.createHoverForSnippet(snippetKey, params, false)
 	}
 	return nil, nil
 }
 
-func (p *SnippetHoverProvider) jsHover(_ context.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
-	// Check for admin snippet pattern: this.$tc('key') or this.$t('key')
-	if treesitterhelper.JSAdminSnippetPattern().Matches(params.Node, params.DocumentContent) {
-		snippetKey := treesitterhelper.GetNodeText(params.Node, params.DocumentContent)
+func (p *SnippetHoverProvider) jsHover(_ context.Context, params *lsp.HoverRequest) (*protocol.Hover, error) {
+	if snippet.AdminJavaScriptStringReference(params.Node) {
+		snippetKey := jsquery.StringValue(params.Node)
 		return p.createHoverForSnippet(snippetKey, params, true)
 	}
 	return nil, nil
 }
 
-func (p *SnippetHoverProvider) createHoverForSnippet(snippetKey string, params *protocol.HoverParams, isAdmin bool) (*protocol.Hover, error) {
+func (p *SnippetHoverProvider) createHoverForSnippet(snippetKey string, params *lsp.HoverRequest, isAdmin bool) (*protocol.Hover, error) {
 	var snippets []snippet.Snippet
 	var err error
 

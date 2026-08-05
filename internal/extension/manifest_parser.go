@@ -3,11 +3,12 @@ package extension
 import (
 	"strings"
 
-	treesitterhelper "github.com/shopware/shopware-lsp/internal/tree_sitter_helper"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
+	xmlparser "github.com/shopware/shopware-lsp/internal/parser/xml"
+	xmlquery "github.com/shopware/shopware-lsp/internal/parser/xml/query"
+	xmlsyntax "github.com/shopware/shopware-lsp/internal/parser/xml/syntax"
 )
 
-// ManifestMeta represents metadata from a Shopware app manifest.xml file
+// ManifestMeta represents metadata from a Shopware app manifest.xml file.
 type ManifestMeta struct {
 	Name        string
 	Label       string
@@ -16,145 +17,35 @@ type ManifestMeta struct {
 	Copyright   string
 	Version     string
 	License     string
-	Path        string // Source file path
+	Path        string
+	Permissions []AppPermission
 }
 
-// ParseManifestXml parses a Shopware app manifest.xml file and extracts metadata
-func ParseManifestXml(path string, rootNode *tree_sitter.Node, data []byte) (*ManifestMeta, error) {
-	// Create manifest with default values
-	manifest := &ManifestMeta{
-		Path: path,
-	}
+// ParseManifestXml parses a Shopware app manifest.xml file and extracts its
+// metadata using the shared error-tolerant XML backend.
+func ParseManifestXml(path string, data []byte) (*ManifestMeta, error) {
+	tree := xmlparser.Parse(string(data)).Tree
+	return ParseManifestTree(path, tree)
+}
 
-	// Process manifest node
-	manifestNode := findManifestNode(rootNode, data)
-	if manifestNode == nil {
+func ParseManifestTree(path string, tree *xmlsyntax.Tree) (*ManifestMeta, error) {
+	if tree == nil || tree.Root == nil {
+		return nil, nil
+	}
+	manifests := xmlquery.Elements(tree.Root, "manifest")
+	if len(manifests) == 0 {
 		return nil, nil
 	}
 
-	// Find meta node inside manifest
-	metaNode := findMetaNodeInManifest(manifestNode, data)
-	if metaNode == nil {
+	meta := xmlquery.ChildElement(manifests[0], "meta")
+	if meta == nil {
 		return nil, nil
 	}
 
-	// Process meta node to extract metadata
-	processMetaNode(metaNode, data, manifest)
-
-	return manifest, nil
-}
-
-// findManifestNode finds the manifest node in the XML tree
-func findManifestNode(rootNode *tree_sitter.Node, data []byte) *tree_sitter.Node {
-	// Find a direct manifest element
-	for i := 0; i < int(rootNode.NamedChildCount()); i++ {
-		child := rootNode.NamedChild(uint(i))
-		if child.Kind() != "element" {
-			continue
-		}
-
-		// Get element's STag or EmptyElemTag
-		elementTag := child.NamedChild(0)
-		if elementTag == nil {
-			continue
-		}
-
-		// Get element name
-		nameNode := treesitterhelper.GetFirstNodeOfKind(elementTag, "Name")
-		if nameNode == nil {
-			continue
-		}
-
-		// Check if it's the manifest element
-		elementName := nameNode.Utf8Text(data)
-		if string(elementName) == "manifest" {
-			return child
-		}
-	}
-
-	return nil
-}
-
-// findMetaNodeInManifest finds the meta node inside the manifest element
-func findMetaNodeInManifest(manifestNode *tree_sitter.Node, data []byte) *tree_sitter.Node {
-	// Get content node of manifest
-	if manifestNode.NamedChildCount() < 2 {
-		return nil
-	}
-
-	contentNode := manifestNode.NamedChild(1)
-	if contentNode == nil || contentNode.Kind() != "content" {
-		return nil
-	}
-
-	// Process all elements in content
-	childCount := int(contentNode.NamedChildCount())
-	for i := 0; i < childCount; i++ {
-		child := contentNode.NamedChild(uint(i))
-		if child.Kind() != "element" {
-			continue
-		}
-
-		// Get element's STag or EmptyElemTag
-		elementTag := child.NamedChild(0)
-		if elementTag == nil {
-			continue
-		}
-
-		// Get element name
-		nameNode := treesitterhelper.GetFirstNodeOfKind(elementTag, "Name")
-		if nameNode == nil {
-			continue
-		}
-
-		// Check if it's the meta element
-		elementName := nameNode.Utf8Text(data)
-		if string(elementName) == "meta" {
-			return child
-		}
-	}
-
-	return nil
-}
-
-// processMetaNode extracts metadata from the meta element
-func processMetaNode(metaNode *tree_sitter.Node, data []byte, manifest *ManifestMeta) {
-	// Get content node of meta
-	if metaNode.NamedChildCount() < 2 {
-		return
-	}
-
-	contentNode := metaNode.NamedChild(1)
-	if contentNode == nil || contentNode.Kind() != "content" {
-		return
-	}
-
-	// Process all meta elements
-	childCount := int(contentNode.NamedChildCount())
-	for i := 0; i < childCount; i++ {
-		child := contentNode.NamedChild(uint(i))
-		if child.Kind() != "element" {
-			continue
-		}
-
-		// Get element's STag or EmptyElemTag
-		elementTag := child.NamedChild(0)
-		if elementTag == nil {
-			continue
-		}
-
-		// Get element name
-		nameNode := treesitterhelper.GetFirstNodeOfKind(elementTag, "Name")
-		if nameNode == nil {
-			continue
-		}
-
-		// Get element value
-		elementName := string(nameNode.Utf8Text(data))
-		value := extractElementTextContent(child, data)
-
-		// Set appropriate field based on element name
-		switch elementName {
+	manifest := &ManifestMeta{Path: path}
+	for _, child := range xmlquery.ChildElements(meta) {
+		value := strings.TrimSpace(xmlquery.TextContent(child))
+		switch xmlquery.ElementName(child) {
 		case "name":
 			manifest.Name = value
 		case "label":
@@ -171,27 +62,22 @@ func processMetaNode(metaNode *tree_sitter.Node, data []byte, manifest *Manifest
 			manifest.License = value
 		}
 	}
-}
-
-// extractElementTextContent extracts text content from an XML element
-func extractElementTextContent(node *tree_sitter.Node, data []byte) string {
-	// Check if the node has content
-	if node.NamedChildCount() < 2 {
-		return ""
-	}
-
-	contentNode := node.NamedChild(1)
-	if contentNode == nil || contentNode.Kind() != "content" {
-		return ""
-	}
-
-	// Find CharData node in content
-	for i := 0; i < int(contentNode.NamedChildCount()); i++ {
-		child := contentNode.NamedChild(uint(i))
-		if child.Kind() == "CharData" {
-			return strings.TrimSpace(string(child.Utf8Text(data)))
+	if permissions := xmlquery.ChildElement(manifests[0], "permissions"); permissions != nil {
+		lines := xmlsyntax.NewLineIndex(tree.Source)
+		for _, permission := range xmlquery.ChildElements(permissions) {
+			operation := xmlquery.ElementName(permission)
+			entity := strings.TrimSpace(xmlquery.TextContent(permission))
+			if entity == "" {
+				continue
+			}
+			line, _ := lines.Position(permission.RangeTrimmedTrivia().Start)
+			manifest.Permissions = append(manifest.Permissions, AppPermission{
+				Operation: operation,
+				Entity:    entity,
+				Line:      int(line) + 1,
+			})
 		}
 	}
 
-	return ""
+	return manifest, nil
 }

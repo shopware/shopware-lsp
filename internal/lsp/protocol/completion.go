@@ -1,7 +1,5 @@
 package protocol
 
-import tree_sitter "github.com/tree-sitter/go-tree-sitter"
-
 // CompletionList represents a list of completion items
 type CompletionList struct {
 	IsIncomplete bool             `json:"isIncomplete"`
@@ -10,9 +8,34 @@ type CompletionList struct {
 
 // InitializeParams represents the parameters for the 'initialize' request
 type InitializeParams struct {
-	RootPath         string            `json:"rootPath,omitempty"`
-	RootURI          string            `json:"rootUri,omitempty"`
-	WorkspaceFolders []WorkspaceFolder `json:"workspaceFolders,omitempty"`
+	RootPath              string                `json:"rootPath,omitempty"`
+	RootURI               string                `json:"rootUri,omitempty"`
+	WorkspaceFolders      []WorkspaceFolder     `json:"workspaceFolders,omitempty"`
+	InitializationOptions InitializationOptions `json:"initializationOptions,omitempty"`
+	Capabilities          ClientCapabilities    `json:"capabilities,omitempty"`
+}
+
+type ClientCapabilities struct {
+	TextDocument TextDocumentClientCapabilities `json:"textDocument,omitempty"`
+}
+
+type TextDocumentClientCapabilities struct {
+	CodeAction *CodeActionClientCapabilities `json:"codeAction,omitempty"`
+}
+
+type CodeActionClientCapabilities struct {
+	DataSupport    bool                     `json:"dataSupport,omitempty"`
+	ResolveSupport CodeActionResolveSupport `json:"resolveSupport,omitempty"`
+}
+
+type CodeActionResolveSupport struct {
+	Properties []string `json:"properties,omitempty"`
+}
+
+type InitializationOptions struct {
+	PHPExtensions         []string `json:"phpExtensions,omitempty"`
+	DisabledPHPExtensions []string `json:"disabledPhpExtensions,omitempty"`
+	CLIMode               bool     `json:"cliMode,omitempty"`
 }
 
 // WorkspaceFolder represents a workspace folder
@@ -43,11 +66,6 @@ type CompletionParams struct {
 	// An optional token that a server can use to report partial results (e.g. streaming) to
 	// the client.
 	PartialResultToken interface{} `json:"partialResultToken,omitempty"`
-
-	// Custom fields for internal use (not part of LSP spec)
-	// These fields are used to pass document content to completion providers
-	DocumentContent []byte            `json:"-"`
-	Node            *tree_sitter.Node `json:"-"`
 }
 
 // CompletionTriggerKind describes how a completion was triggered

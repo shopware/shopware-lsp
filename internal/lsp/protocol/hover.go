@@ -1,7 +1,5 @@
 package protocol
 
-import tree_sitter "github.com/tree-sitter/go-tree-sitter"
-
 // HoverParams represents the parameters for a hover request
 type HoverParams struct {
 	TextDocument struct {
@@ -12,11 +10,6 @@ type HoverParams struct {
 		Character int `json:"character"`
 	} `json:"position"`
 	WorkDoneToken interface{} `json:"workDoneToken,omitempty"`
-
-	// Custom fields for internal use (not part of LSP spec)
-	// These fields are used to pass document content to hover providers
-	DocumentContent []byte            `json:"-"`
-	Node            *tree_sitter.Node `json:"-"`
 }
 
 // Hover represents the result of a hover request

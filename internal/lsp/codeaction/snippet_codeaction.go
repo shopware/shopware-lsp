@@ -2,14 +2,13 @@ package codeaction
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	"github.com/shopware/shopware-lsp/internal/snippet"
-	treesitterhelper "github.com/shopware/shopware-lsp/internal/tree_sitter_helper"
 )
 
 // SnippetCodeActionProvider provides code actions for snippet diagnostics
@@ -18,14 +17,8 @@ type SnippetCodeActionProvider struct {
 }
 
 // NewSnippetCodeActionProvider creates a new SnippetCodeActionProvider
-func NewSnippetCodeActionProvider(lspServer *lsp.Server) *SnippetCodeActionProvider {
-	snippetIndexer, ok := lspServer.GetIndexer("snippet.indexer")
-	if !ok {
-		return &SnippetCodeActionProvider{}
-	}
-	return &SnippetCodeActionProvider{
-		snippetIndex: snippetIndexer.(*snippet.SnippetIndexer),
-	}
+func NewSnippetCodeActionProvider(snippetIndexer *snippet.SnippetIndexer) *SnippetCodeActionProvider {
+	return &SnippetCodeActionProvider{snippetIndex: snippetIndexer}
 }
 
 // GetCodeActionKinds returns the kinds of code actions this provider can provide
@@ -36,7 +29,7 @@ func (s *SnippetCodeActionProvider) GetCodeActionKinds() []protocol.CodeActionKi
 }
 
 // GetCodeActions returns code actions for snippet diagnostics
-func (s *SnippetCodeActionProvider) GetCodeActions(ctx context.Context, params *protocol.CodeActionParams) []protocol.CodeAction {
+func (s *SnippetCodeActionProvider) GetCodeActions(ctx context.Context, params *lsp.CodeActionRequest) []protocol.CodeAction {
 	if !strings.HasSuffix(strings.ToLower(filepath.Ext(params.TextDocument.URI)), ".twig") {
 		return []protocol.CodeAction{}
 	}
@@ -60,7 +53,7 @@ func (s *SnippetCodeActionProvider) GetCodeActions(ctx context.Context, params *
 
 	if params.Range.Start.Line != params.Range.End.Line || params.Range.Start.Character != params.Range.End.Character {
 		// There is a text selection
-		selectedText := treesitterhelper.GetTextForRange(params.DocumentContent, params.Range)
+		selectedText := textForRange(params.DocumentContent, params.Range, params.LineIndex)
 		if selectedText != "" {
 			if isAdminFile {
 				codeActions = append(codeActions, protocol.CodeAction{
@@ -86,50 +79,27 @@ func (s *SnippetCodeActionProvider) GetCodeActions(ctx context.Context, params *
 		}
 	}
 
-	// Process snippet-related diagnostics
-	for _, diagnostic := range params.Context.Diagnostics {
-		// Handle frontend snippet missing
-		if diagnostic.Code == "frontend.snippet.missing" {
-			data := diagnostic.Data.(map[string]interface{})
-			snippetKey := data["snippetText"].(string)
-
-			commandAction := protocol.CodeAction{
-				Title: fmt.Sprintf("Create snippet '%s'", snippetKey),
-				Kind:  protocol.CodeActionQuickFix,
-				Diagnostics: []protocol.Diagnostic{
-					diagnostic,
-				},
-				Command: &protocol.CommandAction{
-					Title:     "Create Snippet",
-					Command:   "shopware.createSnippet",
-					Arguments: []interface{}{snippetKey, params.TextDocument.URI},
-				},
-			}
-
-			codeActions = append(codeActions, commandAction)
-		}
-
-		// Handle admin snippet missing
-		if diagnostic.Code == "admin.snippet.missing" {
-			data := diagnostic.Data.(map[string]interface{})
-			snippetKey := data["snippetText"].(string)
-
-			commandAction := protocol.CodeAction{
-				Title: fmt.Sprintf("Create admin snippet '%s'", snippetKey),
-				Kind:  protocol.CodeActionQuickFix,
-				Diagnostics: []protocol.Diagnostic{
-					diagnostic,
-				},
-				Command: &protocol.CommandAction{
-					Title:     "Create Admin Snippet",
-					Command:   "shopware.createAdminSnippet",
-					Arguments: []interface{}{snippetKey, params.TextDocument.URI},
-				},
-			}
-
-			codeActions = append(codeActions, commandAction)
-		}
-	}
-
 	return codeActions
+}
+
+func textForRange(
+	content []byte,
+	selectedRange protocol.Range,
+	lineIndex *cst.LineIndex,
+) string {
+	if lineIndex == nil {
+		lineIndex = cst.NewLineIndex(string(content))
+	}
+	start := lineIndex.OffsetUTF16(
+		uint32(selectedRange.Start.Line),
+		uint32(selectedRange.Start.Character),
+	)
+	end := lineIndex.OffsetUTF16(
+		uint32(selectedRange.End.Line),
+		uint32(selectedRange.End.Character),
+	)
+	if start > end || int(end) > len(content) {
+		return ""
+	}
+	return string(content[start:end])
 }

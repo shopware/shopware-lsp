@@ -7,9 +7,9 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	twigquery "github.com/shopware/shopware-lsp/internal/parser/twig/query"
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/systemconfig"
-	treesitterhelper "github.com/shopware/shopware-lsp/internal/tree_sitter_helper"
 )
 
 type SystemConfigCompletionProvider struct {
@@ -17,12 +17,10 @@ type SystemConfigCompletionProvider struct {
 	phpIndex *php.PHPIndex
 }
 
-func (s *SystemConfigCompletionProvider) GetCompletions(ctx context.Context, params *protocol.CompletionParams) []protocol.CompletionItem {
-	if params.Node == nil {
-		return nil
-	}
-
-	if treesitterhelper.TwigStringInFunctionPattern("config").Matches(params.Node, params.DocumentContent) {
+func (s *SystemConfigCompletionProvider) GetCompletions(ctx context.Context, params *lsp.CompletionRequest) []protocol.CompletionItem {
+	if filepath.Ext(params.TextDocument.URI) == ".twig" &&
+		params.Node != nil &&
+		twigquery.StringInFunction(params.Node, "config") {
 		completions, err := s.indexer.GetAllSystemConfigEntries()
 		if err != nil {
 			return nil
@@ -39,13 +37,16 @@ func (s *SystemConfigCompletionProvider) GetCompletions(ctx context.Context, par
 	}
 
 	if filepath.Ext(params.TextDocument.URI) == ".php" {
+		if params.Node == nil {
+			return nil
+		}
 		return s.phpCompletion(ctx, params)
 	}
 
 	return nil
 }
 
-func (s *SystemConfigCompletionProvider) phpCompletion(ctx context.Context, params *protocol.CompletionParams) []protocol.CompletionItem {
+func (s *SystemConfigCompletionProvider) phpCompletion(ctx context.Context, params *lsp.CompletionRequest) []protocol.CompletionItem {
 	if s.phpIndex.IsMethodCalledOnClass(ctx, params.Node, params.DocumentContent, "Shopware\\Core\\System\\SystemConfig\\SystemConfigService") {
 		if s.phpIndex.IsMethodCalledName(ctx, params.Node, params.DocumentContent, "get", "getInt", "getString", "getFloat", "getBool", "set") {
 			completions, err := s.indexer.GetAllSystemConfigEntries()
@@ -94,11 +95,9 @@ func (s *SystemConfigCompletionProvider) GetTriggerCharacters() []string {
 	return []string{}
 }
 
-func NewSystemConfigCompletion(lspServer *lsp.Server) *SystemConfigCompletionProvider {
-	indexer, _ := lspServer.GetIndexer("systemconfig.indexer")
-	phpIndexer, _ := lspServer.GetIndexer("php.index")
+func NewSystemConfigCompletion(indexer *systemconfig.SystemConfigIndexer, phpIndexer *php.PHPIndex) *SystemConfigCompletionProvider {
 	return &SystemConfigCompletionProvider{
-		indexer:  indexer.(*systemconfig.SystemConfigIndexer),
-		phpIndex: phpIndexer.(*php.PHPIndex),
+		indexer:  indexer,
+		phpIndex: phpIndexer,
 	}
 }

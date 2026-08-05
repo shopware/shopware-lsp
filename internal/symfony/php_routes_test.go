@@ -4,9 +4,10 @@ import (
 	"os"
 	"testing"
 
+	phpparser "github.com/shopware/shopware-lsp/internal/parser/php"
+	phpsyntax "github.com/shopware/shopware-lsp/internal/parser/php/syntax"
 	"github.com/stretchr/testify/assert"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
-	tree_sitter_php "github.com/tree-sitter/tree-sitter-php/bindings/go"
+	"github.com/stretchr/testify/require"
 )
 
 func TestExtractRoutesFromFile(t *testing.T) {
@@ -53,6 +54,33 @@ func TestExtractRoutesWithBasePathFromFile(t *testing.T) {
 	assert.Equal(t, expectedRouteMethod, routes[0])
 }
 
+func TestExtractRoutesWithClassPathAndMethods(t *testing.T) {
+	source := []byte(`<?php
+namespace App\Controller;
+#[Route(path: '/products')]
+final class ProductController {
+    #[Route(path: '/{id}', name: 'product_show', methods: [
+        Request::METHOD_GET,
+        \Symfony\Component\HttpFoundation\Request::METHOD_POST,
+        'HEAD',
+        Request::METHOD_GET,
+        Other::NOT_A_METHOD,
+    ])]
+    public function show(): void {}
+}`)
+	routes := parsePHPRoutes(
+		"/project/ProductController.php",
+		phpparser.ParseBytes(source).Tree.Root,
+		source,
+	)
+	if assert.Len(t, routes, 1) {
+		assert.Equal(t, "product_show", routes[0].Name)
+		assert.Equal(t, "/products/{id}", routes[0].Path)
+		assert.Equal(t, []string{"GET", "POST", "HEAD"}, routes[0].Methods)
+		assert.Equal(t, []string{"id"}, routes[0].Parameters())
+	}
+}
+
 func TestExtractRoutesStorefrontController(t *testing.T) {
 	// Extract routes from the test file with base path
 	filePath := "testdata/wishlist.php"
@@ -83,24 +111,96 @@ func TestExtractRoutesStorefrontController(t *testing.T) {
 		FilePath:   filePath,
 		Line:       55, // Line number of the Route attribute in the wishlist.php file
 		Controller: "Shopware\\Storefront\\Controller\\WishlistController::index",
+		Methods:    []string{"GET"},
 	}
 
 	assert.Equal(t, expectedRouteMethod, *wishlistPageRoute)
 }
 
-func parsePHPFile(filePath string) (*tree_sitter.Node, []byte) {
-	parser := tree_sitter.NewParser()
-	if err := parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_php.LanguagePHP())); err != nil {
-		panic(err)
-	}
+func TestExtractRoutingConfiguratorRoutes(t *testing.T) {
+	source := []byte(`<?php
+namespace App\Routing;
 
+use App\Controller\MyController;
+use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
+
+return static function (RoutingConfigurator $routes): void {
+    $route = $routes->add('_profiler_home', '/');
+    $route->controller('web_profiler.controller.profiler::homeAction');
+
+    $routes->add('app_class_route', '/class')
+        ->controller(MyController::class);
+
+    $routes->add('app_array_route', '/array')
+        ->controller([\App\Controller\MyController::class, 'detail']);
+
+    $group = $routes->namePrefix('admin_')->prefix('/admin/');
+    $group->add('app_default_route', '/defaults/{id}')
+        ->defaults(['_controller' => [MyController::class, 'detail']])
+        ->methods([Request::METHOD_GET, 'HEAD', Request::METHOD_GET]);
+
+    $group->namePrefix('api_')->prefix('/api')->add('dashboard', 'dashboard');
+};`)
+
+	routes := parsePHPRoutes(
+		"/project/config/routes.php",
+		phpparser.ParseBytes(source).Tree.Root,
+		source,
+	)
+	require.Len(t, routes, 5)
+	assert.Equal(t, Route{
+		Name:       "_profiler_home",
+		Path:       "/",
+		Controller: "web_profiler.controller.profiler::homeAction",
+		FilePath:   "/project/config/routes.php",
+		Line:       8,
+	}, routes[0])
+	assert.Equal(t, "App\\Controller\\MyController", routes[1].Controller)
+	assert.Equal(t, "App\\Controller\\MyController::detail", routes[2].Controller)
+	assert.Equal(t, Route{
+		Name:       "admin_app_default_route",
+		Path:       "/admin/defaults/{id}",
+		Controller: "App\\Controller\\MyController::detail",
+		Methods:    []string{"GET", "HEAD"},
+		FilePath:   "/project/config/routes.php",
+		Line:       18,
+	}, routes[3])
+	assert.Equal(t, "admin_api_dashboard", routes[4].Name)
+	assert.Equal(t, "/admin/api/dashboard", routes[4].Path)
+}
+
+func TestRoutingConfiguratorRoutesRequireResolvedTypedRoot(t *testing.T) {
+	source := []byte(`<?php
+use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator as Routes;
+
+$collection->add('outside', '/outside');
+
+return static function (Routes $routes): void {
+    $alias = $routes;
+    $alias->add('inside', '/inside');
+    $alias->add($dynamicName, '/dynamic');
+};
+
+return static function ($untyped): void {
+    $untyped->add('untyped', '/untyped');
+};`)
+
+	routes := parsePHPRoutes(
+		"/project/config/routes.php",
+		phpparser.ParseBytes(source).Tree.Root,
+		source,
+	)
+	require.Len(t, routes, 1)
+	assert.Equal(t, "inside", routes[0].Name)
+	assert.Equal(t, "/inside", routes[0].Path)
+	assert.Equal(t, 8, routes[0].Line)
+}
+
+func parsePHPFile(filePath string) (*phpsyntax.Node, []byte) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		panic(err)
 	}
 
-	defer parser.Close()
-
-	tree := parser.Parse(content, nil)
-	return tree.RootNode(), content
+	return phpparser.ParseBytes(content).Tree.Root, content
 }

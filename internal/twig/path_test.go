@@ -19,3 +19,17 @@ func TestGetBundleNameByPath(t *testing.T) {
 	assert.Equal(t, "storefront", getBundleNameByPath("vendor/shopware/storefront/Resources/views/storefront/base.html.twig"))
 	assert.Equal(t, "MyFoo", getBundleNameByPath("vendor/store.shopware.com/MyFoo/src/Resources/views/storefront/base.html.twig"))
 }
+
+func TestTemplateNames(t *testing.T) {
+	assert.Equal(t, []string{"base.html.twig"}, TemplateNames("/project/templates/base.html.twig"))
+	assert.Equal(
+		t,
+		[]string{
+			"card.html.twig",
+			"@Storefront/card.html.twig",
+			"@MyBundle/card.html.twig",
+			"MyBundle::card.html.twig",
+		},
+		TemplateNames("/project/MyBundle/src/Resources/views/card.html.twig"),
+	)
+}

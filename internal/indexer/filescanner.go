@@ -3,18 +3,23 @@ package indexer
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	iofs "io/fs"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
-	_ "modernc.org/sqlite"
+	"github.com/charlievieth/fastwalk"
+	_ "github.com/mattn/go-sqlite3"
+	"github.com/shopware/shopware-lsp/internal/parser/cst"
+	"github.com/shopware/shopware-lsp/internal/parser/parsekit"
 )
 
 var defaultSkipDirs = map[string]bool{
@@ -24,6 +29,7 @@ var defaultSkipDirs = map[string]bool{
 	"bin":          true,
 	"cache":        true,
 	"dist":         true,
+	".tmp":         true,
 	".git":         true,
 	".github":      true,
 	".gitlab":      true,
@@ -38,18 +44,39 @@ var defaultSkipDirs = map[string]bool{
 
 // FileScanner scans the project for files and tracks changes
 type FileScanner struct {
-	projectRoot string
-	db          *sql.DB
-	indexer     []Indexer
-	watcher     *fsnotify.Watcher
-	watcherCtx  context.Context
-	cancel      context.CancelFunc
-	watcherWg   sync.WaitGroup
-	onUpdate    func()
+	platformWatcherState
+	projectRoot  string
+	pharCache    string
+	db           *sql.DB
+	store        *Store
+	symbols      *WorkspaceSymbolCatalog
+	indexer      []Indexer
+	watcherCtx   context.Context
+	cancel       context.CancelFunc
+	watcherWg    sync.WaitGroup
+	watcherMu    sync.Mutex
+	nativeEvents chan fileSystemEvent
+	onUpdate     func()
+	workerCount  int
+	operationMu  sync.Mutex
+	closeOnce    sync.Once
+	closeErr     error
+}
+
+type fileSystemEvent struct {
+	path  string
+	flags uint32
+}
+
+type FileScannerStats struct {
+	TrackedFiles int   `json:"trackedFiles"`
+	TrackedBytes int64 `json:"trackedBytes"`
+	Indexers     int   `json:"indexers"`
+	Workers      int   `json:"workers"`
 }
 
 // NewFileScanner creates a new file scanner
-func NewFileScanner(projectRoot string, dbPath string) (*FileScanner, error) {
+func NewFileScanner(projectRoot string, dbPath string, stores ...*Store) (*FileScanner, error) {
 	// Ensure parent directory exists for the DB file
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create db directory: %w", err)
@@ -57,7 +84,7 @@ func NewFileScanner(projectRoot string, dbPath string) (*FileScanner, error) {
 
 	// Open the database with WAL mode for concurrent access
 	// Using _txlock=immediate to acquire locks early and avoid SQLITE_BUSY
-	db, err := sql.Open("sqlite", dbPath+"?_txlock=immediate")
+	db, err := sql.Open("sqlite3", dbPath+"?_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -71,7 +98,9 @@ func NewFileScanner(projectRoot string, dbPath string) (*FileScanner, error) {
 		"PRAGMA journal_mode=WAL",
 		"PRAGMA busy_timeout=5000",
 		"PRAGMA synchronous=NORMAL",
-		"PRAGMA cache_size=10000",
+		// SQLite interprets a negative cache size as KiB. File hash scans are
+		// sequential and do not benefit from retaining a large page cache.
+		"PRAGMA cache_size=-8192",
 		"PRAGMA auto_vacuum=INCREMENTAL",
 		"PRAGMA wal_autocheckpoint=1000",
 	}
@@ -98,17 +127,60 @@ func NewFileScanner(projectRoot string, dbPath string) (*FileScanner, error) {
 	// Create a new context for the watcher
 	ctx, cancel := context.WithCancel(context.Background())
 
-	return &FileScanner{
+	scanner := &FileScanner{
 		projectRoot: projectRoot,
+		pharCache:   filepath.Join(filepath.Dir(dbPath), "phar-sources"),
 		db:          db,
 		indexer:     []Indexer{},
 		watcherCtx:  ctx,
 		cancel:      cancel,
-	}, nil
+	}
+	if len(stores) > 0 {
+		scanner.store = stores[0]
+	}
+	return scanner, nil
 }
 
 func (fs *FileScanner) SetOnUpdate(onUpdate func()) {
 	fs.onUpdate = onUpdate
+}
+
+func (fs *FileScanner) SetWorkspaceSymbolCatalog(
+	catalog *WorkspaceSymbolCatalog,
+) {
+	fs.symbols = catalog
+}
+
+func (fs *FileScanner) Stats(ctx context.Context) (FileScannerStats, error) {
+	if fs == nil || fs.db == nil {
+		return FileScannerStats{}, fmt.Errorf("file scanner is closed")
+	}
+	var stats FileScannerStats
+	if err := fs.db.QueryRowContext(
+		ctx,
+		"SELECT COUNT(*), COALESCE(SUM(size), 0) FROM file_hashes",
+	).Scan(&stats.TrackedFiles, &stats.TrackedBytes); err != nil {
+		return FileScannerStats{}, fmt.Errorf("query tracked file statistics: %w", err)
+	}
+	stats.Indexers = len(fs.indexer)
+	stats.Workers = defaultIndexWorkerCount(runtime.NumCPU())
+	fs.operationMu.Lock()
+	if fs.workerCount > 0 {
+		stats.Workers = fs.workerCount
+	}
+	fs.operationMu.Unlock()
+	return stats, nil
+}
+
+// SetWorkerCount overrides the automatic indexing concurrency. A value of
+// zero restores the default. The setting takes effect on the next operation.
+func (fs *FileScanner) SetWorkerCount(count int) {
+	if count < 0 {
+		count = 0
+	}
+	fs.operationMu.Lock()
+	fs.workerCount = count
+	fs.operationMu.Unlock()
 }
 
 func (fs *FileScanner) AddIndexer(indexer Indexer) {
@@ -120,288 +192,94 @@ func shouldSkipRelPath(relPath string) bool {
 		return false
 	}
 
-	pathParts := strings.Split(relPath, string(os.PathSeparator))
-	for _, part := range pathParts {
-		if defaultSkipDirs[part] {
+	separator := byte(os.PathSeparator)
+	insideVendor := false
+	for {
+		part := relPath
+		if position := strings.IndexByte(relPath, separator); position >= 0 {
+			part = relPath[:position]
+			relPath = relPath[position+1:]
+		} else {
+			relPath = ""
+		}
+		if part == "vendor" {
+			insideVendor = true
+		}
+		// Composer package names and source trees can legitimately contain
+		// directories such as symfony/cache. Root/application cache-like
+		// directories remain excluded, while dependency source stays visible.
+		skipInsideVendor := part == "cache" ||
+			part == "bin" ||
+			part == "dist" ||
+			part == "public" ||
+			part == "var"
+		if defaultSkipDirs[part] && (!insideVendor || !skipInsideVendor) {
 			return true
 		}
-	}
-
-	return false
-}
-
-// StartWatcher starts watching for file changes in the project directory
-func (fs *FileScanner) StartWatcher() error {
-	// Create a new watcher
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return fmt.Errorf("failed to create file watcher: %w", err)
-	}
-
-	fs.watcher = watcher
-	fs.watcherWg.Add(1)
-
-	// Start the watcher goroutine
-	go func() {
-		defer fs.watcherWg.Done()
-		defer func() {
-			if fs.watcher != nil {
-				_ = fs.watcher.Close()
-			}
-		}()
-
-		// Use a debounce mechanism to avoid processing the same file multiple times
-		pendingAdds := make(map[string]bool)
-		pendingRemoves := make(map[string]bool)
-		debounceTimer := time.NewTimer(time.Hour) // Initialize with a long duration
-		debounceTimer.Stop()                      // Stop it immediately
-
-		processChanges := func() {
-			// Process adds/modifications
-			if len(pendingAdds) > 0 {
-				filesToAdd := make([]string, 0, len(pendingAdds))
-				for file := range pendingAdds {
-					filesToAdd = append(filesToAdd, file)
-				}
-				pendingAdds = make(map[string]bool)
-
-				log.Printf("Processing %d changed/added files", len(filesToAdd))
-				if err := fs.IndexFiles(fs.watcherCtx, filesToAdd); err != nil {
-					log.Printf("Error indexing files: %v", err)
-				}
-			}
-
-			// Process removes
-			if len(pendingRemoves) > 0 {
-				filesToRemove := make([]string, 0, len(pendingRemoves))
-				for file := range pendingRemoves {
-					filesToRemove = append(filesToRemove, file)
-				}
-				pendingRemoves = make(map[string]bool)
-
-				log.Printf("Processing %d deleted files", len(filesToRemove))
-				if err := fs.RemoveFiles(fs.watcherCtx, filesToRemove); err != nil {
-					log.Printf("Error removing files: %v", err)
-				}
-			}
+		if relPath == "" {
+			return false
 		}
-
-		for {
-			select {
-			case <-fs.watcherCtx.Done():
-				// Process any pending changes before exiting
-				processChanges()
-				return
-
-			case event, ok := <-fs.watcher.Events:
-				if !ok {
-					return
-				}
-
-				// Skip directories that should be ignored
-				relPath, err := filepath.Rel(fs.projectRoot, event.Name)
-				if err == nil && shouldSkipRelPath(relPath) {
-					continue
-				}
-
-				// Get file info
-				fileInfo, err := os.Stat(event.Name)
-				if err != nil {
-					// File might have been deleted
-					if event.Op&(fsnotify.Remove|fsnotify.Rename) != 0 {
-						// Check if it's a file type we care about
-						ext := strings.ToLower(filepath.Ext(event.Name))
-						if slices.Contains(scannedFileTypes, ext) {
-							pendingRemoves[event.Name] = true
-							// Reset the debounce timer
-							if !debounceTimer.Stop() {
-								select {
-								case <-debounceTimer.C:
-								default:
-								}
-							}
-							debounceTimer.Reset(200 * time.Millisecond)
-						}
-					}
-					continue
-				}
-
-				// Skip directories
-				if fileInfo.IsDir() {
-					// If a directory is created, add it to the watcher
-					if event.Op&fsnotify.Create != 0 {
-						if err := fs.addDirectoryToWatcher(event.Name); err != nil {
-							log.Printf("Error adding directory to watcher: %v", err)
-						}
-					}
-					continue
-				}
-
-				// Handle file events
-				ext := strings.ToLower(filepath.Ext(event.Name))
-				if slices.Contains(scannedFileTypes, ext) {
-					if event.Op&(fsnotify.Create|fsnotify.Write) != 0 {
-						// File was created or modified
-						if event.Op&fsnotify.Create != 0 {
-							log.Printf("File created: %s", event.Name)
-						} else {
-							log.Printf("File modified: %s", event.Name)
-						}
-						pendingAdds[event.Name] = true
-						// Remove from pending removes if it was there
-						delete(pendingRemoves, event.Name)
-					} else if event.Op&(fsnotify.Remove|fsnotify.Rename) != 0 {
-						// File was removed or renamed
-						if event.Op&fsnotify.Remove != 0 {
-							log.Printf("File removed: %s", event.Name)
-						} else {
-							log.Printf("File renamed: %s", event.Name)
-						}
-						pendingRemoves[event.Name] = true
-						// Remove from pending adds if it was there
-						delete(pendingAdds, event.Name)
-					}
-
-					// Reset the debounce timer
-					if !debounceTimer.Stop() {
-						select {
-						case <-debounceTimer.C:
-						default:
-						}
-					}
-					debounceTimer.Reset(200 * time.Millisecond)
-				}
-
-			case err, ok := <-fs.watcher.Errors:
-				if !ok {
-					return
-				}
-				log.Printf("File watcher error: %v", err)
-
-			case <-debounceTimer.C:
-				// Process changes after the debounce period
-				processChanges()
-			}
-		}
-	}()
-
-	// Add the project root directory to the watcher
-	return fs.addDirectoryToWatcher(fs.projectRoot)
-}
-
-// StopWatcher stops the file watcher
-func (fs *FileScanner) StopWatcher() {
-	if fs.watcher != nil {
-		// Cancel the context to signal the watcher goroutine to stop
-		fs.cancel()
-
-		// Wait for the watcher goroutine to finish
-		fs.watcherWg.Wait()
-
-		// Reset the watcher
-		fs.watcher = nil
 	}
 }
 
-// addDirectoryToWatcher recursively adds a directory and its subdirectories to the watcher
-func (fs *FileScanner) addDirectoryToWatcher(dir string) error {
-	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil // Skip files/dirs we can't access
-		}
-
-		// Only watch directories
-		if !info.IsDir() {
-			return nil
-		}
-
-		// Skip directories in the skipDirs list
-		relPath, err := filepath.Rel(fs.projectRoot, path)
-		if err == nil && shouldSkipRelPath(relPath) {
-			return filepath.SkipDir
-		}
-
-		// Add the directory to the watcher
-		if err := fs.watcher.Add(path); err != nil {
-			log.Printf("Error watching directory %s: %v", path, err)
-		}
-
-		return nil
-	})
+// ShouldSkipRelativePath reports whether a path relative to a scan root is in
+// a generated, cache, tooling, or otherwise excluded directory. It is exposed
+// for commands that need to discover the same source-file set as the scanner.
+func ShouldSkipRelativePath(relPath string) bool {
+	return shouldSkipRelPath(relPath)
 }
 
 // Close closes the database and stops the file watcher
 func (fs *FileScanner) Close() error {
-	// Stop the file watcher if it's running
-	if fs.watcher != nil {
+	fs.closeOnce.Do(func() {
 		fs.StopWatcher()
-	}
-
-	// Close all indexers
-	for _, indexer := range fs.indexer {
-		if err := indexer.Close(); err != nil {
-			return err
+		fs.operationMu.Lock()
+		defer fs.operationMu.Unlock()
+		if fs.db == nil {
+			return
 		}
-	}
-
-	// Close the database with optimization
-	if fs.db != nil {
-		// Optimize query planner statistics before closing
 		_, _ = fs.db.Exec("PRAGMA optimize")
-
-		// Reclaim any remaining unused space
 		_, _ = fs.db.Exec("PRAGMA incremental_vacuum")
-
-		// Checkpoint and truncate the WAL file to reduce disk usage
 		_, _ = fs.db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
-
-		return fs.db.Close()
-	}
-
-	return nil
+		fs.closeErr = fs.db.Close()
+	})
+	return fs.closeErr
 }
 
 func (fs *FileScanner) IndexAll(ctx context.Context) error {
-	var files []string
-
-	err := filepath.Walk(fs.projectRoot, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil // Skip files we can't access
-		}
-
-		// Skip directories
-		if info.IsDir() {
-			// Skip directories in the skipDirs list
-			relPath, err := filepath.Rel(fs.projectRoot, path)
-			if err == nil && shouldSkipRelPath(relPath) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Skip phar files
-		if strings.HasSuffix(path, ".phar.php") {
-			return nil
-		}
-
-		ext := strings.ToLower(filepath.Ext(path))
-		if slices.Contains(scannedFileTypes, ext) {
-			files = append(files, path)
-		}
-
-		return nil
-	})
-
+	files, err := fs.discoverFiles(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to walk project directory: %w", err)
+		return err
+	}
+	storedStates, stale, err := fs.scanFileStates(ctx, files, true)
+	if err != nil {
+		return fmt.Errorf("load tracked file states: %w", err)
+	}
+	if len(stale) > 0 {
+		if err := fs.RemoveFiles(ctx, stale); err != nil {
+			return fmt.Errorf("remove stale index entries: %w", err)
+		}
 	}
 
 	log.Printf("Found %d files to index", len(files))
 
 	startTime := time.Now()
 
-	if err := fs.IndexFiles(ctx, files); err != nil {
+	if fs.symbols != nil {
+		fs.symbols.BeginBulkPopulation()
+	}
+	indexErr := fs.indexFiles(ctx, files, false, storedStates)
+	var symbolErr error
+	if fs.symbols != nil {
+		symbolErr = fs.symbols.EndBulkPopulation(ctx)
+	}
+	if err := errors.Join(indexErr, symbolErr); err != nil {
 		return fmt.Errorf("failed to index files: %w", err)
+	}
+	if fs.symbols != nil {
+		if err := fs.symbols.SetReady(ctx, true); err != nil {
+			return fmt.Errorf("mark workspace symbol catalog ready: %w", err)
+		}
 	}
 
 	log.Printf("Indexing took %s", time.Since(startTime))
@@ -409,26 +287,187 @@ func (fs *FileScanner) IndexAll(ctx context.Context) error {
 	return nil
 }
 
-// fileNeedsIndexing checks if a file needs to be indexed
-func (fs *FileScanner) fileNeedsIndexing(path string) (bool, []byte, os.FileInfo, error) {
+func (fs *FileScanner) discoverFiles(ctx context.Context) ([]string, error) {
+	var capacity int
+	if err := fs.db.QueryRowContext(
+		ctx,
+		"SELECT COUNT(*) FROM file_hashes",
+	).Scan(&capacity); err != nil {
+		return nil, fmt.Errorf("count tracked files: %w", err)
+	}
+	files := make([]string, 0, capacity)
+	var archives []string
+	var filesMu sync.Mutex
+	config := &fastwalk.Config{
+		NumWorkers: defaultIndexWorkerCount(runtime.NumCPU()),
+	}
+	err := fastwalk.Walk(config, fs.projectRoot, func(
+		path string,
+		entry iofs.DirEntry,
+		err error,
+	) error {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if err != nil {
+			return fmt.Errorf("access %s: %w", path, err)
+		}
+
+		if entry.IsDir() {
+			if !fs.shouldEnterDirectory(path) {
+				return fastwalk.SkipDir
+			}
+			return nil
+		}
+
+		if isPHARArchivePath(path) {
+			filesMu.Lock()
+			archives = append(archives, path)
+			filesMu.Unlock()
+		} else if fs.shouldIndexPath(path) {
+			filesMu.Lock()
+			files = append(files, path)
+			filesMu.Unlock()
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to walk project directory: %w", err)
+	}
+	archiveFiles, err := fs.discoverPHARSources(ctx, archives)
+	if err != nil {
+		return nil, err
+	}
+	files = append(files, archiveFiles...)
+	slices.Sort(files)
+	return files, nil
+}
+
+type storedFileState struct {
+	size  int64
+	mtime int64
+	found bool
+}
+
+func (fs *FileScanner) loadFileStates(
+	ctx context.Context,
+	files []string,
+) ([]storedFileState, error) {
+	states, _, err := fs.scanFileStates(ctx, files, false)
+	return states, err
+}
+
+// scanFileStates aligns the ordered SQLite state with the ordered discovery
+// result in one pass. IndexAll also collects stored paths absent from discovery
+// so it does not scan the file_hashes table a second time to find deletions.
+func (fs *FileScanner) scanFileStates(
+	ctx context.Context,
+	files []string,
+	collectStale bool,
+) ([]storedFileState, []string, error) {
+	rows, err := fs.db.QueryContext(
+		ctx,
+		"SELECT path, size, mtime FROM file_hashes ORDER BY path",
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	states := make([]storedFileState, len(files))
+	var stale []string
+	fileIndex := 0
+	for rows.Next() {
+		var path sql.RawBytes
+		var state storedFileState
+		if err := rows.Scan(&path, &state.size, &state.mtime); err != nil {
+			return nil, nil, err
+		}
+		matched := false
+		for fileIndex < len(files) {
+			compared := compareRawPath(path, files[fileIndex])
+			if compared < 0 {
+				break
+			}
+			if compared == 0 {
+				state.found = true
+				states[fileIndex] = state
+				matched = true
+				break
+			}
+			fileIndex++
+		}
+		if collectStale && !matched {
+			// RawBytes is only valid until the next Rows call.
+			stale = append(stale, string(path))
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	return states, stale, nil
+}
+
+func compareRawPath(left []byte, right string) int {
+	length := min(len(left), len(right))
+	for index := 0; index < length; index++ {
+		if left[index] < right[index] {
+			return -1
+		}
+		if left[index] > right[index] {
+			return 1
+		}
+	}
+	switch {
+	case len(left) < len(right):
+		return -1
+	case len(left) > len(right):
+		return 1
+	default:
+		return 0
+	}
+}
+
+// fileNeedsIndexing checks if a file needs to be indexed. A non-nil state
+// snapshot avoids one SQLite query per file during large workspace scans.
+func (fs *FileScanner) fileNeedsIndexing(
+	ctx context.Context,
+	path string,
+	state *storedFileState,
+) (bool, []byte, os.FileInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return false, nil, nil, err
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return false, nil, nil, err
 	}
 
-	var storedSize, storedMtime int64
-	err = fs.db.QueryRow("SELECT size, mtime FROM file_hashes WHERE path = ?", path).Scan(&storedSize, &storedMtime)
-
-	fileChanged := false
-	if err == sql.ErrNoRows {
-		fileChanged = true
-	} else if err != nil {
-		fileChanged = true
+	var stored storedFileState
+	var exists bool
+	if state != nil {
+		stored = *state
+		exists = stored.found
 	} else {
-		fileChanged = storedSize != info.Size() || storedMtime != info.ModTime().UnixNano()
+		err = fs.db.QueryRowContext(
+			ctx,
+			"SELECT size, mtime FROM file_hashes WHERE path = ?",
+			path,
+		).Scan(&stored.size, &stored.mtime)
+		switch err {
+		case nil:
+			exists = true
+		case sql.ErrNoRows:
+		default:
+			return false, nil, info, fmt.Errorf("query file state: %w", err)
+		}
 	}
 
-	if !fileChanged {
+	if exists &&
+		stored.size == info.Size() &&
+		stored.mtime == info.ModTime().UnixNano() {
 		return false, nil, info, nil
 	}
 
@@ -442,26 +481,117 @@ func (fs *FileScanner) fileNeedsIndexing(path string) (bool, []byte, os.FileInfo
 
 // RemoveFiles removes multiple files from the index
 func (fs *FileScanner) RemoveFiles(ctx context.Context, paths []string) error {
-	for _, indexer := range fs.indexer {
-		if err := indexer.RemovedFiles(paths); err != nil {
+	fs.operationMu.Lock()
+	defer fs.operationMu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if len(paths) == 0 {
+		return nil
+	}
+
+	var mutation *Mutation
+	if fs.store != nil {
+		transactional := true
+		for _, idx := range fs.indexer {
+			if _, ok := idx.(TransactionalRemover); !ok {
+				transactional = false
+				break
+			}
+		}
+		if transactional {
+			var err error
+			mutation, err = fs.store.BeginMutation(ctx)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	var removeErrors []error
+	for _, idx := range fs.indexer {
+		if err := ctx.Err(); err != nil {
+			removeErrors = append(removeErrors, err)
+			break
+		}
+		var err error
+		if remover, ok := idx.(TransactionalRemover); mutation != nil && ok {
+			err = remover.RemovedFilesIn(paths, mutation)
+		} else {
+			err = idx.RemovedFiles(paths)
+		}
+		if err != nil {
+			removeErrors = append(removeErrors, fmt.Errorf("%s: %w", idx.ID(), err))
+		}
+	}
+	if err := errors.Join(removeErrors...); err != nil {
+		if mutation != nil {
+			err = errors.Join(err, mutation.Rollback())
+		}
+		return fmt.Errorf("remove index entries: %w", err)
+	}
+	if mutation != nil {
+		if fs.symbols != nil {
+			if err := fs.symbols.DeleteFilesIn(mutation, paths); err != nil {
+				return errors.Join(err, mutation.Rollback())
+			}
+		}
+		if err := ctx.Err(); err != nil {
+			return errors.Join(err, mutation.Rollback())
+		}
+		if err := mutation.Commit(); err != nil {
+			return err
+		}
+	} else if fs.symbols != nil {
+		if err := fs.symbols.DeleteFiles(ctx, paths); err != nil {
 			return err
 		}
 	}
 
-	tx, err := fs.db.Begin()
+	tx, err := fs.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	stmt, err := tx.Prepare("DELETE FROM file_hashes WHERE path = ?")
+	const batchSize = 128
+	firstBatchCount := min(len(paths), batchSize)
+	stmt, err := tx.PrepareContext(
+		ctx,
+		inClauseSQL("DELETE FROM file_hashes WHERE path IN (", firstBatchCount),
+	)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = stmt.Close() }()
 
-	for _, path := range paths {
-		if _, err := stmt.Exec(path); err != nil {
+	var tailStmt *sql.Stmt
+	defer func() {
+		if tailStmt != nil {
+			_ = tailStmt.Close()
+		}
+	}()
+	args := make([]any, firstBatchCount)
+	for start := 0; start < len(paths); start += batchSize {
+		end := min(start+batchSize, len(paths))
+		batch := paths[start:end]
+		currentStmt := stmt
+		if len(batch) != firstBatchCount {
+			tailStmt, err = tx.PrepareContext(
+				ctx,
+				inClauseSQL("DELETE FROM file_hashes WHERE path IN (", len(batch)),
+			)
+			if err != nil {
+				return err
+			}
+			currentStmt = tailStmt
+		}
+		currentArgs := args[:len(batch)]
+		for index, path := range batch {
+			currentArgs[index] = path
+		}
+		if _, err := currentStmt.ExecContext(ctx, currentArgs...); err != nil {
 			return err
 		}
 	}
@@ -477,35 +607,73 @@ func (fs *FileScanner) RemoveFiles(ctx context.Context, paths []string) error {
 	return nil
 }
 
-func (fs *FileScanner) removeFilesFromIndexers(paths []string) error {
-	for _, indexer := range fs.indexer {
-		if err := indexer.RemovedFiles(paths); err != nil {
-			return err
-		}
+func (fs *FileScanner) updateFileStates(ctx context.Context, files []fileState) error {
+	if len(files) == 0 {
+		return nil
 	}
-	return nil
-}
-
-func (fs *FileScanner) updateFileStates(files []fileState) error {
-	tx, err := fs.db.Begin()
+	tx, err := fs.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	stmt, err := tx.Prepare("INSERT OR REPLACE INTO file_hashes (path, size, mtime) VALUES (?, ?, ?)")
+	const batchSize = 128
+	firstBatchCount := min(len(files), batchSize)
+	stmt, err := tx.PrepareContext(ctx, fileStateUpsertSQL(firstBatchCount))
 	if err != nil {
 		return err
 	}
 	defer func() { _ = stmt.Close() }()
 
-	for _, file := range files {
-		if _, err := stmt.Exec(file.path, file.info.Size(), file.info.ModTime().UnixNano()); err != nil {
+	var tailStmt *sql.Stmt
+	defer func() {
+		if tailStmt != nil {
+			_ = tailStmt.Close()
+		}
+	}()
+	args := make([]any, firstBatchCount*3)
+	for start := 0; start < len(files); start += batchSize {
+		end := min(start+batchSize, len(files))
+		batch := files[start:end]
+		currentStmt := stmt
+		if len(batch) != firstBatchCount {
+			tailStmt, err = tx.PrepareContext(
+				ctx,
+				fileStateUpsertSQL(len(batch)),
+			)
+			if err != nil {
+				return err
+			}
+			currentStmt = tailStmt
+		}
+		currentArgs := args[:len(batch)*3]
+		for index, file := range batch {
+			offset := index * 3
+			currentArgs[offset] = file.path
+			currentArgs[offset+1] = file.info.Size()
+			currentArgs[offset+2] = file.info.ModTime().UnixNano()
+		}
+		if _, err := currentStmt.ExecContext(ctx, currentArgs...); err != nil {
 			return err
 		}
 	}
 
 	return tx.Commit()
+}
+
+func fileStateUpsertSQL(count int) string {
+	const prefix = "INSERT OR REPLACE INTO file_hashes (path, size, mtime) VALUES "
+	const tuple = "(?, ?, ?)"
+	var query strings.Builder
+	query.Grow(len(prefix) + count*(len(tuple)+1))
+	query.WriteString(prefix)
+	for index := 0; index < count; index++ {
+		if index != 0 {
+			query.WriteByte(',')
+		}
+		query.WriteString(tuple)
+	}
+	return query.String()
 }
 
 type fileState struct {
@@ -519,45 +687,139 @@ type fileWork struct {
 	info    os.FileInfo
 }
 
+type preparedFileWork struct {
+	file     *ParsedFile
+	info     os.FileInfo
+	prepared []any
+}
+
+const (
+	// Bound preparation by source weight as well as file count. Tiny files can
+	// still share an efficient transaction, while one generated container file
+	// no longer keeps dozens of syntax trees alive until a 50-file batch fills.
+	maxPreparationBatchFiles = 50
+	maxPreparationBatchBytes = 128 << 10
+)
+
+func preparationBatchReady(fileCount, sourceBytes int) bool {
+	return fileCount >= maxPreparationBatchFiles ||
+		sourceBytes >= maxPreparationBatchBytes
+}
+
+func preparationBatchWouldOverflow(
+	fileCount,
+	sourceBytes,
+	nextSourceBytes int,
+) bool {
+	return fileCount > 0 &&
+		(fileCount+1 > maxPreparationBatchFiles ||
+			sourceBytes+nextSourceBytes > maxPreparationBatchBytes)
+}
+
 // IndexFiles processes multiple files in parallel
-func (fs *FileScanner) IndexFiles(ctx context.Context, files []string) error {
+func (fs *FileScanner) IndexFiles(
+	ctx context.Context,
+	files []string,
+) error {
+	return fs.indexFiles(ctx, files, true, nil)
+}
+
+func (fs *FileScanner) indexFiles(
+	ctx context.Context,
+	files []string,
+	filterPaths bool,
+	storedStates []storedFileState,
+) (returnErr error) {
+	if len(files) == 0 {
+		return nil
+	}
+	fs.operationMu.Lock()
+	defer fs.operationMu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	if filterPaths {
+		// Direct callers may provide skipped or duplicate paths. Scanner-owned
+		// discovery results are already selected, unique, and sorted.
+		filteredFiles := make([]string, 0, len(files))
+		seen := make(map[string]struct{}, len(files))
+		for _, path := range files {
+			if _, duplicate := seen[path]; fs.shouldIndexPath(path) && !duplicate {
+				filteredFiles = append(filteredFiles, path)
+				seen[path] = struct{}{}
+			}
+		}
+		files = filteredFiles
+		slices.Sort(files)
+	}
 	if len(files) == 0 {
 		return nil
 	}
 
-	// Filter out files in directories that should be skipped
-	filteredFiles := make([]string, 0, len(files))
-	for _, path := range files {
-		// Get the relative path from project root
-		relPath, err := filepath.Rel(fs.projectRoot, path)
-		if err != nil {
-			// If we can't get the relative path, keep the file to be safe
-			filteredFiles = append(filteredFiles, path)
-			continue
+	updatedStates := make([]fileState, 0, len(files))
+	batchIndexers := make([]BatchIndexer, 0, len(fs.indexer))
+	for _, idx := range fs.indexer {
+		if batchIndexer, ok := idx.(BatchIndexer); ok {
+			batchIndexer.BeginIndexingBatch(files)
+			batchIndexers = append(batchIndexers, batchIndexer)
 		}
+	}
+	defer func() {
+		for index := len(batchIndexers) - 1; index >= 0; index-- {
+			returnErr = errors.Join(returnErr, batchIndexers[index].EndIndexingBatch())
+		}
+		cst.ReleaseTransientBuffers()
+		parsekit.ReleaseTransientBuffers()
+		clearMessagePackBuffers()
+		const largeBatchReclaimThreshold = 8192
+		if len(updatedStates) >= largeBatchReclaimThreshold {
+			// Cold workspace indexing leaves large parser, binder, and
+			// persistence slabs dead at the same lifecycle boundary. Return
+			// those pages promptly instead of making an idle language server
+			// wait for the next GC/scavenger cycle. Incremental watcher batches
+			// and warm no-op scans stay on the normal runtime pacing path.
+			debug.FreeOSMemory()
+		}
+	}()
 
-		if !shouldSkipRelPath(relPath) {
-			filteredFiles = append(filteredFiles, path)
+	const bulkStateLookupThreshold = 1024
+	if storedStates == nil && len(files) >= bulkStateLookupThreshold {
+		var err error
+		storedStates, err = fs.loadFileStates(ctx, files)
+		if err != nil {
+			return fmt.Errorf("load file states: %w", err)
 		}
 	}
 
-	// Update files to only include filtered files
-	files = filteredFiles
-
 	// Determine the number of worker goroutines to use
-	workerCount := runtime.NumCPU() + 2
-	if workerCount > 16 {
-		workerCount = 16
+	workerCount := defaultIndexWorkerCount(runtime.NumCPU())
+	if fs.workerCount > 0 {
+		workerCount = fs.workerCount
+	}
+	if workerCount > len(files) {
+		workerCount = len(files)
 	}
 
 	// Create a channel to distribute work
-	fileChan := make(chan string, 100)
+	type fileCandidate struct {
+		path  string
+		state *storedFileState
+	}
+	fileChan := make(chan fileCandidate, 100)
 
-	// Create a channel for errors
-	errChan := make(chan error, len(files))
-
-	// Create a wait group to wait for all workers to finish
 	var wg sync.WaitGroup
+	var resultMu sync.Mutex
+	var resultErrors []error
+	recordError := func(err error) {
+		if err == nil {
+			return
+		}
+		resultMu.Lock()
+		resultErrors = append(resultErrors, err)
+		resultMu.Unlock()
+	}
 
 	// Start workers
 	for i := 0; i < workerCount; i++ {
@@ -565,61 +827,286 @@ func (fs *FileScanner) IndexFiles(ctx context.Context, files []string) error {
 		go func() {
 			defer wg.Done()
 
-			parsers := CreateTreesitterParsers()
-			const batchSize = 50
-			batch := make([]fileWork, 0, batchSize)
+			batch := make([]fileWork, 0, maxPreparationBatchFiles)
+			batchBytes := 0
 
 			processBatch := func(items []fileWork) {
 				if len(items) == 0 {
 					return
 				}
 
-				paths := make([]string, 0, len(items))
+				prepared := make([]preparedFileWork, 0, len(items))
 				for _, item := range items {
-					paths = append(paths, item.path)
-				}
-
-				if err := fs.removeFilesFromIndexers(paths); err != nil {
-					errChan <- err
-					return
-				}
-
-				for _, item := range items {
-					ext := strings.ToLower(filepath.Ext(item.path))
-					parser := parsers[ext]
-					if parser == nil {
-						panic(fmt.Sprintf("no parser found for file type: %s", ext))
+					if err := ctx.Err(); err != nil {
+						recordError(err)
+						break
 					}
-
-					tree := parser.Parse(item.content, nil)
-
-					for _, indexer := range fs.indexer {
-						if err := indexer.Index(item.path, tree.RootNode(), item.content); err != nil {
-							errChan <- err
+					file := NewParsedFile(item.path, item.content)
+					// Complete the shared, read-only frontend work before
+					// acquiring the bounded workspace-store write transaction.
+					if fs.shouldPreparsePath(item.path) {
+						_ = file.SyntaxTree()
+					}
+					preparedValues := make([]any, len(fs.indexer))
+					var prepareErrors []error
+					for index, idx := range fs.indexer {
+						preparer, ok := idx.(PreparingIndexer)
+						if !ok {
+							continue
 						}
+						value, err := preparer.Prepare(file)
+						if err != nil {
+							prepareErrors = append(
+								prepareErrors,
+								fmt.Errorf(
+									"%s prepare %s: %w",
+									idx.ID(),
+									file.Path,
+									err,
+								),
+							)
+							continue
+						}
+						preparedValues[index] = value
 					}
-
-					tree.Close()
-				}
-
-				fileStates := make([]fileState, 0, len(items))
-				for _, item := range items {
-					fileStates = append(fileStates, fileState{
-						path: item.path,
-						info: item.info,
+					// Cross-indexer analysis is only an input to preparation.
+					// Release it before this file joins the transaction batch
+					// so large semantic documents do not accumulate there.
+					file.clearMemoized()
+					if err := errors.Join(prepareErrors...); err != nil {
+						file.releaseSyntaxStorage()
+						recordError(err)
+						continue
+					}
+					prepared = append(prepared, preparedFileWork{
+						file:     file,
+						info:     item.info,
+						prepared: preparedValues,
 					})
 				}
-
-				if err := fs.updateFileStates(fileStates); err != nil {
-					errChan <- err
+				if len(prepared) == 0 {
+					return
 				}
+				defer func() {
+					for _, item := range prepared {
+						item.file.releaseSyntaxStorage()
+					}
+				}()
+
+				successful := make([]fileState, 0, len(prepared))
+				if fs.store == nil {
+					for _, item := range prepared {
+						var fileErrors []error
+						for index, idx := range fs.indexer {
+							if err := ctx.Err(); err != nil {
+								fileErrors = append(fileErrors, err)
+								break
+							}
+							var err error
+							if preparer, ok := idx.(PreparingIndexer); ok {
+								err = preparer.IndexPrepared(
+									item.file,
+									item.prepared[index],
+								)
+							} else {
+								err = idx.Index(item.file)
+							}
+							if err != nil {
+								fileErrors = append(fileErrors, fmt.Errorf(
+									"%s index %s: %w",
+									idx.ID(),
+									item.file.Path,
+									err,
+								))
+							}
+						}
+						if err := errors.Join(fileErrors...); err != nil {
+							recordError(err)
+							continue
+						}
+						successful = append(successful, fileState{
+							path: item.file.Path,
+							info: item.info,
+						})
+					}
+				} else {
+					var indexBatch func([]preparedFileWork)
+					indexBatch = func(batch []preparedFileWork) {
+						if len(batch) == 0 {
+							return
+						}
+						if err := ctx.Err(); err != nil {
+							recordError(err)
+							return
+						}
+						mutation, err := fs.store.BeginMutation(ctx)
+						if err != nil {
+							recordError(fmt.Errorf(
+								"begin indexing %s: %w",
+								batch[0].file.Path,
+								err,
+							))
+							return
+						}
+
+						var indexErrors []error
+						symbolDocuments := make(
+							[]WorkspaceSymbolDocument,
+							0,
+							len(batch),
+						)
+						for _, item := range batch {
+							item.file.clearWorkspaceSymbols()
+							item.file.setMutation(mutation)
+							for index, idx := range fs.indexer {
+								if err := ctx.Err(); err != nil {
+									indexErrors = append(indexErrors, err)
+									break
+								}
+								var err error
+								if preparer, ok := idx.(PreparingIndexer); ok {
+									err = preparer.IndexPrepared(
+										item.file,
+										item.prepared[index],
+									)
+								} else {
+									err = idx.Index(item.file)
+								}
+								if err != nil {
+									indexErrors = append(indexErrors, fmt.Errorf(
+										"%s index %s: %w",
+										idx.ID(),
+										item.file.Path,
+										err,
+									))
+								}
+							}
+							if len(indexErrors) > 0 {
+								break
+							}
+							if fs.symbols != nil {
+								symbols := append(
+									[]WorkspaceSymbol(nil),
+									item.file.collectedWorkspaceSymbols()...,
+								)
+								for index, idx := range fs.indexer {
+									contributor, ok := idx.(WorkspaceSymbolContributor)
+									if !ok {
+										continue
+									}
+									current, err := contributor.WorkspaceSymbols(
+										item.file,
+										item.prepared[index],
+									)
+									if err != nil {
+										indexErrors = append(indexErrors, fmt.Errorf(
+											"%s workspace symbols %s: %w",
+											idx.ID(),
+											item.file.Path,
+											err,
+										))
+										break
+									}
+									symbols = append(symbols, current...)
+								}
+								if len(indexErrors) == 0 {
+									symbolDocuments = append(
+										symbolDocuments,
+										WorkspaceSymbolDocument{
+											Path:    item.file.Path,
+											Symbols: symbols,
+										},
+									)
+								}
+							}
+						}
+						if len(indexErrors) == 0 && fs.symbols != nil {
+							if err := fs.symbols.ReplaceFilesIn(
+								mutation,
+								symbolDocuments,
+							); err != nil {
+								indexErrors = append(indexErrors, fmt.Errorf(
+									"catalog workspace symbol batch starting at %s: %w",
+									batch[0].file.Path,
+									err,
+								))
+							}
+						}
+
+						if len(indexErrors) > 0 {
+							if rollbackErr := mutation.Rollback(); rollbackErr != nil {
+								indexErrors = append(indexErrors, rollbackErr)
+							}
+							for _, item := range batch {
+								item.file.setMutation(nil)
+							}
+							if len(batch) > 1 && ctx.Err() == nil {
+								middle := len(batch) / 2
+								indexBatch(batch[:middle])
+								indexBatch(batch[middle:])
+								return
+							}
+							recordError(errors.Join(indexErrors...))
+							return
+						}
+
+						if err := ctx.Err(); err != nil {
+							recordError(errors.Join(err, mutation.Rollback()))
+							return
+						}
+						if err := mutation.Commit(); err != nil {
+							recordError(fmt.Errorf(
+								"commit indexing batch starting at %s: %w",
+								batch[0].file.Path,
+								err,
+							))
+							return
+						}
+						for _, item := range batch {
+							successful = append(successful, fileState{
+								path: item.file.Path,
+								info: item.info,
+							})
+						}
+					}
+					indexBatch(prepared)
+				}
+
+				if len(successful) == 0 {
+					return
+				}
+				resultMu.Lock()
+				updatedStates = append(updatedStates, successful...)
+				resultMu.Unlock()
 			}
 
-			for path := range fileChan {
+			for {
+				var candidate fileCandidate
+				var ok bool
+				select {
+				case <-ctx.Done():
+					recordError(ctx.Err())
+					processBatch(batch)
+					return
+				case candidate, ok = <-fileChan:
+					if !ok {
+						processBatch(batch)
+						return
+					}
+				}
+
 				// Check if file needs indexing
-				needsIndexing, content, info, err := fs.fileNeedsIndexing(path)
+				needsIndexing, content, info, err := fs.fileNeedsIndexing(
+					ctx,
+					candidate.path,
+					candidate.state,
+				)
 				if err != nil {
-					// We'll just skip file errors to reduce noise
+					recordError(fmt.Errorf(
+						"read %s: %w",
+						candidate.path,
+						err,
+					))
 					continue
 				}
 
@@ -628,49 +1115,175 @@ func (fs *FileScanner) IndexFiles(ctx context.Context, files []string) error {
 					continue
 				}
 
+				if preparationBatchWouldOverflow(
+					len(batch),
+					batchBytes,
+					len(content),
+				) {
+					processBatch(batch)
+					batch = batch[:0]
+					batchBytes = 0
+				}
 				batch = append(batch, fileWork{
-					path:    path,
+					path:    candidate.path,
 					content: content,
 					info:    info,
 				})
-				if len(batch) >= batchSize {
+				batchBytes += len(content)
+				if preparationBatchReady(len(batch), batchBytes) {
 					processBatch(batch)
 					batch = batch[:0]
+					batchBytes = 0
 				}
 			}
-
-			processBatch(batch)
-
-			CloseTreesitterParsers(parsers)
 		}()
 	}
 
 	// Send files to workers
-	for _, path := range files {
-		fileChan <- path
+	for index, path := range files {
+		candidate := fileCandidate{path: path}
+		if storedStates != nil {
+			candidate.state = &storedStates[index]
+		}
+		select {
+		case <-ctx.Done():
+			recordError(ctx.Err())
+			close(fileChan)
+			wg.Wait()
+			return errors.Join(resultErrors...)
+		case fileChan <- candidate:
+		}
 	}
 	close(fileChan)
 
 	// Wait for all workers to finish
 	wg.Wait()
-	close(errChan)
-
-	// Check if there were any errors
-	for err := range errChan {
-		log.Printf("Error processing file: %v", err)
+	if len(updatedStates) > 0 {
+		if err := fs.updateFileStates(ctx, updatedStates); err != nil {
+			recordError(fmt.Errorf("commit file state: %w", err))
+		} else if fs.onUpdate != nil {
+			fs.onUpdate()
+		}
 	}
 
-	if fs.onUpdate != nil {
-		fs.onUpdate()
-	}
+	return errors.Join(resultErrors...)
+}
 
-	return nil
+func defaultIndexWorkerCount(cpuCount int) int {
+	return min(max(cpuCount, 1), 4)
+}
+
+func (fs *FileScanner) shouldEnterDirectory(path string) bool {
+	if pathWithin(fs.pharCache, path) {
+		return false
+	}
+	relative, within := relativePathWithin(fs.projectRoot, path)
+	if !within || !shouldSkipRelPath(relative) {
+		return true
+	}
+	for _, idx := range fs.indexer {
+		if selector, ok := idx.(SupplementalPathIndexer); ok &&
+			selector.ShouldEnterDirectory(path) {
+			return true
+		}
+	}
+	return false
+}
+
+func (fs *FileScanner) shouldIndexPath(path string) bool {
+	if pathWithin(fs.pharCache, path) && isScannedPath(path) {
+		return true
+	}
+	relative, within := relativePathWithin(fs.projectRoot, path)
+	if within &&
+		!shouldSkipRelPath(relative) &&
+		isScannedPath(path) {
+		return true
+	}
+	for _, idx := range fs.indexer {
+		if selector, ok := idx.(SupplementalPathIndexer); ok &&
+			selector.ShouldIndexPath(path) {
+			return true
+		}
+	}
+	return false
+}
+
+func (fs *FileScanner) shouldPreparsePath(path string) bool {
+	if pathWithin(fs.pharCache, path) && isScannedPath(path) {
+		return true
+	}
+	relative, within := relativePathWithin(fs.projectRoot, path)
+	if within &&
+		!shouldSkipRelPath(relative) &&
+		isScannedPath(path) {
+		return true
+	}
+	for _, idx := range fs.indexer {
+		selector, selected := idx.(SupplementalPathIndexer)
+		if !selected || !selector.ShouldIndexPath(path) {
+			continue
+		}
+		if syntaxIndexer, ok := idx.(SupplementalSyntaxIndexer); ok &&
+			syntaxIndexer.ShouldPreparsePath(path) {
+			return true
+		}
+	}
+	return false
 }
 
 // ClearHashes clears all file hashes, forcing reindexing
 func (fs *FileScanner) ClearHashes() error {
-	for _, indexer := range fs.indexer {
-		if err := indexer.Clear(); err != nil {
+	fs.operationMu.Lock()
+	defer fs.operationMu.Unlock()
+
+	var mutation *Mutation
+	if fs.store != nil {
+		transactional := true
+		for _, idx := range fs.indexer {
+			if _, ok := idx.(TransactionalClearer); !ok {
+				transactional = false
+				break
+			}
+		}
+		if transactional {
+			var err error
+			mutation, err = fs.store.BeginMutation(context.Background())
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	var clearErrors []error
+	for _, idx := range fs.indexer {
+		var err error
+		if clearer, ok := idx.(TransactionalClearer); mutation != nil && ok {
+			err = clearer.ClearIn(mutation)
+		} else {
+			err = idx.Clear()
+		}
+		if err != nil {
+			clearErrors = append(clearErrors, fmt.Errorf("%s: %w", idx.ID(), err))
+		}
+	}
+	if err := errors.Join(clearErrors...); err != nil {
+		if mutation != nil {
+			err = errors.Join(err, mutation.Rollback())
+		}
+		return fmt.Errorf("clear indexes: %w", err)
+	}
+	if mutation != nil {
+		if fs.symbols != nil {
+			if err := fs.symbols.ClearIn(mutation); err != nil {
+				return errors.Join(err, mutation.Rollback())
+			}
+		}
+		if err := mutation.Commit(); err != nil {
+			return err
+		}
+	} else if fs.symbols != nil {
+		if err := fs.symbols.Clear(context.Background()); err != nil {
 			return err
 		}
 	}

@@ -1,17 +1,55 @@
 package indexer
 
 import (
+	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 type testStruct struct {
 	Name  string
 	Value int
+}
+
+func TestMessagePackEncoderReusesBoundedBuffers(t *testing.T) {
+	clearMessagePackBuffers()
+	t.Cleanup(clearMessagePackBuffers)
+
+	encoder := acquireMessagePackEncoder()
+	first := testStruct{Name: "first", Value: 1}
+	encoded, err := encoder.encode(first)
+	require.NoError(t, err)
+	expected, err := msgpack.Marshal(first)
+	require.NoError(t, err)
+	require.Equal(t, expected, encoded)
+	firstStorage := unsafe.SliceData(encoded)
+
+	second := testStruct{Name: "next", Value: 2}
+	encoded, err = encoder.encode(second)
+	require.NoError(t, err)
+	expected, err = msgpack.Marshal(second)
+	require.NoError(t, err)
+	require.Equal(t, expected, encoded)
+	require.Equal(t, firstStorage, unsafe.SliceData(encoded))
+	encoder.release()
+	require.Len(t, messagePackEncoders, 1)
+
+	oversized := acquireMessagePackEncoder()
+	require.Same(t, encoder, oversized)
+	_, err = oversized.encode(strings.Repeat(
+		"x",
+		maxPooledMessagePackBuffer+1,
+	))
+	require.NoError(t, err)
+	oversized.release()
+	require.Empty(t, messagePackEncoders)
 }
 
 // Helper function to set up a temporary database for testing
@@ -80,6 +118,71 @@ func TestDataIndexer_GetAllValues_WithData(t *testing.T) {
 
 	// Check that all expected values are present (order doesn't matter)
 	assert.ElementsMatch(t, expectedValues, values, "Returned values do not match expected values")
+}
+
+func TestDataIndexerValueViewsReuseCachedCatalogs(t *testing.T) {
+	index, cleanup := setupTestDB[testStruct](t)
+	defer cleanup()
+	require.NoError(t, index.BatchSaveItems(
+		map[string]map[string]testStruct{
+			"file.txt": {"key": {Name: "cached", Value: 1}},
+		},
+	))
+
+	allFirst, err := index.GetAllValuesView()
+	require.NoError(t, err)
+	allSecond, err := index.GetAllValuesView()
+	require.NoError(t, err)
+	require.Len(t, allFirst, 1)
+	require.Equal(t, unsafe.SliceData(allFirst), unsafe.SliceData(allSecond))
+
+	keyFirst, err := index.GetValuesView("key")
+	require.NoError(t, err)
+	keySecond, err := index.GetValuesView("key")
+	require.NoError(t, err)
+	require.Len(t, keyFirst, 1)
+	require.Equal(t, unsafe.SliceData(keyFirst), unsafe.SliceData(keySecond))
+
+	copyValues, err := index.GetAllValues()
+	require.NoError(t, err)
+	copyValues[0] = testStruct{Name: "changed"}
+	require.Equal(t, "cached", allFirst[0].Name)
+}
+
+func TestDataIndexerVisitAllEncodedValues(t *testing.T) {
+	index, cleanup := setupTestDB[testStruct](t)
+	defer cleanup()
+
+	expected := []testStruct{
+		{Name: "first", Value: 1},
+		{Name: "second", Value: 2},
+	}
+	require.NoError(t, index.BatchSaveItems(
+		map[string]map[string]testStruct{
+			"/first":  {"first": expected[0]},
+			"/second": {"second": expected[1]},
+		},
+	))
+	count, err := index.CountAllValues()
+	require.NoError(t, err)
+	require.Equal(t, len(expected), count)
+
+	var visited []testStruct
+	require.NoError(t, index.VisitAllEncodedValues(func(encoded []byte) error {
+		var value testStruct
+		if err := msgpack.Unmarshal(encoded, &value); err != nil {
+			return err
+		}
+		visited = append(visited, value)
+		return nil
+	}))
+	require.ElementsMatch(t, expected, visited)
+
+	sentinel := errors.New("stop visiting")
+	require.ErrorIs(t, index.VisitAllEncodedValues(
+		func([]byte) error { return sentinel },
+	), sentinel)
+	require.NoError(t, index.VisitAllEncodedValues(nil))
 }
 
 func TestDataIndexer_GetAllValues_SpecificKeyRetrievalStillWorks(t *testing.T) {

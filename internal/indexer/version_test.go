@@ -3,6 +3,7 @@ package indexer
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,6 +11,7 @@ import (
 )
 
 func TestCheckAndMigrateCache_FreshCache(t *testing.T) {
+	assert.Equal(t, 157, IndexVersion)
 	cacheDir := t.TempDir()
 
 	// Fresh cache should be marked as cleared (needs rebuild)
@@ -28,7 +30,7 @@ func TestCheckAndMigrateCache_MatchingVersion(t *testing.T) {
 
 	// Write current version
 	versionFile := filepath.Join(cacheDir, versionFileName)
-	err := os.WriteFile(versionFile, []byte("1"), 0644)
+	err := os.WriteFile(versionFile, []byte(strconv.Itoa(IndexVersion)), 0644)
 	require.NoError(t, err)
 
 	// Create a dummy file to verify it's not deleted
@@ -40,6 +42,9 @@ func TestCheckAndMigrateCache_MatchingVersion(t *testing.T) {
 	cleared, err := CheckAndMigrateCache(cacheDir)
 	require.NoError(t, err)
 	assert.False(t, cleared, "Matching version should not clear cache")
+	current, err := CacheVersionCurrent(cacheDir)
+	require.NoError(t, err)
+	assert.True(t, current)
 
 	// Dummy file should still exist
 	_, err = os.Stat(dummyFile)
@@ -58,6 +63,9 @@ func TestCheckAndMigrateCache_OldVersion(t *testing.T) {
 	dummyFile := filepath.Join(cacheDir, "test.db")
 	err = os.WriteFile(dummyFile, []byte("test data"), 0644)
 	require.NoError(t, err)
+	current, err := CacheVersionCurrent(cacheDir)
+	require.NoError(t, err)
+	assert.False(t, current)
 
 	// Old version should trigger cache clear
 	cleared, err := CheckAndMigrateCache(cacheDir)
@@ -71,7 +79,7 @@ func TestCheckAndMigrateCache_OldVersion(t *testing.T) {
 	// Version file should be updated
 	data, err := os.ReadFile(versionFile)
 	require.NoError(t, err)
-	assert.Equal(t, "1", string(data), "Version file should be updated to current version")
+	assert.Equal(t, strconv.Itoa(IndexVersion), string(data), "Version file should be updated to current version")
 }
 
 func TestCheckAndMigrateCache_CorruptedVersion(t *testing.T) {
@@ -90,7 +98,7 @@ func TestCheckAndMigrateCache_CorruptedVersion(t *testing.T) {
 	// Version file should be fixed
 	data, err := os.ReadFile(versionFile)
 	require.NoError(t, err)
-	assert.Equal(t, "1", string(data), "Version file should be fixed")
+	assert.Equal(t, strconv.Itoa(IndexVersion), string(data), "Version file should be fixed")
 }
 
 func TestCheckAndMigrateCache_ClearsSubdirectories(t *testing.T) {

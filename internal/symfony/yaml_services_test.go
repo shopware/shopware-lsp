@@ -4,8 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	tree_sitter_yaml "github.com/tree-sitter-grammars/tree-sitter-yaml/bindings/go"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseYAMLServices(t *testing.T) {
@@ -37,18 +36,8 @@ parameters:
   app.parameter.service: '@app.another_service'
 `
 
-	// Create parser
-	parser := tree_sitter.NewParser()
-	_ = parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_yaml.Language()))
-
-	// Parse the YAML content
-	tree := parser.Parse([]byte(yamlContent), nil)
-	if tree == nil {
-		t.Fatal("Failed to parse YAML")
-	}
-
 	// Parse the services
-	services, params, err := ParseYAMLServices("test.yaml", tree.RootNode(), []byte(yamlContent))
+	services, params, err := ParseYAMLServices("test.yaml", []byte(yamlContent))
 	assert.NoError(t, err, "Should be able to parse YAML services")
 
 	// Verify services count
@@ -74,9 +63,8 @@ parameters:
 	assert.True(t, ok, "Service 'app.another_service' should exist")
 	if ok {
 		assert.Equal(t, "App\\Service\\AnotherService", service.Class, "Class should match expected value")
-		// Use the tag as it exists in the map (with the format from YAML)
-		_, hasTag := service.Tags["{ name: doctrine.event_listener, event: postPersist }"]
-		assert.True(t, hasTag, "Service should have tag with flow mapping format")
+		_, hasTag := service.Tags["doctrine.event_listener"]
+		assert.True(t, hasTag, "Service should have normalized tag name")
 	}
 
 	// Test service with string alias
@@ -124,6 +112,36 @@ parameters:
 	}
 }
 
+func TestParseYAMLDeprecatedServiceMetadata(t *testing.T) {
+	services, _, err := ParseYAMLServices(
+		"services.yaml",
+		[]byte(`services:
+  legacy:
+    class: App\Legacy
+    deprecated: 'Use App\Modern instead'
+  flagged:
+    class: App\Flagged
+    deprecated: true
+  active:
+    class: App\Active
+    deprecated: false
+  legacy_null_marker:
+    class: App\LegacyNullMarker
+    deprecated: ~
+`),
+	)
+	require.NoError(t, err)
+	require.Len(t, services, 4)
+	assert.True(t, services[0].Deprecated)
+	assert.Equal(t, "Use App\\Modern instead", services[0].Deprecation)
+	assert.NotZero(t, services[0].DeprecatedRange.Len())
+	assert.True(t, services[1].Deprecated)
+	assert.Empty(t, services[1].Deprecation)
+	assert.False(t, services[2].Deprecated)
+	assert.True(t, services[3].Deprecated)
+	assert.Empty(t, services[3].Deprecation)
+}
+
 func TestParseYAMLServicesFromFile(t *testing.T) {
 	yamlContent := `
 services:
@@ -140,13 +158,8 @@ parameters:
   param2: 'value2'
 `
 
-	// Parse the YAML content
-	parser := tree_sitter.NewParser()
-	_ = parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_yaml.Language()))
-	tree := parser.Parse([]byte(yamlContent), nil)
-
 	// Parse the services
-	services, params, err := ParseYAMLServices("test.yaml", tree.RootNode(), []byte(yamlContent))
+	services, params, err := ParseYAMLServices("test.yaml", []byte(yamlContent))
 	assert.NoError(t, err, "Should be able to parse YAML services")
 
 	// Verify services and parameters
@@ -165,8 +178,8 @@ parameters:
 	if ok {
 		assert.Equal(t, "App\\Service\\ExampleService", service.Class, "Class name should match service ID")
 		// Verify tags
-		assert.Contains(t, service.Tags, "{ name: tag1 }", "Should have tag1")
-		assert.Contains(t, service.Tags, "{ name: tag2 }", "Should have tag2")
+		assert.Contains(t, service.Tags, "tag1", "Should have tag1")
+		assert.Contains(t, service.Tags, "tag2", "Should have tag2")
 	}
 
 	// Check the alias service
@@ -192,5 +205,21 @@ parameters:
 	assert.True(t, ok, "Parameter 'param2' should exist")
 	if ok {
 		assert.Equal(t, "value2", param.Value, "Parameter value should match expected string")
+	}
+}
+
+func TestParseYAMLServicesHandlesNullDefinitions(t *testing.T) {
+	services, parameters, err := ParseYAMLServices("test.yaml", []byte(`
+services:
+  App\Service\DefaultService: ~
+parameters:
+  optional: null
+`))
+	assert.NoError(t, err)
+	if assert.Len(t, services, 1) {
+		assert.Equal(t, `App\Service\DefaultService`, services[0].Class)
+	}
+	if assert.Len(t, parameters, 1) {
+		assert.Empty(t, parameters[0].Value)
 	}
 }

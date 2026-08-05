@@ -5,8 +5,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	tree_sitter_xml "github.com/tree-sitter-grammars/tree-sitter-xml/bindings/go"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 func TestParseManifestXml(t *testing.T) {
@@ -101,15 +99,8 @@ func TestParseManifestXml(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			parser := tree_sitter.NewParser()
-			err := parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_xml.LanguageXML()))
-			require.NoError(t, err)
-
-			rootNode := parser.Parse([]byte(tc.xmlContent), nil)
-			defer rootNode.Close()
-
 			// Parse the manifest file
-			manifest, err := ParseManifestXml("test.xml", rootNode.RootNode(), []byte(tc.xmlContent))
+			manifest, err := ParseManifestXml("test.xml", []byte(tc.xmlContent))
 			require.NoError(t, err)
 
 			if tc.expectNil {
@@ -123,4 +114,21 @@ func TestParseManifestXml(t *testing.T) {
 			assert.Equal(t, "test.xml", manifest.Path, "Path should match expected value")
 		})
 	}
+}
+
+func TestParseManifestPermissions(t *testing.T) {
+	manifest, err := ParseManifestXml("/app/manifest.xml", []byte(`
+<manifest>
+    <meta><name>AcmeApp</name></meta>
+    <permissions>
+        <read>product</read>
+        <create>order</create>
+    </permissions>
+</manifest>`))
+	require.NoError(t, err)
+	require.NotNil(t, manifest)
+	require.Equal(t, []AppPermission{
+		{Operation: "read", Entity: "product", Line: 5},
+		{Operation: "create", Entity: "order", Line: 6},
+	}, manifest.Permissions)
 }

@@ -25,7 +25,12 @@
     "onLanguage:php",
     "onLanguage:xml",
     "onLanguage:twig",
+	"onLanguage:vue",
     "onLanguage:yaml",
+    "onLanguage:dotenv",
+    "onLanguage:dockerfile",
+    "workspaceContains:.env",
+    "workspaceContains:Dockerfile",
     "onLanguage:scss",
     "onLanguage:javascript",
     "onLanguage:typescript"
@@ -47,6 +52,32 @@
           "type": "string",
           "default": "",
           "description": "Path to the Shopware Language Server executable. If empty, the extension will try to find the server automatically."
+        },
+        "shopwareLSP.phpExecutable": {
+          "type": "string",
+          "default": "php",
+          "description": "PHP executable used by Symfony command code lenses."
+        },
+        "shopwareLSP.memoryLimitMiB": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "scope": "machine-overridable",
+          "description": "Optional soft Go memory limit for the language-server process in MiB. Zero uses the server's balanced GC policy. A value of 512 is a low-memory starting point for large Shopware workspaces; lower values may increase indexing CPU substantially."
+        },
+        "shopwareLSP.phpExtensions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "scope": "resource",
+          "description": "Additional PHP runtime extensions whose generated stubs should be loaded (for example redis or imagick). Composer ext-* requirements are detected automatically."
+        },
+        "shopwareLSP.disabledPhpExtensions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "scope": "resource",
+          "description": "PHP runtime extensions known to be unavailable. Their stubs are excluded and uses receive a targeted diagnostic."
         }
       }
     },
@@ -58,6 +89,66 @@
       {
         "command": "shopwareLSP.forceReindex",
         "title": "Shopware: Force Reindex"
+      },
+      {
+        "command": "shopware.symfony.createScaffold",
+        "title": "Symfony: New File…"
+      },
+      {
+        "command": "shopware.createScaffold",
+        "title": "Shopware: New File or Feature…"
+      },
+      {
+        "command": "shopware.insertUuid",
+        "title": "Shopware: Insert UUID"
+      },
+      {
+        "command": "shopware.symfony.runConsoleCommandPicker",
+        "title": "Symfony: Run Console Command…"
+      },
+      {
+        "command": "shopware.symfony.browseRoutes",
+        "title": "Symfony: Browse Routes…"
+      },
+      {
+        "command": "shopware.symfony.browseProfilerRequests",
+        "title": "Symfony: Browse Profiler Requests…"
+      },
+      {
+        "command": "shopware.symfony.browseDoctrineEntities",
+        "title": "Symfony: Browse Doctrine Entities…"
+      },
+      {
+        "command": "shopware.symfony.browseFormTypes",
+        "title": "Symfony: Browse Form Types…"
+      },
+      {
+        "command": "shopware.symfony.locateService",
+        "title": "Symfony: Locate Service…"
+      },
+      {
+        "command": "shopware.symfony.generateServiceDefinitions",
+        "title": "Symfony: Generate Service Definitions…"
+      },
+      {
+        "command": "shopware.symfony.browseTwigExtensions",
+        "title": "Symfony: Browse Twig Extensions…"
+      },
+      {
+        "command": "shopware.symfony.analyzeTwigTemplateUsages",
+        "title": "Symfony: Analyze Twig Template Usages…"
+      },
+      {
+        "command": "shopware.symfony.browseTwigComponents",
+        "title": "Symfony: Browse Twig Components…"
+      },
+      {
+        "command": "shopware.symfony.analyzeTwigTemplateVariables",
+        "title": "Symfony: Analyze Twig Template Variables…"
+      },
+      {
+        "command": "shopware.symfony.twigVariables",
+        "title": "Symfony: Browse Current Twig Variables…"
       },
       {
         "command": "shopware.insertSnippet",
@@ -77,7 +168,23 @@
       }
     ],
     "menus": {
+      "explorer/context": [
+        {
+          "when": "explorerResourceIsFolder",
+          "command": "shopware.createScaffold",
+          "group": "navigation@89"
+        },
+        {
+          "when": "explorerResourceIsFolder",
+          "command": "shopware.symfony.createScaffold",
+          "group": "navigation@90"
+        }
+      ],
       "editor/context": [
+        {
+          "command": "shopware.insertUuid",
+          "group": "shopware"
+        },
         {
           "when": "resourceLangId == twig",
           "command": "shopware.insertSnippet",
@@ -89,7 +196,17 @@
           "group": "shopware"
         }
       ]
-    }
+    },
+    "snippets": [
+      {
+        "language": "php",
+        "path": "./snippets/php.json"
+      },
+      {
+        "language": "xml",
+        "path": "./snippets/config-xml.json"
+      }
+    ]
   },
   "scripts": {
     "compile": "npm run check-types && node esbuild.js",

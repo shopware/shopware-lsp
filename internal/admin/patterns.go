@@ -3,200 +3,93 @@ package admin
 import (
 	"strings"
 
-	treesitterhelper "github.com/shopware/shopware-lsp/internal/tree_sitter_helper"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
-)
-
-// =============================================================================
-// Pattern Matchers (defined first as they're used by other patterns)
-// =============================================================================
-
-// nodeTextPrefixPattern matches nodes whose text starts with a given prefix
-type nodeTextPrefixPattern struct {
-	prefix string
-}
-
-func (p nodeTextPrefixPattern) Matches(node *tree_sitter.Node, content []byte) bool {
-	if node == nil {
-		return false
-	}
-	text := string(node.Utf8Text(content))
-	return strings.HasPrefix(text, p.prefix)
-}
-
-// NodeTextPrefix creates a pattern that matches nodes whose text starts with prefix
-func NodeTextPrefix(prefix string) treesitterhelper.Pattern {
-	return nodeTextPrefixPattern{prefix: prefix}
-}
-
-// =============================================================================
-// JavaScript/TypeScript Patterns for Admin Component Registration
-// =============================================================================
-
-// NOTE: JSComponentCallPattern is defined in indexer.go as it's used during indexing
-// It matches: Component.register('name', ...) | Component.extend('name', 'parent', ...) | Shopware.Component.*
-
-// JSComponentExtendCallPattern matches only Component.extend() calls (not register)
-// Used for diagnostics to check if parent component exists
-//
-// Example: Component.extend('my-component', 'sw-parent', ...)
-var JSComponentExtendCallPattern = treesitterhelper.And(
-	treesitterhelper.NodeKind("call_expression"),
-	treesitterhelper.HasChild(
-		treesitterhelper.And(
-			treesitterhelper.NodeKind("member_expression"),
-			treesitterhelper.Or(
-				treesitterhelper.NodeText("Shopware.Component.extend"),
-				treesitterhelper.NodeText("Component.extend"),
-			),
-		),
-	),
-)
-
-// JSStringInComponentExtendPattern matches a string node inside Component.extend() arguments
-// Used for completion and go-to-definition when cursor is on component name string
-//
-// Example: Component.extend('my-component', '<caret>', ...)
-//
-//	^^^^^^^^^ matches this string
-var JSStringInComponentExtendPattern = treesitterhelper.And(
-	treesitterhelper.AnyNodeKind("string", "string_fragment"),
-	treesitterhelper.Ancestor(JSComponentExtendCallPattern, 5),
-)
-
-// =============================================================================
-// Twig/HTML Patterns for Admin Templates
-// =============================================================================
-
-// TwigHTMLStartTagPattern matches an html_start_tag node
-// Used as base pattern for component tag detection
-//
-// Example: <sw-button label="Click">
-//
-//	^^^^^^^^^^^^^^^^^^^^^^^ matches entire start tag
-var TwigHTMLStartTagPattern = treesitterhelper.NodeKind("html_start_tag")
-
-// TwigHTMLTagNamePattern matches an html_tag_name node
-// Used for go-to-definition when clicking on component tag name
-//
-// Example: <sw-button label="Click">
-//
-//	^^^^^^^^^ matches "sw-button"
-var TwigHTMLTagNamePattern = treesitterhelper.NodeKind("html_tag_name")
-
-// TwigHTMLAttributeNamePattern matches an html_attribute_name node
-// Used for completion and go-to-definition on prop attributes
-//
-// Example: <sw-button label="Click">
-//
-//	^^^^^ matches "label"
-var TwigHTMLAttributeNamePattern = treesitterhelper.NodeKind("html_attribute_name")
-
-// TwigVueDirectivePattern matches a vue_directive node
-// Used for completion and go-to-definition on Vue bindings (:prop, v-bind:prop)
-//
-// Example: <sw-button :disabled="isDisabled">
-//
-//	^^^^^^^^^ matches ":disabled"
-var TwigVueDirectivePattern = treesitterhelper.NodeKind("vue_directive")
-
-// TwigPropAttributePattern matches either html_attribute_name or vue_directive
-// Used for prop-related features (completion, go-to-definition, hover)
-//
-// Example: <sw-button label="x" :disabled="y">
-//
-//	^^^^^            ^^^^^^^^^ both match
-var TwigPropAttributePattern = treesitterhelper.AnyNodeKind("html_attribute_name", "vue_directive")
-
-// TwigSlotShorthandPattern matches the # character used for Vue slot shorthand
-// In Twig parser, # inside HTML is parsed as inline_comment
-//
-// Example: <template #default>
-//
-//	^^^^^^^^ matches "#default" (parsed as inline_comment)
-var TwigSlotShorthandPattern = treesitterhelper.And(
-	treesitterhelper.NodeKind("inline_comment"),
-	NodeTextPrefix("#"),
+	"github.com/shopware/shopware-lsp/internal/parser/cst"
 )
 
 // =============================================================================
 // Helper Functions
 // =============================================================================
 
-// IsComponentTag checks if a tag name represents a Vue component (contains hyphen)
-// Standard HTML elements don't contain hyphens, Vue components do
+// IsComponentTag recognizes both DOM custom-element spelling and Vue's
+// PascalCase local-component spelling. Native HTML elements are lowercase and
+// contain no hyphen, so they remain outside the component resolver.
 func IsComponentTag(tagName string) bool {
-	return strings.Contains(tagName, "-") && tagName != "template"
+	tagName = strings.TrimSpace(tagName)
+	return tagName != "" && tagName != "template" &&
+		(strings.Contains(tagName, "-") ||
+			tagName[0] >= 'A' && tagName[0] <= 'Z')
 }
 
-// GetTagNameFromStartTag extracts the tag name from an html_start_tag node
-func GetTagNameFromStartTag(startTag *tree_sitter.Node, content []byte) string {
-	if startTag == nil || startTag.Kind() != "html_start_tag" {
+// IsShopwareComponentTag reports component names owned by Shopware's public
+// Administration registries. Arbitrary custom elements may also contain a
+// dash, so missing-component diagnostics deliberately use the narrower sw-/mt-
+// convention while completion and navigation continue to accept every
+// registered component name.
+func IsShopwareComponentTag(tagName string) bool {
+	name := strings.ToLower(strings.TrimSpace(tagName))
+	return strings.HasPrefix(name, "sw-") || strings.HasPrefix(name, "mt-")
+}
+
+// VueDirectiveReference is the registry-owned part of one Vue directive
+// attribute. Range covers only the custom name, excluding `v-`, an argument,
+// and modifiers, so navigation, references, rename, and typo fixes preserve
+// the surrounding directive syntax.
+type VueDirectiveReference struct {
+	Name  string
+	Range cst.TextRange
+}
+
+// VueAttributeReference is the contract-owned portion of one component
+// attribute. Range excludes Vue shorthand/long-form prefixes and modifiers so
+// navigation, rename, diagnostics, and quick fixes can edit only the public
+// prop or event name.
+type VueAttributeReference struct {
+	Name  string
+	Range cst.TextRange
+}
+
+// VueDirectiveName extracts a directive identity from an attribute such as
+// `v-tooltip.bottom` or `v-custom:argument.modifier`.
+func VueDirectiveName(attributeName string) string {
+	name := strings.TrimSpace(attributeName)
+	if !strings.HasPrefix(name, "v-") {
 		return ""
 	}
-
-	for i := uint(0); i < startTag.ChildCount(); i++ {
-		child := startTag.Child(i)
-		if child.Kind() == "html_tag_name" {
-			return string(child.Utf8Text(content))
-		}
+	name = strings.TrimPrefix(name, "v-")
+	if end := strings.IndexAny(name, ":."); end >= 0 {
+		name = name[:end]
 	}
-	return ""
+	return strings.TrimSpace(name)
 }
 
-// GetTagNameFromEndTag extracts the tag name from an html_end_tag node
-func GetTagNameFromEndTag(endTag *tree_sitter.Node, content []byte) string {
-	if endTag == nil || endTag.Kind() != "html_end_tag" {
-		return ""
+// VueDirectiveReferenceForAttribute returns the custom directive identity and
+// its source range within an HTML attribute name token.
+func VueDirectiveReferenceForAttribute(
+	attributeName string,
+	nameRange cst.TextRange,
+) (VueDirectiveReference, bool) {
+	name := VueDirectiveName(attributeName)
+	if name == "" || IsVueBuiltinDirective(name) {
+		return VueDirectiveReference{}, false
 	}
-
-	for i := uint(0); i < endTag.ChildCount(); i++ {
-		child := endTag.Child(i)
-		if child.Kind() == "html_tag_name" {
-			return string(child.Utf8Text(content))
-		}
-	}
-	return ""
+	start := nameRange.Start + uint32(len("v-"))
+	return VueDirectiveReference{
+		Name:  name,
+		Range: cst.TextRange{Start: start, End: start + uint32(len(name))},
+	}, true
 }
 
-// FindAncestorOfKind walks up the tree to find an ancestor of the given kind
-func FindAncestorOfKind(node *tree_sitter.Node, kind string) *tree_sitter.Node {
-	if node == nil {
-		return nil
+// IsVueBuiltinDirective separates Vue's language-level directives from
+// Shopware registry declarations. Built-ins remain handled by Vue markup
+// semantics and must never produce missing-registry diagnostics.
+func IsVueBuiltinDirective(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "bind", "cloak", "else", "else-if", "for", "html", "if", "memo",
+		"model", "on", "once", "pre", "show", "slot", "text":
+		return true
+	default:
+		return false
 	}
-	current := node.Parent()
-	for current != nil {
-		if current.Kind() == kind {
-			return current
-		}
-		current = current.Parent()
-	}
-	return nil
-}
-
-// FindParentStartTag finds the html_start_tag that contains this node
-func FindParentStartTag(node *tree_sitter.Node) *tree_sitter.Node {
-	return FindAncestorOfKind(node, "html_start_tag")
-}
-
-// GetComponentNameFromAttribute finds the component name for an attribute node
-// Walks up to find the html_start_tag, then extracts the tag name
-//
-// Example: <sw-button label="x">
-//
-//	^^^^^ given this node, returns "sw-button"
-func GetComponentNameFromAttribute(node *tree_sitter.Node, content []byte) string {
-	startTag := FindParentStartTag(node)
-	if startTag == nil {
-		return ""
-	}
-
-	tagName := GetTagNameFromStartTag(startTag, content)
-	if !IsComponentTag(tagName) {
-		return ""
-	}
-
-	return tagName
 }
 
 // NormalizePropName normalizes an attribute name to a prop name
@@ -223,12 +116,196 @@ func NormalizePropName(attrName string) string {
 		name = strings.TrimPrefix(name, ":")
 	} else if strings.HasPrefix(name, "@") {
 		return "" // Event handler shorthand
+	} else if strings.HasPrefix(name, "#") {
+		return "" // Slot shorthand
 	} else if strings.HasPrefix(name, "v-") {
 		return "" // Vue directive
+	}
+	if modifier := strings.IndexByte(name, '.'); modifier >= 0 {
+		name = name[:modifier]
 	}
 
 	// Convert kebab-case to camelCase
 	return KebabToCamel(name)
+}
+
+// VuePropReferenceForAttribute resolves a static component prop attribute and
+// its source range. Directives, listeners, and slot shorthands are excluded.
+func VuePropReferenceForAttribute(
+	attributeName string,
+	nameRange cst.TextRange,
+) (VueAttributeReference, bool) {
+	name := NormalizePropName(attributeName)
+	if name == "" {
+		return VueAttributeReference{}, false
+	}
+	rangeValue, found := vueAttributeArgumentRange(attributeName, nameRange)
+	if !found {
+		return VueAttributeReference{}, false
+	}
+	return VueAttributeReference{Name: name, Range: rangeValue}, true
+}
+
+// NormalizeEventName returns the canonical event identity for a Vue listener
+// attribute. Listener modifiers are not part of the event name.
+//
+// Examples:
+//
+//	"@update:model-value"       -> "update:model-value"
+//	"v-on:itemClick.stop"       -> "item-click"
+//	":label"                    -> ""
+func NormalizeEventName(attributeName string) string {
+	name := strings.TrimSpace(attributeName)
+	switch {
+	case strings.HasPrefix(name, "@"):
+		name = strings.TrimPrefix(name, "@")
+	case strings.HasPrefix(name, "v-on:"):
+		name = strings.TrimPrefix(name, "v-on:")
+	default:
+		return ""
+	}
+	if modifier := strings.IndexByte(name, '.'); modifier >= 0 {
+		name = name[:modifier]
+	}
+	return CanonicalEventName(name)
+}
+
+// VueEventReferenceForAttribute resolves a static Vue listener and its public
+// event-name range while preserving @/v-on prefixes and listener modifiers.
+func VueEventReferenceForAttribute(
+	attributeName string,
+	nameRange cst.TextRange,
+) (VueAttributeReference, bool) {
+	name := NormalizeEventName(attributeName)
+	if name == "" {
+		return VueAttributeReference{}, false
+	}
+	rangeValue, found := vueAttributeArgumentRange(attributeName, nameRange)
+	if !found {
+		return VueAttributeReference{}, false
+	}
+	return VueAttributeReference{Name: name, Range: rangeValue}, true
+}
+
+func vueAttributeArgumentRange(
+	attributeName string,
+	nameRange cst.TextRange,
+) (cst.TextRange, bool) {
+	prefixLength := 0
+	switch {
+	case strings.HasPrefix(attributeName, "@"),
+		strings.HasPrefix(attributeName, "#"):
+		prefixLength = 1
+	case strings.HasPrefix(attributeName, "v-on:"):
+		prefixLength = len("v-on:")
+	case strings.HasPrefix(attributeName, "v-slot:"):
+		prefixLength = len("v-slot:")
+	case strings.HasPrefix(attributeName, "v-model:"):
+		prefixLength = len("v-model:")
+	case strings.HasPrefix(attributeName, "v-bind:"):
+		prefixLength = len("v-bind:")
+	case strings.HasPrefix(attributeName, ":"):
+		prefixLength = 1
+	}
+	name := attributeName[prefixLength:]
+	if modifier := strings.IndexByte(name, '.'); modifier >= 0 {
+		name = name[:modifier]
+	}
+	if name == "" {
+		return cst.TextRange{}, false
+	}
+	start := nameRange.Start + uint32(prefixLength)
+	end := start + uint32(len(name))
+	if end > nameRange.End {
+		return cst.TextRange{}, false
+	}
+	return cst.TextRange{Start: start, End: end}, true
+}
+
+// NormalizeModelArgument recognizes static Vue model directives. The empty
+// argument represents default `v-model`; named arguments are returned in the
+// camelCase spelling used by component prop declarations. Dynamic arguments
+// remain unresolved.
+func NormalizeModelArgument(attributeName string) (string, bool) {
+	name := strings.TrimSpace(attributeName)
+	if modifier := strings.IndexByte(name, '.'); modifier >= 0 {
+		name = name[:modifier]
+	}
+	if name == "v-model" {
+		return "", true
+	}
+	if !strings.HasPrefix(name, "v-model:") {
+		return "", false
+	}
+	argument := strings.TrimSpace(strings.TrimPrefix(name, "v-model:"))
+	if argument == "" || strings.HasPrefix(argument, "[") {
+		return "", false
+	}
+	return KebabToCamel(argument), true
+}
+
+// VueModelReferenceForAttribute resolves the argument of a named v-model
+// directive. The default v-model has no independently replaceable argument and
+// is therefore intentionally excluded.
+func VueModelReferenceForAttribute(
+	attributeName string,
+	nameRange cst.TextRange,
+) (VueAttributeReference, bool) {
+	argument, found := NormalizeModelArgument(attributeName)
+	if !found || argument == "" {
+		return VueAttributeReference{}, false
+	}
+	rangeValue, found := vueAttributeArgumentRange(attributeName, nameRange)
+	if !found {
+		return VueAttributeReference{}, false
+	}
+	return VueAttributeReference{Name: argument, Range: rangeValue}, true
+}
+
+// CanonicalEventName normalizes JavaScript camelCase event declarations to
+// the kebab-case spelling used by Administration Twig markup.
+func CanonicalEventName(name string) string {
+	return CamelToKebab(strings.TrimSpace(name))
+}
+
+// NormalizeSlotName extracts a static Vue slot name from its shorthand or
+// long-form attribute spelling.
+func NormalizeSlotName(attributeName string) string {
+	name := strings.TrimSpace(attributeName)
+	switch {
+	case name == "v-slot":
+		return "default"
+	case strings.HasPrefix(name, "#"):
+		name = strings.TrimPrefix(name, "#")
+	case strings.HasPrefix(name, "v-slot:"):
+		name = strings.TrimPrefix(name, "v-slot:")
+	default:
+		return ""
+	}
+	if modifier := strings.IndexByte(name, '.'); modifier >= 0 {
+		name = name[:modifier]
+	}
+	if strings.HasPrefix(name, "[") {
+		return ""
+	}
+	return strings.TrimSpace(name)
+}
+
+// VueSlotReferenceForAttribute resolves an explicitly named slot consumer.
+// Bare v-slot denotes the default slot but has no argument range to rewrite.
+func VueSlotReferenceForAttribute(
+	attributeName string,
+	nameRange cst.TextRange,
+) (VueAttributeReference, bool) {
+	name := NormalizeSlotName(attributeName)
+	if name == "" || strings.TrimSpace(attributeName) == "v-slot" {
+		return VueAttributeReference{}, false
+	}
+	rangeValue, found := vueAttributeArgumentRange(attributeName, nameRange)
+	if !found {
+		return VueAttributeReference{}, false
+	}
+	return VueAttributeReference{Name: name, Range: rangeValue}, true
 }
 
 // KebabToCamel converts kebab-case to camelCase

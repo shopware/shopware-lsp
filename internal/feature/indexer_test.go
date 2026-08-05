@@ -5,11 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	indexerpkg "github.com/shopware/shopware-lsp/internal/indexer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	tree_sitter_yaml "github.com/tree-sitter-grammars/tree-sitter-yaml/bindings/go"
-	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 func TestFeatureIndexer_Index(t *testing.T) {
@@ -28,16 +26,8 @@ func TestFeatureIndexer_Index(t *testing.T) {
 	content, err := os.ReadFile(filePath)
 	require.NoError(t, err, "Reading test file should not fail")
 
-	// Parse the YAML file
-	parser := sitter.NewParser()
-	err = parser.SetLanguage(sitter.NewLanguage(tree_sitter_yaml.Language()))
-	require.NoError(t, err, "Setting language should not fail")
-
-	tree := parser.Parse(content, nil)
-	require.NotNil(t, tree, "Parsing YAML should not fail")
-
 	// Index the file
-	err = indexer.Index(filePath, tree.RootNode(), content)
+	err = indexer.Index(indexerpkg.NewParsedFile(filePath, content))
 	require.NoError(t, err, "Indexing file should not fail")
 
 	// Verify that all 8 features were indexed
@@ -81,16 +71,8 @@ func TestFeatureIndexer_RemovedFiles(t *testing.T) {
 	content, err := os.ReadFile(filePath)
 	require.NoError(t, err, "Reading test file should not fail")
 
-	// Parse the YAML file
-	parser := sitter.NewParser()
-	err = parser.SetLanguage(sitter.NewLanguage(tree_sitter_yaml.Language()))
-	require.NoError(t, err, "Setting language should not fail")
-
-	tree := parser.Parse(content, nil)
-	require.NotNil(t, tree, "Parsing YAML should not fail")
-
 	// Index the file
-	err = indexer.Index(filePath, tree.RootNode(), content)
+	err = indexer.Index(indexerpkg.NewParsedFile(filePath, content))
 	require.NoError(t, err, "Indexing file should not fail")
 
 	// Verify features were indexed

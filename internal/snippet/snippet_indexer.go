@@ -1,11 +1,11 @@
 package snippet
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/indexer"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 type SnippetIndexer struct {
@@ -13,13 +13,13 @@ type SnippetIndexer struct {
 	adminIndex    *indexer.DataIndexer[Snippet]
 }
 
-func NewSnippetIndexer(configDir string) (*SnippetIndexer, error) {
-	frontendIndexer, err := indexer.NewDataIndexer[Snippet](filepath.Join(configDir, "frontend_snippet.db"))
+func NewSnippetIndexer(configDir string, stores ...*indexer.Store) (*SnippetIndexer, error) {
+	frontendIndexer, err := indexer.NewRepository[Snippet](filepath.Join(configDir, "frontend_snippet.db"), "snippets.frontend", stores...)
 	if err != nil {
 		return nil, err
 	}
 
-	adminIndexer, err := indexer.NewDataIndexer[Snippet](filepath.Join(configDir, "admin_snippet.db"))
+	adminIndexer, err := indexer.NewRepository[Snippet](filepath.Join(configDir, "admin_snippet.db"), "snippets.admin", stores...)
 	if err != nil {
 		_ = frontendIndexer.Close()
 		return nil, err
@@ -35,7 +35,8 @@ func (s *SnippetIndexer) ID() string {
 	return "snippet.indexer"
 }
 
-func (s *SnippetIndexer) Index(path string, node *tree_sitter.Node, fileContent []byte) error {
+func (s *SnippetIndexer) Index(file *indexer.ParsedFile) error {
+	path := file.Path
 	// Skip test fixtures
 	if strings.Contains(path, "/_fixtures/") {
 		return nil
@@ -43,12 +44,12 @@ func (s *SnippetIndexer) Index(path string, node *tree_sitter.Node, fileContent 
 
 	// Check if this is a frontend snippet (Resources/snippet/)
 	if strings.Contains(path, "/Resources/snippet/") {
-		return s.indexFrontendSnippet(path, node, fileContent)
+		return s.indexFrontendSnippet(file)
 	}
 
 	// Check if this is an admin snippet (Resources/app/administration/**/snippet/en-GB.json or en.json)
 	if s.isAdminSnippetFile(path) {
-		return s.indexAdminSnippet(path, node, fileContent)
+		return s.indexAdminSnippet(file)
 	}
 
 	return nil
@@ -74,13 +75,14 @@ func (s *SnippetIndexer) isAdminSnippetFile(path string) bool {
 	return strings.HasSuffix(filename, ".json")
 }
 
-func (s *SnippetIndexer) indexFrontendSnippet(path string, node *tree_sitter.Node, fileContent []byte) error {
-	snippets, err := parseSnippetFile(node, fileContent, path)
+func (s *SnippetIndexer) indexFrontendSnippet(file *indexer.ParsedFile) error {
+	path := file.Path
+	snippets, err := parseSnippetTree(file.SyntaxTree(), file.LineIndex(), path)
 	if err != nil {
 		return err
 	}
 
-	batchSave := make(map[string]map[string]Snippet)
+	batchSave := map[string]map[string]Snippet{path: {}}
 
 	for snippetKey, snippet := range snippets {
 		if _, ok := batchSave[snippet.File]; !ok {
@@ -89,16 +91,17 @@ func (s *SnippetIndexer) indexFrontendSnippet(path string, node *tree_sitter.Nod
 		batchSave[snippet.File][snippetKey] = snippet
 	}
 
-	return s.frontendIndex.BatchSaveItems(batchSave)
+	return s.frontendIndex.BatchSaveItemsIn(file.Mutation(), batchSave)
 }
 
-func (s *SnippetIndexer) indexAdminSnippet(path string, node *tree_sitter.Node, fileContent []byte) error {
-	snippets, err := parseSnippetFile(node, fileContent, path)
+func (s *SnippetIndexer) indexAdminSnippet(file *indexer.ParsedFile) error {
+	path := file.Path
+	snippets, err := parseSnippetTree(file.SyntaxTree(), file.LineIndex(), path)
 	if err != nil {
 		return err
 	}
 
-	batchSave := make(map[string]map[string]Snippet)
+	batchSave := map[string]map[string]Snippet{path: {}}
 
 	for snippetKey, snippet := range snippets {
 		if _, ok := batchSave[snippet.File]; !ok {
@@ -107,7 +110,7 @@ func (s *SnippetIndexer) indexAdminSnippet(path string, node *tree_sitter.Node, 
 		batchSave[snippet.File][snippetKey] = snippet
 	}
 
-	return s.adminIndex.BatchSaveItems(batchSave)
+	return s.adminIndex.BatchSaveItemsIn(file.Mutation(), batchSave)
 }
 
 func (s *SnippetIndexer) RemovedFiles(paths []string) error {
@@ -121,33 +124,51 @@ func (s *SnippetIndexer) RemovedFiles(paths []string) error {
 		}
 	}
 
+	var removeErrors []error
 	if len(frontendPaths) > 0 {
-		if err := s.frontendIndex.BatchDeleteByFilePaths(frontendPaths); err != nil {
-			return err
-		}
+		removeErrors = append(removeErrors, s.frontendIndex.BatchDeleteByFilePaths(frontendPaths))
 	}
-
 	if len(adminPaths) > 0 {
-		if err := s.adminIndex.BatchDeleteByFilePaths(adminPaths); err != nil {
-			return err
+		removeErrors = append(removeErrors, s.adminIndex.BatchDeleteByFilePaths(adminPaths))
+	}
+	return errors.Join(removeErrors...)
+}
+
+func (s *SnippetIndexer) RemovedFilesIn(paths []string, mutation *indexer.Mutation) error {
+	var removeErrors []error
+	if len(paths) == 0 {
+		return nil
+	}
+	var frontendPaths, adminPaths []string
+	for _, path := range paths {
+		if strings.Contains(path, "/Resources/app/administration/") {
+			adminPaths = append(adminPaths, path)
+		} else if strings.Contains(path, "/Resources/snippet/") {
+			frontendPaths = append(frontendPaths, path)
 		}
 	}
-
-	return nil
+	if len(frontendPaths) > 0 {
+		removeErrors = append(removeErrors, s.frontendIndex.BatchDeleteByFilePathsIn(mutation, frontendPaths))
+	}
+	if len(adminPaths) > 0 {
+		removeErrors = append(removeErrors, s.adminIndex.BatchDeleteByFilePathsIn(mutation, adminPaths))
+	}
+	return errors.Join(removeErrors...)
 }
 
 func (s *SnippetIndexer) Close() error {
-	if err := s.frontendIndex.Close(); err != nil {
-		return err
-	}
-	return s.adminIndex.Close()
+	return errors.Join(s.frontendIndex.Close(), s.adminIndex.Close())
 }
 
 func (s *SnippetIndexer) Clear() error {
-	if err := s.frontendIndex.Clear(); err != nil {
-		return err
-	}
-	return s.adminIndex.Clear()
+	return errors.Join(s.frontendIndex.Clear(), s.adminIndex.Clear())
+}
+
+func (s *SnippetIndexer) ClearIn(mutation *indexer.Mutation) error {
+	return errors.Join(
+		s.frontendIndex.ClearIn(mutation),
+		s.adminIndex.ClearIn(mutation),
+	)
 }
 
 func (s *SnippetIndexer) GetFrontendSnippets() ([]string, error) {

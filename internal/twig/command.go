@@ -16,9 +16,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/extension"
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
-	tree_sitter_twig "github.com/shopware/shopware-lsp/internal/tree_sitter_grammars/twig/bindings/go"
-	tree_sitter_helper "github.com/shopware/shopware-lsp/internal/tree_sitter_helper"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
+	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
 type TwigCommandProvider struct {
@@ -27,13 +25,10 @@ type TwigCommandProvider struct {
 	projectRoot    string
 }
 
-func NewTwigCommandProvider(projectRoot string, server *lsp.Server) *TwigCommandProvider {
-	extensionIndex, _ := server.GetIndexer("extension.indexer")
-	twigIndexer, _ := server.GetIndexer("twig.indexer")
-
+func NewTwigCommandProvider(projectRoot string, extensionIndex *extension.ExtensionIndexer, twigIndexer *TwigIndexer) *TwigCommandProvider {
 	return &TwigCommandProvider{
-		extensionIndex: extensionIndex.(*extension.ExtensionIndexer),
-		twigIndexer:    twigIndexer.(*TwigIndexer),
+		extensionIndex: extensionIndex,
+		twigIndexer:    twigIndexer,
 		projectRoot:    projectRoot,
 	}
 }
@@ -56,12 +51,18 @@ func (t *TwigCommandProvider) extendBlock(ctx context.Context, args *json.RawMes
 		return nil, err
 	}
 
-	extension := t.extensionIndex.GetExtensionByName(params.Extension)
-	if extension == nil {
+	extension, found, err := t.extensionIndex.FindByName(params.Extension)
+	if err != nil {
+		return nil, fmt.Errorf("find extension: %w", err)
+	}
+	if !found {
 		return protocol.NewLspError("Extension not found", "extension.not_found"), nil
 	}
 
-	originalPath := strings.TrimPrefix(params.TextUri, "file://")
+	originalPath, err := uriutil.Path(params.TextUri)
+	if err != nil {
+		return nil, fmt.Errorf("resolve document URI: %w", err)
+	}
 
 	resourcesIndex := strings.Index(originalPath, "Resources/views/storefront")
 	if resourcesIndex == -1 {
@@ -79,7 +80,7 @@ func (t *TwigCommandProvider) extendBlock(ctx context.Context, args *json.RawMes
 		}
 	}
 
-	_, err := os.Stat(extensionViewPath)
+	_, err = os.Stat(extensionViewPath)
 
 	if os.IsNotExist(err) {
 		if err := os.WriteFile(extensionViewPath, []byte("{% sw_extends \"@Storefront/"+storefrontRelativePath+"\" %}\n"), 0644); err != nil {
@@ -88,20 +89,17 @@ func (t *TwigCommandProvider) extendBlock(ctx context.Context, args *json.RawMes
 		}
 	}
 
-	parser := tree_sitter.NewParser()
-	_ = parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_twig.Language()))
-
 	currentContent, err := os.ReadFile(extensionViewPath)
 
 	if err != nil {
 		return protocol.NewLspError("Failed to read file", "file.read_failed"), nil
 	}
 
-	tree := parser.Parse(currentContent, nil)
-
-	blocks := tree_sitter_helper.FindAll(tree.RootNode(), tree_sitter_helper.TwigBlockWithNamePattern(params.BlockName), currentContent)
-
-	if len(blocks) > 0 {
+	twigFile, err := ParseTwig(extensionViewPath, currentContent)
+	if err != nil {
+		return protocol.NewLspError("Failed to parse twig file", "parse.failed"), nil
+	}
+	if _, exists := twigFile.Blocks[params.BlockName]; exists {
 		return protocol.NewLspError("Block already exists", "block.already_exists"), nil
 	}
 
@@ -120,16 +118,18 @@ func (t *TwigCommandProvider) extendBlock(ctx context.Context, args *json.RawMes
 		return protocol.NewLspError("Failed to write file", "file.write_failed"), nil
 	}
 
-	tree = parser.Parse(currentContent, nil)
-	blocks = tree_sitter_helper.FindAll(tree.RootNode(), tree_sitter_helper.TwigBlockWithNamePattern(params.BlockName), currentContent)
-
-	if len(blocks) == 0 {
+	twigFile, err = ParseTwig(extensionViewPath, currentContent)
+	if err != nil {
+		return protocol.NewLspError("Failed to parse twig file", "parse.failed"), nil
+	}
+	block, exists := twigFile.Blocks[params.BlockName]
+	if !exists {
 		return protocol.NewLspError("Block not found after creation", "block.not_found"), nil
 	}
 
 	return map[string]any{
-		"uri":  "file://" + extensionViewPath,
-		"line": blocks[0].StartPosition().Row + 1,
+		"uri":  uriutil.FileURI(extensionViewPath),
+		"line": block.Line,
 	}, nil
 }
 
@@ -157,18 +157,16 @@ func (t *TwigCommandProvider) getBlockDiff(ctx context.Context, args *json.RawMe
 		return protocol.NewLspError("Original block not found", "block.not_found"), nil
 	}
 
-	filePath := strings.TrimPrefix(params.TextUri, "file://")
+	filePath, err := uriutil.Path(params.TextUri)
+	if err != nil {
+		return nil, fmt.Errorf("resolve document URI: %w", err)
+	}
 	overrideContent, err := os.ReadFile(filePath)
 	if err != nil {
 		return protocol.NewLspError("Failed to read override file", "file.read_failed"), nil
 	}
 
-	parser := tree_sitter.NewParser()
-	_ = parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_twig.Language()))
-
-	tree := parser.Parse(overrideContent, nil)
-
-	twigFile, err := ParseTwig(filePath, tree.RootNode(), overrideContent)
+	twigFile, err := ParseTwig(filePath, overrideContent)
 	if err != nil {
 		return protocol.NewLspError("Failed to parse twig file", "parse.failed"), nil
 	}
@@ -220,17 +218,16 @@ func (t *TwigCommandProvider) getBlockContentAtVersion(absolutePath, blockName, 
 		}
 	}
 
-	parser := tree_sitter.NewParser()
-	_ = parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_twig.Language()))
-
-	tree := parser.Parse([]byte(fileContent), nil)
-	blocks := tree_sitter_helper.FindAll(tree.RootNode(), tree_sitter_helper.TwigBlockWithNamePattern(blockName), []byte(fileContent))
-
-	if len(blocks) == 0 {
+	twigFile, err := ParseTwig(relativePath, []byte(fileContent))
+	if err != nil {
+		return "", fmt.Errorf("failed to parse block %s at version %s: %w", blockName, version, err)
+	}
+	block, exists := twigFile.Blocks[blockName]
+	if !exists {
 		return "", fmt.Errorf("block %s not found at version %s", blockName, version)
 	}
 
-	return string(blocks[0].Utf8Text([]byte(fileContent))), nil
+	return block.Text, nil
 }
 
 func (t *TwigCommandProvider) findStorefrontPackagePath() string {

@@ -7,9 +7,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	tree_sitter_yaml "github.com/tree-sitter-grammars/tree-sitter-yaml/bindings/go"
-	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 func TestParseFeatureFile(t *testing.T) {
@@ -18,16 +15,8 @@ func TestParseFeatureFile(t *testing.T) {
 	content, err := os.ReadFile(filePath)
 	require.NoError(t, err, "Reading test file should not fail")
 
-	// Parse the YAML file with tree-sitter
-	parser := sitter.NewParser()
-	err = parser.SetLanguage(sitter.NewLanguage(tree_sitter_yaml.Language()))
-	require.NoError(t, err, "Setting language should not fail")
-
-	tree := parser.Parse(content, nil)
-	require.NotNil(t, tree, "Parsing YAML should not fail")
-
 	// Parse the features from the file
-	features, err := ParseFeatureFile(tree.RootNode(), content, filePath)
+	features, err := ParseFeatureFile(content, filePath)
 	require.NoError(t, err, "Parsing feature file should not fail")
 	require.Len(t, features, 8, "Should find 8 features in the test file")
 

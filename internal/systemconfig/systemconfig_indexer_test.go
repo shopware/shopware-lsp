@@ -7,8 +7,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	tree_sitter_xml "github.com/tree-sitter-grammars/tree-sitter-xml/bindings/go"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 func TestSystemConfigIndexer(t *testing.T) {
@@ -60,17 +58,11 @@ func TestSystemConfigIndexer(t *testing.T) {
 	configPath := filepath.Join(configDir, "config.xml")
 	require.NoError(t, os.WriteFile(configPath, xmlContent, 0644))
 
-	parser := tree_sitter.NewParser()
-	assert.NoError(t, parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_xml.LanguageXML())))
-
-	tree := parser.Parse(xmlContent, nil)
-	defer tree.Close()
-
 	// Manually index the file since we need to use the real file path
 	// for namespace detection to work correctly
 	fileContent, err := os.ReadFile(configPath)
 	require.NoError(t, err)
-	entries, err := IndexSystemConfigFile(configPath, tree.RootNode(), fileContent)
+	entries, err := IndexSystemConfigFile(configPath, fileContent)
 	require.NoError(t, err)
 
 	// Print debug info about the entries

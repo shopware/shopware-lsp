@@ -4,8 +4,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	tree_sitter_yaml "github.com/tree-sitter-grammars/tree-sitter-yaml/bindings/go"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 func TestParseYAMLRoutes(t *testing.T) {
@@ -28,22 +26,12 @@ app_product_create:
         color: blue
 `
 
-	// Create a YAML parser
-	parser := tree_sitter.NewParser()
-	if err := parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_yaml.Language())); err != nil {
-		t.Fatal(err)
-	}
-
-	// Parse the YAML content
-	tree := parser.Parse([]byte(yamlContent), nil)
-	defer tree.Close()
-
 	// Run the parser
-	routes, err := ParseYAMLRoutes("test.yaml", tree.RootNode(), []byte(yamlContent))
+	routes, err := ParseYAMLRoutes("test.yaml", []byte(yamlContent))
 	assert.NoError(t, err)
 
 	// Verify the parsed routes
-	if assert.Len(t, routes, 3, "Expected 3 routes from tree-sitter YAML parsing") {
+	if assert.Len(t, routes, 3, "Expected 3 routes from YAML parsing") {
 		// Check the first route
 		assert.Equal(t, "app_homepage", routes[0].Name)
 		assert.Equal(t, "/", routes[0].Path)
@@ -55,6 +43,7 @@ app_product_create:
 		assert.Equal(t, "app_product", routes[1].Name)
 		assert.Equal(t, "/product/{id}", routes[1].Path)
 		assert.Equal(t, "App\\Controller\\ProductController::show", routes[1].Controller)
+		assert.Equal(t, []string{"GET"}, routes[1].Methods)
 		assert.Equal(t, "test.yaml", routes[1].FilePath)
 		assert.Greater(t, routes[1].Line, 0)
 
@@ -62,6 +51,7 @@ app_product_create:
 		assert.Equal(t, "app_product_create", routes[2].Name)
 		assert.Equal(t, "/product/create", routes[2].Path)
 		assert.Equal(t, "App\\Controller\\ProductController::create", routes[2].Controller)
+		assert.Equal(t, []string{"GET", "POST"}, routes[2].Methods)
 		assert.Equal(t, "test.yaml", routes[2].FilePath)
 		assert.Greater(t, routes[2].Line, 0)
 	}

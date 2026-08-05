@@ -1,100 +1,154 @@
 package lsp
 
 import (
-	"path/filepath"
-	"strings"
 	"sync"
 
-	"github.com/shopware/shopware-lsp/internal/indexer"
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
+	"github.com/shopware/shopware-lsp/internal/language"
+	"github.com/shopware/shopware-lsp/internal/parser/cst"
+	"github.com/shopware/shopware-lsp/internal/parser/parsekit"
 )
 
 // TextDocument represents a document open in the editor
 type TextDocument struct {
-	URI     string
-	Text    []byte
-	Version int
-	Tree    *tree_sitter.Tree
+	URI            string
+	Text           []byte
+	Source         string
+	Version        int
+	SyntaxTree     *cst.Tree
+	SyntaxLanguage language.ID
+	ParseErrors    []parsekit.Error
+	LineIndex      *cst.LineIndex
 }
 
 // DocumentManager manages text documents
 type DocumentManager struct {
 	documents map[string]*TextDocument
+	observers []DocumentObserver
 	mu        sync.RWMutex
-	parsers   map[string]*tree_sitter.Parser
+	languages *language.Registry
+}
+
+// DocumentObserver receives immutable open-document snapshots after the
+// document manager has published them. Domain indexes can use this narrow
+// boundary for request-local overlays without importing LSP state or writing
+// editor buffers into their persistent workspace generation.
+type DocumentObserver struct {
+	DidOpenOrChange func(*TextDocument)
+	DidClose        func(string)
 }
 
 // NewDocumentManager creates a new document manager
 func NewDocumentManager() *DocumentManager {
+	return NewDocumentManagerWithRegistry(language.DefaultRegistry())
+}
+
+func NewDocumentManagerWithRegistry(registry *language.Registry) *DocumentManager {
+	if registry == nil {
+		registry = language.DefaultRegistry()
+	}
 	return &DocumentManager{
 		documents: make(map[string]*TextDocument),
-		parsers:   indexer.CreateTreesitterParsers(),
+		languages: registry,
 	}
 }
 
 // OpenDocument adds or updates a document
 func (m *DocumentManager) OpenDocument(uri string, text string, version int) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	doc := &TextDocument{
-		URI:     uri,
-		Text:    []byte(text),
-		Version: version,
-	}
-
-	fileType := strings.ToLower(filepath.Ext(uri))
-
-	if parser, ok := m.parsers[fileType]; ok {
-		doc.Tree = parser.Parse(doc.Text, nil)
-	}
-
-	m.documents[uri] = doc
+	doc := NewTextDocumentWithRegistry(m.languages, uri, text, version)
+	m.publishDocument(doc)
 }
 
 // UpdateDocument updates an existing document
 func (m *DocumentManager) UpdateDocument(uri string, text string, version int) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	doc := NewTextDocumentWithRegistry(m.languages, uri, text, version)
+	m.publishDocument(doc)
+}
 
-	if doc, ok := m.documents[uri]; ok {
-		doc.Text = []byte(text)
-		doc.Version = version
-
-		fileType := strings.ToLower(filepath.Ext(uri))
-
-		if parser, ok := m.parsers[fileType]; ok {
-			doc.Tree = parser.Parse(doc.Text, nil)
-		}
-	} else {
-		// If the document doesn't exist, create it
-		doc := &TextDocument{
-			URI:     uri,
-			Text:    []byte(text),
-			Version: version,
-		}
-
-		fileType := strings.ToLower(filepath.Ext(uri))
-
-		if parser, ok := m.parsers[fileType]; ok {
-			doc.Tree = parser.Parse(doc.Text, nil)
-		}
-
-		m.documents[uri] = doc
+func (m *DocumentManager) publishDocument(doc *TextDocument) {
+	if doc == nil {
+		return
 	}
+	m.mu.Lock()
+	m.documents[doc.URI] = doc
+	observers := append([]DocumentObserver(nil), m.observers...)
+	m.mu.Unlock()
+
+	for _, observer := range observers {
+		if observer.DidOpenOrChange != nil {
+			observer.DidOpenOrChange(doc)
+		}
+	}
+}
+
+// RegisterObserver subscribes to document lifecycle changes and immediately
+// replays documents which were already open. Replaying makes workspace
+// initialization order irrelevant while retaining synchronous change
+// delivery before diagnostics and interactive requests are scheduled.
+func (m *DocumentManager) RegisterObserver(observer DocumentObserver) {
+	if observer.DidOpenOrChange == nil && observer.DidClose == nil {
+		return
+	}
+	m.mu.Lock()
+	m.observers = append(m.observers, observer)
+	documents := make([]*TextDocument, 0, len(m.documents))
+	for _, document := range m.documents {
+		documents = append(documents, document)
+	}
+	m.mu.Unlock()
+
+	if observer.DidOpenOrChange != nil {
+		for _, document := range documents {
+			observer.DidOpenOrChange(document)
+		}
+	}
+}
+
+func NewTextDocument(uri, source string, version int) *TextDocument {
+	return NewTextDocumentWithRegistry(
+		language.DefaultRegistry(),
+		uri,
+		source,
+		version,
+	)
+}
+
+func NewTextDocumentWithRegistry(
+	registry *language.Registry,
+	uri,
+	source string,
+	version int,
+) *TextDocument {
+	if registry == nil {
+		registry = language.DefaultRegistry()
+	}
+	doc := &TextDocument{
+		URI:       uri,
+		Text:      []byte(source),
+		Source:    source,
+		Version:   version,
+		LineIndex: cst.NewLineIndex(source),
+	}
+
+	if id, result, ok := registry.ParsePath(uri, source); ok {
+		doc.SyntaxLanguage = id
+		doc.SyntaxTree = result.Tree
+		doc.ParseErrors = result.Errors
+	}
+	return doc
 }
 
 // CloseDocument removes a document
 func (m *DocumentManager) CloseDocument(uri string) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// Close the tree if it exists
-	if doc, ok := m.documents[uri]; ok && doc.Tree != nil {
-		doc.Tree.Close()
-	}
-
 	delete(m.documents, uri)
+	observers := append([]DocumentObserver(nil), m.observers...)
+	m.mu.Unlock()
+
+	for _, observer := range observers {
+		if observer.DidClose != nil {
+			observer.DidClose(uri)
+		}
+	}
 }
 
 // GetDocument returns a document by URI
@@ -104,6 +158,29 @@ func (m *DocumentManager) GetDocument(uri string) (*TextDocument, bool) {
 
 	doc, ok := m.documents[uri]
 	return doc, ok
+}
+
+func (m *DocumentManager) SyntaxContext(
+	uri string,
+	line,
+	character int,
+) (SyntaxContext, bool) {
+	document, ok := m.GetDocument(uri)
+	if !ok {
+		return SyntaxContext{}, false
+	}
+	return newSyntaxContext(document, line, character), true
+}
+
+func (m *DocumentManager) Documents() []*TextDocument {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	documents := make([]*TextDocument, 0, len(m.documents))
+	for _, document := range m.documents {
+		documents = append(documents, document)
+	}
+	return documents
 }
 
 // GetDocumentText returns the text of a document by URI
@@ -117,95 +194,51 @@ func (m *DocumentManager) GetDocumentText(uri string) ([]byte, bool) {
 	return nil, false
 }
 
-func (m *DocumentManager) GetNodeAtPosition(uri string, line int, character int) (*tree_sitter.Node, *TextDocument, bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	// Check if the document exists
-	doc, ok := m.documents[uri]
-	if !ok || doc.Tree == nil {
-		return nil, nil, false
+func syntaxAtPosition(tree *cst.Tree, lineIndex *cst.LineIndex, line int, character int) (*cst.Node, *cst.Token, *cst.Node) {
+	if tree == nil || tree.Root == nil {
+		return nil, nil, nil
 	}
 
-	// Find the closest element to our cursor position
-	treeSitterPos := tree_sitter.Point{
-		Row:    uint(line),
-		Column: uint(character),
+	offset := lineIndex.OffsetUTF16(uint32(line), uint32(character))
+	token := tree.Root.TokenAtOffset(offset)
+	node := tree.Root.NodeAtOffset(offset)
+
+	// At EOF there is no token on the right side of the cursor. Use the final
+	// token as editor context so incomplete input still has useful context.
+	if token == nil && offset > tree.Root.Range().Start {
+		token = tree.Root.TokenAtOffset(offset - 1)
+		node = tree.Root.NodeAtOffset(offset - 1)
 	}
-
-	// Manual tree traversal to find the most specific node at position
-	node := m.findNodeAtPosition(doc.Tree.RootNode(), treeSitterPos, doc.Text)
-	if node != nil {
-		return node, doc, true
-	}
-
-	// Fallback to standard method
-	node = doc.Tree.RootNode().NamedDescendantForPointRange(treeSitterPos, treeSitterPos)
-	return node, doc, true
-}
-
-func (m *DocumentManager) findNodeAtPosition(node *tree_sitter.Node, pos tree_sitter.Point, text []byte) *tree_sitter.Node {
-	if node == nil {
-		return nil
-	}
-
-	// Convert position to byte offset
-	lines := string(text)
-	targetOffset := 0
-	for i, line := range strings.Split(lines, "\n") {
-		if uint(i) == pos.Row {
-			targetOffset += int(pos.Column)
+	for token != nil && token.Kind().IsTrivia() && token.Range().Start > tree.Root.Range().Start {
+		previousOffset := token.Range().Start - 1
+		previousToken := tree.Root.TokenAtOffset(previousOffset)
+		if previousToken == nil || previousToken == token {
 			break
 		}
-		if uint(i) < pos.Row {
-			targetOffset += len(line) + 1 // +1 for newline
-		}
+		token = previousToken
+		node = tree.Root.NodeAtOffset(previousOffset)
 	}
 
-	// Check if this node contains the target position
-	if node.StartByte() <= uint(targetOffset) && uint(targetOffset) <= node.EndByte() {
-		// Check all children (including unnamed ones)
-		for i := uint(0); i < node.ChildCount(); i++ {
-			child := node.Child(i)
-			if child != nil {
-				childResult := m.findNodeAtPosition(child, pos, text)
-				if childResult != nil {
-					return childResult
-				}
-			}
-		}
-		// If no child contains it, this node is the most specific
-		return node
-	}
-
-	return nil
-}
-
-func (m *DocumentManager) GetRootNode(uri string) *tree_sitter.Node {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	// Check if the document exists
-	doc, ok := m.documents[uri]
-	if !ok || doc.Tree == nil {
-		return nil
-	}
-
-	return doc.Tree.RootNode()
+	return tree.Root, token, node
 }
 
 // Close closes the document manager and frees resources
 func (m *DocumentManager) Close() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	observers := append([]DocumentObserver(nil), m.observers...)
+	uris := make([]string, 0, len(m.documents))
+	for uri := range m.documents {
+		uris = append(uris, uri)
+	}
+	m.documents = make(map[string]*TextDocument)
+	m.observers = nil
+	m.mu.Unlock()
 
-	// Close all trees
-	for _, doc := range m.documents {
-		if doc.Tree != nil {
-			doc.Tree.Close()
-			doc.Tree = nil
+	for _, uri := range uris {
+		for _, observer := range observers {
+			if observer.DidClose != nil {
+				observer.DidClose(uri)
+			}
 		}
 	}
-
-	indexer.CloseTreesitterParsers(m.parsers)
 }
