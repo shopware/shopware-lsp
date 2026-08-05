@@ -1068,6 +1068,11 @@ func (s *functionState) inferArrayAccess(node *phpsyntax.Node, env environment) 
 }
 
 func (s *functionState) arrayAccessType(receiver, key types.Type) types.Type {
+	if receiver.Kind() == types.NeverKind {
+		// Chained access through a definitely absent array element remains
+		// impossible. Preserving never lets isset() discard that flow branch.
+		return types.Never()
+	}
 	if receiver.Kind() == types.UnionKind {
 		var members []types.Type
 		for _, alternative := range receiver.Arguments() {

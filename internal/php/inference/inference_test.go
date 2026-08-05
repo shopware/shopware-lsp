@@ -656,6 +656,40 @@ function build(iterable $channels): void {
 	}
 }
 
+func TestNestedIssetInitializationDoesNotCreatePartialShape(t *testing.T) {
+	t.Parallel()
+	root := phpparser.Parse(`<?php
+/**
+ * @param iterable<array{package: string, version: string, normalized: string|null, source: string}> $rows
+ * @return array<string, array<string, array{pretty: string, normalized: string|null, sources: list<string>}>>
+ */
+function collect(iterable $rows): array {
+    $packages = [];
+    foreach ($rows as $row) {
+        $package = $row['package'];
+        $version = $row['version'];
+        if (!isset($packages[$package][$version])) {
+            $packages[$package][$version] = [
+                'pretty' => $version,
+                'normalized' => $row['normalized'],
+                'sources' => [],
+            ];
+        }
+        if (!in_array($row['source'], $packages[$package][$version]['sources'], true)) {
+            $packages[$package][$version]['sources'][] = $row['source'];
+        }
+    }
+    return $packages;
+}
+`).Tree.Root
+	bound := binder.New().Bind("/nested-isset-array-initialization.php", 1, root)
+	snapshot := semantic.NewSnapshot(1, []*semantic.Document{bound})
+	analyzed := New(snapshot, Builtins).Analyze(binder.Link(bound, snapshot), root)
+	for _, issue := range analyzed.Issues {
+		require.NotEqual(t, "php.returnType", issue.Code, issue.Message)
+	}
+}
+
 func TestConditionalAssertionNarrowsOppositeBranch(t *testing.T) {
 	t.Parallel()
 	root := phpparser.Parse(`<?php
