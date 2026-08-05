@@ -162,6 +162,14 @@ func (s *functionState) conditionEnvironments(
 			phpquery.CallMethodName(node),
 			"\\",
 		))
+		if name == "empty" {
+			if trueEnv, falseEnv, narrowed := s.narrowEmpty(
+				node,
+				env,
+			); narrowed {
+				return trueEnv, falseEnv
+			}
+		}
 		if name == "isset" {
 			if trueEnv, falseEnv, narrowed := s.narrowIsset(node, env); narrowed {
 				return trueEnv, falseEnv
@@ -638,6 +646,20 @@ func (s *functionState) narrowIsset(
 	return trueEnv, falseEnv, narrowed
 }
 
+func (s *functionState) narrowEmpty(
+	call *phpsyntax.Node,
+	env environment,
+) (environment, environment, bool) {
+	expression := phpquery.ArgumentExpression(call, 0)
+	if expression == nil || flowExpressionKey(expression) == "" {
+		return environment{}, environment{}, false
+	}
+	truthy, falsy := s.truthinessEnvironments(expression, env)
+	// empty($value) is the inverse of the value's ordinary truthiness. The
+	// false branch therefore carries the useful non-null/non-falsy refinement.
+	return falsy, truthy, true
+}
+
 func (s *functionState) narrowCallAssertions(
 	call *phpsyntax.Node,
 	env environment,
@@ -1087,8 +1109,7 @@ func (s *functionState) truthinessEnvironments(
 	if !exists {
 		original = s.infer(expression, env)
 	}
-	truthy := s.relations.Without(original, types.Null())
-	truthy = s.relations.Without(truthy, types.False())
+	truthy := withoutFalsyLiterals(s.relations, original)
 	trueEnv := cloneEnvironment(env)
 	trueEnv.set(key, truthy)
 	s.record(expression, truthy, semantic.FlowSource, "truthiness")

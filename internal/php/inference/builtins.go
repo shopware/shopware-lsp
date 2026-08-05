@@ -138,6 +138,13 @@ var Builtins Extension = ExtensionFunc(func(context CallContext) (semantic.TypeF
 		if len(context.Arguments) > 1 {
 			value = types.List(types.String())
 		}
+	case "ini_get":
+		if len(context.Arguments) > 0 &&
+			knownCoreINIOption(context.Arguments[0].Type) {
+			value = types.String()
+		}
+	case "parse_url":
+		value = parseURLComponentReturnType(context.Node)
 	case "pathinfo":
 		if pathinfoReturnsString(context.Node) {
 			value = types.String()
@@ -885,6 +892,43 @@ func pathinfoReturnsString(call *phpsyntax.Node) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func knownCoreINIOption(value types.Type) bool {
+	if value.Kind() != types.LiteralStringKind {
+		return false
+	}
+	switch strings.ToLower(value.Name()) {
+	case "default_charset",
+		"max_execution_time",
+		"max_input_nesting_level",
+		"max_input_time",
+		"max_input_vars",
+		"memory_limit",
+		"post_max_size",
+		"upload_max_filesize":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseURLComponentReturnType(call *phpsyntax.Node) types.Type {
+	component := phpquery.ArgumentExpression(call, 1)
+	if component == nil {
+		return types.Unknown()
+	}
+	name := strings.ToUpper(strings.TrimPrefix(compact(component.Text()), `\`))
+	switch name {
+	case "PHP_URL_PORT", "2":
+		return types.Union(types.Int(), types.Null(), types.False())
+	case "PHP_URL_SCHEME", "PHP_URL_HOST", "PHP_URL_USER", "PHP_URL_PASS",
+		"PHP_URL_PATH", "PHP_URL_QUERY", "PHP_URL_FRAGMENT",
+		"0", "1", "3", "4", "5", "6", "7":
+		return types.Union(types.String(), types.Null(), types.False())
+	default:
+		return types.Unknown()
 	}
 }
 

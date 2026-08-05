@@ -2763,6 +2763,110 @@ function flipped(array $values, string $id): string {
 	}
 }
 
+func TestBuiltinConfigurationAndURLReturnTypes(t *testing.T) {
+	t.Parallel()
+	root := phpparser.Parse(`<?php
+function acceptsString(string $value): void {}
+function memoryLimit(): void {
+    acceptsString(ini_get('memory_limit'));
+}
+function unknownIniOption(string $option): string|false {
+    return ini_get($option);
+}
+function missingIniOption(): string|false {
+    return ini_get('shopware_lsp.missing');
+}
+function parseQuery(string $dsn): void {
+    $query = parse_url($dsn, PHP_URL_QUERY);
+    if ($query === false || $query === null) {
+        return;
+    }
+    $result = [];
+    parse_str($query, $result);
+}
+function queryComponent(string $dsn): string|false|null {
+    return parse_url($dsn, PHP_URL_QUERY);
+}
+function portComponent(string $dsn): int|false|null {
+    return parse_url($dsn, PHP_URL_PORT);
+}
+function dynamicComponent(string $dsn, int $component): array|int|string|false|null {
+    return parse_url($dsn, $component);
+}
+`).Tree.Root
+	bound := binder.New().Bind("/builtin-config-url.php", 1, root)
+	snapshot := semantic.NewSnapshot(1, []*semantic.Document{
+		bound,
+		stubs.Document(project.Version{Major: 8, Minor: 5}),
+	})
+	analyzed := New(snapshot, Builtins).Analyze(
+		binder.Link(bound, snapshot),
+		root,
+	)
+
+	assertTextType(t, analyzed, root, "ini_get('memory_limit')", "string")
+	assertTextType(t, analyzed, root, "ini_get($option)", "false|string")
+	assertTextType(
+		t,
+		analyzed,
+		root,
+		"ini_get('shopware_lsp.missing')",
+		"false|string",
+	)
+	assertTextType(
+		t,
+		analyzed,
+		root,
+		"parse_url($dsn, PHP_URL_QUERY)",
+		"false|null|string",
+	)
+	assertTextType(
+		t,
+		analyzed,
+		root,
+		"parse_url($dsn, PHP_URL_PORT)",
+		"false|int|null",
+	)
+	assertTextType(
+		t,
+		analyzed,
+		root,
+		"parse_url($dsn, $component)",
+		"array{fragment:string,host:string,pass:string,path:string,port:int,query:string,scheme:string,user:string}|false|int|null|string",
+	)
+	for _, issue := range analyzed.Issues {
+		require.NotEqual(t, "php.arguments", issue.Code, issue.Message)
+		require.NotEqual(t, "php.returnType", issue.Code, issue.Message)
+	}
+}
+
+func TestEmptyGuardNarrowsOptionalArrayField(t *testing.T) {
+	t.Parallel()
+	root := phpparser.Parse(`<?php
+/** @param array{security_eol?: string} $support */
+function securityEol(array $support): DateTime {
+    if (empty($support['security_eol'])) {
+        throw new RuntimeException();
+    }
+    return new DateTime($support['security_eol']);
+}
+`).Tree.Root
+	bound := binder.New().Bind("/empty-guard.php", 1, root)
+	snapshot := semantic.NewSnapshot(1, []*semantic.Document{
+		bound,
+		stubs.Document(project.Version{Major: 8, Minor: 5}),
+	})
+	analyzed := New(snapshot, Builtins).Analyze(
+		binder.Link(bound, snapshot),
+		root,
+	)
+
+	for _, issue := range analyzed.Issues {
+		require.NotEqual(t, "php.arguments", issue.Code, issue.Message)
+		require.NotEqual(t, "php.returnType", issue.Code, issue.Message)
+	}
+}
+
 func TestBuiltinStringCollectionReturnTypes(t *testing.T) {
 	t.Parallel()
 	root := phpparser.Parse(`<?php
