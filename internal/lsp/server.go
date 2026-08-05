@@ -80,7 +80,8 @@ func (s *Server) InitializationOptions() protocol.InitializationOptions {
 			[]string(nil),
 			s.initializationOptions.DisabledPHPExtensions...,
 		),
-		CLIMode: s.initializationOptions.CLIMode,
+		ShopwareTargetVersion: s.initializationOptions.ShopwareTargetVersion,
+		CLIMode:               s.initializationOptions.CLIMode,
 	}
 }
 

@@ -730,7 +730,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           .get<string[]>('phpExtensions', []),
         disabledPhpExtensions: vscode.workspace
           .getConfiguration('shopwareLSP')
-          .get<string[]>('disabledPhpExtensions', [])
+          .get<string[]>('disabledPhpExtensions', []),
+        shopwareTargetVersion: vscode.workspace
+          .getConfiguration('shopwareLSP')
+          .get<string>('shopwareTargetVersion', '')
       },
       // Add output configuration
       outputChannel: outputChannel,

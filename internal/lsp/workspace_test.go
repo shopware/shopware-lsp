@@ -78,11 +78,13 @@ func TestInitializePublishesPHPStubExtensionOptionsToWorkspace(t *testing.T) {
 		InitializationOptions: protocol.InitializationOptions{
 			PHPExtensions:         []string{"redis"},
 			DisabledPHPExtensions: []string{"imagick"},
+			ShopwareTargetVersion: "6.8.0",
 		},
 	})
 	require.ErrorContains(t, err, "stop after options")
 	require.Equal(t, []string{"redis"}, received.PHPExtensions)
 	require.Equal(t, []string{"imagick"}, received.DisabledPHPExtensions)
+	require.Equal(t, "6.8.0", received.ShopwareTargetVersion)
 }
 
 func TestInitializeAdvertisesTwigFileRenameEdits(t *testing.T) {

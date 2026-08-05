@@ -44,6 +44,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/security"
 	"github.com/shopware/shopware-lsp/internal/serializer"
+	"github.com/shopware/shopware-lsp/internal/shopware"
 	shopwaredal "github.com/shopware/shopware-lsp/internal/shopware/dal"
 	"github.com/shopware/shopware-lsp/internal/snippet"
 	"github.com/shopware/shopware-lsp/internal/stimulus"
@@ -58,33 +59,34 @@ import (
 )
 
 type workspaceServices struct {
-	symbols        *indexer.WorkspaceSymbolCatalog
-	services       *symfony.ServiceIndex
-	routes         *symfony.RouteIndexer
-	routeUsage     *symfony.RouteUsageIndexer
-	console        *console.Index
-	doctrine       *doctrine.Index
-	assets         *asset.Index
-	events         *event.Index
-	messenger      *messenger.Index
-	environment    *environment.Index
-	forms          *form.Index
-	security       *security.Index
-	configuration  *symfonyconfig.Index
-	serializer     *serializer.Index
-	stimulus       *stimulus.Index
-	php            *php.PHPIndex
-	twig           *twig.TwigIndexer
-	twigComponents *twigcomponent.Index
-	snippets       *snippet.SnippetIndexer
-	translations   *translation.Index
-	features       *feature.FeatureIndexer
-	systemConfig   *systemconfig.SystemConfigIndexer
-	theme          *theme.ThemeConfigIndexer
-	extensions     *extension.ExtensionIndexer
-	admin          *admin.AdminComponentIndexer
-	dal            *shopwaredal.Index
-	appScripts     *appscript.Index
+	symbols         *indexer.WorkspaceSymbolCatalog
+	services        *symfony.ServiceIndex
+	routes          *symfony.RouteIndexer
+	routeUsage      *symfony.RouteUsageIndexer
+	console         *console.Index
+	doctrine        *doctrine.Index
+	assets          *asset.Index
+	events          *event.Index
+	messenger       *messenger.Index
+	environment     *environment.Index
+	forms           *form.Index
+	security        *security.Index
+	configuration   *symfonyconfig.Index
+	serializer      *serializer.Index
+	stimulus        *stimulus.Index
+	php             *php.PHPIndex
+	twig            *twig.TwigIndexer
+	twigComponents  *twigcomponent.Index
+	snippets        *snippet.SnippetIndexer
+	translations    *translation.Index
+	features        *feature.FeatureIndexer
+	systemConfig    *systemconfig.SystemConfigIndexer
+	theme           *theme.ThemeConfigIndexer
+	extensions      *extension.ExtensionIndexer
+	admin           *admin.AdminComponentIndexer
+	dal             *shopwaredal.Index
+	appScripts      *appscript.Index
+	shopwareVersion shopware.ResolvedVersion
 }
 
 // registerFeatures is the adapter layer from domain repositories to LSP

@@ -114,6 +114,18 @@ func TestParseVersionConstraint(t *testing.T) {
 	require.Equal(t, Version{Major: 8, Minor: 2}, version)
 }
 
+func TestVersionComparisonIncludesPatch(t *testing.T) {
+	t.Parallel()
+	version := Version{Major: 6, Minor: 6, Patch: 10}
+	require.True(t, version.AtLeast(6, 6))
+	require.True(t, version.AtLeastPatch(6, 6, 4))
+	require.True(t, version.AtLeastPatch(6, 6, 10))
+	require.False(t, version.AtLeastPatch(6, 6, 11))
+	require.Equal(t, 1, version.Compare(Version{Major: 6, Minor: 5, Patch: 99}))
+	require.Equal(t, 0, version.Compare(Version{Major: 6, Minor: 6, Patch: 10}))
+	require.Equal(t, -1, version.Compare(Version{Major: 6, Minor: 7}))
+}
+
 func TestDependencyVersion(t *testing.T) {
 	t.Parallel()
 	model := &Model{Dependencies: []Package{

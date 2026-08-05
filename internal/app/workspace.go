@@ -97,6 +97,14 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 	phpIndex.RegisterTypeExtension(shopware.NewPHPTypeExtension())
 	phpIndex.RegisterTypeExtension(event.NewPHPTypeExtension())
 	workspace.indexers = append(workspace.indexers, phpIndex)
+	shopwareVersion, err := shopware.NewVersionResolver(
+		root,
+		phpIndex.Project(),
+		initializationOptions.ShopwareTargetVersion,
+	).Resolve()
+	if err != nil {
+		return nil, fmt.Errorf("configure Shopware target version: %w", err)
+	}
 
 	serviceIndex, err := symfony.NewServiceIndex(root, cacheDir, workspace.store)
 	if err != nil {
@@ -259,33 +267,34 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 	}
 
 	registerFeatures(server, root, workspaceServices{
-		symbols:        workspace.symbols,
-		services:       serviceIndex,
-		routes:         routeIndex,
-		routeUsage:     routeUsageIndex,
-		console:        consoleIndex,
-		doctrine:       doctrineIndex,
-		assets:         assetIndex,
-		events:         eventIndex,
-		messenger:      messengerIndex,
-		environment:    environmentIndex,
-		forms:          formIndex,
-		security:       securityIndex,
-		configuration:  configurationIndex,
-		serializer:     serializerIndex,
-		stimulus:       stimulusIndex,
-		php:            phpIndex,
-		twig:           twigIndex,
-		twigComponents: twigComponentIndex,
-		snippets:       snippetIndex,
-		translations:   translationIndex,
-		features:       featureIndex,
-		systemConfig:   systemConfigIndex,
-		theme:          themeIndex,
-		extensions:     extensionIndex,
-		admin:          adminIndex,
-		dal:            dalIndex,
-		appScripts:     appScriptIndex,
+		symbols:         workspace.symbols,
+		services:        serviceIndex,
+		routes:          routeIndex,
+		routeUsage:      routeUsageIndex,
+		console:         consoleIndex,
+		doctrine:        doctrineIndex,
+		assets:          assetIndex,
+		events:          eventIndex,
+		messenger:       messengerIndex,
+		environment:     environmentIndex,
+		forms:           formIndex,
+		security:        securityIndex,
+		configuration:   configurationIndex,
+		serializer:      serializerIndex,
+		stimulus:        stimulusIndex,
+		php:             phpIndex,
+		twig:            twigIndex,
+		twigComponents:  twigComponentIndex,
+		snippets:        snippetIndex,
+		translations:    translationIndex,
+		features:        featureIndex,
+		systemConfig:    systemConfigIndex,
+		theme:           themeIndex,
+		extensions:      extensionIndex,
+		admin:           adminIndex,
+		dal:             dalIndex,
+		appScripts:      appScriptIndex,
+		shopwareVersion: shopwareVersion,
 	})
 
 	return workspace, nil

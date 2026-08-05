@@ -13,6 +13,8 @@ import (
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
+	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
+	phpsyntax "github.com/shopware/shopware-lsp/internal/parser/php/syntax"
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/php/project"
 	"github.com/shopware/shopware-lsp/internal/rewrite"
@@ -816,6 +818,43 @@ func TestServiceArgumentFixRewritesYAMLServiceDefinition(t *testing.T) {
 	require.Contains(t, updated, "    arguments:\n")
 	require.Contains(t, updated, "      - '@logger'\n")
 	require.Contains(t, updated, "      - '@?'")
+	require.Empty(t, lsp.NewTextDocument(document.URI, updated, 2).ParseErrors)
+}
+
+func TestFormClassConstantFixUsesSharedPHPImportRewrite(t *testing.T) {
+	source := `<?php
+namespace App;
+
+$form->add('enabled', 'checkbox');
+`
+	document := lsp.NewTextDocument("file:///project/src/Form.php", source, 1)
+	strings := phpquery.Nodes(document.SyntaxTree.Root, phpsyntax.PhpString)
+	require.Len(t, strings, 2)
+	literal := strings[1]
+	problem := lsp.Problem{
+		ID:      "symfony.form.type.legacy_alias",
+		Range:   literal.RangeTrimmedTrivia(),
+		Element: literal,
+		Message: "Use fully-qualified class name (FQCN)",
+	}
+	bound := lsp.BindFix(formClassConstantFixID, formClassPayload{
+		ClassName: `Symfony\Component\Form\Extension\Core\Type\CheckboxType`,
+	})
+	plan, err := (formClassConstantFix{}).Build(
+		context.Background(),
+		fixContext(t, document, problem, bound, nil),
+	)
+	require.NoError(t, err)
+	require.Len(t, plan.Documents, 1)
+	updated, err := plan.Documents[0].Apply()
+	require.NoError(t, err)
+	require.Equal(t, `<?php
+namespace App;
+
+use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
+
+$form->add('enabled', CheckboxType::class);
+`, updated)
 	require.Empty(t, lsp.NewTextDocument(document.URI, updated, 2).ParseErrors)
 }
 

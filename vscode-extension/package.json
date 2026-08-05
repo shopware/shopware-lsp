@@ -78,6 +78,13 @@
           "default": [],
           "scope": "resource",
           "description": "PHP runtime extensions known to be unavailable. Their stubs are excluded and uses receive a targeted diagnostic."
+        },
+        "shopwareLSP.shopwareTargetVersion": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "pattern": "^$|^v?[0-9]+\\.[0-9]+(?:\\.[0-9]+)?(?:\\.[0-9]+)?(?:[-+][0-9A-Za-z.-]+)?$",
+          "description": "Optional Shopware target version for migration diagnostics, for example 6.8. Leave empty to detect the installed or platform checkout version."
         }
       }
     },

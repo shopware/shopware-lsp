@@ -35,6 +35,7 @@ type CodeActionResolveSupport struct {
 type InitializationOptions struct {
 	PHPExtensions         []string `json:"phpExtensions,omitempty"`
 	DisabledPHPExtensions []string `json:"disabledPhpExtensions,omitempty"`
+	ShopwareTargetVersion string   `json:"shopwareTargetVersion,omitempty"`
 	CLIMode               bool     `json:"cliMode,omitempty"`
 }
 

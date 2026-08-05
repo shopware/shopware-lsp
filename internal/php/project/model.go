@@ -29,7 +29,35 @@ func (v Version) String() string {
 }
 
 func (v Version) AtLeast(major, minor int) bool {
-	return v.Major > major || v.Major == major && v.Minor >= minor
+	return v.Compare(Version{Major: major, Minor: minor}) >= 0
+}
+
+func (v Version) AtLeastPatch(major, minor, patch int) bool {
+	return v.Compare(Version{Major: major, Minor: minor, Patch: patch}) >= 0
+}
+
+// Compare returns -1, 0, or 1 when v is respectively lower than, equal to,
+// or greater than other.
+func (v Version) Compare(other Version) int {
+	if v.Major != other.Major {
+		if v.Major < other.Major {
+			return -1
+		}
+		return 1
+	}
+	if v.Minor != other.Minor {
+		if v.Minor < other.Minor {
+			return -1
+		}
+		return 1
+	}
+	if v.Patch != other.Patch {
+		if v.Patch < other.Patch {
+			return -1
+		}
+		return 1
+	}
+	return 0
 }
 
 type Model struct {

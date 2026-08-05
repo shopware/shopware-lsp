@@ -3,17 +3,15 @@ package inspections
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/form"
 	"github.com/shopware/shopware-lsp/internal/language"
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/diagnostics"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
-	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
 	phpsyntax "github.com/shopware/shopware-lsp/internal/parser/php/syntax"
 	"github.com/shopware/shopware-lsp/internal/php"
-	phpresolver "github.com/shopware/shopware-lsp/internal/php/resolver"
+	phprewrite "github.com/shopware/shopware-lsp/internal/php/rewrite"
 	"github.com/shopware/shopware-lsp/internal/rewrite"
 )
 
@@ -93,26 +91,21 @@ func (formClassConstantFix) Build(
 	if literal == nil {
 		return rewrite.WorkspacePlan{}, fmt.Errorf("form alias string is no longer available")
 	}
-	qualifier, importOffset, importText := phpClassReferenceRewrite(
+	editor := phprewrite.NewEditor(
+		fixContext.Document.Source,
 		fixContext.Document.SyntaxTree.Root,
-		payload.ClassName,
 	)
-	if qualifier == "" {
-		return rewrite.WorkspacePlan{}, fmt.Errorf("form class name is invalid")
+	qualifier, err := editor.ClassReference(payload.ClassName)
+	if err != nil {
+		return rewrite.WorkspacePlan{}, err
 	}
-	builder := rewrite.NewBuilder(fixContext.Document.Source)
-	if err := builder.ReplaceRange(
+	if err := editor.ReplaceRange(
 		literal.RangeTrimmedTrivia(),
 		qualifier+"::class",
 	); err != nil {
 		return rewrite.WorkspacePlan{}, err
 	}
-	if importText != "" {
-		if err := builder.Insert(importOffset, importText); err != nil {
-			return rewrite.WorkspacePlan{}, err
-		}
-	}
-	edits, err := builder.Finish()
+	edits, err := editor.Finish()
 	if err != nil {
 		return rewrite.WorkspacePlan{}, err
 	}
@@ -125,73 +118,4 @@ func (formClassConstantFix) Build(
 			edits,
 		),
 	}}, nil
-}
-
-func phpClassReferenceRewrite(
-	root *phpsyntax.Node,
-	className string,
-) (qualifier string, importOffset uint32, importText string) {
-	className = strings.Trim(className, "\\")
-	if className == "" {
-		return "", 0, ""
-	}
-	lastSeparator := strings.LastIndex(className, "\\")
-	shortName := className
-	classNamespace := ""
-	if lastSeparator >= 0 {
-		shortName = className[lastSeparator+1:]
-		classNamespace = className[:lastSeparator]
-	}
-	if root == nil {
-		return "\\" + className, 0, ""
-	}
-	conflict := false
-	for _, declaration := range phpquery.UseDeclarations(root) {
-		for _, imported := range phpresolver.ParseUseDeclaration(declaration.Text()) {
-			if imported.Kind != phpresolver.ClassImport {
-				continue
-			}
-			if strings.EqualFold(strings.Trim(imported.Target, "\\"), className) {
-				return imported.Alias, 0, ""
-			}
-			if strings.EqualFold(imported.Alias, shortName) {
-				conflict = true
-			}
-		}
-	}
-	if conflict {
-		return "\\" + className, 0, ""
-	}
-	if strings.EqualFold(strings.Trim(phpquery.Namespace(root), "\\"), classNamespace) {
-		return shortName, 0, ""
-	}
-	importOffset = phpImportInsertionOffset(root)
-	importText = "\nuse " + className + ";"
-	if len(phpquery.UseDeclarations(root)) == 0 {
-		importText = "\n\nuse " + className + ";"
-	}
-	return shortName, importOffset, importText
-}
-
-func phpImportInsertionOffset(root *phpsyntax.Node) uint32 {
-	var result uint32
-	for _, declaration := range phpquery.UseDeclarations(root) {
-		if declaration.Range().End > result {
-			result = declaration.Range().End
-		}
-	}
-	if result != 0 {
-		return result
-	}
-	namespaces := phpquery.Nodes(root, phpsyntax.PhpNamespace)
-	if len(namespaces) != 0 {
-		namespace := namespaces[0]
-		if end := strings.IndexAny(namespace.Text(), ";{"); end >= 0 {
-			return namespace.Range().Start + uint32(end+1)
-		}
-	}
-	if openTag := root.FirstToken(); openTag != nil && openTag.Kind() == phpsyntax.TkOpenTag {
-		return openTag.Range().End
-	}
-	return 0
 }
