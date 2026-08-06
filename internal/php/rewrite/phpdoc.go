@@ -16,6 +16,35 @@ type phpDocAnnotation struct {
 	lineEnd   int
 }
 
+type PHPDocAnnotation struct {
+	Text  string
+	Range cst.TextRange
+}
+
+// FindPHPDocAnnotation returns one complete standalone annotation owned by a
+// declaration. Short names also match qualified annotations.
+func FindPHPDocAnnotation(
+	owner *phpsyntax.Node,
+	annotationName string,
+) (PHPDocAnnotation, bool) {
+	token := leadingPHPDoc(owner)
+	if token == nil {
+		return PHPDocAnnotation{}, false
+	}
+	annotation, found := findPHPDocAnnotation(token.Text(), annotationName)
+	if !found {
+		return PHPDocAnnotation{}, false
+	}
+	rng := cst.TextRange{
+		Start: token.Range().Start + uint32(annotation.start),
+		End:   token.Range().Start + uint32(annotation.end),
+	}
+	return PHPDocAnnotation{
+		Text:  token.Text()[annotation.start:annotation.end],
+		Range: rng,
+	}, true
+}
+
 // ReplacePHPDocAnnotation replaces one complete, standalone annotation while
 // preserving the surrounding docblock. Nested parentheses and quoted strings
 // are balanced before a rewrite is considered safe.
@@ -119,7 +148,7 @@ func findPHPDocAnnotation(source, annotationName string) (phpDocAnnotation, bool
 					nameEnd++
 				}
 				actualName := strings.TrimPrefix(line[nameStart:nameEnd], "\\")
-				if strings.EqualFold(actualName, annotationName) {
+				if phpDocAnnotationNamesEqual(actualName, annotationName) {
 					return scanPHPDocAnnotation(source, start+prefix, start+nameEnd)
 				}
 			}
@@ -130,6 +159,19 @@ func findPHPDocAnnotation(source, annotationName string) (phpDocAnnotation, bool
 		start = end + 1
 	}
 	return phpDocAnnotation{}, false
+}
+
+func phpDocAnnotationNamesEqual(actual, requested string) bool {
+	if strings.EqualFold(actual, requested) {
+		return true
+	}
+	if strings.Contains(requested, "\\") {
+		return false
+	}
+	if separator := strings.LastIndex(actual, "\\"); separator >= 0 {
+		return strings.EqualFold(actual[separator+1:], requested)
+	}
+	return false
 }
 
 func scanPHPDocAnnotation(source string, annotationStart, nameEnd int) (phpDocAnnotation, bool) {

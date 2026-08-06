@@ -38,6 +38,49 @@ func (e *Editor) SetExtends(class *phpsyntax.Node, parent string) error {
 	return e.builder.Insert(anchor.RangeTrimmedTrivia().Start, "extends "+parent+" ")
 }
 
+// RemoveExtends removes a class parent declaration when present.
+func (e *Editor) RemoveExtends(class *phpsyntax.Node) (bool, error) {
+	class = phpquery.ClassAt(class)
+	if e == nil || e.builder == nil {
+		return false, fmt.Errorf("remove PHP parent: editor is nil")
+	}
+	if class == nil || class.Kind() != phpsyntax.PhpClassDeclaration {
+		return false, fmt.Errorf("remove PHP parent: class declaration is unavailable")
+	}
+	clause := directNode(class, phpsyntax.PhpExtendsClause)
+	if clause == nil {
+		return false, nil
+	}
+	if nodeHasComment(clause) {
+		return false, fmt.Errorf("remove PHP parent: extends clause contains comments")
+	}
+	return true, e.builder.ReplaceRange(clause.Range(), "")
+}
+
+// AddAttribute inserts a native PHP attribute before a declaration.
+func (e *Editor) AddAttribute(owner *phpsyntax.Node, attribute string) error {
+	attribute = strings.TrimSpace(attribute)
+	if e == nil || e.builder == nil {
+		return fmt.Errorf("add PHP attribute: editor is nil")
+	}
+	if owner == nil {
+		return fmt.Errorf("add PHP attribute: declaration is unavailable")
+	}
+	if attribute == "" {
+		return fmt.Errorf("add PHP attribute: attribute is empty")
+	}
+	if !strings.HasPrefix(attribute, "#[") {
+		attribute = "#[" + strings.Trim(attribute, "[]#") + "]"
+	}
+	start := owner.RangeTrimmedTrivia().Start
+	line := lineStart(e.source, start)
+	indent, ok := whitespacePrefix(e.source, line, start)
+	if !ok {
+		indent = ""
+	}
+	return e.builder.Insert(start, attribute+"\n"+indent)
+}
+
 func (e *Editor) AddImplements(class *phpsyntax.Node, interfaceName string) error {
 	class = phpquery.ClassAt(class)
 	interfaceName = strings.TrimSpace(interfaceName)

@@ -59,10 +59,10 @@ final class Controller
 }`
 	editor, root := testEditor(t, source)
 	method := phpquery.Methods(phpquery.Classes(root)[0])[0]
-	removed, err := editor.RemovePHPDocAnnotation(
-		method,
-		`Shopware\Storefront\Framework\Routing\Annotation\RouteScope`,
-	)
+	annotation, found := FindPHPDocAnnotation(method, "RouteScope")
+	require.True(t, found)
+	require.Equal(t, `@Shopware\Storefront\Framework\Routing\Annotation\RouteScope(scopes={"storefront"})`, annotation.Text)
+	removed, err := editor.RemovePHPDocAnnotation(method, "RouteScope")
 	require.NoError(t, err)
 	require.True(t, removed)
 	require.Equal(t, `<?php

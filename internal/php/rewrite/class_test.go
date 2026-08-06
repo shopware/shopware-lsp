@@ -33,6 +33,23 @@ func TestSetExtendsReplacesExistingParent(t *testing.T) {
 	require.Equal(t, `<?php class Demo extends Modern {}`, applyTestEditor(t, source, editor))
 }
 
+func TestRemoveExtendsAndAddAttribute(t *testing.T) {
+	t.Parallel()
+	source := `<?php
+/** Handler. */
+class Demo extends Legacy implements Existing {}`
+	editor, root := testEditor(t, source)
+	class := phpquery.Classes(root)[0]
+	removed, err := editor.RemoveExtends(class)
+	require.NoError(t, err)
+	require.True(t, removed)
+	require.NoError(t, editor.AddAttribute(class, "AsHandler"))
+	require.Equal(t, `<?php
+/** Handler. */
+#[AsHandler]
+class Demo implements Existing {}`, applyTestEditor(t, source, editor))
+}
+
 func TestRemoveOnlyImplementedInterface(t *testing.T) {
 	t.Parallel()
 	source := `<?php class Demo implements Contract {}`

@@ -50,6 +50,74 @@ func NewShopwareMigration(
 					ID: "shopware.migration.scheduled_task.exception_logger", Source: "shopware-rector",
 					DefaultSeverity: protocol.DiagnosticSeverityWarning,
 				},
+				{
+					ID: "shopware.migration.context_metadata.state", Source: "shopware-rector",
+					DefaultSeverity: protocol.DiagnosticSeverityWarning,
+				},
+				{
+					ID: "shopware.migration.faker.property_call", Source: "shopware-rector",
+					DefaultSeverity: protocol.DiagnosticSeverityWarning,
+				},
+				{
+					ID: "shopware.migration.product_stream.enrich_criteria", Source: "shopware-rector",
+					DefaultSeverity: protocol.DiagnosticSeverityWarning,
+				},
+				{
+					ID: "shopware.migration.api.class.rename", Source: "shopware-rector",
+					DefaultSeverity: protocol.DiagnosticSeverityWarning,
+				},
+				{
+					ID: "shopware.migration.api.method.rename", Source: "shopware-rector",
+					DefaultSeverity: protocol.DiagnosticSeverityWarning,
+				},
+				{
+					ID: "shopware.migration.api.static_method.rename", Source: "shopware-rector",
+					DefaultSeverity: protocol.DiagnosticSeverityWarning,
+				},
+				{
+					ID: "shopware.migration.api.constant.rename", Source: "shopware-rector",
+					DefaultSeverity: protocol.DiagnosticSeverityWarning,
+				},
+				{
+					ID: "shopware.migration.api.property", Source: "shopware-rector",
+					DefaultSeverity: protocol.DiagnosticSeverityWarning,
+				},
+				{
+					ID: "shopware.migration.api.exception_factory", Source: "shopware-rector",
+					DefaultSeverity: protocol.DiagnosticSeverityWarning,
+				},
+				{
+					ID: "shopware.migration.arguments.remove", Source: "shopware-rector",
+					DefaultSeverity: protocol.DiagnosticSeverityWarning,
+				},
+				{
+					ID: "shopware.migration.arguments.add_default", Source: "shopware-rector",
+					DefaultSeverity: protocol.DiagnosticSeverityWarning,
+				},
+				{
+					ID: "shopware.migration.thumbnail.generate", Source: "shopware-rector",
+					DefaultSeverity: protocol.DiagnosticSeverityWarning,
+				},
+				{
+					ID: "shopware.migration.declaration.interface_to_abstract", Source: "shopware-rector",
+					DefaultSeverity: protocol.DiagnosticSeverityWarning,
+				},
+				{
+					ID: "shopware.migration.declaration.parameter.add", Source: "shopware-rector",
+					DefaultSeverity: protocol.DiagnosticSeverityWarning,
+				},
+				{
+					ID: "shopware.migration.declaration.type", Source: "shopware-rector",
+					DefaultSeverity: protocol.DiagnosticSeverityWarning,
+				},
+				{
+					ID: "shopware.migration.annotation.route_defaults", Source: "shopware-rector",
+					DefaultSeverity: protocol.DiagnosticSeverityWarning,
+				},
+				{
+					ID: "shopware.migration.message_handler.subscriber", Source: "shopware-rector",
+					DefaultSeverity: protocol.DiagnosticSeverityWarning,
+				},
 			},
 		},
 		analyzer: diagnostics.NewShopwareMigrationAnalyzer(phpIndex, version),
@@ -58,6 +126,16 @@ func NewShopwareMigration(
 			entityExtensionEntityNameFix{},
 			reverseProxyBanAllFix{},
 			scheduledTaskLoggerFix{},
+			contextMetadataStateFix{},
+			fakerPropertyCallFix{},
+			productStreamEnrichCriteriaFix{},
+			apiRenameFix{},
+			removeArgumentMigrationFix{},
+			addDefaultArgumentFix{},
+			thumbnailGenerateFix{},
+			declarationMigrationFix{},
+			routeAnnotationMigrationFix{},
+			messageHandlerSubscriberFix{},
 		},
 		bind: func(code lsp.DiagnosticID, payload map[string]any) []lsp.BoundFix {
 			safe, _ := payload["safe"].(bool)
@@ -74,6 +152,33 @@ func NewShopwareMigration(
 				fixID = reverseProxyBanAllFixID
 			case "shopware.migration.scheduled_task.exception_logger":
 				fixID = scheduledTaskLoggerFixID
+			case "shopware.migration.context_metadata.state":
+				fixID = contextMetadataStateFixID
+			case "shopware.migration.faker.property_call":
+				fixID = fakerPropertyCallFixID
+			case "shopware.migration.product_stream.enrich_criteria":
+				fixID = productStreamEnrichCriteriaFixID
+			case "shopware.migration.api.class.rename",
+				"shopware.migration.api.method.rename",
+				"shopware.migration.api.static_method.rename",
+				"shopware.migration.api.constant.rename",
+				"shopware.migration.api.property",
+				"shopware.migration.api.exception_factory":
+				fixID = apiRenameFixID
+			case "shopware.migration.arguments.remove":
+				fixID = removeArgumentMigrationFixID
+			case "shopware.migration.arguments.add_default":
+				fixID = addDefaultArgumentFixID
+			case "shopware.migration.thumbnail.generate":
+				fixID = thumbnailGenerateFixID
+			case "shopware.migration.declaration.interface_to_abstract",
+				"shopware.migration.declaration.parameter.add",
+				"shopware.migration.declaration.type":
+				fixID = declarationMigrationFixID
+			case "shopware.migration.annotation.route_defaults":
+				fixID = routeAnnotationMigrationFixID
+			case "shopware.migration.message_handler.subscriber":
+				fixID = messageHandlerSubscriberFixID
 			default:
 				return nil
 			}
@@ -471,7 +576,7 @@ func resolveMigrationClass(
 	}
 	class := ancestorNode(element, phpsyntax.PhpClassDeclaration)
 	if class == nil {
-		return nil, nil, fmt.Errorf("Shopware migration class is unavailable")
+		return nil, nil, fmt.Errorf("shopware migration class is unavailable")
 	}
 	return class, fixContext.Document.SyntaxTree.Root, nil
 }
@@ -505,7 +610,7 @@ func finishPHPRewrite(
 		updated,
 		fixContext.Document.Version+1,
 	).ParseErrors) != 0 {
-		return rewrite.WorkspacePlan{}, fmt.Errorf("Shopware migration produced invalid PHP")
+		return rewrite.WorkspacePlan{}, fmt.Errorf("shopware migration produced invalid PHP")
 	}
 	version := fixContext.Document.Version
 	return rewrite.WorkspacePlan{Documents: []rewrite.DocumentPlan{

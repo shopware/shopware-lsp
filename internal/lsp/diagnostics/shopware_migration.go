@@ -45,12 +45,25 @@ var entitySearchResultDelegatedFunctions = map[string]struct{}{
 }
 
 type ShopwareMigrationPayload struct {
-	Rule         string `json:"rule"`
-	Kind         string `json:"kind"`
-	Safe         bool   `json:"safe"`
-	Replacement  string `json:"replacement,omitempty"`
-	RemoveLegacy bool   `json:"removeLegacy,omitempty"`
-	AddParameter bool   `json:"addParameter,omitempty"`
+	Rule          string                  `json:"rule"`
+	Kind          string                  `json:"kind"`
+	Safe          bool                    `json:"safe"`
+	Replacement   string                  `json:"replacement,omitempty"`
+	Original      string                  `json:"original,omitempty"`
+	RemoveLegacy  bool                    `json:"removeLegacy,omitempty"`
+	AddParameter  bool                    `json:"addParameter,omitempty"`
+	Start         uint32                  `json:"start,omitempty"`
+	End           uint32                  `json:"end,omitempty"`
+	Edits         []ShopwareMigrationEdit `json:"edits,omitempty"`
+	ArgumentIndex int                     `json:"argumentIndex,omitempty"`
+	Value         string                  `json:"value,omitempty"`
+}
+
+type ShopwareMigrationEdit struct {
+	Start       uint32 `json:"start"`
+	End         uint32 `json:"end"`
+	Original    string `json:"original"`
+	Replacement string `json:"replacement"`
 }
 
 // ShopwareMigrationAnalyzer ports versioned, deterministic shopware-rector
@@ -93,12 +106,20 @@ func (p *ShopwareMigrationAnalyzer) Analyze(
 	result := make([]lsp.Problem, 0)
 	result = append(result, p.entityExtensionProblems(ctx, root, snapshot)...)
 	result = append(result, p.reverseProxyProblems(ctx, root, snapshot)...)
+	result = append(result, p.contextMetadataProblems(ctx, root, semanticDocument, snapshot)...)
+	result = append(result, p.fakerPropertyProblems(ctx, root, semanticDocument, snapshot)...)
+	result = append(result, p.apiMigrationProblems(ctx, root, semanticDocument, snapshot, document.Source)...)
+	result = append(result, p.argumentMigrationProblems(ctx, root, semanticDocument, snapshot, document.Source)...)
+	result = append(result, p.declarationMigrationProblems(ctx, root, snapshot)...)
+	result = append(result, p.routeAnnotationMigrationProblems(ctx, root)...)
+	result = append(result, p.messageHandlerMigrationProblems(ctx, root)...)
 	if p.version.AtLeast(6, 7, 0) {
 		result = append(result, p.scheduledTaskLoggerProblems(ctx, root, snapshot)...)
 	}
 	if !p.version.AtLeast(6, 8, 0) {
 		return result, nil
 	}
+	result = append(result, p.productStreamBuilderProblems(ctx, root, semanticDocument, snapshot)...)
 
 	for _, call := range phpquery.Nodes(root, phpsyntax.PhpMemberCall) {
 		if ctx.Err() != nil {
