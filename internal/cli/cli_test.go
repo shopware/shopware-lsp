@@ -227,6 +227,78 @@ func TestCheckRejectsInvalidWorkerCount(t *testing.T) {
 	require.ErrorContains(t, err, "workers must be at least 1")
 }
 
+func TestConfigCommandPrintsEffectiveProjectConfiguration(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
+	configPath := filepath.Join(root, ".config", "shopware-lsp", "config.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(configPath), 0o755))
+	require.NoError(t, os.WriteFile(configPath, []byte(`{
+        "version": 1,
+        "features": {"hover": false},
+        "check": {"severity": "information", "failOn": "error"}
+    }`), 0o644))
+	var output, errors bytes.Buffer
+	runner := New(Options{Version: "test"})
+	require.NoError(t, runner.Run(
+		context.Background(), []string{"-root", root, "-json", "config"},
+		strings.NewReader(""), &output, &errors,
+	), errors.String())
+	var result struct {
+		Effective struct {
+			Features map[string]bool `json:"features"`
+			Check    struct {
+				Severity string `json:"severity"`
+				FailOn   string `json:"failOn"`
+			} `json:"check"`
+		} `json:"effective"`
+	}
+	require.NoError(t, json.Unmarshal(output.Bytes(), &result))
+	require.False(t, result.Effective.Features["hover"])
+	require.Equal(t, "information", result.Effective.Check.Severity)
+	require.Equal(t, "error", result.Effective.Check.FailOn)
+}
+
+func TestCheckUsesProjectFailurePolicyAndExplicitFlagWins(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
+	phpPath := filepath.Join(root, "Broken.php")
+	require.NoError(t, os.WriteFile(phpPath, []byte("<?php function (\n"), 0o644))
+	configPath := filepath.Join(root, ".config", "shopware-lsp", "config.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(configPath), 0o755))
+	require.NoError(t, os.WriteFile(configPath, []byte(`{
+        "version": 1,
+        "check": {"severity": "hint", "failOn": "error"}
+    }`), 0o644))
+	run := func(extra ...string) error {
+		args := []string{"-root", root, "check"}
+		args = append(args, extra...)
+		args = append(args, phpPath)
+		return New(Options{Version: "test"}).Run(
+			context.Background(), args, strings.NewReader(""),
+			&bytes.Buffer{}, &bytes.Buffer{},
+		)
+	}
+	require.ErrorContains(t, run(), "fail-on error")
+	require.NoError(t, run("-fail-on", "off"))
+}
+
+func TestCLIRejectsInvalidProjectConfigurationBeforeChecking(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
+	configPath := filepath.Join(root, ".config", "shopware-lsp", "config.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(configPath), 0o755))
+	require.NoError(t, os.WriteFile(
+		configPath,
+		[]byte(`{"version":1,"diagnostics":{"rules":{"does.not.exist":"off"}}}`),
+		0o644,
+	))
+	err := New(Options{Version: "test"}).Run(
+		context.Background(), []string{"-root", root, "check", root},
+		strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{},
+	)
+	require.ErrorContains(t, err, "unknown diagnostic rule")
+}
+
 func TestWorkspaceCLIIndexCheckAndExecuteUseProductionLSP(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())

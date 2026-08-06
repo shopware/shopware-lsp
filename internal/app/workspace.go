@@ -59,6 +59,15 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 	if err != nil {
 		return nil, fmt.Errorf("migrate index cache: %w", err)
 	}
+	configuration := server.EffectiveConfiguration()
+	configurationCleared, err := indexer.CheckAndMigrateConfiguration(
+		cacheDir,
+		configuration.StructuralFingerprint(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("migrate structurally configured cache: %w", err)
+	}
+	cacheCleared = cacheCleared || configurationCleared
 
 	workspace := &Workspace{root: root, cacheDir: cacheDir, initialForce: cacheCleared}
 	defer func() {
@@ -195,11 +204,14 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 		return nil, fmt.Errorf("create Stimulus index: %w", err)
 	}
 	workspace.indexers = append(workspace.indexers, stimulusIndex)
-	styleIndex, err := style.NewIndex(cacheDir, workspace.store)
-	if err != nil {
-		return nil, fmt.Errorf("create style index: %w", err)
+	var styleIndex *style.Index
+	if configuration.DomainEnabled("scss") {
+		styleIndex, err = style.NewIndex(cacheDir, workspace.store)
+		if err != nil {
+			return nil, fmt.Errorf("create style index: %w", err)
+		}
+		workspace.indexers = append(workspace.indexers, styleIndex)
 	}
-	workspace.indexers = append(workspace.indexers, styleIndex)
 	twigIndex, err := twig.NewTwigIndexer(cacheDir, workspace.store)
 	if err != nil {
 		return nil, fmt.Errorf("create Twig index: %w", err)
@@ -253,11 +265,14 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 	}
 	extensionIndex.SetPHPIndex(phpIndex)
 	workspace.indexers = append(workspace.indexers, extensionIndex)
-	adminIndex, err := admin.NewAdminComponentIndexer(cacheDir, workspace.store)
-	if err != nil {
-		return nil, fmt.Errorf("create administration index: %w", err)
+	var adminIndex *admin.AdminComponentIndexer
+	if configuration.DomainEnabled("administration") {
+		adminIndex, err = admin.NewAdminComponentIndexer(cacheDir, workspace.store)
+		if err != nil {
+			return nil, fmt.Errorf("create administration index: %w", err)
+		}
+		workspace.indexers = append(workspace.indexers, adminIndex)
 	}
-	workspace.indexers = append(workspace.indexers, adminIndex)
 	dalIndex, err := shopwaredal.NewIndex(cacheDir, workspace.store)
 	if err != nil {
 		return nil, fmt.Errorf("create Shopware DAL index: %w", err)
@@ -269,7 +284,9 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 	}
 	workspace.indexers = append(workspace.indexers, appScriptIndex)
 	for _, idx := range workspace.indexers {
-		workspace.scanner.AddIndexer(idx)
+		if configuration.DomainEnabled(domainForIndexer(idx.ID())) {
+			workspace.scanner.AddIndexer(idx)
+		}
 	}
 
 	registerFeatures(server, root, workspaceServices{
@@ -305,6 +322,65 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 	})
 
 	return workspace, nil
+}
+
+func domainForIndexer(id string) string {
+	switch id {
+	case "php.index":
+		return "php"
+	case "symfony.service":
+		return "symfony.services"
+	case "symfony.route", "symfony.route_usage":
+		return "symfony.routes"
+	case "symfony.console":
+		return "symfony.console"
+	case "symfony.doctrine":
+		return "symfony.doctrine"
+	case "symfony.assets":
+		return "symfony.assets"
+	case "symfony.event":
+		return "symfony.events"
+	case "symfony.messenger":
+		return "symfony.messenger"
+	case "symfony.environment":
+		return "symfony.environment"
+	case "symfony.form":
+		return "symfony.forms"
+	case "symfony.security":
+		return "symfony.security"
+	case "symfony.configuration":
+		return "symfony.configuration"
+	case "symfony.serializer":
+		return "symfony.serializer"
+	case "symfony.stimulus":
+		return "symfony.stimulus"
+	case "style.classes":
+		return "scss"
+	case "twig.indexer":
+		return "twig"
+	case "symfony.twig_components":
+		return "symfony.twigComponents"
+	case "snippet.indexer":
+		return "shopware.snippets"
+	case "translation.indexer":
+		return "shopware.translations"
+	case "feature.indexer":
+		return "shopware.featureFlags"
+	case "systemconfig.indexer":
+		return "shopware.systemConfig"
+	case "theme.indexer":
+		return "shopware.theme"
+	case "extension.indexer":
+		return "shopware.extensions"
+	case "admin.component.indexer":
+		return "administration"
+	case "shopware.dal":
+		return "shopware.dal"
+	case "shopware.app_script":
+		return "shopware.appScripts"
+	default:
+		return "shopware"
+	}
 }
 
 func (w *Workspace) Root() string                  { return w.root }

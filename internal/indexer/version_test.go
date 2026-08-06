@@ -122,3 +122,31 @@ func TestCheckAndMigrateCache_ClearsSubdirectories(t *testing.T) {
 	_, err = os.Stat(subDir)
 	assert.True(t, os.IsNotExist(err), "Subdirectories should be deleted")
 }
+
+func TestCheckAndMigrateConfigurationInvalidatesOnlyOnFingerprintChange(t *testing.T) {
+	cacheDir := t.TempDir()
+	rebuilt, err := CheckAndMigrateCache(cacheDir)
+	require.NoError(t, err)
+	require.True(t, rebuilt)
+
+	rebuilt, err = CheckAndMigrateConfiguration(cacheDir, "first")
+	require.NoError(t, err)
+	require.True(t, rebuilt)
+	marker := filepath.Join(cacheDir, "indexes.db")
+	require.NoError(t, os.WriteFile(marker, []byte("cache"), 0o644))
+
+	rebuilt, err = CheckAndMigrateConfiguration(cacheDir, "first")
+	require.NoError(t, err)
+	require.False(t, rebuilt)
+	_, err = os.Stat(marker)
+	require.NoError(t, err)
+
+	rebuilt, err = CheckAndMigrateConfiguration(cacheDir, "second")
+	require.NoError(t, err)
+	require.True(t, rebuilt)
+	_, err = os.Stat(marker)
+	require.True(t, os.IsNotExist(err))
+	current, err := CacheVersionCurrent(cacheDir)
+	require.NoError(t, err)
+	require.True(t, current)
+}

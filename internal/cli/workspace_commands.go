@@ -199,8 +199,8 @@ type diagnosticOutput struct {
 func (r *Runner) runCheck(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
 	flags.SetOutput(r.errOut)
-	severityName := flags.String("severity", "warning", "minimum severity: hint, info, warning, error")
-	failOnName := flags.String("fail-on", "", "exit unsuccessfully when this severity or higher is reported")
+	severityName := flags.String("severity", "", "minimum severity: hint, info, warning, error (defaults to project configuration)")
+	failOnName := flags.String("fail-on", "", "exit unsuccessfully when this severity or higher is reported (defaults to project configuration)")
 	workers := flags.Int("workers", min(runtime.GOMAXPROCS(0), 4), "maximum concurrent diagnostic requests")
 	if err := flags.Parse(args); err != nil {
 		return usageError(err.Error())
@@ -211,20 +211,33 @@ func (r *Runner) runCheck(ctx context.Context, args []string) error {
 	if *workers < 1 {
 		return usageError("check workers must be at least 1")
 	}
-	cutoff, err := diagnosticSeverity(*severityName)
-	if err != nil {
-		return err
-	}
-	var failOn protocol.DiagnosticSeverity
-	if *failOnName != "" {
-		failOn, err = diagnosticSeverity(*failOnName)
-		if err != nil {
-			return err
-		}
-	}
 	paths, err := resolveCheckFiles(ctx, flags.Args())
 	if err != nil {
 		return err
+	}
+	session, err := r.connect(ctx)
+	if err != nil {
+		return err
+	}
+	defer closeIgnoringError(session)
+	effectiveSeverity := *severityName
+	if effectiveSeverity == "" {
+		effectiveSeverity = string(session.configuration.Effective.Check.Severity)
+	}
+	cutoff, err := diagnosticSeverity(effectiveSeverity)
+	if err != nil {
+		return err
+	}
+	effectiveFailOn := *failOnName
+	if effectiveFailOn == "" {
+		effectiveFailOn = string(session.configuration.Effective.Check.FailOn)
+	}
+	var failOn protocol.DiagnosticSeverity
+	if effectiveFailOn != "" && !strings.EqualFold(effectiveFailOn, "off") {
+		failOn, err = diagnosticSeverity(effectiveFailOn)
+		if err != nil {
+			return err
+		}
 	}
 	if len(paths) == 0 {
 		if r.json {
@@ -232,11 +245,6 @@ func (r *Runner) runCheck(ctx context.Context, args []string) error {
 		}
 		return nil
 	}
-	session, err := r.connect(ctx)
-	if err != nil {
-		return err
-	}
-	defer closeIgnoringError(session)
 	type fileResult struct {
 		findings []diagnosticOutput
 		err      error
@@ -274,7 +282,7 @@ func (r *Runner) runCheck(ctx context.Context, args []string) error {
 			return err
 		}
 		if findingsAtSeverity(findings, failOn) {
-			return &exitError{code: 1, err: fmt.Errorf("diagnostics matched -fail-on %s", *failOnName)}
+			return &exitError{code: 1, err: fmt.Errorf("diagnostics matched fail-on %s", effectiveFailOn)}
 		}
 		return nil
 	}
@@ -312,7 +320,7 @@ func (r *Runner) runCheck(ctx context.Context, args []string) error {
 		}
 	}
 	if findingsAtSeverity(findings, failOn) {
-		return &exitError{code: 1, err: fmt.Errorf("diagnostics matched -fail-on %s", *failOnName)}
+		return &exitError{code: 1, err: fmt.Errorf("diagnostics matched fail-on %s", effectiveFailOn)}
 	}
 	return nil
 }

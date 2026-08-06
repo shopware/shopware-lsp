@@ -12,6 +12,7 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
+	"github.com/shopware/shopware-lsp/internal/projectconfig"
 	"github.com/shopware/shopware-lsp/internal/rewrite"
 )
 
@@ -211,8 +212,8 @@ func (s *Server) diagnosticsForDocument(
 	ctx context.Context,
 	document *TextDocument,
 ) []protocol.Diagnostic {
-	if document == nil {
-		return nil
+	if document == nil || !s.diagnosticsEnabled() {
+		return []protocol.Diagnostic{}
 	}
 	s.diagnosticsMu.Lock()
 	generation := s.diagnosticsGenerations[document.URI]
@@ -255,11 +256,18 @@ func (s *Server) collectDiagnostics(ctx context.Context, document *TextDocument)
 		if ctx.Err() != nil {
 			break
 		}
+		domain := inspectionDomain(inspection.definition.ID)
+		if domain != "" && !s.domainEnabled(domain) ||
+			!s.inspectionEnabled(inspection.definition.ID) ||
+			!s.inspectionHasEnabledRule(inspection) {
+			continue
+		}
 		var inspectionStarted time.Time
 		if tracePerformance {
 			inspectionStarted = time.Now()
 		}
 		reporter := &inspectionProblemReporter{
+			server:     s,
 			document:   document,
 			inspection: inspection,
 		}
@@ -305,6 +313,7 @@ func diagnosticPerformanceTraceEnabled() bool {
 }
 
 type inspectionProblemReporter struct {
+	server      *Server
 	document    *TextDocument
 	inspection  *registeredInspection
 	diagnostics []protocol.Diagnostic
@@ -314,6 +323,12 @@ func (r *inspectionProblemReporter) Report(problem Problem) error {
 	definition, declared := r.inspection.problems[problem.ID]
 	if !declared {
 		return fmt.Errorf("inspection %q reported undeclared diagnostic %q", r.inspection.definition.ID, problem.ID)
+	}
+	if r.server != nil {
+		if configured, found := r.server.configuredRuleSeverity(problem.ID); found &&
+			configured == projectconfig.SeverityOff {
+			return nil
+		}
 	}
 	if problem.Range.Start > problem.Range.End ||
 		problem.Range.End > uint32(len(r.document.Source)) {
@@ -365,6 +380,11 @@ func (r *inspectionProblemReporter) Report(problem Problem) error {
 	if severity == 0 {
 		severity = definition.DefaultSeverity
 	}
+	if r.server != nil {
+		if configured, found := r.server.configuredRuleSeverity(problem.ID); found {
+			severity = protocolDiagnosticSeverity(configured)
+		}
+	}
 	source := problem.Source
 	if source == "" {
 		source = definition.Source
@@ -380,6 +400,19 @@ func (r *inspectionProblemReporter) Report(problem Problem) error {
 		Data:               data,
 	})
 	return nil
+}
+
+func (s *Server) inspectionHasEnabledRule(inspection *registeredInspection) bool {
+	if inspection == nil {
+		return false
+	}
+	for id := range inspection.problems {
+		severity, configured := s.configuredRuleSeverity(id)
+		if !configured || severity != projectconfig.SeverityOff {
+			return true
+		}
+	}
+	return false
 }
 
 func protocolRangeFromText(lineIndex *cst.LineIndex, rng cst.TextRange) protocol.Range {

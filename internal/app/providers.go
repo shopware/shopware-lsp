@@ -94,7 +94,9 @@ type workspaceServices struct {
 // registerFeatures is the adapter layer from domain repositories to LSP
 // capabilities. Construction stays in workspace.go; protocol wiring stays here.
 func registerFeatures(server *lsp.Server, root string, services workspaceServices) {
-	registerAdministrationDocumentObserver(server, services.admin)
+	if server.DomainEnabled("administration") {
+		registerAdministrationDocumentObserver(server, services.admin)
+	}
 	server.RegisterContextEnricher(language.PHP, func(ctx context.Context, syntax lsp.SyntaxContext) context.Context {
 		path := ""
 		version := 0
@@ -116,31 +118,38 @@ func registerFeatures(server *lsp.Server, root string, services workspaceService
 		services.translations,
 		services.php,
 	)
-	adminSymbols := symbol.NewAdminWorkspaceSymbolProvider(services.admin)
 	dalSymbols := symbol.NewDALWorkspaceSymbolProvider(services.dal)
-	server.RegisterWorkspaceSymbolProvider(
-		symbol.NewCatalogWorkspaceSymbolProvider(
-			services.symbols,
-			symfonySymbols,
-			adminSymbols,
-			dalSymbols,
-		),
-	)
-	server.RegisterDocumentSymbolProvider(
-		symbol.NewAdminDocumentSymbolProvider(services.admin),
-	)
-	server.RegisterDocumentHighlightProvider(
-		highlight.NewAdminDocumentHighlightProvider(services.admin),
-	)
-	server.RegisterCallHierarchyProvider(
-		callhierarchy.NewAdminCallHierarchyProvider(services.admin),
-	)
-	server.RegisterLinkedEditingRangeProvider(
-		linkedediting.NewAdminLinkedEditingProvider(),
-	)
-	server.RegisterFoldingRangeProvider(folding.NewAdminFoldingProvider())
-	server.RegisterSelectionRangeProvider(selection.NewAdminSelectionRangeProvider())
-	server.RegisterDocumentColorProvider(color.NewAdminSCSSColorProvider())
+	if server.DomainEnabled("administration") {
+		adminSymbols := symbol.NewAdminWorkspaceSymbolProvider(services.admin)
+		server.RegisterWorkspaceSymbolProvider(
+			symbol.NewCatalogWorkspaceSymbolProvider(
+				services.symbols, symfonySymbols, adminSymbols, dalSymbols,
+			),
+		)
+		server.RegisterDocumentSymbolProvider(
+			symbol.NewAdminDocumentSymbolProvider(services.admin),
+		)
+		server.RegisterDocumentHighlightProvider(
+			highlight.NewAdminDocumentHighlightProvider(services.admin),
+		)
+		server.RegisterCallHierarchyProvider(
+			callhierarchy.NewAdminCallHierarchyProvider(services.admin),
+		)
+		server.RegisterLinkedEditingRangeProvider(
+			linkedediting.NewAdminLinkedEditingProvider(),
+		)
+		server.RegisterFoldingRangeProvider(folding.NewAdminFoldingProvider())
+		server.RegisterSelectionRangeProvider(selection.NewAdminSelectionRangeProvider())
+	} else {
+		server.RegisterWorkspaceSymbolProvider(
+			symbol.NewCatalogWorkspaceSymbolProvider(
+				services.symbols, symfonySymbols, dalSymbols,
+			),
+		)
+	}
+	if server.DomainEnabled("scss") {
+		server.RegisterDocumentColorProvider(color.NewAdminSCSSColorProvider())
+	}
 	server.RegisterDocumentLinkProvider(documentlink.NewRelatedProvider(
 		services.twig,
 		services.configuration,
@@ -283,7 +292,9 @@ func registerFeatures(server *lsp.Server, root string, services workspaceService
 	server.RegisterCompletionProvider(completion.NewDALCompletionProvider(services.dal))
 	server.RegisterCompletionProvider(completion.NewSystemConfigCompletion(services.systemConfig, services.php))
 	server.RegisterCompletionProvider(completion.NewThemeCompletionProvider(services.theme))
-	server.RegisterCompletionProvider(completion.NewAdminCompletionProvider(services.admin))
+	if server.DomainEnabled("administration") {
+		server.RegisterCompletionProvider(completion.NewAdminCompletionProvider(services.admin))
+	}
 
 	server.RegisterDefinitionProvider(phpFeatures)
 	server.RegisterImplementationProvider(phpFeatures)
@@ -311,9 +322,11 @@ func registerFeatures(server *lsp.Server, root string, services workspaceService
 	server.RegisterDefinitionProvider(
 		definition.NewStimulusDefinitionProvider(services.stimulus),
 	)
-	server.RegisterDefinitionProvider(
-		definition.NewStyleClassDefinitionProvider(services.styles),
-	)
+	if server.DomainEnabled("scss") {
+		server.RegisterDefinitionProvider(
+			definition.NewStyleClassDefinitionProvider(services.styles),
+		)
+	}
 	server.RegisterDefinitionProvider(definition.NewEventDefinitionProvider(
 		services.events,
 		services.php,
@@ -400,12 +413,16 @@ func registerFeatures(server *lsp.Server, root string, services workspaceService
 	server.RegisterDefinitionProvider(definition.NewDALDefinitionProvider(services.dal))
 	server.RegisterDefinitionProvider(definition.NewSystemConfigDefinitionProvider(services.systemConfig, services.php))
 	server.RegisterDefinitionProvider(definition.NewThemeDefinitionProvider(services.theme))
-	server.RegisterDefinitionProvider(definition.NewAdminDefinitionProvider(services.admin))
+	if server.DomainEnabled("administration") {
+		server.RegisterDefinitionProvider(definition.NewAdminDefinitionProvider(services.admin))
+	}
 
 	server.RegisterCodeLensProvider(codelens.NewPHPCodeLensProvider(services.php, services.services))
-	server.RegisterCodeLensProvider(
-		codelens.NewAdminComponentCodeLensProvider(services.admin),
-	)
+	if server.DomainEnabled("administration") {
+		server.RegisterCodeLensProvider(
+			codelens.NewAdminComponentCodeLensProvider(services.admin),
+		)
+	}
 	server.RegisterCodeLensProvider(
 		codelens.NewSymfonyConfigCodeLensProvider(
 			services.configuration,
@@ -518,9 +535,11 @@ func registerFeatures(server *lsp.Server, root string, services workspaceService
 	server.RegisterReferencesProvider(
 		reference.NewStimulusReferenceProvider(services.stimulus),
 	)
-	server.RegisterReferencesProvider(
-		reference.NewStyleClassReferenceProvider(services.styles),
-	)
+	if server.DomainEnabled("scss") {
+		server.RegisterReferencesProvider(
+			reference.NewStyleClassReferenceProvider(services.styles),
+		)
+	}
 	server.RegisterReferencesProvider(reference.NewTwigMacroReferenceProvider(
 		services.twig,
 	))
@@ -550,9 +569,11 @@ func registerFeatures(server *lsp.Server, root string, services workspaceService
 			services.twigComponents,
 		),
 	)
-	server.RegisterReferencesProvider(
-		reference.NewAdminReferenceProvider(services.admin),
-	)
+	if server.DomainEnabled("administration") {
+		server.RegisterReferencesProvider(
+			reference.NewAdminReferenceProvider(services.admin),
+		)
+	}
 	server.RegisterFileRenameProvider(
 		refactor.NewTwigTemplateRenameProvider(services.twig),
 	)
@@ -663,22 +684,28 @@ func registerFeatures(server *lsp.Server, root string, services workspaceService
 	server.RegisterHoverProvider(hover.NewSnippetHoverProvider(root, services.snippets))
 	server.RegisterHoverProvider(hover.NewDALHoverProvider(services.dal))
 	server.RegisterHoverProvider(hover.NewTwigVersioningHoverProvider(services.twig))
-	server.RegisterHoverProvider(hover.NewAdminHoverProvider(root, services.admin))
+	if server.DomainEnabled("administration") {
+		server.RegisterHoverProvider(hover.NewAdminHoverProvider(root, services.admin))
+	}
 	server.RegisterSignatureHelpProvider(signature.NewTwigMacroSignatureProvider(
 		services.twig,
 	))
-	server.RegisterSignatureHelpProvider(
-		signature.NewAdminSignatureProvider(services.admin),
-	)
+	if server.DomainEnabled("administration") {
+		server.RegisterSignatureHelpProvider(
+			signature.NewAdminSignatureProvider(services.admin),
+		)
+	}
 	server.RegisterSignatureHelpProvider(phpFeatures)
 	server.RegisterRenameProvider(refactor.NewPHPTwigRenameProvider(
 		phpFeatures,
 		services.twig,
 		services.php,
 	))
-	server.RegisterRenameProvider(
-		refactor.NewAdminRenameProvider(services.admin),
-	)
+	if server.DomainEnabled("administration") {
+		server.RegisterRenameProvider(
+			refactor.NewAdminRenameProvider(services.admin),
+		)
+	}
 	server.RegisterInlayHintProvider(inlay.NewServiceArgumentProvider(
 		services.services,
 		services.php,
@@ -700,15 +727,19 @@ func registerFeatures(server *lsp.Server, root string, services workspaceService
 	server.RegisterInlayHintProvider(inlay.NewPHPUnitProviderProvider(
 		services.php,
 	))
-	server.RegisterInlayHintProvider(inlay.NewAdminParameterProvider(
-		services.admin,
-	))
+	if server.DomainEnabled("administration") {
+		server.RegisterInlayHintProvider(inlay.NewAdminParameterProvider(
+			services.admin,
+		))
+	}
 	server.RegisterSemanticTokensProvider(
 		lspsemantic.NewTwigUXToolkitProvider(),
 	)
-	server.RegisterSemanticTokensProvider(
-		lspsemantic.NewAdminMarkupProvider(services.admin),
-	)
+	if server.DomainEnabled("administration") {
+		server.RegisterSemanticTokensProvider(
+			lspsemantic.NewAdminMarkupProvider(services.admin),
+		)
+	}
 	server.RegisterSemanticTokensProvider(
 		lspsemantic.NewEmbeddedLanguageProvider(services.php),
 	)
@@ -716,7 +747,9 @@ func registerFeatures(server *lsp.Server, root string, services workspaceService
 	server.RegisterActionProvider(codeaction.NewSnippetCodeActionProvider(services.snippets))
 	server.RegisterActionProvider(codeaction.NewSnippetCopyCodeActionProvider())
 	server.RegisterActionProvider(codeaction.NewTwigCodeActionProvider(root, services.twig))
-	server.RegisterActionProvider(codeaction.NewAdminContextProvider())
+	if server.DomainEnabled("administration") {
+		server.RegisterActionProvider(codeaction.NewAdminContextProvider())
+	}
 	server.RegisterActionProvider(
 		codeaction.NewEventListenerContextProvider(services.php),
 	)

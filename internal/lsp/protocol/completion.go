@@ -1,5 +1,7 @@
 package protocol
 
+import "github.com/shopware/shopware-lsp/internal/projectconfig"
+
 // CompletionList represents a list of completion items
 type CompletionList struct {
 	IsIncomplete bool             `json:"isIncomplete"`
@@ -33,10 +35,11 @@ type CodeActionResolveSupport struct {
 }
 
 type InitializationOptions struct {
-	PHPExtensions         []string `json:"phpExtensions,omitempty"`
-	DisabledPHPExtensions []string `json:"disabledPhpExtensions,omitempty"`
-	ShopwareTargetVersion string   `json:"shopwareTargetVersion,omitempty"`
-	CLIMode               bool     `json:"cliMode,omitempty"`
+	PHPExtensions         []string               `json:"phpExtensions,omitempty"`
+	DisabledPHPExtensions []string               `json:"disabledPhpExtensions,omitempty"`
+	ShopwareTargetVersion string                 `json:"shopwareTargetVersion,omitempty"`
+	Configuration         *projectconfig.Partial `json:"configuration,omitempty"`
+	CLIMode               bool                   `json:"cliMode,omitempty"`
 }
 
 // WorkspaceFolder represents a workspace folder

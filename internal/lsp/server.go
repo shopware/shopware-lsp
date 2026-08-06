@@ -13,74 +13,76 @@ import (
 	"github.com/shopware/shopware-lsp/internal/indexer"
 	"github.com/shopware/shopware-lsp/internal/language"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	"github.com/shopware/shopware-lsp/internal/projectconfig"
 	"github.com/sourcegraph/jsonrpc2"
 )
 
 // Server represents the LSP server
 type Server struct {
-	rootPath                   string
-	version                    string
-	initializationOptions      protocol.InitializationOptions
-	initializeMu               sync.Mutex
-	initialized                bool
-	connMu                     sync.RWMutex
-	conn                       *jsonrpc2.Conn
-	completionProviders        []CompletionProvider
-	definitionProviders        []GotoDefinitionProvider
-	implementationProviders    []ImplementationProvider
-	typeHierarchyProviders     []TypeHierarchyProvider
-	callHierarchyProviders     []CallHierarchyProvider
-	referencesProviders        []ReferencesProvider
-	codeLensProviders          []CodeLensProvider
-	actionProviders            []ActionProvider
-	inspections                *inspectionRegistry
-	codeActionResolveSupport   bool
-	hoverProviders             []HoverProvider
-	signatureProviders         []SignatureHelpProvider
-	renameProviders            []RenameProvider
-	inlayHintProviders         []InlayHintProvider
-	documentLinkProviders      []DocumentLinkProvider
-	documentSymbolProviders    []DocumentSymbolProvider
-	documentHighlightProviders []DocumentHighlightProvider
-	linkedEditingProviders     []LinkedEditingRangeProvider
-	foldingRangeProviders      []FoldingRangeProvider
-	selectionRangeProviders    []SelectionRangeProvider
-	documentColorProviders     []DocumentColorProvider
-	semanticTokensProviders    []SemanticTokensProvider
-	fileRenameProviders        []FileRenameProvider
-	workspaceSymbolProviders   []WorkspaceSymbolProvider
-	commandProviders           []CommandProvider
-	commandMap                 map[string]CommandFunc
-	contextEnrichers           map[language.ID]ContextEnricher
-	documentManager            *DocumentManager
-	fileScanner                *indexer.FileScanner
-	workspaceFactory           WorkspaceFactory
-	workspace                  WorkspaceRuntime
-	lifecycleCtx               context.Context
-	lifecycleCancel            context.CancelFunc
-	lifecycleWG                sync.WaitGroup
-	backgroundMu               sync.Mutex
-	closing                    bool
-	closeOnce                  sync.Once
-	closeErr                   error
-	diagnosticsMu              sync.Mutex
-	diagnosticsPublishMu       sync.Mutex
-	diagnosticsJobs            map[string]*diagnosticsJob
-	diagnosticsGenerations     map[string]uint64
-	diagnosticsCache           map[string]diagnosticsCacheEntry
+	rootPath                        string
+	version                         string
+	initializationOptions           protocol.InitializationOptions
+	initializeMu                    sync.Mutex
+	initialized                     bool
+	connMu                          sync.RWMutex
+	conn                            *jsonrpc2.Conn
+	completionProviders             []CompletionProvider
+	definitionProviders             []GotoDefinitionProvider
+	implementationProviders         []ImplementationProvider
+	typeHierarchyProviders          []TypeHierarchyProvider
+	callHierarchyProviders          []CallHierarchyProvider
+	referencesProviders             []ReferencesProvider
+	codeLensProviders               []CodeLensProvider
+	actionProviders                 []ActionProvider
+	inspections                     *inspectionRegistry
+	codeActionResolveSupport        bool
+	hoverProviders                  []HoverProvider
+	signatureProviders              []SignatureHelpProvider
+	renameProviders                 []RenameProvider
+	inlayHintProviders              []InlayHintProvider
+	documentLinkProviders           []DocumentLinkProvider
+	documentSymbolProviders         []DocumentSymbolProvider
+	documentHighlightProviders      []DocumentHighlightProvider
+	linkedEditingProviders          []LinkedEditingRangeProvider
+	foldingRangeProviders           []FoldingRangeProvider
+	selectionRangeProviders         []SelectionRangeProvider
+	documentColorProviders          []DocumentColorProvider
+	semanticTokensProviders         []SemanticTokensProvider
+	fileRenameProviders             []FileRenameProvider
+	workspaceSymbolProviders        []WorkspaceSymbolProvider
+	commandProviders                []CommandProvider
+	commandMap                      map[string]CommandFunc
+	contextEnrichers                map[language.ID]ContextEnricher
+	documentManager                 *DocumentManager
+	fileScanner                     *indexer.FileScanner
+	workspaceFactory                WorkspaceFactory
+	workspace                       WorkspaceRuntime
+	lifecycleCtx                    context.Context
+	lifecycleCancel                 context.CancelFunc
+	lifecycleWG                     sync.WaitGroup
+	backgroundMu                    sync.Mutex
+	closing                         bool
+	closeOnce                       sync.Once
+	closeErr                        error
+	diagnosticsMu                   sync.Mutex
+	diagnosticsPublishMu            sync.Mutex
+	diagnosticsJobs                 map[string]*diagnosticsJob
+	diagnosticsGenerations          map[string]uint64
+	diagnosticsCache                map[string]diagnosticsCacheEntry
+	configurationMu                 sync.RWMutex
+	projectConfiguration            projectconfig.Partial
+	editorConfiguration             projectconfig.Partial
+	effectiveConfiguration          projectconfig.Effective
+	configurationErr                error
+	pendingConfigurationFingerprint string
 }
 
 func (s *Server) InitializationOptions() protocol.InitializationOptions {
+	configuration := s.EffectiveConfiguration()
 	return protocol.InitializationOptions{
-		PHPExtensions: append(
-			[]string(nil),
-			s.initializationOptions.PHPExtensions...,
-		),
-		DisabledPHPExtensions: append(
-			[]string(nil),
-			s.initializationOptions.DisabledPHPExtensions...,
-		),
-		ShopwareTargetVersion: s.initializationOptions.ShopwareTargetVersion,
+		PHPExtensions:         append([]string(nil), configuration.PHP.Extensions...),
+		DisabledPHPExtensions: append([]string(nil), configuration.PHP.DisabledExtensions...),
+		ShopwareTargetVersion: configuration.Shopware.TargetVersion,
 		CLIMode:               s.initializationOptions.CLIMode,
 	}
 }
@@ -143,6 +145,7 @@ func NewServer(filescanner *indexer.FileScanner, rootPath, version string) *Serv
 		diagnosticsJobs:            make(map[string]*diagnosticsJob),
 		diagnosticsGenerations:     make(map[string]uint64),
 		diagnosticsCache:           make(map[string]diagnosticsCacheEntry),
+		effectiveConfiguration:     projectconfig.Default(),
 	}
 
 	if s.fileScanner != nil {
@@ -475,8 +478,17 @@ func (s *Server) handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.
 		}
 		return nil, nil
 	}
+	if feature := featureForMethod(req.Method); feature != "" &&
+		!s.featureEnabled(feature) {
+		return disabledFeatureResult(req.Method), nil
+	}
 
 	if cmd, ok := s.commandMap[req.Method]; ok {
+		if !s.featureEnabled("commands") && !isConfigurationMethod(req.Method) {
+			return nil, &jsonrpc2.Error{
+				Code: jsonrpc2.CodeMethodNotFound, Message: "Shopware commands are disabled by configuration",
+			}
+		}
 		return cmd(ctx, req.Params)
 	}
 
@@ -493,7 +505,22 @@ func (s *Server) handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.
 		return result, nil
 
 	case "initialized":
-		if s.fileScanner == nil {
+		if configurationErr := s.configurationError(); configurationErr != nil {
+			if conn := s.connection(); conn != nil {
+				_ = conn.Notify(ctx, "window/showMessage", map[string]interface{}{
+					"type":    1,
+					"message": "Invalid Shopware LSP configuration: " + configurationErr.Error(),
+				})
+			}
+		}
+		if s.fileScanner == nil || !s.EffectiveConfiguration().Indexing.Enabled {
+			if s.initializationOptions.CLIMode {
+				if conn := s.connection(); conn != nil {
+					_ = conn.Notify(ctx, "shopware/indexingCompleted", map[string]interface{}{
+						"message": "Indexing disabled", "timeInSeconds": 0,
+					})
+				}
+			}
 			return nil, nil
 		}
 		s.startBackground(func(ctx context.Context) {
@@ -534,7 +561,7 @@ func (s *Server) handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.
 		s.documentManager.OpenDocument(params.TextDocument.URI, params.TextDocument.Text, params.TextDocument.Version)
 
 		// Run diagnostics on the opened document
-		if !s.initializationOptions.CLIMode {
+		if !s.initializationOptions.CLIMode && s.diagnosticsEnabled() {
 			s.scheduleDiagnostics(params.TextDocument.URI, params.TextDocument.Version, 0)
 		}
 		return nil, nil
@@ -555,7 +582,7 @@ func (s *Server) handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.
 		if len(params.ContentChanges) > 0 {
 			s.documentManager.UpdateDocument(params.TextDocument.URI, params.ContentChanges[0].Text, params.TextDocument.Version)
 
-			if !s.initializationOptions.CLIMode {
+			if !s.initializationOptions.CLIMode && s.diagnosticsEnabled() {
 				s.scheduleDiagnostics(params.TextDocument.URI, params.TextDocument.Version, diagnosticsDebounce)
 			}
 		}
@@ -749,7 +776,38 @@ func (s *Server) handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.
 		if err := json.Unmarshal(*req.Params, &params); err != nil {
 			return nil, err
 		}
+		if !s.diagnosticsEnabled() {
+			return protocol.DiagnosticResult{Items: []protocol.Diagnostic{}}, nil
+		}
 		return s.diagnostic(ctx, &params), nil
+
+	case "shopware/configuration/catalog":
+		return s.configurationCatalog(), nil
+
+	case "shopware/configuration/effective":
+		return s.EffectiveConfiguration(), nil
+
+	case "shopware/configuration/reload":
+		return s.reloadProjectConfiguration(ctx), nil
+
+	case "workspace/didChangeConfiguration":
+		var params struct {
+			Settings projectconfig.Partial `json:"settings"`
+		}
+		if err := json.Unmarshal(*req.Params, &params); err != nil {
+			return nil, err
+		}
+		result := s.replaceEditorConfiguration(ctx, params.Settings)
+		if result.Error != "" {
+			log.Printf("Invalid editor configuration: %s", result.Error)
+			if conn := s.connection(); conn != nil {
+				_ = conn.Notify(ctx, "window/showMessage", map[string]interface{}{
+					"type":    1,
+					"message": "Invalid Shopware LSP configuration: " + result.Error,
+				})
+			}
+		}
+		return nil, nil
 
 	case "codeLens/resolve":
 		var codeLens protocol.CodeLens
@@ -773,6 +831,9 @@ func (s *Server) handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.
 		return s.resolveCodeAction(ctx, action), nil
 
 	case "shopware/forceReindex":
+		if !s.EffectiveConfiguration().Indexing.Enabled {
+			return nil, fmt.Errorf("indexing is disabled by configuration")
+		}
 		s.startBackground(func(ctx context.Context) {
 			if err := s.indexAll(ctx, true); err != nil {
 				log.Printf("Error force reindexing: %v", err)

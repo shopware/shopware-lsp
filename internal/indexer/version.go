@@ -14,6 +14,7 @@ import (
 const IndexVersion = 160
 
 const versionFileName = "index_version"
+const configurationFingerprintFileName = "configuration_fingerprint"
 
 // CacheVersionCurrent performs the read-only half of cache migration. It lets
 // lightweight CLI commands reject stale catalogs without constructing a
@@ -82,6 +83,34 @@ func CheckAndMigrateCache(cacheDir string) (bool, error) {
 
 	// Version matches, no migration needed
 	return false, nil
+}
+
+// CheckAndMigrateConfiguration invalidates the complete workspace cache when
+// structural configuration changes. File hashes are shared by all indexers;
+// without this invalidation, re-enabling an indexer could incorrectly skip
+// files which changed while that indexer was disabled.
+func CheckAndMigrateConfiguration(cacheDir, fingerprint string) (bool, error) {
+	if strings.TrimSpace(fingerprint) == "" {
+		return false, fmt.Errorf("configuration fingerprint must not be empty")
+	}
+	path := filepath.Join(cacheDir, configurationFingerprintFileName)
+	data, err := os.ReadFile(path)
+	if err == nil && strings.TrimSpace(string(data)) == fingerprint {
+		return false, nil
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return false, fmt.Errorf("read configuration fingerprint: %w", err)
+	}
+	if err := clearCacheDir(cacheDir); err != nil {
+		return false, fmt.Errorf("clear structurally stale cache: %w", err)
+	}
+	if err := writeVersion(filepath.Join(cacheDir, versionFileName)); err != nil {
+		return false, fmt.Errorf("restore index version: %w", err)
+	}
+	if err := os.WriteFile(path, []byte(fingerprint+"\n"), 0o644); err != nil {
+		return false, fmt.Errorf("write configuration fingerprint: %w", err)
+	}
+	return true, nil
 }
 
 // clearCacheDir removes all files in the cache directory except the directory itself

@@ -15,6 +15,11 @@ import {registerSymfonyCatalogCommands} from './commands/symfonyCatalogCommands'
 import {registerSymfonyGenerationCommands} from './commands/symfonyGenerationCommands';
 import {registerTwigCatalogCommands} from './commands/twigCatalogCommands';
 import {registerTwigVariableCommands} from './twigVariables';
+import {
+  attachConfigurationClient,
+  readEditorConfiguration,
+  registerConfigurationSupport,
+} from './configuration';
 
 const clientState: ClientState = {};
 let indexingStatusBarItem: vscode.StatusBarItem;
@@ -116,15 +121,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         { scheme: 'file', pattern: '**/Dockerfile*' }
       ],
       initializationOptions: {
-        phpExtensions: vscode.workspace
-          .getConfiguration('shopwareLSP')
-          .get<string[]>('phpExtensions', []),
-        disabledPhpExtensions: vscode.workspace
-          .getConfiguration('shopwareLSP')
-          .get<string[]>('disabledPhpExtensions', []),
-        shopwareTargetVersion: vscode.workspace
-          .getConfiguration('shopwareLSP')
-          .get<string>('shopwareTargetVersion', '')
+        configuration: readEditorConfiguration()
       },
       // Add output configuration
       outputChannel: outputChannel,
@@ -150,6 +147,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // Register notification handlers
     clientState.client.start().then(() => {
+      attachConfigurationClient(clientState.client!);
       // Handler for indexing started
       clientState.client!.onNotification('shopware/indexingStarted', () => {
         outputChannel.appendLine('Shopware indexing started');
@@ -181,6 +179,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await startClient();
     vscode.window.showInformationMessage('Shopware LSP restarted');
   }));
+
+  registerConfigurationSupport(context, clientState, outputChannel, async () => {
+    await startClient();
+    vscode.window.showInformationMessage('Shopware LSP restarted');
+  });
 
   // Register force reindex command
   context.subscriptions.push(vscode.commands.registerCommand('shopwareLSP.forceReindex', async () => {

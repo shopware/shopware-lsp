@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/shopwareLabs/shopware-lsp/main/internal/projectconfig/schema.json",
+  "title": "Shopware LSP Configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1 },
+    "php": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "extensions": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "disabledExtensions": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
+    "shopware": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "targetVersion": { "type": "string", "pattern": "^$|^v?[0-9]+\\.[0-9]+(?:\\.[0-9]+)?(?:\\.[0-9]+)?(?:[-+][0-9A-Za-z.-]+)?$" }
+      }
+    },
+    "features": { "$ref": "#/$defs/featureMap" },
+    "indexing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "enabled": { "type": "boolean" } }
+    },
+    "domains": { "$ref": "#/$defs/domainMap" },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "inspections": { "type": "object", "additionalProperties": { "type": "boolean" } },
+        "rules": { "type": "object", "additionalProperties": { "$ref": "#/$defs/ruleSeverity" } }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "severity": { "enum": ["hint", "information", "warning", "error"] },
+        "failOn": { "$ref": "#/$defs/ruleSeverity" }
+      }
+    }
+  },
+  "$defs": {
+    "ruleSeverity": { "enum": ["off", "hint", "information", "warning", "error"] },
+    "featureMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "completion": { "type": "boolean" }, "definition": { "type": "boolean" },
+        "implementation": { "type": "boolean" }, "typeHierarchy": { "type": "boolean" },
+        "callHierarchy": { "type": "boolean" }, "references": { "type": "boolean" },
+        "codeLens": { "type": "boolean" }, "hover": { "type": "boolean" },
+        "signatureHelp": { "type": "boolean" }, "rename": { "type": "boolean" },
+        "inlayHints": { "type": "boolean" }, "documentLinks": { "type": "boolean" },
+        "documentSymbols": { "type": "boolean" }, "documentHighlights": { "type": "boolean" },
+        "linkedEditing": { "type": "boolean" }, "foldingRanges": { "type": "boolean" },
+        "selectionRanges": { "type": "boolean" }, "documentColors": { "type": "boolean" },
+        "semanticTokens": { "type": "boolean" }, "codeActions": { "type": "boolean" },
+        "workspaceSymbols": { "type": "boolean" }, "fileRename": { "type": "boolean" },
+        "commands": { "type": "boolean" }
+      }
+    },
+    "domainMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "php": { "type": "boolean" }, "twig": { "type": "boolean" }, "scss": { "type": "boolean" },
+        "administration": { "type": "boolean" }, "symfony": { "type": "boolean" },
+        "symfony.services": { "type": "boolean" }, "symfony.routes": { "type": "boolean" },
+        "symfony.console": { "type": "boolean" }, "symfony.doctrine": { "type": "boolean" },
+        "symfony.assets": { "type": "boolean" }, "symfony.events": { "type": "boolean" },
+        "symfony.messenger": { "type": "boolean" }, "symfony.environment": { "type": "boolean" },
+        "symfony.forms": { "type": "boolean" }, "symfony.security": { "type": "boolean" },
+        "symfony.configuration": { "type": "boolean" }, "symfony.serializer": { "type": "boolean" },
+        "symfony.stimulus": { "type": "boolean" }, "symfony.validation": { "type": "boolean" },
+        "symfony.twigComponents": { "type": "boolean" }, "shopware": { "type": "boolean" },
+        "shopware.extensions": { "type": "boolean" }, "shopware.snippets": { "type": "boolean" },
+        "shopware.translations": { "type": "boolean" }, "shopware.featureFlags": { "type": "boolean" },
+        "shopware.systemConfig": { "type": "boolean" }, "shopware.theme": { "type": "boolean" },
+        "shopware.dal": { "type": "boolean" }, "shopware.appScripts": { "type": "boolean" },
+        "shopware.migrations": { "type": "boolean" }, "shopware.entitySchema": { "type": "boolean" },
+        "shopware.store": { "type": "boolean" }
+      }
+    }
+  }
+}

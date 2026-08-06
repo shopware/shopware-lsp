@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -61,6 +62,9 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 	}
 	s.rootPath = rootPath
 	s.initializationOptions = params.InitializationOptions
+	if err := s.initializeConfiguration(rootPath, params.InitializationOptions); err != nil {
+		return nil, fmt.Errorf("load configuration: %w", err)
+	}
 	s.codeActionResolveSupport = params.Capabilities.TextDocument.CodeAction != nil &&
 		params.Capabilities.TextDocument.CodeAction.DataSupport &&
 		slices.Contains(
@@ -85,6 +89,20 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 			log.Printf("Publishing diagnostics to all open files")
 			s.PublishDiagnostics(s.lifecycleCtx, nil)
 		})
+	}
+	if err := s.validateConfiguredDiagnosticIDs(); err != nil {
+		if s.initializationOptions.CLIMode {
+			if s.workspace != nil {
+				_ = s.workspace.Close()
+				s.workspace = nil
+				s.fileScanner = nil
+			}
+			return nil, fmt.Errorf("validate configuration: %w", err)
+		}
+		s.configurationMu.Lock()
+		s.configurationErr = errors.Join(s.configurationErr, err)
+		s.configurationMu.Unlock()
+		log.Printf("Invalid Shopware LSP configuration: %v", err)
 	}
 	s.initialized = true
 

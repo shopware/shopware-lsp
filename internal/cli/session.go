@@ -15,6 +15,7 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/app"
 	"github.com/shopware/shopware-lsp/internal/language"
+	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 	"github.com/sourcegraph/jsonrpc2"
@@ -25,21 +26,22 @@ type indexingResult struct {
 }
 
 type cliSession struct {
-	application  *app.Application
-	client       *jsonrpc2.Conn
-	clientSide   net.Conn
-	serverSide   net.Conn
-	serverDone   chan struct{}
-	serverErrMu  sync.Mutex
-	serverErr    error
-	indexStarted chan struct{}
-	indexDone    chan indexingResult
-	indexFailed  chan error
-	root         string
-	capabilities interface{}
-	initialIndex indexingResult
-	closeOnce    sync.Once
-	closeErr     error
+	application   *app.Application
+	client        *jsonrpc2.Conn
+	clientSide    net.Conn
+	serverSide    net.Conn
+	serverDone    chan struct{}
+	serverErrMu   sync.Mutex
+	serverErr     error
+	indexStarted  chan struct{}
+	indexDone     chan indexingResult
+	indexFailed   chan error
+	root          string
+	capabilities  interface{}
+	configuration lsp.ConfigurationCatalog
+	initialIndex  indexingResult
+	closeOnce     sync.Once
+	closeErr      error
 }
 
 type cliDocument struct {
@@ -82,7 +84,7 @@ func (r *Runner) connect(ctx context.Context) (*cliSession, error) {
 			return nil, err
 		}
 	}
-	session, err := newCLISession(ctx, root, r.options.Version, r.errOut)
+	session, err := newCLISession(ctx, root, r.options.Version, r.errOut, true)
 	if err != nil {
 		return nil, err
 	}
@@ -106,11 +108,20 @@ func (r *Runner) connect(ctx context.Context) (*cliSession, error) {
 	return session, nil
 }
 
+func (r *Runner) connectWithoutIndex(ctx context.Context) (*cliSession, error) {
+	root, err := r.workspaceRoot()
+	if err != nil {
+		return nil, err
+	}
+	return newCLISession(ctx, root, r.options.Version, r.errOut, false)
+}
+
 func newCLISession(
 	ctx context.Context,
 	root,
 	version string,
 	errOut io.Writer,
+	startIndex bool,
 ) (*cliSession, error) {
 	serverSide, clientSide := net.Pipe()
 	session := &cliSession{
@@ -207,6 +218,18 @@ func newCLISession(
 	); err != nil {
 		_ = session.Close()
 		return nil, fmt.Errorf("initialize LSP session: %w", err)
+	}
+	if err := session.client.Call(
+		ctx,
+		"shopware/configuration/catalog",
+		struct{}{},
+		&session.configuration,
+	); err != nil {
+		_ = session.Close()
+		return nil, fmt.Errorf("read effective configuration: %w", err)
+	}
+	if !startIndex {
+		return session, nil
 	}
 	if err := session.client.Notify(ctx, "initialized", struct{}{}); err != nil {
 		_ = session.Close()

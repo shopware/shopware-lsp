@@ -150,6 +150,7 @@ func (r *Runner) commands() map[string]commandDefinition {
 		{"help", "print command usage", "help [command]", r.runHelp},
 		{"api-json", "print the supported CLI and language API", "api-json", r.runAPIJSON},
 		{"licenses", "print license and third-party notices", "licenses", r.runLicenses},
+		{"config", "validate and print the effective project configuration", "config", r.runConfig},
 		{"index", "build or refresh the workspace index", "index [-force]", r.runIndex},
 		{"stats", "print indexing, workspace, cache, and memory statistics", "stats", r.runStats},
 		{"check", "show diagnostics for files and directories", "check [-severity level] [-fail-on level] [-workers count] <file-or-directory>...", r.runCheck},
@@ -182,6 +183,24 @@ func (r *Runner) commands() map[string]commandDefinition {
 		result[definition.Name] = definition
 	}
 	return result
+}
+
+func (r *Runner) runConfig(ctx context.Context, args []string) error {
+	if len(args) != 0 {
+		return usageError("config takes no arguments")
+	}
+	session, err := r.connectWithoutIndex(ctx)
+	if err != nil {
+		return err
+	}
+	defer closeIgnoringError(session)
+	if r.json {
+		return writeJSON(r.out, session.configuration)
+	}
+	return writeJSON(r.out, map[string]interface{}{
+		"path":      session.configuration.Path,
+		"effective": session.configuration.Effective,
+	})
 }
 
 func (r *Runner) runHelp(_ context.Context, args []string) error {
@@ -272,6 +291,8 @@ func (r *Runner) runAPIJSON(_ context.Context, args []string) error {
 		"textDocument/signatureHelp", "typeHierarchy/subtypes",
 		"typeHierarchy/supertypes", "workspace/symbol",
 		"workspace/willRenameFiles",
+		"shopware/configuration/catalog", "shopware/configuration/effective",
+		"shopware/configuration/reload", "workspace/didChangeConfiguration",
 	}
 	return writeJSON(r.out, map[string]interface{}{
 		"name":                   "shopware-lsp",

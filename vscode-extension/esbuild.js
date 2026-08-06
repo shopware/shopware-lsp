@@ -1,9 +1,16 @@
 const esbuild = require('esbuild');
+const fs = require('fs');
+const path = require('path');
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
 
 async function main() {
+  fs.mkdirSync('dist', {recursive: true});
+  fs.copyFileSync(
+    path.join('..', 'internal', 'projectconfig', 'schema.json'),
+    path.join('dist', 'shopware-lsp.schema.json')
+  );
   const extensionContext = await esbuild.context({
     entryPoints: ['src/extension.ts'],
     bundle: true,
@@ -32,11 +39,29 @@ async function main() {
     logLevel: 'warning',
     plugins: [esbuildProblemMatcherPlugin]
   });
+  const configurationModelContext = await esbuild.context({
+    entryPoints: ['src/configurationModel.ts'],
+    bundle: true,
+    format: 'cjs',
+    minify: production,
+    sourcemap: !production,
+    sourcesContent: false,
+    platform: 'node',
+    outfile: 'dist/configurationModel.js',
+    logLevel: 'warning',
+    plugins: [esbuildProblemMatcherPlugin]
+  });
   if (watch) {
-    await Promise.all([extensionContext.watch(), webviewContext.watch()]);
+    await Promise.all([
+      extensionContext.watch(), webviewContext.watch(), configurationModelContext.watch()
+    ]);
   } else {
-    await Promise.all([extensionContext.rebuild(), webviewContext.rebuild()]);
-    await Promise.all([extensionContext.dispose(), webviewContext.dispose()]);
+    await Promise.all([
+      extensionContext.rebuild(), webviewContext.rebuild(), configurationModelContext.rebuild()
+    ]);
+    await Promise.all([
+      extensionContext.dispose(), webviewContext.dispose(), configurationModelContext.dispose()
+    ]);
   }
 }
 

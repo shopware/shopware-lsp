@@ -132,6 +132,14 @@ func (r *inspectionRegistry) inspections(languageID language.ID) []*registeredIn
 	return r.byLanguage[languageID]
 }
 
+func (r *inspectionRegistry) all() []*registeredInspection {
+	values := make([]*registeredInspection, 0, len(r.byID))
+	for _, value := range r.byID {
+		values = append(values, value)
+	}
+	return values
+}
+
 func encodeDiagnosticData(envelope diagnosticEnvelope) (map[string]any, error) {
 	metadata, err := json.Marshal(envelope)
 	if err != nil {

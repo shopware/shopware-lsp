@@ -1338,6 +1338,68 @@ disables. The server only emits `php.extension` when it has that negative
 runtime evidence; an optional extension omitted from Composer is not assumed
 to be unavailable.
 
+### Project configuration
+
+Shopware LSP reads the committed project configuration from
+`.config/shopware-lsp/config.json`. The same configuration is used by editor
+sessions and CLI commands, so diagnostic policy does not need to be duplicated
+in CI. VS Code user and workspace settings are local overrides; explicit CLI
+flags such as `check -severity` and `check -fail-on` take final precedence.
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/shopwareLabs/shopware-lsp/main/internal/projectconfig/schema.json",
+  "version": 1,
+  "php": {
+    "extensions": ["redis"],
+    "disabledExtensions": []
+  },
+  "shopware": {
+    "targetVersion": "6.7"
+  },
+  "features": {
+    "codeLens": false
+  },
+  "domains": {
+    "symfony.doctrine": false
+  },
+  "diagnostics": {
+    "enabled": true,
+    "inspections": {
+      "shopware.admin": false
+    },
+    "rules": {
+      "php.arguments": "error",
+      "admin.component.unknown-instance-member": "off"
+    }
+  },
+  "check": {
+    "severity": "warning",
+    "failOn": "error"
+  }
+}
+```
+
+Unspecified values inherit the built-in defaults, which keep all current
+features, domains, indexing, and diagnostics enabled. Diagnostic rule values
+are `off`, `hint`, `information`, `warning`, or `error`. Disabling a complete
+inspection skips its analyzer; disabling every rule in an inspection has the
+same optimization. Domain dependencies cascade off, so disabling PHP also
+disables PHP-backed Symfony and Twig domains.
+
+The VS Code command `Shopware: Configure Language Server…` provides searchable
+feature, domain, inspection, and rule controls and can write either the shared
+project file or a local editor override. Diagnostic and request-time feature
+changes apply live. Indexing, domain, PHP extension, and target-version changes
+prompt for a language-server restart and invalidate structurally incompatible
+workspace caches.
+
+For CI, `shopware-lsp config` validates and prints the effective configuration.
+`shopware-lsp check` fails before indexing when the committed configuration is
+invalid. Its command-line severity flags override the `check` defaults from the
+file; use `-fail-on off` to explicitly suppress the configured failure threshold
+for one invocation.
+
 For a resource-only measurement without the feature assertions, build the
 profiling harness once and run the binary through the operating-system resource
 counter:

@@ -85,6 +85,48 @@
           "scope": "resource",
           "pattern": "^$|^v?[0-9]+\\.[0-9]+(?:\\.[0-9]+)?(?:\\.[0-9]+)?(?:[-+][0-9A-Za-z.-]+)?$",
           "description": "Optional Shopware target version for migration diagnostics, for example 6.8. Leave empty to detect the installed or platform checkout version."
+        },
+        "shopwareLSP.features": {
+          "type": "object",
+          "default": {},
+          "scope": "resource",
+          "additionalProperties": { "type": "boolean" },
+          "description": "Local overrides for LSP capabilities such as completion, hover, codeLens, and semanticTokens. Use 'Shopware: Configure Language Server…' for a searchable editor."
+        },
+        "shopwareLSP.indexing.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Enable persistent workspace indexing. Changing this structural setting requires a language-server restart."
+        },
+        "shopwareLSP.domains": {
+          "type": "object",
+          "default": {},
+          "scope": "resource",
+          "additionalProperties": { "type": "boolean" },
+          "description": "Local domain overrides, for example symfony.doctrine, administration, twig, or scss. Changing domains requires a restart."
+        },
+        "shopwareLSP.diagnostics.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Enable all Shopware LSP diagnostics."
+        },
+        "shopwareLSP.diagnostics.inspections": {
+          "type": "object",
+          "default": {},
+          "scope": "resource",
+          "additionalProperties": { "type": "boolean" },
+          "description": "Enable or disable complete diagnostic inspections by stable inspection ID."
+        },
+        "shopwareLSP.diagnostics.rules": {
+          "type": "object",
+          "default": {},
+          "scope": "resource",
+          "additionalProperties": {
+            "enum": ["off", "hint", "information", "warning", "error"]
+          },
+          "description": "Disable or override severity for individual diagnostics by stable rule ID."
         }
       }
     },
@@ -96,6 +138,10 @@
       {
         "command": "shopwareLSP.forceReindex",
         "title": "Shopware: Force Reindex"
+      },
+      {
+        "command": "shopwareLSP.configure",
+        "title": "Shopware: Configure Language Server…"
       },
       {
         "command": "shopware.createFile",
@@ -195,6 +241,12 @@
         }
       ]
     },
+    "jsonValidation": [
+      {
+        "fileMatch": "**/.config/shopware-lsp/config.json",
+        "url": "./dist/shopware-lsp.schema.json"
+      }
+    ],
     "snippets": [
       {
         "language": "php",
@@ -210,6 +262,7 @@
     "compile": "npm run check-types && node esbuild.js",
     "check-types": "tsc --noEmit",
     "test:entity-designer": "npm run compile && node --test test/entityDesignerWebview.test.js",
+    "test:configuration": "npm run compile && node --test test/configuration.test.js",
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
