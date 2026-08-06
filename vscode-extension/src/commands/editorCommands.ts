@@ -344,7 +344,7 @@ export function registerEditorCommands(
     if (isAdminFile) {
       // Fetch admin snippets
       snippets = await clientState.client.sendRequest('shopware/snippet/admin/all');
-      insertFormat = "{{ \\$tc('${label}') }}";
+      insertFormat = "{{ \\$t('${label}') }}";
     } else {
       // Fetch frontend snippets
       snippets = await clientState.client.sendRequest('shopware/snippet/storefront/all');
@@ -557,7 +557,7 @@ export function registerEditorCommands(
       const editor = vscode.window.activeTextEditor;
       if (editor) {
         // Replace the selected text with the admin snippet reference
-        const snippetReference = `{{ $tc('${snippetKey}') }}`;
+        const snippetReference = `{{ $t('${snippetKey}') }}`;
         editor.edit(editBuilder => {
           const selection = editor.selection;
           editBuilder.replace(selection, snippetReference);

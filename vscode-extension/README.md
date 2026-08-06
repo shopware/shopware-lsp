@@ -32,7 +32,7 @@ Get autocompletion for icon names and packs in `sw_icon` tags. Hover over an ico
 Autocomplete translation keys everywhere they're used:
 
 - **Storefront:** `{{ 'key'|trans }}` in Twig, `$this->trans('key')` in PHP
-- **Administration:** `{{ $t('key') }}` / `{{ $tc('key') }}` in Twig, `this.$t('key')` in JS/TS
+- **Administration:** `{{ $t('key') }}` in Twig, `this.$t('key')` in JS/TS
 
 Hover over any key to see all available translations across locales. Missing keys are flagged as errors with a quick fix to create them — or select text and create a snippet directly from your selection.
 

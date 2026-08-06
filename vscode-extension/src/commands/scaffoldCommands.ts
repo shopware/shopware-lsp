@@ -656,11 +656,11 @@ export function registerScaffoldCommands(
       const target = await vscode.window.showQuickPick([
         {
           label: 'Administration Twig',
-          code: `{{ $tc('${key}') }}`,
+          code: `{{ $t('${key}') }}`,
         },
         {
           label: 'Administration JavaScript',
-          code: `this.$tc('${key}')`,
+          code: `this.$t('${key}')`,
         },
         {
           label: 'Storefront Twig',

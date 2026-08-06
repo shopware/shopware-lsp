@@ -20,6 +20,7 @@ const (
 	addAdminPropFixID             lsp.FixID = "add-admin-component-prop"
 	bindAdminPropFixID            lsp.FixID = "bind-admin-component-prop"
 	replaceAdminComponentTagFixID lsp.FixID = "replace-admin-component-tag"
+	migrateAdminI18nTCFixID       lsp.FixID = "migrate-admin-vue-i18n-tc"
 )
 
 type adminPropPayload struct {
@@ -79,13 +80,17 @@ func NewAdmin(index *admin.AdminComponentIndexer) lsp.Inspection {
 				{ID: "admin.module.not-found", Source: "shopware-lsp", DefaultSeverity: protocol.DiagnosticSeverityWarning},
 				{ID: "admin.module-route.not-found", Source: "shopware-lsp", DefaultSeverity: protocol.DiagnosticSeverityWarning},
 				{ID: "admin.slot-syntax-deprecated", Source: "shopware-lsp", DefaultSeverity: protocol.DiagnosticSeverityWarning},
+				{ID: "admin.vue-i18n.tc-deprecated", Source: "shopware-lsp", DefaultSeverity: protocol.DiagnosticSeverityWarning},
 			},
 		},
-		analyzer:  diagnostics.NewAdminAnalyzer(index),
-		analyzers: []ProblemAnalyzer{diagnostics.NewAdminSlotMigrationAnalyzer()},
+		analyzer: diagnostics.NewAdminAnalyzer(index),
+		analyzers: []ProblemAnalyzer{
+			diagnostics.NewAdminSlotMigrationAnalyzer(),
+			diagnostics.NewAdminI18nDeprecationAnalyzer(),
+		},
 		fixes: []lsp.QuickFix{
 			adminPropFix{index: index}, adminStaticPropFix{}, adminSlotMigrationFix{},
-			adminComponentTagFix{}, suggestionFix{},
+			adminI18nTCFix{}, adminComponentTagFix{}, suggestionFix{},
 		},
 		bind: func(code lsp.DiagnosticID, payload map[string]any) []lsp.BoundFix {
 			if string(code) == "admin.component.not-found" {
@@ -122,6 +127,16 @@ func NewAdmin(index *admin.AdminComponentIndexer) lsp.Inspection {
 				return []lsp.BoundFix{lsp.BindFix(
 					migrateAdminSlotFixID,
 					adminSlotReplacement{Replacement: replacement},
+				)}
+			}
+			if string(code) == "admin.vue-i18n.tc-deprecated" {
+				replacement := mapString(payload, "replacement")
+				if replacement != "$t" {
+					return nil
+				}
+				return []lsp.BoundFix{lsp.BindFix(
+					migrateAdminI18nTCFixID,
+					adminI18nTCReplacement{Replacement: replacement},
 				)}
 			}
 			if string(code) == "admin.component.static-prop-type" {
