@@ -36,7 +36,10 @@ func (p *ShopwareMigrationAnalyzer) messageHandlerMigrationProblems(
 		}
 		handle := phpOwnMethodForMigration(class, "handle")
 		invoke := phpOwnMethodForMigration(class, "__invoke")
-		safe := (handle != nil) != (invoke != nil)
+		// Rector can still perform the structural migration when a handler has
+		// neither method (for example, an abstract base handler). Only an existing
+		// handle() and __invoke() pair would make renaming handle() ambiguous.
+		safe := handle == nil || invoke == nil
 		name := phpquery.DirectChild(class, phpsyntax.PhpName)
 		rng := class.RangeTrimmedTrivia()
 		if name != nil {

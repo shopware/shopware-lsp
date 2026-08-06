@@ -43,7 +43,7 @@ class UnrelatedHandler extends OtherHandler
 	assert.Equal(t, messageHandlerSubscriberCode, problems[0].ID)
 	assert.True(t, problems[0].Payload.(ShopwareMigrationPayload).Safe)
 	assert.False(t, problems[1].Payload.(ShopwareMigrationPayload).Safe)
-	assert.False(t, problems[2].Payload.(ShopwareMigrationPayload).Safe)
+	assert.True(t, problems[2].Payload.(ShopwareMigrationPayload).Safe)
 
 	problems, err = NewShopwareMigrationAnalyzer(
 		phpIndex,

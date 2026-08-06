@@ -107,24 +107,32 @@ function migrate(
 		resolvedShopwareMigrationVersion(6, 8, 0),
 	).Analyze(context.Background(), document)
 	require.NoError(t, err)
-	require.Len(t, problems, 3)
+	var productStreamProblems []lsp.Problem
+	for _, problem := range problems {
+		if problem.ID == productStreamBuilderCode {
+			productStreamProblems = append(productStreamProblems, problem)
+		}
+	}
+	require.Len(t, productStreamProblems, 3)
 
-	assignment := problems[0].Payload.(ShopwareMigrationPayload)
-	assert.Equal(t, productStreamBuilderCode, problems[0].ID)
+	assignment := productStreamProblems[0].Payload.(ShopwareMigrationPayload)
+	assert.Equal(t, productStreamBuilderCode, productStreamProblems[0].ID)
 	assert.Equal(t, "assignment", assignment.Kind)
 	assert.True(t, assignment.Safe)
 	assert.Less(t, assignment.Start, assignment.End)
 	assert.Equal(t, "$builder->enrichCriteria($criteria, $streamId, $context);", assignment.Replacement)
 
-	inline := problems[1].Payload.(ShopwareMigrationPayload)
+	inline := productStreamProblems[1].Payload.(ShopwareMigrationPayload)
 	assert.Equal(t, "inline", inline.Kind)
 	assert.True(t, inline.Safe)
 	assert.Equal(t, "$builder->enrichCriteria($criteria, $streamId, $context)", inline.Replacement)
 
-	manual := problems[2].Payload.(ShopwareMigrationPayload)
+	manual := productStreamProblems[2].Payload.(ShopwareMigrationPayload)
 	assert.Equal(t, "manual", manual.Kind)
-	assert.False(t, manual.Safe)
-	assert.Contains(t, problems[2].Message, "manual migration required")
+	assert.True(t, manual.Safe)
+	assert.NotZero(t, manual.Start)
+	assert.Contains(t, manual.Replacement, "TODO: Replace buildFilters()")
+	assert.Contains(t, productStreamProblems[2].Message, "manual migration required")
 
 	problems, err = NewShopwareMigrationAnalyzer(
 		phpIndex,

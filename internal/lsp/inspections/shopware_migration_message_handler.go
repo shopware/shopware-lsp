@@ -58,7 +58,7 @@ func (messageHandlerSubscriberFix) Build(
 	}
 	handle := phpOwnMethodForMigrationFix(class, "handle")
 	invoke := phpOwnMethodForMigrationFix(class, "__invoke")
-	if (handle == nil && invoke == nil) || (handle != nil && invoke != nil) {
+	if handle != nil && invoke != nil {
 		return rewrite.WorkspacePlan{}, fmt.Errorf("message handler method changed")
 	}
 	editor := phprewrite.NewEditor(fixContext.Document.Source, root)

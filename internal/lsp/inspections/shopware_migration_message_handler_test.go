@@ -45,3 +45,29 @@ class Handler extends AbstractMessageHandler
 	require.NotContains(t, updated, "getHandledMessages")
 	require.NotContains(t, updated, "function handle")
 }
+
+func TestMessageHandlerSubscriberMigrationQuickFixWithoutHandlerMethod(t *testing.T) {
+	phpIndex := migrationInspectionPHPIndex(t)
+	document := lsp.NewTextDocument(
+		"file:///project/src/AbstractHandler.php",
+		`<?php
+namespace App;
+
+use Shopware\Core\Framework\MessageQueue\Handler\AbstractMessageHandler;
+
+abstract class Handler extends AbstractMessageHandler
+{
+}
+`,
+		1,
+	)
+	updated := applyOnlyMigrationFix(
+		t,
+		NewShopwareMigration(phpIndex, migrationInspectionVersion(6, 5)),
+		document,
+		messageHandlerSubscriberFixID,
+	)
+	require.Contains(t, updated, "#[AsMessageHandler]")
+	require.Contains(t, updated, "abstract class Handler implements MessageSubscriberInterface")
+	require.NotContains(t, updated, "extends AbstractMessageHandler")
+}

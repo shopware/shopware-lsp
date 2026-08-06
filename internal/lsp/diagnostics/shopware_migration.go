@@ -119,7 +119,13 @@ func (p *ShopwareMigrationAnalyzer) Analyze(
 	if !p.version.AtLeast(6, 8, 0) {
 		return result, nil
 	}
-	result = append(result, p.productStreamBuilderProblems(ctx, root, semanticDocument, snapshot)...)
+	result = append(result, p.productStreamBuilderProblems(
+		ctx,
+		root,
+		semanticDocument,
+		snapshot,
+		document.Source,
+	)...)
 
 	for _, call := range phpquery.Nodes(root, phpsyntax.PhpMemberCall) {
 		if ctx.Err() != nil {

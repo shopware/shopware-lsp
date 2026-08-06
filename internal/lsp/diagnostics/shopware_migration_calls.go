@@ -20,6 +20,7 @@ const (
 	shopwareContextClass               = "Shopware\\Core\\Framework\\Context"
 	fakerGeneratorClass                = "Faker\\Generator"
 	productStreamBuilderInterfaceClass = "Shopware\\Core\\Content\\ProductStream\\Service\\ProductStreamBuilderInterface"
+	productStreamMigrationTODO         = "// TODO: Replace buildFilters() call with AbstractProductStreamBuilder::enrichCriteria() - please check manually"
 )
 
 func (p *ShopwareMigrationAnalyzer) contextMetadataProblems(
@@ -112,6 +113,7 @@ func (p *ShopwareMigrationAnalyzer) productStreamBuilderProblems(
 	root *phpsyntax.Node,
 	document *semantic.Document,
 	snapshot *semantic.Snapshot,
+	source string,
 ) []lsp.Problem {
 	var result []lsp.Problem
 	for _, call := range phpquery.Nodes(root, phpsyntax.PhpMemberCall) {
@@ -146,6 +148,10 @@ func (p *ShopwareMigrationAnalyzer) productStreamBuilderProblems(
 				payload.Start = start
 				payload.End = end
 				payload.Replacement = replacement
+			} else if start, replacement, ok := productStreamManualRewrite(call, source); ok {
+				payload.Safe = true
+				payload.Start = start
+				payload.Replacement = replacement
 			}
 		}
 		name := callTargetName(call)
@@ -154,7 +160,7 @@ func (p *ShopwareMigrationAnalyzer) productStreamBuilderProblems(
 			rng = name.RangeTrimmedTrivia()
 		}
 		message := "Shopware 6.8: replace ProductStreamBuilder::buildFilters() with enrichCriteria()"
-		if !payload.Safe {
+		if payload.Kind == "manual" {
 			message += " (manual migration required)"
 		}
 		result = append(result, lsp.Problem{
@@ -168,6 +174,60 @@ func (p *ShopwareMigrationAnalyzer) productStreamBuilderProblems(
 		})
 	}
 	return result
+}
+
+func productStreamManualRewrite(call *phpsyntax.Node, source string) (uint32, string, bool) {
+	statement := nearestPHPStatement(call)
+	if statement == nil {
+		return 0, "", false
+	}
+	start := statement.RangeTrimmedTrivia().Start
+	if start > uint32(len(source)) || productStreamTODOImmediatelyPrecedes(source, start) {
+		return 0, "", false
+	}
+	lineStart := strings.LastIndex(source[:start], "\n") + 1
+	indent := source[lineStart:start]
+	if strings.TrimSpace(indent) != "" {
+		indent = ""
+	}
+	return start, productStreamMigrationTODO + "\n" + indent, true
+}
+
+func productStreamTODOImmediatelyPrecedes(source string, start uint32) bool {
+	if start > uint32(len(source)) {
+		return false
+	}
+	lineStart := strings.LastIndex(source[:start], "\n") + 1
+	if lineStart == 0 {
+		return false
+	}
+	previousEnd := lineStart - 1
+	previousStart := strings.LastIndex(source[:previousEnd], "\n") + 1
+	return strings.TrimSpace(source[previousStart:previousEnd]) == productStreamMigrationTODO
+}
+
+func nearestPHPStatement(node *phpsyntax.Node) *phpsyntax.Node {
+	for current := node; current != nil; current = current.Parent() {
+		switch current.Kind() {
+		case phpsyntax.PhpReturnStatement,
+			phpsyntax.PhpIfStatement,
+			phpsyntax.PhpSwitchStatement,
+			phpsyntax.PhpWhileStatement,
+			phpsyntax.PhpDoWhileStatement,
+			phpsyntax.PhpForStatement,
+			phpsyntax.PhpForeachStatement,
+			phpsyntax.PhpTryStatement,
+			phpsyntax.PhpThrowStatement,
+			phpsyntax.PhpBreakStatement,
+			phpsyntax.PhpContinueStatement,
+			phpsyntax.PhpEchoStatement,
+			phpsyntax.PhpGlobalStatement,
+			phpsyntax.PhpStaticStatement,
+			phpsyntax.PhpExpressionStatement:
+			return current
+		}
+	}
+	return nil
 }
 
 func productStreamAssignmentRewrite(call *phpsyntax.Node) (uint32, uint32, string, bool) {

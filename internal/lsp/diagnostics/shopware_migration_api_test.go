@@ -2,9 +2,11 @@ package diagnostics
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,6 +18,95 @@ func TestShopwareAPIMigrationTablesCoverRectorConfiguration(t *testing.T) {
 	assert.Len(t, apiConstantMigrations, 35)
 	assert.Len(t, apiPropertyMigrations, 1)
 	assert.Len(t, apiFactoryMigrations, 12)
+}
+
+func TestEveryShopwareAPIMigrationMappingProducesDiagnostic(t *testing.T) {
+	phpIndex := migrationTestPHPIndex(t)
+	for _, rule := range apiClassMigrations {
+		assertShopwareAPIMigrationDiagnostic(
+			t,
+			phpIndex,
+			rule.since,
+			fmt.Sprintf("<?php function migrate(): void { new \\%s(); }", rule.from),
+			apiClassRenameCode,
+		)
+	}
+	for _, rule := range apiMethodMigrations {
+		assertShopwareAPIMigrationDiagnostic(
+			t,
+			phpIndex,
+			rule.since,
+			fmt.Sprintf(
+				"<?php function migrate(\\%s $subject): void { $subject->%s(); }",
+				rule.owner,
+				rule.from,
+			),
+			apiMethodRenameCode,
+		)
+	}
+	for _, rule := range apiStaticMethodMigrations {
+		assertShopwareAPIMigrationDiagnostic(
+			t,
+			phpIndex,
+			rule.since,
+			fmt.Sprintf("<?php \\%s::%s();", rule.owner, rule.from),
+			apiStaticMethodRenameCode,
+		)
+	}
+	for _, rule := range apiConstantMigrations {
+		assertShopwareAPIMigrationDiagnostic(
+			t,
+			phpIndex,
+			rule.since,
+			fmt.Sprintf("<?php $value = \\%s::%s;", rule.owner, rule.from),
+			apiConstantRenameCode,
+		)
+	}
+	for _, rule := range apiPropertyMigrations {
+		assertShopwareAPIMigrationDiagnostic(
+			t,
+			phpIndex,
+			rule.since,
+			fmt.Sprintf(
+				"<?php function migrate(\\%s $subject): void { echo $subject->%s; }",
+				rule.owner,
+				rule.from,
+			),
+			apiPropertyMigrationCode,
+		)
+	}
+	for _, rule := range apiFactoryMigrations {
+		assertShopwareAPIMigrationDiagnostic(
+			t,
+			phpIndex,
+			rule.since,
+			fmt.Sprintf("<?php throw new \\%s('value');", rule.from),
+			apiExceptionFactoryCode,
+		)
+	}
+}
+
+func assertShopwareAPIMigrationDiagnostic(
+	t *testing.T,
+	phpIndex *php.PHPIndex,
+	since shopwareMigrationSince,
+	source string,
+	expected lsp.DiagnosticID,
+) {
+	t.Helper()
+	document := lsp.NewTextDocument("file:///project/src/Mapping.php", source, 1)
+	require.Empty(t, document.ParseErrors)
+	problems, err := NewShopwareMigrationAnalyzer(
+		phpIndex,
+		resolvedShopwareMigrationVersion(6, since.minor, since.patch),
+	).Analyze(context.Background(), document)
+	require.NoError(t, err)
+	for _, problem := range problems {
+		if problem.ID == expected {
+			return
+		}
+	}
+	require.Failf(t, "missing migration diagnostic", "%s did not produce %s", source, expected)
 }
 
 func TestShopwareAPIPropertyAndExceptionFactoryMigrations(t *testing.T) {

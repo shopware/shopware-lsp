@@ -263,3 +263,41 @@ func applyOnlyMigrationFix(
 	require.Empty(t, lsp.NewTextDocument(document.URI, updated, document.Version+1).ParseErrors)
 	return updated
 }
+
+func applyMigrationFixByID(
+	t *testing.T,
+	inspection lsp.Inspection,
+	document *lsp.TextDocument,
+	fixID lsp.FixID,
+) string {
+	t.Helper()
+	collector := &problemCollector{}
+	require.NoError(t, inspection.Inspect(context.Background(), document, collector))
+	var matches []struct {
+		problem lsp.Problem
+		fix     lsp.BoundFix
+	}
+	for _, problem := range collector.problems {
+		for _, bound := range problem.Fixes {
+			if bound.ID == fixID {
+				matches = append(matches, struct {
+					problem lsp.Problem
+					fix     lsp.BoundFix
+				}{problem: problem, fix: bound})
+			}
+		}
+	}
+	require.Len(t, matches, 1)
+	match := matches[0]
+	fix := quickFixWithID(t, inspection, match.fix.ID)
+	plan, err := fix.Build(
+		context.Background(),
+		fixContext(t, document, match.problem, match.fix, nil),
+	)
+	require.NoError(t, err)
+	require.Len(t, plan.Documents, 1)
+	updated, err := plan.Documents[0].Apply()
+	require.NoError(t, err)
+	require.Empty(t, lsp.NewTextDocument(document.URI, updated, document.Version+1).ParseErrors)
+	return updated
+}

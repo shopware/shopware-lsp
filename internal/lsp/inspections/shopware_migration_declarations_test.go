@@ -153,3 +153,26 @@ class Definition extends AbstractElasticsearchDefinition
 		})
 	}
 }
+
+func TestInterfaceToAbstractClassMigrationQuickFixesFreeFunctionParameter(t *testing.T) {
+	phpIndex := migrationInspectionPHPIndex(t)
+	document := lsp.NewTextDocument(
+		"file:///project/src/Function.php",
+		`<?php
+namespace App;
+
+use Shopware\Core\Checkout\Cart\CartPersisterInterface;
+
+function persist(CartPersisterInterface $persister): void {}
+`,
+		1,
+	)
+	updated := applyOnlyMigrationFix(
+		t,
+		NewShopwareMigration(phpIndex, migrationInspectionVersion(6, 5)),
+		document,
+		declarationMigrationFixID,
+	)
+	require.Contains(t, updated, "use Shopware\\Core\\Checkout\\Cart\\AbstractCartPersister;")
+	require.Contains(t, updated, "function persist(AbstractCartPersister $persister): void")
+}

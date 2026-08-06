@@ -2,10 +2,12 @@ package diagnostics
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/shopware/shopware-lsp/internal/indexer"
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,6 +17,81 @@ func TestShopwareDeclarationMigrationTablesCoverRectorConfiguration(t *testing.T
 	assert.Len(t, addedMethodParameterMigrations, 2)
 	assert.Len(t, parameterTypeMigrations, 10)
 	assert.Len(t, returnTypeMigrations, 5)
+}
+
+func TestEveryShopwareDeclarationMigrationMappingProducesDiagnostic(t *testing.T) {
+	phpIndex := migrationTestPHPIndex(t)
+	for _, rule := range interfaceAbstractClassMigrations {
+		assertShopwareDeclarationMigrationDiagnostic(
+			t,
+			phpIndex,
+			rule.since,
+			fmt.Sprintf("<?php function migrate(\\%s $value): void {}", rule.interfaceName),
+			interfaceAbstractClassCode,
+		)
+	}
+	for _, rule := range addedMethodParameterMigrations {
+		assertShopwareDeclarationMigrationDiagnostic(
+			t,
+			phpIndex,
+			rule.since,
+			fmt.Sprintf(
+				"<?php class Subject extends \\%s { public function %s(): void {} }",
+				rule.class,
+				rule.method,
+			),
+			addMethodParameterCode,
+		)
+	}
+	for _, rule := range parameterTypeMigrations {
+		assertShopwareDeclarationMigrationDiagnostic(
+			t,
+			phpIndex,
+			rule.since,
+			fmt.Sprintf(
+				"<?php class Subject extends \\%s { public function %s($value): void {} }",
+				rule.class,
+				rule.method,
+			),
+			nativeTypeMigrationCode,
+		)
+	}
+	for _, rule := range returnTypeMigrations {
+		assertShopwareDeclarationMigrationDiagnostic(
+			t,
+			phpIndex,
+			rule.since,
+			fmt.Sprintf(
+				"<?php class Subject extends \\%s { public function %s() {} }",
+				rule.class,
+				rule.method,
+			),
+			nativeTypeMigrationCode,
+		)
+	}
+}
+
+func assertShopwareDeclarationMigrationDiagnostic(
+	t *testing.T,
+	phpIndex *php.PHPIndex,
+	since shopwareMigrationSince,
+	source string,
+	expected lsp.DiagnosticID,
+) {
+	t.Helper()
+	document := lsp.NewTextDocument("file:///project/src/DeclarationMapping.php", source, 1)
+	require.Empty(t, document.ParseErrors)
+	problems, err := NewShopwareMigrationAnalyzer(
+		phpIndex,
+		resolvedShopwareMigrationVersion(6, since.minor, since.patch),
+	).Analyze(context.Background(), document)
+	require.NoError(t, err)
+	for _, problem := range problems {
+		if problem.ID == expected {
+			return
+		}
+	}
+	require.Failf(t, "missing declaration migration diagnostic", "%s did not produce %s", source, expected)
 }
 
 func TestShopwareDeclarationMigrationsAreVersioned(t *testing.T) {
@@ -96,6 +173,27 @@ class ElasticsearchDefinition extends AbstractElasticsearchDefinition
 	).Analyze(context.Background(), document)
 	require.NoError(t, err)
 	require.Len(t, problems, 6)
+}
+
+func TestInterfaceToAbstractClassMigrationCoversFreeFunctionParameters(t *testing.T) {
+	phpIndex := migrationTestPHPIndex(t)
+	document := lsp.NewTextDocument(
+		"file:///project/src/Function.php",
+		`<?php
+use Shopware\Core\Checkout\Cart\CartPersisterInterface;
+
+function persist(CartPersisterInterface $persister): void {}
+`,
+		1,
+	)
+	problems, err := NewShopwareMigrationAnalyzer(
+		phpIndex,
+		resolvedShopwareMigrationVersion(6, 5, 0),
+	).Analyze(context.Background(), document)
+	require.NoError(t, err)
+	require.Len(t, problems, 1)
+	assert.Equal(t, interfaceAbstractClassCode, problems[0].ID)
+	assert.Equal(t, "interface-parameter", problems[0].Payload.(ShopwareMigrationPayload).Kind)
 }
 
 func TestInterfaceToAbstractMigrationAvoidsReplacingExistingParent(t *testing.T) {

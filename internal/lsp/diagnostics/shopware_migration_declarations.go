@@ -89,6 +89,12 @@ func (p *ShopwareMigrationAnalyzer) declarationMigrationProblems(
 		result = append(result, p.addedMethodParameterProblems(class, root, snapshot)...)
 		result = append(result, p.nativeTypeProblems(class, root, snapshot, resolver)...)
 	}
+	for _, parameter := range phpquery.Nodes(root, phpsyntax.PhpParameter) {
+		if phpquery.ClassAt(parameter) != nil {
+			continue
+		}
+		result = append(result, p.interfaceTypeProblem(parameter, resolver, "interface-parameter")...)
+	}
 	return result
 }
 

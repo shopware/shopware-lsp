@@ -121,8 +121,12 @@ func (productStreamEnrichCriteriaFix) Present(
 	fixContext lsp.FixContext,
 ) (lsp.FixPresentation, bool, error) {
 	payload, err := lsp.DecodeBoundFixPayload[diagnostics.ShopwareMigrationPayload](fixContext)
+	title := "Shopware 6.8: Replace buildFilters() with enrichCriteria()"
+	if payload.Kind == "manual" {
+		title = "Shopware 6.8: Add buildFilters() migration TODO"
+	}
 	return lsp.FixPresentation{
-		Title:      "Shopware 6.8: Replace buildFilters() with enrichCriteria()",
+		Title:      title,
 		Kind:       protocol.CodeActionQuickFix,
 		Preferred:  true,
 		Resolution: lsp.FixEager,
@@ -137,25 +141,37 @@ func (productStreamEnrichCriteriaFix) Build(
 	if err != nil {
 		return rewrite.WorkspacePlan{}, err
 	}
-	if !payload.Safe || payload.Rule != "product-stream-enrich-criteria" ||
-		(payload.Kind != "assignment" && payload.Kind != "inline") {
+	if !payload.Safe || payload.Rule != "product-stream-enrich-criteria" {
 		return rewrite.WorkspacePlan{}, fmt.Errorf("ProductStream rewrite is no longer safe")
 	}
 	call, _, err := resolveMigrationPHPNode(fixContext, phpsyntax.PhpMemberCall)
 	if err != nil {
 		return rewrite.WorkspacePlan{}, err
 	}
-	if !strings.EqualFold(phpquery.CallMethodName(call), "buildFilters") ||
-		payload.Start >= payload.End || payload.End > uint32(len(fixContext.Document.Source)) ||
-		payload.Replacement == "" {
+	if !strings.EqualFold(phpquery.CallMethodName(call), "buildFilters") || payload.Replacement == "" {
 		return rewrite.WorkspacePlan{}, fmt.Errorf("ProductStream migration target changed")
 	}
 	builder := rewrite.NewBuilder(fixContext.Document.Source)
-	if err := builder.ReplaceRange(
-		cst.TextRange{Start: payload.Start, End: payload.End},
-		payload.Replacement,
-	); err != nil {
-		return rewrite.WorkspacePlan{}, err
+	switch payload.Kind {
+	case "assignment", "inline":
+		if payload.Start >= payload.End || payload.End > uint32(len(fixContext.Document.Source)) {
+			return rewrite.WorkspacePlan{}, fmt.Errorf("ProductStream migration target changed")
+		}
+		if err := builder.ReplaceRange(
+			cst.TextRange{Start: payload.Start, End: payload.End},
+			payload.Replacement,
+		); err != nil {
+			return rewrite.WorkspacePlan{}, err
+		}
+	case "manual":
+		if payload.Start > uint32(len(fixContext.Document.Source)) {
+			return rewrite.WorkspacePlan{}, fmt.Errorf("ProductStream migration target changed")
+		}
+		if err := builder.Insert(payload.Start, payload.Replacement); err != nil {
+			return rewrite.WorkspacePlan{}, err
+		}
+	default:
+		return rewrite.WorkspacePlan{}, fmt.Errorf("unknown ProductStream migration target %q", payload.Kind)
 	}
 	edits, err := builder.Finish()
 	if err != nil {

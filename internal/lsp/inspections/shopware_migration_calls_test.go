@@ -108,7 +108,7 @@ function migrate(ProductStreamBuilderInterface $builder, object $criteria, strin
 `,
 				1,
 			)
-			updated := applyOnlyMigrationFix(
+			updated := applyMigrationFixByID(
 				t,
 				NewShopwareMigration(phpIndex, migrationInspectionVersion(6, 8)),
 				document,
@@ -120,7 +120,7 @@ function migrate(ProductStreamBuilderInterface $builder, object $criteria, strin
 	}
 }
 
-func TestProductStreamManualMigrationHasNoQuickFix(t *testing.T) {
+func TestProductStreamManualMigrationAddsRectorTODO(t *testing.T) {
 	phpIndex := migrationInspectionPHPIndex(t)
 	require.NoError(t, phpIndex.Index(indexer.NewParsedFile(
 		"/project/vendor/ProductStreamBuilderInterface.php",
@@ -139,13 +139,29 @@ function migrate(ProductStreamBuilderInterface $builder, string $streamId, objec
 `,
 		1,
 	)
-	collector := &problemCollector{}
-	require.NoError(t, NewShopwareMigration(
+	inspection := NewShopwareMigration(
 		phpIndex,
 		migrationInspectionVersion(6, 8),
-	).Inspect(context.Background(), document, collector))
-	require.Len(t, collector.problems, 1)
-	require.Empty(t, collector.problems[0].Fixes)
+	)
+	updated := applyMigrationFixByID(
+		t,
+		inspection,
+		document,
+		productStreamEnrichCriteriaFixID,
+	)
+	require.Contains(t, updated, "    // TODO: Replace buildFilters() call with AbstractProductStreamBuilder::enrichCriteria() - please check manually\n    return $builder->buildFilters")
+
+	updatedDocument := lsp.NewTextDocument(document.URI, updated, document.Version+1)
+	collector := &problemCollector{}
+	require.NoError(t, inspection.Inspect(context.Background(), updatedDocument, collector))
+	var productStreamProblems []lsp.Problem
+	for _, problem := range collector.problems {
+		if problem.ID == "shopware.migration.product_stream.enrich_criteria" {
+			productStreamProblems = append(productStreamProblems, problem)
+		}
+	}
+	require.Len(t, productStreamProblems, 1)
+	require.Empty(t, productStreamProblems[0].Fixes)
 }
 
 func migrationInspectionVersion(major, minor int) shopware.ResolvedVersion {
