@@ -49,7 +49,7 @@ release-build-extension:
 	fi; \
 	(cd ./vscode-extension && npm install); \
 	(cd ./vscode-extension && jq '.version = "${VERSION}"' package.json > package.json.tmp && mv package.json.tmp package.json); \
-	(cd ./vscode-extension && npx @vscode/vsce package --target $$VSCODE_OS-$$RELEASE_ARCH --pre-release -o ../dist/shopware-lsp-${VERSION}-$$VSCODE_OS-$$RELEASE_ARCH.vsix); \
+	(cd ./vscode-extension && npx @vscode/vsce package --target $$VSCODE_OS-$$RELEASE_ARCH -o ../dist/shopware-lsp-${VERSION}-$$VSCODE_OS-$$RELEASE_ARCH.vsix); \
 	rm -rf ./vscode-extension/shopware-lsp; \
 	if [ -f "./dist/shopware-lsp-${VERSION}-$$VSCODE_OS-$$RELEASE_ARCH.vsix" ]; then \
 		gh release upload ${VERSION} ./dist/shopware-lsp-${VERSION}-$$VSCODE_OS-$$RELEASE_ARCH.vsix || echo "Failed to upload to GitHub release. Release may not exist yet."; \
