@@ -13,18 +13,23 @@ import (
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
 	phpsyntax "github.com/shopware/shopware-lsp/internal/parser/php/syntax"
+	phpresolver "github.com/shopware/shopware-lsp/internal/php/resolver"
 )
 
 var entityNameConstantPattern = regexp.MustCompile(`(?m)\bENTITY_NAME\s*=\s*['"]([^'"]+)['"]`)
 
 type Definition struct {
-	Name       string
-	Class      string
-	File       string
-	Line       int
-	NameRange  cst.TextRange
-	ClassRange cst.TextRange
-	Fields     []Field
+	Name                string
+	Class               string
+	FullyQualifiedClass string
+	EntityClass         string
+	CollectionClass     string
+	File                string
+	Line                int
+	NameRange           cst.TextRange
+	ClassRange          cst.TextRange
+	Fields              []Field
+	VersionAware        bool
 }
 
 type Field struct {
@@ -32,6 +37,8 @@ type Field struct {
 	StorageName string
 	Type        string
 	Association bool
+	TargetClass string
+	Primary     bool
 	Line        int
 	Range       cst.TextRange
 }
@@ -76,7 +83,7 @@ func (idx *Index) Index(file *indexer.ParsedFile) error {
 	}
 	root := tree.Root
 	for _, class := range phpquery.Classes(root) {
-		definition, found := parseDefinition(class, file.Path, file.LineIndex())
+		definition, found := parseDefinition(class, root, file.Path, file.LineIndex())
 		if found {
 			write[file.Path][definition.Name] = definition
 		}
@@ -88,7 +95,7 @@ func (idx *Index) Index(file *indexer.ParsedFile) error {
 	return nil
 }
 
-func parseDefinition(class *phpsyntax.Node, file string, lines *cst.LineIndex) (Definition, bool) {
+func parseDefinition(class, root *phpsyntax.Node, file string, lines *cst.LineIndex) (Definition, bool) {
 	if class == nil || phpquery.IsAbstract(class) {
 		return Definition{}, false
 	}
@@ -112,7 +119,11 @@ func parseDefinition(class *phpsyntax.Node, file string, lines *cst.LineIndex) (
 	}
 	name := ""
 	nameRange := cst.TextRange{}
+	resolveClass := definitionClassResolver(root)
+	entityClass := ""
+	collectionClass := ""
 	var fields []Field
+	versionAware := false
 	for _, method := range phpquery.Methods(class) {
 		switch phpquery.MethodName(method) {
 		case "getEntityName":
@@ -122,7 +133,16 @@ func parseDefinition(class *phpsyntax.Node, file string, lines *cst.LineIndex) (
 				nameRange = phpquery.StringContentRange(stringsInMethod[0])
 			}
 		case "defineFields":
-			fields = parseFields(method, lines)
+			fields = parseFields(method, lines, resolveClass)
+			for _, field := range fields {
+				if field.Type == "VersionField" {
+					versionAware = true
+				}
+			}
+		case "getEntityClass":
+			entityClass = returnedClassName(method, resolveClass)
+		case "getCollectionClass":
+			collectionClass = returnedClassName(method, resolveClass)
 		}
 	}
 	if name == "" {
@@ -138,19 +158,33 @@ func parseDefinition(class *phpsyntax.Node, file string, lines *cst.LineIndex) (
 	if name == "" {
 		return Definition{}, false
 	}
+	fullyQualifiedClass := resolveClass(className)
+	if strings.HasSuffix(fullyQualifiedClass, "Definition") {
+		base := strings.TrimSuffix(fullyQualifiedClass, "Definition")
+		if entityClass == "" {
+			entityClass = base + "Entity"
+		}
+		if collectionClass == "" {
+			collectionClass = base + "Collection"
+		}
+	}
 	line, _ := lines.Position(class.RangeTrimmedTrivia().Start)
 	return Definition{
-		Name:       name,
-		Class:      className,
-		File:       file,
-		Line:       int(line) + 1,
-		NameRange:  nameRange,
-		ClassRange: class.RangeTrimmedTrivia(),
-		Fields:     fields,
+		Name:                name,
+		Class:               className,
+		FullyQualifiedClass: fullyQualifiedClass,
+		EntityClass:         entityClass,
+		CollectionClass:     collectionClass,
+		File:                file,
+		Line:                int(line) + 1,
+		NameRange:           nameRange,
+		ClassRange:          class.RangeTrimmedTrivia(),
+		Fields:              fields,
+		VersionAware:        versionAware,
 	}, true
 }
 
-func parseFields(method *phpsyntax.Node, lines *cst.LineIndex) []Field {
+func parseFields(method *phpsyntax.Node, lines *cst.LineIndex, resolveClass func(string) string) []Field {
 	var fields []Field
 	seen := make(map[string]struct{})
 	for _, creation := range phpquery.ObjectCreations(method) {
@@ -173,6 +207,15 @@ func parseFields(method *phpsyntax.Node, lines *cst.LineIndex) []Field {
 			nameNode = phpquery.StringArgument(creation, nameArgument)
 		}
 		name := phpquery.StringValue(nameNode)
+		storageName := phpquery.StringValue(phpquery.StringArgument(creation, 0))
+		if shortType == "VersionField" {
+			name = "versionId"
+			storageName = "version_id"
+		}
+		if shortType == "AutoIncrementField" {
+			name = "autoIncrement"
+			storageName = "auto_increment"
+		}
 		if name == "" {
 			continue
 		}
@@ -180,17 +223,69 @@ func parseFields(method *phpsyntax.Node, lines *cst.LineIndex) []Field {
 			continue
 		}
 		seen[name] = struct{}{}
-		line, _ := lines.Position(nameNode.RangeTrimmedTrivia().Start)
+		fieldRange := creation.RangeTrimmedTrivia()
+		if nameNode != nil {
+			fieldRange = phpquery.StringContentRange(nameNode)
+		}
+		line, _ := lines.Position(fieldRange.Start)
+		primary := shortType == "IdField" || shortType == "VersionField"
+		if item := phpquery.ArrayItemAt(creation); item != nil {
+			for _, flag := range phpquery.ObjectCreations(item, "PrimaryKey") {
+				if strings.HasSuffix(phpquery.ObjectClassName(flag), "PrimaryKey") {
+					primary = true
+				}
+			}
+		}
 		fields = append(fields, Field{
 			Name:        name,
-			StorageName: phpquery.StringValue(phpquery.StringArgument(creation, 0)),
+			StorageName: storageName,
 			Type:        shortType,
 			Association: association,
+			TargetClass: resolveClass(phpquery.ClassConstantName(creation)),
+			Primary:     primary,
 			Line:        int(line) + 1,
-			Range:       phpquery.StringContentRange(nameNode),
+			Range:       fieldRange,
 		})
 	}
 	return fields
+}
+
+func returnedClassName(method *phpsyntax.Node, resolve func(string) string) string {
+	for _, access := range phpquery.Nodes(method, phpsyntax.PhpScopedAccess, phpsyntax.PhpMemberAccess) {
+		if className := phpquery.ClassConstantName(access); className != "" {
+			return resolve(className)
+		}
+	}
+	return ""
+}
+
+func definitionClassResolver(root *phpsyntax.Node) func(string) string {
+	namespace := strings.Trim(phpquery.Namespace(root), `\`)
+	aliases := make(map[string]string)
+	for _, declaration := range phpquery.UseDeclarations(root) {
+		for _, imported := range phpresolver.ParseUseDeclaration(declaration.Text()) {
+			if imported.Kind == phpresolver.ClassImport {
+				aliases[strings.ToLower(imported.Alias)] = strings.Trim(imported.Target, `\`)
+			}
+		}
+	}
+	return func(name string) string {
+		name = strings.Trim(strings.TrimSpace(name), `\`)
+		if name == "" {
+			return ""
+		}
+		parts := strings.SplitN(name, `\`, 2)
+		if target, found := aliases[strings.ToLower(parts[0])]; found {
+			if len(parts) == 2 {
+				return target + `\` + parts[1]
+			}
+			return target
+		}
+		if namespace != "" {
+			return namespace + `\` + name
+		}
+		return name
+	}
 }
 
 func (idx *Index) Definitions() ([]Definition, error) {

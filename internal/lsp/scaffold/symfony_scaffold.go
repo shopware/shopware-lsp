@@ -19,6 +19,7 @@ import (
 	yamlparser "github.com/shopware/shopware-lsp/internal/parser/yaml"
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/php/project"
+	shopwaredal "github.com/shopware/shopware-lsp/internal/shopware/dal"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
@@ -35,18 +36,24 @@ type Provider struct {
 	root     string
 	phpIndex *php.PHPIndex
 	console  *console.Index
+	dal      *shopwaredal.Index
 }
 
 func NewProvider(
 	root string,
 	phpIndex *php.PHPIndex,
 	consoleIndex *console.Index,
+	dalIndexes ...*shopwaredal.Index,
 ) *Provider {
-	return &Provider{
+	provider := &Provider{
 		root:     filepath.Clean(root),
 		phpIndex: phpIndex,
 		console:  consoleIndex,
 	}
+	if len(dalIndexes) != 0 {
+		provider.dal = dalIndexes[0]
+	}
+	return provider
 }
 
 func (p *Provider) GetCommands(
@@ -55,6 +62,12 @@ func (p *Provider) GetCommands(
 	return map[string]lsp.CommandFunc{
 		CreateSymfonyScaffoldCommand:  p.create,
 		CreateShopwareScaffoldCommand: p.createShopware,
+		EntitySchemaBootstrapCommand:  p.entitySchemaBootstrap,
+		EntitySchemaSearchCommand:     p.entitySchemaSearch,
+		EntitySchemaLoadCommand:       p.entitySchemaLoad,
+		EntitySchemaPreviewCommand:    p.entitySchemaPreview,
+		EntitySchemaApplyCommand:      p.entitySchemaApply,
+		EntitySchemaReconcileCommand:  p.entitySchemaReconcile,
 	}
 }
 

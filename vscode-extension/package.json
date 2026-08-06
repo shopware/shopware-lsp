@@ -209,6 +209,7 @@
   "scripts": {
     "compile": "npm run check-types && node esbuild.js",
     "check-types": "tsc --noEmit",
+    "test:entity-designer": "npm run compile && node --test test/entityDesignerWebview.test.js",
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
@@ -219,15 +220,11 @@
     "vscode-languageclient": "^8.1.0"
   },
   "devDependencies": {
-    "@types/glob": "^7.2.0",
-    "@types/mocha": "^10.0.1",
     "@types/node": "^16.18.34",
     "@types/vscode": "^1.96.0",
     "@vscode/test-electron": "^2.3.8",
     "esbuild": "^0.28.1",
-    "glob": "^7.2.3",
-    "minimatch": "^3.1.4",
-    "mocha": "^10.2.0",
+    "jsdom": "^26.1.0",
     "typescript": "^5.1.3"
   }
 }

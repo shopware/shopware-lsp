@@ -734,35 +734,6 @@ func normalizeTemplateReference(template string) string {
 	)
 }
 
-func twigTemplateReferenceKind(
-	literal *twigsyntax.Node,
-) TemplateReferenceKind {
-	if tag := twigquery.TagAt(literal); tag != nil {
-		switch twigquery.TagName(tag) {
-		case "extends", "sw_extends":
-			return TemplateExtendsReference
-		case "include", "sw_include":
-			return TemplateIncludeReference
-		case "embed":
-			return TemplateEmbedReference
-		case "use":
-			return TemplateUseReference
-		case "from", "import":
-			return TemplateImportReference
-		case "form_theme":
-			return TemplateFormThemeReference
-		}
-	}
-	switch twigquery.FunctionName(twigquery.FunctionCallAt(literal)) {
-	case "source":
-		return TemplateSourceReference
-	case "block":
-		return TemplateBlockReference
-	default:
-		return TemplateIncludeReference
-	}
-}
-
 func phpTemplateCallReference(literal *phpsyntax.Node) bool {
 	call := phpquery.CallAt(literal)
 	if call == nil ||

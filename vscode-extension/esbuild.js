@@ -4,7 +4,7 @@ const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
 
 async function main() {
-  const ctx = await esbuild.context({
+  const extensionContext = await esbuild.context({
     entryPoints: ['src/extension.ts'],
     bundle: true,
     format: 'cjs',
@@ -20,11 +20,23 @@ async function main() {
       esbuildProblemMatcherPlugin
     ]
   });
+  const webviewContext = await esbuild.context({
+    entryPoints: ['src/entityDesignerWebview.ts'],
+    bundle: true,
+    format: 'iife',
+    minify: production,
+    sourcemap: !production,
+    sourcesContent: false,
+    platform: 'browser',
+    outfile: 'dist/entityDesignerWebview.js',
+    logLevel: 'warning',
+    plugins: [esbuildProblemMatcherPlugin]
+  });
   if (watch) {
-    await ctx.watch();
+    await Promise.all([extensionContext.watch(), webviewContext.watch()]);
   } else {
-    await ctx.rebuild();
-    await ctx.dispose();
+    await Promise.all([extensionContext.rebuild(), webviewContext.rebuild()]);
+    await Promise.all([extensionContext.dispose(), webviewContext.dispose()]);
   }
 }
 

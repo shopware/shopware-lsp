@@ -27,6 +27,7 @@ class ProductDefinition extends EntityDefinition
     {
         return new FieldCollection([
             new IdField('id', 'id'),
+            new VersionField(),
             new FkField('manufacturer_id', 'manufacturerId', ManufacturerDefinition::class),
             new ManyToOneAssociationField('manufacturer', 'manufacturer_id', ManufacturerDefinition::class),
         ]);
@@ -38,11 +39,16 @@ class ProductDefinition extends EntityDefinition
 	require.NoError(t, err)
 	require.Len(t, definitions, 1)
 	require.Equal(t, "ProductDefinition", definitions[0].Class)
-	require.Len(t, definitions[0].Fields, 3)
-	require.Equal(t, "manufacturerId", definitions[0].Fields[1].Name)
-	require.Equal(t, "manufacturer_id", definitions[0].Fields[1].StorageName)
-	require.Equal(t, "manufacturer", definitions[0].Fields[2].Name)
-	require.True(t, definitions[0].Fields[2].Association)
+	require.True(t, definitions[0].VersionAware)
+	require.Len(t, definitions[0].Fields, 4)
+	require.True(t, definitions[0].Fields[0].Primary)
+	require.Equal(t, "versionId", definitions[0].Fields[1].Name)
+	require.Equal(t, "version_id", definitions[0].Fields[1].StorageName)
+	require.True(t, definitions[0].Fields[1].Primary)
+	require.Equal(t, "manufacturerId", definitions[0].Fields[2].Name)
+	require.Equal(t, "manufacturer_id", definitions[0].Fields[2].StorageName)
+	require.Equal(t, "manufacturer", definitions[0].Fields[3].Name)
+	require.True(t, definitions[0].Fields[3].Association)
 	fields, err := idx.FieldDefinitions("manufacturer", true)
 	require.NoError(t, err)
 	require.Len(t, fields, 1)

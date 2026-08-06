@@ -855,6 +855,7 @@ func registerFeatures(server *lsp.Server, root string, services workspaceService
 		root,
 		services.php,
 		services.console,
+		services.dal,
 	))
 }
 

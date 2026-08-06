@@ -246,6 +246,40 @@ socket through `-listen`.
   collisions and workspace escapes are rejected, and the editor applies each
   file as an atomic workspace edit
 
+### Shopware DAL Entity Designer
+
+- `Shopware: New File…` → `DAL Entity Definition` opens a visual designer for
+  new and indexed plugin entities, ordered fields, relations, and indexes
+- One preview drives the definition, entity, collection, service registration,
+  Shopware migration, and a full-plugin schema snapshot committed below
+  `src/Resources/shopware-lsp/schema/`
+- Existing definitions are imported through the native PHP CST. Unknown field
+  expressions are locked and preserved; custom definition/entity members are
+  retained, and customized managed accessors stop the rewrite safely
+- The field model covers scalar, JSON/list/object/blob, timestamps,
+  auto-increment and version fields, primary flags, reference versions, and
+  owning or inverse to-one/to-many associations. Version-aware relations emit
+  composite foreign keys and indexes automatically
+- A selected-field inspector exposes type-specific limits, integer ranges,
+  search ranking, relation delete behavior, mapping columns, and backfill SQL.
+  Relation and index columns use indexed choices, and validation is attached to
+  the affected field instead of only appearing in the file preview
+- Required columns use an explicit existing-row backfill before becoming
+  `NOT NULL`; version fields use Shopware's live-version ID. Primary-key and
+  named JSON-check changes are rebuilt explicitly during schema edits
+- Snapshot history is a content-addressed DAG. The designer handles baseline
+  import, explicit branch reconciliation, manual-drift adoption or migration,
+  and explicit column create-versus-rename decisions
+- Unapplied drafts survive webview reloads, unsaved PHP buffers participate in
+  import and rewrite analysis, and a changed snapshot head forces a reload
+  instead of silently rebasing a pending schema edit
+- Destructive changes require confirmation. All generated DDL—including drops
+  and narrowing changes—runs from `MigrationStep::update()`; the generator does
+  not create or use `updateDestructive()`
+- JSON snapshot diagnostics validate IDs, ancestry, migration hashes, branch
+  reconciliation, and PHP-definition drift, so the same checks run in the
+  editor and through the CLI `check` command
+
 ### PHP Semantic Intelligence
 - Native lossless PHP 8.x CST, including PHP 8.4 asymmetric visibility and
   property hooks, heredoc/nowdoc, attributes, enums, traits, closures, match,

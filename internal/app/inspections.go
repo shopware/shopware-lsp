@@ -203,6 +203,15 @@ func registerDiagnosticInspections(
 		"shopware.store.require-core",
 		"shopware.store.support-link",
 	}, diagnostics.NewShopwareStoreComposerAnalyzer())
+	registerProblemInspection(server, "shopware.entity_snapshot", jsonOnly, "shopware-lsp", []string{
+		"shopware.entity_snapshot.invalid",
+		"shopware.entity_snapshot.graph",
+		"shopware.entity_snapshot.parent_missing",
+		"shopware.entity_snapshot.reconcile",
+		"shopware.entity_snapshot.migration_missing",
+		"shopware.entity_snapshot.migration_changed",
+		"shopware.entity_snapshot.schema_drift",
+	}, diagnostics.NewEntitySnapshotAnalyzer())
 	server.RegisterInspection(inspections.NewAppScript(
 		services.appScripts,
 		services.extensions,
