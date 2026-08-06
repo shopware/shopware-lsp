@@ -38,6 +38,10 @@ func registerDiagnosticInspections(
 		"php.version",
 		"php.visibility",
 	}, phpFeatures)
+	server.RegisterInspection(inspections.NewShopwareMigration(
+		services.php,
+		services.shopwareVersion,
+	))
 	registerProblemInspection(server, "symfony.embedded_language", phpOnly, "symfony", []string{
 		"symfony.php.embedded_css.invalid",
 		"symfony.php.embedded_json.invalid",
