@@ -278,6 +278,66 @@ export function registerEditorCommands(
     }
   }));
 
+  context.subscriptions.push(vscode.commands.registerCommand('shopware.admin.overrideTwigBlock', async (textUri: string, blockName: string) => {
+    if (!clientState.client) {
+      vscode.window.showErrorMessage('Shopware LSP is not running');
+      return;
+    }
+
+    try {
+      const extensions: { Name: string; Type: number; Path: string }[] = await clientState.client.sendRequest('shopware/extension/all');
+      const plugins = (extensions || []).filter(extension => extension.Type === 0);
+      if (plugins.length === 0) {
+        vscode.window.showErrorMessage('No Shopware plugins found in this workspace');
+        return;
+      }
+
+      const selected = await vscode.window.showQuickPick(
+        plugins.map(plugin => ({
+          label: plugin.Name,
+          description: 'Shopware plugin',
+          detail: plugin.Path,
+          plugin,
+        })),
+        {
+          title: `Override Administration block ${blockName}`,
+          placeHolder: 'Select the plugin that should contain the component override',
+          matchOnDescription: true,
+          matchOnDetail: true,
+        }
+      );
+      if (!selected) {
+        return;
+      }
+
+      const result: {code: string; message: string} | {
+        uri: string;
+        line: number;
+        component: string;
+        scriptUri: string;
+      } = await clientState.client.sendRequest('shopware/admin/twig/override', {
+        textUri,
+        blockName,
+        extension: selected.plugin.Name,
+      });
+      if ('code' in result) {
+        vscode.window.showErrorMessage(`Failed to create Administration override: ${result.message}`);
+        return;
+      }
+
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(result.uri));
+      const editor = await vscode.window.showTextDocument(document);
+      const position = new vscode.Position(result.line, 0);
+      editor.selection = new vscode.Selection(position, position);
+      editor.revealRange(new vscode.Range(position, position));
+      vscode.window.showInformationMessage(
+        `Block ${blockName} is ready in the ${result.component} override for ${selected.plugin.Name}`
+      );
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to create Administration override: ${error}`);
+    }
+  }));
+
   context.subscriptions.push(vscode.commands.registerCommand('shopware.twig.showBlockDiff', async (textUri: string, blockName: string) => {
     if (!clientState.client) {
       vscode.window.showErrorMessage('Shopware LSP is not running');

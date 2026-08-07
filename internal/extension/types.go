@@ -2,7 +2,6 @@ package extension
 
 import (
 	"path/filepath"
-	"strings"
 )
 
 type ShopwareExtensionType int
@@ -26,6 +25,25 @@ type AppPermission struct {
 }
 
 func (e ShopwareExtension) GetStorefrontViewsPath() string {
-	path := strings.TrimSuffix(e.Path, string(filepath.Separator)+e.Name+".php")
-	return filepath.Join(path, "Resources", "views")
+	return filepath.Join(e.GetRootPath(), "Resources", "views")
+}
+
+// GetRootPath returns the source root that owns an extension's Resources
+// directory. Bundle paths point at the plugin class while App paths already
+// point at their root directory.
+func (e ShopwareExtension) GetRootPath() string {
+	if e.Type == ShopwareExtensionTypeBundle {
+		return filepath.Dir(e.Path)
+	}
+	return filepath.Clean(e.Path)
+}
+
+func (e ShopwareExtension) GetAdministrationSourcePath() string {
+	return filepath.Join(
+		e.GetRootPath(),
+		"Resources",
+		"app",
+		"administration",
+		"src",
+	)
 }

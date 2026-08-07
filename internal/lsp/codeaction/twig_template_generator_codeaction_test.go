@@ -38,6 +38,21 @@ func TestTwigTemplateGeneratorOffersContextualActions(t *testing.T) {
 	assert.Equal(t, generateTwigBlocksAction, actions[0].Command.Command)
 }
 
+func TestTwigTemplateGeneratorDefersAdministrationTemplatesToComponentOverride(
+	t *testing.T,
+) {
+	provider := newTwigTemplateGeneratorFixture(t)
+	source := `{% extends 'layout.html.twig' %}
+{% block sidebar %}custom{% endblock %}
+`
+	request := symfonyGeneratorCodeActionRequest(
+		"file:///project/src/Administration/Resources/app/administration/src/component/sw-card/sw-card.html.twig",
+		source,
+		"sidebar",
+	)
+	assert.Empty(t, provider.GetCodeActions(context.Background(), request))
+}
+
 func TestTwigTemplateGeneratorHidesExtendsWithoutAnotherTemplate(
 	t *testing.T,
 ) {

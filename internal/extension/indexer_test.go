@@ -1,6 +1,7 @@
 package extension
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/shopware/shopware-lsp/internal/indexer"
@@ -36,4 +37,13 @@ final class DemoPlugin extends Plugin {}
 	require.NotNil(t, indexed)
 	require.Equal(t, ShopwareExtensionTypeBundle, indexed.Type)
 	require.Equal(t, file.Path, indexed.Path)
+	require.Equal(t, filepath.Dir(file.Path), indexed.GetRootPath())
+	require.Equal(
+		t,
+		filepath.Join(
+			filepath.Dir(file.Path),
+			"Resources/app/administration/src",
+		),
+		indexed.GetAdministrationSourcePath(),
+	)
 }

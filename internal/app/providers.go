@@ -747,8 +747,14 @@ func registerFeatures(server *lsp.Server, root string, services workspaceService
 	server.RegisterActionProvider(codeaction.NewSnippetCodeActionProvider(services.snippets))
 	server.RegisterActionProvider(codeaction.NewSnippetCopyCodeActionProvider())
 	server.RegisterActionProvider(codeaction.NewTwigCodeActionProvider(root, services.twig))
+	var adminTwigOverride *codeaction.AdminTwigOverrideProvider
 	if server.DomainEnabled("administration") {
 		server.RegisterActionProvider(codeaction.NewAdminContextProvider())
+		adminTwigOverride = codeaction.NewAdminTwigOverrideProvider(
+			services.admin,
+			services.extensions,
+		)
+		server.RegisterActionProvider(adminTwigOverride)
 	}
 	server.RegisterActionProvider(
 		codeaction.NewEventListenerContextProvider(services.php),
@@ -824,6 +830,9 @@ func registerFeatures(server *lsp.Server, root string, services workspaceService
 	server.RegisterCommandProvider(twigFormFieldGenerator)
 	server.RegisterCommandProvider(twigTemplateGenerator)
 	server.RegisterCommandProvider(twigTranslationExtractor)
+	if adminTwigOverride != nil {
+		server.RegisterCommandProvider(adminTwigOverride)
+	}
 	server.RegisterCommandProvider(console.NewCatalogProvider(
 		services.console,
 		root,

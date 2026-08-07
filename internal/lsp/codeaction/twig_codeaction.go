@@ -31,6 +31,13 @@ func (p *TwigCodeActionProvider) GetCodeActionKinds() []protocol.CodeActionKind 
 }
 
 func (p *TwigCodeActionProvider) GetCodeActions(ctx context.Context, params *lsp.CodeActionRequest) []protocol.CodeAction {
+	if params == nil || params.CodeActionParams == nil {
+		return nil
+	}
+	if documentPath, err := uriutil.Path(params.TextDocument.URI); err == nil &&
+		isAdministrationTwigPath(documentPath) {
+		return nil
+	}
 	if params.Node == nil && len(params.DocumentContent) > 0 {
 		result := twigparser.Parse(string(params.DocumentContent))
 		lineIndex := twigsyntax.NewLineIndex(result.Tree.Source)

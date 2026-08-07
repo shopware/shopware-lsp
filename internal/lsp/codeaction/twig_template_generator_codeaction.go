@@ -52,6 +52,9 @@ func (p *TwigTemplateGeneratorProvider) GetCodeActions(
 		return nil
 	}
 	path := twigGeneratorPath(request.Document.URI)
+	if isAdministrationTwigPath(path) {
+		return nil
+	}
 	var current *twig.TwigFile
 	var err error
 	if request.Document.SyntaxTree != nil && request.Document.LineIndex != nil {
