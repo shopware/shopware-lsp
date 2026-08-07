@@ -80,7 +80,7 @@ changelog:
       - '^test:'
 release:
   github:
-    owner: shopwareLabs
+    owner: shopware
     name: shopware-lsp
 
 brews:
