@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/admin"
+	"github.com/shopware/shopware-lsp/internal/admin/twigmigration"
 	"github.com/shopware/shopware-lsp/internal/language"
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/diagnostics"
@@ -14,13 +15,15 @@ import (
 	twigquery "github.com/shopware/shopware-lsp/internal/parser/twig/query"
 	twigsyntax "github.com/shopware/shopware-lsp/internal/parser/twig/syntax"
 	"github.com/shopware/shopware-lsp/internal/rewrite"
+	"github.com/shopware/shopware-lsp/internal/shopware"
 )
 
 const (
-	addAdminPropFixID             lsp.FixID = "add-admin-component-prop"
-	bindAdminPropFixID            lsp.FixID = "bind-admin-component-prop"
-	replaceAdminComponentTagFixID lsp.FixID = "replace-admin-component-tag"
-	migrateAdminI18nTCFixID       lsp.FixID = "migrate-admin-vue-i18n-tc"
+	addAdminPropFixID              lsp.FixID = "add-admin-component-prop"
+	bindAdminPropFixID             lsp.FixID = "bind-admin-component-prop"
+	replaceAdminComponentTagFixID  lsp.FixID = "replace-admin-component-tag"
+	migrateAdminI18nTCFixID        lsp.FixID = "migrate-admin-vue-i18n-tc"
+	migrateAdminTwigComponentFixID lsp.FixID = "migrate-admin-twig-component"
 )
 
 type adminPropPayload struct {
@@ -37,8 +40,23 @@ type adminComponentTagPayload struct {
 	Replacement string `json:"replacement"`
 }
 
-func NewAdmin(index *admin.AdminComponentIndexer) lsp.Inspection {
-	return &boundInspection{
+func NewAdmin(
+	index *admin.AdminComponentIndexer,
+	versions ...shopware.ResolvedVersion,
+) lsp.Inspection {
+	version := shopware.ResolvedVersion{}
+	if len(versions) != 0 {
+		version = versions[0]
+	}
+	adminAnalyzer := diagnostics.NewAdminAnalyzer(index)
+	if version.AtLeast(6, 7, 0) {
+		names := make([]string, 0, len(twigmigration.Rules()))
+		for _, rule := range twigmigration.Rules() {
+			names = append(names, rule.SourceTag)
+		}
+		adminAnalyzer.SuppressComponentDiagnostics(names...)
+	}
+	inspection := &boundInspection{
 		definition: lsp.InspectionDefinition{
 			ID: "shopware.admin",
 			Languages: []language.ID{
@@ -83,16 +101,29 @@ func NewAdmin(index *admin.AdminComponentIndexer) lsp.Inspection {
 				{ID: "admin.vue-i18n.tc-deprecated", Source: "shopware-lsp", DefaultSeverity: protocol.DiagnosticSeverityWarning},
 			},
 		},
-		analyzer: diagnostics.NewAdminAnalyzer(index),
+		analyzer: adminAnalyzer,
 		analyzers: []ProblemAnalyzer{
+			diagnostics.NewAdminTwigMigrationAnalyzer(version),
 			diagnostics.NewAdminSlotMigrationAnalyzer(),
 			diagnostics.NewAdminI18nDeprecationAnalyzer(),
 		},
 		fixes: []lsp.QuickFix{
 			adminPropFix{index: index}, adminStaticPropFix{}, adminSlotMigrationFix{},
-			adminI18nTCFix{}, adminComponentTagFix{}, suggestionFix{},
+			adminI18nTCFix{}, adminComponentTagFix{},
+			adminTwigComponentMigrationFix{}, suggestionFix{},
 		},
 		bind: func(code lsp.DiagnosticID, payload map[string]any) []lsp.BoundFix {
+			if strings.HasPrefix(string(code), "admin.twig.migration.") {
+				safe, _ := payload["safe"].(bool)
+				value := diagnostics.AdminTwigMigrationPayload{
+					Rule: mapString(payload, "rule"), SourceTag: mapString(payload, "sourceTag"),
+					TargetTag: mapString(payload, "targetTag"), Safe: safe,
+				}
+				if !value.Safe || value.Rule == "" || value.SourceTag == "" || value.TargetTag == "" {
+					return nil
+				}
+				return []lsp.BoundFix{lsp.BindFix(migrateAdminTwigComponentFixID, value)}
+			}
 			if string(code) == "admin.component.not-found" {
 				return adminComponentTagBoundFixes(payload)
 			}
@@ -162,6 +193,13 @@ func NewAdmin(index *admin.AdminComponentIndexer) lsp.Inspection {
 			return []lsp.BoundFix{lsp.BindFix(addAdminPropFixID, value)}
 		},
 	}
+	for _, rule := range twigmigration.Rules() {
+		inspection.definition.Problems = append(inspection.definition.Problems, lsp.ProblemDefinition{
+			ID: lsp.DiagnosticID("admin.twig.migration." + rule.ID), Source: "shopware-lsp",
+			DefaultSeverity: protocol.DiagnosticSeverityWarning,
+		})
+	}
+	return inspection
 }
 
 type adminComponentTagFix struct{}

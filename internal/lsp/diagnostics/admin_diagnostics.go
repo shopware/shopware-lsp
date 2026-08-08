@@ -21,7 +21,8 @@ import (
 
 // AdminAnalyzer provides diagnostics for Shopware Admin Vue components
 type AdminAnalyzer struct {
-	adminIndexer *admin.AdminComponentIndexer
+	adminIndexer                   *admin.AdminComponentIndexer
+	suppressedComponentDiagnostics map[string]struct{}
 }
 
 type adminTwigDiagnosticDocument struct {
@@ -44,6 +45,22 @@ type adminTwigComponentResolution struct {
 // NewAdminAnalyzer creates a new admin diagnostics provider
 func NewAdminAnalyzer(adminIndexer *admin.AdminComponentIndexer) *AdminAnalyzer {
 	return &AdminAnalyzer{adminIndexer: adminIndexer}
+}
+
+// SuppressComponentDiagnostics lets a more specific, version-aware migration
+// diagnostic own selected component tags without producing duplicate generic
+// deprecation or not-found problems on the same source range.
+func (p *AdminAnalyzer) SuppressComponentDiagnostics(names ...string) *AdminAnalyzer {
+	if p == nil {
+		return p
+	}
+	if p.suppressedComponentDiagnostics == nil {
+		p.suppressedComponentDiagnostics = make(map[string]struct{}, len(names))
+	}
+	for _, name := range names {
+		p.suppressedComponentDiagnostics[name] = struct{}{}
+	}
+	return p
 }
 
 // Analyze returns diagnostics for admin component files.
@@ -2188,6 +2205,9 @@ func (p *AdminAnalyzer) checkDeprecatedComponent(
 	if rangeValue.Len() == 0 || strings.TrimSpace(component.Deprecated) == "" {
 		return
 	}
+	if _, suppressed := p.suppressedComponentDiagnostics[displayName]; suppressed {
+		return
+	}
 	*diagnostics = append(*diagnostics, lsp.Problem{
 		Range: rangeValue,
 		Message: fmt.Sprintf(
@@ -3120,6 +3140,9 @@ func (p *AdminAnalyzer) checkUnknownComponent(
 ) {
 	if p == nil || p.adminIndexer == nil ||
 		!admin.IsShopwareComponentTag(tagName) {
+		return
+	}
+	if _, suppressed := p.suppressedComponentDiagnostics[tagName]; suppressed {
 		return
 	}
 	components, err := p.adminIndexer.GetAllComponentsView()

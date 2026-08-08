@@ -189,7 +189,10 @@ func registerDiagnosticInspections(
 		"theme.icon.missing",
 	}, diagnostics.NewThemeAnalyzer(root, services.extensions))
 	server.RegisterInspection(inspections.NewTwigVersioning(services.twigVersioning))
-	server.RegisterInspection(inspections.NewAdmin(services.admin))
+	server.RegisterInspection(inspections.NewAdmin(
+		services.admin,
+		services.shopwareVersion,
+	))
 	server.RegisterInspection(inspections.NewDALEntity(services.dal))
 	server.RegisterInspection(inspections.NewShopwareCriteria())
 	registerProblemInspection(server, "shopware.decoration", phpOnly, "shopware-lsp", []string{
