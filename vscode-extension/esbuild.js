@@ -51,16 +51,34 @@ async function main() {
     logLevel: 'warning',
     plugins: [esbuildProblemMatcherPlugin]
   });
+  const mcpModelContext = await esbuild.context({
+    entryPoints: {
+      mcpServerModel: 'src/mcpServerModel.ts',
+      serverExecutable: 'src/serverExecutable.ts'
+    },
+    bundle: true,
+    format: 'cjs',
+    minify: production,
+    sourcemap: !production,
+    sourcesContent: false,
+    platform: 'node',
+    outdir: 'dist',
+    logLevel: 'warning',
+    plugins: [esbuildProblemMatcherPlugin]
+  });
   if (watch) {
     await Promise.all([
-      extensionContext.watch(), webviewContext.watch(), configurationModelContext.watch()
+      extensionContext.watch(), webviewContext.watch(), configurationModelContext.watch(),
+      mcpModelContext.watch()
     ]);
   } else {
     await Promise.all([
-      extensionContext.rebuild(), webviewContext.rebuild(), configurationModelContext.rebuild()
+      extensionContext.rebuild(), webviewContext.rebuild(), configurationModelContext.rebuild(),
+      mcpModelContext.rebuild()
     ]);
     await Promise.all([
-      extensionContext.dispose(), webviewContext.dispose(), configurationModelContext.dispose()
+      extensionContext.dispose(), webviewContext.dispose(), configurationModelContext.dispose(),
+      mcpModelContext.dispose()
     ]);
   }
 }

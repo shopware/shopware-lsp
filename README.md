@@ -82,6 +82,11 @@ a code action requires an exact title returned by `shopware_code_actions`, is
 restricted to workspace edit targets, writes the affected files, and returns a
 unified diff.
 
+The bundled VS Code extension registers this server automatically with VS
+Code's native MCP provider API for every enabled workspace folder; manual JSON
+configuration is only needed for other MCP clients. Set
+`shopwareLSP.mcp.enabled` to `false` to opt a workspace folder out.
+
 ## Features
 
 ### Symfony Service Support

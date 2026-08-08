@@ -34,7 +34,15 @@ func TestMCPServerAdvertisesAnalysisAndWriteTools(t *testing.T) {
 		"shopware_workspace_symbols",
 	} {
 		require.Contains(t, byName, name)
+		require.NotNil(t, byName[name].OutputSchema, "%s has no output schema", name)
 	}
+	require.Contains(t, outputSchemaProperties(t, byName["shopware_diagnostics"]), "diagnostics")
+	require.Contains(t, outputSchemaProperties(t, byName["shopware_code_actions"]), "actions")
+	require.Contains(t, outputSchemaProperties(t, byName["shopware_apply_code_action"]), "diff")
+	require.Contains(t, outputSchemaProperties(t, byName["shopware_hover"]), "hover")
+	require.Contains(t, outputSchemaProperties(t, byName["shopware_definition"]), "locations")
+	require.Contains(t, outputSchemaProperties(t, byName["shopware_references"]), "locations")
+	require.Contains(t, outputSchemaProperties(t, byName["shopware_workspace_symbols"]), "symbols")
 	require.True(t, byName["shopware_diagnostics"].Annotations.ReadOnlyHint)
 	require.False(t, byName["shopware_apply_code_action"].Annotations.ReadOnlyHint)
 	require.NotNil(t, byName["shopware_apply_code_action"].Annotations.DestructiveHint)
@@ -62,24 +70,18 @@ func TestMCPDiagnosticsAndCodeActionUseProductionLSP(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.False(t, diagnostics.IsError, toolResultText(diagnostics))
-	var diagnosticOutput struct {
-		Total       int `json:"total"`
-		Diagnostics []struct {
-			Code  any      `json:"code"`
-			Range mcpRange `json:"range"`
-		} `json:"diagnostics"`
-	}
-	decodeMCPStructuredContent(t, diagnostics, &diagnosticOutput)
-	require.GreaterOrEqual(t, diagnosticOutput.Total, 1)
+	var diagnosticResult diagnosticsOutput
+	decodeMCPStructuredContent(t, diagnostics, &diagnosticResult)
+	require.GreaterOrEqual(t, diagnosticResult.Total, 1)
 	var found bool
-	for _, diagnostic := range diagnosticOutput.Diagnostics {
+	for _, diagnostic := range diagnosticResult.Diagnostics {
 		if diagnostic.Code == "admin.vue-i18n.tc-deprecated" {
 			found = true
 			require.Equal(t, 1, diagnostic.Range.Start.Line)
 			require.Equal(t, 6, diagnostic.Range.Start.Column)
 		}
 	}
-	require.True(t, found, "expected admin.vue-i18n.tc-deprecated in %#v", diagnosticOutput)
+	require.True(t, found, "expected admin.vue-i18n.tc-deprecated in %#v", diagnosticResult)
 
 	actions, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name: "shopware_code_actions",
@@ -92,11 +94,9 @@ func TestMCPDiagnosticsAndCodeActionUseProductionLSP(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.False(t, actions.IsError, toolResultText(actions))
-	var actionOutput struct {
-		Actions []mcpCodeAction `json:"actions"`
-	}
-	decodeMCPStructuredContent(t, actions, &actionOutput)
-	require.Contains(t, actionTitles(actionOutput.Actions), "Replace deprecated $tc() with $t()")
+	var actionResult codeActionsOutput
+	decodeMCPStructuredContent(t, actions, &actionResult)
+	require.Contains(t, actionTitles(actionResult.Actions), "Replace deprecated $tc() with $t()")
 
 	applied, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name: "shopware_apply_code_action",
@@ -110,13 +110,10 @@ func TestMCPDiagnosticsAndCodeActionUseProductionLSP(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.False(t, applied.IsError, toolResultText(applied))
-	var applyOutput struct {
-		Applied bool   `json:"applied"`
-		Diff    string `json:"diff"`
-	}
-	decodeMCPStructuredContent(t, applied, &applyOutput)
-	require.True(t, applyOutput.Applied)
-	require.Contains(t, applyOutput.Diff, "+this.$t('translation.key');")
+	var applyResult applyCodeActionOutput
+	decodeMCPStructuredContent(t, applied, &applyResult)
+	require.True(t, applyResult.Applied)
+	require.Contains(t, applyResult.Diff, "+this.$t('translation.key');")
 	content, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.Equal(t, "this.$t('translation.key');\n", string(content))
@@ -180,6 +177,18 @@ func decodeMCPStructuredContent(t *testing.T, result *mcp.CallToolResult, target
 	content, err := json.Marshal(result.StructuredContent)
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(content, target), string(content))
+}
+
+func outputSchemaProperties(t *testing.T, tool *mcp.Tool) map[string]any {
+	t.Helper()
+	content, err := json.Marshal(tool.OutputSchema)
+	require.NoError(t, err)
+	var schema struct {
+		Properties map[string]any `json:"properties"`
+	}
+	require.NoError(t, json.Unmarshal(content, &schema), string(content))
+	require.NotEmpty(t, schema.Properties, string(content))
+	return schema.Properties
 }
 
 func toolResultText(result *mcp.CallToolResult) string {

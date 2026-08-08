@@ -64,6 +64,20 @@ Full intelligence for the Shopware Admin built with Vue.js:
 - **Diagnostics** — Warnings for missing required props, errors for invalid blocks or non-existent parent components
 - **Quick fixes** — Add missing props with type-appropriate default values in one click
 
+### AI and MCP
+
+On VS Code 1.101 or newer, the extension automatically contributes a Shopware
+MCP server for every open workspace folder. VS Code starts the bundled
+`shopware-lsp` executable lazily when an AI agent uses a Shopware tool, so no
+manual `mcp.json` setup is required. Diagnostics, code actions, hover,
+definitions, references, and workspace-symbol search use the same production
+analysis as the editor.
+
+Set `shopwareLSP.mcp.enabled` to `false` for a workspace folder to hide that
+server from VS Code AI clients. A custom `shopwareLSP.serverPath` and the
+`shopwareLSP.memoryLimitMiB` setting apply to both the editor server and the
+MCP process.
+
 ### Diagnostics Overview
 
 | What's checked | Severity | Where |
@@ -79,8 +93,8 @@ Full intelligence for the Shopware Admin built with Vue.js:
 ## Resource usage
 
 `shopwareLSP.memoryLimitMiB` applies a soft memory limit to the language-server
-process. Its default value of `0` uses the server's balanced GC policy. For
-large Shopware workspaces, `512` is an opt-in low-memory starting point when
-lower peak memory matters more than indexing CPU. Very low limits can cause
-frequent garbage collection and substantially increase CPU use. Restart the
-language server after changing this setting.
+and MCP processes. Its default value of `0` uses the server's balanced GC
+policy. For large Shopware workspaces, `512` is an opt-in low-memory starting
+point when lower peak memory matters more than indexing CPU. Very low limits
+can cause frequent garbage collection and substantially increase CPU use.
+Restart the language server after changing this setting.

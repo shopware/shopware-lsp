@@ -10,7 +10,7 @@
     "theme": "light"
   },
   "engines": {
-    "vscode": "^1.96.0"
+    "vscode": "^1.101.0"
   },
   "categories": [
     "Programming Languages",
@@ -25,7 +25,7 @@
     "onLanguage:php",
     "onLanguage:xml",
     "onLanguage:twig",
-	"onLanguage:vue",
+    "onLanguage:vue",
     "onLanguage:yaml",
     "onLanguage:dotenv",
     "onLanguage:dockerfile",
@@ -65,16 +65,26 @@
           "scope": "machine-overridable",
           "description": "Optional soft Go memory limit for the language-server process in MiB. Zero uses the server's balanced GC policy. A value of 512 is a low-memory starting point for large Shopware workspaces; lower values may increase indexing CPU substantially."
         },
+        "shopwareLSP.mcp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Expose the Shopware MCP tools to VS Code AI clients for this workspace folder. VS Code starts a separate language-server process lazily when an MCP tool is used."
+        },
         "shopwareLSP.phpExtensions": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "scope": "resource",
           "description": "Additional PHP runtime extensions whose generated stubs should be loaded (for example redis or imagick). Composer ext-* requirements are detected automatically."
         },
         "shopwareLSP.disabledPhpExtensions": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "scope": "resource",
           "description": "PHP runtime extensions known to be unavailable. Their stubs are excluded and uses receive a targeted diagnostic."
@@ -90,7 +100,9 @@
           "type": "object",
           "default": {},
           "scope": "resource",
-          "additionalProperties": { "type": "boolean" },
+          "additionalProperties": {
+            "type": "boolean"
+          },
           "description": "Local overrides for LSP capabilities such as completion, hover, codeLens, and semanticTokens. Use 'Shopware: Configure Language Server…' for a searchable editor."
         },
         "shopwareLSP.indexing.enabled": {
@@ -103,7 +115,9 @@
           "type": "object",
           "default": {},
           "scope": "resource",
-          "additionalProperties": { "type": "boolean" },
+          "additionalProperties": {
+            "type": "boolean"
+          },
           "description": "Local domain overrides, for example symfony.doctrine, administration, twig, or scss. Changing domains requires a restart."
         },
         "shopwareLSP.diagnostics.enabled": {
@@ -116,7 +130,9 @@
           "type": "object",
           "default": {},
           "scope": "resource",
-          "additionalProperties": { "type": "boolean" },
+          "additionalProperties": {
+            "type": "boolean"
+          },
           "description": "Enable or disable complete diagnostic inspections by stable inspection ID."
         },
         "shopwareLSP.diagnostics.rules": {
@@ -124,12 +140,24 @@
           "default": {},
           "scope": "resource",
           "additionalProperties": {
-            "enum": ["off", "hint", "information", "warning", "error"]
+            "enum": [
+              "off",
+              "hint",
+              "information",
+              "warning",
+              "error"
+            ]
           },
           "description": "Disable or override severity for individual diagnostics by stable rule ID."
         }
       }
     },
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "shopwareLSP.mcp",
+        "label": "Shopware Language Server"
+      }
+    ],
     "commands": [
       {
         "command": "shopwareLSP.restart",
@@ -263,6 +291,7 @@
     "check-types": "tsc --noEmit",
     "test:entity-designer": "npm run compile && node --test test/entityDesignerWebview.test.js",
     "test:configuration": "npm run compile && node --test test/configuration.test.js",
+    "test:mcp": "npm run compile && node --test test/mcpServer.test.js",
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
@@ -274,7 +303,7 @@
   },
   "devDependencies": {
     "@types/node": "^16.18.34",
-    "@types/vscode": "^1.96.0",
+    "@types/vscode": "^1.101.0",
     "@vscode/test-electron": "^2.3.8",
     "esbuild": "^0.28.1",
     "jsdom": "^26.1.0",

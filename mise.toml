@@ -51,6 +51,7 @@ dir = "vscode-extension"
 run = [
   "npm run test:entity-designer",
   "npm run test:configuration",
+  "npm run test:mcp",
 ]
 
 [tasks.release]

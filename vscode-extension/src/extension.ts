@@ -1,5 +1,3 @@
-import * as path from 'path';
-import * as fs from 'fs';
 import * as vscode from 'vscode';
 import {
   LanguageClient,
@@ -15,6 +13,9 @@ import {registerSymfonyCatalogCommands} from './commands/symfonyCatalogCommands'
 import {registerSymfonyGenerationCommands} from './commands/symfonyGenerationCommands';
 import {registerTwigCatalogCommands} from './commands/twigCatalogCommands';
 import {registerTwigVariableCommands} from './twigVariables';
+import {registerMcpServerDefinitionProvider} from './mcpServer';
+import {normalizeMemoryLimitMiB} from './mcpServerModel';
+import {resolveServerExecutable} from './serverExecutable';
 import {
   attachConfigurationClient,
   readEditorConfiguration,
@@ -43,45 +44,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     outputChannel.clear();
 
     // Get the server path from settings or use default
-    let serverPath = vscode.workspace.getConfiguration('shopwareLSP').get<string>('serverPath', '');
-    
-    // If no custom path is provided, use the bundled server
-    if (!serverPath) {
-      const binaryName = process.platform === 'win32'
-        ? 'shopware-lsp.exe'
-        : 'shopware-lsp';
-      // For development, we'll look for the server in the parent directory
-      const workspaceRoot = getOuterMostWorkspaceFolder()?.uri.fsPath || '';
-      const possiblePaths = [
-        // When installed as extension
-        context.asAbsolutePath(path.join('.', binaryName)),
-        // When installed as extension in the parent directory
-        context.asAbsolutePath(path.join('..', binaryName)),
-        // When running from source
-        path.join(workspaceRoot, '..', binaryName),
-        // When in the same directory
-        path.join(workspaceRoot, binaryName)
-      ];
-
-      for (const p of possiblePaths) {
-        if (fs.existsSync(p)) {
-          serverPath = p;
-          break;
-        }
-      }
-    }
+    const workspaceFolder = getOuterMostWorkspaceFolder();
+    const configuration = vscode.workspace.getConfiguration(
+      'shopwareLSP', workspaceFolder?.uri,
+    );
+    const serverPath = resolveServerExecutable({
+      configuredPath: configuration.get<string>('serverPath', ''),
+      extensionPath: context.extensionPath,
+      workspaceRoot: workspaceFolder?.uri.fsPath,
+    });
 
     if (!serverPath) {
       vscode.window.showErrorMessage('Could not find Symfony Service LSP server. Please set the path in settings.');
       return;
     }
 
-    const memoryLimitMiB = vscode.workspace
-      .getConfiguration('shopwareLSP')
-      .get<number>('memoryLimitMiB', 0);
-    const memoryLimit = Number.isFinite(memoryLimitMiB)
-      ? Math.max(0, Math.floor(memoryLimitMiB))
-      : 0;
+    const memoryLimit = normalizeMemoryLimitMiB(
+      configuration.get<number>('memoryLimitMiB', 0),
+    );
 
     // Define server options
     const serverOptions: ServerOptions = {
@@ -173,6 +153,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       outputChannel.appendLine(`Error registering notification handler: ${err}`);
     });
   }
+
+  registerMcpServerDefinitionProvider(context, outputChannel);
 
   // Start the client on activation and await it
   await startClient();

@@ -77,17 +77,17 @@ func newMCPServer(runtime *mcpRuntime) *mcp.Server {
 		ReadOnlyHint: true, IdempotentHint: true,
 		OpenWorldHint: boolPointer(false),
 	}
-	mcp.AddTool[diagnosticsInput, any](server, &mcp.Tool{
+	mcp.AddTool[diagnosticsInput, diagnosticsOutput](server, &mcp.Tool{
 		Name: "shopware_diagnostics", Title: "Shopware diagnostics",
 		Description: "Run the same configured Shopware LSP diagnostics used by the editor for one workspace file or directory.",
 		Annotations: readOnly,
 	}, runtime.diagnostics)
-	mcp.AddTool[codeActionsInput, any](server, &mcp.Tool{
+	mcp.AddTool[codeActionsInput, codeActionsOutput](server, &mcp.Tool{
 		Name: "shopware_code_actions", Title: "Shopware code actions",
 		Description: "List available quick fixes and refactorings at a one-based file position without changing files.",
 		Annotations: readOnly,
 	}, runtime.codeActions)
-	mcp.AddTool[applyCodeActionInput, any](server, &mcp.Tool{
+	mcp.AddTool[applyCodeActionInput, applyCodeActionOutput](server, &mcp.Tool{
 		Name: "shopware_apply_code_action", Title: "Apply Shopware code action",
 		Description: "Resolve and apply one exact code-action title at a one-based file position. This writes workspace files and returns the resulting diff.",
 		Annotations: &mcp.ToolAnnotations{
@@ -95,22 +95,22 @@ func newMCPServer(runtime *mcpRuntime) *mcp.Server {
 			DestructiveHint: boolPointer(true), OpenWorldHint: boolPointer(false),
 		},
 	}, runtime.applyCodeAction)
-	mcp.AddTool[positionInput, any](server, &mcp.Tool{
+	mcp.AddTool[positionInput, hoverOutput](server, &mcp.Tool{
 		Name: "shopware_hover", Title: "Shopware hover",
 		Description: "Return Shopware LSP hover information at a one-based file position.",
 		Annotations: readOnly,
 	}, runtime.hover)
-	mcp.AddTool[positionInput, any](server, &mcp.Tool{
+	mcp.AddTool[positionInput, locationsOutput](server, &mcp.Tool{
 		Name: "shopware_definition", Title: "Shopware definitions",
 		Description: "Find definitions for the symbol at a one-based file position.",
 		Annotations: readOnly,
 	}, runtime.definition)
-	mcp.AddTool[positionInput, any](server, &mcp.Tool{
+	mcp.AddTool[positionInput, locationsOutput](server, &mcp.Tool{
 		Name: "shopware_references", Title: "Shopware references",
 		Description: "Find references, including the declaration, for the symbol at a one-based file position.",
 		Annotations: readOnly,
 	}, runtime.references)
-	mcp.AddTool[workspaceSymbolsInput, any](server, &mcp.Tool{
+	mcp.AddTool[workspaceSymbolsInput, workspaceSymbolsOutput](server, &mcp.Tool{
 		Name: "shopware_workspace_symbols", Title: "Shopware workspace symbols",
 		Description: "Search indexed Shopware workspace symbols such as PHP classes and members.",
 		Annotations: readOnly,
@@ -120,10 +120,12 @@ func newMCPServer(runtime *mcpRuntime) *mcp.Server {
 
 func boolPointer(value bool) *bool { return &value }
 
-func (runtime *mcpRuntime) withSession(
+func withMCPSession[T any](
 	ctx context.Context,
-	operation func(*cliSession) (any, error),
-) (any, error) {
+	runtime *mcpRuntime,
+	operation func(*cliSession) (T, error),
+) (T, error) {
+	var zero T
 	runtime.operationMu.Lock()
 	defer runtime.operationMu.Unlock()
 	if runtime.session == nil {
@@ -135,12 +137,12 @@ func (runtime *mcpRuntime) withSession(
 			true,
 		)
 		if err != nil {
-			return nil, err
+			return zero, err
 		}
 		result, err := session.waitForIndex(ctx)
 		if err != nil {
 			_ = session.Close()
-			return nil, err
+			return zero, err
 		}
 		session.initialIndex = result
 		runtime.session = session
@@ -215,7 +217,7 @@ type mcpDiagnostic struct {
 	Path     string                 `json:"path"`
 	Range    mcpRange               `json:"range"`
 	Severity string                 `json:"severity"`
-	Code     any                    `json:"code,omitempty"`
+	Code     string                 `json:"code,omitempty"`
 	Source   string                 `json:"source,omitempty"`
 	Message  string                 `json:"message"`
 	Tags     []string               `json:"tags,omitempty"`
@@ -232,41 +234,95 @@ type mcpCodeAction struct {
 	Command        string `json:"command,omitempty"`
 }
 
+type diagnosticsOutput struct {
+	Root         string          `json:"root"`
+	Path         string          `json:"path"`
+	FilesChecked int             `json:"filesChecked"`
+	Severity     string          `json:"severity"`
+	Total        int             `json:"total"`
+	Diagnostics  []mcpDiagnostic `json:"diagnostics"`
+	Truncated    bool            `json:"truncated"`
+}
+
+type codeActionsOutput struct {
+	Path     string          `json:"path"`
+	Position mcpPosition     `json:"position"`
+	Actions  []mcpCodeAction `json:"actions"`
+}
+
+type applyCodeActionOutput struct {
+	Applied bool     `json:"applied"`
+	Title   string   `json:"title"`
+	Files   []string `json:"files"`
+	Diff    string   `json:"diff"`
+}
+
+type mcpHover struct {
+	Kind  string    `json:"kind"`
+	Value string    `json:"value"`
+	Range *mcpRange `json:"range,omitempty"`
+}
+
+type hoverOutput struct {
+	Path  string    `json:"path"`
+	Hover *mcpHover `json:"hover"`
+}
+
+type locationsOutput struct {
+	Path      string        `json:"path"`
+	Position  mcpPosition   `json:"position"`
+	Locations []mcpLocation `json:"locations"`
+}
+
+type mcpWorkspaceSymbol struct {
+	Name      string      `json:"name"`
+	Kind      string      `json:"kind"`
+	Container string      `json:"container"`
+	Location  mcpLocation `json:"location"`
+}
+
+type workspaceSymbolsOutput struct {
+	Query     string               `json:"query"`
+	Total     int                  `json:"total"`
+	Symbols   []mcpWorkspaceSymbol `json:"symbols"`
+	Truncated bool                 `json:"truncated"`
+}
+
 func (runtime *mcpRuntime) diagnostics(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	input diagnosticsInput,
-) (*mcp.CallToolResult, any, error) {
+) (*mcp.CallToolResult, diagnosticsOutput, error) {
 	target, err := runtime.resolvePath(input.Path)
 	if err != nil {
-		return nil, nil, err
+		return nil, diagnosticsOutput{}, err
 	}
 	limit, err := boundedLimit(
 		input.MaxResults, defaultMCPDiagnosticLimit, maximumMCPDiagnosticLimit,
 		"maxResults",
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, diagnosticsOutput{}, err
 	}
-	return runtimeToolResult(runtime.withSession(ctx, func(session *cliSession) (any, error) {
+	output, err := withMCPSession(ctx, runtime, func(session *cliSession) (diagnosticsOutput, error) {
 		severity := strings.TrimSpace(input.Severity)
 		if severity == "" {
 			severity = string(session.configuration.Effective.Check.Severity)
 		}
 		cutoff, err := diagnosticSeverity(severity)
 		if err != nil {
-			return nil, err
+			return diagnosticsOutput{}, err
 		}
 		paths, err := resolveCheckFiles(ctx, []string{target})
 		if err != nil {
-			return nil, err
+			return diagnosticsOutput{}, err
 		}
 		findings := make([]mcpDiagnostic, 0)
 		total := 0
 		for _, path := range paths {
 			diagnostics, err := session.checkDocument(ctx, path, cutoff)
 			if err != nil {
-				return nil, err
+				return diagnosticsOutput{}, err
 			}
 			for _, finding := range diagnostics {
 				total++
@@ -275,32 +331,29 @@ func (runtime *mcpRuntime) diagnostics(
 				}
 			}
 		}
-		return map[string]any{
-			"root":         runtime.root,
-			"path":         runtime.outputPath(target),
-			"filesChecked": len(paths),
-			"severity":     strings.ToLower(severity),
-			"total":        total,
-			"diagnostics":  findings,
-			"truncated":    total > len(findings),
+		return diagnosticsOutput{
+			Root: runtime.root, Path: runtime.outputPath(target),
+			FilesChecked: len(paths), Severity: strings.ToLower(severity),
+			Total: total, Diagnostics: findings, Truncated: total > len(findings),
 		}, nil
-	}))
+	})
+	return nil, output, err
 }
 
 func (runtime *mcpRuntime) codeActions(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	input codeActionsInput,
-) (*mcp.CallToolResult, any, error) {
+) (*mcp.CallToolResult, codeActionsOutput, error) {
 	path, position, err := runtime.position(input.Path, input.Line, input.Column)
 	if err != nil {
-		return nil, nil, err
+		return nil, codeActionsOutput{}, err
 	}
-	return runtimeToolResult(runtime.withSession(ctx, func(session *cliSession) (any, error) {
-		return runtime.withCodeActions(ctx, session, path, position, input.Kind, func(
+	output, err := withMCPSession(ctx, runtime, func(session *cliSession) (codeActionsOutput, error) {
+		return withMCPCodeActions(ctx, session, path, position, input.Kind, func(
 			_ *cliDocument,
 			actions []protocol.CodeAction,
-		) (any, error) {
+		) (codeActionsOutput, error) {
 			result := make([]mcpCodeAction, 0, len(actions))
 			for _, action := range actions {
 				entry := mcpCodeAction{
@@ -316,32 +369,32 @@ func (runtime *mcpRuntime) codeActions(
 				}
 				result = append(result, entry)
 			}
-			return map[string]any{
-				"path":     runtime.outputPath(path),
-				"position": toMCPPosition(position),
-				"actions":  result,
+			return codeActionsOutput{
+				Path:     runtime.outputPath(path),
+				Position: toMCPPosition(position), Actions: result,
 			}, nil
 		})
-	}))
+	})
+	return nil, output, err
 }
 
 func (runtime *mcpRuntime) applyCodeAction(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	input applyCodeActionInput,
-) (*mcp.CallToolResult, any, error) {
+) (*mcp.CallToolResult, applyCodeActionOutput, error) {
 	if strings.TrimSpace(input.Title) == "" {
-		return nil, nil, errors.New("title is required")
+		return nil, applyCodeActionOutput{}, errors.New("title is required")
 	}
 	path, position, err := runtime.position(input.Path, input.Line, input.Column)
 	if err != nil {
-		return nil, nil, err
+		return nil, applyCodeActionOutput{}, err
 	}
-	return runtimeToolResult(runtime.withSession(ctx, func(session *cliSession) (any, error) {
-		return runtime.withCodeActions(ctx, session, path, position, input.Kind, func(
+	output, err := withMCPSession(ctx, runtime, func(session *cliSession) (applyCodeActionOutput, error) {
+		return withMCPCodeActions(ctx, session, path, position, input.Kind, func(
 			_ *cliDocument,
 			actions []protocol.CodeAction,
-		) (any, error) {
+		) (applyCodeActionOutput, error) {
 			matches := make([]protocol.CodeAction, 0, 1)
 			for _, action := range actions {
 				if action.Title == input.Title {
@@ -349,82 +402,83 @@ func (runtime *mcpRuntime) applyCodeAction(
 				}
 			}
 			if len(matches) == 0 {
-				return nil, fmt.Errorf("no code action with exact title %q", input.Title)
+				return applyCodeActionOutput{}, fmt.Errorf("no code action with exact title %q", input.Title)
 			}
 			if len(matches) > 1 {
-				return nil, fmt.Errorf("code action title %q is ambiguous; also provide kind", input.Title)
+				return applyCodeActionOutput{}, fmt.Errorf("code action title %q is ambiguous; also provide kind", input.Title)
 			}
 			action := matches[0]
 			if action.Disabled != nil {
-				return nil, fmt.Errorf("code action %q is disabled: %s", action.Title, action.Disabled.Reason)
+				return applyCodeActionOutput{}, fmt.Errorf("code action %q is disabled: %s", action.Title, action.Disabled.Reason)
 			}
 			if action.Edit == nil && action.Data != nil {
 				var resolved protocol.CodeAction
 				if err := session.call(ctx, "codeAction/resolve", action, &resolved); err != nil {
-					return nil, err
+					return applyCodeActionOutput{}, err
 				}
 				action = resolved
 				if action.Disabled != nil {
-					return nil, fmt.Errorf("code action %q is disabled: %s", action.Title, action.Disabled.Reason)
+					return applyCodeActionOutput{}, fmt.Errorf("code action %q is disabled: %s", action.Title, action.Disabled.Reason)
 				}
 			}
 			if action.Edit == nil {
 				if action.Command != nil {
-					return nil, fmt.Errorf("code action %q requires unsupported editor command %q", action.Title, action.Command.Command)
+					return applyCodeActionOutput{}, fmt.Errorf("code action %q requires unsupported editor command %q", action.Title, action.Command.Command)
 				}
-				return nil, fmt.Errorf("code action %q returned no edits", action.Title)
+				return applyCodeActionOutput{}, fmt.Errorf("code action %q returned no edits", action.Title)
 			}
 			if err := runtime.validateWorkspaceEdit(action.Edit); err != nil {
-				return nil, err
+				return applyCodeActionOutput{}, err
 			}
 			var diff bytes.Buffer
 			if err := applyWorkspaceEdit(&diff, action.Edit, editMode{Write: true, Diff: true}); err != nil {
-				return nil, err
+				return applyCodeActionOutput{}, err
 			}
-			return map[string]any{
-				"applied": true,
-				"title":   action.Title,
-				"files":   runtime.workspaceEditPaths(action.Edit),
-				"diff":    diff.String(),
+			return applyCodeActionOutput{
+				Applied: true, Title: action.Title,
+				Files: runtime.workspaceEditPaths(action.Edit), Diff: diff.String(),
 			}, nil
 		})
-	}))
+	})
+	return nil, output, err
 }
 
 func (runtime *mcpRuntime) hover(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	input positionInput,
-) (*mcp.CallToolResult, any, error) {
+) (*mcp.CallToolResult, hoverOutput, error) {
 	path, position, err := runtime.position(input.Path, input.Line, input.Column)
 	if err != nil {
-		return nil, nil, err
+		return nil, hoverOutput{}, err
 	}
-	return runtimeToolResult(runtime.withSession(ctx, func(session *cliSession) (any, error) {
-		return runtime.withDocument(ctx, session, path, func(document *cliDocument) (any, error) {
+	output, err := withMCPSession(ctx, runtime, func(session *cliSession) (hoverOutput, error) {
+		return withMCPDocument(ctx, session, path, func(document *cliDocument) (hoverOutput, error) {
 			var hover *protocol.Hover
 			if err := session.call(ctx, "textDocument/hover", positionParams(document.URI, position), &hover); err != nil {
-				return nil, err
+				return hoverOutput{}, err
 			}
 			if hover == nil {
-				return map[string]any{"path": runtime.outputPath(path), "hover": nil}, nil
+				return hoverOutput{Path: runtime.outputPath(path)}, nil
 			}
-			result := map[string]any{
-				"kind": string(hover.Contents.Kind), "value": hover.Contents.Value,
+			result := &mcpHover{
+				Kind: string(hover.Contents.Kind), Value: hover.Contents.Value,
 			}
 			if hover.Range != nil {
-				result["range"] = toMCPRange(*hover.Range)
+				converted := toMCPRange(*hover.Range)
+				result.Range = &converted
 			}
-			return map[string]any{"path": runtime.outputPath(path), "hover": result}, nil
+			return hoverOutput{Path: runtime.outputPath(path), Hover: result}, nil
 		})
-	}))
+	})
+	return nil, output, err
 }
 
 func (runtime *mcpRuntime) definition(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	input positionInput,
-) (*mcp.CallToolResult, any, error) {
+) (*mcp.CallToolResult, locationsOutput, error) {
 	return runtime.locationsAtPosition(ctx, input, "textDocument/definition", false)
 }
 
@@ -432,7 +486,7 @@ func (runtime *mcpRuntime) references(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	input positionInput,
-) (*mcp.CallToolResult, any, error) {
+) (*mcp.CallToolResult, locationsOutput, error) {
 	return runtime.locationsAtPosition(ctx, input, "textDocument/references", true)
 }
 
@@ -441,77 +495,73 @@ func (runtime *mcpRuntime) locationsAtPosition(
 	input positionInput,
 	method string,
 	includeDeclaration bool,
-) (*mcp.CallToolResult, any, error) {
+) (*mcp.CallToolResult, locationsOutput, error) {
 	path, position, err := runtime.position(input.Path, input.Line, input.Column)
 	if err != nil {
-		return nil, nil, err
+		return nil, locationsOutput{}, err
 	}
-	return runtimeToolResult(runtime.withSession(ctx, func(session *cliSession) (any, error) {
-		return runtime.withDocument(ctx, session, path, func(document *cliDocument) (any, error) {
+	output, err := withMCPSession(ctx, runtime, func(session *cliSession) (locationsOutput, error) {
+		return withMCPDocument(ctx, session, path, func(document *cliDocument) (locationsOutput, error) {
 			params := positionParams(document.URI, position)
 			if includeDeclaration {
 				params["context"] = map[string]bool{"includeDeclaration": true}
 			}
 			var locations []protocol.Location
 			if err := session.call(ctx, method, params, &locations); err != nil {
-				return nil, err
+				return locationsOutput{}, err
 			}
 			result := make([]mcpLocation, 0, len(locations))
 			for _, location := range locations {
 				result = append(result, runtime.convertLocation(location))
 			}
-			return map[string]any{
-				"path":      runtime.outputPath(path),
-				"position":  toMCPPosition(position),
-				"locations": result,
+			return locationsOutput{
+				Path:     runtime.outputPath(path),
+				Position: toMCPPosition(position), Locations: result,
 			}, nil
 		})
-	}))
+	})
+	return nil, output, err
 }
 
 func (runtime *mcpRuntime) workspaceSymbols(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	input workspaceSymbolsInput,
-) (*mcp.CallToolResult, any, error) {
+) (*mcp.CallToolResult, workspaceSymbolsOutput, error) {
 	if strings.TrimSpace(input.Query) == "" {
-		return nil, nil, errors.New("query is required")
+		return nil, workspaceSymbolsOutput{}, errors.New("query is required")
 	}
 	limit, err := boundedLimit(
 		input.Limit, defaultMCPSymbolLimit, maximumMCPSymbolLimit, "limit",
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, workspaceSymbolsOutput{}, err
 	}
-	return runtimeToolResult(runtime.withSession(ctx, func(session *cliSession) (any, error) {
+	output, err := withMCPSession(ctx, runtime, func(session *cliSession) (workspaceSymbolsOutput, error) {
 		var symbols []protocol.SymbolInformation
 		if err := session.call(
 			ctx, "workspace/symbol", map[string]string{"query": input.Query}, &symbols,
 		); err != nil {
-			return nil, err
+			return workspaceSymbolsOutput{}, err
 		}
 		total := len(symbols)
 		if len(symbols) > limit {
 			symbols = symbols[:limit]
 		}
-		result := make([]map[string]any, 0, len(symbols))
+		result := make([]mcpWorkspaceSymbol, 0, len(symbols))
 		for _, symbol := range symbols {
-			result = append(result, map[string]any{
-				"name":      symbol.Name,
-				"kind":      symbolKindLabel(symbol.Kind),
-				"container": symbol.ContainerName,
-				"location":  runtime.convertLocation(symbol.Location),
+			result = append(result, mcpWorkspaceSymbol{
+				Name: symbol.Name, Kind: symbolKindLabel(symbol.Kind),
+				Container: symbol.ContainerName,
+				Location:  runtime.convertLocation(symbol.Location),
 			})
 		}
-		return map[string]any{
-			"query": input.Query, "total": total, "symbols": result,
-			"truncated": total > len(result),
+		return workspaceSymbolsOutput{
+			Query: input.Query, Total: total, Symbols: result,
+			Truncated: total > len(result),
 		}, nil
-	}))
-}
-
-func runtimeToolResult(value any, err error) (*mcp.CallToolResult, any, error) {
-	return nil, value, err
+	})
+	return nil, output, err
 }
 
 func boundedLimit(value, defaultValue, maximum int, name string) (int, error) {
@@ -593,35 +643,37 @@ func (runtime *mcpRuntime) outputPath(path string) string {
 	return path
 }
 
-func (runtime *mcpRuntime) withDocument(
+func withMCPDocument[T any](
 	ctx context.Context,
 	session *cliSession,
 	path string,
-	operation func(*cliDocument) (any, error),
-) (any, error) {
+	operation func(*cliDocument) (T, error),
+) (T, error) {
+	var zero T
 	document, err := session.openDocument(ctx, path)
 	if err != nil {
-		return nil, err
+		return zero, err
 	}
 	result, operationErr := operation(document)
 	closeErr := session.closeDocument(ctx, document)
 	return result, errors.Join(operationErr, closeErr)
 }
 
-func (runtime *mcpRuntime) withCodeActions(
+func withMCPCodeActions[T any](
 	ctx context.Context,
 	session *cliSession,
 	path string,
 	position protocol.Position,
 	kind string,
-	operation func(*cliDocument, []protocol.CodeAction) (any, error),
-) (any, error) {
-	return runtime.withDocument(ctx, session, path, func(document *cliDocument) (any, error) {
+	operation func(*cliDocument, []protocol.CodeAction) (T, error),
+) (T, error) {
+	return withMCPDocument(ctx, session, path, func(document *cliDocument) (T, error) {
+		var zero T
 		var diagnostics protocol.DiagnosticResult
 		if err := session.call(
 			ctx, "textDocument/diagnostic", textDocumentParams(document.URI), &diagnostics,
 		); err != nil {
-			return nil, err
+			return zero, err
 		}
 		params := positionParams(document.URI, position)
 		params["range"] = protocol.Range{Start: position, End: position}
@@ -632,7 +684,7 @@ func (runtime *mcpRuntime) withCodeActions(
 		params["context"] = contextParams
 		var actions []protocol.CodeAction
 		if err := session.call(ctx, "textDocument/codeAction", params, &actions); err != nil {
-			return nil, err
+			return zero, err
 		}
 		if kind != "" {
 			filtered := actions[:0]
@@ -656,7 +708,10 @@ func (runtime *mcpRuntime) convertDiagnostic(finding diagnosticOutput) mcpDiagno
 	result := mcpDiagnostic{
 		Path: runtime.outputURI(finding.URI), Range: toMCPRange(diagnostic.Range),
 		Severity: strings.ToLower(severityLabel(severity)),
-		Code:     diagnostic.Code, Source: diagnostic.Source, Message: diagnostic.Message,
+		Source:   diagnostic.Source, Message: diagnostic.Message,
+	}
+	if diagnostic.Code != nil {
+		result.Code = fmt.Sprint(diagnostic.Code)
 	}
 	for _, tag := range diagnostic.Tags {
 		switch tag {
