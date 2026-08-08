@@ -17,6 +17,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/language"
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	"github.com/shopware/shopware-lsp/internal/projectconfig"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 	"github.com/sourcegraph/jsonrpc2"
 )
@@ -122,6 +123,7 @@ func newCLISession(
 	version string,
 	errOut io.Writer,
 	startIndex bool,
+	editorConfigurations ...projectconfig.Partial,
 ) (*cliSession, error) {
 	serverSide, clientSide := net.Pipe()
 	session := &cliSession{
@@ -193,12 +195,14 @@ func newCLISession(
 			return nil, nil
 		}).SuppressErrClosed(),
 	)
+	initializationOptions := map[string]interface{}{"cliMode": true}
+	if len(editorConfigurations) > 0 {
+		initializationOptions["configuration"] = editorConfigurations[0]
+	}
 	initialize := map[string]interface{}{
-		"processId": os.Getpid(),
-		"rootUri":   uriutil.FileURI(root),
-		"initializationOptions": map[string]bool{
-			"cliMode": true,
-		},
+		"processId":             os.Getpid(),
+		"rootUri":               uriutil.FileURI(root),
+		"initializationOptions": initializationOptions,
 		"workspaceFolders": []map[string]string{{
 			"uri": uriutil.FileURI(root), "name": filepath.Base(root),
 		}},

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import {createMcpProcessDefinition} from './mcpServerModel';
 import {resolveServerExecutable} from './serverExecutable';
+import {readEditorConfiguration} from './configuration';
 
 export const shopwareMcpProviderId = 'shopwareLSP.mcp';
 
@@ -44,6 +45,7 @@ export function registerMcpServerDefinitionProvider(
           label: multiRoot ? `Shopware LSP (${folder.name})` : 'Shopware LSP',
           version: String(context.extension.packageJSON.version ?? 'dev'),
           memoryLimitMiB: configuration.get<number>('memoryLimitMiB', 0),
+          editorConfiguration: readEditorConfiguration(folder.uri),
         });
         const definition = new vscode.McpStdioServerDefinition(
           process.label,
@@ -66,7 +68,14 @@ export function registerMcpServerDefinitionProvider(
       if (
         event.affectsConfiguration('shopwareLSP.mcp.enabled') ||
         event.affectsConfiguration('shopwareLSP.serverPath') ||
-        event.affectsConfiguration('shopwareLSP.memoryLimitMiB')
+        event.affectsConfiguration('shopwareLSP.memoryLimitMiB') ||
+        event.affectsConfiguration('shopwareLSP.phpExtensions') ||
+        event.affectsConfiguration('shopwareLSP.disabledPhpExtensions') ||
+        event.affectsConfiguration('shopwareLSP.shopwareTargetVersion') ||
+        event.affectsConfiguration('shopwareLSP.features') ||
+        event.affectsConfiguration('shopwareLSP.indexing.enabled') ||
+        event.affectsConfiguration('shopwareLSP.domains') ||
+        event.affectsConfiguration('shopwareLSP.diagnostics')
       ) {
         changed.fire();
       }

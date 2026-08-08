@@ -201,6 +201,7 @@ func (r *Runner) runConfig(ctx context.Context, args []string) error {
 	return writeJSON(r.out, map[string]interface{}{
 		"path":      session.configuration.Path,
 		"effective": session.configuration.Effective,
+		"scopes":    session.configuration.Scopes,
 	})
 }
 

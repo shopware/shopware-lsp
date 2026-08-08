@@ -1402,7 +1402,7 @@ flags such as `check -severity` and `check -fail-on` take final precedence.
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/shopwareLabs/shopware-lsp/main/internal/projectconfig/schema.json",
+  "$schema": "https://raw.githubusercontent.com/shopware/shopware-lsp/main/internal/projectconfig/schema.json",
   "version": 1,
   "php": {
     "extensions": ["redis"],
@@ -1425,7 +1425,17 @@ flags such as `check -severity` and `check -fail-on` take final precedence.
     "rules": {
       "php.arguments": "error",
       "admin.component.unknown-instance-member": "off"
-    }
+    },
+    "overrides": [
+      {
+        "files": ["src/Generated/**"],
+        "enabled": false
+      },
+      {
+        "files": ["custom/plugins/FroshTools/**"],
+        "rules": {"php.arguments": "off"}
+      }
+    ]
   },
   "check": {
     "severity": "warning",
@@ -1441,12 +1451,24 @@ inspection skips its analyzer; disabling every rule in an inspection has the
 same optimization. Domain dependencies cascade off, so disabling PHP also
 disables PHP-backed Symfony and Twig domains.
 
+Shopware extensions may commit their own
+`.config/shopware-lsp/config.json`, for example
+`custom/plugins/FroshTools/.config/shopware-lsp/config.json`. Nested files are
+diagnostics-only and apply to their containing directory. Their `files`
+patterns are relative to the extension root, so the same file works when the
+extension is installed in a project or opened as its own repository. Scoped
+configuration is applied from the workspace root toward the nearest extension;
+VS Code-local overrides apply last. Patterns support `*`, `?`, and `**`.
+
 The VS Code command `Shopware: Configure Language Server…` provides searchable
 feature, domain, inspection, and rule controls and can write either the shared
 project file or a local editor override. Diagnostic and request-time feature
 changes apply live. Indexing, domain, PHP extension, and target-version changes
 prompt for a language-server restart and invalidate structurally incompatible
-workspace caches.
+workspace caches. `Shopware: Open Configuration…` opens or creates the root or
+extension-local file. Every Shopware diagnostic also offers a configuration
+quick fix for suppressing its rule—or all diagnostics—for a file, directory,
+extension, or workspace.
 
 For CI, `shopware-lsp config` validates and prints the effective configuration.
 `shopware-lsp check` fails before indexing when the committed configuration is

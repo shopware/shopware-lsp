@@ -16,6 +16,7 @@ import {registerTwigVariableCommands} from './twigVariables';
 import {registerMcpServerDefinitionProvider} from './mcpServer';
 import {normalizeMemoryLimitMiB} from './mcpServerModel';
 import {resolveServerExecutable} from './serverExecutable';
+import {registerDiagnosticConfigurationSupport} from './diagnosticConfiguration';
 import {
   attachConfigurationClient,
   readEditorConfiguration,
@@ -104,7 +105,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         { scheme: 'file', pattern: '**/Dockerfile*' }
       ],
       initializationOptions: {
-        configuration: readEditorConfiguration()
+        configuration: readEditorConfiguration(workspaceFolder?.uri)
       },
       // Add output configuration
       outputChannel: outputChannel,
@@ -169,6 +170,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await startClient();
     vscode.window.showInformationMessage('Shopware LSP restarted');
   });
+  registerDiagnosticConfigurationSupport(context, clientState, outputChannel);
 
   // Register force reindex command
   context.subscriptions.push(vscode.commands.registerCommand('shopwareLSP.forceReindex', async () => {

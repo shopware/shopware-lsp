@@ -212,7 +212,7 @@ func (s *Server) diagnosticsForDocument(
 	ctx context.Context,
 	document *TextDocument,
 ) []protocol.Diagnostic {
-	if document == nil || !s.diagnosticsEnabled() {
+	if document == nil || !s.diagnosticPolicy(document.URI).Enabled {
 		return []protocol.Diagnostic{}
 	}
 	s.diagnosticsMu.Lock()
@@ -247,6 +247,10 @@ func (s *Server) diagnosticsForDocument(
 
 func (s *Server) collectDiagnostics(ctx context.Context, document *TextDocument) []protocol.Diagnostic {
 	allDiagnostics := []protocol.Diagnostic{}
+	policy := s.diagnosticPolicy(document.URI)
+	if !policy.Enabled {
+		return allDiagnostics
+	}
 	tracePerformance := diagnosticPerformanceTraceEnabled()
 	var requestStarted time.Time
 	if tracePerformance {
@@ -258,8 +262,8 @@ func (s *Server) collectDiagnostics(ctx context.Context, document *TextDocument)
 		}
 		domain := inspectionDomain(inspection.definition.ID)
 		if domain != "" && !s.domainEnabled(domain) ||
-			!s.inspectionEnabled(inspection.definition.ID) ||
-			!s.inspectionHasEnabledRule(inspection) {
+			!diagnosticInspectionEnabled(policy, inspection.definition.ID) ||
+			!inspectionHasEnabledRule(inspection, policy) {
 			continue
 		}
 		var inspectionStarted time.Time
@@ -270,6 +274,7 @@ func (s *Server) collectDiagnostics(ctx context.Context, document *TextDocument)
 			server:     s,
 			document:   document,
 			inspection: inspection,
+			policy:     policy,
 		}
 		if err := inspection.inspection.Inspect(ctx, document, reporter); err != nil {
 			if ctx.Err() != nil || errors.Is(err, context.Canceled) {
@@ -316,6 +321,7 @@ type inspectionProblemReporter struct {
 	server      *Server
 	document    *TextDocument
 	inspection  *registeredInspection
+	policy      projectconfig.DiagnosticPolicy
 	diagnostics []protocol.Diagnostic
 }
 
@@ -325,7 +331,7 @@ func (r *inspectionProblemReporter) Report(problem Problem) error {
 		return fmt.Errorf("inspection %q reported undeclared diagnostic %q", r.inspection.definition.ID, problem.ID)
 	}
 	if r.server != nil {
-		if configured, found := r.server.configuredRuleSeverity(problem.ID); found &&
+		if configured, found := diagnosticRuleSeverity(r.policy, problem.ID); found &&
 			configured == projectconfig.SeverityOff {
 			return nil
 		}
@@ -381,7 +387,7 @@ func (r *inspectionProblemReporter) Report(problem Problem) error {
 		severity = definition.DefaultSeverity
 	}
 	if r.server != nil {
-		if configured, found := r.server.configuredRuleSeverity(problem.ID); found {
+		if configured, found := diagnosticRuleSeverity(r.policy, problem.ID); found {
 			severity = protocolDiagnosticSeverity(configured)
 		}
 	}
@@ -402,12 +408,15 @@ func (r *inspectionProblemReporter) Report(problem Problem) error {
 	return nil
 }
 
-func (s *Server) inspectionHasEnabledRule(inspection *registeredInspection) bool {
+func inspectionHasEnabledRule(
+	inspection *registeredInspection,
+	policy projectconfig.DiagnosticPolicy,
+) bool {
 	if inspection == nil {
 		return false
 	}
 	for id := range inspection.problems {
-		severity, configured := s.configuredRuleSeverity(id)
+		severity, configured := diagnosticRuleSeverity(policy, id)
 		if !configured || severity != projectconfig.SeverityOff {
 			return true
 		}

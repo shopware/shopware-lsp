@@ -5,7 +5,14 @@ import {setNested} from './configurationModel';
 
 export const projectConfigurationPath = '.config/shopware-lsp/config.json';
 
-type Severity = 'off' | 'hint' | 'information' | 'warning' | 'error';
+export type Severity = 'off' | 'hint' | 'information' | 'warning' | 'error';
+
+export interface DiagnosticOverride {
+  files: string[];
+  enabled?: boolean;
+  inspections?: Record<string, boolean>;
+  rules?: Record<string, Severity>;
+}
 
 export interface PartialConfiguration {
   php?: {extensions?: string[]; disabledExtensions?: string[]};
@@ -17,7 +24,13 @@ export interface PartialConfiguration {
     enabled?: boolean;
     inspections?: Record<string, boolean>;
     rules?: Record<string, Severity>;
+    overrides?: DiagnosticOverride[];
   };
+}
+
+export interface ConfigurationIssue {
+  path: string;
+  message: string;
 }
 
 interface CatalogEntry {
@@ -48,6 +61,7 @@ interface EffectiveConfiguration {
     enabled: boolean;
     inspections: Record<string, boolean>;
     rules: Record<string, Severity>;
+    overrides?: DiagnosticOverride[];
   };
   disabledDomainReasons?: Record<string, string>;
   origins?: Record<string, string>;
@@ -60,12 +74,15 @@ export interface ConfigurationCatalog {
   domains: CatalogEntry[];
   inspections: InspectionEntry[];
   error?: string;
+  errors?: ConfigurationIssue[];
+  scopes?: Array<{root: string; path: string; error?: string}>;
 }
 
-interface ReloadResult {
+export interface ReloadResult {
   applied: boolean;
   restartRequired: boolean;
   error?: string;
+  errors?: ConfigurationIssue[];
 }
 
 type ConfigurableKind = 'feature' | 'domain' | 'inspection' | 'rule' | 'diagnostics' | 'indexing';
@@ -76,8 +93,8 @@ interface ConfigurableItem extends vscode.QuickPickItem {
   value: boolean | Severity;
 }
 
-export function readEditorConfiguration(): PartialConfiguration {
-  const configuration = vscode.workspace.getConfiguration('shopwareLSP');
+export function readEditorConfiguration(resource?: vscode.Uri): PartialConfiguration {
+  const configuration = vscode.workspace.getConfiguration('shopwareLSP', resource);
   const result: PartialConfiguration = {};
 
   const phpExtensions = explicitValue<string[]>(configuration, 'phpExtensions');
@@ -100,11 +117,14 @@ export function readEditorConfiguration(): PartialConfiguration {
   const diagnosticsEnabled = explicitValue<boolean>(configuration, 'diagnostics.enabled');
   const inspections = explicitValue<Record<string, boolean>>(configuration, 'diagnostics.inspections');
   const rules = explicitValue<Record<string, Severity>>(configuration, 'diagnostics.rules');
-  if (diagnosticsEnabled !== undefined || inspections !== undefined || rules !== undefined) {
+  const overrides = explicitValue<DiagnosticOverride[]>(configuration, 'diagnostics.overrides');
+  if (diagnosticsEnabled !== undefined || inspections !== undefined || rules !== undefined ||
+    overrides !== undefined) {
     result.diagnostics = {};
     if (diagnosticsEnabled !== undefined) result.diagnostics.enabled = diagnosticsEnabled;
     if (inspections !== undefined) result.diagnostics.inspections = inspections;
     if (rules !== undefined) result.diagnostics.rules = rules;
+    if (overrides !== undefined) result.diagnostics.overrides = overrides;
   }
   return result;
 }
@@ -141,21 +161,21 @@ export function registerConfigurationSupport(
     const client = clientState.client;
     if (!client) return;
     await client.sendNotification('workspace/didChangeConfiguration', {
-      settings: readEditorConfiguration(),
+      settings: readEditorConfiguration(outermostWorkspaceFolder()?.uri),
     });
   }));
 
   const folder = outermostWorkspaceFolder();
   if (folder) {
     const watcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(folder, projectConfigurationPath),
+      new vscode.RelativePattern(folder, `**/${projectConfigurationPath}`),
     );
     const reload = async () => {
       const client = clientState.client;
       if (!client) return;
       try {
         const result = await client.sendRequest<ReloadResult>('shopware/configuration/reload');
-        updateConfigurationError(diagnostics, folder, result.error);
+        updateConfigurationErrors(diagnostics, folder, result.errors, result.error);
         if (result.error) output.appendLine(`Configuration error: ${result.error}`);
       } catch (error) {
         output.appendLine(`Failed to reload Shopware LSP configuration: ${error}`);
@@ -177,6 +197,17 @@ let configurationDiagnostics: vscode.DiagnosticCollection | undefined;
 let configurationOutput: vscode.OutputChannel | undefined;
 let configurationRestart: (() => Promise<void>) | undefined;
 let restartPromptVisible = false;
+let diagnosticRuleIDs = new Set<string>();
+
+export function isKnownDiagnosticRule(id: string): boolean {
+  return diagnosticRuleIDs.has(id);
+}
+
+function rememberDiagnosticRules(catalog: ConfigurationCatalog): void {
+  diagnosticRuleIDs = new Set(
+    catalog.inspections.flatMap(inspection => inspection.rules.map(rule => rule.id)),
+  );
+}
 
 export function attachConfigurationClient(client: LanguageClient): void {
   client.onNotification('shopware/configurationRestartRequired', async (params: {message?: string}) => {
@@ -191,14 +222,18 @@ export function attachConfigurationClient(client: LanguageClient): void {
     if (selected === 'Restart') await configurationRestart?.();
   });
   void client.sendRequest<ConfigurationCatalog>('shopware/configuration/catalog').then(catalog => {
+    rememberDiagnosticRules(catalog);
     const folder = outermostWorkspaceFolder();
-    if (folder) updateConfigurationError(configurationDiagnostics, folder, catalog.error);
+    if (folder) updateConfigurationErrors(
+      configurationDiagnostics, folder, catalog.errors, catalog.error,
+    );
     if (catalog.error) configurationOutput?.appendLine(`Configuration error: ${catalog.error}`);
   }, error => configurationOutput?.appendLine(`Failed to read configuration catalog: ${error}`));
 }
 
 async function showConfigurationPicker(client: LanguageClient): Promise<void> {
   const catalog = await client.sendRequest<ConfigurationCatalog>('shopware/configuration/catalog');
+  rememberDiagnosticRules(catalog);
   const items = configurableItems(catalog);
   const selected = await vscode.window.showQuickPick(items, {
     title: 'Shopware Language Server Configuration',
@@ -331,7 +366,7 @@ async function updateProjectConfiguration(
   if (!folder) throw new Error('A workspace folder is required for project configuration');
   const uri = vscode.Uri.joinPath(folder.uri, projectConfigurationPath);
   let document: Record<string, unknown> = {
-    $schema: 'https://raw.githubusercontent.com/shopwareLabs/shopware-lsp/main/internal/projectconfig/schema.json',
+    $schema: 'https://raw.githubusercontent.com/shopware/shopware-lsp/main/internal/projectconfig/schema.json',
     version: 1,
   };
   try {
@@ -349,23 +384,26 @@ async function updateProjectConfiguration(
   await vscode.window.showTextDocument(uri, {preview: false});
 }
 
-function updateConfigurationError(
+function updateConfigurationErrors(
   collection: vscode.DiagnosticCollection | undefined,
   folder: vscode.WorkspaceFolder,
-  message?: string,
+  issues?: ConfigurationIssue[],
+  fallbackMessage?: string,
 ): void {
   if (!collection) return;
-  const uri = vscode.Uri.joinPath(folder.uri, projectConfigurationPath);
-  if (!message) {
-    collection.delete(uri);
-    return;
+  collection.clear();
+  const values = issues?.length ? issues : fallbackMessage ? [{
+    path: vscode.Uri.joinPath(folder.uri, projectConfigurationPath).fsPath,
+    message: fallbackMessage,
+  }] : [];
+  for (const issue of values) {
+    const diagnostic = new vscode.Diagnostic(
+      new vscode.Range(0, 0, 0, 1), issue.message, vscode.DiagnosticSeverity.Error,
+    );
+    diagnostic.source = 'shopware-lsp';
+    diagnostic.code = 'shopware.config.invalid';
+    collection.set(vscode.Uri.file(issue.path), [diagnostic]);
   }
-  const diagnostic = new vscode.Diagnostic(
-    new vscode.Range(0, 0, 0, 1), message, vscode.DiagnosticSeverity.Error,
-  );
-  diagnostic.source = 'shopware-lsp';
-  diagnostic.code = 'shopware.config.invalid';
-  collection.set(uri, [diagnostic]);
 }
 
 function outermostWorkspaceFolder(): vscode.WorkspaceFolder | undefined {

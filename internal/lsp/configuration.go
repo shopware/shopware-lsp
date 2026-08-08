@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"sort"
@@ -13,15 +14,28 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/projectconfig"
+	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
 type ConfigurationCatalog struct {
 	Path        string                       `json:"path"`
 	Effective   projectconfig.Effective      `json:"effective"`
+	Scopes      []projectconfig.Scope        `json:"scopes,omitempty"`
 	Features    []projectconfig.CatalogEntry `json:"features"`
 	Domains     []projectconfig.CatalogEntry `json:"domains"`
 	Inspections []ConfigurationInspection    `json:"inspections"`
 	Error       string                       `json:"error,omitempty"`
+	Errors      []ConfigurationIssue         `json:"errors,omitempty"`
+}
+
+type ConfigurationIssue struct {
+	Path    string `json:"path"`
+	Message string `json:"message"`
+}
+
+type configurationScopeLoad struct {
+	scopes []projectconfig.Scope
+	err    error
 }
 
 type ConfigurationInspection struct {
@@ -37,9 +51,10 @@ type ConfigurationDiagnostic struct {
 }
 
 type ConfigurationReloadResult struct {
-	Applied         bool   `json:"applied"`
-	RestartRequired bool   `json:"restartRequired"`
-	Error           string `json:"error,omitempty"`
+	Applied         bool                 `json:"applied"`
+	RestartRequired bool                 `json:"restartRequired"`
+	Error           string               `json:"error,omitempty"`
+	Errors          []ConfigurationIssue `json:"errors,omitempty"`
 }
 
 func (s *Server) initializeConfiguration(
@@ -68,8 +83,52 @@ func (s *Server) initializeConfiguration(
 	s.editorConfiguration = editor
 	s.effectiveConfiguration = effective
 	s.configurationErr = loadErr
+	s.configurationIssues = configurationIssues(root, loadErr, nil)
 	s.configurationMu.Unlock()
 	return nil
+}
+
+func loadConfigurationScopes(root string) configurationScopeLoad {
+	scopes, err := projectconfig.LoadScopes(root)
+	return configurationScopeLoad{scopes: scopes, err: err}
+}
+
+func (s *Server) installInitialConfigurationScopes(loaded configurationScopeLoad) error {
+	scopeErr := errors.Join(loaded.err, projectconfig.ScopeErrors(loaded.scopes))
+	if scopeErr != nil && s.initializationOptions.CLIMode {
+		return scopeErr
+	}
+	issues := scopeConfigurationIssues(loaded.scopes)
+	if loaded.err != nil {
+		issues = append(issues, ConfigurationIssue{
+			Path: projectconfig.Path(s.rootPath), Message: loaded.err.Error(),
+		})
+	}
+	s.configurationMu.Lock()
+	s.scopedConfigurations = loaded.scopes
+	s.configurationErr = errors.Join(s.configurationErr, scopeErr)
+	s.configurationIssues = append(s.configurationIssues, issues...)
+	s.configurationMu.Unlock()
+	return nil
+}
+
+func configurationIssues(root string, rootErr error, scopes []projectconfig.Scope) []ConfigurationIssue {
+	result := make([]ConfigurationIssue, 0, len(scopes)+1)
+	if rootErr != nil {
+		// Scope errors are added with their precise paths below. Keep the root
+		// issue only when the root configuration itself cannot be loaded.
+		if _, _, loadErr := projectconfig.Load(root); loadErr != nil {
+			result = append(result, ConfigurationIssue{
+				Path: projectconfig.Path(root), Message: loadErr.Error(),
+			})
+		}
+	}
+	for _, scope := range scopes {
+		if scope.Error != "" {
+			result = append(result, ConfigurationIssue{Path: scope.Path, Message: scope.Error})
+		}
+	}
+	return result
 }
 
 func editorConfiguration(options protocol.InitializationOptions) projectconfig.Partial {
@@ -148,10 +207,68 @@ func (s *Server) DomainEnabled(id string) bool {
 	return s.domainEnabled(id)
 }
 
-func (s *Server) diagnosticsEnabled() bool {
+func (s *Server) diagnosticPolicy(uri string) projectconfig.DiagnosticPolicy {
+	policy := projectconfig.DefaultDiagnosticPolicy()
+	documentPath, pathErr := uriutil.Path(uri)
+	if pathErr == nil {
+		documentPath, pathErr = filepath.Abs(documentPath)
+	}
 	s.configurationMu.RLock()
 	defer s.configurationMu.RUnlock()
-	return s.effectiveConfiguration.Diagnostics.Enabled
+	workspaceRelative := "\x00outside-workspace"
+	if pathErr == nil && projectconfig.Contains(s.rootPath, documentPath) {
+		if relative, err := filepath.Rel(s.rootPath, documentPath); err == nil {
+			workspaceRelative = filepath.ToSlash(relative)
+		}
+	}
+	projectconfig.ApplyDiagnostics(
+		&policy,
+		diagnosticsConfiguration(s.projectConfiguration),
+		workspaceRelative,
+	)
+	if pathErr == nil {
+		for _, scope := range s.scopedConfigurations {
+			if scope.Configuration.Diagnostics == nil ||
+				!projectconfig.Contains(scope.Root, documentPath) {
+				continue
+			}
+			relative, err := filepath.Rel(scope.Root, documentPath)
+			if err != nil {
+				continue
+			}
+			projectconfig.ApplyDiagnostics(
+				&policy,
+				diagnosticsConfiguration(scope.Configuration),
+				filepath.ToSlash(relative),
+			)
+		}
+	}
+	projectconfig.ApplyDiagnostics(
+		&policy,
+		diagnosticsConfiguration(s.editorConfiguration),
+		workspaceRelative,
+	)
+	return policy
+}
+
+func diagnosticsConfiguration(value projectconfig.Partial) *projectconfig.DiagnosticsConfig {
+	return value.Diagnostics
+}
+
+func diagnosticInspectionEnabled(policy projectconfig.DiagnosticPolicy, id string) bool {
+	if !policy.Enabled {
+		return false
+	}
+	enabled, configured := policy.Inspections[id]
+	return !configured || enabled
+}
+
+func diagnosticRuleSeverity(
+	policy projectconfig.DiagnosticPolicy,
+	id DiagnosticID,
+) (projectconfig.Severity, bool) {
+	severity, configured := policy.Rules[string(id)]
+	return severity, configured
 }
 
 func (s *Server) configurationError() error {
@@ -160,30 +277,20 @@ func (s *Server) configurationError() error {
 	return s.configurationErr
 }
 
-func (s *Server) inspectionEnabled(id string) bool {
-	s.configurationMu.RLock()
-	defer s.configurationMu.RUnlock()
-	return s.effectiveConfiguration.InspectionEnabled(id)
-}
-
-func (s *Server) configuredRuleSeverity(
-	id DiagnosticID,
-) (projectconfig.Severity, bool) {
-	s.configurationMu.RLock()
-	defer s.configurationMu.RUnlock()
-	return s.effectiveConfiguration.RuleSeverity(string(id))
-}
-
 func (s *Server) configurationCatalog() ConfigurationCatalog {
 	s.configurationMu.RLock()
 	effective := cloneEffective(s.effectiveConfiguration)
 	configurationErr := s.configurationErr
+	scopes := cloneScopes(s.scopedConfigurations)
+	issues := slices.Clone(s.configurationIssues)
 	s.configurationMu.RUnlock()
 	result := ConfigurationCatalog{
 		Path:      projectconfig.Path(s.rootPath),
 		Effective: effective,
+		Scopes:    scopes,
 		Features:  slices.Clone(projectconfig.FeatureCatalog),
 		Domains:   slices.Clone(projectconfig.DomainCatalog),
+		Errors:    issues,
 	}
 	if configurationErr != nil {
 		result.Error = configurationErr.Error()
@@ -208,6 +315,13 @@ func (s *Server) configurationCatalog() ConfigurationCatalog {
 	sort.Slice(result.Inspections, func(i, j int) bool {
 		return result.Inspections[i].ID < result.Inspections[j].ID
 	})
+	return result
+}
+
+func cloneScopes(value []projectconfig.Scope) []projectconfig.Scope {
+	encoded, _ := json.Marshal(value)
+	var result []projectconfig.Scope
+	_ = json.Unmarshal(encoded, &result)
 	return result
 }
 
@@ -241,6 +355,7 @@ func (s *Server) validateConfiguredDiagnosticIDs() error {
 	s.configurationMu.RLock()
 	project := s.projectConfiguration
 	editor := s.editorConfiguration
+	scopes := cloneScopes(s.scopedConfigurations)
 	s.configurationMu.RUnlock()
 	inspectionIDs := make(map[string]bool, len(s.inspections.byID))
 	ruleIDs := make(map[string]bool, len(s.inspections.byCode))
@@ -255,8 +370,38 @@ func (s *Server) validateConfiguredDiagnosticIDs() error {
 		name  string
 		value projectconfig.Partial
 	}{{"project", project}, {"editor", editor}} {
-		validationErrors = append(validationErrors,
-			validateDiagnosticLayer(layer.value, layer.name, inspectionIDs, ruleIDs))
+		layerErr := validateDiagnosticLayer(
+			layer.value, layer.name, inspectionIDs, ruleIDs,
+		)
+		validationErrors = append(validationErrors, layerErr)
+		if layerErr != nil && layer.name == "project" && !s.initializationOptions.CLIMode {
+			s.configurationMu.Lock()
+			s.configurationIssues = append(s.configurationIssues, ConfigurationIssue{
+				Path: projectconfig.Path(s.rootPath), Message: layerErr.Error(),
+			})
+			s.configurationMu.Unlock()
+		}
+	}
+	for index, scope := range scopes {
+		if scope.Error != "" {
+			continue
+		}
+		scopeErr := validateDiagnosticLayer(
+			scope.Configuration, scope.Path, inspectionIDs, ruleIDs,
+		)
+		validationErrors = append(validationErrors, scopeErr)
+		if scopeErr != nil && !s.initializationOptions.CLIMode {
+			s.configurationMu.Lock()
+			if index < len(s.scopedConfigurations) &&
+				s.scopedConfigurations[index].Root == scope.Root {
+				s.scopedConfigurations[index].Error = scopeErr.Error()
+				s.scopedConfigurations[index].Configuration = projectconfig.Partial{}
+			}
+			s.configurationIssues = append(s.configurationIssues, ConfigurationIssue{
+				Path: scope.Path, Message: scopeErr.Error(),
+			})
+			s.configurationMu.Unlock()
+		}
 	}
 	return errors.Join(validationErrors...)
 }
@@ -271,17 +416,23 @@ func validateDiagnosticLayer(
 		return nil
 	}
 	var validationErrors []error
-	for id := range value.Diagnostics.Inspections {
-		if !inspectionIDs[id] {
-			validationErrors = append(validationErrors,
-				fmt.Errorf("%s configuration has unknown inspection %q", name, id))
+	validateMaps := func(inspections map[string]bool, rules map[string]projectconfig.Severity) {
+		for id := range inspections {
+			if !inspectionIDs[id] {
+				validationErrors = append(validationErrors,
+					fmt.Errorf("%s configuration has unknown inspection %q", name, id))
+			}
+		}
+		for id := range rules {
+			if !ruleIDs[id] {
+				validationErrors = append(validationErrors,
+					fmt.Errorf("%s configuration has unknown diagnostic rule %q", name, id))
+			}
 		}
 	}
-	for id := range value.Diagnostics.Rules {
-		if !ruleIDs[id] {
-			validationErrors = append(validationErrors,
-				fmt.Errorf("%s configuration has unknown diagnostic rule %q", name, id))
-		}
+	validateMaps(value.Diagnostics.Inspections, value.Diagnostics.Rules)
+	for _, override := range value.Diagnostics.Overrides {
+		validateMaps(override.Inspections, override.Rules)
 	}
 	return errors.Join(validationErrors...)
 }
@@ -304,21 +455,43 @@ func (s *Server) validateDiagnosticLayer(
 func (s *Server) reloadProjectConfiguration(ctx context.Context) ConfigurationReloadResult {
 	project, _, err := projectconfig.Load(s.rootPath)
 	if err != nil {
+		issues := []ConfigurationIssue{{
+			Path: projectconfig.Path(s.rootPath), Message: err.Error(),
+		}}
 		s.configurationMu.Lock()
 		s.configurationErr = err
+		s.configurationIssues = issues
 		s.configurationMu.Unlock()
-		return ConfigurationReloadResult{Error: err.Error()}
+		return ConfigurationReloadResult{
+			Error: err.Error(), Errors: slices.Clone(issues),
+		}
 	}
 	if err := s.validateDiagnosticLayer(project, "project"); err != nil {
+		issues := []ConfigurationIssue{{
+			Path: projectconfig.Path(s.rootPath), Message: err.Error(),
+		}}
 		s.configurationMu.Lock()
 		s.configurationErr = err
+		s.configurationIssues = issues
 		s.configurationMu.Unlock()
-		return ConfigurationReloadResult{Error: err.Error()}
+		return ConfigurationReloadResult{
+			Error: err.Error(), Errors: slices.Clone(issues),
+		}
 	}
+	scopes, discoveryErr := projectconfig.LoadScopes(s.rootPath)
 	s.configurationMu.RLock()
 	old := cloneEffective(s.effectiveConfiguration)
 	editor := clonePartial(s.editorConfiguration)
+	previousScopes := cloneScopes(s.scopedConfigurations)
 	s.configurationMu.RUnlock()
+	scopes = s.validateAndRetainScopes(scopes, previousScopes)
+	issues := scopeConfigurationIssues(scopes)
+	configurationErr := errors.Join(discoveryErr, projectconfig.ScopeErrors(scopes))
+	if discoveryErr != nil {
+		issues = append(issues, ConfigurationIssue{
+			Path: projectconfig.Path(s.rootPath), Message: discoveryErr.Error(),
+		})
+	}
 	next := projectconfig.Resolve(project, editor)
 	restartRequired := old.StructuralFingerprint() != next.StructuralFingerprint()
 	nextFingerprint := next.StructuralFingerprint()
@@ -332,8 +505,10 @@ func (s *Server) reloadProjectConfiguration(ctx context.Context) ConfigurationRe
 	}
 	s.configurationMu.Lock()
 	s.projectConfiguration = project
+	s.scopedConfigurations = scopes
 	s.effectiveConfiguration = applied
-	s.configurationErr = nil
+	s.configurationErr = configurationErr
+	s.configurationIssues = issues
 	notifyRestart := restartRequired &&
 		s.pendingConfigurationFingerprint != nextFingerprint
 	if restartRequired {
@@ -342,11 +517,59 @@ func (s *Server) reloadProjectConfiguration(ctx context.Context) ConfigurationRe
 		s.pendingConfigurationFingerprint = ""
 	}
 	s.configurationMu.Unlock()
-	s.refreshConfigurationEffects(ctx, old, applied)
+	s.refreshConfigurationEffects(ctx, old, applied, true)
 	if notifyRestart {
 		s.notifyConfigurationRestartRequired(ctx)
 	}
-	return ConfigurationReloadResult{Applied: true, RestartRequired: restartRequired}
+	result := ConfigurationReloadResult{
+		Applied: true, RestartRequired: restartRequired, Errors: slices.Clone(issues),
+	}
+	if configurationErr != nil {
+		result.Error = configurationErr.Error()
+	}
+	return result
+}
+
+func (s *Server) validateAndRetainScopes(
+	next,
+	previous []projectconfig.Scope,
+) []projectconfig.Scope {
+	previousByRoot := make(map[string]projectconfig.Scope, len(previous))
+	for _, scope := range previous {
+		if scope.Configuration.Diagnostics != nil {
+			previousByRoot[scope.Root] = scope
+		}
+	}
+	for index := range next {
+		validationErr := error(nil)
+		if next[index].Error == "" {
+			validationErr = s.validateDiagnosticLayer(
+				next[index].Configuration, next[index].Path,
+			)
+			if validationErr != nil {
+				next[index].Error = validationErr.Error()
+			}
+		}
+		if next[index].Error == "" {
+			continue
+		}
+		if old, found := previousByRoot[next[index].Root]; found {
+			next[index].Configuration = old.Configuration
+		}
+	}
+	return next
+}
+
+func scopeConfigurationIssues(scopes []projectconfig.Scope) []ConfigurationIssue {
+	var result []ConfigurationIssue
+	for _, scope := range scopes {
+		if scope.Error != "" {
+			result = append(result, ConfigurationIssue{
+				Path: scope.Path, Message: scope.Error,
+			})
+		}
+	}
+	return result
 }
 
 func (s *Server) replaceEditorConfiguration(
@@ -368,10 +591,13 @@ func (s *Server) replaceEditorConfiguration(
 	s.configurationMu.RLock()
 	old := cloneEffective(s.effectiveConfiguration)
 	project := clonePartial(s.projectConfiguration)
+	scopes := cloneScopes(s.scopedConfigurations)
+	issues := slices.Clone(s.configurationIssues)
 	s.configurationMu.RUnlock()
 	next := projectconfig.Resolve(project, editor)
 	restartRequired := old.StructuralFingerprint() != next.StructuralFingerprint()
 	nextFingerprint := next.StructuralFingerprint()
+	scopeErr := projectconfig.ScopeErrors(scopes)
 	applied := next
 	if restartRequired {
 		applied.PHP = old.PHP
@@ -383,7 +609,8 @@ func (s *Server) replaceEditorConfiguration(
 	s.configurationMu.Lock()
 	s.editorConfiguration = clonePartial(editor)
 	s.effectiveConfiguration = applied
-	s.configurationErr = nil
+	s.configurationErr = scopeErr
+	s.configurationIssues = issues
 	notifyRestart := restartRequired &&
 		s.pendingConfigurationFingerprint != nextFingerprint
 	if restartRequired {
@@ -392,29 +619,32 @@ func (s *Server) replaceEditorConfiguration(
 		s.pendingConfigurationFingerprint = ""
 	}
 	s.configurationMu.Unlock()
-	s.refreshConfigurationEffects(ctx, old, applied)
+	s.refreshConfigurationEffects(ctx, old, applied, false)
 	if notifyRestart {
 		s.notifyConfigurationRestartRequired(ctx)
 	}
-	return ConfigurationReloadResult{Applied: true, RestartRequired: restartRequired}
+	result := ConfigurationReloadResult{
+		Applied: true, RestartRequired: restartRequired, Errors: issues,
+	}
+	if scopeErr != nil {
+		result.Error = scopeErr.Error()
+	}
+	return result
 }
 
 func (s *Server) refreshConfigurationEffects(
 	ctx context.Context,
 	old,
 	next projectconfig.Effective,
+	force bool,
 ) {
-	if reflect.DeepEqual(old.Features, next.Features) &&
+	if !force && reflect.DeepEqual(old.Features, next.Features) &&
 		reflect.DeepEqual(old.Diagnostics, next.Diagnostics) {
 		return
 	}
 	s.cancelAllDiagnostics()
 	for _, document := range s.documentManager.Documents() {
-		if next.Diagnostics.Enabled {
-			s.scheduleDiagnostics(document.URI, document.Version, 0)
-		} else {
-			s.clearPublishedDiagnostics(ctx, document.URI)
-		}
+		s.scheduleDiagnostics(document.URI, document.Version, 0)
 	}
 }
 

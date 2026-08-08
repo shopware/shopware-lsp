@@ -62,6 +62,8 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 	}
 	s.rootPath = rootPath
 	s.initializationOptions = params.InitializationOptions
+	scopeLoad := make(chan configurationScopeLoad, 1)
+	go func() { scopeLoad <- loadConfigurationScopes(rootPath) }()
 	if err := s.initializeConfiguration(rootPath, params.InitializationOptions); err != nil {
 		return nil, fmt.Errorf("load configuration: %w", err)
 	}
@@ -89,6 +91,14 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 			log.Printf("Publishing diagnostics to all open files")
 			s.PublishDiagnostics(s.lifecycleCtx, nil)
 		})
+	}
+	if err := s.installInitialConfigurationScopes(<-scopeLoad); err != nil {
+		if s.workspace != nil {
+			_ = s.workspace.Close()
+			s.workspace = nil
+			s.fileScanner = nil
+		}
+		return nil, fmt.Errorf("load scoped configuration: %w", err)
 	}
 	if err := s.validateConfiguredDiagnosticIDs(); err != nil {
 		if s.initializationOptions.CLIMode {

@@ -3,9 +3,11 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	"github.com/shopware/shopware-lsp/internal/projectconfig"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
@@ -24,8 +27,9 @@ const (
 )
 
 type mcpRuntime struct {
-	runner *Runner
-	root   string
+	runner              *Runner
+	root                string
+	editorConfiguration *projectconfig.Partial
 
 	operationMu sync.Mutex
 	session     *cliSession
@@ -45,7 +49,13 @@ func (r *Runner) runMCP(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	runtime := &mcpRuntime{runner: r, root: root}
+	editorConfiguration, err := mcpEditorConfiguration()
+	if err != nil {
+		return err
+	}
+	runtime := &mcpRuntime{
+		runner: r, root: root, editorConfiguration: editorConfiguration,
+	}
 	defer func() {
 		if closeErr := runtime.Close(); closeErr != nil && r.verbose {
 			_ = writeFormatted(r.errOut, "Close MCP workspace: %v\n", closeErr)
@@ -60,6 +70,30 @@ func (r *Runner) runMCP(ctx context.Context, args []string) error {
 		return fmt.Errorf("run stdio MCP server: %w", err)
 	}
 	return nil
+}
+
+func mcpEditorConfiguration() (*projectconfig.Partial, error) {
+	source := strings.TrimSpace(os.Getenv("SHOPWARE_LSP_EDITOR_CONFIGURATION"))
+	if source == "" {
+		return nil, nil
+	}
+	var result projectconfig.Partial
+	decoder := json.NewDecoder(strings.NewReader(source))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode MCP editor configuration: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = errors.New("multiple JSON values")
+		}
+		return nil, fmt.Errorf("decode MCP editor configuration: %w", err)
+	}
+	if err := projectconfig.Validate(result); err != nil {
+		return nil, fmt.Errorf("validate MCP editor configuration: %w", err)
+	}
+	return &result, nil
 }
 
 func newMCPServer(runtime *mcpRuntime) *mcp.Server {
@@ -129,12 +163,13 @@ func withMCPSession[T any](
 	runtime.operationMu.Lock()
 	defer runtime.operationMu.Unlock()
 	if runtime.session == nil {
+		configuration := []projectconfig.Partial(nil)
+		if runtime.editorConfiguration != nil {
+			configuration = append(configuration, *runtime.editorConfiguration)
+		}
 		session, err := newCLISession(
-			ctx,
-			runtime.root,
-			runtime.runner.options.Version,
-			runtime.runner.errOut,
-			true,
+			ctx, runtime.root, runtime.runner.options.Version,
+			runtime.runner.errOut, true, configuration...,
 		)
 		if err != nil {
 			return zero, err

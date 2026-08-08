@@ -71,9 +71,11 @@ type Server struct {
 	diagnosticsCache                map[string]diagnosticsCacheEntry
 	configurationMu                 sync.RWMutex
 	projectConfiguration            projectconfig.Partial
+	scopedConfigurations            []projectconfig.Scope
 	editorConfiguration             projectconfig.Partial
 	effectiveConfiguration          projectconfig.Effective
 	configurationErr                error
+	configurationIssues             []ConfigurationIssue
 	pendingConfigurationFingerprint string
 }
 
@@ -561,7 +563,7 @@ func (s *Server) handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.
 		s.documentManager.OpenDocument(params.TextDocument.URI, params.TextDocument.Text, params.TextDocument.Version)
 
 		// Run diagnostics on the opened document
-		if !s.initializationOptions.CLIMode && s.diagnosticsEnabled() {
+		if !s.initializationOptions.CLIMode {
 			s.scheduleDiagnostics(params.TextDocument.URI, params.TextDocument.Version, 0)
 		}
 		return nil, nil
@@ -582,7 +584,7 @@ func (s *Server) handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.
 		if len(params.ContentChanges) > 0 {
 			s.documentManager.UpdateDocument(params.TextDocument.URI, params.ContentChanges[0].Text, params.TextDocument.Version)
 
-			if !s.initializationOptions.CLIMode && s.diagnosticsEnabled() {
+			if !s.initializationOptions.CLIMode {
 				s.scheduleDiagnostics(params.TextDocument.URI, params.TextDocument.Version, diagnosticsDebounce)
 			}
 		}
@@ -775,9 +777,6 @@ func (s *Server) handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.
 		var params protocol.DiagnosticParams
 		if err := json.Unmarshal(*req.Params, &params); err != nil {
 			return nil, err
-		}
-		if !s.diagnosticsEnabled() {
-			return protocol.DiagnosticResult{Items: []protocol.Diagnostic{}}, nil
 		}
 		return s.diagnostic(ctx, &params), nil
 

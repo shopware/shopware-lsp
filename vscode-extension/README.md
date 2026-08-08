@@ -78,6 +78,22 @@ server from VS Code AI clients. A custom `shopwareLSP.serverPath` and the
 `shopwareLSP.memoryLimitMiB` setting apply to both the editor server and the
 MCP process.
 
+### Diagnostic configuration
+
+Use `Shopware: Open Configuration…` to create or open
+`.config/shopware-lsp/config.json`. Extensions nested inside a Shopware
+workspace can keep the same file in their own repository; its diagnostic rules
+and path overrides apply only below that extension directory. Override paths
+are relative to the configuration-owning directory and support `*`, `?`, and
+`**`.
+
+The quick-fix menu for a Shopware diagnostic can suppress that rule or all
+Shopware diagnostics for the current file, directory, extension, or workspace.
+Suppressions may be committed to the root or extension configuration, or kept
+locally in VS Code workspace/user settings. Changes apply without restarting
+the language server, and VS Code's Shopware MCP process receives the same local
+diagnostic settings.
+
 ### Diagnostics Overview
 
 | What's checked | Severity | Where |

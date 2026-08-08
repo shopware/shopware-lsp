@@ -308,6 +308,26 @@ func TestCLIRejectsInvalidProjectConfigurationBeforeChecking(t *testing.T) {
 	require.ErrorContains(t, err, "unknown diagnostic rule")
 }
 
+func TestCLIRejectsInvalidNestedExtensionConfiguration(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
+	configPath := filepath.Join(
+		root, "custom", "plugins", "Example", ".config", "shopware-lsp", "config.json",
+	)
+	require.NoError(t, os.MkdirAll(filepath.Dir(configPath), 0o755))
+	require.NoError(t, os.WriteFile(
+		configPath,
+		[]byte(`{"version":1,"domains":{"php":false}}`),
+		0o644,
+	))
+	err := New(Options{Version: "test"}).Run(
+		context.Background(), []string{"-root", root, "check", root},
+		strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{},
+	)
+	require.ErrorContains(t, err, configPath)
+	require.ErrorContains(t, err, "nested configuration may only contain diagnostics")
+}
+
 func TestWorkspaceCLIIndexCheckAndExecuteUseProductionLSP(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())

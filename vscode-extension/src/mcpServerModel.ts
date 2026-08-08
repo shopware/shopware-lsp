@@ -4,6 +4,7 @@ export interface McpProcessOptions {
   label: string;
   version: string;
   memoryLimitMiB?: number;
+  editorConfiguration?: unknown;
 }
 
 export interface McpProcessDefinition {
@@ -23,12 +24,18 @@ export function normalizeMemoryLimitMiB(value: number | undefined): number {
 
 export function createMcpProcessDefinition(options: McpProcessOptions): McpProcessDefinition {
   const memoryLimitMiB = normalizeMemoryLimitMiB(options.memoryLimitMiB);
+  const env: Record<string, string | number> = {};
+  if (memoryLimitMiB > 0) env.GOMEMLIMIT = `${memoryLimitMiB}MiB`;
+  if (options.editorConfiguration && typeof options.editorConfiguration === 'object' &&
+    Object.keys(options.editorConfiguration).length > 0) {
+    env.SHOPWARE_LSP_EDITOR_CONFIGURATION = JSON.stringify(options.editorConfiguration);
+  }
   return {
     label: options.label,
     command: options.serverPath,
     args: ['-root', options.workspaceRoot, 'mcp'],
     cwd: options.workspaceRoot,
-    env: memoryLimitMiB > 0 ? {GOMEMLIMIT: `${memoryLimitMiB}MiB`} : {},
+    env,
     version: options.version,
   };
 }

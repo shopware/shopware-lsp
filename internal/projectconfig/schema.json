@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/shopwareLabs/shopware-lsp/main/internal/projectconfig/schema.json",
+  "$id": "https://raw.githubusercontent.com/shopware/shopware-lsp/main/internal/projectconfig/schema.json",
   "title": "Shopware LSP Configuration",
   "type": "object",
   "additionalProperties": false,
@@ -36,7 +36,11 @@
       "properties": {
         "enabled": { "type": "boolean" },
         "inspections": { "type": "object", "additionalProperties": { "type": "boolean" } },
-        "rules": { "type": "object", "additionalProperties": { "$ref": "#/$defs/ruleSeverity" } }
+        "rules": { "type": "object", "additionalProperties": { "$ref": "#/$defs/ruleSeverity" } },
+        "overrides": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/diagnosticOverride" }
+        }
       }
     },
     "check": {
@@ -50,6 +54,31 @@
   },
   "$defs": {
     "ruleSeverity": { "enum": ["off", "hint", "information", "warning", "error"] },
+    "diagnosticOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files"],
+      "properties": {
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "not": { "pattern": "^(?:/|[A-Za-z]:)|(?:^|/)\\.\\.(?:/|$)" }
+          }
+        },
+        "enabled": { "type": "boolean" },
+        "inspections": { "type": "object", "additionalProperties": { "type": "boolean" } },
+        "rules": { "type": "object", "additionalProperties": { "$ref": "#/$defs/ruleSeverity" } }
+      },
+      "anyOf": [
+        { "required": ["enabled"] },
+        { "required": ["inspections"] },
+        { "required": ["rules"] }
+      ]
+    },
     "featureMap": {
       "type": "object",
       "additionalProperties": false,

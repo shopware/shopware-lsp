@@ -148,6 +148,19 @@ func TestMCPRejectsUnsafeWorkspaceEdits(t *testing.T) {
 	require.ErrorContains(t, err, "unsupported workspace resource operation")
 }
 
+func TestMCPEditorConfigurationReadsDiagnosticOverrides(t *testing.T) {
+	t.Setenv("SHOPWARE_LSP_EDITOR_CONFIGURATION", `{
+        "diagnostics": {
+            "overrides": [{"files":["custom/plugins/Test/**"],"enabled":false}]
+        }
+    }`)
+	configuration, err := mcpEditorConfiguration()
+	require.NoError(t, err)
+	require.NotNil(t, configuration)
+	require.Len(t, configuration.Diagnostics.Overrides, 1)
+	require.Equal(t, "custom/plugins/Test/**", configuration.Diagnostics.Overrides[0].Files[0])
+}
+
 func connectMCPTestClient(t *testing.T, root string) *mcp.ClientSession {
 	t.Helper()
 	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())

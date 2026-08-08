@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -118,6 +119,114 @@ func TestReloadAppliesLiveSettingsAndRequestsRestartForStructuralSettings(t *tes
 	require.True(t, result.RestartRequired)
 	// The running workspace retains its structural configuration until restart.
 	require.True(t, server.EffectiveConfiguration().Domains["scss"])
+}
+
+func TestNestedConfigurationAppliesOnlyInsideItsExtensionScope(t *testing.T) {
+	root := t.TempDir()
+	writeProjectConfiguration(t, root, `{
+        "version":1,
+        "diagnostics":{"rules":{"test.invalid-value":"error"}}
+    }`)
+	plugin := filepath.Join(root, "custom", "plugins", "Example")
+	writeProjectConfiguration(t, plugin, `{
+        "version":1,
+        "diagnostics":{
+            "rules":{"test.invalid-value":"off"},
+            "overrides":[{
+                "files":["src/Keep.yaml"],
+                "rules":{"test.invalid-value":"warning"}
+            }]
+        }
+    }`)
+
+	server := NewServer(nil, "", "test")
+	server.RegisterInspection(testInspection{})
+	_, err := server.initialize(context.Background(), &protocol.InitializeParams{
+		RootURI: uriutil.FileURI(root),
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, server.CloseAll()) })
+
+	require.Empty(t, configuredDiagnosticsForPath(
+		t, server, filepath.Join(plugin, "src", "Ignored.yaml"),
+	))
+	kept := configuredDiagnosticsForPath(
+		t, server, filepath.Join(plugin, "src", "Keep.yaml"),
+	)
+	require.Len(t, kept, 1)
+	require.Equal(t, protocol.DiagnosticSeverityWarning, kept[0].Severity)
+	outside := configuredDiagnosticsForPath(
+		t, server, filepath.Join(root, "src", "Outside.yaml"),
+	)
+	require.Len(t, outside, 1)
+	require.Equal(t, protocol.DiagnosticSeverityError, outside[0].Severity)
+}
+
+func TestEditorPathOverrideWinsNestedExtensionConfiguration(t *testing.T) {
+	root := t.TempDir()
+	plugin := filepath.Join(root, "custom", "plugins", "Example")
+	writeProjectConfiguration(t, plugin,
+		`{"version":1,"diagnostics":{"rules":{"test.invalid-value":"off"}}}`,
+	)
+	warning := projectconfig.SeverityWarning
+	server := NewServer(nil, "", "test")
+	server.RegisterInspection(testInspection{})
+	_, err := server.initialize(context.Background(), &protocol.InitializeParams{
+		RootURI: uriutil.FileURI(root),
+		InitializationOptions: protocol.InitializationOptions{Configuration: &projectconfig.Partial{
+			Diagnostics: &projectconfig.DiagnosticsConfig{Overrides: []projectconfig.DiagnosticOverride{{
+				Files: []string{"custom/plugins/Example/src/Keep.yaml"},
+				Rules: map[string]projectconfig.Severity{"test.invalid-value": warning},
+			}}},
+		}},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, server.CloseAll()) })
+
+	diagnostics := configuredDiagnosticsForPath(
+		t, server, filepath.Join(plugin, "src", "Keep.yaml"),
+	)
+	require.Len(t, diagnostics, 1)
+	require.Equal(t, protocol.DiagnosticSeverityWarning, diagnostics[0].Severity)
+}
+
+func TestInvalidNestedReloadKeepsLastKnownGoodDiagnostics(t *testing.T) {
+	root := t.TempDir()
+	plugin := filepath.Join(root, "custom", "plugins", "Example")
+	writeProjectConfiguration(t, plugin,
+		`{"version":1,"diagnostics":{"rules":{"test.invalid-value":"off"}}}`,
+	)
+	server := NewServer(nil, "", "test")
+	server.RegisterInspection(testInspection{})
+	_, err := server.initialize(context.Background(), &protocol.InitializeParams{
+		RootURI: uriutil.FileURI(root),
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, server.CloseAll()) })
+	path := filepath.Join(plugin, "src", "Ignored.yaml")
+	require.Empty(t, configuredDiagnosticsForPath(t, server, path))
+
+	writeProjectConfiguration(t, plugin, `{"version":1,"domains":{"php":false}}`)
+	result := server.reloadProjectConfiguration(context.Background())
+	require.True(t, result.Applied)
+	require.ErrorContains(t, errors.New(result.Error), "nested configuration may only contain diagnostics")
+	require.Empty(t, configuredDiagnosticsForPath(t, server, path))
+}
+
+func configuredDiagnosticsForPath(
+	t *testing.T,
+	server *Server,
+	path string,
+) []protocol.Diagnostic {
+	t.Helper()
+	uri := uriutil.FileURI(path)
+	server.documentManager.OpenDocument(uri, "value: bad\n", 1)
+	result := server.diagnostic(context.Background(), &protocol.DiagnosticParams{
+		TextDocument: struct {
+			URI string `json:"uri"`
+		}{URI: uri},
+	}).(protocol.DiagnosticResult)
+	return result.Items
 }
 
 func boolPointer(value bool) *bool { return &value }

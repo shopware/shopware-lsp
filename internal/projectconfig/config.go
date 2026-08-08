@@ -15,6 +15,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/shopware/shopware-lsp/internal/pathmatch"
 )
 
 const (
@@ -58,6 +60,16 @@ type IndexingConfig struct {
 }
 
 type DiagnosticsConfig struct {
+	Enabled     *bool                `json:"enabled,omitempty"`
+	Inspections map[string]bool      `json:"inspections,omitempty"`
+	Rules       map[string]Severity  `json:"rules,omitempty"`
+	Overrides   []DiagnosticOverride `json:"overrides,omitempty"`
+}
+
+// DiagnosticOverride applies diagnostic settings to workspace-scope-relative
+// files. Overrides are ordered; later matching entries win.
+type DiagnosticOverride struct {
+	Files       []string            `json:"files"`
 	Enabled     *bool               `json:"enabled,omitempty"`
 	Inspections map[string]bool     `json:"inspections,omitempty"`
 	Rules       map[string]Severity `json:"rules,omitempty"`
@@ -108,9 +120,17 @@ type EffectiveIndexing struct {
 }
 
 type EffectiveDiagnostics struct {
-	Enabled     bool                `json:"enabled"`
-	Inspections map[string]bool     `json:"inspections"`
-	Rules       map[string]Severity `json:"rules"`
+	Enabled     bool                 `json:"enabled"`
+	Inspections map[string]bool      `json:"inspections"`
+	Rules       map[string]Severity  `json:"rules"`
+	Overrides   []DiagnosticOverride `json:"overrides,omitempty"`
+}
+
+// DiagnosticPolicy is the resolved policy for one document.
+type DiagnosticPolicy struct {
+	Enabled     bool
+	Inspections map[string]bool
+	Rules       map[string]Severity
 }
 
 type EffectiveCheck struct {
@@ -290,18 +310,8 @@ func Validate(value Partial) error {
 		}
 	}
 	if value.Diagnostics != nil {
-		for id, severity := range value.Diagnostics.Rules {
-			if strings.TrimSpace(id) == "" {
-				return errors.New("diagnostic rule ID must not be empty")
-			}
-			if !ValidSeverity(severity, true) {
-				return fmt.Errorf("invalid severity %q for diagnostic %q", severity, id)
-			}
-		}
-		for id := range value.Diagnostics.Inspections {
-			if strings.TrimSpace(id) == "" {
-				return errors.New("inspection ID must not be empty")
-			}
+		if err := validateDiagnostics(*value.Diagnostics); err != nil {
+			return err
 		}
 	}
 	if value.Check != nil {
@@ -310,6 +320,64 @@ func Validate(value Partial) error {
 		}
 		if value.Check.FailOn != nil && !ValidSeverity(*value.Check.FailOn, true) {
 			return fmt.Errorf("invalid check failOn severity %q", *value.Check.FailOn)
+		}
+	}
+	return nil
+}
+
+func validateDiagnostics(value DiagnosticsConfig) error {
+	if err := validateDiagnosticMaps(value.Inspections, value.Rules); err != nil {
+		return err
+	}
+	for index, override := range value.Overrides {
+		if len(override.Files) == 0 {
+			return fmt.Errorf("diagnostics.overrides[%d].files must not be empty", index)
+		}
+		if override.Enabled == nil && len(override.Inspections) == 0 && len(override.Rules) == 0 {
+			return fmt.Errorf("diagnostics.overrides[%d] must configure enabled, inspections, or rules", index)
+		}
+		for _, pattern := range override.Files {
+			if err := validateDiagnosticPattern(pattern); err != nil {
+				return fmt.Errorf("diagnostics.overrides[%d].files: %w", index, err)
+			}
+		}
+		if err := validateDiagnosticMaps(override.Inspections, override.Rules); err != nil {
+			return fmt.Errorf("diagnostics.overrides[%d]: %w", index, err)
+		}
+	}
+	return nil
+}
+
+func validateDiagnosticMaps(inspections map[string]bool, rules map[string]Severity) error {
+	for id, severity := range rules {
+		if strings.TrimSpace(id) == "" {
+			return errors.New("diagnostic rule ID must not be empty")
+		}
+		if !ValidSeverity(severity, true) {
+			return fmt.Errorf("invalid severity %q for diagnostic %q", severity, id)
+		}
+	}
+	for id := range inspections {
+		if strings.TrimSpace(id) == "" {
+			return errors.New("inspection ID must not be empty")
+		}
+	}
+	return nil
+}
+
+func validateDiagnosticPattern(pattern string) error {
+	pattern = filepath.ToSlash(strings.ReplaceAll(strings.TrimSpace(pattern), `\`, "/"))
+	if pattern == "" {
+		return errors.New("pattern must not be empty")
+	}
+	windowsAbsolute := len(pattern) >= 3 && pattern[1] == ':' && pattern[2] == '/' &&
+		((pattern[0] >= 'a' && pattern[0] <= 'z') || (pattern[0] >= 'A' && pattern[0] <= 'Z'))
+	if filepath.IsAbs(filepath.FromSlash(pattern)) || strings.HasPrefix(pattern, "/") || windowsAbsolute {
+		return fmt.Errorf("pattern %q must be relative", pattern)
+	}
+	for _, component := range strings.Split(pattern, "/") {
+		if component == ".." {
+			return fmt.Errorf("pattern %q must not escape its configuration scope", pattern)
 		}
 	}
 	return nil
@@ -367,6 +435,10 @@ func apply(target *Effective, value Partial, source string) {
 			target.Diagnostics.Rules[id] = severity
 			target.Origins["diagnostics.rules."+id] = source
 		}
+		target.Diagnostics.Overrides = append(
+			target.Diagnostics.Overrides,
+			cloneDiagnosticOverrides(value.Diagnostics.Overrides)...,
+		)
 	}
 	if value.Check != nil {
 		if value.Check.Severity != nil {
@@ -424,6 +496,64 @@ func (c Effective) InspectionEnabled(id string) bool {
 func (c Effective) RuleSeverity(id string) (Severity, bool) {
 	severity, configured := c.Diagnostics.Rules[id]
 	return severity, configured
+}
+
+// DefaultDiagnosticPolicy returns an independent mutable policy initialized
+// with the built-in diagnostic defaults.
+func DefaultDiagnosticPolicy() DiagnosticPolicy {
+	return DiagnosticPolicy{
+		Enabled: true, Inspections: map[string]bool{}, Rules: map[string]Severity{},
+	}
+}
+
+// ApplyDiagnostics applies one configuration layer and its matching ordered
+// overrides. relativePath must be slash-normalized and relative to the layer's
+// owning scope.
+func ApplyDiagnostics(policy *DiagnosticPolicy, value *DiagnosticsConfig, relativePath string) {
+	if policy == nil || value == nil {
+		return
+	}
+	applyDiagnosticValues(policy, value.Enabled, value.Inspections, value.Rules)
+	relativePath = filepath.ToSlash(strings.TrimPrefix(relativePath, "./"))
+	for _, override := range value.Overrides {
+		matched := false
+		for _, pattern := range override.Files {
+			if pathmatch.Ant(pattern, relativePath) {
+				matched = true
+				break
+			}
+		}
+		if matched {
+			applyDiagnosticValues(policy, override.Enabled, override.Inspections, override.Rules)
+		}
+	}
+}
+
+func applyDiagnosticValues(
+	policy *DiagnosticPolicy,
+	enabled *bool,
+	inspections map[string]bool,
+	rules map[string]Severity,
+) {
+	if enabled != nil {
+		policy.Enabled = *enabled
+	}
+	for id, value := range inspections {
+		policy.Inspections[id] = value
+	}
+	for id, value := range rules {
+		policy.Rules[id] = value
+	}
+}
+
+func cloneDiagnosticOverrides(values []DiagnosticOverride) []DiagnosticOverride {
+	if len(values) == 0 {
+		return nil
+	}
+	encoded, _ := json.Marshal(values)
+	var result []DiagnosticOverride
+	_ = json.Unmarshal(encoded, &result)
+	return result
 }
 
 func (c Effective) StructuralFingerprint() string {
