@@ -83,17 +83,27 @@ type DocumentChange struct {
 
 	// Resource-operation fields. LSP models documentChanges as a union; one
 	// compact transport type keeps create operations and text edits ordered.
-	Kind    string             `json:"kind,omitempty"`
-	URI     string             `json:"uri,omitempty"`
-	Options *CreateFileOptions `json:"options,omitempty"`
+	Kind    string                    `json:"kind,omitempty"`
+	URI     string                    `json:"uri,omitempty"`
+	Options *ResourceOperationOptions `json:"options,omitempty"`
 }
 
-const CreateFileOperation = "create"
+const (
+	CreateFileOperation = "create"
+	DeleteFileOperation = "delete"
+)
 
-type CreateFileOptions struct {
-	Overwrite      bool `json:"overwrite,omitempty"`
-	IgnoreIfExists bool `json:"ignoreIfExists,omitempty"`
+// ResourceOperationOptions is the union of create/delete resource-operation
+// options used by LSP documentChanges.
+type ResourceOperationOptions struct {
+	Overwrite         bool `json:"overwrite,omitempty"`
+	IgnoreIfExists    bool `json:"ignoreIfExists,omitempty"`
+	Recursive         bool `json:"recursive,omitempty"`
+	IgnoreIfNotExists bool `json:"ignoreIfNotExists,omitempty"`
 }
+
+type CreateFileOptions = ResourceOperationOptions
+type DeleteFileOptions = ResourceOperationOptions
 
 // ChangeAnnotation represents an annotation for a change
 type ChangeAnnotation struct {

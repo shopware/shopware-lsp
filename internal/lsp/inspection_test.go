@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/shopware/shopware-lsp/internal/language"
@@ -174,6 +176,36 @@ func TestInspectionBindsAndLazilyResolvesExactQuickFix(t *testing.T) {
 	require.Len(t, resolved.Edit.DocumentChanges, 1)
 	require.Equal(t, 3, *resolved.Edit.DocumentChanges[0].TextDocument.Version)
 	require.Equal(t, "good", resolved.Edit.DocumentChanges[0].Edits[0].NewText)
+}
+
+func TestWorkspacePlanDeleteRequiresCurrentInWorkspaceSnapshot(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "services.xml")
+	uri := uriutil.FileURI(path)
+	require.NoError(t, os.WriteFile(path, []byte("<container/>"), 0o644))
+
+	server := NewServer(nil, root, "test")
+	server.documentManager.OpenDocument(uri, "<container/>", 4)
+	version := 4
+	plan := rewrite.WorkspacePlan{Deletes: []rewrite.DeleteFilePlan{{
+		URI: uri, Version: &version, Source: "<container/>",
+	}}}
+	require.NoError(t, server.validateWorkspacePlan(context.Background(), plan))
+
+	staleSource := plan
+	staleSource.Deletes = append([]rewrite.DeleteFilePlan(nil), plan.Deletes...)
+	staleSource.Deletes[0].Source = "<changed/>"
+	require.ErrorIs(
+		t, server.validateWorkspacePlan(context.Background(), staleSource),
+		rewrite.ErrStaleHandle,
+	)
+
+	outsidePath := filepath.Join(t.TempDir(), "services.xml")
+	require.NoError(t, os.WriteFile(outsidePath, []byte("<container/>"), 0o644))
+	outside := rewrite.WorkspacePlan{Deletes: []rewrite.DeleteFilePlan{{
+		URI: uriutil.FileURI(outsidePath), Source: "<container/>",
+	}}}
+	require.Error(t, server.validateWorkspacePlan(context.Background(), outside))
 }
 
 func TestInspectionRuleCanBeDisabledByDefaultAndExplicitlyEnabled(t *testing.T) {

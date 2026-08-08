@@ -165,6 +165,7 @@ func (p DocumentPlan) Apply() (string, error) {
 type WorkspacePlan struct {
 	Documents []DocumentPlan
 	Creates   []CreateFilePlan
+	Deletes   []DeleteFilePlan
 }
 
 // CreateFilePlan creates a new workspace file before any document edits are
@@ -175,9 +176,17 @@ type CreateFilePlan struct {
 	Content string
 }
 
+// DeleteFilePlan removes a file only after the server has verified that the
+// current document still matches the snapshot used to prepare the rewrite.
+type DeleteFilePlan struct {
+	URI     string
+	Version *int
+	Source  string
+}
+
 func (p WorkspacePlan) WorkspaceEdit() (*protocol.WorkspaceEdit, error) {
 	result := &protocol.WorkspaceEdit{}
-	seen := make(map[string]struct{}, len(p.Creates)+len(p.Documents))
+	seen := make(map[string]struct{}, len(p.Creates)+len(p.Documents)+len(p.Deletes))
 	for _, created := range p.Creates {
 		if created.URI == "" {
 			return nil, errors.New("rewrite create-file URI is empty")
@@ -241,6 +250,23 @@ func (p WorkspacePlan) WorkspaceEdit() (*protocol.WorkspaceEdit, error) {
 				Version: document.Version,
 			},
 			Edits: wireEdits,
+		})
+	}
+	for _, deleted := range p.Deletes {
+		if deleted.URI == "" {
+			return nil, errors.New("rewrite delete-file URI is empty")
+		}
+		if _, exists := seen[deleted.URI]; exists {
+			return nil, fmt.Errorf("rewrite contains duplicate document %q", deleted.URI)
+		}
+		seen[deleted.URI] = struct{}{}
+		result.DocumentChanges = append(result.DocumentChanges, protocol.DocumentChange{
+			Kind: protocol.DeleteFileOperation,
+			URI:  deleted.URI,
+			Options: &protocol.DeleteFileOptions{
+				Recursive:         false,
+				IgnoreIfNotExists: false,
+			},
 		})
 	}
 	return result, nil

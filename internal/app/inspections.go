@@ -131,6 +131,7 @@ func registerDiagnosticInspections(
 		"symfony.route.requirement.deprecated",
 		"symfony.service.factory.deprecated",
 	}, diagnostics.NewLegacyConfigurationAnalyzer())
+	server.RegisterInspection(inspections.NewServicesXMLMigration())
 
 	server.RegisterInspection(inspections.NewYAMLCompatibility(services.php.Project()))
 	server.RegisterInspection(inspections.NewController(

@@ -258,6 +258,27 @@ func (s *Server) validateWorkspacePlan(ctx context.Context, plan rewrite.Workspa
 			return fmt.Errorf("rewrite introduces %d parser errors", len(result.Errors)-len(current.Document.ParseErrors))
 		}
 	}
+	for _, deleted := range plan.Deletes {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		path, err := uriutil.Path(deleted.URI)
+		if err != nil || !pathWithinRoot(s.rootPath, path) {
+			return fmt.Errorf("deleted document %q is outside the workspace", deleted.URI)
+		}
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			return fmt.Errorf("deleted document %q does not exist or is not a file", deleted.URI)
+		}
+		current, err := (serverDocumentResolver{server: s}).ResolveDocument(ctx, deleted.URI)
+		if err != nil {
+			return err
+		}
+		if current.Document.Source != deleted.Source ||
+			!sameOptionalVersion(current.Version, deleted.Version) {
+			return rewrite.ErrStaleHandle
+		}
+	}
 	return nil
 }
 

@@ -86,6 +86,29 @@ func TestWorkspacePlanMarshalsCreatedFileEditWithNullVersion(t *testing.T) {
 	require.Nil(t, version)
 }
 
+func TestWorkspacePlanEmitsDeleteAfterCreatedContent(t *testing.T) {
+	version := 4
+	plan := rewrite.WorkspacePlan{
+		Creates: []rewrite.CreateFilePlan{{
+			URI: "file:///project/services.yaml", Content: "services:\n",
+		}},
+		Deletes: []rewrite.DeleteFilePlan{{
+			URI: "file:///project/services.xml", Version: &version,
+			Source: "<container/>",
+		}},
+	}
+	wire, err := plan.WorkspaceEdit()
+	require.NoError(t, err)
+	require.Len(t, wire.DocumentChanges, 3)
+	require.Equal(t, "create", wire.DocumentChanges[0].Kind)
+	require.Equal(t, "services:\n", wire.DocumentChanges[1].Edits[0].NewText)
+	require.Equal(t, "delete", wire.DocumentChanges[2].Kind)
+	require.Equal(t, "file:///project/services.xml", wire.DocumentChanges[2].URI)
+	require.NotNil(t, wire.DocumentChanges[2].Options)
+	require.False(t, wire.DocumentChanges[2].Options.Recursive)
+	require.False(t, wire.DocumentChanges[2].Options.IgnoreIfNotExists)
+}
+
 func TestElementHandleRejectsChangedDocumentVersion(t *testing.T) {
 	document := lsp.NewTextDocument("file:///project/test.yaml", "value: bad\n", 3)
 	element := document.SyntaxTree.Root.DescendantForRange(cst.TextRange{Start: 7, End: 10})

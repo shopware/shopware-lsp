@@ -14,6 +14,7 @@ require (
 	github.com/tidwall/pretty v1.2.1
 	github.com/tidwall/sjson v1.2.5
 	github.com/vmihailenco/msgpack/v5 v5.4.1
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -29,5 +30,4 @@ require (
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
