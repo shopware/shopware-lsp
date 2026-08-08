@@ -3,6 +3,7 @@ node_modules
 /vscode-extension/out
 /vscode-extension/dist
 /dist
+/out
 /.opencode
 internal/php/alias_resolver.go
 internal/php/php.db

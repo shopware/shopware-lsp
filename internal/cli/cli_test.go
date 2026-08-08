@@ -96,7 +96,16 @@ func TestAPIJSONDescribesCommandsAndLanguages(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(output.Bytes(), &result))
 	require.GreaterOrEqual(t, len(result.Commands), 30)
+	require.Contains(t, commandNames(result.Commands), "mcp")
 	require.Contains(t, result.Languages["php"], ".php")
+}
+
+func commandNames(commands []commandDefinition) []string {
+	result := make([]string, 0, len(commands))
+	for _, command := range commands {
+		result = append(result, command.Name)
+	}
+	return result
 }
 
 func TestParsePositionTargetUsesOneBasedCLIPositions(t *testing.T) {

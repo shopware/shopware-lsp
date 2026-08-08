@@ -47,17 +47,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     
     // If no custom path is provided, use the bundled server
     if (!serverPath) {
+      const binaryName = process.platform === 'win32'
+        ? 'shopware-lsp.exe'
+        : 'shopware-lsp';
       // For development, we'll look for the server in the parent directory
       const workspaceRoot = getOuterMostWorkspaceFolder()?.uri.fsPath || '';
       const possiblePaths = [
         // When installed as extension
-        context.asAbsolutePath(path.join('.', 'shopware-lsp')),
+        context.asAbsolutePath(path.join('.', binaryName)),
         // When installed as extension in the parent directory
-        context.asAbsolutePath(path.join('..', 'shopware-lsp')),
+        context.asAbsolutePath(path.join('..', binaryName)),
         // When running from source
-        path.join(workspaceRoot, '..', 'shopware-lsp'),
+        path.join(workspaceRoot, '..', binaryName),
         // When in the same directory
-        path.join(workspaceRoot, 'shopware-lsp')
+        path.join(workspaceRoot, binaryName)
       ];
 
       for (const p of possiblePaths) {

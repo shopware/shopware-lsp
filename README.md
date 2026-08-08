@@ -23,6 +23,7 @@ shopware-lsp -root /path/to/project workspace-symbol customer.detail
 shopware-lsp -root /path/to/project workspace-symbol --fresh customer.detail
 shopware-lsp -root /path/to/project codeaction -kind quickfix src/Controller.php:24:18
 shopware-lsp -root /path/to/project rename -d src/Controller.php:24:18 NewName
+shopware-lsp -root /path/to/project mcp
 ```
 
 Positions are one-based `file:line:column` values. Structured feature commands
@@ -53,6 +54,33 @@ Operational flags include `-profile.cpu`, `-profile.mem`, and
 `-profile.trace`. `serve` additionally supports `-logfile`, `-rpc.trace`, a
 runtime profiling endpoint through `-debug`, and a single-client TCP or Unix
 socket through `-listen`.
+
+### MCP server
+
+The `mcp` command exposes the production workspace index, diagnostics, and
+refactoring engine to AI clients over MCP's stdin/stdout transport. For
+example, an MCP client configuration can launch one server per workspace:
+
+```json
+{
+  "mcpServers": {
+    "shopware": {
+      "command": "/absolute/path/to/shopware-lsp",
+      "args": ["-root", "/absolute/path/to/project", "mcp"]
+    }
+  }
+}
+```
+
+The server advertises `shopware_diagnostics`, `shopware_code_actions`,
+`shopware_apply_code_action`, `shopware_hover`, `shopware_definition`,
+`shopware_references`, and `shopware_workspace_symbols`. Indexing is lazy on
+the first tool call and the resulting workspace session is reused for later
+calls. Tool paths may be absolute or workspace-relative; positions and
+returned ranges are one-based. Read tools never modify the workspace. Applying
+a code action requires an exact title returned by `shopware_code_actions`, is
+restricted to workspace edit targets, writes the affected files, and returns a
+unified diff.
 
 ## Features
 
@@ -1236,8 +1264,29 @@ is tracked in [`docs/symfony-plugin-roadmap.md`](docs/symfony-plugin-roadmap.md)
 
 ### Requirements
 
-- Go 1.25.3 or higher
+- Go 1.26.5 or higher
 - A C compiler with CGO enabled (the index uses native SQLite)
+- Node.js 24 for VSCode extension development
+- Docker for cross-compiling release binaries
+
+The repository includes a `mise.toml` for reproducible tool versions and
+common development tasks:
+
+```bash
+mise install
+mise run setup
+mise run check
+```
+
+Run `mise tasks` to list the individual backend and VSCode extension tasks.
+`mise run release` uses the pinned GoReleaser cross-build container to create
+platform-specific VSIX packages and `SHA256SUMS` in `out/`. It keeps CGO
+enabled for every server binary and covers macOS, Linux, Alpine, and Windows.
+Pass `--pre-release` through mise to mark every VSIX as a VSCode pre-release:
+
+```bash
+mise run release -- --pre-release
+```
 
 ### Building
 

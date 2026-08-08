@@ -1,5 +1,5 @@
 PACKAGE_NAME          := shopware-cli
-GOLANG_CROSS_VERSION  ?= latest
+GOLANG_CROSS_VERSION  ?= v1.26.5
 PUBLISH               ?= 0
 VSCODE_OS             ?= $(OS)
 

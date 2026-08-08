@@ -60,6 +60,34 @@ builds:
       - CC=aarch64-linux-gnu-gcc
       - CXX=aarch64-linux-gnu-g++
       - CGO_ENABLED=1
+  - id: linux-armv7
+    main: ./
+    binary: shopware-lsp
+    goos:
+      - linux
+    goarch:
+      - arm
+    goarm:
+      - "7"
+    ldflags:
+      - -s -w -linkmode external -extldflags -static -X main.version={{.Version}}
+    env:
+      - CC=arm-linux-gnueabihf-gcc
+      - CXX=arm-linux-gnueabihf-g++
+      - CGO_ENABLED=1
+  - id: windows-amd64
+    main: ./
+    binary: shopware-lsp
+    goos:
+      - windows
+    goarch:
+      - amd64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    env:
+      - CC=x86_64-w64-mingw32-gcc
+      - CXX=x86_64-w64-mingw32-g++
+      - CGO_ENABLED=1
 archives:
   - id: golang-cross
     ids:
@@ -67,6 +95,8 @@ archives:
       - darwin-arm64
       - linux-amd64
       - linux-arm64
+      - linux-armv7
+      - windows-amd64
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [ 'zip' ]
     wrap_in_directory: false
@@ -83,18 +113,18 @@ release:
     owner: shopwareLabs
     name: shopware-lsp
 
-brews:
+homebrew_casks:
   - repository:
       owner: shopware
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    ids:
+      - golang-cross
+    binaries:
+      - shopware-lsp
     commit_author:
       name: Frosh Automation
       email: ci@fos.gg
-    goarm: "7"
     homepage: https://shopware.com
     description: Shopware Language Server
-    license: MIT
-    directory: Formula
-    install: |-
-      bin.install "shopware-lsp"
+    directory: Casks

@@ -146,6 +146,7 @@ func (r *Runner) Run(
 func (r *Runner) commands() map[string]commandDefinition {
 	definitions := []commandDefinition{
 		{"serve", "run the Shopware language server", "serve [server-flags]", r.runServe},
+		{"mcp", "run the Shopware MCP server", "mcp", r.runMCP},
 		{"version", "print version information", "version", r.runVersion},
 		{"help", "print command usage", "help [command]", r.runHelp},
 		{"api-json", "print the supported CLI and language API", "api-json", r.runAPIJSON},

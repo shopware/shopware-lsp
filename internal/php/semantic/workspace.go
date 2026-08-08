@@ -1042,7 +1042,7 @@ func shareWorkspaceSymbolStrings(
 		key := unsafe.StringData(value)
 		id, exists := (*index)[key]
 		if !exists {
-			if len((*shared).Values) == math.MaxUint32 {
+			if uint64(len((*shared).Values)) == math.MaxUint32 {
 				panic("semantic: shared symbol string table exceeds uint32")
 			}
 			id = uint32(len((*shared).Values) + 1)
@@ -3516,7 +3516,7 @@ func shareWorkspaceReferenceStrings(
 		key := unsafe.StringData(value)
 		id, exists := (*index)[key]
 		if !exists {
-			if len((*shared).Values) == math.MaxUint32 {
+			if uint64(len((*shared).Values)) == math.MaxUint32 {
 				panic("semantic: shared reference string table exceeds uint32")
 			}
 			id = uint32(len((*shared).Values) + 1)
@@ -4296,7 +4296,7 @@ func (packer *workspaceReferencePacker) stringIndexFor(value string) uint32 {
 	if index, exists := packer.stringIndex[value]; exists {
 		return index
 	}
-	if len(packer.stringIndex) == math.MaxUint32 {
+	if uint64(len(packer.stringIndex)) == math.MaxUint32 {
 		panic("semantic: workspace reference string table exceeds uint32")
 	}
 	index := uint32(len(packer.stringIndex) + 1)
@@ -4317,7 +4317,7 @@ func (packer *workspaceReferencePacker) typeIndexFor(value types.Type) uint32 {
 	if index, exists := packer.typeIndex[value]; exists {
 		return index
 	}
-	if len(packer.typeIndex) == math.MaxUint32 {
+	if uint64(len(packer.typeIndex)) == math.MaxUint32 {
 		panic("semantic: workspace reference type table exceeds uint32")
 	}
 	index := uint32(len(packer.typeIndex) + 1)
@@ -4436,7 +4436,7 @@ func (builder *workspaceSymbolStringBuilder) indexFor(value string) uint32 {
 			}
 		}
 	}
-	if len(values) == math.MaxUint32 {
+	if uint64(len(values)) == math.MaxUint32 {
 		panic("semantic: workspace symbol string table exceeds uint32")
 	}
 	index := uint32(len(values) + 1)

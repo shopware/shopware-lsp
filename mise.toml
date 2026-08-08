@@ -1,0 +1,67 @@
+[tools]
+go = "1.26.5"
+node = "24.18.1"
+golangci-lint = "2.12.2"
+"npm:@vscode/vsce" = "3.9.1"
+
+[env]
+CGO_ENABLED = "1"
+
+[tasks.setup]
+description = "Install Go and VSCode extension dependencies"
+run = [
+  "go mod download",
+  "npm --prefix vscode-extension ci",
+]
+
+[tasks.build]
+description = "Build the language server"
+run = "go build ./..."
+
+[tasks.test]
+description = "Run the Go test suite"
+run = "go test ./..."
+
+[tasks."test:race"]
+description = "Run internal Go tests with the race detector"
+run = "go test -race ./internal/..."
+
+[tasks.lint]
+description = "Run Go lint checks"
+run = "golangci-lint run"
+
+[tasks."vscode:install"]
+description = "Install VSCode extension dependencies"
+dir = "vscode-extension"
+run = "npm ci"
+
+[tasks."vscode:check"]
+description = "Type-check the VSCode extension"
+dir = "vscode-extension"
+run = "npm run check-types"
+
+[tasks."vscode:build"]
+description = "Build the VSCode extension"
+dir = "vscode-extension"
+run = "npm run compile"
+
+[tasks."vscode:test"]
+description = "Run VSCode extension tests"
+dir = "vscode-extension"
+run = [
+  "npm run test:entity-designer",
+  "npm run test:configuration",
+]
+
+[tasks.release]
+description = "Build platform-specific VSIX packages into out/"
+depends = ["vscode:install"]
+run = "node scripts/build-vsix-release.mjs"
+
+[tasks.check]
+description = "Run backend and VSCode validation"
+depends = ["test", "lint", "vscode:check", "vscode:test"]
+
+[tasks.default]
+description = "Build the backend and VSCode extension"
+depends = ["build", "vscode:build"]

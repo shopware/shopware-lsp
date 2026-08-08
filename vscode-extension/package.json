@@ -2,7 +2,7 @@
   "name": "shopware-lsp",
   "displayName": "Shopware Language Server",
   "description": "Shopware and Symfony Support for Visual Studio Code",
-  "version": "0.0.3",
+  "version": "0.2.0",
   "publisher": "shopware",
   "icon": "icon.png",
   "galleryBanner": {
