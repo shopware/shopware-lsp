@@ -78,6 +78,7 @@ type workspaceServices struct {
 	styles          *style.Index
 	php             *php.PHPIndex
 	twig            *twig.TwigIndexer
+	twigVersioning  *twig.VersioningService
 	twigComponents  *twigcomponent.Index
 	snippets        *snippet.SnippetIndexer
 	translations    *translation.Index
@@ -683,7 +684,12 @@ func registerFeatures(server *lsp.Server, root string, services workspaceService
 	))
 	server.RegisterHoverProvider(hover.NewSnippetHoverProvider(root, services.snippets))
 	server.RegisterHoverProvider(hover.NewDALHoverProvider(services.dal))
-	server.RegisterHoverProvider(hover.NewTwigVersioningHoverProvider(services.twig))
+	versioning := services.twigVersioning
+	if !server.DomainEnabled("shopware.twigVersioning") {
+		versioning = nil
+	} else {
+		server.RegisterHoverProvider(hover.NewTwigVersioningHoverProvider(versioning))
+	}
 	if server.DomainEnabled("administration") {
 		server.RegisterHoverProvider(hover.NewAdminHoverProvider(root, services.admin))
 	}
@@ -746,7 +752,7 @@ func registerFeatures(server *lsp.Server, root string, services workspaceService
 
 	server.RegisterActionProvider(codeaction.NewSnippetCodeActionProvider(services.snippets))
 	server.RegisterActionProvider(codeaction.NewSnippetCopyCodeActionProvider())
-	server.RegisterActionProvider(codeaction.NewTwigCodeActionProvider(root, services.twig))
+	server.RegisterActionProvider(codeaction.NewTwigCodeActionProvider(versioning))
 	var adminTwigOverride *codeaction.AdminTwigOverrideProvider
 	if server.DomainEnabled("administration") {
 		server.RegisterActionProvider(codeaction.NewAdminContextProvider())
@@ -824,7 +830,7 @@ func registerFeatures(server *lsp.Server, root string, services workspaceService
 
 	server.RegisterCommandProvider(snippet.NewSnippetCommandProvider(services.snippets, server))
 	server.RegisterCommandProvider(extension.NewExtensionCommandProvider(services.extensions))
-	server.RegisterCommandProvider(twig.NewTwigCommandProvider(root, services.extensions, services.twig))
+	server.RegisterCommandProvider(twig.NewTwigCommandProvider(root, services.extensions, versioning))
 	server.RegisterCommandProvider(symfonyGenerators)
 	server.RegisterCommandProvider(formFieldGenerator)
 	server.RegisterCommandProvider(twigFormFieldGenerator)

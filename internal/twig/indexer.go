@@ -370,12 +370,15 @@ func (idx *TwigIndexer) indexTwig(parsed *indexer.ParsedFile) error {
 	twigBlocks := make(map[string]map[string]TwigBlock)
 	twigBlocks[file.Path] = make(map[string]TwigBlock)
 
-	isStorefrontTemplate := IsStorefrontTemplate(path)
+	isVersionedView := strings.Contains(
+		filepath.ToSlash(path),
+		"/Resources/views/",
+	)
 
 	twigBlockHashes := map[string]map[string]TwigBlockHash{
 		file.Path: {},
 	}
-	if isStorefrontTemplate {
+	if isVersionedView {
 		twigBlockHashes[file.Path] = make(map[string]TwigBlockHash)
 	}
 
@@ -384,14 +387,17 @@ func (idx *TwigIndexer) indexTwig(parsed *indexer.ParsedFile) error {
 			twigBlocks[file.Path][block.Name] = block
 		}
 
-		if isStorefrontTemplate {
+		if isVersionedView {
 			blockHash := TwigBlockHash{
-				Name:         block.Name,
-				RelativePath: ConvertToRelativePath(path),
-				AbsolutePath: path,
-				Hash:         block.Hash,
-				Text:         block.Text,
-				Deprecation:  block.Deprecation,
+				Name:                 block.Name,
+				RelativePath:         ConvertToRelativePath(path),
+				AbsolutePath:         path,
+				BundleName:           file.BundleName,
+				Hash:                 block.Hash,
+				Text:                 block.Text,
+				Line:                 block.Line,
+				Deprecation:          block.Deprecation,
+				HasVersioningComment: block.HasVersioningComment,
 			}
 			twigBlockHashes[file.Path][block.Name] = blockHash
 		}

@@ -133,7 +133,9 @@ func TestStorefrontTwigActionsDoNotLeakIntoAdministrationTemplates(t *testing.T)
 	}
 	assert.Empty(
 		t,
-		NewTwigCodeActionProvider(root, twigIndex).GetCodeActions(
+		NewTwigCodeActionProvider(
+			twig.NewVersioningService(root, twigIndex, ""),
+		).GetCodeActions(
 			context.Background(),
 			request,
 		),

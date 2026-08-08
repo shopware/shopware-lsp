@@ -45,6 +45,7 @@ interface DiagnosticEntry {
   id: string;
   source: string;
   defaultSeverity: Severity;
+  defaultEnabled?: boolean;
 }
 
 interface InspectionEntry {
@@ -298,7 +299,8 @@ function configurableItems(catalog: ConfigurationCatalog): ConfigurableItem[] {
       value: enabled,
     });
     for (const rule of inspection.rules) {
-      const value = catalog.effective.diagnostics.rules[rule.id] ?? rule.defaultSeverity;
+      const value = catalog.effective.diagnostics.rules[rule.id] ??
+        (rule.defaultEnabled !== false ? rule.defaultSeverity : 'off');
       result.push({
         configKind: 'rule', id: rule.id, label: rule.id, description: value,
         detail: `Diagnostic · ${inspection.id} · ${rule.source} · ${configurationOrigin(catalog, `diagnostics.rules.${rule.id}`)}`,

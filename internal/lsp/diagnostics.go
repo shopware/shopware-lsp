@@ -331,8 +331,11 @@ func (r *inspectionProblemReporter) Report(problem Problem) error {
 		return fmt.Errorf("inspection %q reported undeclared diagnostic %q", r.inspection.definition.ID, problem.ID)
 	}
 	if r.server != nil {
-		if configured, found := diagnosticRuleSeverity(r.policy, problem.ID); found &&
-			configured == projectconfig.SeverityOff {
+		if configured, found := diagnosticRuleSeverity(r.policy, problem.ID); found {
+			if configured == projectconfig.SeverityOff {
+				return nil
+			}
+		} else if definition.DisabledByDefault {
 			return nil
 		}
 	}
@@ -415,9 +418,10 @@ func inspectionHasEnabledRule(
 	if inspection == nil {
 		return false
 	}
-	for id := range inspection.problems {
+	for id, definition := range inspection.problems {
 		severity, configured := diagnosticRuleSeverity(policy, id)
-		if !configured || severity != projectconfig.SeverityOff {
+		if configured && severity != projectconfig.SeverityOff ||
+			!configured && !definition.DisabledByDefault {
 			return true
 		}
 	}

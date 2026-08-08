@@ -13,7 +13,9 @@ import (
 	twigsyntax "github.com/shopware/shopware-lsp/internal/parser/twig/syntax"
 )
 
-var shopwareBlockCommentRegex = regexp.MustCompile(`\{#\s*` + VersionCommentPrefix + `\s*([a-f0-9]+)@([\w\.\-]+)\s*#\}`)
+var shopwareBlockCommentRegex = regexp.MustCompile(
+	`\{#\s*` + VersionCommentPrefix + `\s*([a-fA-F0-9]+)(?:@([\w.\-+]+))?\s*#\}`,
+)
 
 func calculateBlockHash(content string) string {
 	hash := sha256.New()
@@ -48,25 +50,32 @@ type TwigVersionComment struct {
 	Hash    string
 	Version string
 	Line    int
+	Range   cst.TextRange
 }
 
 type TwigBlockHash struct {
-	Name         string
-	RelativePath string
-	AbsolutePath string
-	Hash         string
-	Text         string
-	Deprecation  string
+	Name                 string
+	RelativePath         string
+	AbsolutePath         string
+	BundleName           string
+	Hash                 string
+	Text                 string
+	Line                 int
+	Deprecation          string
+	HasVersioningComment bool
 }
 
 type TwigBlock struct {
-	Name           string
-	NameRange      cst.TextRange
-	Line           int
-	Hash           string
-	Text           string
-	VersionComment *TwigVersionComment
-	Deprecation    string
+	Name                 string
+	Range                cst.TextRange
+	NameRange            cst.TextRange
+	Line                 int
+	Hash                 string
+	Text                 string
+	HasVersioningComment bool
+	VersionCommentRange  *cst.TextRange
+	VersionComment       *TwigVersionComment
+	Deprecation          string
 }
 
 func findBlocks(root *twigsyntax.Node, source string, lineIndex *twigsyntax.LineIndex, file *TwigFile) {
@@ -89,23 +98,36 @@ func findBlocks(root *twigsyntax.Node, source string, lineIndex *twigsyntax.Line
 		blockRange := node.RangeTrimmedTrivia()
 		blockText := source[blockRange.Start:blockRange.End]
 		var versionComment *TwigVersionComment
+		var versionCommentRange *cst.TextRange
+		hasVersioningComment := false
 		deprecation := BlockDeprecation(node, source)
 		if previous := findPreviousBlockComment(node); previous != nil {
 			commentRange := previous.RangeTrimmedTrivia()
 			line, _ := lineIndex.Position(commentRange.Start)
 			comment := source[commentRange.Start:commentRange.End]
+			hasVersioningComment = strings.Contains(comment, VersionCommentPrefix)
+			if hasVersioningComment {
+				copyRange := commentRange
+				versionCommentRange = &copyRange
+			}
 			versionComment = ParseVersionComment(comment, int(line)+1)
+			if versionComment != nil {
+				versionComment.Range = commentRange
+			}
 		}
 
 		line, _ := lineIndex.Position(name.Range().Start)
 		file.Blocks[name.Text()] = TwigBlock{
-			Name:           name.Text(),
-			NameRange:      name.Range(),
-			Line:           int(line) + 1,
-			Hash:           calculateBlockHash(blockText),
-			Text:           blockText,
-			VersionComment: versionComment,
-			Deprecation:    deprecation,
+			Name:                 name.Text(),
+			Range:                blockRange,
+			NameRange:            name.Range(),
+			Line:                 int(line) + 1,
+			Hash:                 calculateBlockHash(blockText),
+			Text:                 blockText,
+			HasVersioningComment: hasVersioningComment,
+			VersionCommentRange:  versionCommentRange,
+			VersionComment:       versionComment,
+			Deprecation:          deprecation,
 		}
 	}
 }

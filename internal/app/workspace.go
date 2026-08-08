@@ -283,6 +283,15 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 		return nil, fmt.Errorf("create App script index: %w", err)
 	}
 	workspace.indexers = append(workspace.indexers, appScriptIndex)
+	shopwareVersionText := ""
+	if shopwareVersion.Known {
+		shopwareVersionText = shopwareVersion.Version.String()
+	}
+	twigVersioning := twig.NewVersioningService(
+		root,
+		twigIndex,
+		shopwareVersionText,
+	)
 	for _, idx := range workspace.indexers {
 		if configuration.DomainEnabled(domainForIndexer(idx.ID())) {
 			workspace.scanner.AddIndexer(idx)
@@ -308,6 +317,7 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 		styles:          styleIndex,
 		php:             phpIndex,
 		twig:            twigIndex,
+		twigVersioning:  twigVersioning,
 		twigComponents:  twigComponentIndex,
 		snippets:        snippetIndex,
 		translations:    translationIndex,

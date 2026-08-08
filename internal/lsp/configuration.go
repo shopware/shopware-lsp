@@ -48,6 +48,7 @@ type ConfigurationDiagnostic struct {
 	ID              string `json:"id"`
 	Source          string `json:"source"`
 	DefaultSeverity string `json:"defaultSeverity"`
+	DefaultEnabled  bool   `json:"defaultEnabled"`
 }
 
 type ConfigurationReloadResult struct {
@@ -305,6 +306,7 @@ func (s *Server) configurationCatalog() ConfigurationCatalog {
 				ID:              string(problem.ID),
 				Source:          problem.Source,
 				DefaultSeverity: diagnosticSeverityName(problem.DefaultSeverity),
+				DefaultEnabled:  !problem.DisabledByDefault,
 			})
 		}
 		sort.Slice(inspection.Rules, func(i, j int) bool {
@@ -743,8 +745,10 @@ func inspectionDomain(id string) string {
 		return "shopware.entitySchema"
 	case id == "shopware.store_composer":
 		return "shopware.store"
-	case id == "shopware.theme", id == "shopware.twig_versioning":
+	case id == "shopware.theme":
 		return "shopware.theme"
+	case id == "shopware.twig_versioning":
+		return "shopware.twigVersioning"
 	case id == "shopware.dal", id == "shopware.criteria":
 		return "shopware.dal"
 	case strings.HasPrefix(id, "symfony.doctrine"):

@@ -21,7 +21,14 @@ Complete template paths in `extends`, `include`, `sw_extends`, and `sw_include` 
 
 ### Twig Block Versioning
 
-Keep your template overrides in sync. The LSP tracks content hashes of Storefront blocks and warns you when the original block has changed. Quick actions let you view the diff, update the version hash, or scaffold a new block override in your extension.
+Keep template overrides in sync across Storefront, themes, vendor packages, and
+custom extensions. The LSP follows the complete `sw_extends` chain, detects
+changed, deprecated, and removed upstream blocks, and shows their source,
+package version, and status on hover. Quick actions add or update portable
+version comments, show historical Shopware core diffs, or scaffold a new block
+override in your extension. Missing version comments are intentionally not
+reported by default; enable `twig.versioning.comment_missing` in the project
+configuration when your project enforces them.
 
 ### Icons
 
@@ -104,7 +111,7 @@ diagnostic settings.
 | Invalid block references | Error | Twig (admin) |
 | Non-existent parent component | Error | JS/TS (admin) |
 | Outdated block version | Warning | Twig |
-| Missing block version comment | Warning | Twig |
+| Missing block version comment (opt-in) | Warning | Twig |
 
 ## Resource usage
 

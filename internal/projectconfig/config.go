@@ -202,6 +202,7 @@ var DomainCatalog = []CatalogEntry{
 	{ID: "shopware.featureFlags", Label: "Feature Flags", Parent: "shopware"},
 	{ID: "shopware.systemConfig", Label: "System Config", Parent: "shopware", DependsOn: []string{"php"}},
 	{ID: "shopware.theme", Label: "Theme", Parent: "shopware"},
+	{ID: "shopware.twigVersioning", Label: "Twig Block Versioning", Parent: "shopware", DependsOn: []string{"twig"}},
 	{ID: "shopware.dal", Label: "Shopware DAL", Parent: "shopware", DependsOn: []string{"php"}},
 	{ID: "shopware.appScripts", Label: "App Scripts", Parent: "shopware"},
 	{ID: "shopware.migrations", Label: "Shopware Migrations", Parent: "shopware", DependsOn: []string{"php"}},

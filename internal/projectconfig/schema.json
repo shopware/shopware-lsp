@@ -114,6 +114,7 @@
         "shopware.extensions": { "type": "boolean" }, "shopware.snippets": { "type": "boolean" },
         "shopware.translations": { "type": "boolean" }, "shopware.featureFlags": { "type": "boolean" },
         "shopware.systemConfig": { "type": "boolean" }, "shopware.theme": { "type": "boolean" },
+        "shopware.twigVersioning": { "type": "boolean" },
         "shopware.dal": { "type": "boolean" }, "shopware.appScripts": { "type": "boolean" },
         "shopware.migrations": { "type": "boolean" }, "shopware.entitySchema": { "type": "boolean" },
         "shopware.store": { "type": "boolean" }

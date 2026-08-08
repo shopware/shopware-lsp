@@ -9,6 +9,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/language"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
+	"github.com/shopware/shopware-lsp/internal/projectconfig"
 	"github.com/shopware/shopware-lsp/internal/rewrite"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 	"github.com/stretchr/testify/require"
@@ -47,6 +48,31 @@ func (testInspection) Inspect(
 }
 
 func (testInspection) QuickFixes() []QuickFix { return []QuickFix{testInspectionFix{}} }
+
+type defaultDisabledInspection struct{}
+
+func (defaultDisabledInspection) Definition() InspectionDefinition {
+	definition := testInspection{}.Definition()
+	definition.ID = "test.default-disabled"
+	definition.Problems[0].ID = "test.default-disabled"
+	definition.Problems[0].DisabledByDefault = true
+	return definition
+}
+
+func (defaultDisabledInspection) Inspect(
+	_ context.Context,
+	document *TextDocument,
+	reporter ProblemReporter,
+) error {
+	rng := cst.TextRange{Start: 7, End: 10}
+	return reporter.Report(Problem{
+		ID: "test.default-disabled", Range: rng,
+		Element: document.SyntaxTree.Root.DescendantForRange(rng),
+		Message: "Opt-in diagnostic",
+	})
+}
+
+func (defaultDisabledInspection) QuickFixes() []QuickFix { return nil }
 
 type testInspectionFix struct{}
 
@@ -148,6 +174,35 @@ func TestInspectionBindsAndLazilyResolvesExactQuickFix(t *testing.T) {
 	require.Len(t, resolved.Edit.DocumentChanges, 1)
 	require.Equal(t, 3, *resolved.Edit.DocumentChanges[0].TextDocument.Version)
 	require.Equal(t, "good", resolved.Edit.DocumentChanges[0].Edits[0].NewText)
+}
+
+func TestInspectionRuleCanBeDisabledByDefaultAndExplicitlyEnabled(t *testing.T) {
+	root := t.TempDir()
+	uri := uriutil.FileURI(root + "/test.yaml")
+	server := NewServer(nil, root, "test")
+	server.RegisterInspection(defaultDisabledInspection{})
+	server.documentManager.OpenDocument(uri, "value: bad\n", 1)
+	document, found := server.documentManager.GetDocument(uri)
+	require.True(t, found)
+	require.Empty(t, server.collectDiagnostics(context.Background(), document))
+
+	result := server.replaceEditorConfiguration(context.Background(), projectconfig.Partial{
+		Diagnostics: &projectconfig.DiagnosticsConfig{Rules: map[string]projectconfig.Severity{
+			"test.default-disabled": projectconfig.SeverityWarning,
+		}},
+	})
+	require.True(t, result.Applied)
+	require.Len(t, server.collectDiagnostics(context.Background(), document), 1)
+
+	catalog := server.configurationCatalog()
+	for _, inspection := range catalog.Inspections {
+		if inspection.ID == "test.default-disabled" {
+			require.Len(t, inspection.Rules, 1)
+			require.False(t, inspection.Rules[0].DefaultEnabled)
+			return
+		}
+	}
+	t.Fatal("default-disabled inspection missing from configuration catalog")
 }
 
 func TestInspectionResolveDisablesStaleAction(t *testing.T) {

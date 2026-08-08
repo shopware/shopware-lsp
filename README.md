@@ -516,12 +516,35 @@ configuration is only needed for other MCP clients. Set
 - Diagnostics for missing icons in `sw_icon` tags
 
 ### Twig Block Versioning
-- Tracks block content hashes between Storefront and extensions
-- Detects outdated block overrides with warning diagnostics
-- Code action to add versioning hash comments to overridden blocks
-- Code action to show block diff when version is outdated
-- Code action to override a Storefront block in an extension
-- Hover shows block hash, template path, and update status
+
+- Tracks compatible SHA-256 block hashes across the complete `sw_extends`
+  chain, including Storefront, vendor packages, themes, and custom extensions
+- Detects outdated, deprecated, and safely resolvable removed upstream blocks;
+  unresolved or missing dependencies do not produce false removal warnings
+- Adds or updates portable `{# shopware-block: hash@version #}` comments through
+  typed, lazily resolved quick fixes that also work through MCP
+- Offers the same add/update action contextually even when the optional missing
+  comment diagnostic is disabled
+- Shows historical diffs for changed Shopware core blocks and exposes upstream
+  path, package version, hash candidates, and current status on hover
+- Scaffolds a Storefront block override into a selected extension
+
+The `twig.versioning.comment_missing` diagnostic is opt-in to avoid noisy
+warnings in projects that do not use block comments. Enable it explicitly:
+
+```json
+{
+  "version": 1,
+  "diagnostics": {
+    "rules": {
+      "twig.versioning.comment_missing": "warning"
+    }
+  }
+}
+```
+
+Set `domains.shopware.twigVersioning` to `false` to disable Twig block
+versioning diagnostics, hover, actions, and commands as one feature domain.
 
 ### Assets, AssetMapper, Webpack Encore, and Vite
 - Static `public/`/`web/` files, manifests, entrypoints, and Encore entries

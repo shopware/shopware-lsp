@@ -119,6 +119,90 @@ func TestMCPDiagnosticsAndCodeActionUseProductionLSP(t *testing.T) {
 	require.Equal(t, "this.$t('translation.key');\n", string(content))
 }
 
+func TestMCPTwigVersioningQuickFixUsesProductionIndex(t *testing.T) {
+	root := t.TempDir()
+	upstreamPath := filepath.Join(
+		root,
+		"src/Storefront/Resources/views/storefront/page/example.html.twig",
+	)
+	overridePath := filepath.Join(
+		root,
+		"custom/plugins/Test/src/Resources/views/storefront/page/example.html.twig",
+	)
+	require.NoError(t, os.MkdirAll(filepath.Dir(upstreamPath), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Dir(overridePath), 0o755))
+	require.NoError(t, os.WriteFile(
+		upstreamPath,
+		[]byte("{% block content %}upstream{% endblock %}\n"),
+		0o644,
+	))
+	require.NoError(t, os.WriteFile(
+		overridePath,
+		[]byte(`{% sw_extends '@Storefront/storefront/page/example.html.twig' %}
+{# shopware-block: deadbeef@6.6.0.0 #}
+{% block content %}local{% endblock %}
+`),
+		0o644,
+	))
+	session := connectMCPTestClient(t, root)
+	ctx := context.Background()
+	const relativePath = "custom/plugins/Test/src/Resources/views/storefront/page/example.html.twig"
+
+	diagnostics, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "shopware_diagnostics",
+		Arguments: map[string]any{
+			"path": relativePath,
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, diagnostics.IsError, toolResultText(diagnostics))
+	var diagnosticResult diagnosticsOutput
+	decodeMCPStructuredContent(t, diagnostics, &diagnosticResult)
+	var found bool
+	for _, diagnostic := range diagnosticResult.Diagnostics {
+		if diagnostic.Code == "twig.versioning.outdated" {
+			found = true
+		}
+		require.NotEqual(t, "twig.versioning.comment_missing", diagnostic.Code)
+	}
+	require.True(t, found, "expected outdated Twig versioning diagnostic in %#v", diagnosticResult)
+
+	actions, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "shopware_code_actions",
+		Arguments: map[string]any{
+			"path": relativePath, "line": 3, "column": 10,
+			"kind": "quickfix",
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, actions.IsError, toolResultText(actions))
+	var actionResult codeActionsOutput
+	decodeMCPStructuredContent(t, actions, &actionResult)
+	require.Contains(
+		t, actionTitles(actionResult.Actions),
+		"Shopware: Update Twig block version comment",
+	)
+
+	applied, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "shopware_apply_code_action",
+		Arguments: map[string]any{
+			"path": relativePath, "line": 3, "column": 10,
+			"kind":  "quickfix",
+			"title": "Shopware: Update Twig block version comment",
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, applied.IsError, toolResultText(applied))
+	var applyResult applyCodeActionOutput
+	decodeMCPStructuredContent(t, applied, &applyResult)
+	require.True(t, applyResult.Applied)
+	require.Contains(t, applyResult.Diff, "-\u007b# shopware-block: deadbeef@6.6.0.0 #\u007d")
+	content, err := os.ReadFile(overridePath)
+	require.NoError(t, err)
+	require.NotContains(t, string(content), "deadbeef")
+	require.Contains(t, string(content), "{# shopware-block: ")
+}
+
 func TestMCPRejectsPathsOutsideWorkspaceBeforeIndexing(t *testing.T) {
 	root := t.TempDir()
 	session := connectMCPTestClient(t, root)

@@ -15,9 +15,10 @@ type DiagnosticID string
 type FixID string
 
 type ProblemDefinition struct {
-	ID              DiagnosticID
-	Source          string
-	DefaultSeverity protocol.DiagnosticSeverity
+	ID                DiagnosticID
+	Source            string
+	DefaultSeverity   protocol.DiagnosticSeverity
+	DisabledByDefault bool
 }
 
 type InspectionDefinition struct {

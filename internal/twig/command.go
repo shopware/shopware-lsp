@@ -21,14 +21,18 @@ import (
 
 type TwigCommandProvider struct {
 	extensionIndex *extension.ExtensionIndexer
-	twigIndexer    *TwigIndexer
+	versioning     *VersioningService
 	projectRoot    string
 }
 
-func NewTwigCommandProvider(projectRoot string, extensionIndex *extension.ExtensionIndexer, twigIndexer *TwigIndexer) *TwigCommandProvider {
+func NewTwigCommandProvider(
+	projectRoot string,
+	extensionIndex *extension.ExtensionIndexer,
+	versioning *VersioningService,
+) *TwigCommandProvider {
 	return &TwigCommandProvider{
 		extensionIndex: extensionIndex,
-		twigIndexer:    twigIndexer,
+		versioning:     versioning,
 		projectRoot:    projectRoot,
 	}
 }
@@ -104,11 +108,15 @@ func (t *TwigCommandProvider) extendBlock(ctx context.Context, args *json.RawMes
 	}
 
 	versionComment := ""
-	if t.twigIndexer != nil {
-		if allBlockHashes, err := t.twigIndexer.GetTwigBlockHashes(params.BlockName); err == nil {
-			if originalHash := FindOriginalStorefrontHash(allBlockHashes); originalHash != nil {
-				versionComment = FormatVersionComment(originalHash.Hash, DetectShopwareVersion(t.projectRoot))
-			}
+	if t.versioning != nil {
+		if originalHash, found, hashErr := t.versioning.BlockAtPath(
+			params.BlockName,
+			originalPath,
+		); hashErr == nil && found {
+			versionComment = FormatVersionComment(
+				originalHash.Hash,
+				t.versioning.VersionForPath(originalHash.AbsolutePath),
+			)
 		}
 	}
 
@@ -143,18 +151,8 @@ func (t *TwigCommandProvider) getBlockDiff(ctx context.Context, args *json.RawMe
 		return nil, err
 	}
 
-	if t.twigIndexer == nil {
-		return protocol.NewLspError("Twig indexer not available", "indexer.not_available"), nil
-	}
-
-	allBlockHashes, err := t.twigIndexer.GetTwigBlockHashes(params.BlockName)
-	if err != nil {
-		return protocol.NewLspError("Failed to get block hashes", "block.hash_failed"), nil
-	}
-
-	currentBlock := FindOriginalStorefrontHash(allBlockHashes)
-	if currentBlock == nil {
-		return protocol.NewLspError("Original block not found", "block.not_found"), nil
+	if t.versioning == nil {
+		return protocol.NewLspError("Twig versioning not available", "indexer.not_available"), nil
 	}
 
 	filePath, err := uriutil.Path(params.TextUri)
@@ -181,6 +179,21 @@ func (t *TwigCommandProvider) getBlockDiff(ctx context.Context, args *json.RawMe
 	}
 
 	versionComment := block.VersionComment
+	if versionComment.Version == "" {
+		return protocol.NewLspError(
+			"The versioning comment has no historical package version",
+			"version.not_found",
+		), nil
+	}
+	resolution, err := t.versioning.Resolve(*twigFile, params.BlockName)
+	if err != nil {
+		return protocol.NewLspError("Failed to resolve upstream block", "block.hash_failed"), nil
+	}
+	if len(resolution.Candidates) == 0 ||
+		!IsStorefrontTemplate(resolution.Candidates[0].AbsolutePath) {
+		return protocol.NewLspError("A historical diff is only available for Shopware core blocks", "block.diff_unavailable"), nil
+	}
+	currentBlock := resolution.Candidates[0]
 
 	originalContent, err := t.getBlockContentAtVersion(currentBlock.AbsolutePath, params.BlockName, versionComment.Version)
 	if err != nil {
@@ -192,7 +205,7 @@ func (t *TwigCommandProvider) getBlockDiff(ctx context.Context, args *json.RawMe
 		"originalContent": originalContent,
 		"originalVersion": versionComment.Version,
 		"currentContent":  currentBlock.Text,
-		"currentVersion":  DetectShopwareVersion(t.projectRoot),
+		"currentVersion":  t.versioning.VersionForPath(currentBlock.AbsolutePath),
 	}, nil
 }
 
@@ -210,7 +223,12 @@ func (t *TwigCommandProvider) getBlockContentAtVersion(absolutePath, blockName, 
 		gitRef = "v" + gitRef
 	}
 
-	fileContent, err := t.getFileContentFromGit(storefrontPath, relativePath, gitRef)
+	repositoryPath := filepath.ToSlash(absolutePath)
+	if relative, relativeErr := filepath.Rel(t.projectRoot, absolutePath); relativeErr == nil &&
+		!strings.HasPrefix(relative, ".."+string(filepath.Separator)) && relative != ".." {
+		repositoryPath = filepath.ToSlash(relative)
+	}
+	fileContent, err := t.getFileContentFromGit(t.projectRoot, repositoryPath, gitRef)
 	if err != nil {
 		fileContent, err = t.getFileContentFromGitHub(relativePath, gitRef)
 		if err != nil {

@@ -2,11 +2,12 @@ package diagnostics
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shopware/shopware-lsp/internal/indexer"
 	"github.com/shopware/shopware-lsp/internal/lsp"
-	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/twig"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,7 +21,7 @@ func TestTwigVersioningAnalyzer_originalNotFoundMessage(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = twigIndexer.Close() }()
 
-	provider := NewTwigVersioningAnalyzer(twigIndexer)
+	provider := NewTwigVersioningAnalyzer(twig.NewVersioningService("/tmp", twigIndexer, ""))
 
 	uri := "file:///tmp/myext/Resources/views/storefront/page/checkout/foo.html.twig"
 	content := []byte(`{% sw_extends '@Storefront/storefront/page/checkout/foo' %}{# shopware-block: abc123def456@6.4.15.0 #}{% block content %}test{% endblock %}`)
@@ -28,10 +29,7 @@ func TestTwigVersioningAnalyzer_originalNotFoundMessage(t *testing.T) {
 	diagnostics, err := provider.Analyze(ctx, diagnosticsDocument(uri, content))
 	require.NoError(t, err)
 
-	require.Len(t, diagnostics, 1)
-	assert.Contains(t, diagnostics[0].Message, "Original block not found in Storefront for block 'content'")
-	assert.Equal(t, protocol.DiagnosticSeverityWarning, diagnostics[0].Severity)
-	assert.Equal(t, "shopware-lsp", diagnostics[0].Source)
+	assert.Empty(t, diagnostics)
 }
 
 func TestTwigVersioningAnalyzer_nilIndexerNoPanic(t *testing.T) {
@@ -57,7 +55,7 @@ func TestTwigVersioningAnalyzerReportsDeprecatedUpstreamBlock(t *testing.T) {
 	)))
 	extensionPath := "/project/custom/plugins/Example/src/Resources/views/storefront/page/example.html.twig"
 	source := "{% sw_extends '@Storefront/storefront/page/example.html.twig' %}\n{% block page_old %}custom{% endblock %}"
-	problems, err := NewTwigVersioningAnalyzer(index).Analyze(
+	problems, err := NewTwigVersioningAnalyzer(twig.NewVersioningService("/project", index, "")).Analyze(
 		context.Background(),
 		lsp.NewTextDocument("file://"+extensionPath, source, 1),
 	)
@@ -71,4 +69,141 @@ func TestTwigVersioningAnalyzerReportsDeprecatedUpstreamBlock(t *testing.T) {
 		}
 	}
 	require.True(t, found)
+}
+
+func TestTwigVersioningAnalyzerAcceptsAnyChainCandidateAndReportsChanges(t *testing.T) {
+	root := t.TempDir()
+	index, err := twig.NewTwigIndexer(filepath.Join(root, "cache"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, index.Close()) })
+	corePath := filepath.Join(
+		root, "src", "Storefront", "Resources", "views",
+		"storefront", "page", "base.html.twig",
+	)
+	themePath := filepath.Join(
+		root, "custom", "plugins", "Theme", "src", "Resources", "views",
+		"storefront", "theme", "base.html.twig",
+	)
+	require.NoError(t, index.Index(indexer.NewParsedFile(
+		corePath,
+		[]byte(`{% block content %}core{% endblock %}`),
+	)))
+	require.NoError(t, index.Index(indexer.NewParsedFile(
+		themePath,
+		[]byte(`{% sw_extends '@Storefront/storefront/page/base.html.twig' %}
+{% block content %}theme{% endblock %}`),
+	)))
+	hashes, err := index.GetTwigBlockHashes("content")
+	require.NoError(t, err)
+	var coreHash string
+	for _, hash := range hashes {
+		if hash.AbsolutePath == corePath {
+			coreHash = hash.Hash
+		}
+	}
+	require.NotEmpty(t, coreHash)
+	pluginPath := filepath.Join(
+		root, "custom", "plugins", "Plugin", "src", "Resources", "views",
+		"storefront", "custom", "page.html.twig",
+	)
+	analyzer := NewTwigVersioningAnalyzer(twig.NewVersioningService(root, index, "6.7.2"))
+	matching := `{% sw_extends '@Theme/storefront/theme/base.html.twig' %}
+{# shopware-block: ` + coreHash + `@6.7.2.0 #}
+{% block content %}local{% endblock %}`
+	problems, err := analyzer.Analyze(
+		context.Background(),
+		lsp.NewTextDocument("file://"+pluginPath, matching, 1),
+	)
+	require.NoError(t, err)
+	for _, problem := range problems {
+		assert.NotEqual(t, TwigVersioningOutdatedCode, problem.ID)
+	}
+
+	outdated := `{% sw_extends '@Theme/storefront/theme/base.html.twig' %}
+{# shopware-block: deadbeef@6.6.0.0 #}
+{% block content %}local{% endblock %}`
+	problems, err = analyzer.Analyze(
+		context.Background(),
+		lsp.NewTextDocument("file://"+pluginPath, outdated, 2),
+	)
+	require.NoError(t, err)
+	require.True(t, containsTwigVersioningProblem(problems, TwigVersioningOutdatedCode))
+}
+
+func TestTwigVersioningAnalyzerReportsRemovalOnlyForResolvableParent(t *testing.T) {
+	root := t.TempDir()
+	index, err := twig.NewTwigIndexer(filepath.Join(root, "cache"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, index.Close()) })
+	corePath := filepath.Join(
+		root, "src", "Storefront", "Resources", "views",
+		"storefront", "page", "base.html.twig",
+	)
+	require.NoError(t, index.Index(indexer.NewParsedFile(
+		corePath,
+		[]byte(`{% block other %}core{% endblock %}`),
+	)))
+	analyzer := NewTwigVersioningAnalyzer(twig.NewVersioningService(root, index, ""))
+	pluginPath := filepath.Join(root, "custom", "plugin.html.twig")
+	tracked := `{% sw_extends '@Storefront/storefront/page/base.html.twig' %}
+{# shopware-block: deadbeef@6.6.0.0 #}
+{% block removed %}local{% endblock %}`
+	problems, err := analyzer.Analyze(
+		context.Background(),
+		lsp.NewTextDocument("file://"+pluginPath, tracked, 1),
+	)
+	require.NoError(t, err)
+	require.True(t, containsTwigVersioningProblem(problems, TwigVersioningOriginalMissingCode))
+
+	standalone := strings.Replace(
+		tracked,
+		"@Storefront/storefront/page/base.html.twig",
+		"@Missing/storefront/page/base.html.twig",
+		1,
+	)
+	problems, err = analyzer.Analyze(
+		context.Background(),
+		lsp.NewTextDocument("file://"+pluginPath, standalone, 2),
+	)
+	require.NoError(t, err)
+	assert.False(t, containsTwigVersioningProblem(problems, TwigVersioningOriginalMissingCode))
+}
+
+func TestTwigVersioningAnalyzerTreatsMalformedCommentAsMissing(t *testing.T) {
+	root := t.TempDir()
+	index, err := twig.NewTwigIndexer(filepath.Join(root, "cache"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, index.Close()) })
+	corePath := filepath.Join(
+		root, "src", "Storefront", "Resources", "views",
+		"storefront", "page", "base.html.twig",
+	)
+	require.NoError(t, index.Index(indexer.NewParsedFile(
+		corePath,
+		[]byte(`{% block content %}core{% endblock %}`),
+	)))
+	pluginPath := filepath.Join(root, "custom", "plugin.html.twig")
+	source := `{% sw_extends '@Storefront/storefront/page/base.html.twig' %}
+{# shopware-block: invalid-value@6.6.0.0 #}
+{% block content %}local{% endblock %}`
+	problems, err := NewTwigVersioningAnalyzer(
+		twig.NewVersioningService(root, index, ""),
+	).Analyze(
+		context.Background(),
+		lsp.NewTextDocument("file://"+pluginPath, source, 1),
+	)
+	require.NoError(t, err)
+	require.True(t, containsTwigVersioningProblem(problems, TwigVersioningCommentMissingCode))
+}
+
+func containsTwigVersioningProblem(
+	problems []lsp.Problem,
+	id lsp.DiagnosticID,
+) bool {
+	for _, problem := range problems {
+		if problem.ID == id {
+			return true
+		}
+	}
+	return false
 }

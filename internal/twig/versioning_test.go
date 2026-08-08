@@ -48,9 +48,18 @@ func TestParseVersionComment(t *testing.T) {
 			expected: nil,
 		},
 		{
+			name:    "version comment without informational version",
+			comment: "{# shopware-block: abc123 #}",
+			line:    8,
+			expected: &TwigVersionComment{
+				Hash: "abc123",
+				Line: 8,
+			},
+		},
+		{
 			name:     "malformed version comment",
-			comment:  "{# shopware-block: abc123 #}",
-			line:     8,
+			comment:  "{# shopware-block: not-a-hash@6.7.0.0 #}",
+			line:     9,
 			expected: nil,
 		},
 	}
@@ -68,6 +77,19 @@ func TestParseVersionComment(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFormatVersionCommentOmitsUnknownVersion(t *testing.T) {
+	assert.Equal(
+		t,
+		"{# shopware-block: abc123 #}\n",
+		FormatVersionComment("abc123", ""),
+	)
+	assert.Equal(
+		t,
+		"{# shopware-block: abc123@v6.7.2.0 #}\n",
+		FormatVersionComment("abc123", "v6.7.2.0"),
+	)
 }
 
 func TestTwigBlockHashStructure(t *testing.T) {

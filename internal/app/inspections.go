@@ -188,12 +188,7 @@ func registerDiagnosticInspections(
 	registerProblemInspection(server, "shopware.theme", twigOnly, "shopware-lsp", []string{
 		"theme.icon.missing",
 	}, diagnostics.NewThemeAnalyzer(root, services.extensions))
-	registerProblemInspection(server, "shopware.twig_versioning", twigOnly, "shopware-lsp", []string{
-		"twig.versioning.comment_missing",
-		"twig.block.deprecated",
-		"twig.versioning.original_missing",
-		"twig.versioning.outdated",
-	}, diagnostics.NewTwigVersioningAnalyzer(services.twig))
+	server.RegisterInspection(inspections.NewTwigVersioning(services.twigVersioning))
 	server.RegisterInspection(inspections.NewAdmin(services.admin))
 	server.RegisterInspection(inspections.NewDALEntity(services.dal))
 	server.RegisterInspection(inspections.NewShopwareCriteria())

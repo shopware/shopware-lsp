@@ -7,128 +7,193 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
-	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	"github.com/shopware/shopware-lsp/internal/twig"
+	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
 const (
-	twigVersioningOriginalMissingCode lsp.DiagnosticID = "twig.versioning.original_missing"
-	twigVersioningOutdatedCode        lsp.DiagnosticID = "twig.versioning.outdated"
-	twigVersioningCommentMissingCode  lsp.DiagnosticID = "twig.versioning.comment_missing"
+	TwigVersioningOriginalMissingCode lsp.DiagnosticID = "twig.versioning.original_missing"
+	TwigVersioningOutdatedCode        lsp.DiagnosticID = "twig.versioning.outdated"
+	TwigVersioningCommentMissingCode  lsp.DiagnosticID = "twig.versioning.comment_missing"
+	TwigBlockDeprecatedCode           lsp.DiagnosticID = "twig.block.deprecated"
 )
 
+type TwigVersioningPayload struct {
+	BlockName       string `json:"blockName"`
+	HasComment      bool   `json:"hasComment,omitempty"`
+	CoreDiff        bool   `json:"coreDiff,omitempty"`
+	RecordedVersion string `json:"recordedVersion,omitempty"`
+	UpstreamPath    string `json:"upstreamPath,omitempty"`
+}
+
 type TwigVersioningAnalyzer struct {
-	twigIndexer *twig.TwigIndexer
+	versioning *twig.VersioningService
 }
 
-func NewTwigVersioningAnalyzer(twigIndexer *twig.TwigIndexer) *TwigVersioningAnalyzer {
-	return &TwigVersioningAnalyzer{twigIndexer: twigIndexer}
+func NewTwigVersioningAnalyzer(
+	versioning *twig.VersioningService,
+) *TwigVersioningAnalyzer {
+	return &TwigVersioningAnalyzer{versioning: versioning}
 }
 
-func (p *TwigVersioningAnalyzer) Analyze(ctx context.Context, document *lsp.TextDocument) ([]lsp.Problem, error) {
-	uri := document.URI
-	if filepath.Ext(uri) != ".twig" {
+func (p *TwigVersioningAnalyzer) Analyze(
+	ctx context.Context,
+	document *lsp.TextDocument,
+) ([]lsp.Problem, error) {
+	if document == nil || filepath.Ext(document.URI) != ".twig" ||
+		p == nil || p.versioning == nil {
 		return []lsp.Problem{}, nil
 	}
-
-	if p.twigIndexer == nil {
+	filePath, err := uriutil.Path(document.URI)
+	if err != nil {
+		filePath = document.URI
+	}
+	if twig.IsUpstreamTemplate(filePath) {
 		return []lsp.Problem{}, nil
 	}
-
-	if twig.IsStorefrontTemplate(uri) {
+	currentFile, err := twig.ParseTwigTree(
+		filePath,
+		document.SyntaxTree,
+		document.LineIndex,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if currentFile.ExtendsFile == "" {
 		return []lsp.Problem{}, nil
 	}
-
-	currentFile, err := twig.ParseTwigTree(uri, document.SyntaxTree, document.LineIndex)
+	resolutions, err := p.versioning.ResolveBlocks(*currentFile)
 	if err != nil {
 		return nil, err
 	}
 
-	var diagnostics []lsp.Problem
-
+	problems := make([]lsp.Problem, 0, len(currentFile.Blocks))
 	for _, block := range currentFile.Blocks {
-		if ctx.Err() != nil {
-			return nil, nil
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
-		allBlockHashes, lookupErr := p.twigIndexer.GetTwigBlockHashes(block.Name)
-		if lookupErr == nil {
-			original := twig.FindOriginalStorefrontHashForExtends(allBlockHashes, currentFile.ExtendsFile)
-			if original != nil && original.Deprecation != "" {
-				diagnostics = append(diagnostics, lsp.Problem{
-					Range:    block.NameRange,
-					Severity: protocol.DiagnosticSeverityWarning,
-					ID:       "twig.block.deprecated",
-					Source:   "shopware-lsp",
-					Message:  original.Deprecation,
-				})
-			}
+		resolution := resolutions[block.Name]
+		payload := TwigVersioningPayload{BlockName: block.Name}
+		if len(resolution.Candidates) != 0 {
+			payload.UpstreamPath = resolution.Candidates[0].AbsolutePath
 		}
-		if block.VersionComment != nil {
-			allBlockHashes, err := p.twigIndexer.GetTwigBlockHashes(block.Name)
-			if err != nil {
+
+		for _, candidate := range resolution.Candidates {
+			if candidate.Deprecation == "" {
 				continue
 			}
+			problems = append(problems, lsp.Problem{
+				Range:   block.NameRange,
+				ID:      TwigBlockDeprecatedCode,
+				Message: candidate.Deprecation,
+				Tags:    []protocol.DiagnosticTag{protocol.DiagnosticTagDeprecated},
+				Payload: payload,
+				RelatedInformation: []protocol.DiagnosticRelatedInformation{
+					blockRelatedInformation(candidate, "Deprecated upstream block"),
+				},
+			})
+			break
+		}
 
-			originalHash := twig.FindOriginalStorefrontHashForExtends(allBlockHashes, currentFile.ExtendsFile)
-			if originalHash == nil {
-				lineIdx := block.Line - 1
-				diagnostics = append(diagnostics, lsp.Problem{
-					Range:    diagnosticLineRange(document.LineIndex, lineIdx),
-					Severity: protocol.DiagnosticSeverityWarning,
-					ID:       twigVersioningOriginalMissingCode,
-					Source:   "shopware-lsp",
-					Message:  fmt.Sprintf("Original block not found in Storefront for block '%s'", block.Name),
+		if len(resolution.Candidates) == 0 {
+			if block.HasVersioningComment && resolution.ParentResolved {
+				locations, locationsErr := p.versioning.OtherLocations(block.Name, filePath)
+				if locationsErr != nil {
+					return nil, locationsErr
+				}
+				related := make([]protocol.DiagnosticRelatedInformation, 0, len(locations))
+				for _, location := range locations {
+					related = append(related, blockRelatedInformation(
+						location,
+						"A block with the same name still exists here",
+					))
+				}
+				message := fmt.Sprintf(
+					"The upstream block %q has been removed; check whether this override is still needed",
+					block.Name,
+				)
+				if len(locations) != 0 {
+					message = fmt.Sprintf(
+						"The upstream block %q was removed from this template but still exists elsewhere",
+						block.Name,
+					)
+				}
+				problems = append(problems, lsp.Problem{
+					Range: block.NameRange, ID: TwigVersioningOriginalMissingCode,
+					Message: message, Payload: payload, RelatedInformation: related,
 				})
-				continue
 			}
+			continue
+		}
 
-			if originalHash.Hash != block.VersionComment.Hash {
-				lineIdx := block.VersionComment.Line - 1
-				diagnostics = append(diagnostics, lsp.Problem{
-					Range:    diagnosticLineRange(document.LineIndex, lineIdx),
-					Severity: protocol.DiagnosticSeverityWarning,
-					ID:       twigVersioningOutdatedCode,
-					Source:   "shopware-lsp",
-					Message:  fmt.Sprintf("The upstream block has been changed, please update the block (expected: %s, got: %s, source: %s)", truncateHash(originalHash.Hash, 12), truncateHash(block.VersionComment.Hash, 12), originalHash.RelativePath),
-				})
+		if !block.HasVersioningComment {
+			problems = append(problems, lsp.Problem{
+				Range: block.NameRange, ID: TwigVersioningCommentMissingCode,
+				Message: fmt.Sprintf(
+					"The block %q does not have a versioning comment", block.Name,
+				),
+				Payload: payload,
+			})
+			continue
+		}
+		payload.HasComment = true
+		if block.VersionComment == nil {
+			rng := block.NameRange
+			if block.VersionCommentRange != nil {
+				rng = *block.VersionCommentRange
 			}
-		} else {
-			allBlockHashes, err := p.twigIndexer.GetTwigBlockHashes(block.Name)
-			if err != nil {
-				continue
-			}
-
-			originalHash := twig.FindOriginalStorefrontHashForExtends(allBlockHashes, currentFile.ExtendsFile)
-			if originalHash != nil {
-				lineIdx := block.Line - 1
-				diagnostics = append(diagnostics, lsp.Problem{
-					Range:    diagnosticLineRange(document.LineIndex, lineIdx),
-					Severity: protocol.DiagnosticSeverityWarning,
-					ID:       twigVersioningCommentMissingCode,
-					Source:   "shopware-lsp",
-					Message:  fmt.Sprintf("The block '%s' does not have a versioning comment", block.Name),
-				})
+			problems = append(problems, lsp.Problem{
+				Range: rng, ID: TwigVersioningCommentMissingCode,
+				Message: "The Twig block versioning comment is malformed",
+				Payload: payload,
+			})
+			continue
+		}
+		payload.RecordedVersion = block.VersionComment.Version
+		matched := false
+		for _, candidate := range resolution.Candidates {
+			if candidate.Hash == block.VersionComment.Hash {
+				matched = true
+				break
 			}
 		}
+		if matched {
+			continue
+		}
+		selected := resolution.Candidates[0]
+		payload.CoreDiff = twig.IsStorefrontTemplate(selected.AbsolutePath) &&
+			block.VersionComment.Version != ""
+		problems = append(problems, lsp.Problem{
+			Range: block.VersionComment.Range, ID: TwigVersioningOutdatedCode,
+			Message: fmt.Sprintf(
+				"The upstream block has changed; review %s and update the versioning comment",
+				selected.RelativePath,
+			),
+			Payload: payload,
+			RelatedInformation: []protocol.DiagnosticRelatedInformation{
+				blockRelatedInformation(selected, "Current upstream block"),
+			},
+		})
 	}
-
-	return diagnostics, nil
+	return problems, nil
 }
 
-func diagnosticLineRange(index *cst.LineIndex, line int) cst.TextRange {
-	if index == nil || line < 0 {
-		return cst.TextRange{}
+func blockRelatedInformation(
+	block twig.TwigBlockHash,
+	message string,
+) protocol.DiagnosticRelatedInformation {
+	line := block.Line - 1
+	if line < 0 {
+		line = 0
 	}
-	lineNumber := uint32(line)
-	return cst.TextRange{
-		Start: index.Offset(lineNumber, 0),
-		End:   index.LineEnd(lineNumber),
+	return protocol.DiagnosticRelatedInformation{
+		Location: protocol.Location{
+			URI: uriutil.FileURI(block.AbsolutePath),
+			Range: protocol.Range{
+				Start: protocol.Position{Line: line},
+				End:   protocol.Position{Line: line},
+			},
+		},
+		Message: message,
 	}
-}
-
-func truncateHash(hash string, length int) string {
-	if len(hash) <= length {
-		return hash
-	}
-	return hash[:length]
 }
