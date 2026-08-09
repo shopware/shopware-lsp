@@ -49,9 +49,16 @@ func (p *FormAnalyzer) Analyze(
 	case ".twig":
 		return p.twigFieldDiagnostics(ctx, document)
 	case ".php":
+		return p.phpFormDiagnostics(ctx, document)
 	default:
 		return nil, nil
 	}
+}
+
+func (p *FormAnalyzer) phpFormDiagnostics(
+	ctx context.Context,
+	document *lsp.TextDocument,
+) ([]lsp.Problem, error) {
 	path, _ := uriutil.Path(document.URI)
 	validationContext := p.phpIndex.AddDocumentContext(
 		ctx,
@@ -64,19 +71,10 @@ func (p *FormAnalyzer) Analyze(
 		validationContext,
 		document.SyntaxTree.Root,
 	)
-	var assistantTypes []*phpsyntax.Node
-	for _, literal := range phpquery.Nodes(
+	assistantTypes := formAssistantTypeNodes(
+		validationContext,
 		document.SyntaxTree.Root,
-		phpsyntax.PhpString,
-	) {
-		if _, tags := php.AssistantArgumentTags(
-			validationContext,
-			literal,
-			"FormType",
-		); len(tags) != 0 {
-			assistantTypes = append(assistantTypes, literal)
-		}
-	}
+	)
 	if len(references) == 0 && len(assistantTypes) == 0 {
 		return nil, nil
 	}
@@ -93,22 +91,69 @@ func (p *FormAnalyzer) Analyze(
 		localTypes[strings.ToLower(current.Class)] = current
 	}
 	legacyAliasesDeprecated := p.legacyFormAliasesDeprecated()
+	run := formPHPDiagnosticsRun{
+		analyzer:                p,
+		ctx:                     ctx,
+		document:                document,
+		validationContext:       validationContext,
+		typeNames:               typeNames,
+		localTypes:              localTypes,
+		legacyAliasesDeprecated: legacyAliasesDeprecated,
+	}
+	if err := run.addAssistantTypes(assistantTypes); err != nil {
+		return nil, err
+	}
+	if err := run.addReferences(references); err != nil {
+		return nil, err
+	}
+	return run.result, nil
+}
 
-	var result []lsp.Problem
-	for _, literal := range assistantTypes {
+func formAssistantTypeNodes(
+	ctx context.Context,
+	root *phpsyntax.Node,
+) []*phpsyntax.Node {
+	var result []*phpsyntax.Node
+	for _, literal := range phpquery.Nodes(root, phpsyntax.PhpString) {
+		if _, tags := php.AssistantArgumentTags(
+			ctx,
+			literal,
+			"FormType",
+		); len(tags) != 0 {
+			result = append(result, literal)
+		}
+	}
+	return result
+}
+
+type formPHPDiagnosticsRun struct {
+	analyzer                *FormAnalyzer
+	ctx                     context.Context
+	document                *lsp.TextDocument
+	validationContext       context.Context
+	typeNames               []string
+	localTypes              map[string]form.Type
+	legacyAliasesDeprecated bool
+	result                  []lsp.Problem
+}
+
+func (r *formPHPDiagnosticsRun) addAssistantTypes(
+	literals []*phpsyntax.Node,
+) error {
+	for _, literal := range literals {
 		name := phpquery.StringValue(literal)
 		if name == "" {
 			continue
 		}
-		_, found, typeErr := p.index.GetType(name)
+		_, found, typeErr := r.analyzer.index.GetType(name)
 		if typeErr != nil {
-			return nil, typeErr
+			return typeErr
 		}
-		if found || len(typeNames) == 0 {
+		if found || len(r.typeNames) == 0 {
 			continue
 		}
-		result = append(result, formDiagnostic(
-			document,
+		r.result = append(r.result, formDiagnostic(
+			r.document,
 			form.Reference{
 				Role: form.ReferenceType,
 				Name: name,
@@ -116,111 +161,125 @@ func (p *FormAnalyzer) Analyze(
 			},
 			missingFormTypeCode,
 			fmt.Sprintf("Symfony form type '%s' not found", name),
-			suggestion.Similar(name, typeNames),
+			suggestion.Similar(name, r.typeNames),
 		))
 	}
+	return nil
+}
+
+func (r *formPHPDiagnosticsRun) addReferences(
+	references []form.Reference,
+) error {
 	for _, reference := range references {
-		if ctx.Err() != nil {
-			return result, nil
+		if r.ctx.Err() != nil {
+			return nil
 		}
-		if legacyAliasesDeprecated &&
-			form.IsLegacyBuilderTypeAlias(validationContext, reference) {
-			className := ""
-			if reference.Name != "" {
-				current, found, typeErr := p.index.GetType(reference.Name)
-				if typeErr != nil {
-					return nil, typeErr
-				}
-				if found {
-					className = current.Class
-				}
-			}
-			result = append(
-				result,
-				legacyFormTypeAliasDiagnostic(
-					document,
-					reference,
-					className,
-				),
-			)
-		}
-		if reference.Name == "" {
-			continue
-		}
-		switch reference.Role {
-		case form.ReferenceType:
-			_, found, typeErr := p.index.GetType(reference.Name)
-			if typeErr != nil {
-				return nil, typeErr
-			}
-			if found || len(typeNames) == 0 {
-				continue
-			}
-			result = append(result, formDiagnostic(
-				document,
-				reference,
-				missingFormTypeCode,
-				fmt.Sprintf(
-					"Symfony form type '%s' not found",
-					reference.Name,
-				),
-				suggestion.Similar(reference.Name, typeNames),
-			))
-		case form.ReferenceOption:
-			if reference.Origin == form.OriginDefinition {
-				continue
-			}
-			var options []form.Option
-			var optionErr error
-			localKey := strings.ToLower(reference.Class)
-			if current, exists := localTypes[localKey]; exists &&
-				diagnosticFormTypeMatches(
-					current,
-					reference.FormType,
-				) {
-				options, optionErr = p.index.EffectiveOptionsFor(current)
-			} else {
-				options, optionErr = p.index.EffectiveOptions(
-					reference.FormType,
-				)
-			}
-			if optionErr != nil {
-				return nil, optionErr
-			}
-			if len(options) == 0 ||
-				hasFormOption(options, reference.Name) {
-				continue
-			}
-			names := make([]string, 0, len(options))
-			for _, option := range options {
-				names = append(names, option.Name)
-			}
-			result = append(result, formDiagnostic(
-				document,
-				reference,
-				missingFormOptionCode,
-				fmt.Sprintf(
-					"Option '%s' is not defined for form type '%s'",
-					reference.Name,
-					reference.FormType,
-				),
-				suggestion.Similar(reference.Name, names),
-			))
-		case form.ReferenceField:
-			diagnostic, found, fieldErr := p.fieldDiagnostic(
-				document,
-				reference,
-				localTypes[strings.ToLower(reference.Class)],
-			)
-			if fieldErr != nil {
-				return nil, fieldErr
-			}
-			if found {
-				result = append(result, diagnostic)
-			}
+		if err := r.addReference(reference); err != nil {
+			return err
 		}
 	}
-	return result, nil
+	return nil
+}
+
+func (r *formPHPDiagnosticsRun) addReference(reference form.Reference) error {
+	if r.legacyAliasesDeprecated &&
+		form.IsLegacyBuilderTypeAlias(r.validationContext, reference) {
+		className := ""
+		if reference.Name != "" {
+			current, found, typeErr := r.analyzer.index.GetType(reference.Name)
+			if typeErr != nil {
+				return typeErr
+			}
+			if found {
+				className = current.Class
+			}
+		}
+		r.result = append(
+			r.result,
+			legacyFormTypeAliasDiagnostic(
+				r.document,
+				reference,
+				className,
+			),
+		)
+	}
+	if reference.Name == "" {
+		return nil
+	}
+	switch reference.Role {
+	case form.ReferenceType:
+		return r.addTypeReference(reference)
+	case form.ReferenceOption:
+		return r.addOptionReference(reference)
+	case form.ReferenceField:
+		diagnostic, found, err := r.analyzer.fieldDiagnostic(
+			r.document,
+			reference,
+			r.localTypes[strings.ToLower(reference.Class)],
+		)
+		if err != nil {
+			return err
+		}
+		if found {
+			r.result = append(r.result, diagnostic)
+		}
+	}
+	return nil
+}
+
+func (r *formPHPDiagnosticsRun) addTypeReference(reference form.Reference) error {
+	_, found, err := r.analyzer.index.GetType(reference.Name)
+	if err != nil {
+		return err
+	}
+	if found || len(r.typeNames) == 0 {
+		return nil
+	}
+	r.result = append(r.result, formDiagnostic(
+		r.document,
+		reference,
+		missingFormTypeCode,
+		fmt.Sprintf("Symfony form type '%s' not found", reference.Name),
+		suggestion.Similar(reference.Name, r.typeNames),
+	))
+	return nil
+}
+
+func (r *formPHPDiagnosticsRun) addOptionReference(reference form.Reference) error {
+	if reference.Origin == form.OriginDefinition {
+		return nil
+	}
+	var options []form.Option
+	var err error
+	localKey := strings.ToLower(reference.Class)
+	if current, exists := r.localTypes[localKey]; exists &&
+		diagnosticFormTypeMatches(current, reference.FormType) {
+		options, err = r.analyzer.index.EffectiveOptionsFor(current)
+	} else {
+		options, err = r.analyzer.index.EffectiveOptions(reference.FormType)
+	}
+	if err != nil {
+		return err
+	}
+	if len(options) == 0 || hasFormOption(options, reference.Name) {
+		return nil
+	}
+	names := make([]string, 0, len(options))
+	for _, option := range options {
+		names = append(names, option.Name)
+	}
+	r.result = append(r.result, formDiagnostic(
+		r.document,
+		reference,
+		missingFormOptionCode,
+		fmt.Sprintf(
+			"Option '%s' is not defined for form type '%s'",
+			reference.Name,
+			reference.FormType,
+		),
+		suggestion.Similar(reference.Name, names),
+	))
+	return nil
 }
 
 func (p *FormAnalyzer) twigFieldDiagnostics(

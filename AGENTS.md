@@ -60,6 +60,14 @@ npm --prefix vscode-extension run test:mcp
 mise run check
 ```
 
+`mise run check` also compiles the opt-in real-world integration suite without
+running it. Production Go files are capped at 2,500 lines by
+`internal/architecture/maintainability_test.go`, and `.golangci.yml` rejects
+new functions with cognitive complexity above 65. Treat these as coarse
+regression ceilings: refactor by responsibility instead of formatting code to
+satisfy a number, and tighten thresholds only after the lower baseline has
+focused correctness coverage.
+
 Prefer targeted tests while iterating, then run validation proportional to the
 change. `go test ./...`, relevant race tests, and `golangci-lint run` are the
 normal backend pre-handoff checks. Run the VS Code checks when protocol shape,

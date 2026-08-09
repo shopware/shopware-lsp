@@ -121,65 +121,106 @@ func Build(root string, lock Lock) (catalog.Catalog, Stats, error) {
 		return catalog.Catalog{}, Stats{}, err
 	}
 	stats := Stats{Files: len(files)}
-	documents := make([]sourceDocument, 0, len(files))
-	semanticBinder := binder.New()
-	for _, path := range files {
-		content, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return catalog.Catalog{}, stats, fmt.Errorf("read stub %s: %w", path, readErr)
-		}
-		stats.SourceBytes += int64(len(content))
-		parsed := phpparser.ParseBytes(content)
-		if len(parsed.Errors) != 0 {
-			stats.ParserErrors += len(parsed.Errors)
-			first := parsed.Errors[0]
-			return catalog.Catalog{}, stats, fmt.Errorf(
-				"parse stub %s: %s (%d total errors)",
-				path,
-				first.String(),
-				len(parsed.Errors),
-			)
-		}
-		relative, relativeErr := filepath.Rel(root, path)
-		if relativeErr != nil {
-			return catalog.Catalog{}, stats, fmt.Errorf("resolve stub path %s: %w", path, relativeErr)
-		}
-		document := semanticBinder.Bind(
-			"phpstorm-stubs://"+filepath.ToSlash(relative),
-			1,
-			parsed.Tree.Root,
-		)
-		stats.ParsedSymbols += len(document.Symbols)
-		containers := make(map[semantic.SymbolID]string)
-		for _, symbol := range document.Symbols {
-			if symbol.IsClassLike() {
-				containers[symbol.ID] = symbol.FullyQualified
-			}
-		}
-		documents = append(documents, sourceDocument{
-			path:      filepath.ToSlash(relative),
-			extension: stubExtension(relative),
-			source:    string(content),
-			document:  document,
-			container: containers,
-		})
+	documents, err := loadStubSourceDocuments(root, files, &stats)
+	if err != nil {
+		return catalog.Catalog{}, stats, err
 	}
-
 	result := catalog.Catalog{
 		Format:     catalog.FormatVersion,
 		Repository: lock.Repository,
 		Commit:     lock.Commit,
 		Versions:   catalogVersions,
 	}
-	metadataFiles, err := metadataSourceFiles(root, lock.Directories)
-	if err != nil {
+	if err := appendMetadataContracts(root, lock.Directories, &result); err != nil {
 		return catalog.Catalog{}, stats, err
+	}
+	if err := appendVersionedSymbols(versions, documents, &result); err != nil {
+		return catalog.Catalog{}, stats, err
+	}
+	stats.Records = len(result.Symbols)
+	if err := result.PackBundles(); err != nil {
+		return catalog.Catalog{}, stats, err
+	}
+	return result, stats, nil
+}
+
+func loadStubSourceDocuments(
+	root string,
+	files []string,
+	stats *Stats,
+) ([]sourceDocument, error) {
+	documents := make([]sourceDocument, 0, len(files))
+	semanticBinder := binder.New()
+	for _, path := range files {
+		document, err := loadStubSourceDocument(root, path, semanticBinder, stats)
+		if err != nil {
+			return nil, err
+		}
+		documents = append(documents, document)
+	}
+	return documents, nil
+}
+
+func loadStubSourceDocument(
+	root,
+	path string,
+	semanticBinder *binder.Binder,
+	stats *Stats,
+) (sourceDocument, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return sourceDocument{}, fmt.Errorf("read stub %s: %w", path, err)
+	}
+	stats.SourceBytes += int64(len(content))
+	parsed := phpparser.ParseBytes(content)
+	if len(parsed.Errors) != 0 {
+		stats.ParserErrors += len(parsed.Errors)
+		return sourceDocument{}, fmt.Errorf(
+			"parse stub %s: %s (%d total errors)",
+			path,
+			parsed.Errors[0].String(),
+			len(parsed.Errors),
+		)
+	}
+	relative, err := filepath.Rel(root, path)
+	if err != nil {
+		return sourceDocument{}, fmt.Errorf("resolve stub path %s: %w", path, err)
+	}
+	document := semanticBinder.Bind(
+		"phpstorm-stubs://"+filepath.ToSlash(relative),
+		1,
+		parsed.Tree.Root,
+	)
+	stats.ParsedSymbols += len(document.Symbols)
+	containers := make(map[semantic.SymbolID]string)
+	for _, symbol := range document.Symbols {
+		if symbol.IsClassLike() {
+			containers[symbol.ID] = symbol.FullyQualified
+		}
+	}
+	return sourceDocument{
+		path:      filepath.ToSlash(relative),
+		extension: stubExtension(relative),
+		source:    string(content),
+		document:  document,
+		container: containers,
+	}, nil
+}
+
+func appendMetadataContracts(
+	root string,
+	directories []string,
+	result *catalog.Catalog,
+) error {
+	metadataFiles, err := metadataSourceFiles(root, directories)
+	if err != nil {
+		return err
 	}
 	contractKeys := make(map[string]struct{})
 	for _, path := range metadataFiles {
 		content, readErr := os.ReadFile(path)
 		if readErr != nil {
-			return catalog.Catalog{}, stats, fmt.Errorf(
+			return fmt.Errorf(
 				"read PhpStorm metadata %s: %w",
 				path,
 				readErr,
@@ -188,7 +229,7 @@ func Build(root string, lock Lock) (catalog.Catalog, Stats, error) {
 		parsed := phpparser.ParseBytes(content)
 		if len(parsed.Errors) != 0 {
 			first := parsed.Errors[0]
-			return catalog.Catalog{}, stats, fmt.Errorf(
+			return fmt.Errorf(
 				"parse PhpStorm metadata %s: %s (%d total errors)",
 				path,
 				first.String(),
@@ -204,7 +245,7 @@ func Build(root string, lock Lock) (catalog.Catalog, Stats, error) {
 			result.Contracts = append(result.Contracts, contract)
 			relative, relativeErr := filepath.Rel(root, path)
 			if relativeErr != nil {
-				return catalog.Catalog{}, stats, fmt.Errorf(
+				return fmt.Errorf(
 					"resolve metadata path %s: %w",
 					path,
 					relativeErr,
@@ -216,78 +257,105 @@ func Build(root string, lock Lock) (catalog.Catalog, Stats, error) {
 			)
 		}
 	}
+	return nil
+}
+
+func appendVersionedSymbols(
+	versions []project.Version,
+	documents []sourceDocument,
+	result *catalog.Catalog,
+) error {
 	recordIndex := make(map[string]int)
 	for versionIndex, version := range versions {
-		versionSymbols := make(map[string]catalog.Symbol)
-		for _, document := range documents {
-			availableClasses := availableClassNames(document, version)
-			for _, symbol := range document.document.Symbols {
-				if !supportedKind(symbol.Kind) {
-					continue
-				}
-				owner := document.container[symbol.Container]
-				if owner != "" {
-					if _, ok := availableClasses[strings.ToLower(owner)]; !ok {
-						continue
-					}
-				}
-				converted, ok, convertErr := convertSymbol(
-					document,
-					symbol,
-					owner,
-					version,
-				)
-				if convertErr != nil {
-					return catalog.Catalog{}, stats, fmt.Errorf(
-						"convert %s in %s: %w",
-						symbol.FullyQualified,
-						document.path,
-						convertErr,
-					)
-				}
-				if !ok {
-					continue
-				}
-				converted.Extension = document.extension
-				key := symbolKey(converted)
-				if existing, duplicate := versionSymbols[key]; duplicate {
-					versionSymbols[key] = preferSymbol(existing, converted)
-				} else {
-					versionSymbols[key] = converted
-				}
-			}
+		versionSymbols, err := symbolsForVersion(documents, version)
+		if err != nil {
+			return err
 		}
-		keys := make([]string, 0, len(versionSymbols))
-		for key := range versionSymbols {
-			keys = append(keys, key)
+		if err := appendVersionRecords(
+			result,
+			recordIndex,
+			versionSymbols,
+			versionIndex,
+		); err != nil {
+			return err
 		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			symbol := versionSymbols[key]
-			symbol.VersionMask = 0
-			encoded, encodeErr := catalog.Encode(catalog.Catalog{
-				Format:   catalog.FormatVersion,
-				Versions: []catalog.Version{{Major: 1}},
-				Symbols:  []catalog.Symbol{symbol},
-			})
-			if encodeErr != nil {
-				return catalog.Catalog{}, stats, fmt.Errorf("encode catalog symbol %s: %w", key, encodeErr)
-			}
-			recordKey := string(encoded)
-			if index, exists := recordIndex[recordKey]; exists {
-				result.Symbols[index].VersionMask |= uint16(1) << versionIndex
+	}
+	return nil
+}
+
+func symbolsForVersion(
+	documents []sourceDocument,
+	version project.Version,
+) (map[string]catalog.Symbol, error) {
+	result := make(map[string]catalog.Symbol)
+	for _, document := range documents {
+		availableClasses := availableClassNames(document, version)
+		for _, symbol := range document.document.Symbols {
+			if !supportedKind(symbol.Kind) {
 				continue
 			}
-			symbol.VersionMask = uint16(1) << versionIndex
-			recordIndex[recordKey] = len(result.Symbols)
-			result.Symbols = append(result.Symbols, symbol)
+			owner := document.container[symbol.Container]
+			if owner != "" {
+				if _, ok := availableClasses[strings.ToLower(owner)]; !ok {
+					continue
+				}
+			}
+			converted, ok, err := convertSymbol(document, symbol, owner, version)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"convert %s in %s: %w",
+					symbol.FullyQualified,
+					document.path,
+					err,
+				)
+			}
+			if !ok {
+				continue
+			}
+			converted.Extension = document.extension
+			key := symbolKey(converted)
+			if existing, duplicate := result[key]; duplicate {
+				result[key] = preferSymbol(existing, converted)
+			} else {
+				result[key] = converted
+			}
 		}
 	}
-	stats.Records = len(result.Symbols)
-	if err := result.PackBundles(); err != nil {
-		return catalog.Catalog{}, stats, err
+	return result, nil
+}
+
+func appendVersionRecords(
+	result *catalog.Catalog,
+	recordIndex map[string]int,
+	versionSymbols map[string]catalog.Symbol,
+	versionIndex int,
+) error {
+	keys := make([]string, 0, len(versionSymbols))
+	for key := range versionSymbols {
+		keys = append(keys, key)
 	}
-	return result, stats, nil
+	sort.Strings(keys)
+	for _, key := range keys {
+		symbol := versionSymbols[key]
+		symbol.VersionMask = 0
+		encoded, err := catalog.Encode(catalog.Catalog{
+			Format:   catalog.FormatVersion,
+			Versions: []catalog.Version{{Major: 1}},
+			Symbols:  []catalog.Symbol{symbol},
+		})
+		if err != nil {
+			return fmt.Errorf("encode catalog symbol %s: %w", key, err)
+		}
+		recordKey := string(encoded)
+		if index, exists := recordIndex[recordKey]; exists {
+			result.Symbols[index].VersionMask |= uint16(1) << versionIndex
+			continue
+		}
+		symbol.VersionMask = uint16(1) << versionIndex
+		recordIndex[recordKey] = len(result.Symbols)
+		result.Symbols = append(result.Symbols, symbol)
+	}
+	return nil
 }
 
 func stubExtension(relative string) string {

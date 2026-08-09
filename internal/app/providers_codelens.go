@@ -1,0 +1,86 @@
+package app
+
+import (
+	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/lsp/codelens"
+)
+
+func registerCodeLensProviders(server *lsp.Server, root string, services workspaceServices) {
+	server.RegisterCodeLensProvider(codelens.NewPHPCodeLensProvider(services.php, services.services))
+	if server.DomainEnabled("administration") {
+		server.RegisterCodeLensProvider(
+			codelens.NewAdminComponentCodeLensProvider(services.admin),
+		)
+	}
+	server.RegisterCodeLensProvider(
+		codelens.NewSymfonyConfigCodeLensProvider(
+			services.configuration,
+		),
+	)
+	server.RegisterCodeLensProvider(
+		codelens.NewRouteResourceCodeLensProvider(
+			services.routes,
+			services.php,
+		),
+	)
+	server.RegisterCodeLensProvider(
+		codelens.NewRouteEndpointCodeLensProvider(
+			services.services,
+			services.php,
+		),
+	)
+	server.RegisterCodeLensProvider(
+		codelens.NewConsoleCommandCodeLensProvider(root),
+	)
+	server.RegisterCodeLensProvider(codelens.NewSerializerCodeLensProvider(
+		services.serializer,
+		services.php,
+	))
+	server.RegisterCodeLensProvider(codelens.NewValidationCodeLensProvider(
+		services.php,
+		services.translations,
+	))
+	server.RegisterCodeLensProvider(codelens.NewTwigCodeLensProvider(services.twig))
+	server.RegisterCodeLensProvider(
+		codelens.NewTwigComponentRelatedCodeLensProvider(
+			services.twigComponents,
+			services.php,
+		),
+	)
+	server.RegisterCodeLensProvider(
+		codelens.NewRelatedNavigationCodeLensProvider(
+			services.twig,
+			services.php,
+			services.routes,
+			services.services,
+		),
+	)
+	server.RegisterCodeLensProvider(
+		codelens.NewControllerRelatedCodeLensProvider(
+			services.routeUsage,
+			services.services,
+			services.php,
+		),
+	)
+	server.RegisterCodeLensProvider(codelens.NewFormRelatedCodeLensProvider(
+		services.forms,
+		services.php,
+	))
+	server.RegisterCodeLensProvider(codelens.NewDoctrineRelatedCodeLensProvider(
+		services.doctrine,
+		services.php,
+	))
+	server.RegisterCodeLensProvider(
+		codelens.NewViteCodeLensProvider(services.assets),
+	)
+	server.RegisterCodeLensProvider(
+		codelens.NewMessengerCodeLensProvider(
+			services.messenger,
+			services.php,
+		),
+	)
+	server.RegisterCodeLensProvider(codelens.NewServiceRelatedCodeLensProvider(
+		services.services,
+		services.php,
+	))
+}

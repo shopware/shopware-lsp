@@ -40,162 +40,238 @@ func ResolveSignatureWithContracts(
 	arguments []Argument,
 	contracts []semantic.CallReturnContract,
 ) ResolvedSignature {
-	result := ResolvedSignature{
-		Symbol:     symbol,
-		ReturnType: symbol.ReturnType,
-		Compatible: true,
+	resolver := signatureResolver{
+		relations:   relations,
+		arguments:   arguments,
+		contracts:   contracts,
+		provided:    newParameterPresence(len(symbol.Parameters)),
+		mappedTypes: make([]types.Type, len(symbol.Parameters)),
+		result: ResolvedSignature{
+			Symbol:     symbol,
+			ReturnType: symbol.ReturnType,
+			Compatible: true,
+		},
 	}
-	provided := newParameterPresence(len(symbol.Parameters))
-	mappedTypes := make([]types.Type, len(symbol.Parameters))
-	nextPositional := 0
-	sawNamed := false
-	for _, argument := range arguments {
-		parameterIndex := -1
-		if argument.Name != "" {
-			sawNamed = true
-			name := strings.TrimPrefix(argument.Name, "$")
-			for index, parameter := range symbol.Parameters {
-				if strings.TrimPrefix(parameter.Name, "$") == name {
-					parameterIndex = index
-					break
-				}
-			}
-			if parameterIndex < 0 && len(symbol.Parameters) > 0 &&
-				symbol.Parameters[len(symbol.Parameters)-1].Flags.Has(semantic.VariadicFlag) {
-				parameterIndex = len(symbol.Parameters) - 1
-			}
-		} else {
-			if sawNamed {
-				result.Compatible = false
-				return result
-			}
-			for nextPositional < len(symbol.Parameters) &&
-				provided.Has(nextPositional) &&
-				!symbol.Parameters[nextPositional].Flags.Has(semantic.VariadicFlag) {
-				nextPositional++
-			}
-			if nextPositional < len(symbol.Parameters) {
-				parameterIndex = nextPositional
-			} else if len(symbol.Parameters) > 0 &&
-				symbol.Parameters[len(symbol.Parameters)-1].Flags.Has(semantic.VariadicFlag) {
-				parameterIndex = len(symbol.Parameters) - 1
-			}
-		}
-		if parameterIndex < 0 {
-			if argument.Name == "" &&
-				!symbol.Flags.Has(semantic.GeneratedStubFlag) {
-				// PHP user-defined callables accept additional positional
-				// arguments, which remain available through func_get_arg(s).
-				// Internal functions reject them, so generated stubs retain
-				// strict arity validation.
-				continue
-			}
-			result.Compatible = false
-			return result
-		}
+	return resolver.resolve()
+}
 
-		parameter := symbol.Parameters[parameterIndex]
-		if typeContainsTemplateNamed(symbol.ReturnType, parameter.Name) {
-			if result.Templates == nil {
-				result.Templates = make(map[string]types.Type)
-			}
-			result.Templates[parameter.Name] = argument.Type
-		}
-		if provided.Has(parameterIndex) &&
-			!parameter.Flags.Has(semantic.VariadicFlag) {
-			result.Compatible = false
-			return result
-		}
-		provided.Add(parameterIndex)
-		mappedTypes[parameterIndex] = argument.Type
-		if !parameter.Flags.Has(semantic.VariadicFlag) {
-			nextPositional = parameterIndex + 1
-		}
+type signatureResolver struct {
+	relations      types.Relations
+	arguments      []Argument
+	contracts      []semantic.CallReturnContract
+	provided       parameterPresence
+	mappedTypes    []types.Type
+	nextPositional int
+	sawNamed       bool
+	result         ResolvedSignature
+}
 
-		inferTemplates(
-			relations,
-			parameter.Type,
-			argument.Type,
-			&result.Templates,
-		)
-		expected := parameter.Type
-		if len(result.Templates) > 0 {
-			expected = types.Substitute(expected, result.Templates)
-		}
-		if !types.ContainsUncertain(argument.Type) &&
-			!relations.IsAssignableTo(argument.Type, expected) {
-			documented := parameter.DocType
-			native := parameter.NativeType
-			if len(result.Templates) > 0 {
-				documented = types.Substitute(
-					documented,
-					result.Templates,
-				)
-				native = types.Substitute(
-					native,
-					result.Templates,
-				)
-			}
-			documentedMatches := !documented.IsUnknown() &&
-				relations.IsAssignableTo(argument.Type, documented)
-			nativeMatches := !native.IsUnknown() &&
-				relations.IsAssignableTo(argument.Type, native)
-			if !documentedMatches && !nativeMatches {
-				result.Compatible = false
-			}
+func (r *signatureResolver) resolve() ResolvedSignature {
+	for _, argument := range r.arguments {
+		if !r.addArgument(argument) {
+			return r.result
 		}
 	}
-	for index, parameter := range symbol.Parameters {
-		if !provided.Has(index) && !parameter.Optional &&
+	if !r.hasRequiredParameters() {
+		r.result.Compatible = false
+		return r.result
+	}
+	r.validateTemplateBounds()
+	r.resolveReturnType()
+	return r.result
+}
+
+func (r *signatureResolver) addArgument(argument Argument) bool {
+	parameterIndex, valid := r.parameterIndex(argument)
+	if !valid {
+		r.result.Compatible = false
+		return false
+	}
+	if parameterIndex < 0 {
+		if argument.Name == "" &&
+			!r.result.Symbol.Flags.Has(semantic.GeneratedStubFlag) {
+			// PHP user-defined callables accept additional positional arguments,
+			// which remain available through func_get_arg(s). Internal functions
+			// reject them, so generated stubs retain strict arity validation.
+			return true
+		}
+		r.result.Compatible = false
+		return false
+	}
+	parameter := r.result.Symbol.Parameters[parameterIndex]
+	r.captureDirectReturnTemplate(parameter, argument.Type)
+	if r.provided.Has(parameterIndex) &&
+		!parameter.Flags.Has(semantic.VariadicFlag) {
+		r.result.Compatible = false
+		return false
+	}
+	r.captureArgument(parameterIndex, parameter, argument)
+	return true
+}
+
+func (r *signatureResolver) captureDirectReturnTemplate(
+	parameter semantic.Parameter,
+	actual types.Type,
+) {
+	if !typeContainsTemplateNamed(r.result.Symbol.ReturnType, parameter.Name) {
+		return
+	}
+	if r.result.Templates == nil {
+		r.result.Templates = make(map[string]types.Type)
+	}
+	r.result.Templates[parameter.Name] = actual
+}
+
+func (r *signatureResolver) parameterIndex(argument Argument) (int, bool) {
+	if argument.Name != "" {
+		r.sawNamed = true
+		return namedParameterIndex(r.result.Symbol.Parameters, argument.Name), true
+	}
+	if r.sawNamed {
+		return -1, false
+	}
+	parameters := r.result.Symbol.Parameters
+	for r.nextPositional < len(parameters) &&
+		r.provided.Has(r.nextPositional) &&
+		!parameters[r.nextPositional].Flags.Has(semantic.VariadicFlag) {
+		r.nextPositional++
+	}
+	if r.nextPositional < len(parameters) {
+		return r.nextPositional, true
+	}
+	if len(parameters) != 0 &&
+		parameters[len(parameters)-1].Flags.Has(semantic.VariadicFlag) {
+		return len(parameters) - 1, true
+	}
+	return -1, true
+}
+
+func namedParameterIndex(parameters []semantic.Parameter, argumentName string) int {
+	name := strings.TrimPrefix(argumentName, "$")
+	for index, parameter := range parameters {
+		if strings.TrimPrefix(parameter.Name, "$") == name {
+			return index
+		}
+	}
+	if len(parameters) != 0 &&
+		parameters[len(parameters)-1].Flags.Has(semantic.VariadicFlag) {
+		return len(parameters) - 1
+	}
+	return -1
+}
+
+func (r *signatureResolver) captureArgument(
+	parameterIndex int,
+	parameter semantic.Parameter,
+	argument Argument,
+) {
+	r.provided.Add(parameterIndex)
+	r.mappedTypes[parameterIndex] = argument.Type
+	if !parameter.Flags.Has(semantic.VariadicFlag) {
+		r.nextPositional = parameterIndex + 1
+	}
+	inferTemplates(
+		r.relations,
+		parameter.Type,
+		argument.Type,
+		&r.result.Templates,
+	)
+	if !r.argumentTypeCompatible(parameter, argument.Type) {
+		r.result.Compatible = false
+	}
+}
+
+func (r *signatureResolver) argumentTypeCompatible(
+	parameter semantic.Parameter,
+	actual types.Type,
+) bool {
+	expected := parameter.Type
+	if len(r.result.Templates) > 0 {
+		expected = types.Substitute(expected, r.result.Templates)
+	}
+	if types.ContainsUncertain(actual) ||
+		r.relations.IsAssignableTo(actual, expected) {
+		return true
+	}
+	documented := parameter.DocType
+	native := parameter.NativeType
+	if len(r.result.Templates) > 0 {
+		documented = types.Substitute(documented, r.result.Templates)
+		native = types.Substitute(native, r.result.Templates)
+	}
+	documentedMatches := !documented.IsUnknown() &&
+		r.relations.IsAssignableTo(actual, documented)
+	nativeMatches := !native.IsUnknown() &&
+		r.relations.IsAssignableTo(actual, native)
+	return documentedMatches || nativeMatches
+}
+
+func (r *signatureResolver) hasRequiredParameters() bool {
+	for index, parameter := range r.result.Symbol.Parameters {
+		if !r.provided.Has(index) && !parameter.Optional &&
 			!parameter.Flags.Has(semantic.VariadicFlag) {
-			result.Compatible = false
-			return result
+			return false
 		}
 	}
-	for _, template := range symbol.Templates {
-		value, inferred := result.Templates[template.Name]
+	return true
+}
+
+func (r *signatureResolver) validateTemplateBounds() {
+	for _, template := range r.result.Symbol.Templates {
+		value, inferred := r.result.Templates[template.Name]
 		if !inferred && !template.Default.IsUnknown() {
-			value = types.Substitute(template.Default, result.Templates)
-			if result.Templates == nil {
-				result.Templates = make(map[string]types.Type, len(symbol.Templates))
+			value = types.Substitute(template.Default, r.result.Templates)
+			if r.result.Templates == nil {
+				r.result.Templates = make(
+					map[string]types.Type,
+					len(r.result.Symbol.Templates),
+				)
 			}
-			result.Templates[template.Name] = value
+			r.result.Templates[template.Name] = value
 			inferred = true
 		}
 		if !inferred || types.ContainsUncertain(value) {
 			continue
 		}
-		bound := types.Substitute(template.Bound, result.Templates)
-		if !bound.IsUnknown() && !relations.IsAssignableTo(value, bound) &&
-			!nominallySatisfiesGenericBound(relations, value, bound) {
-			result.Compatible = false
+		bound := types.Substitute(template.Bound, r.result.Templates)
+		if !bound.IsUnknown() && !r.relations.IsAssignableTo(value, bound) &&
+			!nominallySatisfiesGenericBound(r.relations, value, bound) {
+			r.result.Compatible = false
 		}
 	}
-	if len(result.Templates) > 0 {
-		result.ReturnType = types.Substitute(symbol.ReturnType, result.Templates)
+}
+
+func (r *signatureResolver) resolveReturnType() {
+	if len(r.result.Templates) > 0 {
+		r.result.ReturnType = types.Substitute(
+			r.result.Symbol.ReturnType,
+			r.result.Templates,
+		)
 	}
 	if contracted, ok := returnTypeContract(
-		symbol.Parameters,
-		provided,
-		mappedTypes,
+		r.result.Symbol.Parameters,
+		r.provided,
+		r.mappedTypes,
 	); ok {
-		result.ReturnType = refineContractedShape(contracted, result.ReturnType)
-		if len(result.Templates) > 0 {
-			result.ReturnType = types.Substitute(
-				result.ReturnType,
-				result.Templates,
+		r.result.ReturnType = refineContractedShape(
+			contracted,
+			r.result.ReturnType,
+		)
+		if len(r.result.Templates) > 0 {
+			r.result.ReturnType = types.Substitute(
+				r.result.ReturnType,
+				r.result.Templates,
 			)
 		}
 	}
 	if contracted, ok := EffectiveCallReturnType(
-		relations,
-		arguments,
-		contracts,
+		r.relations,
+		r.arguments,
+		r.contracts,
 	); ok {
-		result.ReturnType = contracted
-		result.ContractApplied = true
+		r.result.ReturnType = contracted
+		r.result.ContractApplied = true
 	}
-	return result
 }
 
 func refineContractedShape(contracted, declared types.Type) types.Type {

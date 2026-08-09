@@ -15,156 +15,216 @@ func MigrationStatements(previous, next Schema, decisions []Decision) ([]string,
 			return nil, diff, err
 		}
 	}
-	decisionByTarget := make(map[string]Decision)
+	builder := migrationSQLBuilder{
+		previous:         previous,
+		diff:             diff,
+		decisionByTarget: make(map[string]Decision),
+		renamedFrom:      make(map[string]struct{}),
+		renamedTo:        make(map[string]struct{}),
+	}
 	for _, decision := range decisions {
-		decisionByTarget[decision.Entity+"\x00"+decision.To] = decision
+		builder.decisionByTarget[decision.Entity+"\x00"+decision.To] = decision
 	}
-	renamedFrom := make(map[string]struct{})
-	renamedTo := make(map[string]struct{})
-	var statements []string
+	statements, err := builder.build()
+	if err != nil {
+		return nil, diff, err
+	}
+	return statements, diff, nil
+}
 
-	for _, change := range diff.RemovedForeignKeys {
-		statements = append(statements, fmt.Sprintf("ALTER TABLE %s DROP FOREIGN KEY %s;", sqlIdent(change.Entity), sqlIdent(change.ForeignKey.Name)))
+type migrationSQLBuilder struct {
+	previous         Schema
+	diff             SchemaDiff
+	decisionByTarget map[string]Decision
+	renamedFrom      map[string]struct{}
+	renamedTo        map[string]struct{}
+	statements       []string
+}
+
+func (b *migrationSQLBuilder) build() ([]string, error) {
+	b.dropForeignKeysAndIndexes()
+	b.dropPrimaryKeys()
+	b.createAndDropEntities()
+	if err := b.renameColumns(); err != nil {
+		return nil, err
 	}
-	for _, change := range diff.RemovedIndexes {
-		statements = append(statements, fmt.Sprintf("ALTER TABLE %s DROP INDEX %s;", sqlIdent(change.Entity), sqlIdent(change.Index.Name)))
+	if err := b.changeColumns(); err != nil {
+		return nil, err
 	}
-	for _, change := range diff.ChangedPrimaryKeys {
+	if err := b.addColumns(); err != nil {
+		return nil, err
+	}
+	b.removeColumns()
+	b.addPrimaryKeysAndConstraints()
+	return b.statements, nil
+}
+
+func (b *migrationSQLBuilder) dropForeignKeysAndIndexes() {
+	for _, change := range b.diff.RemovedForeignKeys {
+		b.statements = append(b.statements, fmt.Sprintf("ALTER TABLE %s DROP FOREIGN KEY %s;", sqlIdent(change.Entity), sqlIdent(change.ForeignKey.Name)))
+	}
+	for _, change := range b.diff.RemovedIndexes {
+		b.statements = append(b.statements, fmt.Sprintf("ALTER TABLE %s DROP INDEX %s;", sqlIdent(change.Entity), sqlIdent(change.Index.Name)))
+	}
+}
+
+func (b *migrationSQLBuilder) dropPrimaryKeys() {
+	for _, change := range b.diff.ChangedPrimaryKeys {
 		if len(change.Before) != 0 {
-			statements = append(statements, fmt.Sprintf("ALTER TABLE %s DROP PRIMARY KEY;", sqlIdent(change.Entity)))
+			b.statements = append(b.statements, fmt.Sprintf("ALTER TABLE %s DROP PRIMARY KEY;", sqlIdent(change.Entity)))
 		}
 	}
-	for _, entity := range diff.CreatedEntities {
-		statements = append(statements, createTableSQL(entity))
+}
+
+func (b *migrationSQLBuilder) createAndDropEntities() {
+	for _, entity := range b.diff.CreatedEntities {
+		b.statements = append(b.statements, createTableSQL(entity))
 	}
-	for _, entity := range diff.RemovedEntities {
-		statements = append(statements, fmt.Sprintf("DROP TABLE IF EXISTS %s;", sqlIdent(entity.Name)))
+	for _, entity := range b.diff.RemovedEntities {
+		b.statements = append(b.statements, fmt.Sprintf("DROP TABLE IF EXISTS %s;", sqlIdent(entity.Name)))
 	}
-	for _, change := range diff.AddedColumns {
+}
+
+func (b *migrationSQLBuilder) renameColumns() error {
+	for _, change := range b.diff.AddedColumns {
 		if change.After == nil {
 			continue
 		}
-		decision := decisionByTarget[change.Entity+"\x00"+change.After.Name]
+		decision := b.decisionByTarget[change.Entity+"\x00"+change.After.Name]
 		if decision.Kind != "columnRename" {
 			continue
 		}
-		beforeEntity := previous.Entities[change.Entity]
+		beforeEntity := b.previous.Entities[change.Entity]
 		oldColumn, found := beforeEntity.Columns[decision.From]
 		if !found {
-			return nil, diff, fmt.Errorf("rename source %s.%s does not exist", change.Entity, decision.From)
+			return fmt.Errorf("rename source %s.%s does not exist", change.Entity, decision.From)
 		}
 		after := *change.After
 		if oldColumn.AutoIncrement {
-			statements = append(statements, fmt.Sprintf("ALTER TABLE %s DROP INDEX %s;", sqlIdent(change.Entity), sqlIdent(oldColumn.Name)))
+			b.statements = append(b.statements, fmt.Sprintf("ALTER TABLE %s DROP INDEX %s;", sqlIdent(change.Entity), sqlIdent(oldColumn.Name)))
 		}
 		if isJSONKind(oldColumn.Kind) {
-			statements = append(statements, dropJSONConstraintSQL(change.Entity, oldColumn.Name))
+			b.statements = append(b.statements, dropJSONConstraintSQL(change.Entity, oldColumn.Name))
 		}
 		if !oldColumn.NotNull && after.NotNull && !after.AutoIncrement {
 			if !validBackfillExpression(after.BackfillSQL) {
-				return nil, diff, fmt.Errorf("rename to NOT NULL column %s.%s requires a valid backfill expression", change.Entity, after.Name)
+				return fmt.Errorf("rename to NOT NULL column %s.%s requires a valid backfill expression", change.Entity, after.Name)
 			}
 			nullable := after
 			nullable.NotNull = false
-			statements = append(statements,
+			b.statements = append(b.statements,
 				fmt.Sprintf("ALTER TABLE %s CHANGE COLUMN %s %s;", sqlIdent(change.Entity), sqlIdent(decision.From), columnSQL(nullable)),
 				backfillSQL(change.Entity, after),
 				fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s;", sqlIdent(change.Entity), columnSQL(after)),
 			)
 		} else {
-			statements = append(statements, fmt.Sprintf(
+			b.statements = append(b.statements, fmt.Sprintf(
 				"ALTER TABLE %s CHANGE COLUMN %s %s;",
 				sqlIdent(change.Entity), sqlIdent(decision.From), columnSQL(after),
 			))
 		}
 		if isJSONKind(after.Kind) {
-			statements = append(statements, jsonConstraintSQL(change.Entity, after.Name))
+			b.statements = append(b.statements, jsonConstraintSQL(change.Entity, after.Name))
 		}
-		renamedFrom[change.Entity+"\x00"+decision.From] = struct{}{}
-		renamedTo[change.Entity+"\x00"+change.After.Name] = struct{}{}
+		b.renamedFrom[change.Entity+"\x00"+decision.From] = struct{}{}
+		b.renamedTo[change.Entity+"\x00"+change.After.Name] = struct{}{}
 	}
-	for _, change := range diff.ChangedColumns {
+	return nil
+}
+
+func (b *migrationSQLBuilder) changeColumns() error {
+	for _, change := range b.diff.ChangedColumns {
 		if change.Before == nil || change.After == nil {
 			continue
 		}
 		beforeJSON := isJSONKind(change.Before.Kind)
 		afterJSON := isJSONKind(change.After.Kind)
 		if change.Before.AutoIncrement && !change.After.AutoIncrement {
-			statements = append(statements, fmt.Sprintf("ALTER TABLE %s DROP INDEX %s;", sqlIdent(change.Entity), sqlIdent(change.Before.Name)))
+			b.statements = append(b.statements, fmt.Sprintf("ALTER TABLE %s DROP INDEX %s;", sqlIdent(change.Entity), sqlIdent(change.Before.Name)))
 		}
 		if beforeJSON && !afterJSON {
-			statements = append(statements, dropJSONConstraintSQL(change.Entity, change.Before.Name))
+			b.statements = append(b.statements, dropJSONConstraintSQL(change.Entity, change.Before.Name))
 		}
 		if !change.Before.NotNull && change.After.NotNull && !change.After.AutoIncrement {
 			if !validBackfillExpression(change.After.BackfillSQL) {
-				return nil, diff, fmt.Errorf("NOT NULL change for %s.%s requires a valid backfill expression", change.Entity, change.After.Name)
+				return fmt.Errorf("NOT NULL change for %s.%s requires a valid backfill expression", change.Entity, change.After.Name)
 			}
-			statements = append(statements, backfillSQL(change.Entity, *change.After))
+			b.statements = append(b.statements, backfillSQL(change.Entity, *change.After))
 		}
-		statements = append(statements, fmt.Sprintf(
+		b.statements = append(b.statements, fmt.Sprintf(
 			"ALTER TABLE %s MODIFY COLUMN %s;",
 			sqlIdent(change.Entity), columnSQL(*change.After),
 		))
 		if !beforeJSON && afterJSON {
-			statements = append(statements, jsonConstraintSQL(change.Entity, change.After.Name))
+			b.statements = append(b.statements, jsonConstraintSQL(change.Entity, change.After.Name))
 		}
 	}
-	for _, change := range diff.AddedColumns {
+	return nil
+}
+
+func (b *migrationSQLBuilder) addColumns() error {
+	for _, change := range b.diff.AddedColumns {
 		if change.After == nil {
 			continue
 		}
-		if _, renamed := renamedTo[change.Entity+"\x00"+change.After.Name]; renamed {
+		if _, renamed := b.renamedTo[change.Entity+"\x00"+change.After.Name]; renamed {
 			continue
 		}
 		after := *change.After
 		if after.NotNull && !after.AutoIncrement {
 			if !validBackfillExpression(after.BackfillSQL) {
-				return nil, diff, fmt.Errorf("adding NOT NULL column %s.%s requires a valid backfill expression", change.Entity, after.Name)
+				return fmt.Errorf("adding NOT NULL column %s.%s requires a valid backfill expression", change.Entity, after.Name)
 			}
 			nullable := after
 			nullable.NotNull = false
-			statements = append(statements, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s;", sqlIdent(change.Entity), columnSQL(nullable)))
+			b.statements = append(b.statements, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s;", sqlIdent(change.Entity), columnSQL(nullable)))
 			if isJSONKind(after.Kind) {
-				statements = append(statements, jsonConstraintSQL(change.Entity, after.Name))
+				b.statements = append(b.statements, jsonConstraintSQL(change.Entity, after.Name))
 			}
-			statements = append(statements, backfillSQL(change.Entity, after), fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s;", sqlIdent(change.Entity), columnSQL(after)))
+			b.statements = append(b.statements, backfillSQL(change.Entity, after), fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s;", sqlIdent(change.Entity), columnSQL(after)))
 			continue
 		}
-		statements = append(statements, fmt.Sprintf(
+		b.statements = append(b.statements, fmt.Sprintf(
 			"ALTER TABLE %s ADD COLUMN %s;",
 			sqlIdent(change.Entity), columnSQL(after),
 		))
 		if isJSONKind(change.After.Kind) {
-			statements = append(statements, jsonConstraintSQL(change.Entity, change.After.Name))
+			b.statements = append(b.statements, jsonConstraintSQL(change.Entity, change.After.Name))
 		}
 	}
-	for _, change := range diff.RemovedColumns {
+	return nil
+}
+
+func (b *migrationSQLBuilder) removeColumns() {
+	for _, change := range b.diff.RemovedColumns {
 		if change.Before == nil {
 			continue
 		}
-		if _, renamed := renamedFrom[change.Entity+"\x00"+change.Before.Name]; renamed {
+		if _, renamed := b.renamedFrom[change.Entity+"\x00"+change.Before.Name]; renamed {
 			continue
 		}
 		if isJSONKind(change.Before.Kind) {
-			statements = append(statements, dropJSONConstraintSQL(change.Entity, change.Before.Name))
+			b.statements = append(b.statements, dropJSONConstraintSQL(change.Entity, change.Before.Name))
 		}
-		statements = append(statements, fmt.Sprintf(
+		b.statements = append(b.statements, fmt.Sprintf(
 			"ALTER TABLE %s DROP COLUMN %s;",
 			sqlIdent(change.Entity), sqlIdent(change.Before.Name),
 		))
 	}
-	for _, change := range diff.ChangedPrimaryKeys {
+}
+
+func (b *migrationSQLBuilder) addPrimaryKeysAndConstraints() {
+	for _, change := range b.diff.ChangedPrimaryKeys {
 		if len(change.After) != 0 {
-			statements = append(statements, fmt.Sprintf("ALTER TABLE %s ADD PRIMARY KEY (%s);", sqlIdent(change.Entity), sqlColumns(change.After)))
+			b.statements = append(b.statements, fmt.Sprintf("ALTER TABLE %s ADD PRIMARY KEY (%s);", sqlIdent(change.Entity), sqlColumns(change.After)))
 		}
 	}
-	for _, change := range diff.AddedIndexes {
-		statements = append(statements, addIndexSQL(change.Entity, change.Index))
+	for _, change := range b.diff.AddedIndexes {
+		b.statements = append(b.statements, addIndexSQL(change.Entity, change.Index))
 	}
-	for _, change := range diff.AddedForeignKeys {
-		statements = append(statements, addForeignKeySQL(change.Entity, change.ForeignKey))
+	for _, change := range b.diff.AddedForeignKeys {
+		b.statements = append(b.statements, addForeignKeySQL(change.Entity, change.ForeignKey))
 	}
-	return statements, diff, nil
 }
 
 func backfillSQL(entity string, column Column) string {

@@ -284,176 +284,6 @@ func (e *phpServiceEvaluator) evaluate(body *phpsyntax.Node) {
 	}
 }
 
-func (e *phpServiceEvaluator) evaluateStatement(statement *phpsyntax.Node) {
-	calls := phpquery.Calls(statement)
-	if len(calls) == 0 {
-		return
-	}
-
-	assignedVariable := phpquery.AssignedVariable(statement)
-	if e.isAccessorAssignment(calls, "services") {
-		if assignedVariable != "" {
-			e.serviceVariables[assignedVariable] = struct{}{}
-		}
-		return
-	}
-	if e.isAccessorAssignment(calls, "parameters") {
-		if assignedVariable != "" {
-			e.parameterVariables[assignedVariable] = struct{}{}
-		}
-		return
-	}
-
-	if parameterSet := e.rootedCall(calls, e.parameterVariables, "parameters", "set"); parameterSet != nil {
-		e.setParameter(parameterSet)
-		return
-	}
-
-	if remove := e.rootedCall(calls, e.serviceVariables, "services", "remove"); remove != nil {
-		if id, ok := e.argumentValue(remove, 0); ok {
-			delete(e.services, id)
-			for variable, definitionID := range e.definitionVars {
-				if definitionID == id {
-					delete(e.definitionVars, variable)
-				}
-			}
-		}
-		return
-	}
-
-	if defaults := e.rootedCall(calls, e.serviceVariables, "services", "defaults"); defaults != nil {
-		for _, autowireCall := range methodCalls(calls, "autowire") {
-			if !e.callHasConfigurator(
-				phpquery.CallName(autowireCall),
-				"defaults",
-			) {
-				continue
-			}
-			e.defaultAutowire, e.defaultAutowireSet =
-				e.phpAutowireCall(autowireCall)
-		}
-		for _, tagCall := range methodCalls(calls, "tag") {
-			if !e.callHasConfigurator(phpquery.CallName(tagCall), "defaults") {
-				continue
-			}
-			if tag, ok := e.argumentValue(tagCall, 0); ok {
-				e.defaultTags[tag] = ""
-			}
-		}
-		return
-	}
-
-	if instanceOf := e.rootedCall(calls, e.serviceVariables, "services", "instanceof"); instanceOf != nil {
-		typeName, typeOK := e.argumentValue(instanceOf, 0)
-		if !typeOK {
-			return
-		}
-		for _, tagCall := range methodCalls(calls, "tag") {
-			if !e.callHasConfigurator(phpquery.CallName(tagCall), "instanceof") {
-				continue
-			}
-			if tag, ok := e.argumentValue(tagCall, 0); ok {
-				e.instanceofTags[tag] = typeName
-			}
-		}
-		return
-	}
-
-	if load := e.rootedCall(calls, e.serviceVariables, "services", "load"); load != nil {
-		e.setPrototype(load, calls)
-		return
-	}
-
-	definitionID := ""
-	if set := e.rootedCall(calls, e.serviceVariables, "services", "set"); set != nil {
-		definitionID = e.setService(set)
-	} else if invoke := e.invokedServicesCall(calls); invoke != nil {
-		definitionID = e.setService(invoke)
-	} else if alias := e.rootedCall(calls, e.serviceVariables, "services", "alias"); alias != nil {
-		definitionID = e.setAlias(alias)
-	} else if stack := e.rootedCall(calls, e.serviceVariables, "services", "stack"); stack != nil {
-		definitionID = e.setStack(stack)
-	} else if get := e.rootedCall(calls, e.serviceVariables, "services", "get"); get != nil {
-		definitionID, _ = e.argumentValue(get, 0)
-	} else {
-		definitionID = e.definitionForCalls(calls)
-	}
-	if definitionID == "" {
-		return
-	}
-
-	if assignedVariable != "" {
-		e.definitionVars[assignedVariable] = definitionID
-	}
-	service, exists := e.services[definitionID]
-	if !exists {
-		return
-	}
-	for _, classCall := range methodCalls(calls, "class") {
-		if !e.callTargetsDefinition(classCall, definitionID) {
-			continue
-		}
-		if className, ok := e.argumentValue(classCall, 0); ok {
-			service.Class = className
-		}
-	}
-	if service.Tags == nil {
-		service.Tags = make(map[string]string)
-	}
-	for _, tagCall := range methodCalls(calls, "tag") {
-		if e.callTargetsDefinition(tagCall, definitionID) {
-			if tag, ok := e.argumentValue(tagCall, 0); ok {
-				service.Tags[tag] = ""
-			}
-		}
-	}
-	for _, autowireCall := range methodCalls(calls, "autowire") {
-		if !e.callTargetsDefinition(autowireCall, definitionID) {
-			continue
-		}
-		service.Autowire, service.AutowireSet =
-			e.phpAutowireCall(autowireCall)
-	}
-	for _, decorateCall := range methodCalls(calls, "decorate") {
-		if !e.callTargetsDefinition(decorateCall, definitionID) {
-			continue
-		}
-		if target, ok := e.argumentValue(decorateCall, 0); ok {
-			service.Decorates = target
-			service.DecoratesRange = phpArgumentContentRange(
-				decorateCall,
-				0,
-			)
-		}
-	}
-	for _, parentCall := range methodCalls(calls, "parent") {
-		if !e.callTargetsDefinition(parentCall, definitionID) {
-			continue
-		}
-		if target, ok := e.argumentValue(parentCall, 0); ok {
-			service.Parent = target
-			service.ParentRange = phpArgumentContentRange(parentCall, 0)
-		}
-	}
-	for _, deprecateCall := range methodCalls(calls, "deprecate") {
-		if !e.callTargetsDefinition(deprecateCall, definitionID) {
-			continue
-		}
-		service.Deprecated = true
-		service.DeprecatedRange = deprecateCall.RangeTrimmedTrivia()
-		if message, ok := e.argumentValue(deprecateCall, 2); ok {
-			service.Deprecation = message
-		}
-	}
-	if e.collectReferences {
-		e.references = append(
-			e.references,
-			e.serviceArgumentReferences(service, calls)...,
-		)
-	}
-	e.services[definitionID] = service
-}
-
 func (e *phpServiceEvaluator) serviceArgumentReferences(
 	service Service,
 	calls []*phpsyntax.Node,
@@ -635,101 +465,152 @@ func legacyPHPServiceArgumentReferences(
 	var result []ServiceArgumentReference
 	for _, array := range phpquery.Arrays(root) {
 		for _, definition := range phpquery.ArrayItems(array) {
-			key := phpquery.ArrayItemKey(definition)
-			config := phpquery.ArrayItemValue(definition)
-			if key == nil || config == nil ||
-				config.Kind() != phpsyntax.PhpArray {
+			ownerID, ownerClass, config, found := legacyPHPServiceDefinition(
+				definition,
+				resolver,
+				path,
+			)
+			if !found {
 				continue
 			}
-			ownerID, ok := staticPHPValue(key.Text(), resolver, path)
-			if !ok || ownerID == "" {
-				continue
+			base := ServiceArgumentReference{
+				OwnerServiceID: ownerID,
+				OwnerClass:     ownerClass,
+				ParameterIndex: -1,
+				Format:         "php",
 			}
-			ownerClass := ""
-			if strings.Contains(ownerID, "\\") {
-				ownerClass = ownerID
-			}
-			for _, option := range phpquery.ArrayItems(config) {
-				optionKey := phpquery.ArrayItemKey(option)
-				if optionKey == nil {
-					continue
-				}
-				name, static := staticPHPValue(
-					optionKey.Text(),
+			for _, arguments := range legacyPHPServiceArgumentArrays(
+				config,
+				resolver,
+				path,
+			) {
+				result = append(result, legacyPHPServiceReferences(
+					arguments,
 					resolver,
 					path,
-				)
-				if !static || name != "class" {
-					continue
-				}
-				classValue := phpquery.ArrayItemValue(option)
-				if classValue == nil {
-					continue
-				}
-				if className, classStatic := staticPHPValue(
-					classValue.Text(),
-					resolver,
-					path,
-				); classStatic {
-					ownerClass = className
-				}
-			}
-			if ownerClass == "" {
-				continue
-			}
-			for _, option := range phpquery.ArrayItems(config) {
-				optionKey := phpquery.ArrayItemKey(option)
-				arguments := phpquery.ArrayItemValue(option)
-				if optionKey == nil {
-					continue
-				}
-				name, ok := staticPHPValue(optionKey.Text(), resolver, path)
-				if !ok || name != "arguments" || arguments == nil ||
-					arguments.Kind() != phpsyntax.PhpArray {
-					continue
-				}
-				base := ServiceArgumentReference{
-					OwnerServiceID: ownerID,
-					OwnerClass:     ownerClass,
-					ParameterIndex: -1,
-					Format:         "php",
-				}
-				for index, item := range phpquery.ArrayItems(arguments) {
-					reference, found := phpServiceReferenceExpression(
-						phpquery.ArrayItemValue(item),
-						resolver,
-						path,
-						base,
-					)
-					if !found {
-						continue
-					}
-					reference.ParameterIndex = index
-					if argumentKey := phpquery.ArrayItemKey(item); argumentKey != nil {
-						value, static := staticPHPValue(
-							argumentKey.Text(),
-							resolver,
-							path,
-						)
-						if !static {
-							continue
-						}
-						switch {
-						case strings.HasPrefix(value, "$"):
-							reference.ParameterName = value
-							reference.ParameterIndex = -1
-						case numericIndex(value) >= 0:
-							reference.ParameterIndex = numericIndex(value)
-						default:
-							continue
-						}
-					}
-					result = append(result, reference)
-				}
+					base,
+				)...)
 			}
 		}
 	}
 	return result
+}
+
+func legacyPHPServiceDefinition(
+	definition *phpsyntax.Node,
+	resolver *php.NameResolver,
+	path string,
+) (string, string, *phpsyntax.Node, bool) {
+	key := phpquery.ArrayItemKey(definition)
+	config := phpquery.ArrayItemValue(definition)
+	if key == nil || config == nil || config.Kind() != phpsyntax.PhpArray {
+		return "", "", nil, false
+	}
+	ownerID, ok := staticPHPValue(key.Text(), resolver, path)
+	if !ok || ownerID == "" {
+		return "", "", nil, false
+	}
+	ownerClass := ""
+	if strings.Contains(ownerID, "\\") {
+		ownerClass = ownerID
+	}
+	for _, option := range phpquery.ArrayItems(config) {
+		className, found := legacyPHPServiceClass(option, resolver, path)
+		if found {
+			ownerClass = className
+		}
+	}
+	return ownerID, ownerClass, config, ownerClass != ""
+}
+
+func legacyPHPServiceClass(
+	option *phpsyntax.Node,
+	resolver *php.NameResolver,
+	path string,
+) (string, bool) {
+	key := phpquery.ArrayItemKey(option)
+	value := phpquery.ArrayItemValue(option)
+	if key == nil || value == nil {
+		return "", false
+	}
+	name, static := staticPHPValue(key.Text(), resolver, path)
+	if !static || name != "class" {
+		return "", false
+	}
+	return staticPHPValue(value.Text(), resolver, path)
+}
+
+func legacyPHPServiceArgumentArrays(
+	config *phpsyntax.Node,
+	resolver *php.NameResolver,
+	path string,
+) []*phpsyntax.Node {
+	var result []*phpsyntax.Node
+	for _, option := range phpquery.ArrayItems(config) {
+		key := phpquery.ArrayItemKey(option)
+		arguments := phpquery.ArrayItemValue(option)
+		if key == nil || arguments == nil || arguments.Kind() != phpsyntax.PhpArray {
+			continue
+		}
+		name, ok := staticPHPValue(key.Text(), resolver, path)
+		if ok && name == "arguments" {
+			result = append(result, arguments)
+		}
+	}
+	return result
+}
+
+func legacyPHPServiceReferences(
+	arguments *phpsyntax.Node,
+	resolver *php.NameResolver,
+	path string,
+	base ServiceArgumentReference,
+) []ServiceArgumentReference {
+	var result []ServiceArgumentReference
+	for index, item := range phpquery.ArrayItems(arguments) {
+		reference, found := phpServiceReferenceExpression(
+			phpquery.ArrayItemValue(item),
+			resolver,
+			path,
+			base,
+		)
+		if !found {
+			continue
+		}
+		reference.ParameterIndex = index
+		if !setLegacyPHPReferenceParameter(&reference, item, resolver, path) {
+			continue
+		}
+		result = append(result, reference)
+	}
+	return result
+}
+
+func setLegacyPHPReferenceParameter(
+	reference *ServiceArgumentReference,
+	item *phpsyntax.Node,
+	resolver *php.NameResolver,
+	path string,
+) bool {
+	key := phpquery.ArrayItemKey(item)
+	if key == nil {
+		return true
+	}
+	value, static := staticPHPValue(key.Text(), resolver, path)
+	if !static {
+		return false
+	}
+	if strings.HasPrefix(value, "$") {
+		reference.ParameterName = value
+		reference.ParameterIndex = -1
+		return true
+	}
+	index := numericIndex(value)
+	if index < 0 {
+		return false
+	}
+	reference.ParameterIndex = index
+	return true
 }
 
 func directPHPServiceArgumentReferences(

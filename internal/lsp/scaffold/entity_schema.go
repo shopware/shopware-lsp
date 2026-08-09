@@ -133,6 +133,27 @@ type entitySchemaPreparedFile struct {
 	exists              bool
 }
 
+type entitySchemaSource struct {
+	path    string
+	content string
+	version *int
+	exists  bool
+}
+
+type entitySchemaSources struct {
+	definition entitySchemaSource
+	entity     entitySchemaSource
+	collection entitySchemaSource
+}
+
+type entitySchemaHistory struct {
+	scanned  entityschema.Schema
+	previous entityschema.Schema
+	parents  []string
+	pending  []entitySchemaPreparedFile
+	stop     bool
+}
+
 func (p *Provider) entitySchemaBootstrap(ctx context.Context, raw *json.RawMessage) (interface{}, error) {
 	var request EntitySchemaBootstrapRequest
 	if err := decodeScaffoldRequest(raw, &request); err != nil {
@@ -423,21 +444,22 @@ func (p *Provider) prepareEntitySchema(ctx context.Context, request EntitySchema
 		spec.MigrationTimestamp = availableMigrationTimestamp(plugin.SourceRoot, spec.MigrationTimestamp)
 		response.MigrationTimestamp = spec.MigrationTimestamp
 	}
-	definitionPath := filepath.Join(directory, entityschema.ShortClass(spec.DefinitionClass)+".php")
-	entityPath := filepath.Join(directory, entityschema.ShortClass(spec.EntityClass)+".php")
-	collectionPath := filepath.Join(directory, entityschema.ShortClass(spec.CollectionClass)+".php")
-	definitionSource, definitionVersion, definitionExists, err := sourceForPath(definitionPath, request.Documents)
+	sources, err := entitySchemaSourcesFor(directory, spec, request.Documents)
 	if err != nil {
 		return entitySchemaPrepared{}, err
 	}
-	entitySource, entityVersion, entityExists, err := sourceForPath(entityPath, request.Documents)
-	if err != nil {
-		return entitySchemaPrepared{}, err
-	}
-	collectionSource, collectionVersion, collectionExists, err := sourceForPath(collectionPath, request.Documents)
-	if err != nil {
-		return entitySchemaPrepared{}, err
-	}
+	definitionPath := sources.definition.path
+	definitionSource := sources.definition.content
+	definitionVersion := sources.definition.version
+	definitionExists := sources.definition.exists
+	entityPath := sources.entity.path
+	entitySource := sources.entity.content
+	entityVersion := sources.entity.version
+	entityExists := sources.entity.exists
+	collectionPath := sources.collection.path
+	collectionSource := sources.collection.content
+	collectionVersion := sources.collection.version
+	collectionExists := sources.collection.exists
 	relationLookup, err := p.entityRelationLookup()
 	if err != nil {
 		return entitySchemaPrepared{}, err
@@ -459,69 +481,23 @@ func (p *Provider) prepareEntitySchema(ctx context.Context, request EntitySchema
 		}
 		scanned.Entities[imported.EntityName] = currentEntity
 	}
-	snapshots, err := entityschema.ReadSnapshots(plugin.Root)
+	history, err := prepareEntitySchemaHistory(
+		plugin,
+		scanned,
+		spec,
+		request,
+		&response,
+	)
 	if err != nil {
 		return entitySchemaPrepared{}, err
 	}
-	graph, err := entityschema.BuildSnapshotGraph(snapshots)
-	if err != nil {
-		return entitySchemaPrepared{}, err
-	}
-	if len(graph.Missing) != 0 {
-		response.Issues = append(response.Issues, entityIssue("entity.snapshot.parent.missing", "Snapshot history references missing parents"))
+	if history.stop {
 		return entitySchemaPrepared{response: response}, nil
 	}
-	if len(graph.Leaves) > 1 {
-		response.Issues = append(response.Issues, entityIssue("entity.snapshot.reconcile.required", "Snapshot history has multiple leaves; reconcile branches before generating a migration"))
-		return entitySchemaPrepared{response: response}, nil
-	}
-	currentLeaves := make([]string, 0, len(graph.Leaves))
-	for _, leaf := range graph.Leaves {
-		currentLeaves = append(currentLeaves, leaf.Snapshot.ID)
-	}
-	if len(spec.BaseSnapshotIDs) != 0 && !sameStringSet(spec.BaseSnapshotIDs, currentLeaves) {
-		response.Issues = append(response.Issues, entityIssue("entity.snapshot.stale", "Snapshot history changed since the entity was opened; reload the designer before applying another migration"))
-		return entitySchemaPrepared{response: response}, nil
-	}
-	var previous entityschema.Schema
-	var parents []string
-	var pending []entitySchemaPreparedFile
-	if len(graph.Leaves) == 0 {
-		baseline, sealErr := (entityschema.Snapshot{Kind: entityschema.SnapshotBaseline, Plugin: entityschema.PluginIdentity{ComposerName: plugin.ComposerName, PluginClass: plugin.PluginClass}, ShopwareVersion: plugin.ShopwareVersion, Schema: scanned}).Seal()
-		if sealErr != nil {
-			return entitySchemaPrepared{}, sealErr
-		}
-		encoded, marshalErr := entityschema.MarshalSnapshot(baseline)
-		if marshalErr != nil {
-			return entitySchemaPrepared{}, marshalErr
-		}
-		pending = append(pending, entitySchemaPreparedFile{path: filepath.Join(plugin.SnapshotDirectory, "0000000000-baseline-"+baseline.ID[:12]+".snapshot.json"), after: string(encoded)})
-		parents = []string{baseline.ID}
-		previous = scanned
-	} else {
-		leaf := graph.Leaves[0].Snapshot
-		parents = []string{leaf.ID}
-		previous = leaf.Schema
-		scanned = entityschema.RestoreSnapshotOnlyIndexes(scanned, previous)
-		if !sameEntitySchema(previous, scanned) {
-			response.Drift = true
-			response.DriftMessage = "Entity definitions differ from the latest committed snapshot. Choose whether to adopt the current code as a baseline or generate migration SQL for it."
-			switch request.DriftDecision {
-			case "adopt":
-				adopted, sealErr := (entityschema.Snapshot{Parents: parents, Kind: entityschema.SnapshotBaseline, Plugin: leaf.Plugin, ShopwareVersion: leaf.ShopwareVersion, Schema: scanned, Decisions: []entityschema.Decision{{Kind: "driftAdopt", Reason: "adopt current plugin entity definitions"}}}).Seal()
-				if sealErr != nil {
-					return entitySchemaPrepared{}, sealErr
-				}
-				encoded, _ := entityschema.MarshalSnapshot(adopted)
-				pending = append(pending, entitySchemaPreparedFile{path: filepath.Join(plugin.SnapshotDirectory, strconv.FormatInt(spec.MigrationTimestamp, 10)+"-adopt-"+adopted.ID[:12]+".snapshot.json"), after: string(encoded)})
-				parents, previous = []string{adopted.ID}, scanned
-			case "migrate":
-			default:
-				response.Issues = append(response.Issues, entityIssue("entity.snapshot.drift.decision", "Choose Adopt current schema or Generate migration before applying"))
-				return entitySchemaPrepared{response: response}, nil
-			}
-		}
-	}
+	scanned = history.scanned
+	previous := history.previous
+	parents := history.parents
+	pending := history.pending
 	next := scanned.Clone()
 	entity, err := entityschema.SchemaFromSpec(spec)
 	if err != nil && len(response.Issues) == 0 {
@@ -647,6 +623,164 @@ func (p *Provider) prepareEntitySchema(ctx context.Context, request EntitySchema
 	hash := sha256.Sum256(revisionContent)
 	response.Revision = hex.EncodeToString(hash[:])
 	return entitySchemaPrepared{response: response, files: pending}, nil
+}
+
+func prepareEntitySchemaHistory(
+	plugin entityschema.PluginContext,
+	scanned entityschema.Schema,
+	spec entityschema.EntitySpec,
+	request EntitySchemaPreviewRequest,
+	response *EntitySchemaPreviewResponse,
+) (entitySchemaHistory, error) {
+	history := entitySchemaHistory{scanned: scanned}
+	snapshots, err := entityschema.ReadSnapshots(plugin.Root)
+	if err != nil {
+		return history, err
+	}
+	graph, err := entityschema.BuildSnapshotGraph(snapshots)
+	if err != nil {
+		return history, err
+	}
+	if len(graph.Missing) != 0 {
+		response.Issues = append(response.Issues, entityIssue(
+			"entity.snapshot.parent.missing",
+			"Snapshot history references missing parents",
+		))
+		history.stop = true
+		return history, nil
+	}
+	if len(graph.Leaves) > 1 {
+		response.Issues = append(response.Issues, entityIssue(
+			"entity.snapshot.reconcile.required",
+			"Snapshot history has multiple leaves; reconcile branches before generating a migration",
+		))
+		history.stop = true
+		return history, nil
+	}
+	currentLeaves := make([]string, 0, len(graph.Leaves))
+	for _, leaf := range graph.Leaves {
+		currentLeaves = append(currentLeaves, leaf.Snapshot.ID)
+	}
+	if len(spec.BaseSnapshotIDs) != 0 &&
+		!sameStringSet(spec.BaseSnapshotIDs, currentLeaves) {
+		response.Issues = append(response.Issues, entityIssue(
+			"entity.snapshot.stale",
+			"Snapshot history changed since the entity was opened; reload the designer before applying another migration",
+		))
+		history.stop = true
+		return history, nil
+	}
+	if len(graph.Leaves) == 0 {
+		return newEntitySchemaBaseline(plugin, history)
+	}
+	return reconcileEntitySchemaDrift(
+		plugin,
+		graph.Leaves[0].Snapshot,
+		spec,
+		request.DriftDecision,
+		response,
+		history,
+	)
+}
+
+func newEntitySchemaBaseline(
+	plugin entityschema.PluginContext,
+	history entitySchemaHistory,
+) (entitySchemaHistory, error) {
+	baseline, err := (entityschema.Snapshot{
+		Kind: entityschema.SnapshotBaseline,
+		Plugin: entityschema.PluginIdentity{
+			ComposerName: plugin.ComposerName,
+			PluginClass:  plugin.PluginClass,
+		},
+		ShopwareVersion: plugin.ShopwareVersion,
+		Schema:          history.scanned,
+	}).Seal()
+	if err != nil {
+		return history, err
+	}
+	encoded, err := entityschema.MarshalSnapshot(baseline)
+	if err != nil {
+		return history, err
+	}
+	history.pending = append(history.pending, entitySchemaPreparedFile{
+		path: filepath.Join(
+			plugin.SnapshotDirectory,
+			"0000000000-baseline-"+baseline.ID[:12]+".snapshot.json",
+		),
+		after: string(encoded),
+	})
+	history.parents = []string{baseline.ID}
+	history.previous = history.scanned
+	return history, nil
+}
+
+func reconcileEntitySchemaDrift(
+	plugin entityschema.PluginContext,
+	leaf entityschema.Snapshot,
+	spec entityschema.EntitySpec,
+	driftDecision string,
+	response *EntitySchemaPreviewResponse,
+	history entitySchemaHistory,
+) (entitySchemaHistory, error) {
+	history.parents = []string{leaf.ID}
+	history.previous = leaf.Schema
+	history.scanned = entityschema.RestoreSnapshotOnlyIndexes(
+		history.scanned,
+		history.previous,
+	)
+	if sameEntitySchema(history.previous, history.scanned) {
+		return history, nil
+	}
+	response.Drift = true
+	response.DriftMessage = "Entity definitions differ from the latest committed snapshot. Choose whether to adopt the current code as a baseline or generate migration SQL for it."
+	switch driftDecision {
+	case "adopt":
+		return adoptEntitySchemaDrift(plugin, leaf, spec, history)
+	case "migrate":
+		return history, nil
+	default:
+		response.Issues = append(response.Issues, entityIssue(
+			"entity.snapshot.drift.decision",
+			"Choose Adopt current schema or Generate migration before applying",
+		))
+		history.stop = true
+		return history, nil
+	}
+}
+
+func adoptEntitySchemaDrift(
+	plugin entityschema.PluginContext,
+	leaf entityschema.Snapshot,
+	spec entityschema.EntitySpec,
+	history entitySchemaHistory,
+) (entitySchemaHistory, error) {
+	adopted, err := (entityschema.Snapshot{
+		Parents:         history.parents,
+		Kind:            entityschema.SnapshotBaseline,
+		Plugin:          leaf.Plugin,
+		ShopwareVersion: leaf.ShopwareVersion,
+		Schema:          history.scanned,
+		Decisions: []entityschema.Decision{{
+			Kind:   "driftAdopt",
+			Reason: "adopt current plugin entity definitions",
+		}},
+	}).Seal()
+	if err != nil {
+		return history, err
+	}
+	encoded, _ := entityschema.MarshalSnapshot(adopted)
+	history.pending = append(history.pending, entitySchemaPreparedFile{
+		path: filepath.Join(
+			plugin.SnapshotDirectory,
+			strconv.FormatInt(spec.MigrationTimestamp, 10)+
+				"-adopt-"+adopted.ID[:12]+".snapshot.json",
+		),
+		after: string(encoded),
+	})
+	history.parents = []string{adopted.ID}
+	history.previous = history.scanned
+	return history, nil
 }
 
 type EntitySchemaReconcileRequest struct {
@@ -782,6 +916,36 @@ func sameStringSet(left, right []string) bool {
 		}
 	}
 	return true
+}
+
+func entitySchemaSourcesFor(
+	directory string,
+	spec entityschema.EntitySpec,
+	documents map[string]EntitySchemaDocument,
+) (entitySchemaSources, error) {
+	paths := []string{
+		filepath.Join(directory, entityschema.ShortClass(spec.DefinitionClass)+".php"),
+		filepath.Join(directory, entityschema.ShortClass(spec.EntityClass)+".php"),
+		filepath.Join(directory, entityschema.ShortClass(spec.CollectionClass)+".php"),
+	}
+	result := make([]entitySchemaSource, len(paths))
+	for index, path := range paths {
+		content, version, exists, err := sourceForPath(path, documents)
+		if err != nil {
+			return entitySchemaSources{}, err
+		}
+		result[index] = entitySchemaSource{
+			path:    path,
+			content: content,
+			version: version,
+			exists:  exists,
+		}
+	}
+	return entitySchemaSources{
+		definition: result[0],
+		entity:     result[1],
+		collection: result[2],
+	}, nil
 }
 
 func sourceForPath(path string, documents map[string]EntitySchemaDocument) (string, *int, bool, error) {

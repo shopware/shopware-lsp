@@ -11,20 +11,55 @@ func (idx *AdminComponentIndexer) enrichScriptSetupTypeContracts(
 	if idx == nil || definition == nil || definition.FilePath == "" {
 		return nil
 	}
-	defaults := make(map[string]string, len(definition.ScriptSetupPropDefaults))
-	for _, value := range definition.ScriptSetupPropDefaults {
+	defaults := scriptSetupPropDefaults(definition.ScriptSetupPropDefaults)
+	resolvedProps, err := idx.resolveScriptSetupProps(
+		definition,
+		defaults,
+		liveFiles,
+	)
+	if err != nil {
+		return err
+	}
+	definition.Props = overlayScriptSetupProps(definition.Props, resolvedProps)
+	applyResolvedScriptSetupDefaults(definition.Props, defaults)
+	definition.Members = overlayResolvedScriptSetupPropMembers(
+		definition.Members,
+		resolvedProps,
+	)
+	definition.Members = applyScriptSetupPropBindingMembers(
+		definition.Members,
+		definition.Props,
+		definition.ScriptSetupPropBindings,
+		definition.FilePath,
+	)
+	if err := idx.enrichScriptSetupEvents(definition, liveFiles); err != nil {
+		return err
+	}
+	return idx.enrichScriptSetupSlots(definition, liveFiles)
+}
+
+func scriptSetupPropDefaults(values []ScriptSetupPropDefault) map[string]string {
+	result := make(map[string]string, len(values))
+	for _, value := range values {
 		if value.Name != "" && value.Value != "" {
-			defaults[value.Name] = value.Value
+			result[value.Name] = value.Value
 		}
 	}
+	return result
+}
 
-	var resolvedProps []VueComponentProp
+func (idx *AdminComponentIndexer) resolveScriptSetupProps(
+	definition *ComponentDefinition,
+	defaults map[string]string,
+	liveFiles []AdminTypeFile,
+) ([]VueComponentProp, error) {
+	var result []VueComponentProp
 	for _, typeExpression := range definition.ScriptSetupPropTypes {
 		shape, err := idx.ResolveVueType(
 			typeExpression, definition.FilePath, liveFiles...,
 		)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		for _, member := range shape.Members {
 			if member.Name == "" {
@@ -45,29 +80,31 @@ func (idx *AdminComponentIndexer) enrichScriptSetupTypeContracts(
 				prop.Default = value
 				prop.Required = false
 			}
-			resolvedProps = overlayScriptSetupProps(
-				resolvedProps, []VueComponentProp{prop},
+			result = overlayScriptSetupProps(
+				result, []VueComponentProp{prop},
 			)
 		}
 	}
-	definition.Props = overlayScriptSetupProps(
-		definition.Props, resolvedProps,
-	)
-	for propIndex := range definition.Props {
-		prop := &definition.Props[propIndex]
+	return result, nil
+}
+
+func applyResolvedScriptSetupDefaults(
+	props []VueComponentProp,
+	defaults map[string]string,
+) {
+	for propIndex := range props {
+		prop := &props[propIndex]
 		if value := defaults[prop.Name]; value != "" {
 			prop.Default = value
 			prop.Required = false
 		}
 	}
-	definition.Members = overlayResolvedScriptSetupPropMembers(
-		definition.Members, resolvedProps,
-	)
-	definition.Members = applyScriptSetupPropBindingMembers(
-		definition.Members, definition.Props,
-		definition.ScriptSetupPropBindings, definition.FilePath,
-	)
+}
 
+func (idx *AdminComponentIndexer) enrichScriptSetupEvents(
+	definition *ComponentDefinition,
+	liveFiles []AdminTypeFile,
+) error {
 	for _, typeExpression := range definition.ScriptSetupEventTypes {
 		shape, err := idx.ResolveVueType(
 			typeExpression, definition.FilePath, liveFiles...,
@@ -111,6 +148,13 @@ func (idx *AdminComponentIndexer) enrichScriptSetupTypeContracts(
 			)
 		}
 	}
+	return nil
+}
+
+func (idx *AdminComponentIndexer) enrichScriptSetupSlots(
+	definition *ComponentDefinition,
+	liveFiles []AdminTypeFile,
+) error {
 	for _, typeExpression := range definition.ScriptSetupSlotTypes {
 		shape, err := idx.ResolveVueType(
 			typeExpression, definition.FilePath, liveFiles...,
@@ -120,53 +164,69 @@ func (idx *AdminComponentIndexer) enrichScriptSetupTypeContracts(
 		}
 		var slots []VueComponentSlot
 		for _, member := range shape.Members {
-			if member.Name == "" {
-				continue
+			slot, found, resolveErr := idx.resolveScriptSetupSlot(
+				member,
+				definition.FilePath,
+				liveFiles,
+			)
+			if resolveErr != nil {
+				return resolveErr
 			}
-			filePath := member.DefinitionPath
-			if filePath == "" {
-				filePath = definition.FilePath
+			if found {
+				slots = append(slots, slot)
 			}
-			slot := VueComponentSlot{
-				Name: member.Name, FilePath: filePath,
-				Line:        member.DefinitionLine,
-				NameRange:   member.DefinitionRange,
-				PayloadType: meteorSlotPayloadType(member.Type),
-			}
-			if slot.PayloadType == "" {
-				slot.MembersComplete = true
-			} else {
-				payload, resolveErr := idx.ResolveVueType(
-					slot.PayloadType, filePath, liveFiles...,
-				)
-				if resolveErr != nil {
-					return resolveErr
-				}
-				slot.MembersComplete = payload.Complete
-				for _, payloadMember := range payload.Members {
-					memberPath := payloadMember.DefinitionPath
-					if memberPath == "" {
-						memberPath = filePath
-					}
-					memberLine := payloadMember.DefinitionLine
-					if memberLine == 0 {
-						memberLine = slot.Line
-					}
-					slot.Members = appendSlotMember(
-						slot.Members,
-						VueComponentSlotMember{
-							Name: payloadMember.Name, Type: payloadMember.Type,
-							FilePath: memberPath, Line: memberLine,
-							NameRange: payloadMember.DefinitionRange,
-						},
-					)
-				}
-			}
-			slots = append(slots, slot)
 		}
 		definition.Slots = overlayScriptSetupSlots(definition.Slots, slots)
 	}
 	return nil
+}
+
+func (idx *AdminComponentIndexer) resolveScriptSetupSlot(
+	member TwigVueMember,
+	definitionPath string,
+	liveFiles []AdminTypeFile,
+) (VueComponentSlot, bool, error) {
+	if member.Name == "" {
+		return VueComponentSlot{}, false, nil
+	}
+	filePath := member.DefinitionPath
+	if filePath == "" {
+		filePath = definitionPath
+	}
+	slot := VueComponentSlot{
+		Name:        member.Name,
+		FilePath:    filePath,
+		Line:        member.DefinitionLine,
+		NameRange:   member.DefinitionRange,
+		PayloadType: meteorSlotPayloadType(member.Type),
+	}
+	if slot.PayloadType == "" {
+		slot.MembersComplete = true
+		return slot, true, nil
+	}
+	payload, err := idx.ResolveVueType(slot.PayloadType, filePath, liveFiles...)
+	if err != nil {
+		return VueComponentSlot{}, false, err
+	}
+	slot.MembersComplete = payload.Complete
+	for _, payloadMember := range payload.Members {
+		memberPath := payloadMember.DefinitionPath
+		if memberPath == "" {
+			memberPath = filePath
+		}
+		memberLine := payloadMember.DefinitionLine
+		if memberLine == 0 {
+			memberLine = slot.Line
+		}
+		slot.Members = appendSlotMember(slot.Members, VueComponentSlotMember{
+			Name:      payloadMember.Name,
+			Type:      payloadMember.Type,
+			FilePath:  memberPath,
+			Line:      memberLine,
+			NameRange: payloadMember.DefinitionRange,
+		})
+	}
+	return slot, true, nil
 }
 
 func applyScriptSetupPropBindingMembers(

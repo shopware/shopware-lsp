@@ -1083,170 +1083,17 @@ func (t Type) render() string {
 		BoolKind, TrueKind, FalseKind, IntKind, FloatKind, StringKind,
 		ResourceKind, ArrayKeyKind:
 		return t.Kind().String()
-	case SelfKind, StaticKind, ParentKind:
-		return renderGeneric(t.Kind().String(), t.arguments())
-	case LiteralIntKind, LiteralFloatKind:
-		return t.Name()
-	case LiteralStringKind:
-		return strconv.Quote(t.Name())
-	case TemplateKind:
-		return t.Name()
-	case ClassStringKind:
-		args := t.arguments()
-		if len(args) == 0 || args[0].Equal(Object()) {
-			return "class-string"
-		}
-		return renderGeneric("class-string", args)
-	case ObjectKind:
-		if t.Name() == "" {
-			return "object"
-		}
-		return renderGeneric(t.Name(), t.arguments())
-	case ArrayKind:
-		args := t.arguments()
-		if len(args) != 2 || args[0].Equal(Mixed()) && args[1].Equal(Mixed()) {
-			return "array"
-		}
-		return renderGeneric("array", args)
-	case NonEmptyArrayKind:
-		args := t.arguments()
-		if len(args) != 2 || args[0].Equal(Mixed()) && args[1].Equal(Mixed()) {
-			return "non-empty-array"
-		}
-		return renderGeneric("non-empty-array", args)
-	case ListKind:
-		args := t.arguments()
-		if len(args) == 0 || args[0].Equal(Mixed()) {
-			return "list"
-		}
-		return renderGeneric("list", args)
-	case NonEmptyListKind:
-		args := t.arguments()
-		if len(args) == 0 || args[0].Equal(Mixed()) {
-			return "non-empty-list"
-		}
-		return renderGeneric("non-empty-list", args)
-	case IterableKind:
-		args := t.arguments()
-		if len(args) != 2 || args[0].Equal(Mixed()) && args[1].Equal(Mixed()) {
-			return "iterable"
-		}
-		return renderGeneric("iterable", args)
+	case SelfKind, StaticKind, ParentKind, LiteralIntKind, LiteralFloatKind,
+		LiteralStringKind, TemplateKind, ClassStringKind, ObjectKind:
+		return renderNamedType(t)
+	case ArrayKind, NonEmptyArrayKind, ListKind, NonEmptyListKind, IterableKind:
+		return renderContainerType(t)
 	case CallableKind:
-		parameters := t.parameters()
-		if len(parameters) == 0 && t.Result().Equal(Mixed()) {
-			return "callable"
-		}
-		var builder strings.Builder
-		length := len("callable():") + renderedLengthHint(t.Result())
-		for index, parameter := range parameters {
-			if index > 0 {
-				length++
-			}
-			if parameter.ByReference {
-				length++
-			}
-			if parameter.Variadic {
-				length += len("...")
-			}
-			length += renderedLengthHint(parameter.Type)
-			if parameter.Name != "" {
-				length += 1 + len(parameter.Name)
-			}
-			if parameter.Optional {
-				length++
-			}
-		}
-		builder.Grow(length)
-		builder.WriteString("callable(")
-		for index, parameter := range parameters {
-			if index > 0 {
-				builder.WriteByte(',')
-			}
-			if parameter.ByReference {
-				builder.WriteByte('&')
-			}
-			if parameter.Variadic {
-				builder.WriteString("...")
-			}
-			writeRenderedType(&builder, parameter.Type)
-			if parameter.Name != "" {
-				builder.WriteByte(' ')
-				builder.WriteString(parameter.Name)
-			}
-			if parameter.Optional {
-				builder.WriteByte('=')
-			}
-		}
-		builder.WriteString("):")
-		writeRenderedType(&builder, t.Result())
-		return builder.String()
+		return renderCallableType(t)
 	case ConditionalKind:
-		args := t.arguments()
-		if len(args) != 4 {
-			return "conditional"
-		}
-		var builder strings.Builder
-		length := len("( is  ?  : )")
-		for _, argument := range args {
-			length += renderedLengthHint(argument)
-		}
-		builder.Grow(length)
-		builder.WriteByte('(')
-		writeRenderedType(&builder, args[0])
-		builder.WriteString(" is ")
-		writeRenderedType(&builder, args[1])
-		builder.WriteString(" ? ")
-		writeRenderedType(&builder, args[2])
-		builder.WriteString(" : ")
-		writeRenderedType(&builder, args[3])
-		builder.WriteByte(')')
-		return builder.String()
+		return renderConditionalType(t)
 	case ArrayShapeKind, ObjectShapeKind:
-		prefix := "array"
-		if t.Kind() == ObjectShapeKind {
-			prefix = "object"
-		}
-		var builder strings.Builder
-		fields := t.fields()
-		length := len(prefix) + 2
-		for index, field := range fields {
-			if index > 0 {
-				length++
-			}
-			length += len(field.Name) + 1 + renderedLengthHint(field.Type)
-			if field.Optional {
-				length++
-			}
-		}
-		if t.IsOpenShape() {
-			if len(fields) > 0 {
-				length++
-			}
-			length += len("...")
-		}
-		builder.Grow(length)
-		builder.WriteString(prefix)
-		builder.WriteByte('{')
-		for index, field := range fields {
-			if index > 0 {
-				builder.WriteByte(',')
-			}
-			builder.WriteString(renderShapeFieldName(field.Name))
-			if field.Optional {
-				builder.WriteByte('?')
-			}
-			builder.WriteByte(':')
-			writeRenderedType(&builder, field.Type)
-		}
-		if t.IsOpenShape() {
-			if len(fields) > 0 {
-				builder.WriteByte(',')
-			}
-			builder.WriteString("...")
-		}
-		builder.WriteByte('}')
-		return builder.String()
+		return renderShapeType(t)
 	case UnionKind:
 		return renderComposite(t.arguments(), "|", true)
 	case IntersectionKind:
@@ -1254,6 +1101,174 @@ func (t Type) render() string {
 	default:
 		return "unknown"
 	}
+}
+
+func renderNamedType(value Type) string {
+	switch value.Kind() {
+	case SelfKind, StaticKind, ParentKind:
+		return renderGeneric(value.Kind().String(), value.arguments())
+	case LiteralStringKind:
+		return strconv.Quote(value.Name())
+	case ClassStringKind:
+		arguments := value.arguments()
+		if len(arguments) == 0 || arguments[0].Equal(Object()) {
+			return "class-string"
+		}
+		return renderGeneric("class-string", arguments)
+	case ObjectKind:
+		if value.Name() == "" {
+			return "object"
+		}
+		return renderGeneric(value.Name(), value.arguments())
+	default:
+		return value.Name()
+	}
+}
+
+func renderContainerType(value Type) string {
+	name := value.Kind().String()
+	arguments := value.arguments()
+	switch value.Kind() {
+	case ListKind, NonEmptyListKind:
+		if len(arguments) == 0 || arguments[0].Equal(Mixed()) {
+			return name
+		}
+	default:
+		if len(arguments) != 2 ||
+			arguments[0].Equal(Mixed()) && arguments[1].Equal(Mixed()) {
+			return name
+		}
+	}
+	return renderGeneric(name, arguments)
+}
+
+func renderCallableType(value Type) string {
+	parameters := value.parameters()
+	if len(parameters) == 0 && value.Result().Equal(Mixed()) {
+		return "callable"
+	}
+	var builder strings.Builder
+	builder.Grow(callableRenderedLength(parameters, value.Result()))
+	builder.WriteString("callable(")
+	for index, parameter := range parameters {
+		if index > 0 {
+			builder.WriteByte(',')
+		}
+		writeCallableParameter(&builder, parameter)
+	}
+	builder.WriteString("):")
+	writeRenderedType(&builder, value.Result())
+	return builder.String()
+}
+
+func callableRenderedLength(parameters []CallableParameter, result Type) int {
+	length := len("callable():") + renderedLengthHint(result)
+	for index, parameter := range parameters {
+		if index > 0 {
+			length++
+		}
+		if parameter.ByReference {
+			length++
+		}
+		if parameter.Variadic {
+			length += len("...")
+		}
+		length += renderedLengthHint(parameter.Type)
+		if parameter.Name != "" {
+			length += 1 + len(parameter.Name)
+		}
+		if parameter.Optional {
+			length++
+		}
+	}
+	return length
+}
+
+func writeCallableParameter(builder *strings.Builder, parameter CallableParameter) {
+	if parameter.ByReference {
+		builder.WriteByte('&')
+	}
+	if parameter.Variadic {
+		builder.WriteString("...")
+	}
+	writeRenderedType(builder, parameter.Type)
+	if parameter.Name != "" {
+		builder.WriteByte(' ')
+		builder.WriteString(parameter.Name)
+	}
+	if parameter.Optional {
+		builder.WriteByte('=')
+	}
+}
+
+func renderConditionalType(value Type) string {
+	arguments := value.arguments()
+	if len(arguments) != 4 {
+		return "conditional"
+	}
+	var builder strings.Builder
+	length := len("( is  ?  : )")
+	for _, argument := range arguments {
+		length += renderedLengthHint(argument)
+	}
+	builder.Grow(length)
+	builder.WriteByte('(')
+	writeRenderedType(&builder, arguments[0])
+	builder.WriteString(" is ")
+	writeRenderedType(&builder, arguments[1])
+	builder.WriteString(" ? ")
+	writeRenderedType(&builder, arguments[2])
+	builder.WriteString(" : ")
+	writeRenderedType(&builder, arguments[3])
+	builder.WriteByte(')')
+	return builder.String()
+}
+
+func renderShapeType(value Type) string {
+	prefix := "array"
+	if value.Kind() == ObjectShapeKind {
+		prefix = "object"
+	}
+	fields := value.fields()
+	length := len(prefix) + 2
+	for index, field := range fields {
+		if index > 0 {
+			length++
+		}
+		length += len(field.Name) + 1 + renderedLengthHint(field.Type)
+		if field.Optional {
+			length++
+		}
+	}
+	if value.IsOpenShape() {
+		if len(fields) > 0 {
+			length++
+		}
+		length += len("...")
+	}
+	var builder strings.Builder
+	builder.Grow(length)
+	builder.WriteString(prefix)
+	builder.WriteByte('{')
+	for index, field := range fields {
+		if index > 0 {
+			builder.WriteByte(',')
+		}
+		builder.WriteString(renderShapeFieldName(field.Name))
+		if field.Optional {
+			builder.WriteByte('?')
+		}
+		builder.WriteByte(':')
+		writeRenderedType(&builder, field.Type)
+	}
+	if value.IsOpenShape() {
+		if len(fields) > 0 {
+			builder.WriteByte(',')
+		}
+		builder.WriteString("...")
+	}
+	builder.WriteByte('}')
+	return builder.String()
 }
 
 func renderShapeFieldName(name string) string {

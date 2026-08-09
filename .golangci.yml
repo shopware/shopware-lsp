@@ -1,0 +1,11 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - gocognit
+  settings:
+    gocognit:
+      min-complexity: 65

@@ -26,6 +26,10 @@ run = "go test ./..."
 description = "Run internal Go tests with the race detector"
 run = "go test -race ./internal/..."
 
+[tasks."test:integration-compile"]
+description = "Compile opt-in real-world integration tests without running them"
+run = "go test -tags=integration ./internal/app -run '^$'"
+
 [tasks.lint]
 description = "Run Go lint checks"
 run = "golangci-lint run"
@@ -61,7 +65,7 @@ run = "node scripts/build-vsix-release.mjs"
 
 [tasks.check]
 description = "Run backend and VSCode validation"
-depends = ["test", "lint", "vscode:check", "vscode:test"]
+depends = ["test", "test:integration-compile", "lint", "vscode:check", "vscode:test"]
 
 [tasks.default]
 description = "Build the backend and VSCode extension"
