@@ -3,6 +3,7 @@ package lsp
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -33,6 +34,48 @@ func TestWorkspaceRootRejectsMissingAndMultipleRoots(t *testing.T) {
 		},
 	})
 	require.ErrorContains(t, err, "multiple workspace folders")
+}
+
+func TestInitializeRejectsUnsupportedProjectWhenDetectionIsRequired(t *testing.T) {
+	root := t.TempDir()
+	server := NewServer(nil, "", "test")
+	server.ConfigureProjectDetection(true, false)
+
+	_, err := server.initialize(context.Background(), &protocol.InitializeParams{
+		RootURI: uriutil.FileURI(root),
+	})
+	require.ErrorContains(t, err, "unsupported project root")
+	require.False(t, server.initialized)
+}
+
+func TestInitializeAcceptsConfiguredOrExplicitlyAllowedProject(t *testing.T) {
+	configured := t.TempDir()
+	require.NoError(t, os.MkdirAll(
+		filepath.Join(configured, ".config", "shopware-lsp"), 0o755,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(configured, ".config", "shopware-lsp", "config.json"),
+		[]byte(`{"version":1}`), 0o644,
+	))
+	server := NewServer(nil, "", "test")
+	server.ConfigureProjectDetection(true, false)
+	_, err := server.initialize(context.Background(), &protocol.InitializeParams{
+		RootURI: uriutil.FileURI(configured),
+	})
+	require.NoError(t, err)
+	require.NoError(t, server.CloseAll())
+
+	unsupported := t.TempDir()
+	server = NewServer(nil, "", "test")
+	server.ConfigureProjectDetection(true, false)
+	_, err = server.initialize(context.Background(), &protocol.InitializeParams{
+		RootURI: uriutil.FileURI(unsupported),
+		InitializationOptions: protocol.InitializationOptions{
+			AllowUnsupportedProject: true,
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, server.CloseAll())
 }
 
 func TestInitializePropagatesWorkspaceConstructionFailure(t *testing.T) {

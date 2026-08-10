@@ -12,6 +12,7 @@ the terminal:
 ```bash
 shopware-lsp help
 shopware-lsp version
+shopware-lsp -root /path/to/project -json project-info
 shopware-lsp -root /path/to/project index
 shopware-lsp -root /path/to/project index -force
 shopware-lsp -root /path/to/project stats
@@ -25,6 +26,15 @@ shopware-lsp -root /path/to/project codeaction -kind quickfix src/Controller.php
 shopware-lsp -root /path/to/project rename -d src/Controller.php:24:18 NewName
 shopware-lsp -root /path/to/project mcp
 ```
+
+Workspace commands run only for detected Shopware or Symfony roots. Detection
+is intentionally bounded to root metadata: Shopware Composer metadata or app
+manifest files, `symfony/framework-bundle` or `config/bundles.php`, and the
+committed `.config/shopware-lsp/config.json` opt-in. Use `project-info` to see
+the detected kind and its evidence without creating a workspace cache. For an
+unusual but intentional root, either add the project configuration or pass the
+global `-allow-unsupported-project` flag before the command. The same guard is
+enforced by the language-server and MCP entry points.
 
 Positions are one-based `file:line:column` values. Structured feature commands
 emit JSON. `check` and `stats` default to readable text; put the global `-json`
@@ -90,8 +100,8 @@ workspace. Applying a code action requires an exact title returned by
 `shopware_code_actions`, writes the affected files, and returns a unified diff.
 
 The bundled VS Code extension registers this server automatically with VS
-Code's native MCP provider API for every enabled workspace folder; manual JSON
-configuration is only needed for other MCP clients. Set
+Code's native MCP provider API for every supported workspace folder; manual
+JSON configuration is only needed for other MCP clients. Set
 `shopwareLSP.mcp.enabled` to `false` to opt a workspace folder out. Individual
 tools can be disabled locally with `shopwareLSP.mcp.tools`, or for every client
 through the committed `mcp.tools` project configuration. Tool keys are the

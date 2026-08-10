@@ -280,6 +280,9 @@ func (r *Runner) cachedWorkspaceSymbols(
 	if err != nil {
 		return nil, false, err
 	}
+	if err := r.requireSupportedProject(root); err != nil {
+		return nil, false, err
+	}
 	cacheDir, err := app.ProjectCacheFolder(root)
 	if err != nil {
 		return nil, false, err

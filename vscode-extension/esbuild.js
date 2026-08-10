@@ -54,7 +54,8 @@ async function main() {
   const mcpModelContext = await esbuild.context({
     entryPoints: {
       mcpServerModel: 'src/mcpServerModel.ts',
-      serverExecutable: 'src/serverExecutable.ts'
+      serverExecutable: 'src/serverExecutable.ts',
+      projectDetection: 'src/projectDetection.ts'
     },
     bundle: true,
     format: 'cjs',

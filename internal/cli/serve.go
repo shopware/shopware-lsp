@@ -79,7 +79,9 @@ func (r *Runner) runServe(ctx context.Context, args []string) error {
 				trace:       &rpcTraceWriter{destination: r.errOut, direction: "server -> client"},
 			}
 		}
-		application := app.New(r.options.Version)
+		application := app.NewWithOptions(r.options.Version, app.Options{
+			AllowUnsupportedProject: r.allowUnsupportedProject,
+		})
 		defer closeIgnoringError(application)
 		serverDone := make(chan error, 1)
 		go func() { serverDone <- application.Run(in, out) }()
@@ -157,7 +159,9 @@ func (r *Runner) runServe(ctx context.Context, args []string) error {
 			trace:       &rpcTraceWriter{destination: r.errOut, direction: "server -> client"},
 		}
 	}
-	application := app.New(r.options.Version)
+	application := app.NewWithOptions(r.options.Version, app.Options{
+		AllowUnsupportedProject: r.allowUnsupportedProject,
+	})
 	defer closeIgnoringError(application)
 	serverDone := make(chan error, 1)
 	go func() { serverDone <- application.Run(in, out) }()

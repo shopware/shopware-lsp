@@ -48,6 +48,22 @@
     "configuration": {
       "title": "Shopware Language Server",
       "properties": {
+        "shopwareLSP.activationMode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ],
+          "enumDescriptions": [
+            "Start only when the workspace root is detected as Shopware or Symfony, or contains .config/shopware-lsp/config.json.",
+            "Always start for this workspace and explicitly allow unsupported project roots.",
+            "Never start the language server or expose its MCP server for this workspace."
+          ],
+          "default": "auto",
+          "scope": "resource",
+          "description": "Controls whether Shopware LSP starts for this workspace folder. Auto avoids starting or indexing in unrelated PHP projects."
+        },
         "shopwareLSP.serverPath": {
           "type": "string",
           "default": "",
@@ -350,6 +366,7 @@
     "test:entity-designer": "npm run compile && node --test test/entityDesignerWebview.test.js",
     "test:configuration": "npm run compile && node --test test/configuration.test.js",
     "test:mcp": "npm run compile && node --test test/mcpServer.test.js",
+    "test:project-detection": "npm run compile && node --test test/projectDetection.test.js",
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",

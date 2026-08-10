@@ -57,6 +57,19 @@ test('passes editor diagnostic and MCP tool overrides to the VS Code launched MC
   });
 });
 
+test('passes the unsupported-project override before the MCP command', () => {
+  const definition = createMcpProcessDefinition({
+    serverPath: '/extension/shopware-lsp',
+    workspaceRoot: '/workspace/library',
+    label: 'Shopware LSP',
+    version: 'dev',
+    allowUnsupportedProject: true,
+  });
+  assert.deepEqual(definition.args, [
+    '-root', '/workspace/library', '-allow-unsupported-project', 'mcp',
+  ]);
+});
+
 test('uses a configured executable without probing and finds packaged binaries', () => {
   assert.equal(resolveServerExecutable({
     configuredPath: '/custom/shopware-lsp',

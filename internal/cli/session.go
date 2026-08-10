@@ -80,12 +80,17 @@ func (r *Runner) connect(ctx context.Context) (*cliSession, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := r.requireSupportedProject(root); err != nil {
+		return nil, err
+	}
 	if r.verbose {
 		if err := writeFormatted(r.errOut, "Initializing workspace %s...\n", root); err != nil {
 			return nil, err
 		}
 	}
-	session, err := newCLISession(ctx, root, r.options.Version, r.errOut, true)
+	session, err := newCLISession(
+		ctx, root, r.options.Version, r.errOut, true, r.allowUnsupportedProject,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +119,12 @@ func (r *Runner) connectWithoutIndex(ctx context.Context) (*cliSession, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newCLISession(ctx, root, r.options.Version, r.errOut, false)
+	if err := r.requireSupportedProject(root); err != nil {
+		return nil, err
+	}
+	return newCLISession(
+		ctx, root, r.options.Version, r.errOut, false, r.allowUnsupportedProject,
+	)
 }
 
 func newCLISession(
@@ -123,11 +133,14 @@ func newCLISession(
 	version string,
 	errOut io.Writer,
 	startIndex bool,
+	allowUnsupportedProject bool,
 	editorConfigurations ...projectconfig.Partial,
 ) (*cliSession, error) {
 	serverSide, clientSide := net.Pipe()
 	session := &cliSession{
-		application:  app.New(version),
+		application: app.NewWithOptions(version, app.Options{
+			AllowUnsupportedProject: allowUnsupportedProject,
+		}),
 		clientSide:   clientSide,
 		serverSide:   serverSide,
 		serverDone:   make(chan struct{}),
@@ -195,7 +208,9 @@ func newCLISession(
 			return nil, nil
 		}).SuppressErrClosed(),
 	)
-	initializationOptions := map[string]interface{}{"cliMode": true}
+	initializationOptions := map[string]interface{}{
+		"cliMode": true, "allowUnsupportedProject": allowUnsupportedProject,
+	}
 	if len(editorConfigurations) > 0 {
 		initializationOptions["configuration"] = editorConfigurations[0]
 	}

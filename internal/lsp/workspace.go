@@ -11,6 +11,7 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/indexer"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	"github.com/shopware/shopware-lsp/internal/projectdetect"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
@@ -62,6 +63,20 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 	}
 	s.rootPath = rootPath
 	s.initializationOptions = params.InitializationOptions
+	if s.projectDetectionRequired &&
+		!s.allowUnsupportedProject &&
+		!params.InitializationOptions.AllowUnsupportedProject {
+		detection, detectErr := projectdetect.Detect(rootPath)
+		if detectErr != nil {
+			return nil, fmt.Errorf("detect project type: %w", detectErr)
+		}
+		if !detection.Supported {
+			return nil, fmt.Errorf(
+				"unsupported project root %s: no Shopware or Symfony project markers found; add .config/shopware-lsp/config.json or allow unsupported projects explicitly",
+				rootPath,
+			)
+		}
+	}
 	scopeLoad := make(chan configurationScopeLoad, 1)
 	go func() { scopeLoad <- loadConfigurationScopes(rootPath) }()
 	if err := s.initializeConfiguration(rootPath, params.InitializationOptions); err != nil {

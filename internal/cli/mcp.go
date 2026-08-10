@@ -50,6 +50,9 @@ func (r *Runner) runMCP(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := r.requireSupportedProject(root); err != nil {
+		return err
+	}
 	editorConfiguration, err := mcpEditorConfiguration()
 	if err != nil {
 		return err
@@ -214,7 +217,8 @@ func withMCPSession[T any](
 		}
 		session, err := newCLISession(
 			ctx, runtime.root, runtime.runner.options.Version,
-			runtime.runner.errOut, true, configuration...,
+			runtime.runner.errOut, true,
+			runtime.runner.allowUnsupportedProject, configuration...,
 		)
 		if err != nil {
 			return zero, err

@@ -97,7 +97,54 @@ func TestAPIJSONDescribesCommandsAndLanguages(t *testing.T) {
 	require.NoError(t, json.Unmarshal(output.Bytes(), &result))
 	require.GreaterOrEqual(t, len(result.Commands), 30)
 	require.Contains(t, commandNames(result.Commands), "mcp")
+	require.Contains(t, commandNames(result.Commands), "project-info")
 	require.Contains(t, result.Languages["php"], ".php")
+}
+
+func TestProjectInfoReportsUnknownWithoutCreatingWorkspaceCache(t *testing.T) {
+	root := t.TempDir()
+	cacheRoot := t.TempDir()
+	t.Setenv("SHOPWARE_LSP_CACHE_DIR", cacheRoot)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "Example.php"), []byte("<?php\n"), 0o644,
+	))
+	runner := New(Options{Version: "test"})
+	var output, errors bytes.Buffer
+	require.NoError(t, runner.Run(
+		context.Background(), []string{"-root", root, "-json", "project-info"},
+		strings.NewReader(""), &output, &errors,
+	), errors.String())
+	var result struct {
+		Supported bool   `json:"supported"`
+		Kind      string `json:"kind"`
+	}
+	require.NoError(t, json.Unmarshal(output.Bytes(), &result))
+	require.False(t, result.Supported)
+	require.Equal(t, "unknown", result.Kind)
+	entries, err := os.ReadDir(cacheRoot)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+}
+
+func TestWorkspaceCommandRejectsUnknownProjectUnlessExplicitlyAllowed(t *testing.T) {
+	root := t.TempDir()
+	cacheRoot := t.TempDir()
+	t.Setenv("SHOPWARE_LSP_CACHE_DIR", cacheRoot)
+	path := filepath.Join(root, "Example.php")
+	require.NoError(t, os.WriteFile(path, []byte("<?php\n"), 0o644))
+
+	run := func(extra ...string) error {
+		args := append([]string{"-root", root, "-json"}, extra...)
+		return New(Options{Version: "test"}).Run(
+			context.Background(), args, strings.NewReader(""),
+			&bytes.Buffer{}, &bytes.Buffer{},
+		)
+	}
+	require.ErrorContains(t, run("check", path), "unsupported project root")
+	entries, err := os.ReadDir(cacheRoot)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+	require.NoError(t, run("-allow-unsupported-project", "check", path))
 }
 
 func commandNames(commands []commandDefinition) []string {
@@ -216,7 +263,7 @@ func TestCheckEmptyDirectoryReturnsAnEmptyJSONArray(t *testing.T) {
 	runner := New(Options{Version: "test"})
 	require.NoError(t, runner.Run(
 		context.Background(),
-		[]string{"-json", "check", root},
+		[]string{"-allow-unsupported-project", "-json", "check", root},
 		strings.NewReader(""),
 		&output,
 		&errors,
@@ -321,7 +368,7 @@ func TestCLIRejectsInvalidNestedExtensionConfiguration(t *testing.T) {
 		0o644,
 	))
 	err := New(Options{Version: "test"}).Run(
-		context.Background(), []string{"-root", root, "check", root},
+		context.Background(), []string{"-root", root, "-allow-unsupported-project", "check", root},
 		strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{},
 	)
 	require.ErrorContains(t, err, configPath)
@@ -352,7 +399,9 @@ final class FixtureController
 		t.Helper()
 		var output, errors bytes.Buffer
 		runner := New(Options{Version: "test"})
-		commandArgs := append([]string{"-root", root, "-json"}, args...)
+		commandArgs := append([]string{
+			"-root", root, "-allow-unsupported-project", "-json",
+		}, args...)
 		require.NoError(t, runner.Run(
 			context.Background(), commandArgs, strings.NewReader(""),
 			&output, &errors,
@@ -468,6 +517,7 @@ func TestWorkspaceSymbolUsesPopulatedCatalogWithoutSession(t *testing.T) {
 
 	runner := New(Options{Version: "test"})
 	runner.root = root
+	runner.allowUnsupportedProject = true
 	result, available, err := runner.cachedWorkspaceSymbols(ctx, "CachedFixture")
 	require.NoError(t, err)
 	require.True(t, available)

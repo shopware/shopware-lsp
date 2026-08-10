@@ -13,8 +13,17 @@ type Application struct {
 	server *lsp.Server
 }
 
+type Options struct {
+	AllowUnsupportedProject bool
+}
+
 func New(version string) *Application {
+	return NewWithOptions(version, Options{})
+}
+
+func NewWithOptions(version string, options Options) *Application {
 	server := lsp.NewServer(nil, "", version)
+	server.ConfigureProjectDetection(true, options.AllowUnsupportedProject)
 	server.SetWorkspaceFactory(func(ctx context.Context, root string, server *lsp.Server) (lsp.WorkspaceRuntime, error) {
 		return NewWorkspace(ctx, root, server)
 	})

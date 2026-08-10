@@ -5,6 +5,7 @@ export interface McpProcessOptions {
   version: string;
   memoryLimitMiB?: number;
   editorConfiguration?: unknown;
+  allowUnsupportedProject?: boolean;
 }
 
 export interface McpProcessDefinition {
@@ -30,10 +31,13 @@ export function createMcpProcessDefinition(options: McpProcessOptions): McpProce
     Object.keys(options.editorConfiguration).length > 0) {
     env.SHOPWARE_LSP_EDITOR_CONFIGURATION = JSON.stringify(options.editorConfiguration);
   }
+  const args = ['-root', options.workspaceRoot];
+  if (options.allowUnsupportedProject) args.push('-allow-unsupported-project');
+  args.push('mcp');
   return {
     label: options.label,
     command: options.serverPath,
-    args: ['-root', options.workspaceRoot, 'mcp'],
+    args,
     cwd: options.workspaceRoot,
     env,
     version: options.version,

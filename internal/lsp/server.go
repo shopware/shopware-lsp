@@ -55,6 +55,8 @@ type Server struct {
 	fileScanner                     *indexer.FileScanner
 	workspaceFactory                WorkspaceFactory
 	workspace                       WorkspaceRuntime
+	projectDetectionRequired        bool
+	allowUnsupportedProject         bool
 	lifecycleCtx                    context.Context
 	lifecycleCancel                 context.CancelFunc
 	lifecycleWG                     sync.WaitGroup
@@ -83,8 +85,15 @@ func (s *Server) InitializationOptions() protocol.InitializationOptions {
 		PHPExtensions:         append([]string(nil), configuration.PHP.Extensions...),
 		DisabledPHPExtensions: append([]string(nil), configuration.PHP.DisabledExtensions...),
 		ShopwareTargetVersion: configuration.Shopware.TargetVersion,
-		CLIMode:               s.initializationOptions.CLIMode,
+		AllowUnsupportedProject: s.initializationOptions.AllowUnsupportedProject ||
+			s.allowUnsupportedProject,
+		CLIMode: s.initializationOptions.CLIMode,
 	}
+}
+
+func (s *Server) ConfigureProjectDetection(required, allowUnsupported bool) {
+	s.projectDetectionRequired = required
+	s.allowUnsupportedProject = allowUnsupported
 }
 
 func (s *Server) connection() *jsonrpc2.Conn {

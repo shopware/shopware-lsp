@@ -455,6 +455,7 @@ func connectMCPTestClientWithConfiguration(
 	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
 	runner := New(Options{Version: "test"})
 	runner.root = root
+	runner.allowUnsupportedProject = true
 	runner.errOut = &bytes.Buffer{}
 	runtime := &mcpRuntime{runner: runner, root: root, configuration: configuration}
 	server := newMCPServer(runtime)

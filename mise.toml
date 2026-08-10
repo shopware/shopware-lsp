@@ -56,6 +56,7 @@ run = [
   "npm run test:entity-designer",
   "npm run test:configuration",
   "npm run test:mcp",
+  "npm run test:project-detection",
 ]
 
 [tasks.release]

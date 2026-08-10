@@ -2,13 +2,23 @@ import * as vscode from 'vscode';
 import {createMcpProcessDefinition} from './mcpServerModel';
 import {resolveServerExecutable} from './serverExecutable';
 import {readEditorConfiguration} from './configuration';
+import {
+  decideActivation,
+  normalizeActivationMode,
+  ProjectDetector,
+} from './projectDetection';
 
 export const shopwareMcpProviderId = 'shopwareLSP.mcp';
+
+export interface McpProviderRegistration {
+  refresh(): void;
+}
 
 export function registerMcpServerDefinitionProvider(
   context: vscode.ExtensionContext,
   outputChannel: vscode.OutputChannel,
-): void {
+  projectDetector: ProjectDetector,
+): McpProviderRegistration {
   const changed = new vscode.EventEmitter<void>();
   const projectConfigurationWatcher = vscode.workspace.createFileSystemWatcher(
     '**/.config/shopware-lsp/config.json',
@@ -20,18 +30,22 @@ export function registerMcpServerDefinitionProvider(
 
   const provider: vscode.McpServerDefinitionProvider<vscode.McpStdioServerDefinition> = {
     onDidChangeMcpServerDefinitions: changed.event,
-    provideMcpServerDefinitions: token => {
+    provideMcpServerDefinitions: async token => {
       const folders = vscode.workspace.workspaceFolders ?? [];
       const multiRoot = folders.length > 1;
-      const definitions: vscode.McpStdioServerDefinition[] = [];
-
-      for (const folder of folders) {
+      const definitions = await Promise.all(folders.map(async folder => {
         if (token.isCancellationRequested) {
-          break;
+          return undefined;
         }
         const configuration = vscode.workspace.getConfiguration('shopwareLSP', folder.uri);
         if (!configuration.get<boolean>('mcp.enabled', true)) {
-          continue;
+          return undefined;
+        }
+        const activationMode = normalizeActivationMode(
+          configuration.get<string>('activationMode', 'auto'),
+        );
+        if (activationMode === 'never') {
+          return undefined;
         }
         const serverPath = resolveServerExecutable({
           configuredPath: configuration.get<string>('serverPath', ''),
@@ -42,7 +56,24 @@ export function registerMcpServerDefinitionProvider(
           outputChannel.appendLine(
             `Skipping Shopware MCP for ${folder.uri.fsPath}: language-server executable not found`,
           );
-          continue;
+          return undefined;
+        }
+        let decision = decideActivation(activationMode);
+        if (activationMode === 'auto') {
+          try {
+            decision = decideActivation(
+              activationMode,
+              await projectDetector.detect(serverPath, folder.uri.fsPath),
+            );
+          } catch (error) {
+            outputChannel.appendLine(
+              `Skipping Shopware MCP for ${folder.uri.fsPath}: project detection failed: ${error}`,
+            );
+            return undefined;
+          }
+        }
+        if (!decision.enabled || token.isCancellationRequested) {
+          return undefined;
         }
 
         const process = createMcpProcessDefinition({
@@ -52,6 +83,7 @@ export function registerMcpServerDefinitionProvider(
           version: String(context.extension.packageJSON.version ?? 'dev'),
           memoryLimitMiB: configuration.get<number>('memoryLimitMiB', 0),
           editorConfiguration: readEditorConfiguration(folder.uri),
+          allowUnsupportedProject: decision.allowUnsupportedProject,
         });
         const definition = new vscode.McpStdioServerDefinition(
           process.label,
@@ -61,9 +93,11 @@ export function registerMcpServerDefinitionProvider(
           process.version,
         );
         definition.cwd = folder.uri;
-        definitions.push(definition);
-      }
-      return definitions;
+        return definition;
+      }));
+      return definitions.filter(
+        (definition): definition is vscode.McpStdioServerDefinition => definition !== undefined,
+      );
     },
   };
 
@@ -73,6 +107,7 @@ export function registerMcpServerDefinitionProvider(
     vscode.workspace.onDidChangeConfiguration(event => {
       if (
         event.affectsConfiguration('shopwareLSP.mcp.enabled') ||
+        event.affectsConfiguration('shopwareLSP.activationMode') ||
         event.affectsConfiguration('shopwareLSP.serverPath') ||
         event.affectsConfiguration('shopwareLSP.memoryLimitMiB') ||
         event.affectsConfiguration('shopwareLSP.phpExtensions') ||
@@ -88,4 +123,5 @@ export function registerMcpServerDefinitionProvider(
       }
     }),
   );
+  return {refresh: () => changed.fire()};
 }

@@ -26,13 +26,14 @@ type Options struct {
 }
 
 type Runner struct {
-	options Options
-	root    string
-	json    bool
-	verbose bool
-	in      io.Reader
-	out     io.Writer
-	errOut  io.Writer
+	options                 Options
+	root                    string
+	json                    bool
+	verbose                 bool
+	allowUnsupportedProject bool
+	in                      io.Reader
+	out                     io.Writer
+	errOut                  io.Writer
 }
 
 type commandDefinition struct {
@@ -82,6 +83,12 @@ func (r *Runner) Run(
 	global.StringVar(&r.root, "root", "", "workspace root (defaults to the current directory)")
 	global.BoolVar(&r.json, "json", false, "emit machine-readable JSON where supported")
 	global.BoolVar(&r.verbose, "v", false, "verbose progress output")
+	global.BoolVar(
+		&r.allowUnsupportedProject,
+		"allow-unsupported-project",
+		false,
+		"allow workspace commands outside detected Shopware or Symfony projects",
+	)
 	// vscode-languageclient and several other LSP clients append these
 	// conventional process flags for stdio servers. The transport is already
 	// implied when no remote listener is configured, but accepting the flags
@@ -152,6 +159,7 @@ func (r *Runner) commands() map[string]commandDefinition {
 		{"api-json", "print the supported CLI and language API", "api-json", r.runAPIJSON},
 		{"licenses", "print license and third-party notices", "licenses", r.runLicenses},
 		{"config", "validate and print the effective project configuration", "config", r.runConfig},
+		{"project-info", "detect the workspace project type", "project-info", r.runProjectInfo},
 		{"index", "build or refresh the workspace index", "index [-force]", r.runIndex},
 		{"stats", "print indexing, workspace, cache, and memory statistics", "stats", r.runStats},
 		{"check", "show diagnostics for files and directories", "check [-severity level] [-fail-on level] [-workers count] <file-or-directory>...", r.runCheck},
@@ -240,6 +248,8 @@ func (r *Runner) runHelp(_ context.Context, args []string) error {
 		"  -root PATH          workspace root (default: current directory)",
 		"  -json               machine-readable output",
 		"  -v                  verbose progress output",
+		"  -allow-unsupported-project",
+		"                       allow workspace commands for an unknown project type",
 		"  -profile.cpu FILE   write CPU profile",
 		"  -profile.mem FILE   write heap profile",
 		"  -profile.trace FILE write runtime trace",

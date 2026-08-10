@@ -11,6 +11,21 @@ Supercharge your Shopware development with intelligent code completion, instant 
 
 ## Features
 
+### Project activation
+
+The extension may activate when a supported file type opens, but in the
+default `shopwareLSP.activationMode: "auto"` it starts no language-server or
+MCP process until the workspace root is recognized as Shopware or Symfony.
+Detection uses only root metadata such as `composer.json`, `composer.lock`, a
+Shopware app `manifest.xml`, `config/bundles.php`, or the explicit
+`.config/shopware-lsp/config.json` opt-in. Unrelated PHP projects therefore do
+not get indexed and produce no inactive-project notification.
+
+Use `"always"` for an unusual project layout that should deliberately run the
+server, or `"never"` to disable both LSP and MCP for a workspace folder. Marker
+changes are re-evaluated automatically, so adding a framework dependency or a
+Shopware LSP configuration starts the server without reloading VS Code.
+
 ### Symfony Services
 
 Autocomplete service IDs, tags, parameters, and class names in XML and YAML service definitions. Navigate to any service definition with a single click. PHP files show a code lens with service usage counts.
@@ -74,7 +89,7 @@ Full intelligence for the Shopware Admin built with Vue.js:
 ### AI and MCP
 
 On VS Code 1.101 or newer, the extension automatically contributes a Shopware
-MCP server for every open workspace folder. VS Code starts the bundled
+MCP server for every supported open workspace folder. VS Code starts the bundled
 `shopware-lsp` executable lazily when an AI agent uses a Shopware tool, so no
 manual `mcp.json` setup is required. Diagnostics, code actions, hover,
 definitions, references, workspace-symbol search, Shopware/Symfony scaffolds,

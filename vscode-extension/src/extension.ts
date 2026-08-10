@@ -15,6 +15,12 @@ import {registerTwigCatalogCommands} from './commands/twigCatalogCommands';
 import {registerTwigVariableCommands} from './twigVariables';
 import {registerMcpServerDefinitionProvider} from './mcpServer';
 import {normalizeMemoryLimitMiB} from './mcpServerModel';
+import {
+  decideActivation,
+  normalizeActivationMode,
+  ProjectDetector,
+} from './projectDetection';
+import {registerProjectMarkerWatchers} from './projectMarkers';
 import {resolveServerExecutable} from './serverExecutable';
 import {registerDiagnosticConfigurationSupport} from './diagnosticConfiguration';
 import {
@@ -34,30 +40,65 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Create status bar item for indexing status
   indexingStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   context.subscriptions.push(indexingStatusBarItem);
+  const projectDetector = new ProjectDetector();
 
-  async function startClient(): Promise<void> {
+  async function startClient(): Promise<boolean> {
     if (clientState.client) {
       await clientState.client.stop();
       clientState.client = undefined;
     }
+    indexingStatusBarItem.hide();
 
     // Clear the output channel when restarting
     outputChannel.clear();
 
-    // Get the server path from settings or use default
     const workspaceFolder = getOuterMostWorkspaceFolder();
+    if (!workspaceFolder) {
+      outputChannel.appendLine('Shopware LSP is inactive: no workspace folder is open');
+      return false;
+    }
     const configuration = vscode.workspace.getConfiguration(
-      'shopwareLSP', workspaceFolder?.uri,
+      'shopwareLSP', workspaceFolder.uri,
     );
+    const activationMode = normalizeActivationMode(
+      configuration.get<string>('activationMode', 'auto'),
+    );
+    if (activationMode === 'never') {
+      outputChannel.appendLine('Shopware LSP is inactive: activation mode is set to never');
+      return false;
+    }
     const serverPath = resolveServerExecutable({
       configuredPath: configuration.get<string>('serverPath', ''),
       extensionPath: context.extensionPath,
-      workspaceRoot: workspaceFolder?.uri.fsPath,
+      workspaceRoot: workspaceFolder.uri.fsPath,
     });
 
     if (!serverPath) {
-      vscode.window.showErrorMessage('Could not find Symfony Service LSP server. Please set the path in settings.');
-      return;
+      vscode.window.showErrorMessage(
+        'Could not find the Shopware LSP server. Please set shopwareLSP.serverPath.',
+      );
+      return false;
+    }
+
+    let decision = decideActivation(activationMode);
+    if (activationMode === 'auto') {
+      try {
+        const project = await projectDetector.detect(serverPath, workspaceFolder.uri.fsPath);
+        decision = decideActivation(activationMode, project);
+        if (!decision.enabled) {
+          outputChannel.appendLine(
+            `Shopware LSP is inactive for ${workspaceFolder.uri.fsPath}: no Shopware or Symfony project markers were found`,
+          );
+          outputChannel.appendLine(
+            'Add .config/shopware-lsp/config.json or set shopwareLSP.activationMode to always to opt in.',
+          );
+          return false;
+        }
+        outputChannel.appendLine(`Detected ${project.kind} project: ${workspaceFolder.uri.fsPath}`);
+      } catch (error) {
+        outputChannel.appendLine(`Shopware LSP project detection failed: ${error}`);
+        return false;
+      }
     }
 
     const memoryLimit = normalizeMemoryLimitMiB(
@@ -70,7 +111,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // vscode-languageclient appends --stdio for this transport. Use the
       // explicit CLI entry point so editor startup and one-shot CLI commands
       // share the same binary without relying on implicit command selection.
-      args: ['serve'],
+      args: decision.allowUnsupportedProject
+        ? ['-allow-unsupported-project', 'serve']
+        : ['serve'],
       transport: TransportKind.stdio,
       ...(memoryLimit > 0
         ? {
@@ -105,7 +148,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         { scheme: 'file', pattern: '**/Dockerfile*' }
       ],
       initializationOptions: {
-        configuration: readEditorConfiguration(workspaceFolder?.uri)
+        configuration: readEditorConfiguration(workspaceFolder.uri),
+        allowUnsupportedProject: decision.allowUnsupportedProject,
       },
       // Add output configuration
       outputChannel: outputChannel,
@@ -122,18 +166,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
 
     // Create and start the client
-    clientState.client = new LanguageClient(
+    const client = new LanguageClient(
       'shopwareLSP',
       'Shopware Language Server',
       serverOptions,
       clientOptions
     );
+    clientState.client = client;
 
-    // Register notification handlers
-    clientState.client.start().then(() => {
-      attachConfigurationClient(clientState.client!);
+    try {
+      await client.start();
+      attachConfigurationClient(client);
       // Handler for indexing started
-      clientState.client!.onNotification('shopware/indexingStarted', () => {
+      client.onNotification('shopware/indexingStarted', () => {
         outputChannel.appendLine('Shopware indexing started');
         indexingStatusBarItem.text = '$(sync~spin) Shopware: Indexing...';
         indexingStatusBarItem.tooltip = 'Shopware language server is currently indexing';
@@ -141,7 +186,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       });
       
       // Handler for indexing completed
-      clientState.client!.onNotification('shopware/indexingCompleted', (params: { timeInSeconds: number }) => {
+      client.onNotification('shopware/indexingCompleted', (params: { timeInSeconds: number }) => {
         indexingStatusBarItem.text = `$(check) Shopware: Indexed`;
         indexingStatusBarItem.tooltip = `Indexing completed in ${params.timeInSeconds} seconds`;
         
@@ -150,27 +195,76 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           indexingStatusBarItem.hide();
         }, 10000);
       });
-    }).catch((err: Error) => {
-      outputChannel.appendLine(`Error registering notification handler: ${err}`);
-    });
+      return true;
+    } catch (error) {
+      if (clientState.client === client) clientState.client = undefined;
+      outputChannel.appendLine(`Failed to start Shopware Language Server: ${error}`);
+      vscode.window.showErrorMessage(`Failed to start Shopware Language Server: ${error}`);
+      return false;
+    }
   }
 
-  registerMcpServerDefinitionProvider(context, outputChannel);
+  let restartQueue: Promise<boolean> = Promise.resolve(false);
+  const queueStart = (): Promise<boolean> => {
+    restartQueue = restartQueue.catch(() => false).then(startClient);
+    return restartQueue;
+  };
+
+  const mcpProvider = registerMcpServerDefinitionProvider(
+    context, outputChannel, projectDetector,
+  );
+  let markerRestart: NodeJS.Timeout | undefined;
+  registerProjectMarkerWatchers(context, event => {
+    projectDetector.invalidate(event.folder.uri.fsPath);
+    mcpProvider.refresh();
+    const current = getOuterMostWorkspaceFolder();
+    if (!current || current.uri.toString() !== event.folder.uri.toString()) return;
+    if (
+      event.path === '.config/shopware-lsp/config.json' &&
+      event.change === 'change' &&
+      clientState.client
+    ) return;
+    if (markerRestart) clearTimeout(markerRestart);
+    markerRestart = setTimeout(() => void queueStart(), 250);
+  });
+  context.subscriptions.push({dispose: () => {
+    if (markerRestart) clearTimeout(markerRestart);
+  }});
 
   // Start the client on activation and await it
-  await startClient();
+  await queueStart();
 
   // Register restart command
   context.subscriptions.push(vscode.commands.registerCommand('shopwareLSP.restart', async () => {
-    await startClient();
-    vscode.window.showInformationMessage('Shopware LSP restarted');
+    projectDetector.invalidate();
+    const running = await queueStart();
+    vscode.window.showInformationMessage(
+      running ? 'Shopware LSP restarted' : 'Shopware LSP is inactive for this workspace',
+    );
   }));
 
   registerConfigurationSupport(context, clientState, outputChannel, async () => {
-    await startClient();
-    vscode.window.showInformationMessage('Shopware LSP restarted');
+    await queueStart();
   });
   registerDiagnosticConfigurationSupport(context, clientState, outputChannel);
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      projectDetector.invalidate();
+      void queueStart();
+    }),
+    vscode.workspace.onDidChangeConfiguration(event => {
+      if (
+        event.affectsConfiguration('shopwareLSP.activationMode') ||
+        event.affectsConfiguration('shopwareLSP.serverPath') ||
+        event.affectsConfiguration('shopwareLSP.memoryLimitMiB')
+      ) {
+        projectDetector.invalidate();
+        mcpProvider.refresh();
+        void queueStart();
+      }
+    }),
+  );
 
   // Register force reindex command
   context.subscriptions.push(vscode.commands.registerCommand('shopwareLSP.forceReindex', async () => {
