@@ -126,7 +126,7 @@ func parsePluginContext(root, selected string, content []byte) (PluginContext, e
 		ShopwareVersion:   composer.Require["shopware/core"],
 		SnapshotDirectory: filepath.Join(root, filepath.FromSlash(SnapshotRelativeDirectory)),
 	}
-	for _, name := range []string{"services.xml", "services.yaml", "services.yml", "services.php"} {
+	for _, name := range []string{"services.yaml", "services.yml", "services.php", "services.xml"} {
 		path := filepath.Join(selectedMapping.root, "Resources", "config", name)
 		if info, statErr := os.Stat(path); statErr == nil && !info.IsDir() {
 			context.ServiceURIs = append(context.ServiceURIs, path)

@@ -73,6 +73,7 @@ function requestPreview(document, messages) {
 test('renders field inspector, inline issues, and typed index columns', () => {
   const {dom, document, messages} = createWebview();
   send(dom, {type: 'bootstrap', value: bootstrapValue()});
+  assert.match(document.querySelector('[data-spec="serviceUri"]').textContent, /Create services\.yaml/);
 
   document.querySelector('[data-select-field="children"]').click();
   assert.match(document.querySelector('.inspector').textContent, /Target foreign-key column/);

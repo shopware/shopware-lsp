@@ -10,7 +10,7 @@ import (
 
 // PatchServiceConfiguration registers a definition while preserving the
 // surrounding configuration file. When no file exists, callers pass an empty
-// source and an XML target path.
+// source and the desired target path.
 func PatchServiceConfiguration(path, source, definitionClass string) (string, error) {
 	definitionClass = strings.Trim(definitionClass, `\ `)
 	if definitionClass == "" {

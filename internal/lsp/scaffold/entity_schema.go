@@ -562,7 +562,7 @@ func (p *Provider) prepareEntitySchema(ctx context.Context, request EntitySchema
 		servicePath = plugin.ServiceURIs[0]
 	}
 	if servicePath == "" {
-		servicePath = filepath.Join(plugin.SourceRoot, "Resources", "config", "services.xml")
+		servicePath = filepath.Join(plugin.SourceRoot, "Resources", "config", "services.yaml")
 	}
 	if !safePluginTarget(plugin.Root, servicePath) {
 		return entitySchemaPrepared{}, fmt.Errorf("service configuration is outside plugin %s", plugin.Root)

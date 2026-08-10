@@ -29,12 +29,12 @@ type scaffoldCatalogOutput struct {
 }
 
 type scaffoldInput struct {
-	Family    string         `json:"family" jsonschema:"scaffold family: shopware or symfony"`
-	Kind      string         `json:"kind" jsonschema:"scaffold kind returned by shopware_scaffold_catalog"`
-	Directory string         `json:"directory" jsonschema:"workspace-relative or absolute target directory"`
-	Name      string         `json:"name" jsonschema:"artifact name"`
-	Options   map[string]any `json:"options,omitempty" jsonschema:"kind-specific Shopware scaffold options"`
-	Write     bool           `json:"write,omitempty" jsonschema:"write generated files; false returns a preview diff only"`
+	Family    string         `json:"family" jsonschema:"scaffold family: use shopware for Shopware plugins and artifacts, or symfony for Symfony artifacts"`
+	Kind      string         `json:"kind" jsonschema:"artifact kind; use plugin whenever the user asks to create, generate, scaffold, or initialize a Shopware plugin"`
+	Directory string         `json:"directory" jsonschema:"workspace-relative or absolute target directory; for a new Shopware plugin pass its parent directory, usually custom/plugins"`
+	Name      string         `json:"name" jsonschema:"artifact name, for example FroshTools for a new plugin"`
+	Options   map[string]any `json:"options,omitempty" jsonschema:"kind-specific options; plugin supports namespace, description, author, license, and package"`
+	Write     bool           `json:"write,omitempty" jsonschema:"write generated files; set true when the user requested creation, otherwise false returns a preview diff only"`
 }
 
 type scaffoldOutput struct {
@@ -110,8 +110,8 @@ func registerMCPScaffoldTools(
 		Annotations: readOnly,
 	}, runtime.scaffoldCatalog)
 	addMCPTool(server, runtime, &mcp.Tool{
-		Name: "shopware_scaffold", Title: "Create Shopware scaffold",
-		Description: "Preview or write a validated Shopware or Symfony scaffold. The default is a non-writing unified diff; set write=true to create the files.",
+		Name: "shopware_scaffold", Title: "Create Shopware plugin or scaffold",
+		Description: "Always use this production generator when the user asks to create, generate, scaffold, or initialize a Shopware plugin or another supported Shopware/Symfony artifact. For a plugin use family=shopware, kind=plugin, and its parent directory (usually custom/plugins). Set write=true when file creation was requested; otherwise it returns a non-writing unified diff.",
 		Annotations: write,
 	}, runtime.scaffold)
 	addMCPTool(server, runtime, &mcp.Tool{
@@ -159,7 +159,7 @@ func (runtime *mcpRuntime) scaffoldCatalog(
 
 func mcpScaffoldKinds() []mcpScaffoldKind {
 	return []mcpScaffoldKind{
-		{"shopware", "plugin", "Minimal Shopware plugin package and class", []string{"namespace", "description", "author", "license", "package"}},
+		{"shopware", "plugin", "Shopware plugin package, class, and YAML service configuration", []string{"namespace", "description", "author", "license", "package"}},
 		{"shopware", "system-config", "Shopware system configuration XML", nil},
 		{"shopware", "scheduled-task", "Scheduled task and handler classes", []string{"namespace", "interval", "taskName"}},
 		{"shopware", "migration", "Timestamped Shopware migration", []string{"namespace", "timestamp"}},

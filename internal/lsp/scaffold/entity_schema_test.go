@@ -54,12 +54,19 @@ func TestEntitySchemaCreatePreviewAndApply(t *testing.T) {
 	require.Positive(t, preview.MigrationTimestamp)
 	require.GreaterOrEqual(t, len(preview.Files), 7) // bundle, service, migration and committed snapshots
 	var snapshotFiles int
+	var serviceFile string
 	for _, file := range preview.Files {
 		require.NotContains(t, file.After, "updateDestructive")
+		if strings.HasSuffix(file.URI, "/Resources/config/services.yaml") {
+			serviceFile = file.URI
+			require.Contains(t, file.After, "shopware.entity.definition")
+		}
+		require.False(t, strings.HasSuffix(file.URI, "/Resources/config/services.xml"))
 		if filepath.Ext(file.URI) == ".json" {
 			snapshotFiles++
 		}
 	}
+	require.NotEmpty(t, serviceFile)
 	require.Equal(t, 2, snapshotFiles)
 
 	previewRequest.Spec.MigrationTimestamp = preview.MigrationTimestamp

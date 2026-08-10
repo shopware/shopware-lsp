@@ -53,6 +53,41 @@ func TestShopwareScaffoldKindsProduceValidatedAtomicEdits(t *testing.T) {
 	}
 }
 
+func TestShopwarePluginScaffoldCreatesYAMLServiceConfiguration(t *testing.T) {
+	root := t.TempDir()
+	provider := &Provider{root: root}
+	payload, err := json.Marshal(ShopwareRequest{
+		Kind:         "plugin",
+		DirectoryURI: uriutil.FileURI(root),
+		Name:         "FroshTools",
+		Options:      map[string]any{"namespace": `Frosh\Tools`},
+	})
+	require.NoError(t, err)
+	raw := json.RawMessage(payload)
+	result, err := provider.createShopware(context.Background(), &raw)
+	require.NoError(t, err)
+	response := result.(ShopwareResponse)
+
+	var servicePath, serviceSource string
+	for _, change := range response.Edit.DocumentChanges {
+		uri := change.URI
+		if change.TextDocument != nil {
+			uri = change.TextDocument.URI
+		}
+		if filepath.Base(uri) != "services.yaml" {
+			require.NotEqual(t, "services.xml", filepath.Base(uri))
+			continue
+		}
+		servicePath = uri
+		for _, edit := range change.Edits {
+			serviceSource += edit.NewText
+		}
+	}
+	require.Contains(t, servicePath, "FroshTools/src/Resources/config/services.yaml")
+	require.Contains(t, serviceSource, `Frosh\Tools\:`)
+	require.Contains(t, serviceSource, "autoconfigure: true")
+}
+
 func TestShopwareScaffoldRejectsCollisionsBeforeReturningEdit(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(

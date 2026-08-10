@@ -168,6 +168,10 @@ func (p *Provider) shopwareFiles(directory string, request ShopwareRequest) ([]g
 		return []generatedFile{
 			{path: filepath.Join(root, "composer.json"), content: string(composer) + "\n"},
 			{path: primary, content: pluginPHP(namespace, className)},
+			{
+				path:    filepath.Join(root, "src", "Resources", "config", "services.yaml"),
+				content: pluginServicesYAML(namespace, className),
+			},
 		}, primary, nil
 	case "system-config":
 		primary := filepath.Join(directory, "Resources", "config", "config.xml")
@@ -379,6 +383,21 @@ func normalizeTwigName(name string) string { return strings.ReplaceAll(name, "-"
 
 func pluginPHP(namespace, class string) string {
 	return fmt.Sprintf("<?php declare(strict_types=1);\n\nnamespace %s;\n\nuse Shopware\\Core\\Framework\\Plugin;\n\nclass %s extends Plugin\n{\n}\n", namespace, class)
+}
+
+func pluginServicesYAML(namespace, class string) string {
+	return `services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+
+  ` + namespace + `\:
+    resource: '../../'
+    exclude:
+      - '../../Resources/'
+      - '../../Migration/'
+      - '../../` + class + `.php'
+`
 }
 
 func systemConfigXML() string {

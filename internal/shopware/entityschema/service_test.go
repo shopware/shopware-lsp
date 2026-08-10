@@ -34,6 +34,12 @@ func TestPatchServiceConfigurationCreatesXML(t *testing.T) {
 	require.Contains(t, result, `<service id="Acme\DemoDefinition">`)
 }
 
+func TestPatchServiceConfigurationCreatesYAML(t *testing.T) {
+	result, err := PatchServiceConfiguration("services.yaml", "", `Acme\DemoDefinition`)
+	require.NoError(t, err)
+	require.Equal(t, "services:\n  Acme\\DemoDefinition:\n    tags:\n      - { name: shopware.entity.definition }\n", result)
+}
+
 func TestPatchYAMLServiceStaysInsideServicesRoot(t *testing.T) {
 	source := "services:\n  existing: ~\n\nwhen@test:\n  services: {}\n"
 	result, err := PatchServiceConfiguration("services.yaml", source, `Acme\DemoDefinition`)

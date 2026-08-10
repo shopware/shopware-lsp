@@ -19,6 +19,11 @@ import (
 func TestMCPServerAdvertisesAnalysisAndWriteTools(t *testing.T) {
 	root := t.TempDir()
 	session := connectMCPTestClient(t, root)
+	initializeResult := session.InitializeResult()
+	require.NotNil(t, initializeResult)
+	require.Contains(t, initializeResult.Instructions, "always use shopware_scaffold")
+	leadingInstructions := initializeResult.Instructions[:min(512, len(initializeResult.Instructions))]
+	require.Contains(t, leadingInstructions, `kind="plugin"`)
 
 	tools, err := session.ListTools(context.Background(), nil)
 	require.NoError(t, err)
@@ -62,6 +67,9 @@ func TestMCPServerAdvertisesAnalysisAndWriteTools(t *testing.T) {
 	require.Contains(t, outputSchemaProperties(t, byName["shopware_workspace_symbols"]), "symbols")
 	require.Contains(t, outputSchemaProperties(t, byName["shopware_scaffold_catalog"]), "scaffolds")
 	require.Contains(t, outputSchemaProperties(t, byName["shopware_scaffold"]), "diff")
+	require.Contains(t, byName["shopware_scaffold"].Title, "plugin")
+	require.Contains(t, byName["shopware_scaffold"].Description, "Always use")
+	require.Contains(t, byName["shopware_scaffold"].Description, "kind=plugin")
 	require.Contains(t, outputSchemaProperties(t, byName["shopware_entity_schema_bootstrap"]), "spec")
 	require.Contains(t, outputSchemaProperties(t, byName["shopware_entity_schema_preview"]), "revision")
 	require.Contains(t, outputSchemaProperties(t, byName["shopware_entity_schema_apply"]), "diff")
