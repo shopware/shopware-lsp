@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/lsp/phpanalysis"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
 	phpsyntax "github.com/shopware/shopware-lsp/internal/parser/php/syntax"
@@ -13,7 +14,6 @@ import (
 	"github.com/shopware/shopware-lsp/internal/php/semantic"
 	"github.com/shopware/shopware-lsp/internal/php/stubs"
 	"github.com/shopware/shopware-lsp/internal/php/types"
-	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
 func (p *Provider) Analyze(
@@ -23,16 +23,14 @@ func (p *Provider) Analyze(
 	if document == nil || !isPHP(document.URI) || document.LineIndex == nil {
 		return nil, nil
 	}
-	path, err := uriutil.Path(document.URI)
+	analysis, err := phpanalysis.ForDocument(p.index, document)
 	if err != nil {
 		return nil, err
 	}
-	semanticDocument := p.index.AnalyzeDocument(
-		path,
-		document.Version,
-		document.SyntaxTree.Root,
-	)
-	run := newPHPDiagnosticRun(p, document, semanticDocument)
+	if analysis == nil {
+		return nil, nil
+	}
+	run := newPHPDiagnosticRun(p, document, analysis.Document, analysis.Snapshot)
 	return run.analyze(), ctx.Err()
 }
 

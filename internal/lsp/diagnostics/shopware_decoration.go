@@ -5,10 +5,10 @@ import (
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/lsp/phpanalysis"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/php/semantic"
-	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
 type ShopwareDecorationAnalyzer struct {
@@ -27,11 +27,14 @@ func (a *ShopwareDecorationAnalyzer) Analyze(
 		document.SyntaxTree.Root == nil || !strings.HasSuffix(strings.ToLower(document.URI), ".php") {
 		return nil, nil
 	}
-	path, err := uriutil.Path(document.URI)
+	state, err := phpanalysis.ForDocument(a.php, document)
 	if err != nil {
 		return nil, err
 	}
-	analysis := a.php.AnalyzeDocument(path, document.Version, document.SyntaxTree.Root)
+	if state == nil {
+		return nil, nil
+	}
+	analysis := state.Document
 	var result []lsp.Problem
 	for _, symbol := range analysis.Symbols {
 		if err := ctx.Err(); err != nil {

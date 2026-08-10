@@ -59,6 +59,17 @@ func (p *PHPIndex) AddParsedFileContext(
 	)
 }
 
+// AddAnalyzedDocumentContext enriches a context with an existing linked
+// document. Request-time LSP features use it to share one semantic analysis
+// instead of rebuilding the same open document for assistant-tag queries.
+func (p *PHPIndex) AddAnalyzedDocumentContext(
+	ctx context.Context,
+	node *phpsyntax.Node,
+	document *semantic.Document,
+) context.Context {
+	return p.addAnalyzedDocumentContext(ctx, node, document)
+}
+
 func (p *PHPIndex) addAnalyzedDocumentContext(
 	ctx context.Context,
 	node *phpsyntax.Node,

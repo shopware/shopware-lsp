@@ -7,13 +7,13 @@ import (
 	"unicode"
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/lsp/phpanalysis"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
 	phpsyntax "github.com/shopware/shopware-lsp/internal/parser/php/syntax"
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/php/types"
-	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
 const (
@@ -49,15 +49,14 @@ func (p *InvokableCommandAnalyzer) Analyze(
 		!strings.Contains(document.Source, "AsCommand") {
 		return nil, nil
 	}
-	path, err := uriutil.Path(document.URI)
+	analysis, err := phpanalysis.ForDocument(p.phpIndex, document)
 	if err != nil {
 		return nil, err
 	}
-	semanticDocument := p.phpIndex.AnalyzeDocument(
-		path,
-		document.Version,
-		document.SyntaxTree.Root,
-	)
+	if analysis == nil {
+		return nil, nil
+	}
+	semanticDocument := analysis.Document
 	resolver := php.NewNameResolver(document.SyntaxTree.Root)
 	var result []lsp.Problem
 	for _, class := range phpquery.Classes(document.SyntaxTree.Root) {

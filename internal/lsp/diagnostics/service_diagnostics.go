@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/lsp/phpanalysis"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
@@ -248,14 +249,12 @@ func (c *referenceDiagnosticCollector) isTypedReceiverSubtype(
 		return false
 	}
 	if c.phpDocument == nil {
-		path, _ := uriutil.Path(c.document.URI)
-		c.phpDocument = c.provider.phpIndex.AnalyzeDocument(
-			path,
-			c.document.Version,
-			c.document.SyntaxTree.Root,
-		)
-		c.phpSnapshot = c.provider.phpIndex.SemanticSnapshot().
-			WithDocument(c.phpDocument)
+		analysis, err := phpanalysis.ForDocument(c.provider.phpIndex, c.document)
+		if err != nil || analysis == nil {
+			return false
+		}
+		c.phpDocument = analysis.Document
+		c.phpSnapshot = analysis.Snapshot
 	}
 	receiverType := c.phpDocument.TypeOf(receiver).Type
 	if receiverType.IsUnknown() {

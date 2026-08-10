@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/lsp/phpanalysis"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
@@ -204,14 +205,15 @@ func (p *TemplateAnalyzer) phpCandidates(
 	)
 	var phpDocument *semantic.Document
 	var phpSnapshot *semantic.Snapshot
-	if len(references) != 0 && p.phpIndex != nil {
-		phpDocument = p.phpIndex.AnalyzeDocument(
-			path,
-			document.Version,
-			document.SyntaxTree.Root,
-		)
-		phpSnapshot = p.phpIndex.SemanticSnapshot().
-			WithDocument(phpDocument)
+	if p.phpIndex != nil {
+		analysis, err := phpanalysis.ForDocument(p.phpIndex, document)
+		if err != nil {
+			return nil, err
+		}
+		if analysis != nil {
+			phpDocument = analysis.Document
+			phpSnapshot = analysis.Snapshot
+		}
 	}
 	result := make([]templateDiagnosticCandidate, 0, len(references))
 	for _, reference := range references {
@@ -225,13 +227,11 @@ func (p *TemplateAnalyzer) phpCandidates(
 			range_: reference.Range,
 		})
 	}
-	if p.phpIndex != nil {
-		validationContext := p.phpIndex.AddDocumentContext(
+	if p.phpIndex != nil && phpDocument != nil {
+		validationContext := p.phpIndex.AddAnalyzedDocumentContext(
 			ctx,
-			path,
-			document.Version,
 			document.SyntaxTree.Root,
-			document.SyntaxTree.Root,
+			phpDocument,
 		)
 		for _, literal := range phpquery.Nodes(
 			document.SyntaxTree.Root,

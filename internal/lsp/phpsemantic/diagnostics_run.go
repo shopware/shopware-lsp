@@ -23,12 +23,16 @@ func newPHPDiagnosticRun(
 	provider *Provider,
 	document *lsp.TextDocument,
 	semanticDocument *semantic.Document,
+	snapshot *semantic.Snapshot,
 ) *phpDiagnosticRun {
+	if snapshot == nil {
+		snapshot = provider.index.SemanticSnapshot().WithDocument(semanticDocument)
+	}
 	return &phpDiagnosticRun{
 		provider:     provider,
 		document:     document,
 		semantic:     semanticDocument,
-		snapshot:     provider.index.SemanticSnapshot().WithDocument(semanticDocument),
+		snapshot:     snapshot,
 		suppressions: suppression.Parse(document.Source),
 	}
 }

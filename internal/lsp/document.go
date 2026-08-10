@@ -18,6 +18,55 @@ type TextDocument struct {
 	SyntaxLanguage language.ID
 	ParseErrors    []parsekit.Error
 	LineIndex      *cst.LineIndex
+
+	analysisCache *documentAnalysisCache
+}
+
+type documentAnalysisCache struct {
+	mu      sync.Mutex
+	entries map[any]documentAnalysisCacheEntry
+}
+
+type documentAnalysisCacheEntry struct {
+	revision uint64
+	value    any
+}
+
+// MemoizedAnalysis returns one request-independent analysis for this immutable
+// document snapshot and workspace revision. A newer workspace revision
+// replaces the previous value so open documents do not retain stale semantic
+// generations indefinitely.
+//
+// owner must be comparable. Analysis packages should use a stable service
+// pointer so independent LSP features share the same value.
+func (d *TextDocument) MemoizedAnalysis(
+	owner any,
+	revision uint64,
+	compute func() any,
+) any {
+	if d == nil || compute == nil {
+		return nil
+	}
+	cache := d.analysisCache
+	if cache == nil {
+		// Text documents created through the manager always own a cache. Keep
+		// zero-value struct literals safe without introducing racy lazy state.
+		return compute()
+	}
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if cached, found := cache.entries[owner]; found && cached.revision == revision {
+		return cached.value
+	}
+	value := compute()
+	if cache.entries == nil {
+		cache.entries = make(map[any]documentAnalysisCacheEntry)
+	}
+	cache.entries[owner] = documentAnalysisCacheEntry{
+		revision: revision,
+		value:    value,
+	}
+	return value
 }
 
 // DocumentManager manages text documents
@@ -122,11 +171,12 @@ func NewTextDocumentWithRegistry(
 		registry = language.DefaultRegistry()
 	}
 	doc := &TextDocument{
-		URI:       uri,
-		Text:      []byte(source),
-		Source:    source,
-		Version:   version,
-		LineIndex: cst.NewLineIndex(source),
+		URI:           uri,
+		Text:          []byte(source),
+		Source:        source,
+		Version:       version,
+		LineIndex:     cst.NewLineIndex(source),
+		analysisCache: &documentAnalysisCache{},
 	}
 
 	if id, result, ok := registry.ParsePath(uri, source); ok {
