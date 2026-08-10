@@ -43,24 +43,119 @@ jobs:
       - name: Build pre-release VSIX packages
         run: node scripts/build-vsix-release.mjs --pre-release
 
-      - name: Upload commit preview
-        id: upload
+      - name: Upload macOS x64 preview
+        id: upload_darwin_x64
         uses: actions/upload-artifact@v7
         with:
-          name: shopware-lsp-${{ steps.preview-version.outputs.version }}-${{ github.sha }}
-          path: |
-            out/*.vsix
-            out/SHA256SUMS
+          name: shopware-lsp-${{ steps.preview-version.outputs.version }}-darwin-x64-${{ github.sha }}
+          path: out/*-darwin-x64.vsix
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload macOS arm64 preview
+        id: upload_darwin_arm64
+        uses: actions/upload-artifact@v7
+        with:
+          name: shopware-lsp-${{ steps.preview-version.outputs.version }}-darwin-arm64-${{ github.sha }}
+          path: out/*-darwin-arm64.vsix
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload Linux x64 preview
+        id: upload_linux_x64
+        uses: actions/upload-artifact@v7
+        with:
+          name: shopware-lsp-${{ steps.preview-version.outputs.version }}-linux-x64-${{ github.sha }}
+          path: out/*-linux-x64.vsix
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload Linux arm64 preview
+        id: upload_linux_arm64
+        uses: actions/upload-artifact@v7
+        with:
+          name: shopware-lsp-${{ steps.preview-version.outputs.version }}-linux-arm64-${{ github.sha }}
+          path: out/*-linux-arm64.vsix
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload Linux armhf preview
+        id: upload_linux_armhf
+        uses: actions/upload-artifact@v7
+        with:
+          name: shopware-lsp-${{ steps.preview-version.outputs.version }}-linux-armhf-${{ github.sha }}
+          path: out/*-linux-armhf.vsix
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload Alpine x64 preview
+        id: upload_alpine_x64
+        uses: actions/upload-artifact@v7
+        with:
+          name: shopware-lsp-${{ steps.preview-version.outputs.version }}-alpine-x64-${{ github.sha }}
+          path: out/*-alpine-x64.vsix
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload Alpine arm64 preview
+        id: upload_alpine_arm64
+        uses: actions/upload-artifact@v7
+        with:
+          name: shopware-lsp-${{ steps.preview-version.outputs.version }}-alpine-arm64-${{ github.sha }}
+          path: out/*-alpine-arm64.vsix
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload Windows x64 preview
+        id: upload_win32_x64
+        uses: actions/upload-artifact@v7
+        with:
+          name: shopware-lsp-${{ steps.preview-version.outputs.version }}-win32-x64-${{ github.sha }}
+          path: out/*-win32-x64.vsix
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload preview checksums
+        id: upload_checksums
+        uses: actions/upload-artifact@v7
+        with:
+          name: shopware-lsp-${{ steps.preview-version.outputs.version }}-checksums-${{ github.sha }}
+          path: out/SHA256SUMS
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
 
       - name: Add download instructions
         env:
-          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ALPINE_ARM64_URL: ${{ steps.upload_alpine_arm64.outputs.artifact-url }}
+          ALPINE_X64_URL: ${{ steps.upload_alpine_x64.outputs.artifact-url }}
+          CHECKSUMS_URL: ${{ steps.upload_checksums.outputs.artifact-url }}
+          DARWIN_ARM64_URL: ${{ steps.upload_darwin_arm64.outputs.artifact-url }}
+          DARWIN_X64_URL: ${{ steps.upload_darwin_x64.outputs.artifact-url }}
+          LINUX_ARM64_URL: ${{ steps.upload_linux_arm64.outputs.artifact-url }}
+          LINUX_ARMHF_URL: ${{ steps.upload_linux_armhf.outputs.artifact-url }}
+          LINUX_X64_URL: ${{ steps.upload_linux_x64.outputs.artifact-url }}
           PREVIEW_VERSION: ${{ steps.preview-version.outputs.version }}
+          WIN32_X64_URL: ${{ steps.upload_win32_x64.outputs.artifact-url }}
         run: |
           echo "### VSIX preview ${PREVIEW_VERSION}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "[Download the platform packages and checksums](${ARTIFACT_URL})." >> "$GITHUB_STEP_SUMMARY"
-          echo "The artifact expires after 14 days and is not published to a registry." >> "$GITHUB_STEP_SUMMARY"
+          echo "- [macOS x64](${DARWIN_X64_URL})" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [macOS arm64](${DARWIN_ARM64_URL})" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [Linux x64](${LINUX_X64_URL})" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [Linux arm64](${LINUX_ARM64_URL})" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [Linux armhf](${LINUX_ARMHF_URL})" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [Alpine x64](${ALPINE_X64_URL})" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [Alpine arm64](${ALPINE_ARM64_URL})" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [Windows x64](${WIN32_X64_URL})" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [SHA-256 checksums](${CHECKSUMS_URL})" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Artifacts expire after 14 days and are not published to a registry." >> "$GITHUB_STEP_SUMMARY"
