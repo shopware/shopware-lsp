@@ -1,0 +1,66 @@
+name: VSIX Preview
+
+on:
+  push:
+    branches:
+      - feat/next-gen
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build preview packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: vscode-extension/package-lock.json
+
+      - name: Install extension tooling
+        run: |
+          npm ci --prefix vscode-extension
+          npm install --global @vscode/vsce@3.9.1
+
+      - name: Set preview version
+        id: preview-version
+        env:
+          PREVIEW_PATCH: ${{ github.run_number }}
+        run: |
+          version="$(node -e 'const manifest = require("./vscode-extension/package.json"); const [major, minor] = manifest.version.split(".").map(Number); const previewMinor = minor % 2 === 0 ? minor + 1 : minor; process.stdout.write(`${major}.${previewMinor}.${process.env.PREVIEW_PATCH}`);')"
+          npm version --prefix vscode-extension "$version" --no-git-tag-version --allow-same-version
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build pre-release VSIX packages
+        run: node scripts/build-vsix-release.mjs --pre-release
+
+      - name: Upload commit preview
+        id: upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: shopware-lsp-${{ steps.preview-version.outputs.version }}-${{ github.sha }}
+          path: |
+            out/*.vsix
+            out/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Add download instructions
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          PREVIEW_VERSION: ${{ steps.preview-version.outputs.version }}
+        run: |
+          echo "### VSIX preview ${PREVIEW_VERSION}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Download the platform packages and checksums](${ARTIFACT_URL})." >> "$GITHUB_STEP_SUMMARY"
+          echo "The artifact expires after 14 days and is not published to a registry." >> "$GITHUB_STEP_SUMMARY"
