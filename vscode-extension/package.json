@@ -71,6 +71,30 @@
           "scope": "resource",
           "description": "Expose the Shopware MCP tools to VS Code AI clients for this workspace folder. VS Code starts a separate language-server process lazily when an MCP tool is used."
         },
+        "shopwareLSP.mcp.tools": {
+          "type": "object",
+          "default": {},
+          "scope": "resource",
+          "additionalProperties": false,
+          "properties": {
+            "shopware_diagnostics": {"type": "boolean"},
+            "shopware_code_actions": {"type": "boolean"},
+            "shopware_apply_code_action": {"type": "boolean"},
+            "shopware_hover": {"type": "boolean"},
+            "shopware_definition": {"type": "boolean"},
+            "shopware_references": {"type": "boolean"},
+            "shopware_workspace_symbols": {"type": "boolean"},
+            "shopware_scaffold_catalog": {"type": "boolean"},
+            "shopware_scaffold": {"type": "boolean"},
+            "shopware_entity_schema_bootstrap": {"type": "boolean"},
+            "shopware_entity_schema_search": {"type": "boolean"},
+            "shopware_entity_schema_load": {"type": "boolean"},
+            "shopware_entity_schema_preview": {"type": "boolean"},
+            "shopware_entity_schema_apply": {"type": "boolean"},
+            "shopware_entity_schema_reconcile": {"type": "boolean"}
+          },
+          "description": "Local overrides for individual Shopware MCP tools. Omitted tools remain enabled."
+        },
         "shopwareLSP.phpExtensions": {
           "type": "array",
           "items": {

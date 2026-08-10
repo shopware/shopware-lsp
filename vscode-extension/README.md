@@ -77,13 +77,18 @@ On VS Code 1.101 or newer, the extension automatically contributes a Shopware
 MCP server for every open workspace folder. VS Code starts the bundled
 `shopware-lsp` executable lazily when an AI agent uses a Shopware tool, so no
 manual `mcp.json` setup is required. Diagnostics, code actions, hover,
-definitions, references, and workspace-symbol search use the same production
-analysis as the editor.
+definitions, references, workspace-symbol search, Shopware/Symfony scaffolds,
+and the typed DAL entity-schema workflow use the same production services as
+the editor. Scaffolds preview their diff unless the caller explicitly requests
+a write; entity changes retain the preview-revision and destructive-change
+confirmation checks used by the visual designer.
 
 Set `shopwareLSP.mcp.enabled` to `false` for a workspace folder to hide that
 server from VS Code AI clients. A custom `shopwareLSP.serverPath` and the
 `shopwareLSP.memoryLimitMiB` setting apply to both the editor server and the
-MCP process.
+MCP process. Use `shopwareLSP.mcp.tools` to disable exact MCP tool names only
+for the current user/workspace, or commit `mcp.tools` in
+`.config/shopware-lsp/config.json` so every MCP client uses the same policy.
 
 ### Diagnostic configuration
 

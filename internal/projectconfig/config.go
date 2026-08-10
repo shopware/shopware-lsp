@@ -59,6 +59,10 @@ type IndexingConfig struct {
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
+type MCPConfig struct {
+	Tools map[string]bool `json:"tools,omitempty"`
+}
+
 type DiagnosticsConfig struct {
 	Enabled     *bool                `json:"enabled,omitempty"`
 	Inspections map[string]bool      `json:"inspections,omitempty"`
@@ -89,6 +93,7 @@ type Partial struct {
 	Shopware    *ShopwareConfig    `json:"shopware,omitempty"`
 	Features    map[string]bool    `json:"features,omitempty"`
 	Indexing    *IndexingConfig    `json:"indexing,omitempty"`
+	MCP         *MCPConfig         `json:"mcp,omitempty"`
 	Domains     map[string]bool    `json:"domains,omitempty"`
 	Diagnostics *DiagnosticsConfig `json:"diagnostics,omitempty"`
 	Check       *CheckConfig       `json:"check,omitempty"`
@@ -99,6 +104,7 @@ type Effective struct {
 	Shopware       EffectiveShopware    `json:"shopware"`
 	Features       map[string]bool      `json:"features"`
 	Indexing       EffectiveIndexing    `json:"indexing"`
+	MCP            EffectiveMCP         `json:"mcp"`
 	Domains        map[string]bool      `json:"domains"`
 	Diagnostics    EffectiveDiagnostics `json:"diagnostics"`
 	Check          EffectiveCheck       `json:"check"`
@@ -117,6 +123,10 @@ type EffectiveShopware struct {
 
 type EffectiveIndexing struct {
 	Enabled bool `json:"enabled"`
+}
+
+type EffectiveMCP struct {
+	Tools map[string]bool `json:"tools"`
 }
 
 type EffectiveDiagnostics struct {
@@ -172,6 +182,26 @@ var FeatureCatalog = []CatalogEntry{
 	{ID: "commands", Label: "Shopware Commands"},
 }
 
+// MCPToolCatalog contains the stable public MCP tool names accepted in
+// committed and editor-local configuration. Tools default to enabled.
+var MCPToolCatalog = []CatalogEntry{
+	{ID: "shopware_diagnostics", Label: "Diagnostics"},
+	{ID: "shopware_code_actions", Label: "Code Actions"},
+	{ID: "shopware_apply_code_action", Label: "Apply Code Action"},
+	{ID: "shopware_hover", Label: "Hover"},
+	{ID: "shopware_definition", Label: "Definitions"},
+	{ID: "shopware_references", Label: "References"},
+	{ID: "shopware_workspace_symbols", Label: "Workspace Symbols"},
+	{ID: "shopware_scaffold_catalog", Label: "Scaffold Catalog"},
+	{ID: "shopware_scaffold", Label: "Create Scaffold"},
+	{ID: "shopware_entity_schema_bootstrap", Label: "Entity Schema Bootstrap"},
+	{ID: "shopware_entity_schema_search", Label: "Entity Schema Search"},
+	{ID: "shopware_entity_schema_load", Label: "Entity Schema Load"},
+	{ID: "shopware_entity_schema_preview", Label: "Entity Schema Preview"},
+	{ID: "shopware_entity_schema_apply", Label: "Entity Schema Apply"},
+	{ID: "shopware_entity_schema_reconcile", Label: "Entity Schema Reconcile"},
+}
+
 // DomainCatalog is deliberately public and stable: these IDs are persisted in
 // project configuration and returned by the configuration catalog request.
 var DomainCatalog = []CatalogEntry{
@@ -219,9 +249,14 @@ func Default() Effective {
 	for _, entry := range DomainCatalog {
 		domains[entry.ID] = true
 	}
+	mcpTools := make(map[string]bool, len(MCPToolCatalog))
+	for _, entry := range MCPToolCatalog {
+		mcpTools[entry.ID] = true
+	}
 	return Effective{
 		Features: features,
 		Indexing: EffectiveIndexing{Enabled: true},
+		MCP:      EffectiveMCP{Tools: mcpTools},
 		Domains:  domains,
 		Diagnostics: EffectiveDiagnostics{
 			Enabled: true, Inspections: map[string]bool{}, Rules: map[string]Severity{},
@@ -302,6 +337,14 @@ func Validate(value Partial) error {
 	for id := range value.Features {
 		if !featureIDs[id] {
 			return fmt.Errorf("unknown feature %q", id)
+		}
+	}
+	mcpToolIDs := catalogIDs(MCPToolCatalog)
+	if value.MCP != nil {
+		for id := range value.MCP.Tools {
+			if !mcpToolIDs[id] {
+				return fmt.Errorf("unknown MCP tool %q", id)
+			}
 		}
 	}
 	domainIDs := catalogIDs(DomainCatalog)
@@ -419,6 +462,12 @@ func apply(target *Effective, value Partial, source string) {
 		target.Indexing.Enabled = *value.Indexing.Enabled
 		target.Origins["indexing.enabled"] = source
 	}
+	if value.MCP != nil {
+		for id, enabled := range value.MCP.Tools {
+			target.MCP.Tools[id] = enabled
+			target.Origins["mcp.tools."+id] = source
+		}
+	}
 	for id, enabled := range value.Domains {
 		target.Domains[id] = enabled
 		target.Origins["domains."+id] = source
@@ -484,6 +533,14 @@ func (c Effective) FeatureEnabled(id string) bool {
 
 func (c Effective) DomainEnabled(id string) bool {
 	return c.Domains[id]
+}
+
+func (c Effective) MCPToolEnabled(id string) bool {
+	if c.MCP.Tools == nil {
+		return true
+	}
+	enabled, configured := c.MCP.Tools[id]
+	return !configured || enabled
 }
 
 func (c Effective) InspectionEnabled(id string) bool {

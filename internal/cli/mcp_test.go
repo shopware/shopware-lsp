@@ -10,6 +10,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	"github.com/shopware/shopware-lsp/internal/lsp/scaffold"
+	"github.com/shopware/shopware-lsp/internal/projectconfig"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 	"github.com/stretchr/testify/require"
 )
@@ -21,9 +23,16 @@ func TestMCPServerAdvertisesAnalysisAndWriteTools(t *testing.T) {
 	tools, err := session.ListTools(context.Background(), nil)
 	require.NoError(t, err)
 	byName := make(map[string]*mcp.Tool, len(tools.Tools))
+	registeredNames := make([]string, 0, len(tools.Tools))
 	for _, tool := range tools.Tools {
 		byName[tool.Name] = tool
+		registeredNames = append(registeredNames, tool.Name)
 	}
+	catalogNames := make([]string, 0, len(projectconfig.MCPToolCatalog))
+	for _, tool := range projectconfig.MCPToolCatalog {
+		catalogNames = append(catalogNames, tool.ID)
+	}
+	require.ElementsMatch(t, catalogNames, registeredNames)
 	for _, name := range []string{
 		"shopware_diagnostics",
 		"shopware_code_actions",
@@ -32,6 +41,14 @@ func TestMCPServerAdvertisesAnalysisAndWriteTools(t *testing.T) {
 		"shopware_definition",
 		"shopware_references",
 		"shopware_workspace_symbols",
+		"shopware_scaffold_catalog",
+		"shopware_scaffold",
+		"shopware_entity_schema_bootstrap",
+		"shopware_entity_schema_search",
+		"shopware_entity_schema_load",
+		"shopware_entity_schema_preview",
+		"shopware_entity_schema_apply",
+		"shopware_entity_schema_reconcile",
 	} {
 		require.Contains(t, byName, name)
 		require.NotNil(t, byName[name].OutputSchema, "%s has no output schema", name)
@@ -43,10 +60,188 @@ func TestMCPServerAdvertisesAnalysisAndWriteTools(t *testing.T) {
 	require.Contains(t, outputSchemaProperties(t, byName["shopware_definition"]), "locations")
 	require.Contains(t, outputSchemaProperties(t, byName["shopware_references"]), "locations")
 	require.Contains(t, outputSchemaProperties(t, byName["shopware_workspace_symbols"]), "symbols")
+	require.Contains(t, outputSchemaProperties(t, byName["shopware_scaffold_catalog"]), "scaffolds")
+	require.Contains(t, outputSchemaProperties(t, byName["shopware_scaffold"]), "diff")
+	require.Contains(t, outputSchemaProperties(t, byName["shopware_entity_schema_bootstrap"]), "spec")
+	require.Contains(t, outputSchemaProperties(t, byName["shopware_entity_schema_preview"]), "revision")
+	require.Contains(t, outputSchemaProperties(t, byName["shopware_entity_schema_apply"]), "diff")
 	require.True(t, byName["shopware_diagnostics"].Annotations.ReadOnlyHint)
 	require.False(t, byName["shopware_apply_code_action"].Annotations.ReadOnlyHint)
 	require.NotNil(t, byName["shopware_apply_code_action"].Annotations.DestructiveHint)
 	require.True(t, *byName["shopware_apply_code_action"].Annotations.DestructiveHint)
+}
+
+func TestMCPConfigurationDisablesExactTools(t *testing.T) {
+	root := t.TempDir()
+	configuration := projectconfig.Default()
+	configuration.MCP.Tools["shopware_hover"] = false
+	configuration.MCP.Tools["shopware_scaffold"] = false
+	session := connectMCPTestClientWithConfiguration(t, root, configuration)
+
+	tools, err := session.ListTools(context.Background(), nil)
+	require.NoError(t, err)
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	require.NotContains(t, names, "shopware_hover")
+	require.NotContains(t, names, "shopware_scaffold")
+	require.Contains(t, names, "shopware_diagnostics")
+	require.Contains(t, names, "shopware_scaffold_catalog")
+}
+
+func TestMCPConfigurationUsesProjectAndEditorLayers(t *testing.T) {
+	root := t.TempDir()
+	path := projectconfig.Path(root)
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	require.NoError(t, os.WriteFile(path, []byte(`{
+        "version": 1,
+        "mcp": {"tools": {"shopware_scaffold": false}}
+    }`), 0o644))
+	editor := projectconfig.Partial{MCP: &projectconfig.MCPConfig{Tools: map[string]bool{
+		"shopware_scaffold": true,
+		"shopware_hover":    false,
+	}}}
+	effective, err := mcpConfiguration(root, &editor)
+	require.NoError(t, err)
+	require.True(t, effective.MCPToolEnabled("shopware_scaffold"))
+	require.False(t, effective.MCPToolEnabled("shopware_hover"))
+	session := connectMCPTestClientWithConfiguration(t, root, effective)
+	tools, err := session.ListTools(context.Background(), nil)
+	require.NoError(t, err)
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	require.Contains(t, names, "shopware_scaffold")
+	require.NotContains(t, names, "shopware_hover")
+}
+
+func TestMCPScaffoldCatalogAndShopwarePreviewWrite(t *testing.T) {
+	root := t.TempDir()
+	session := connectMCPTestClient(t, root)
+	ctx := context.Background()
+
+	catalogResult, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "shopware_scaffold_catalog", Arguments: map[string]any{},
+	})
+	require.NoError(t, err)
+	require.False(t, catalogResult.IsError, toolResultText(catalogResult))
+	var catalog scaffoldCatalogOutput
+	decodeMCPStructuredContent(t, catalogResult, &catalog)
+	require.True(t, catalog.EntitySchema)
+	require.Contains(t, scaffoldKindNames(catalog.Scaffolds), "shopware:app-cms")
+	require.Contains(t, scaffoldKindNames(catalog.Scaffolds), "symfony:controller")
+
+	arguments := map[string]any{
+		"family": "shopware", "kind": "app-cms",
+		"directory": ".", "name": "cms",
+	}
+	preview, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "shopware_scaffold", Arguments: arguments,
+	})
+	require.NoError(t, err)
+	require.False(t, preview.IsError, toolResultText(preview))
+	var previewOutput scaffoldOutput
+	decodeMCPStructuredContent(t, preview, &previewOutput)
+	require.False(t, previewOutput.Applied)
+	require.Contains(t, previewOutput.Diff, "Resources/cms.xml")
+	require.NoFileExists(t, filepath.Join(root, "Resources", "cms.xml"))
+
+	arguments["write"] = true
+	applied, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "shopware_scaffold", Arguments: arguments,
+	})
+	require.NoError(t, err)
+	require.False(t, applied.IsError, toolResultText(applied))
+	var appliedOutput scaffoldOutput
+	decodeMCPStructuredContent(t, applied, &appliedOutput)
+	require.True(t, appliedOutput.Applied)
+	require.Equal(t, "Resources/cms.xml", appliedOutput.PrimaryFile)
+	require.FileExists(t, filepath.Join(root, "Resources", "cms.xml"))
+}
+
+func TestMCPSymfonyScaffoldWritesThroughProductionCommand(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "src", "Controller"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "composer.json"), []byte(`{
+        "name": "acme/example",
+        "autoload": {"psr-4": {"App\\": "src/"}}
+    }`), 0o644))
+	session := connectMCPTestClient(t, root)
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "shopware_scaffold",
+		Arguments: map[string]any{
+			"family": "symfony", "kind": "controller",
+			"directory": "src/Controller", "name": "Product", "write": true,
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError, toolResultText(result))
+	var output scaffoldOutput
+	decodeMCPStructuredContent(t, result, &output)
+	require.True(t, output.Applied)
+	require.Equal(t, "src/Controller/ProductController.php", output.PrimaryFile)
+	content, err := os.ReadFile(filepath.Join(root, output.PrimaryFile))
+	require.NoError(t, err)
+	require.Contains(t, string(content), "namespace App\\Controller;")
+}
+
+func TestMCPEntitySchemaBootstrapPreviewAndApply(t *testing.T) {
+	root := t.TempDir()
+	plugin := filepath.Join(root, "custom", "plugins", "Example")
+	directory := filepath.Join(plugin, "src", "Content", "Example")
+	require.NoError(t, os.MkdirAll(directory, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(plugin, "composer.json"), []byte(`{
+        "name": "acme/example",
+        "type": "shopware-platform-plugin",
+        "require": {"shopware/core": "~6.7"},
+        "autoload": {"psr-4": {"Acme\\Example\\": "src/"}},
+        "extra": {"shopware-plugin-class": "Acme\\Example\\Example"}
+    }`), 0o644))
+	session := connectMCPTestClient(t, root)
+	ctx := context.Background()
+
+	bootstrapResult, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "shopware_entity_schema_bootstrap",
+		Arguments: map[string]any{"directory": "custom/plugins/Example/src/Content/Example"},
+	})
+	require.NoError(t, err)
+	require.False(t, bootstrapResult.IsError, toolResultText(bootstrapResult))
+	var bootstrap scaffold.EntitySchemaBootstrapResponse
+	decodeMCPStructuredContent(t, bootstrapResult, &bootstrap)
+	require.Equal(t, "custom/plugins/Example", bootstrap.Plugin.RootURI)
+	require.Equal(t, "custom/plugins/Example/src/Content/Example", bootstrap.Spec.DirectoryURI)
+	require.NotEmpty(t, bootstrap.FieldTypes)
+
+	previewResult, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "shopware_entity_schema_preview",
+		Arguments: map[string]any{"spec": bootstrap.Spec},
+	})
+	require.NoError(t, err)
+	require.False(t, previewResult.IsError, toolResultText(previewResult))
+	var preview scaffold.EntitySchemaPreviewResponse
+	decodeMCPStructuredContent(t, previewResult, &preview)
+	require.NotEmpty(t, preview.Revision)
+	require.Empty(t, preview.Issues)
+	require.NotEmpty(t, preview.Files)
+	require.NotZero(t, preview.MigrationTimestamp)
+
+	bootstrap.Spec.MigrationTimestamp = preview.MigrationTimestamp
+	applyResult, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "shopware_entity_schema_apply",
+		Arguments: map[string]any{
+			"spec": bootstrap.Spec, "revision": preview.Revision,
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, applyResult.IsError, toolResultText(applyResult))
+	var applied entitySchemaWriteOutput
+	decodeMCPStructuredContent(t, applyResult, &applied)
+	require.True(t, applied.Applied)
+	require.NotEmpty(t, applied.SnapshotID)
+	require.Contains(t, applied.Files, "custom/plugins/Example/src/Content/Example/ExampleDefinition.php")
+	require.FileExists(t, filepath.Join(directory, "ExampleDefinition.php"))
 }
 
 func TestMCPDiagnosticsAndCodeActionUseProductionLSP(t *testing.T) {
@@ -234,6 +429,7 @@ func TestMCPRejectsUnsafeWorkspaceEdits(t *testing.T) {
 
 func TestMCPEditorConfigurationReadsDiagnosticOverrides(t *testing.T) {
 	t.Setenv("SHOPWARE_LSP_EDITOR_CONFIGURATION", `{
+        "mcp": {"tools": {"shopware_scaffold": false}},
         "diagnostics": {
             "overrides": [{"files":["custom/plugins/Test/**"],"enabled":false}]
         }
@@ -243,15 +439,24 @@ func TestMCPEditorConfigurationReadsDiagnosticOverrides(t *testing.T) {
 	require.NotNil(t, configuration)
 	require.Len(t, configuration.Diagnostics.Overrides, 1)
 	require.Equal(t, "custom/plugins/Test/**", configuration.Diagnostics.Overrides[0].Files[0])
+	require.False(t, configuration.MCP.Tools["shopware_scaffold"])
 }
 
 func connectMCPTestClient(t *testing.T, root string) *mcp.ClientSession {
+	return connectMCPTestClientWithConfiguration(t, root, projectconfig.Effective{})
+}
+
+func connectMCPTestClientWithConfiguration(
+	t *testing.T,
+	root string,
+	configuration projectconfig.Effective,
+) *mcp.ClientSession {
 	t.Helper()
 	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
 	runner := New(Options{Version: "test"})
 	runner.root = root
 	runner.errOut = &bytes.Buffer{}
-	runtime := &mcpRuntime{runner: runner, root: root}
+	runtime := &mcpRuntime{runner: runner, root: root, configuration: configuration}
 	server := newMCPServer(runtime)
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
 	serverSession, err := server.Connect(context.Background(), serverTransport, nil)
@@ -267,6 +472,14 @@ func connectMCPTestClient(t *testing.T, root string) *mcp.ClientSession {
 		require.NoError(t, runtime.Close())
 	})
 	return clientSession
+}
+
+func scaffoldKindNames(kinds []mcpScaffoldKind) []string {
+	result := make([]string, 0, len(kinds))
+	for _, kind := range kinds {
+		result = append(result, kind.Family+":"+kind.Kind)
+	}
+	return result
 }
 
 func decodeMCPStructuredContent(t *testing.T, result *mcp.CallToolResult, target any) {

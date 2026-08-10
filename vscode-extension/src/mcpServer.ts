@@ -10,7 +10,13 @@ export function registerMcpServerDefinitionProvider(
   outputChannel: vscode.OutputChannel,
 ): void {
   const changed = new vscode.EventEmitter<void>();
-  context.subscriptions.push(changed);
+  const projectConfigurationWatcher = vscode.workspace.createFileSystemWatcher(
+    '**/.config/shopware-lsp/config.json',
+  );
+  projectConfigurationWatcher.onDidCreate(() => changed.fire());
+  projectConfigurationWatcher.onDidChange(() => changed.fire());
+  projectConfigurationWatcher.onDidDelete(() => changed.fire());
+  context.subscriptions.push(changed, projectConfigurationWatcher);
 
   const provider: vscode.McpServerDefinitionProvider<vscode.McpStdioServerDefinition> = {
     onDidChangeMcpServerDefinitions: changed.event,
@@ -73,6 +79,7 @@ export function registerMcpServerDefinitionProvider(
         event.affectsConfiguration('shopwareLSP.disabledPhpExtensions') ||
         event.affectsConfiguration('shopwareLSP.shopwareTargetVersion') ||
         event.affectsConfiguration('shopwareLSP.features') ||
+        event.affectsConfiguration('shopwareLSP.mcp.tools') ||
         event.affectsConfiguration('shopwareLSP.indexing.enabled') ||
         event.affectsConfiguration('shopwareLSP.domains') ||
         event.affectsConfiguration('shopwareLSP.diagnostics')

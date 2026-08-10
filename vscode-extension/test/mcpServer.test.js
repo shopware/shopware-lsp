@@ -40,7 +40,7 @@ test('omits an inactive memory limit and normalizes invalid values', () => {
   }).env, {});
 });
 
-test('passes editor diagnostic overrides to the VS Code launched MCP server', () => {
+test('passes editor diagnostic and MCP tool overrides to the VS Code launched MCP server', () => {
   const definition = createMcpProcessDefinition({
     serverPath: '/extension/shopware-lsp',
     workspaceRoot: '/workspace/shopware',
@@ -48,10 +48,12 @@ test('passes editor diagnostic overrides to the VS Code launched MCP server', ()
     version: 'dev',
     editorConfiguration: {
       diagnostics: {overrides: [{files: ['custom/plugins/Test/**'], enabled: false}]},
+      mcp: {tools: {shopware_scaffold: false}},
     },
   });
   assert.deepEqual(JSON.parse(definition.env.SHOPWARE_LSP_EDITOR_CONFIGURATION), {
     diagnostics: {overrides: [{files: ['custom/plugins/Test/**'], enabled: false}]},
+    mcp: {tools: {shopware_scaffold: false}},
   });
 });
 

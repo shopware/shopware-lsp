@@ -60,6 +60,7 @@ func TestSchemaCatalogsStayInSync(t *testing.T) {
 		require.Equal(t, expected, actual)
 	}
 	assertCatalog("featureMap", FeatureCatalog)
+	assertCatalog("mcpToolMap", MCPToolCatalog)
 	assertCatalog("domainMap", DomainCatalog)
 }
 
@@ -83,10 +84,30 @@ func TestDecodeRejectsUnknownAndInvalidValues(t *testing.T) {
 	require.ErrorContains(t, err, "unknown field")
 	_, err = Decode([]byte(`{"version":1,"shopware":{"targetVersion":"next"}}`))
 	require.ErrorContains(t, err, "invalid Shopware target version")
+	_, err = Decode([]byte(`{"version":1,"mcp":{"tools":{"future_tool":false}}}`))
+	require.ErrorContains(t, err, "unknown MCP tool")
 	_, err = Decode([]byte(`{"version":1,"diagnostics":{"overrides":[{"files":[],"enabled":false}]}}`))
 	require.ErrorContains(t, err, "files must not be empty")
 	_, err = Decode([]byte(`{"version":1,"diagnostics":{"overrides":[{"files":["../outside/**"],"enabled":false}]}}`))
 	require.ErrorContains(t, err, "must not escape")
+}
+
+func TestResolveMCPToolOverrides(t *testing.T) {
+	t.Parallel()
+	project, err := Decode([]byte(`{
+        "version": 1,
+        "mcp": {"tools": {"shopware_scaffold": false}}
+    }`))
+	require.NoError(t, err)
+	editor := Partial{MCP: &MCPConfig{Tools: map[string]bool{
+		"shopware_scaffold": true,
+		"shopware_hover":    false,
+	}}}
+	effective := Resolve(project, editor)
+	require.True(t, effective.MCPToolEnabled("shopware_scaffold"))
+	require.False(t, effective.MCPToolEnabled("shopware_hover"))
+	require.True(t, effective.MCPToolEnabled("shopware_diagnostics"))
+	require.Equal(t, "editor", effective.Origins["mcp.tools.shopware_scaffold"])
 }
 
 func TestApplyDiagnosticsUsesOrderedPathOverrides(t *testing.T) {

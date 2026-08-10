@@ -22,6 +22,7 @@ type ConfigurationCatalog struct {
 	Effective   projectconfig.Effective      `json:"effective"`
 	Scopes      []projectconfig.Scope        `json:"scopes,omitempty"`
 	Features    []projectconfig.CatalogEntry `json:"features"`
+	MCPTools    []projectconfig.CatalogEntry `json:"mcpTools"`
 	Domains     []projectconfig.CatalogEntry `json:"domains"`
 	Inspections []ConfigurationInspection    `json:"inspections"`
 	Error       string                       `json:"error,omitempty"`
@@ -290,6 +291,7 @@ func (s *Server) configurationCatalog() ConfigurationCatalog {
 		Effective: effective,
 		Scopes:    scopes,
 		Features:  slices.Clone(projectconfig.FeatureCatalog),
+		MCPTools:  slices.Clone(projectconfig.MCPToolCatalog),
 		Domains:   slices.Clone(projectconfig.DomainCatalog),
 		Errors:    issues,
 	}

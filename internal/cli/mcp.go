@@ -30,6 +30,7 @@ type mcpRuntime struct {
 	runner              *Runner
 	root                string
 	editorConfiguration *projectconfig.Partial
+	configuration       projectconfig.Effective
 
 	operationMu sync.Mutex
 	session     *cliSession
@@ -53,8 +54,13 @@ func (r *Runner) runMCP(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	configuration, err := mcpConfiguration(root, editorConfiguration)
+	if err != nil {
+		return err
+	}
 	runtime := &mcpRuntime{
 		runner: r, root: root, editorConfiguration: editorConfiguration,
+		configuration: configuration,
 	}
 	defer func() {
 		if closeErr := runtime.Close(); closeErr != nil && r.verbose {
@@ -70,6 +76,21 @@ func (r *Runner) runMCP(ctx context.Context, args []string) error {
 		return fmt.Errorf("run stdio MCP server: %w", err)
 	}
 	return nil
+}
+
+func mcpConfiguration(
+	root string,
+	editor *projectconfig.Partial,
+) (projectconfig.Effective, error) {
+	project, _, err := projectconfig.Load(root)
+	if err != nil {
+		return projectconfig.Effective{}, err
+	}
+	editorValue := projectconfig.Partial{}
+	if editor != nil {
+		editorValue = *editor
+	}
+	return projectconfig.Resolve(project, editorValue), nil
 }
 
 func mcpEditorConfiguration() (*projectconfig.Partial, error) {
@@ -111,17 +132,17 @@ func newMCPServer(runtime *mcpRuntime) *mcp.Server {
 		ReadOnlyHint: true, IdempotentHint: true,
 		OpenWorldHint: boolPointer(false),
 	}
-	mcp.AddTool[diagnosticsInput, diagnosticsOutput](server, &mcp.Tool{
+	addMCPTool(server, runtime, &mcp.Tool{
 		Name: "shopware_diagnostics", Title: "Shopware diagnostics",
 		Description: "Run the same configured Shopware LSP diagnostics used by the editor for one workspace file or directory.",
 		Annotations: readOnly,
 	}, runtime.diagnostics)
-	mcp.AddTool[codeActionsInput, codeActionsOutput](server, &mcp.Tool{
+	addMCPTool(server, runtime, &mcp.Tool{
 		Name: "shopware_code_actions", Title: "Shopware code actions",
 		Description: "List available quick fixes and refactorings at a one-based file position without changing files.",
 		Annotations: readOnly,
 	}, runtime.codeActions)
-	mcp.AddTool[applyCodeActionInput, applyCodeActionOutput](server, &mcp.Tool{
+	addMCPTool(server, runtime, &mcp.Tool{
 		Name: "shopware_apply_code_action", Title: "Apply Shopware code action",
 		Description: "Resolve and apply one exact code-action title at a one-based file position. This writes workspace files and returns the resulting diff.",
 		Annotations: &mcp.ToolAnnotations{
@@ -129,27 +150,51 @@ func newMCPServer(runtime *mcpRuntime) *mcp.Server {
 			DestructiveHint: boolPointer(true), OpenWorldHint: boolPointer(false),
 		},
 	}, runtime.applyCodeAction)
-	mcp.AddTool[positionInput, hoverOutput](server, &mcp.Tool{
+	addMCPTool(server, runtime, &mcp.Tool{
 		Name: "shopware_hover", Title: "Shopware hover",
 		Description: "Return Shopware LSP hover information at a one-based file position.",
 		Annotations: readOnly,
 	}, runtime.hover)
-	mcp.AddTool[positionInput, locationsOutput](server, &mcp.Tool{
+	addMCPTool(server, runtime, &mcp.Tool{
 		Name: "shopware_definition", Title: "Shopware definitions",
 		Description: "Find definitions for the symbol at a one-based file position.",
 		Annotations: readOnly,
 	}, runtime.definition)
-	mcp.AddTool[positionInput, locationsOutput](server, &mcp.Tool{
+	addMCPTool(server, runtime, &mcp.Tool{
 		Name: "shopware_references", Title: "Shopware references",
 		Description: "Find references, including the declaration, for the symbol at a one-based file position.",
 		Annotations: readOnly,
 	}, runtime.references)
-	mcp.AddTool[workspaceSymbolsInput, workspaceSymbolsOutput](server, &mcp.Tool{
+	addMCPTool(server, runtime, &mcp.Tool{
 		Name: "shopware_workspace_symbols", Title: "Shopware workspace symbols",
 		Description: "Search indexed Shopware workspace symbols such as PHP classes and members.",
 		Annotations: readOnly,
 	}, runtime.workspaceSymbols)
+	registerMCPScaffoldTools(server, runtime, readOnly)
 	return server
+}
+
+func addMCPTool[Input, Output any](
+	server *mcp.Server,
+	runtime *mcpRuntime,
+	tool *mcp.Tool,
+	handler func(
+		context.Context,
+		*mcp.CallToolRequest,
+		Input,
+	) (*mcp.CallToolResult, Output, error),
+) {
+	if runtime == nil || tool == nil || !runtime.toolEnabled(tool.Name) {
+		return
+	}
+	mcp.AddTool(server, tool, handler)
+}
+
+func (runtime *mcpRuntime) toolEnabled(name string) bool {
+	if runtime == nil {
+		return false
+	}
+	return runtime.configuration.MCPToolEnabled(name)
 }
 
 func boolPointer(value bool) *bool { return &value }

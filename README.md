@@ -72,20 +72,30 @@ example, an MCP client configuration can launch one server per workspace:
 }
 ```
 
-The server advertises `shopware_diagnostics`, `shopware_code_actions`,
-`shopware_apply_code_action`, `shopware_hover`, `shopware_definition`,
-`shopware_references`, and `shopware_workspace_symbols`. Indexing is lazy on
-the first tool call and the resulting workspace session is reused for later
-calls. Tool paths may be absolute or workspace-relative; positions and
-returned ranges are one-based. Read tools never modify the workspace. Applying
-a code action requires an exact title returned by `shopware_code_actions`, is
-restricted to workspace edit targets, writes the affected files, and returns a
-unified diff.
+The server advertises diagnostics, code actions, hover, definitions,
+references, and workspace-symbol search. It also exposes the production
+Shopware/Symfony scaffold generators through `shopware_scaffold_catalog` and
+`shopware_scaffold`. A scaffold call previews a unified diff by default; pass
+`write: true` to create its validated files. The typed DAL entity workflow is
+available through `shopware_entity_schema_bootstrap`, `_search`, `_load`,
+`_preview`, `_apply`, and `_reconcile`. Apply requires the exact preview
+revision, and destructive migrations additionally require
+`allowDestructive: true`.
+
+Indexing is lazy on the first analysis or scaffold call and the resulting
+workspace session is reused. Tool paths may be absolute or workspace-relative;
+positions and returned ranges are one-based. Every returned workspace edit is
+validated against the workspace root. Read and preview tools never modify the
+workspace. Applying a code action requires an exact title returned by
+`shopware_code_actions`, writes the affected files, and returns a unified diff.
 
 The bundled VS Code extension registers this server automatically with VS
 Code's native MCP provider API for every enabled workspace folder; manual JSON
 configuration is only needed for other MCP clients. Set
-`shopwareLSP.mcp.enabled` to `false` to opt a workspace folder out.
+`shopwareLSP.mcp.enabled` to `false` to opt a workspace folder out. Individual
+tools can be disabled locally with `shopwareLSP.mcp.tools`, or for every client
+through the committed `mcp.tools` project configuration. Tool keys are the
+exact public names shown by MCP `tools/list`; unknown names are rejected.
 
 ## Features
 
@@ -1437,6 +1447,12 @@ flags such as `check -severity` and `check -fail-on` take final precedence.
   "features": {
     "codeLens": false
   },
+  "mcp": {
+    "tools": {
+      "shopware_apply_code_action": false,
+      "shopware_entity_schema_apply": false
+    }
+  },
   "domains": {
     "symfony.doctrine": false
   },
@@ -1468,7 +1484,7 @@ flags such as `check -severity` and `check -fail-on` take final precedence.
 ```
 
 Unspecified values inherit the built-in defaults, which keep all current
-features, domains, indexing, and diagnostics enabled. Diagnostic rule values
+features, MCP tools, domains, indexing, and diagnostics enabled. Diagnostic rule values
 are `off`, `hint`, `information`, `warning`, or `error`. Disabling a complete
 inspection skips its analyzer; disabling every rule in an inspection has the
 same optimization. Domain dependencies cascade off, so disabling PHP also

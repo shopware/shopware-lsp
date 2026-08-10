@@ -29,6 +29,11 @@
       "additionalProperties": false,
       "properties": { "enabled": { "type": "boolean" } }
     },
+    "mcp": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "tools": { "$ref": "#/$defs/mcpToolMap" } }
+    },
     "domains": { "$ref": "#/$defs/domainMap" },
     "diagnostics": {
       "type": "object",
@@ -95,6 +100,27 @@
         "semanticTokens": { "type": "boolean" }, "codeActions": { "type": "boolean" },
         "workspaceSymbols": { "type": "boolean" }, "fileRename": { "type": "boolean" },
         "commands": { "type": "boolean" }
+      }
+    },
+    "mcpToolMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "shopware_diagnostics": { "type": "boolean" },
+        "shopware_code_actions": { "type": "boolean" },
+        "shopware_apply_code_action": { "type": "boolean" },
+        "shopware_hover": { "type": "boolean" },
+        "shopware_definition": { "type": "boolean" },
+        "shopware_references": { "type": "boolean" },
+        "shopware_workspace_symbols": { "type": "boolean" },
+        "shopware_scaffold_catalog": { "type": "boolean" },
+        "shopware_scaffold": { "type": "boolean" },
+        "shopware_entity_schema_bootstrap": { "type": "boolean" },
+        "shopware_entity_schema_search": { "type": "boolean" },
+        "shopware_entity_schema_load": { "type": "boolean" },
+        "shopware_entity_schema_preview": { "type": "boolean" },
+        "shopware_entity_schema_apply": { "type": "boolean" },
+        "shopware_entity_schema_reconcile": { "type": "boolean" }
       }
     },
     "domainMap": {

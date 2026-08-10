@@ -19,6 +19,7 @@ export interface PartialConfiguration {
   shopware?: {targetVersion?: string};
   features?: Record<string, boolean>;
   indexing?: {enabled?: boolean};
+  mcp?: {tools?: Record<string, boolean>};
   domains?: Record<string, boolean>;
   diagnostics?: {
     enabled?: boolean;
@@ -57,6 +58,7 @@ interface InspectionEntry {
 interface EffectiveConfiguration {
   features: Record<string, boolean>;
   indexing: {enabled: boolean};
+  mcp?: {tools: Record<string, boolean>};
   domains: Record<string, boolean>;
   diagnostics: {
     enabled: boolean;
@@ -72,6 +74,7 @@ export interface ConfigurationCatalog {
   path: string;
   effective: EffectiveConfiguration;
   features: CatalogEntry[];
+  mcpTools?: CatalogEntry[];
   domains: CatalogEntry[];
   inspections: InspectionEntry[];
   error?: string;
@@ -86,7 +89,7 @@ export interface ReloadResult {
   errors?: ConfigurationIssue[];
 }
 
-type ConfigurableKind = 'feature' | 'domain' | 'inspection' | 'rule' | 'diagnostics' | 'indexing';
+type ConfigurableKind = 'feature' | 'mcpTool' | 'domain' | 'inspection' | 'rule' | 'diagnostics' | 'indexing';
 
 interface ConfigurableItem extends vscode.QuickPickItem {
   configKind: ConfigurableKind;
@@ -114,6 +117,8 @@ export function readEditorConfiguration(resource?: vscode.Uri): PartialConfigura
   if (domains !== undefined) result.domains = domains;
   const indexing = explicitValue<boolean>(configuration, 'indexing.enabled');
   if (indexing !== undefined) result.indexing = {enabled: indexing};
+  const mcpTools = explicitValue<Record<string, boolean>>(configuration, 'mcp.tools');
+  if (mcpTools !== undefined) result.mcp = {tools: mcpTools};
 
   const diagnosticsEnabled = explicitValue<boolean>(configuration, 'diagnostics.enabled');
   const inspections = explicitValue<Record<string, boolean>>(configuration, 'diagnostics.inspections');
@@ -238,7 +243,7 @@ async function showConfigurationPicker(client: LanguageClient): Promise<void> {
   const items = configurableItems(catalog);
   const selected = await vscode.window.showQuickPick(items, {
     title: 'Shopware Language Server Configuration',
-    placeHolder: 'Search features, domains, inspections, and diagnostic rules',
+    placeHolder: 'Search features, MCP tools, domains, inspections, and diagnostic rules',
     matchOnDescription: true,
     matchOnDetail: true,
   });
@@ -277,6 +282,15 @@ function configurableItems(catalog: ConfigurationCatalog): ConfigurableItem[] {
       configKind: 'feature', id: feature.id, label: feature.label,
       description: enabled ? 'Enabled' : 'Disabled',
       detail: `Feature · ${feature.id} · ${configurationOrigin(catalog, `features.${feature.id}`)}`,
+      value: enabled,
+    });
+  }
+  for (const tool of catalog.mcpTools ?? []) {
+    const enabled = catalog.effective.mcp?.tools[tool.id] !== false;
+    result.push({
+      configKind: 'mcpTool', id: tool.id, label: `MCP: ${tool.label}`,
+      description: enabled ? 'Enabled' : 'Disabled',
+      detail: `MCP tool · ${tool.id} · ${configurationOrigin(catalog, `mcp.tools.${tool.id}`)}`,
       value: enabled,
     });
   }
@@ -353,6 +367,7 @@ async function updateEditorSetting(
     return;
   }
   const key = item.configKind === 'feature' ? 'features' : item.configKind === 'domain' ? 'domains' :
+    item.configKind === 'mcpTool' ? 'mcp.tools' :
     item.configKind === 'inspection' ? 'diagnostics.inspections' : 'diagnostics.rules';
   const current = {...(explicitValue<Record<string, boolean | Severity>>(configuration, key) || {})};
   if (value === null) delete current[item.id];
@@ -377,6 +392,7 @@ async function updateProjectConfiguration(
     if (!(error instanceof vscode.FileSystemError && error.code === 'FileNotFound')) throw error;
   }
   const path = item.configKind === 'feature' ? ['features', item.id] :
+    item.configKind === 'mcpTool' ? ['mcp', 'tools', item.id] :
     item.configKind === 'domain' ? ['domains', item.id] :
     item.configKind === 'inspection' ? ['diagnostics', 'inspections', item.id] :
     item.configKind === 'rule' ? ['diagnostics', 'rules', item.id] : item.id.split('.');
