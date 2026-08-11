@@ -2,6 +2,7 @@ package scaffold
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -50,6 +51,7 @@ func TestEntitySchemaCreatePreviewAndApply(t *testing.T) {
 	preview := value.(EntitySchemaPreviewResponse)
 	require.Empty(t, preview.Issues)
 	require.NotEmpty(t, preview.Revision)
+	require.Contains(t, preview.Revision, ":")
 	require.NotEmpty(t, preview.SnapshotID)
 	require.Positive(t, preview.MigrationTimestamp)
 	require.GreaterOrEqual(t, len(preview.Files), 7) // bundle, service, migration and committed snapshots
@@ -69,13 +71,101 @@ func TestEntitySchemaCreatePreviewAndApply(t *testing.T) {
 	require.NotEmpty(t, serviceFile)
 	require.Equal(t, 2, snapshotFiles)
 
-	previewRequest.Spec.MigrationTimestamp = preview.MigrationTimestamp
 	applyRaw := rawJSON(t, EntitySchemaApplyRequest{EntitySchemaPreviewRequest: previewRequest, Revision: preview.Revision})
 	value, err = provider.entitySchemaApply(context.Background(), &applyRaw)
 	require.NoError(t, err)
 	apply := value.(EntitySchemaApplyResponse)
 	require.NotNil(t, apply.Edit)
 	require.NotEmpty(t, apply.Edit.DocumentChanges)
+}
+
+func TestEntitySchemaBootstrapUsesComposerSourceRootForPluginRoot(t *testing.T) {
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "src")
+	require.NoError(t, os.MkdirAll(sourceRoot, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "composer.json"), []byte(`{
+  "name":"acme/example","type":"shopware-platform-plugin",
+  "autoload":{"psr-4":{"Acme\\Example\\":"src/"}},
+  "extra":{"shopware-plugin-class":"Acme\\Example\\Plugin"}
+}`), 0o644))
+
+	provider := NewProvider(root, nil, nil)
+	bootstrapRaw := rawJSON(t, EntitySchemaBootstrapRequest{DirectoryURI: uriutil.FileURI(root)})
+	value, err := provider.entitySchemaBootstrap(context.Background(), &bootstrapRaw)
+	require.NoError(t, err)
+	bootstrap := value.(EntitySchemaBootstrapResponse)
+	require.Equal(t, uriutil.FileURI(sourceRoot), bootstrap.Spec.DirectoryURI)
+	require.Equal(t, `Acme\Example`, bootstrap.Spec.Namespace)
+	require.Equal(t, "Example", bootstrap.Spec.ClassName)
+
+	previewRaw := rawJSON(t, EntitySchemaPreviewRequest{Spec: bootstrap.Spec})
+	value, err = provider.entitySchemaPreview(context.Background(), &previewRaw)
+	require.NoError(t, err)
+	preview := value.(EntitySchemaPreviewResponse)
+	require.Empty(t, preview.Issues)
+	for _, file := range preview.Files {
+		path, pathErr := uriutil.Path(file.URI)
+		require.NoError(t, pathErr)
+		if strings.HasSuffix(path, "Definition.php") || strings.HasSuffix(path, "Entity.php") || strings.HasSuffix(path, "Collection.php") {
+			require.True(t, safePluginTarget(sourceRoot, path), path)
+		}
+	}
+}
+
+func TestEntitySchemaPreviewRejectsDirectoryOutsideComposerSourceRoot(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "src"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "composer.json"), []byte(`{
+  "name":"acme/example","type":"shopware-platform-plugin",
+  "autoload":{"psr-4":{"Acme\\Example\\":"src/"}},
+  "extra":{"shopware-plugin-class":"Acme\\Example\\Plugin"}
+}`), 0o644))
+	spec := entityschema.CompleteSpec(entityschema.EntitySpec{
+		Mode: "new", PluginRootURI: uriutil.FileURI(root), DirectoryURI: uriutil.FileURI(root),
+		Namespace: `Acme\Example`, ClassName: "Example", EntityName: "acme_example",
+		Fields: []entityschema.FieldSpec{{ID: "id", Kind: entityschema.FieldID, Editable: true}},
+	})
+	previewRaw := rawJSON(t, EntitySchemaPreviewRequest{Spec: spec})
+	_, err := NewProvider(root, nil, nil).entitySchemaPreview(context.Background(), &previewRaw)
+	require.ErrorContains(t, err, "outside the Composer PSR-4 source root")
+}
+
+func TestEntitySchemaRevisionCarriesGeneratedTimestamp(t *testing.T) {
+	hash := sha256.Sum256([]byte("entity preview"))
+	revision := entitySchemaRevision(1700000000, hash)
+
+	timestamp, ok := entitySchemaRevisionTimestamp(revision)
+	require.True(t, ok)
+	require.Equal(t, int64(1700000000), timestamp)
+	_, ok = entitySchemaRevisionTimestamp("stale")
+	require.False(t, ok)
+}
+
+func TestEntitySchemaDriftReturnsConcreteDiffAndRecoveryChoices(t *testing.T) {
+	spec := entityschema.CompleteSpec(entityschema.EntitySpec{
+		Mode: "new", Namespace: `Acme\Example`, ClassName: "Example", EntityName: "acme_example",
+		Fields: []entityschema.FieldSpec{{ID: "id", Kind: entityschema.FieldID, Editable: true}},
+	})
+	entity, err := entityschema.SchemaFromSpec(spec)
+	require.NoError(t, err)
+	committed := entityschema.EmptySchema()
+	committed.Entities[entity.Name] = entity
+	response := EntitySchemaPreviewResponse{}
+
+	history, err := reconcileEntitySchemaDrift(
+		entityschema.PluginContext{},
+		entityschema.Snapshot{ID: "leaf", Schema: committed},
+		spec,
+		"",
+		&response,
+		entitySchemaHistory{scanned: entityschema.EmptySchema()},
+	)
+	require.NoError(t, err)
+	require.True(t, history.stop)
+	require.True(t, response.Drift)
+	require.Len(t, response.Diff.RemovedEntities, 1)
+	require.Contains(t, response.DriftMessage, "driftDecision=adopt")
+	require.Contains(t, response.DriftMessage, "driftDecision=migrate")
 }
 
 func TestEntitySchemaProductionRoundTrip(t *testing.T) {

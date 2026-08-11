@@ -48,12 +48,12 @@ type scaffoldOutput struct {
 }
 
 type entitySchemaBootstrapInput struct {
-	Directory string `json:"directory" jsonschema:"workspace-relative or absolute directory inside a Shopware plugin"`
+	Directory string `json:"directory" jsonschema:"workspace-relative or absolute directory inside the target Shopware plugin; call this first for every create or edit entity request"`
 }
 
 type entitySchemaSearchInput struct {
-	Query string `json:"query,omitempty" jsonschema:"optional entity name or class query"`
-	Limit int    `json:"limit,omitempty" jsonschema:"maximum results; defaults to 50 and cannot exceed 200"`
+	Query string `json:"query,omitempty" jsonschema:"entity name or definition class query used to resolve relation targets after bootstrap"`
+	Limit int    `json:"limit,omitempty" jsonschema:"maximum relation targets; defaults to 50 and cannot exceed 200"`
 }
 
 type entitySchemaSearchOutput struct {
@@ -61,20 +61,58 @@ type entitySchemaSearchOutput struct {
 }
 
 type entitySchemaLoadInput struct {
-	DefinitionClass string `json:"definitionClass,omitempty"`
-	EntityName      string `json:"entityName,omitempty"`
-	Path            string `json:"path,omitempty" jsonschema:"workspace-relative or absolute entity definition file"`
+	DefinitionClass string `json:"definitionClass,omitempty" jsonschema:"existing indexed definition class to edit after bootstrapping its plugin"`
+	EntityName      string `json:"entityName,omitempty" jsonschema:"existing indexed technical entity name to edit"`
+	Path            string `json:"path,omitempty" jsonschema:"workspace-relative or absolute existing entity definition file to edit"`
 }
 
 type entitySchemaPreviewInput struct {
-	Spec          entityschema.EntitySpec `json:"spec"`
-	Decisions     []entityschema.Decision `json:"decisions,omitempty"`
-	DriftDecision string                  `json:"driftDecision,omitempty"`
+	Spec          entityschema.EntitySpec `json:"spec" jsonschema:"typed entity specification returned by bootstrap or load, modified for the requested fields and indexes"`
+	Decisions     []entityschema.Decision `json:"decisions,omitempty" jsonschema:"answers to rename questions returned by a previous preview"`
+	DriftDecision string                  `json:"driftDecision,omitempty" jsonschema:"adopt or migrate when preview reports manual schema drift"`
+}
+
+type entitySchemaPreviewFile struct {
+	Path      string `json:"path"`
+	Action    string `json:"action"`
+	Language  string `json:"language"`
+	SizeBytes int    `json:"sizeBytes"`
+}
+
+type entitySchemaDiffSummary struct {
+	CreatedEntities    []string                      `json:"createdEntities,omitempty"`
+	RemovedEntities    []string                      `json:"removedEntities,omitempty"`
+	AddedColumns       []string                      `json:"addedColumns,omitempty"`
+	RemovedColumns     []string                      `json:"removedColumns,omitempty"`
+	ChangedColumns     []string                      `json:"changedColumns,omitempty"`
+	RenameQuestions    []entityschema.RenameQuestion `json:"renameQuestions,omitempty"`
+	AddedIndexes       []string                      `json:"addedIndexes,omitempty"`
+	RemovedIndexes     []string                      `json:"removedIndexes,omitempty"`
+	AddedForeignKeys   []string                      `json:"addedForeignKeys,omitempty"`
+	RemovedForeignKeys []string                      `json:"removedForeignKeys,omitempty"`
+	ChangedPrimaryKeys []string                      `json:"changedPrimaryKeys,omitempty"`
+}
+
+type entitySchemaPreviewOutput struct {
+	Status                          string                         `json:"status"`
+	ReadyToApply                    bool                           `json:"readyToApply"`
+	NextAction                      string                         `json:"nextAction"`
+	Revision                        string                         `json:"revision,omitempty"`
+	Files                           []entitySchemaPreviewFile      `json:"files,omitempty"`
+	Issues                          []entityschema.ValidationIssue `json:"issues,omitempty"`
+	Diff                            entitySchemaDiffSummary        `json:"diff"`
+	Destructive                     bool                           `json:"destructive"`
+	RequiresDestructiveConfirmation bool                           `json:"requiresDestructiveConfirmation"`
+	Drift                           bool                           `json:"drift"`
+	DriftMessage                    string                         `json:"driftMessage,omitempty"`
+	SnapshotID                      string                         `json:"snapshotId,omitempty"`
+	PrimaryFile                     string                         `json:"primaryFile,omitempty"`
+	MigrationTimestamp              int64                          `json:"migrationTimestamp,omitempty"`
 }
 
 type entitySchemaApplyInput struct {
 	entitySchemaPreviewInput
-	Revision         string `json:"revision" jsonschema:"exact revision returned by shopware_entity_schema_preview"`
+	Revision         string `json:"revision" jsonschema:"exact opaque revision returned by shopware_entity_schema_preview; it carries the generated migration timestamp, so do not refresh either value"`
 	AllowDestructive bool   `json:"allowDestructive,omitempty" jsonschema:"explicitly permit destructive migration changes"`
 }
 
@@ -115,33 +153,33 @@ func registerMCPScaffoldTools(
 		Annotations: write,
 	}, runtime.scaffold)
 	addMCPTool(server, runtime, &mcp.Tool{
-		Name: "shopware_entity_schema_bootstrap", Title: "Bootstrap entity schema",
-		Description: "Load plugin context, defaults, snapshot history, field types, and relation targets for the DAL entity schema workflow.",
+		Name: "shopware_entity_schema_bootstrap", Title: "Start creating or editing a Shopware DAL entity",
+		Description: "Always call this first when the user asks to create, generate, or edit a Shopware DAL entity or entity definition. It returns the typed spec to modify, plugin paths, field types, snapshot state, and initial relation targets. Do not create entity PHP files manually.",
 		Annotations: readOnly,
 	}, runtime.entitySchemaBootstrap)
 	addMCPTool(server, runtime, &mcp.Tool{
-		Name: "shopware_entity_schema_search", Title: "Search entity schemas",
-		Description: "Search indexed DAL entity definitions for relation targets.",
+		Name: "shopware_entity_schema_search", Title: "Find Shopware DAL relation targets",
+		Description: "Use after entity-schema bootstrap when a requested association needs an indexed target definition, entity name, fields, or collection class. Feed the selected target into the typed spec before previewing.",
 		Annotations: readOnly,
 	}, runtime.entitySchemaSearch)
 	addMCPTool(server, runtime, &mcp.Tool{
-		Name: "shopware_entity_schema_load", Title: "Load entity schema",
-		Description: "Import an existing indexed DAL entity definition into the typed entity schema model.",
+		Name: "shopware_entity_schema_load", Title: "Load an existing Shopware DAL entity for editing",
+		Description: "Use after bootstrapping the plugin when the user asks to edit an existing DAL entity. Import the indexed definition into the typed spec, modify that spec, and send it to entity-schema preview.",
 		Annotations: readOnly,
 	}, runtime.entitySchemaLoad)
 	addMCPTool(server, runtime, &mcp.Tool{
-		Name: "shopware_entity_schema_preview", Title: "Preview entity schema",
-		Description: "Validate a typed DAL entity specification and preview PHP, service, migration, and committed snapshot changes without writing files.",
+		Name: "shopware_entity_schema_preview", Title: "Validate and preview a Shopware DAL entity",
+		Description: "Required after bootstrap/load and before apply. Validate the modified typed spec and return a compact, self-contained summary of all PHP, services.yaml, migration, and committed snapshot changes without writing. Generated file bodies are intentionally omitted to keep the MCP result inline; do not search temporary VS Code payloads. Resolve every returned issue or rename/drift question and preview again. When status=ready, call apply once with the same spec and exact opaque revision without rerunning preview.",
 		Annotations: readOnly,
 	}, runtime.entitySchemaPreview)
 	addMCPTool(server, runtime, &mcp.Tool{
-		Name: "shopware_entity_schema_apply", Title: "Apply entity schema",
-		Description: "Apply the exact revision returned by the entity schema preview. Destructive changes require allowDestructive=true.",
+		Name: "shopware_entity_schema_apply", Title: "Create or update the Shopware DAL entity",
+		Description: "Final entity workflow step: write the exact clean revision returned by entity-schema preview. Reuse the previewed spec and opaque revision without refreshing the generated migration timestamp. Use it when the user requested creation or editing; never reproduce the preview with manual file edits. Destructive changes require explicit user confirmation and allowDestructive=true.",
 		Annotations: destructiveWrite,
 	}, runtime.entitySchemaApply)
 	addMCPTool(server, runtime, &mcp.Tool{
-		Name: "shopware_entity_schema_reconcile", Title: "Reconcile entity schema history",
-		Description: "Create a merge snapshot for divergent committed entity-schema history.",
+		Name: "shopware_entity_schema_reconcile", Title: "Repair divergent entity-schema history",
+		Description: "Use only when bootstrap or preview reports divergent committed entity-schema snapshot leaves. Create a merge snapshot, then restart the bootstrap/preview/apply workflow.",
 		Annotations: write,
 	}, runtime.entitySchemaReconcile)
 }
@@ -369,20 +407,20 @@ func (runtime *mcpRuntime) entitySchemaPreview(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	input entitySchemaPreviewInput,
-) (*mcp.CallToolResult, scaffold.EntitySchemaPreviewResponse, error) {
+) (*mcp.CallToolResult, entitySchemaPreviewOutput, error) {
 	request, err := runtime.entitySchemaPreviewRequest(input)
 	if err != nil {
-		return nil, scaffold.EntitySchemaPreviewResponse{}, err
+		return nil, entitySchemaPreviewOutput{}, err
 	}
 	output, err := withMCPSession(ctx, runtime, func(session *cliSession) (scaffold.EntitySchemaPreviewResponse, error) {
 		return callMCPCommand[scaffold.EntitySchemaPreviewRequest, scaffold.EntitySchemaPreviewResponse](
 			ctx, session, scaffold.EntitySchemaPreviewCommand, request,
 		)
 	})
-	if err == nil {
-		runtime.normalizeEntityPreviewOutput(&output)
+	if err != nil {
+		return nil, entitySchemaPreviewOutput{}, err
 	}
-	return nil, output, err
+	return nil, runtime.entitySchemaPreviewOutput(output), nil
 }
 
 func (runtime *mcpRuntime) entitySchemaApply(
@@ -531,16 +569,90 @@ func (runtime *mcpRuntime) normalizeEntitySpecOutput(spec *entityschema.EntitySp
 	}
 }
 
-func (runtime *mcpRuntime) normalizeEntityPreviewOutput(
-	output *scaffold.EntitySchemaPreviewResponse,
-) {
-	if output == nil {
-		return
+func (runtime *mcpRuntime) entitySchemaPreviewOutput(
+	preview scaffold.EntitySchemaPreviewResponse,
+) entitySchemaPreviewOutput {
+	output := entitySchemaPreviewOutput{
+		Revision: preview.Revision, Issues: preview.Issues,
+		Diff:                            compactEntitySchemaDiff(preview.Diff),
+		Destructive:                     preview.Destructive,
+		RequiresDestructiveConfirmation: preview.Destructive,
+		Drift:                           preview.Drift, DriftMessage: preview.DriftMessage,
+		SnapshotID:         preview.SnapshotID,
+		MigrationTimestamp: preview.MigrationTimestamp,
 	}
-	for index := range output.Files {
-		output.Files[index].URI = runtime.outputURI(output.Files[index].URI)
+	for _, file := range preview.Files {
+		output.Files = append(output.Files, entitySchemaPreviewFile{
+			Path: runtime.outputURI(file.URI), Action: file.Action,
+			Language: file.Language, SizeBytes: len(file.After),
+		})
 	}
-	if output.PrimaryFileURI != "" {
-		output.PrimaryFileURI = runtime.outputURI(output.PrimaryFileURI)
+	if preview.PrimaryFileURI != "" {
+		output.PrimaryFile = runtime.outputURI(preview.PrimaryFileURI)
 	}
+	switch {
+	case len(preview.Issues) != 0:
+		output.Status = "needs-input"
+		output.NextAction = "Resolve every reported issue or rename question, then call shopware_entity_schema_preview again. Do not apply this result."
+	case preview.Drift:
+		output.Status = "needs-input"
+		output.NextAction = "Choose driftDecision=adopt or driftDecision=migrate as described, then call shopware_entity_schema_preview again. Do not apply this result."
+	case preview.Revision == "":
+		output.Status = "blocked"
+		output.NextAction = "The preview did not produce an applicable revision. Resolve the reported state and preview again."
+	case preview.Destructive:
+		output.Status = "requires-destructive-confirmation"
+		output.ReadyToApply = true
+		output.NextAction = "Obtain explicit user confirmation, then call shopware_entity_schema_apply once with the unchanged spec, this exact revision, and allowDestructive=true. Do not preview again or inspect temporary payload files."
+	default:
+		output.Status = "ready"
+		output.ReadyToApply = true
+		output.NextAction = "Call shopware_entity_schema_apply once with the unchanged spec and this exact revision. Do not preview again or inspect temporary payload files."
+	}
+	return output
+}
+
+func compactEntitySchemaDiff(diff entityschema.SchemaDiff) entitySchemaDiffSummary {
+	result := entitySchemaDiffSummary{RenameQuestions: diff.RenameQuestions}
+	for _, entity := range diff.CreatedEntities {
+		result.CreatedEntities = append(result.CreatedEntities, entity.Name)
+	}
+	for _, entity := range diff.RemovedEntities {
+		result.RemovedEntities = append(result.RemovedEntities, entity.Name)
+	}
+	for _, change := range diff.AddedColumns {
+		if change.After != nil {
+			result.AddedColumns = append(result.AddedColumns, change.Entity+"."+change.After.Name)
+		}
+	}
+	for _, change := range diff.RemovedColumns {
+		if change.Before != nil {
+			result.RemovedColumns = append(result.RemovedColumns, change.Entity+"."+change.Before.Name)
+		}
+	}
+	for _, change := range diff.ChangedColumns {
+		name := ""
+		if change.After != nil {
+			name = change.After.Name
+		} else if change.Before != nil {
+			name = change.Before.Name
+		}
+		result.ChangedColumns = append(result.ChangedColumns, change.Entity+"."+name)
+	}
+	for _, change := range diff.AddedIndexes {
+		result.AddedIndexes = append(result.AddedIndexes, change.Entity+"."+change.Index.Name)
+	}
+	for _, change := range diff.RemovedIndexes {
+		result.RemovedIndexes = append(result.RemovedIndexes, change.Entity+"."+change.Index.Name)
+	}
+	for _, change := range diff.AddedForeignKeys {
+		result.AddedForeignKeys = append(result.AddedForeignKeys, change.Entity+"."+change.ForeignKey.Name)
+	}
+	for _, change := range diff.RemovedForeignKeys {
+		result.RemovedForeignKeys = append(result.RemovedForeignKeys, change.Entity+"."+change.ForeignKey.Name)
+	}
+	for _, change := range diff.ChangedPrimaryKeys {
+		result.ChangedPrimaryKeys = append(result.ChangedPrimaryKeys, change.Entity)
+	}
+	return result
 }

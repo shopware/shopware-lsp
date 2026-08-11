@@ -45,9 +45,11 @@ func TestRenderEntityBundleAndMigrationUseOnlyUpdate(t *testing.T) {
 	}
 	require.Contains(t, definition, "new FkField('manufacturer_id', 'manufacturerId'")
 	require.Contains(t, definition, "addFlags(new SetNullOnDelete())")
+	require.Contains(t, definition, "new CreatedAtField()")
+	require.Contains(t, definition, "new UpdatedAtField()")
 	require.Contains(t, entity, "protected ?ProductManufacturerEntity $manufacturer = null;")
-	require.Contains(t, entity, `protected \DateTimeInterface $createdAt;`)
-	require.Contains(t, entity, `protected ?\DateTimeInterface $updatedAt = null;`)
+	require.NotContains(t, entity, "$createdAt")
+	require.NotContains(t, entity, "$updatedAt")
 
 	entitySchema, err := SchemaFromSpec(spec)
 	require.NoError(t, err)

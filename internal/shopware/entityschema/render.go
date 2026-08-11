@@ -410,14 +410,9 @@ func renderDefinitionField(field FieldSpec, imports *importTable) ([]string, err
 }
 
 func renderEntityField(field FieldSpec, imports *importTable) ([]string, []string, error) {
-	if field.Kind == FieldID || field.Kind == FieldVersion || field.Kind == FieldReferenceVersion || field.Kind == FieldLocked {
+	if field.Kind == FieldID || field.Kind == FieldVersion || field.Kind == FieldReferenceVersion ||
+		field.Kind == FieldCreatedAt || field.Kind == FieldUpdatedAt || field.Kind == FieldLocked {
 		return nil, nil, nil
-	}
-	if field.Kind == FieldCreatedAt {
-		return []string{`protected \DateTimeInterface $createdAt;`}, accessors("createdAt", `\DateTimeInterface`, false), nil
-	}
-	if field.Kind == FieldUpdatedAt {
-		return []string{`protected ?\DateTimeInterface $updatedAt = null;`}, accessors("updatedAt", `?\DateTimeInterface`, false), nil
 	}
 	if field.Kind == FieldManyToOne || field.Kind == FieldOneToOne {
 		fkType := "string"

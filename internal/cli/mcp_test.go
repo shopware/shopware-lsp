@@ -12,6 +12,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/lsp/scaffold"
 	"github.com/shopware/shopware-lsp/internal/projectconfig"
+	"github.com/shopware/shopware-lsp/internal/shopware/entityschema"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 	"github.com/stretchr/testify/require"
 )
@@ -21,8 +22,11 @@ func TestMCPServerAdvertisesAnalysisAndWriteTools(t *testing.T) {
 	session := connectMCPTestClient(t, root)
 	initializeResult := session.InitializeResult()
 	require.NotNil(t, initializeResult)
+	require.Contains(t, initializeResult.Instructions, "always run shopware_entity_schema_bootstrap")
+	require.Contains(t, initializeResult.Instructions, "shopware_entity_schema_preview and shopware_entity_schema_apply")
 	require.Contains(t, initializeResult.Instructions, "always use shopware_scaffold")
 	leadingInstructions := initializeResult.Instructions[:min(512, len(initializeResult.Instructions))]
+	require.Contains(t, leadingInstructions, "never handwrite entity PHP")
 	require.Contains(t, leadingInstructions, `kind="plugin"`)
 
 	tools, err := session.ListTools(context.Background(), nil)
@@ -70,6 +74,13 @@ func TestMCPServerAdvertisesAnalysisAndWriteTools(t *testing.T) {
 	require.Contains(t, byName["shopware_scaffold"].Title, "plugin")
 	require.Contains(t, byName["shopware_scaffold"].Description, "Always use")
 	require.Contains(t, byName["shopware_scaffold"].Description, "kind=plugin")
+	require.Contains(t, byName["shopware_entity_schema_bootstrap"].Description, "Always call this first")
+	require.Contains(t, byName["shopware_entity_schema_bootstrap"].Title, "creating or editing")
+	require.Contains(t, byName["shopware_entity_schema_search"].Description, "Use after entity-schema bootstrap")
+	require.Contains(t, byName["shopware_entity_schema_load"].Description, "edit an existing DAL entity")
+	require.Contains(t, byName["shopware_entity_schema_preview"].Description, "Required after bootstrap/load")
+	require.Contains(t, byName["shopware_entity_schema_apply"].Description, "never reproduce the preview")
+	require.Contains(t, byName["shopware_entity_schema_apply"].Description, "without refreshing")
 	require.Contains(t, outputSchemaProperties(t, byName["shopware_entity_schema_bootstrap"]), "spec")
 	require.Contains(t, outputSchemaProperties(t, byName["shopware_entity_schema_preview"]), "revision")
 	require.Contains(t, outputSchemaProperties(t, byName["shopware_entity_schema_apply"]), "diff")
@@ -228,14 +239,21 @@ func TestMCPEntitySchemaBootstrapPreviewAndApply(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.False(t, previewResult.IsError, toolResultText(previewResult))
-	var preview scaffold.EntitySchemaPreviewResponse
+	var preview entitySchemaPreviewOutput
 	decodeMCPStructuredContent(t, previewResult, &preview)
 	require.NotEmpty(t, preview.Revision)
 	require.Empty(t, preview.Issues)
 	require.NotEmpty(t, preview.Files)
 	require.NotZero(t, preview.MigrationTimestamp)
+	require.Contains(t, preview.Revision, ":")
+	require.Equal(t, "ready", preview.Status)
+	require.True(t, preview.ReadyToApply)
+	require.Contains(t, preview.NextAction, "Do not preview again")
+	previewJSON, err := json.Marshal(preview)
+	require.NoError(t, err)
+	require.Less(t, len(previewJSON), 8_000)
+	require.NotContains(t, string(previewJSON), `"after"`)
 
-	bootstrap.Spec.MigrationTimestamp = preview.MigrationTimestamp
 	applyResult, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name: "shopware_entity_schema_apply",
 		Arguments: map[string]any{
@@ -250,6 +268,29 @@ func TestMCPEntitySchemaBootstrapPreviewAndApply(t *testing.T) {
 	require.NotEmpty(t, applied.SnapshotID)
 	require.Contains(t, applied.Files, "custom/plugins/Example/src/Content/Example/ExampleDefinition.php")
 	require.FileExists(t, filepath.Join(directory, "ExampleDefinition.php"))
+
+	loadResult, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "shopware_entity_schema_load",
+		Arguments: map[string]any{
+			"path": "custom/plugins/Example/src/Content/Example/ExampleDefinition.php",
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, loadResult.IsError, toolResultText(loadResult))
+	var loaded entityschema.EntitySpec
+	decodeMCPStructuredContent(t, loadResult, &loaded)
+	require.Equal(t, "edit", loaded.Mode)
+
+	roundTripResult, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "shopware_entity_schema_preview",
+		Arguments: map[string]any{"spec": loaded},
+	})
+	require.NoError(t, err)
+	require.False(t, roundTripResult.IsError, toolResultText(roundTripResult))
+	var roundTrip entitySchemaPreviewOutput
+	decodeMCPStructuredContent(t, roundTripResult, &roundTrip)
+	require.False(t, roundTrip.Drift, roundTrip.DriftMessage)
+	require.Empty(t, roundTrip.Issues)
 }
 
 func TestMCPDiagnosticsAndCodeActionUseProductionLSP(t *testing.T) {

@@ -163,6 +163,13 @@ func (p *Provider) entitySchemaBootstrap(ctx context.Context, raw *json.RawMessa
 	if err != nil {
 		return nil, err
 	}
+	if !safePluginTarget(plugin.SourceRoot, directory) {
+		directory = plugin.SourceRoot
+		plugin, err = entityschema.FindPluginContext(p.root, directory)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -383,7 +390,13 @@ func (p *Provider) entitySchemaApply(ctx context.Context, raw *json.RawMessage) 
 	if err := decodeScaffoldRequest(raw, &request); err != nil {
 		return nil, err
 	}
-	prepared, err := p.prepareEntitySchema(ctx, request.EntitySchemaPreviewRequest)
+	previewRequest := request.EntitySchemaPreviewRequest
+	if previewRequest.Spec.MigrationTimestamp <= 0 {
+		if timestamp, ok := entitySchemaRevisionTimestamp(request.Revision); ok {
+			previewRequest.Spec.MigrationTimestamp = timestamp
+		}
+	}
+	prepared, err := p.prepareEntitySchema(ctx, previewRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -433,6 +446,13 @@ func (p *Provider) prepareEntitySchema(ctx context.Context, request EntitySchema
 	plugin, err := entityschema.FindPluginContext(p.root, directory)
 	if err != nil {
 		return entitySchemaPrepared{}, err
+	}
+	if !safePluginTarget(plugin.SourceRoot, directory) {
+		return entitySchemaPrepared{}, fmt.Errorf(
+			"entity directory %s is outside the Composer PSR-4 source root %s",
+			directory,
+			plugin.SourceRoot,
+		)
 	}
 	if spec.PluginRootURI != "" && spec.PluginRootURI != uriutil.FileURI(plugin.Root) {
 		return entitySchemaPrepared{}, errors.New("entity plugin root changed since the designer was opened")
@@ -621,8 +641,24 @@ func (p *Provider) prepareEntitySchema(ctx context.Context, request EntitySchema
 		Files   []EntitySchemaFilePreview
 	}{revisionRequest, response.Files})
 	hash := sha256.Sum256(revisionContent)
-	response.Revision = hex.EncodeToString(hash[:])
+	response.Revision = entitySchemaRevision(spec.MigrationTimestamp, hash)
 	return entitySchemaPrepared{response: response, files: pending}, nil
+}
+
+func entitySchemaRevision(timestamp int64, hash [sha256.Size]byte) string {
+	return strconv.FormatInt(timestamp, 10) + ":" + hex.EncodeToString(hash[:])
+}
+
+func entitySchemaRevisionTimestamp(revision string) (int64, bool) {
+	timestampText, digest, found := strings.Cut(revision, ":")
+	if !found || len(digest) != sha256.Size*2 {
+		return 0, false
+	}
+	if _, err := hex.DecodeString(digest); err != nil {
+		return 0, false
+	}
+	timestamp, err := strconv.ParseInt(timestampText, 10, 64)
+	return timestamp, err == nil && timestamp > 0
 }
 
 func prepareEntitySchemaHistory(
@@ -733,7 +769,8 @@ func reconcileEntitySchemaDrift(
 		return history, nil
 	}
 	response.Drift = true
-	response.DriftMessage = "Entity definitions differ from the latest committed snapshot. Choose whether to adopt the current code as a baseline or generate migration SQL for it."
+	response.Diff = entityschema.DiffSchemas(history.previous, history.scanned)
+	response.DriftMessage = "Entity definitions differ from the latest committed schema snapshot. Review the returned diff, then preview again with driftDecision=adopt when the current PHP definitions are authoritative, or driftDecision=migrate when the committed snapshot is authoritative and the code changes need migration SQL."
 	switch driftDecision {
 	case "adopt":
 		return adoptEntitySchemaDrift(plugin, leaf, spec, history)

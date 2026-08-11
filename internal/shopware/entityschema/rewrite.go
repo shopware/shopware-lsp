@@ -164,7 +164,8 @@ func managedEntityMembers(spec EntitySpec) (map[string]struct{}, map[string]stru
 	properties := make(map[string]struct{})
 	methods := make(map[string]struct{})
 	for _, field := range spec.Fields {
-		if field.Kind == FieldID || field.Kind == FieldVersion || field.Kind == FieldReferenceVersion || field.Kind == FieldLocked {
+		if field.Kind == FieldID || field.Kind == FieldVersion || field.Kind == FieldReferenceVersion ||
+			field.Kind == FieldCreatedAt || field.Kind == FieldUpdatedAt || field.Kind == FieldLocked {
 			continue
 		}
 		names := []string{field.PropertyName}
