@@ -45,7 +45,7 @@ func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 		}
 		actions = append(actions, provider.GetCodeActions(ctx, request)...)
 	}
-	return actions
+	return s.filterCodeActionsForClient(actions)
 }
 
 func (s *Server) inspectionCodeActions(
@@ -171,7 +171,7 @@ func (s *Server) resolveCodeAction(
 	action.Kind = presentation.Kind
 	action.IsPreferred = presentation.Preferred
 	s.populateInspectionEdit(ctx, &action, fix, fixContext)
-	return action
+	return s.filterResolvedCodeActionForClient(action)
 }
 
 func (s *Server) populateInspectionEdit(

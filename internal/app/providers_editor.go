@@ -18,12 +18,14 @@ func registerEditorProviders(server *lsp.Server, phpFeatures *phpsemantic.Provid
 			signature.NewAdminSignatureProvider(services.admin),
 		)
 	}
-	server.RegisterSignatureHelpProvider(phpFeatures)
-	server.RegisterRenameProvider(refactor.NewPHPTwigRenameProvider(
-		phpFeatures,
-		services.twig,
-		services.php,
-	))
+	if !server.FrameworkPresentation() {
+		server.RegisterSignatureHelpProvider(phpFeatures)
+		server.RegisterRenameProvider(refactor.NewPHPTwigRenameProvider(
+			phpFeatures,
+			services.twig,
+			services.php,
+		))
+	}
 	if server.DomainEnabled("administration") {
 		server.RegisterRenameProvider(
 			refactor.NewAdminRenameProvider(services.admin),
@@ -63,7 +65,9 @@ func registerEditorProviders(server *lsp.Server, phpFeatures *phpsemantic.Provid
 			lspsemantic.NewAdminMarkupProvider(services.admin),
 		)
 	}
-	server.RegisterSemanticTokensProvider(
-		lspsemantic.NewEmbeddedLanguageProvider(services.php),
-	)
+	if !server.FrameworkPresentation() {
+		server.RegisterSemanticTokensProvider(
+			lspsemantic.NewEmbeddedLanguageProvider(services.php),
+		)
+	}
 }

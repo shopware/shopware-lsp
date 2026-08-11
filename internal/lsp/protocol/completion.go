@@ -19,6 +19,11 @@ type InitializeParams struct {
 
 type ClientCapabilities struct {
 	TextDocument TextDocumentClientCapabilities `json:"textDocument,omitempty"`
+	Window       WindowClientCapabilities       `json:"window,omitempty"`
+}
+
+type WindowClientCapabilities struct {
+	WorkDoneProgress bool `json:"workDoneProgress,omitempty"`
 }
 
 type TextDocumentClientCapabilities struct {
@@ -41,6 +46,15 @@ type InitializationOptions struct {
 	Configuration           *projectconfig.Partial `json:"configuration,omitempty"`
 	AllowUnsupportedProject bool                   `json:"allowUnsupportedProject,omitempty"`
 	CLIMode                 bool                   `json:"cliMode,omitempty"`
+	ShopwareClient          *ShopwareClientOptions `json:"shopwareClient,omitempty"`
+}
+
+// ShopwareClientOptions negotiates optional integration behavior without
+// changing the default presentation used by legacy LSP clients.
+type ShopwareClientOptions struct {
+	ProtocolVersion     int      `json:"protocolVersion"`
+	PresentationProfile string   `json:"presentationProfile,omitempty"`
+	SupportedCommands   []string `json:"supportedCommands,omitempty"`
 }
 
 // WorkspaceFolder represents a workspace folder

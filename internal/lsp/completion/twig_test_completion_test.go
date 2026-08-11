@@ -75,6 +75,39 @@ class AppExtension extends \Twig\Extension\AbstractExtension
 	assert.Equal(t, "Deprecated Twig test", deprecated.Detail)
 }
 
+func TestTwigTestCompletionCanLeaveBuiltinsToHostIDE(t *testing.T) {
+	twigIndex, err := twig.NewTwigIndexer(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, twigIndex.Close()) })
+	require.NoError(t, twigIndex.Index(indexer.NewParsedFile(
+		"/project/src/AppExtension.php",
+		[]byte(`<?php
+class AppExtension extends \Twig\Extension\AbstractExtension
+{
+    public function getTests(): array
+    {
+        return [new \Twig\TwigTest('positive', $this->positive(...))];
+    }
+}`),
+	)))
+	provider := NewTwigCompletionProvider(
+		"/project",
+		twigIndex,
+		nil,
+		nil,
+	).WithoutBuiltinTwigCompletions()
+
+	items := twigTestCompletionItems(
+		t,
+		provider,
+		`{% if value is <caret> %}`,
+	)
+	labels := completionLabels(items)
+	assert.NotContains(t, labels, "defined")
+	assert.NotContains(t, labels, "same as")
+	assert.Contains(t, labels, "positive")
+}
+
 func TestTwigTestCompletionDoesNotLeakIntoOtherExpressions(t *testing.T) {
 	twigIndex, err := twig.NewTwigIndexer(t.TempDir())
 	require.NoError(t, err)

@@ -2,6 +2,35 @@
 
 This document lists the custom LSP commands and notifications provided by the Shopware Language Server. Each entry shows the method name, expected parameters and a short description of the action that is executed.
 
+For the versioned editor contract, framework-only presentation profile,
+client-side command catalog, scaffolding workflows, and a complete PhpStorm
+adoption guide, see [`docs/phpstorm-integration.md`](docs/phpstorm-integration.md).
+
+## Client integration
+
+Smart host IDEs can send `initializationOptions.shopwareClient` with protocol
+version `1`, presentation profile `framework`, and the exact editor-side
+commands they implement. Legacy clients that omit this object retain the
+existing `full` presentation.
+
+The initialize result reports the negotiated state at
+`capabilities.experimental.shopwareLSP`. Server-side commands are advertised
+through standard `executeCommandProvider` and can be called with
+`workspace/executeCommand`; direct custom requests remain supported.
+
+### `shopware/integration/catalog`
+
+* **Parameters:** none
+* **Action:** Returns the protocol version, every client-side command the
+  server may emit, and the authoritative Shopware/Symfony scaffold catalog.
+* **Returns:** `{ protocolVersion, clientCommands, scaffolds }`.
+
+### `shopware/commands`
+
+* **Parameters:** none
+* **Action:** Lists registered server-side `shopware/...` commands.
+* **Returns:** sorted command IDs.
+
 ## Commands
 
 ### `shopware/forceReindex`

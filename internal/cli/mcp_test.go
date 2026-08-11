@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/shopware/shopware-lsp/internal/integration"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/lsp/scaffold"
 	"github.com/shopware/shopware-lsp/internal/projectconfig"
@@ -524,7 +525,7 @@ func connectMCPTestClientWithConfiguration(
 	return clientSession
 }
 
-func scaffoldKindNames(kinds []mcpScaffoldKind) []string {
+func scaffoldKindNames(kinds []integration.ScaffoldDefinition) []string {
 	result := make([]string, 0, len(kinds))
 	for _, kind := range kinds {
 		result = append(result, kind.Family+":"+kind.Kind)

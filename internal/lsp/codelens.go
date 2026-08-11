@@ -25,7 +25,7 @@ func (s *Server) codeLens(ctx context.Context, params *protocol.CodeLensParams) 
 		lenses = append(lenses, providerLenses...)
 	}
 
-	return lenses, nil
+	return s.filterCodeLensesForClient(lenses), nil
 }
 
 // resolveCodeLens handles codeLens/resolve requests
@@ -37,6 +37,10 @@ func (s *Server) resolveCodeLens(ctx context.Context, codeLens *protocol.CodeLen
 			return nil, err
 		}
 		if resolved != nil {
+			if resolved.Command != nil &&
+				!s.supportsClientCommand(resolved.Command.Command) {
+				resolved.Command = nil
+			}
 			return resolved, nil
 		}
 	}

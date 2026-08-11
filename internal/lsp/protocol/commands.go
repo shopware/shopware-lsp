@@ -1,9 +1,11 @@
 package protocol
 
+import "encoding/json"
+
 // CommandRequest represents a custom command request
 type CommandRequest struct {
-	Command   string        `json:"command"`
-	Arguments []interface{} `json:"arguments"`
+	Command   string            `json:"command"`
+	Arguments []json.RawMessage `json:"arguments,omitempty"`
 }
 
 // RequestInputParams represents the parameters for a request input request

@@ -7,9 +7,11 @@ import (
 )
 
 func registerDefinitionProviders(server *lsp.Server, root string, phpFeatures *phpsemantic.Provider, services workspaceServices) {
-	server.RegisterDefinitionProvider(phpFeatures)
-	server.RegisterImplementationProvider(phpFeatures)
-	server.RegisterTypeHierarchyProvider(phpFeatures)
+	if !server.FrameworkPresentation() {
+		server.RegisterDefinitionProvider(phpFeatures)
+		server.RegisterImplementationProvider(phpFeatures)
+		server.RegisterTypeHierarchyProvider(phpFeatures)
+	}
 	server.RegisterDefinitionProvider(
 		definition.NewContainerConstantDefinitionProvider(services.php),
 	)

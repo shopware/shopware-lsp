@@ -260,6 +260,9 @@ func (s *Server) collectDiagnostics(ctx context.Context, document *TextDocument)
 		if ctx.Err() != nil {
 			break
 		}
+		if !s.inspectionPresentedToClient(inspection.definition.ID) {
+			continue
+		}
 		domain := inspectionDomain(inspection.definition.ID)
 		if domain != "" && !s.domainEnabled(domain) ||
 			!diagnosticInspectionEnabled(policy, inspection.definition.ID) ||

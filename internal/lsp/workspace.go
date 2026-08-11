@@ -64,6 +64,12 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 	}
 	s.rootPath = rootPath
 	s.initializationOptions = params.InitializationOptions
+	if err := s.configureClientIntegration(
+		params.InitializationOptions.ShopwareClient,
+	); err != nil {
+		return nil, err
+	}
+	s.workDoneProgress = params.Capabilities.Window.WorkDoneProgress
 	if s.projectDetectionRequired &&
 		!s.allowUnsupportedProject &&
 		!params.InitializationOptions.AllowUnsupportedProject {
@@ -82,7 +88,7 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 			s.inactiveProject = true
 			s.initialized = true
 			log.Printf("Shopware LSP inactive: %v", unsupportedErr)
-			return inactiveProjectInitializeResult(s.version), nil
+			return s.inactiveProjectInitializeResult(), nil
 		}
 	}
 	scopeLoad := make(chan configurationScopeLoad, 1)
@@ -144,92 +150,21 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 			"name":    "shopware-lsp",
 			"version": s.version,
 		},
-		"capabilities": map[string]interface{}{
-			"textDocumentSync": map[string]interface{}{
-				"openClose": true,
-				"change":    1,
-			},
-			"diagnosticProvider": map[string]interface{}{
-				"interFileDependencies": true,
-				"workspaceDiagnostics":  false,
-			},
-			"completionProvider": map[string]interface{}{
-				"triggerCharacters": s.collectTriggerCharacters(),
-			},
-			"definitionProvider":         true,
-			"implementationProvider":     true,
-			"typeHierarchyProvider":      true,
-			"callHierarchyProvider":      true,
-			"referencesProvider":         true,
-			"renameProvider":             true,
-			"workspaceSymbolProvider":    true,
-			"documentSymbolProvider":     true,
-			"documentHighlightProvider":  true,
-			"linkedEditingRangeProvider": true,
-			"foldingRangeProvider":       true,
-			"selectionRangeProvider":     true,
-			"colorProvider":              true,
-			"workspace": map[string]interface{}{
-				"fileOperations": protocol.FileOperationOptions{
-					WillRename: &protocol.FileOperationRegistrationOptions{
-						Filters: []protocol.FileOperationFilter{
-							{
-								Scheme: "file",
-								Pattern: protocol.FileOperationPattern{
-									Glob:    "**/*.twig",
-									Matches: "file",
-								},
-							},
-						},
-					},
-				},
-			},
-			"hoverProvider":     true,
-			"inlayHintProvider": true,
-			"documentLinkProvider": map[string]interface{}{
-				"resolveProvider": false,
-			},
-			"semanticTokensProvider": map[string]interface{}{
-				"legend": protocol.SemanticTokensLegend{
-					TokenTypes: append(
-						[]string(nil),
-						protocol.SemanticTokenTypes...,
-					),
-					TokenModifiers: append(
-						[]string(nil),
-						protocol.SemanticTokenModifiers...,
-					),
-				},
-				"full":  true,
-				"range": false,
-			},
-			"signatureHelpProvider": map[string]interface{}{
-				"triggerCharacters":   []string{"(", ","},
-				"retriggerCharacters": []string{","},
-			},
-			"codeLensProvider": map[string]interface{}{
-				"resolveProvider": true,
-			},
-			"codeActionProvider": map[string]interface{}{
-				"codeActionKinds": s.collectCodeActionKinds(),
-				"resolveProvider": s.codeActionResolveSupport,
-			},
-		},
+		"capabilities": s.serverCapabilities(),
 	}, nil
 }
 
-func inactiveProjectInitializeResult(version string) map[string]interface{} {
+func (s *Server) inactiveProjectInitializeResult() map[string]interface{} {
 	return map[string]interface{}{
 		"serverInfo": map[string]interface{}{
 			"name":    "shopware-lsp",
-			"version": version,
+			"version": s.version,
 		},
 		"capabilities": map[string]interface{}{
 			"experimental": map[string]interface{}{
-				"shopwareLSP": map[string]interface{}{
-					"active": false,
-					"reason": "unsupportedProject",
-				},
+				"shopwareLSP": s.negotiatedClientState(
+					false, "unsupportedProject",
+				),
 			},
 		},
 	}
@@ -256,7 +191,8 @@ func (s *Server) collectCodeActionKinds() []protocol.CodeActionKind {
 			unique[kind] = struct{}{}
 		}
 	}
-	if len(s.inspections.byID) != 0 {
+	if len(s.inspections.byID) != 0 &&
+		s.EffectiveConfiguration().Diagnostics.Enabled {
 		unique[protocol.CodeActionQuickFix] = struct{}{}
 	}
 	kinds := make([]protocol.CodeActionKind, 0, len(unique))

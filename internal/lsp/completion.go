@@ -23,6 +23,7 @@ func (s *Server) completion(ctx context.Context, params *protocol.CompletionPara
 		providerItems := provider.GetCompletions(ctx, request)
 		items = append(items, providerItems...)
 	}
+	s.filterCompletionCommandsForClient(items)
 
 	// Return the completion list
 	return &protocol.CompletionList{

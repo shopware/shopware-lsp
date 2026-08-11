@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -162,6 +163,20 @@ func TestInitializePublishesPHPStubExtensionOptionsToWorkspace(t *testing.T) {
 
 func TestInitializeAdvertisesTwigFileRenameEdits(t *testing.T) {
 	server := NewServer(nil, "", "test")
+	server.fileRenameProviders = []FileRenameProvider{nil}
+	server.workspaceSymbolProviders = []WorkspaceSymbolProvider{nil}
+	server.documentSymbolProviders = []DocumentSymbolProvider{nil}
+	server.documentHighlightProviders = []DocumentHighlightProvider{nil}
+	server.linkedEditingProviders = []LinkedEditingRangeProvider{nil}
+	server.foldingRangeProviders = []FoldingRangeProvider{nil}
+	server.selectionRangeProviders = []SelectionRangeProvider{nil}
+	server.documentColorProviders = []DocumentColorProvider{nil}
+	server.inlayHintProviders = []InlayHintProvider{nil}
+	server.implementationProviders = []ImplementationProvider{nil}
+	server.typeHierarchyProviders = []TypeHierarchyProvider{nil}
+	server.callHierarchyProviders = []CallHierarchyProvider{nil}
+	server.documentLinkProviders = []DocumentLinkProvider{nil}
+	server.semanticTokensProviders = []SemanticTokensProvider{nil}
 	result, err := server.initialize(
 		context.Background(),
 		&protocol.InitializeParams{RootURI: "file:///workspace"},
@@ -202,6 +217,89 @@ func TestInitializeAdvertisesTwigFileRenameEdits(t *testing.T) {
 	require.Empty(t, legend.TokenModifiers)
 	require.Equal(t, true, semanticTokens["full"])
 	require.Equal(t, false, semanticTokens["range"])
+}
+
+func TestInitializeOmitsCapabilitiesWithoutProviders(t *testing.T) {
+	server := NewServer(nil, "", "test")
+	result, err := server.initialize(
+		context.Background(),
+		&protocol.InitializeParams{RootURI: "file:///workspace"},
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, server.CloseAll()) })
+
+	payload := result.(map[string]interface{})
+	capabilities := payload["capabilities"].(map[string]interface{})
+	require.Contains(t, capabilities, "textDocumentSync")
+	require.Contains(t, capabilities, "experimental")
+	require.NotContains(t, capabilities, "definitionProvider")
+	require.NotContains(t, capabilities, "diagnosticProvider")
+	require.NotContains(t, capabilities, "workspace")
+}
+
+func TestInitializeNegotiatesFrameworkPresentation(t *testing.T) {
+	server := NewServer(nil, "", "test")
+	server.commandMap["shopware/test"] = func(
+		context.Context,
+		*json.RawMessage,
+	) (interface{}, error) {
+		return nil, nil
+	}
+	result, err := server.initialize(context.Background(), &protocol.InitializeParams{
+		RootURI: "file:///workspace",
+		InitializationOptions: protocol.InitializationOptions{
+			ShopwareClient: &protocol.ShopwareClientOptions{
+				ProtocolVersion:     ClientProtocolVersion,
+				PresentationProfile: string(PresentationProfileFramework),
+				SupportedCommands: []string{
+					"shopware.openReferences", "shopware.openReferences", " ",
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, server.CloseAll()) })
+	require.True(t, server.FrameworkPresentation())
+	require.True(t, server.supportsClientCommand("shopware.openReferences"))
+	require.False(t, server.supportsClientCommand("shopware.unsupported"))
+
+	payload := result.(map[string]interface{})
+	capabilities := payload["capabilities"].(map[string]interface{})
+	experimental := capabilities["experimental"].(map[string]interface{})
+	state := experimental["shopwareLSP"].(map[string]interface{})
+	require.Equal(t, ClientProtocolVersion, state["protocolVersion"])
+	require.Equal(t, "framework", state["presentationProfile"])
+	require.Equal(t, []string{"shopware.openReferences"}, state["supportedCommands"])
+	execute := capabilities["executeCommandProvider"].(map[string]interface{})
+	require.Equal(t, []string{"shopware/test"}, execute["commands"])
+}
+
+func TestInitializeRejectsUnsupportedClientContract(t *testing.T) {
+	for name, options := range map[string]*protocol.ShopwareClientOptions{
+		"version": {
+			ProtocolVersion: ClientProtocolVersion + 1,
+		},
+		"profile": {
+			ProtocolVersion:     ClientProtocolVersion,
+			PresentationProfile: "unknown",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := NewServer(nil, "", "test")
+			_, err := server.initialize(
+				context.Background(),
+				&protocol.InitializeParams{
+					RootURI: "file:///workspace",
+					InitializationOptions: protocol.InitializationOptions{
+						ShopwareClient: options,
+					},
+				},
+			)
+			require.Error(t, err)
+			require.False(t, server.initialized)
+			require.NoError(t, server.CloseAll())
+		})
+	}
 }
 
 func TestInitializeNegotiatesCodeActionResolution(t *testing.T) {

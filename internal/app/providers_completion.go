@@ -7,7 +7,9 @@ import (
 )
 
 func registerCompletionProviders(server *lsp.Server, root string, phpFeatures *phpsemantic.Provider, services workspaceServices) {
-	server.RegisterCompletionProvider(phpFeatures)
+	if !server.FrameworkPresentation() {
+		server.RegisterCompletionProvider(phpFeatures)
+	}
 	server.RegisterCompletionProvider(
 		completion.NewPHPAttributeCompletionProvider(services.php),
 	)
@@ -121,12 +123,16 @@ func registerCompletionProviders(server *lsp.Server, root string, phpFeatures *p
 			services.php,
 		),
 	)
-	server.RegisterCompletionProvider(completion.NewTwigCompletionProvider(
+	twigCompletion := completion.NewTwigCompletionProvider(
 		root,
 		services.twig,
 		services.extensions,
 		services.php,
-	))
+	)
+	if server.FrameworkPresentation() {
+		twigCompletion.WithoutBuiltinTwigCompletions()
+	}
+	server.RegisterCompletionProvider(twigCompletion)
 	server.RegisterCompletionProvider(
 		completion.NewControllerCompletionProvider(
 			services.php,

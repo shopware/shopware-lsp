@@ -41,6 +41,20 @@ func TestTwigOperatorCompletionIncludesLegacyModernAndAliases(
 	assert.Equal(t, "Custom Twig unary operator", unary.Detail)
 }
 
+func TestTwigOperatorCompletionCanLeaveBuiltinsToHostIDE(t *testing.T) {
+	provider := twigOperatorCompletionFixture(t).WithoutBuiltinTwigCompletions()
+	items := twigOperatorCompletionItems(
+		t,
+		provider,
+		`{% if value <caret> %}`,
+	)
+	labels := completionLabels(items)
+	assert.NotContains(t, labels, "or")
+	assert.NotContains(t, labels, "starts with")
+	assert.Contains(t, labels, "legacy-or")
+	assert.Contains(t, labels, "b-custom")
+}
+
 func TestTwigOperatorCompletionContextMatchesTwigIfOperands(t *testing.T) {
 	provider := twigOperatorCompletionFixture(t)
 	tests := []struct {

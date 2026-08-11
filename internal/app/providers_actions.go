@@ -6,6 +6,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/extension"
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/codeaction"
+	lspintegration "github.com/shopware/shopware-lsp/internal/lsp/integration"
 	"github.com/shopware/shopware-lsp/internal/lsp/scaffold"
 	"github.com/shopware/shopware-lsp/internal/snippet"
 	"github.com/shopware/shopware-lsp/internal/twig"
@@ -91,6 +92,7 @@ func registerActionAndCommandProviders(server *lsp.Server, root string, versioni
 	server.RegisterActionProvider(twigTranslationExtractor)
 
 	server.RegisterCommandProvider(snippet.NewSnippetCommandProvider(services.snippets, server))
+	server.RegisterCommandProvider(lspintegration.NewProvider())
 	server.RegisterCommandProvider(extension.NewExtensionCommandProvider(services.extensions))
 	server.RegisterCommandProvider(twig.NewTwigCommandProvider(root, services.extensions, versioning))
 	server.RegisterCommandProvider(symfonyGenerators)

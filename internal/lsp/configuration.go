@@ -708,6 +708,8 @@ func featureForMethod(method string) string {
 		return "workspaceSymbols"
 	case "workspace/willRenameFiles":
 		return "fileRename"
+	case "workspace/executeCommand":
+		return "commands"
 	default:
 		return ""
 	}

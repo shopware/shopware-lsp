@@ -534,6 +534,21 @@ func (catalog *WorkspaceSymbolCatalog) Query(
 	query string,
 	limit int,
 ) ([]WorkspaceSymbol, error) {
+	return catalog.QueryWithOptions(
+		ctx, query, limit, WorkspaceSymbolQueryOptions{},
+	)
+}
+
+type WorkspaceSymbolQueryOptions struct {
+	ExcludedDomains []string
+}
+
+func (catalog *WorkspaceSymbolCatalog) QueryWithOptions(
+	ctx context.Context,
+	query string,
+	limit int,
+	options WorkspaceSymbolQueryOptions,
+) ([]WorkspaceSymbol, error) {
 	if catalog == nil || catalog.db == nil || limit <= 0 {
 		return nil, nil
 	}
@@ -551,26 +566,40 @@ func (catalog *WorkspaceSymbolCatalog) Query(
 		rows *sql.Rows
 		err  error
 	)
+	domainPredicate, domainArguments := workspaceSymbolDomainExclusion(
+		options.ExcludedDomains,
+	)
 	if query == "" {
+		statement := baseSelect
+		if domainPredicate != "" {
+			statement += " WHERE " + domainPredicate
+		}
+		statement += " ORDER BY s.priority DESC, s.name LIMIT ?"
+		arguments := append(domainArguments, candidateLimit)
 		rows, err = catalog.db.QueryContext(
 			ctx,
-			baseSelect+" ORDER BY s.priority DESC, s.name LIMIT ?",
-			candidateLimit,
+			statement,
+			arguments...,
 		)
 	} else {
 		match := workspaceSymbolMatchQuery(query)
 		if match == "" {
 			return nil, nil
 		}
+		statement := baseSelect + `
+				JOIN workspace_symbols_fts f ON f.docid = s.id
+				WHERE workspace_symbols_fts MATCH ?`
+		arguments := []any{match}
+		if domainPredicate != "" {
+			statement += " AND " + domainPredicate
+			arguments = append(arguments, domainArguments...)
+		}
+		statement += " ORDER BY s.priority DESC, s.name LIMIT ?"
+		arguments = append(arguments, candidateLimit)
 		rows, err = catalog.db.QueryContext(
 			ctx,
-			baseSelect+`
-				JOIN workspace_symbols_fts f ON f.docid = s.id
-				WHERE workspace_symbols_fts MATCH ?
-				ORDER BY s.priority DESC, s.name
-				LIMIT ?`,
-			match,
-			candidateLimit,
+			statement,
+			arguments...,
 		)
 	}
 	if err != nil {
@@ -636,6 +665,31 @@ func (catalog *WorkspaceSymbolCatalog) Query(
 		result = append(result, current.symbol)
 	}
 	return result, nil
+}
+
+func workspaceSymbolDomainExclusion(domains []string) (string, []any) {
+	unique := make(map[string]struct{}, len(domains))
+	for _, domain := range domains {
+		domain = strings.TrimSpace(domain)
+		if domain != "" {
+			unique[domain] = struct{}{}
+		}
+	}
+	if len(unique) == 0 {
+		return "", nil
+	}
+	ordered := make([]string, 0, len(unique))
+	for domain := range unique {
+		ordered = append(ordered, domain)
+	}
+	slices.Sort(ordered)
+	placeholders := make([]string, len(ordered))
+	arguments := make([]any, len(ordered))
+	for index, domain := range ordered {
+		placeholders[index] = "?"
+		arguments[index] = domain
+	}
+	return "s.domain NOT IN (" + strings.Join(placeholders, ",") + ")", arguments
 }
 
 func workspaceSymbolTextScore(query string, symbol WorkspaceSymbol) int {

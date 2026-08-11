@@ -98,6 +98,7 @@ func (s *Server) protocolMethodHandlers() map[string]rpcMethodHandler {
 		"shopware/forceReindex":             s.handleForceReindex,
 		"shopware/index/stats":              s.handleIndexStats,
 		"shopware/commands":                 s.handleCommands,
+		"workspace/executeCommand":          s.handleExecuteCommand,
 		"workspace/willRenameFiles":         rpcResultHandler(s.willRenameFiles),
 		"workspace/symbol":                  rpcResultHandler(s.workspaceSymbols),
 		"shutdown":                          s.handleShutdown,
@@ -415,6 +416,34 @@ func (s *Server) handleCommands(
 	}
 	sort.Strings(commands)
 	return commands, nil
+}
+
+func (s *Server) handleExecuteCommand(
+	ctx context.Context,
+	request *jsonrpc2.Request,
+) (interface{}, error) {
+	params, err := decodeRPCParams[protocol.CommandRequest](request)
+	if err != nil {
+		return nil, err
+	}
+	command, found := s.commandMap[params.Command]
+	if !found {
+		return nil, &jsonrpc2.Error{
+			Code:    jsonrpc2.CodeMethodNotFound,
+			Message: "Unknown Shopware command: " + params.Command,
+		}
+	}
+	if len(params.Arguments) > 1 {
+		return nil, &jsonrpc2.Error{
+			Code:    jsonrpc2.CodeInvalidParams,
+			Message: "Shopware commands accept at most one JSON argument",
+		}
+	}
+	raw := json.RawMessage("{}")
+	if len(params.Arguments) == 1 {
+		raw = params.Arguments[0]
+	}
+	return command(ctx, &raw)
 }
 
 func (s *Server) handleShutdown(

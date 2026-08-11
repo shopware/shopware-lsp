@@ -8,7 +8,9 @@ import (
 )
 
 func registerHoverProviders(server *lsp.Server, root string, phpFeatures *phpsemantic.Provider, services workspaceServices) *twig.VersioningService {
-	server.RegisterHoverProvider(phpFeatures)
+	if !server.FrameworkPresentation() {
+		server.RegisterHoverProvider(phpFeatures)
+	}
 	server.RegisterHoverProvider(
 		hover.NewHttpClientHoverProvider(services.php),
 	)

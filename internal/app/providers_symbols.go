@@ -24,12 +24,19 @@ func registerSymbolAndDocumentProviders(server *lsp.Server, services workspaceSe
 		services.php,
 	)
 	dalSymbols := symbol.NewDALWorkspaceSymbolProvider(services.dal)
+	catalogProvider := func(fallbacks ...symbol.WorkspaceSymbolProvider) *symbol.CatalogWorkspaceSymbolProvider {
+		provider := symbol.NewCatalogWorkspaceSymbolProvider(
+			services.symbols, fallbacks...,
+		)
+		if server.FrameworkPresentation() {
+			provider.ExcludeDomains("php")
+		}
+		return provider
+	}
 	if server.DomainEnabled("administration") {
 		adminSymbols := symbol.NewAdminWorkspaceSymbolProvider(services.admin)
 		server.RegisterWorkspaceSymbolProvider(
-			symbol.NewCatalogWorkspaceSymbolProvider(
-				services.symbols, symfonySymbols, adminSymbols, dalSymbols,
-			),
+			catalogProvider(symfonySymbols, adminSymbols, dalSymbols),
 		)
 		server.RegisterDocumentSymbolProvider(
 			symbol.NewAdminDocumentSymbolProvider(services.admin),
@@ -47,12 +54,10 @@ func registerSymbolAndDocumentProviders(server *lsp.Server, services workspaceSe
 		server.RegisterSelectionRangeProvider(selection.NewAdminSelectionRangeProvider())
 	} else {
 		server.RegisterWorkspaceSymbolProvider(
-			symbol.NewCatalogWorkspaceSymbolProvider(
-				services.symbols, symfonySymbols, dalSymbols,
-			),
+			catalogProvider(symfonySymbols, dalSymbols),
 		)
 	}
-	if server.DomainEnabled("scss") {
+	if server.DomainEnabled("scss") && !server.FrameworkPresentation() {
 		server.RegisterDocumentColorProvider(color.NewAdminSCSSColorProvider())
 	}
 	server.RegisterDocumentLinkProvider(documentlink.NewRelatedProvider(

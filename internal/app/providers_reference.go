@@ -8,7 +8,9 @@ import (
 )
 
 func registerReferenceProviders(server *lsp.Server, phpFeatures *phpsemantic.Provider, services workspaceServices) {
-	server.RegisterReferencesProvider(phpFeatures)
+	if !server.FrameworkPresentation() {
+		server.RegisterReferencesProvider(phpFeatures)
+	}
 	server.RegisterReferencesProvider(reference.NewDoctrineReferenceProvider(
 		services.doctrine,
 		services.php,

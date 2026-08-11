@@ -2,6 +2,12 @@
 
 A Language Server Protocol (LSP) implementation for Shopware and Symfony development, providing IDE features across PHP, Twig, XML, YAML, JavaScript/TypeScript, SCSS, and JSON files.
 
+Editor authors can use the versioned integration contract and framework-only
+presentation profile documented in the
+[PhpStorm LSP integration guide](docs/phpstorm-integration.md). The profile
+keeps Shopware and Symfony intelligence in the server while leaving generic
+PHP presentation to the host IDE.
+
 ## Command-line interface
 
 Running `shopware-lsp` without a command keeps the editor-compatible behavior

@@ -25,10 +25,11 @@ import (
 )
 
 type TwigCompletionProvider struct {
-	projectRoot  string
-	twigIndexer  *twig.TwigIndexer
-	iconProvider *theme.IconProvider
-	phpIndex     *php.PHPIndex
+	projectRoot               string
+	twigIndexer               *twig.TwigIndexer
+	iconProvider              *theme.IconProvider
+	phpIndex                  *php.PHPIndex
+	includeBuiltinCompletions bool
 }
 
 func NewTwigCompletionProvider(
@@ -38,11 +39,19 @@ func NewTwigCompletionProvider(
 	phpIndex *php.PHPIndex,
 ) *TwigCompletionProvider {
 	return &TwigCompletionProvider{
-		projectRoot:  projectRoot,
-		twigIndexer:  twigIndexer,
-		iconProvider: theme.NewIconProvider(projectRoot, extensionIndexer),
-		phpIndex:     phpIndex,
+		projectRoot:               projectRoot,
+		twigIndexer:               twigIndexer,
+		iconProvider:              theme.NewIconProvider(projectRoot, extensionIndexer),
+		phpIndex:                  phpIndex,
+		includeBuiltinCompletions: true,
 	}
+}
+
+// WithoutBuiltinTwigCompletions keeps project and framework-aware Twig
+// completions while leaving built-in language suggestions to the host IDE.
+func (p *TwigCompletionProvider) WithoutBuiltinTwigCompletions() *TwigCompletionProvider {
+	p.includeBuiltinCompletions = false
+	return p
 }
 
 func (p *TwigCompletionProvider) GetCompletions(ctx context.Context, params *lsp.CompletionRequest) []protocol.CompletionItem {
@@ -272,11 +281,13 @@ func (p *TwigCompletionProvider) twigOperatorCompletions(
 	}
 
 	itemsByName := make(map[string]protocol.CompletionItem)
-	for _, name := range twigBuiltinOperators {
-		itemsByName[name] = protocol.CompletionItem{
-			Label:  name,
-			Kind:   int(protocol.OperatorCompletion),
-			Detail: "Built-in Twig operator",
+	if p.includeBuiltinCompletions {
+		for _, name := range twigBuiltinOperators {
+			itemsByName[name] = protocol.CompletionItem{
+				Label:  name,
+				Kind:   int(protocol.OperatorCompletion),
+				Detail: "Built-in Twig operator",
+			}
 		}
 	}
 	if p.twigIndexer != nil {

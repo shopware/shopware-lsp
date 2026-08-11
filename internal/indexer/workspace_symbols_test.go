@@ -96,6 +96,36 @@ func TestWorkspaceSymbolCatalogQueryAndPriority(t *testing.T) {
 	require.Equal(t, "SystemConfigService", results[0].Name)
 }
 
+func TestWorkspaceSymbolCatalogExcludesDomainsInSQLQuery(t *testing.T) {
+	store, err := NewStore(filepath.Join(t.TempDir(), "indexes.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+	catalog, err := NewWorkspaceSymbolCatalog(store)
+	require.NoError(t, err)
+	require.NoError(t, catalog.ReplaceFiles(
+		context.Background(),
+		[]WorkspaceSymbolDocument{{
+			Path: "/project/Symbols.php",
+			Symbols: []WorkspaceSymbol{
+				{Name: "ProductRepository", Domain: "php", Kind: WorkspaceSymbolClass},
+				{Name: "ProductRepository", Domain: "symfony.service", Kind: WorkspaceSymbolObject},
+			},
+		}},
+	))
+
+	for _, query := range []string{"", "ProductRepository"} {
+		results, queryErr := catalog.QueryWithOptions(
+			context.Background(), query, 20,
+			WorkspaceSymbolQueryOptions{
+				ExcludedDomains: []string{"php", "php", " "},
+			},
+		)
+		require.NoError(t, queryErr)
+		require.Len(t, results, 1)
+		require.Equal(t, "symfony.service", results[0].Domain)
+	}
+}
+
 func TestWorkspaceSymbolCatalogReplaceDeleteAndReadOnly(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "indexes.db")

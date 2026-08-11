@@ -9,7 +9,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
-type workspaceSymbolProvider interface {
+type WorkspaceSymbolProvider interface {
 	WorkspaceSymbols(
 		ctx context.Context,
 		query string,
@@ -20,18 +20,28 @@ type workspaceSymbolProvider interface {
 // indexing completes. During a cold index it delegates to the existing live
 // providers, preserving workspace-symbol availability during startup.
 type CatalogWorkspaceSymbolProvider struct {
-	catalog   *indexer.WorkspaceSymbolCatalog
-	fallbacks []workspaceSymbolProvider
+	catalog         *indexer.WorkspaceSymbolCatalog
+	fallbacks       []WorkspaceSymbolProvider
+	excludedDomains []string
 }
 
 func NewCatalogWorkspaceSymbolProvider(
 	catalog *indexer.WorkspaceSymbolCatalog,
-	fallbacks ...workspaceSymbolProvider,
+	fallbacks ...WorkspaceSymbolProvider,
 ) *CatalogWorkspaceSymbolProvider {
 	return &CatalogWorkspaceSymbolProvider{
 		catalog:   catalog,
 		fallbacks: fallbacks,
 	}
+}
+
+// ExcludeDomains removes catalog domains at query time. Fallback providers
+// are already framework-specific and remain available during cold indexing.
+func (provider *CatalogWorkspaceSymbolProvider) ExcludeDomains(domains ...string) {
+	if provider == nil {
+		return
+	}
+	provider.excludedDomains = append([]string(nil), domains...)
 }
 
 func (provider *CatalogWorkspaceSymbolProvider) WorkspaceSymbols(
@@ -47,7 +57,14 @@ func (provider *CatalogWorkspaceSymbolProvider) WorkspaceSymbols(
 			return nil, err
 		}
 		if ready {
-			symbols, err := provider.catalog.Query(ctx, query, 500)
+			symbols, err := provider.catalog.QueryWithOptions(
+				ctx,
+				query,
+				500,
+				indexer.WorkspaceSymbolQueryOptions{
+					ExcludedDomains: provider.excludedDomains,
+				},
+			)
 			if err != nil {
 				return nil, err
 			}

@@ -31,5 +31,6 @@ func (s *Server) inlayHints(
 		}
 		result = append(result, hints...)
 	}
+	s.filterInlayHintCommandsForClient(result)
 	return result, nil
 }

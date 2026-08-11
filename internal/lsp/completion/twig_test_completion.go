@@ -49,13 +49,15 @@ func (p *TwigCompletionProvider) twigTestCompletions(
 	}
 	prefix := strings.ToLower(position.Name)
 	itemsByName := make(map[string]protocol.CompletionItem)
-	for _, name := range twigBuiltinTests {
-		if strings.HasPrefix(strings.ToLower(name), prefix) {
-			itemsByName[strings.ToLower(name)] = protocol.CompletionItem{
-				Label:      name,
-				InsertText: name,
-				Kind:       int(protocol.FunctionCompletion),
-				Detail:     "Built-in Twig test",
+	if p.includeBuiltinCompletions {
+		for _, name := range twigBuiltinTests {
+			if strings.HasPrefix(strings.ToLower(name), prefix) {
+				itemsByName[strings.ToLower(name)] = protocol.CompletionItem{
+					Label:      name,
+					InsertText: name,
+					Kind:       int(protocol.FunctionCompletion),
+					Detail:     "Built-in Twig test",
+				}
 			}
 		}
 	}

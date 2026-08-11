@@ -2,9 +2,11 @@ package lsp
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/shopware/shopware-lsp/internal/indexer"
@@ -19,6 +21,12 @@ type Server struct {
 	rootPath                        string
 	version                         string
 	initializationOptions           protocol.InitializationOptions
+	clientProtocolVersion           int
+	presentationProfile             string
+	filterClientCommands            bool
+	supportedClientCommands         map[string]struct{}
+	workDoneProgress                bool
+	progressSequence                atomic.Uint64
 	initializeMu                    sync.Mutex
 	initialized                     bool
 	connMu                          sync.RWMutex
@@ -82,13 +90,22 @@ type Server struct {
 
 func (s *Server) InitializationOptions() protocol.InitializationOptions {
 	configuration := s.EffectiveConfiguration()
+	var shopwareClient *protocol.ShopwareClientOptions
+	if s.initializationOptions.ShopwareClient != nil {
+		current := *s.initializationOptions.ShopwareClient
+		current.SupportedCommands = append(
+			[]string(nil), current.SupportedCommands...,
+		)
+		shopwareClient = &current
+	}
 	return protocol.InitializationOptions{
 		PHPExtensions:         append([]string(nil), configuration.PHP.Extensions...),
 		DisabledPHPExtensions: append([]string(nil), configuration.PHP.DisabledExtensions...),
 		ShopwareTargetVersion: configuration.Shopware.TargetVersion,
 		AllowUnsupportedProject: s.initializationOptions.AllowUnsupportedProject ||
 			s.allowUnsupportedProject,
-		CLIMode: s.initializationOptions.CLIMode,
+		CLIMode:        s.initializationOptions.CLIMode,
+		ShopwareClient: shopwareClient,
 	}
 }
 
@@ -145,6 +162,7 @@ func NewServer(filescanner *indexer.FileScanner, rootPath, version string) *Serv
 		workspaceSymbolProviders:   make([]WorkspaceSymbolProvider, 0),
 		commandProviders:           make([]CommandProvider, 0),
 		commandMap:                 make(map[string]CommandFunc),
+		supportedClientCommands:    make(map[string]struct{}),
 		contextEnrichers:           make(map[language.ID]ContextEnricher),
 		documentManager:            NewDocumentManager(),
 		fileScanner:                filescanner,
@@ -350,11 +368,18 @@ func (s *Server) RegisterDocumentObserver(observer DocumentObserver) {
 
 // indexAll builds or updates all registered indexes
 // If forceReindex is true, it will clear the existing index before rebuilding
-func (s *Server) indexAll(ctx context.Context, forceReindex bool) error {
+func (s *Server) indexAll(
+	ctx context.Context,
+	forceReindex bool,
+) (returnErr error) {
 	if s.fileScanner == nil {
 		return nil
 	}
 	startTime := time.Now()
+	finishProgress := s.beginIndexingProgress(ctx)
+	defer func() {
+		finishProgress(time.Since(startTime), returnErr)
+	}()
 
 	// Send notification that indexing has started
 	if conn := s.connection(); conn != nil {
@@ -394,6 +419,62 @@ func (s *Server) indexAll(ctx context.Context, forceReindex bool) error {
 	}
 
 	return nil
+}
+
+func (s *Server) beginIndexingProgress(
+	ctx context.Context,
+) func(time.Duration, error) {
+	if !s.workDoneProgress {
+		return func(time.Duration, error) {}
+	}
+	conn := s.connection()
+	if conn == nil {
+		return func(time.Duration, error) {}
+	}
+	token := fmt.Sprintf(
+		"shopware-index-%d", s.progressSequence.Add(1),
+	)
+	progressContext, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if err := conn.Call(
+		progressContext,
+		"window/workDoneProgress/create",
+		map[string]interface{}{"token": token},
+		nil,
+	); err != nil {
+		if ctx.Err() == nil {
+			log.Printf("Create indexing progress: %v", err)
+		}
+		return func(time.Duration, error) {}
+	}
+	if err := conn.Notify(ctx, "$/progress", map[string]interface{}{
+		"token": token,
+		"value": map[string]interface{}{
+			"kind": "begin", "title": "Shopware indexing",
+			"message": "Indexing workspace", "cancellable": false,
+		},
+	}); err != nil {
+		if ctx.Err() == nil {
+			log.Printf("Publish indexing progress: %v", err)
+		}
+		return func(time.Duration, error) {}
+	}
+	return func(elapsed time.Duration, cause error) {
+		message := fmt.Sprintf(
+			"Indexing completed in %.2fs", elapsed.Seconds(),
+		)
+		if cause != nil {
+			message = "Indexing failed: " + cause.Error()
+		}
+		if err := conn.Notify(ctx, "$/progress", map[string]interface{}{
+			"token": token,
+			"value": map[string]interface{}{
+				"kind": "end", "message": message,
+			},
+		}); err != nil && ctx.Err() == nil {
+			log.Printf("Complete indexing progress: %v", err)
+		}
+	}
 }
 
 // CloseAll closes all registered indexers and resources

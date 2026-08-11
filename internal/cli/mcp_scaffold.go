@@ -8,24 +8,19 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/shopware/shopware-lsp/internal/integration"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/lsp/scaffold"
 	"github.com/shopware/shopware-lsp/internal/shopware/entityschema"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
-type mcpScaffoldKind struct {
-	Family      string   `json:"family"`
-	Kind        string   `json:"kind"`
-	Description string   `json:"description"`
-	Options     []string `json:"options,omitempty"`
-}
-
 type scaffoldCatalogInput struct{}
 
 type scaffoldCatalogOutput struct {
-	Scaffolds    []mcpScaffoldKind `json:"scaffolds"`
-	EntitySchema bool              `json:"entitySchema"`
+	ProtocolVersion int                              `json:"protocolVersion"`
+	Scaffolds       []integration.ScaffoldDefinition `json:"scaffolds"`
+	EntitySchema    bool                             `json:"entitySchema"`
 }
 
 type scaffoldInput struct {
@@ -144,7 +139,7 @@ func registerMCPScaffoldTools(
 	}
 	addMCPTool(server, runtime, &mcp.Tool{
 		Name: "shopware_scaffold_catalog", Title: "Shopware scaffold catalog",
-		Description: "List the Shopware and Symfony artifacts supported by the production scaffold generators.",
+		Description: "List Shopware and Symfony artifacts with their production workflow and typed options. Entries with workflow=entity-schema must use the dedicated entity-schema tools instead of shopware_scaffold.",
 		Annotations: readOnly,
 	}, runtime.scaffoldCatalog)
 	addMCPTool(server, runtime, &mcp.Tool{
@@ -190,37 +185,10 @@ func (runtime *mcpRuntime) scaffoldCatalog(
 	scaffoldCatalogInput,
 ) (*mcp.CallToolResult, scaffoldCatalogOutput, error) {
 	return nil, scaffoldCatalogOutput{
-		Scaffolds:    mcpScaffoldKinds(),
-		EntitySchema: true,
+		ProtocolVersion: integration.ProtocolVersion,
+		Scaffolds:       integration.Scaffolds(),
+		EntitySchema:    true,
 	}, nil
-}
-
-func mcpScaffoldKinds() []mcpScaffoldKind {
-	return []mcpScaffoldKind{
-		{"shopware", "plugin", "Shopware plugin package, class, and YAML service configuration", []string{"namespace", "description", "author", "license", "package"}},
-		{"shopware", "system-config", "Shopware system configuration XML", nil},
-		{"shopware", "scheduled-task", "Scheduled task and handler classes", []string{"namespace", "interval", "taskName"}},
-		{"shopware", "migration", "Timestamped Shopware migration", []string{"namespace", "timestamp"}},
-		{"shopware", "event-listener", "Attribute-based Shopware event listener", []string{"namespace", "event"}},
-		{"shopware", "admin-component", "Administration component, Twig, and SCSS files", []string{"mode", "target", "generateTwig", "generateScss", "method", "methodGroup", "parameters"}},
-		{"shopware", "admin-module", "Administration module and snippets", nil},
-		{"shopware", "cms-block", "Administration CMS block and preview", []string{"category"}},
-		{"shopware", "cms-element", "Administration CMS element", nil},
-		{"shopware", "app", "Shopware app manifest", []string{"label", "author", "license"}},
-		{"shopware", "app-custom-entities", "Shopware app custom entities XML", nil},
-		{"shopware", "app-cms", "Shopware app CMS XML", nil},
-		{"shopware", "app-script", "Shopware app script hook", []string{"hook"}},
-		{"symfony", "command", "Symfony Console command", nil},
-		{"symfony", "controller", "Symfony controller with route", nil},
-		{"symfony", "form", "Symfony form type", nil},
-		{"symfony", "twig-extension", "Twig functions and filters", nil},
-		{"symfony", "compiler-pass", "Dependency-injection compiler pass", nil},
-		{"symfony", "kernel-test", "KernelTestCase integration test", nil},
-		{"symfony", "web-test", "WebTestCase functional test", nil},
-		{"symfony", "services-yaml", "YAML service configuration", nil},
-		{"symfony", "services-xml", "XML service configuration", nil},
-		{"symfony", "services-php", "PHP service configuration", nil},
-	}
 }
 
 func (runtime *mcpRuntime) scaffold(
