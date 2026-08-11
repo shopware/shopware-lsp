@@ -17,6 +17,7 @@ import {registerMcpServerDefinitionProvider} from './mcpServer';
 import {normalizeMemoryLimitMiB} from './mcpServerModel';
 import {
   decideActivation,
+  inactiveServerProject,
   normalizeActivationMode,
   ProjectDetector,
 } from './projectDetection';
@@ -177,6 +178,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     try {
       await client.start();
+      const inactiveProject = inactiveServerProject(
+        client.initializeResult?.capabilities.experimental,
+      );
+      if (inactiveProject) {
+        if (clientState.client === client) clientState.client = undefined;
+        outputChannel.appendLine(
+          `Shopware LSP is inactive for ${workspaceFolder.uri.fsPath}: the server found no Shopware or Symfony project markers`,
+        );
+        try {
+          await client.stop();
+        } catch (error) {
+          outputChannel.appendLine(`Failed to stop inactive Shopware Language Server: ${error}`);
+        }
+        return false;
+      }
       attachConfigurationClient(client);
       // Handler for indexing started
       client.onNotification('shopware/indexingStarted', () => {

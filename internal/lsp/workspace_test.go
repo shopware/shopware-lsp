@@ -36,13 +36,43 @@ func TestWorkspaceRootRejectsMissingAndMultipleRoots(t *testing.T) {
 	require.ErrorContains(t, err, "multiple workspace folders")
 }
 
-func TestInitializeRejectsUnsupportedProjectWhenDetectionIsRequired(t *testing.T) {
+func TestEditorInitializeIsInactiveForUnsupportedProject(t *testing.T) {
+	root := t.TempDir()
+	server := NewServer(nil, "", "test")
+	server.ConfigureProjectDetection(true, false)
+	workspaceCreated := false
+	server.SetWorkspaceFactory(func(context.Context, string, *Server) (WorkspaceRuntime, error) {
+		workspaceCreated = true
+		return nil, errors.New("must not create workspace")
+	})
+
+	result, err := server.initialize(context.Background(), &protocol.InitializeParams{
+		RootURI: uriutil.FileURI(root),
+	})
+	require.NoError(t, err)
+	require.True(t, server.initialized)
+	require.True(t, server.inactiveProject)
+	require.False(t, workspaceCreated)
+	payload := result.(map[string]interface{})
+	capabilities := payload["capabilities"].(map[string]interface{})
+	require.Len(t, capabilities, 1)
+	experimental := capabilities["experimental"].(map[string]interface{})
+	state := experimental["shopwareLSP"].(map[string]interface{})
+	require.Equal(t, false, state["active"])
+	require.Equal(t, "unsupportedProject", state["reason"])
+	require.NoError(t, server.CloseAll())
+}
+
+func TestCLIInitializeRejectsUnsupportedProjectWhenDetectionIsRequired(t *testing.T) {
 	root := t.TempDir()
 	server := NewServer(nil, "", "test")
 	server.ConfigureProjectDetection(true, false)
 
 	_, err := server.initialize(context.Background(), &protocol.InitializeParams{
 		RootURI: uriutil.FileURI(root),
+		InitializationOptions: protocol.InitializationOptions{
+			CLIMode: true,
+		},
 	})
 	require.ErrorContains(t, err, "unsupported project root")
 	require.False(t, server.initialized)

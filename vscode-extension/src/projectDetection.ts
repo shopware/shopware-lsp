@@ -19,6 +19,11 @@ export interface ActivationDecision {
   allowUnsupportedProject: boolean;
 }
 
+export interface InactiveServerProject {
+  active: false;
+  reason: 'unsupportedProject';
+}
+
 type ProjectInfoRunner = (serverPath: string, workspaceRoot: string) => Promise<string>;
 
 export function normalizeActivationMode(value: unknown): ActivationMode {
@@ -32,6 +37,15 @@ export function decideActivation(
   if (mode === 'never') return {enabled: false, allowUnsupportedProject: false};
   if (mode === 'always') return {enabled: true, allowUnsupportedProject: true};
   return {enabled: project?.supported === true, allowUnsupportedProject: false};
+}
+
+export function inactiveServerProject(experimental: unknown): InactiveServerProject | undefined {
+  if (!experimental || typeof experimental !== 'object') return undefined;
+  const shopware = (experimental as Record<string, unknown>).shopwareLSP;
+  if (!shopware || typeof shopware !== 'object') return undefined;
+  const state = shopware as Record<string, unknown>;
+  if (state.active !== false || state.reason !== 'unsupportedProject') return undefined;
+  return {active: false, reason: 'unsupportedProject'};
 }
 
 export function parseProjectInfo(source: string): ProjectInfo {

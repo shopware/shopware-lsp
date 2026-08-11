@@ -57,6 +57,7 @@ type Server struct {
 	workspace                       WorkspaceRuntime
 	projectDetectionRequired        bool
 	allowUnsupportedProject         bool
+	inactiveProject                 bool
 	lifecycleCtx                    context.Context
 	lifecycleCancel                 context.CancelFunc
 	lifecycleWG                     sync.WaitGroup

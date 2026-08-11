@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const {test} = require('node:test');
 const {
   decideActivation,
+  inactiveServerProject,
   normalizeActivationMode,
   parseProjectInfo,
   ProjectDetector,
@@ -19,6 +20,15 @@ test('parses typed project-info output', () => {
   });
   assert.throws(() => parseProjectInfo('{"supported":true,"kind":"unknown","evidence":[]}'));
   assert.throws(() => parseProjectInfo('{"supported":false,"kind":"other","evidence":[]}'));
+});
+
+test('recognizes capability-free inactive server initialization', () => {
+  assert.deepEqual(inactiveServerProject({
+    shopwareLSP: {active: false, reason: 'unsupportedProject'},
+  }), {active: false, reason: 'unsupportedProject'});
+  assert.equal(inactiveServerProject(undefined), undefined);
+  assert.equal(inactiveServerProject({shopwareLSP: {active: true}}), undefined);
+  assert.equal(inactiveServerProject({shopwareLSP: {active: false, reason: 'other'}}), undefined);
 });
 
 test('applies auto, always, and never activation modes', () => {

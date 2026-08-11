@@ -72,10 +72,17 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 			return nil, fmt.Errorf("detect project type: %w", detectErr)
 		}
 		if !detection.Supported {
-			return nil, fmt.Errorf(
+			unsupportedErr := fmt.Errorf(
 				"unsupported project root %s: no Shopware or Symfony project markers found; add %s or allow unsupported projects explicitly",
 				rootPath, projectconfig.ProjectRelativePath,
 			)
+			if params.InitializationOptions.CLIMode {
+				return nil, unsupportedErr
+			}
+			s.inactiveProject = true
+			s.initialized = true
+			log.Printf("Shopware LSP inactive: %v", unsupportedErr)
+			return inactiveProjectInitializeResult(s.version), nil
 		}
 	}
 	scopeLoad := make(chan configurationScopeLoad, 1)
@@ -209,6 +216,23 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 			},
 		},
 	}, nil
+}
+
+func inactiveProjectInitializeResult(version string) map[string]interface{} {
+	return map[string]interface{}{
+		"serverInfo": map[string]interface{}{
+			"name":    "shopware-lsp",
+			"version": version,
+		},
+		"capabilities": map[string]interface{}{
+			"experimental": map[string]interface{}{
+				"shopwareLSP": map[string]interface{}{
+					"active": false,
+					"reason": "unsupportedProject",
+				},
+			},
+		},
+	}
 }
 
 func (s *Server) collectTriggerCharacters() []string {
