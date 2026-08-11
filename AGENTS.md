@@ -129,8 +129,8 @@ future reads may return to indexed/disk state.
 Configuration is layered in this order:
 
 1. built-in defaults;
-2. workspace `.config/shopware-lsp/config.json`;
-3. nested extension `.config/shopware-lsp/config.json` files for files below
+2. workspace `.config/shopware/lsp.json`;
+3. nested extension `.config/shopware/lsp.json` files for files below
    that extension;
 4. editor-local overrides supplied by the client.
 

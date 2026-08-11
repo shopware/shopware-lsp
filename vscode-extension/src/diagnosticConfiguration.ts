@@ -5,6 +5,7 @@ import {
   type ConfigurationCatalog,
   type DiagnosticOverride,
   isKnownDiagnosticRule,
+  projectConfigurationDirectory,
   projectConfigurationPath,
   type ReloadResult,
 } from './configuration';
@@ -188,7 +189,7 @@ async function writeDiagnosticConfiguration(
       );
       setNested(config, ['diagnostics', 'overrides'], overrides);
     }
-    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(storage.root, '.config/shopware-lsp'));
+    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(storage.root, projectConfigurationDirectory));
     await vscode.workspace.fs.writeFile(
       configUri,
       new TextEncoder().encode(`${JSON.stringify(config, null, 2)}\n`),
@@ -322,7 +323,7 @@ async function openConfiguration(clientState: ClientState): Promise<void> {
     await vscode.workspace.fs.stat(uri);
   } catch (error) {
     if (!(error instanceof vscode.FileSystemError && error.code === 'FileNotFound')) throw error;
-    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(selected.root, '.config/shopware-lsp'));
+    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(selected.root, projectConfigurationDirectory));
     await vscode.workspace.fs.writeFile(
       uri,
       new TextEncoder().encode(`${JSON.stringify({$schema: schemaURL, version: 1}, null, 2)}\n`),

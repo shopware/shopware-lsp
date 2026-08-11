@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import {createMcpProcessDefinition} from './mcpServerModel';
 import {resolveServerExecutable} from './serverExecutable';
-import {readEditorConfiguration} from './configuration';
+import {projectConfigurationPath, readEditorConfiguration} from './configuration';
 import {
   decideActivation,
   normalizeActivationMode,
@@ -21,7 +21,7 @@ export function registerMcpServerDefinitionProvider(
 ): McpProviderRegistration {
   const changed = new vscode.EventEmitter<void>();
   const projectConfigurationWatcher = vscode.workspace.createFileSystemWatcher(
-    '**/.config/shopware-lsp/config.json',
+    `**/${projectConfigurationPath}`,
   );
   projectConfigurationWatcher.onDidCreate(() => changed.fire());
   projectConfigurationWatcher.onDidChange(() => changed.fire());

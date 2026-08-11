@@ -64,6 +64,16 @@ func TestSchemaCatalogsStayInSync(t *testing.T) {
 	assertCatalog("domainMap", DomainCatalog)
 }
 
+func TestLoadUsesShopwareLSPConfigurationPath(t *testing.T) {
+	root := t.TempDir()
+	require.Equal(t, filepath.Join(root, ".config", "shopware", "lsp.json"), Path(root))
+	require.NoError(t, os.MkdirAll(filepath.Dir(Path(root)), 0o755))
+	require.NoError(t, os.WriteFile(Path(root), []byte(`{"version":1}`), 0o644))
+	_, found, err := Load(root)
+	require.NoError(t, err)
+	require.True(t, found)
+}
+
 func TestResolveCascadesDisabledDependencies(t *testing.T) {
 	t.Parallel()
 	project, err := Decode([]byte(`{"version":1,"domains":{"php":false}}`))

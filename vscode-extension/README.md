@@ -18,7 +18,7 @@ default `shopwareLSP.activationMode: "auto"` it starts no language-server or
 MCP process until the workspace root is recognized as Shopware or Symfony.
 Detection uses only root metadata such as `composer.json`, `composer.lock`, a
 Shopware app `manifest.xml`, `config/bundles.php`, or the explicit
-`.config/shopware-lsp/config.json` opt-in. Unrelated PHP projects therefore do
+`.config/shopware/lsp.json` opt-in. Unrelated PHP projects therefore do
 not get indexed and produce no inactive-project notification.
 
 Use `"always"` for an unusual project layout that should deliberately run the
@@ -103,12 +103,12 @@ server from VS Code AI clients. A custom `shopwareLSP.serverPath` and the
 `shopwareLSP.memoryLimitMiB` setting apply to both the editor server and the
 MCP process. Use `shopwareLSP.mcp.tools` to disable exact MCP tool names only
 for the current user/workspace, or commit `mcp.tools` in
-`.config/shopware-lsp/config.json` so every MCP client uses the same policy.
+`.config/shopware/lsp.json` so every MCP client uses the same policy.
 
 ### Diagnostic configuration
 
 Use `Shopware: Open Configuration…` to create or open
-`.config/shopware-lsp/config.json`. Extensions nested inside a Shopware
+`.config/shopware/lsp.json`. Extensions nested inside a Shopware
 workspace can keep the same file in their own repository; its diagnostic rules
 and path overrides apply only below that extension directory. Override paths
 are relative to the configuration-owning directory and support `*`, `?`, and

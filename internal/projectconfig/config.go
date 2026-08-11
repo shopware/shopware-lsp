@@ -21,7 +21,7 @@ import (
 
 const (
 	CurrentVersion      = 1
-	ProjectRelativePath = ".config/shopware-lsp/config.json"
+	ProjectRelativePath = ".config/shopware/lsp.json"
 )
 
 type Severity string

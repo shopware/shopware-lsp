@@ -3,7 +3,8 @@ import type {LanguageClient} from 'vscode-languageclient/node';
 import type {ClientState} from './clientState';
 import {setNested} from './configurationModel';
 
-export const projectConfigurationPath = '.config/shopware-lsp/config.json';
+export const projectConfigurationDirectory = '.config/shopware';
+export const projectConfigurationPath = `${projectConfigurationDirectory}/lsp.json`;
 
 export type Severity = 'off' | 'hint' | 'information' | 'warning' | 'error';
 
@@ -397,7 +398,7 @@ async function updateProjectConfiguration(
     item.configKind === 'inspection' ? ['diagnostics', 'inspections', item.id] :
     item.configKind === 'rule' ? ['diagnostics', 'rules', item.id] : item.id.split('.');
   setNested(document, path, value);
-  await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(folder.uri, '.config/shopware-lsp'));
+  await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(folder.uri, projectConfigurationDirectory));
   await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(`${JSON.stringify(document, null, 2)}\n`));
   await vscode.window.showTextDocument(uri, {preview: false});
 }

@@ -51,10 +51,10 @@ func TestInitializeRejectsUnsupportedProjectWhenDetectionIsRequired(t *testing.T
 func TestInitializeAcceptsConfiguredOrExplicitlyAllowedProject(t *testing.T) {
 	configured := t.TempDir()
 	require.NoError(t, os.MkdirAll(
-		filepath.Join(configured, ".config", "shopware-lsp"), 0o755,
+		filepath.Join(configured, ".config", "shopware"), 0o755,
 	))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(configured, ".config", "shopware-lsp", "config.json"),
+		filepath.Join(configured, ".config", "shopware", "lsp.json"),
 		[]byte(`{"version":1}`), 0o644,
 	))
 	server := NewServer(nil, "", "test")

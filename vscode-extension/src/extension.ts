@@ -25,6 +25,7 @@ import {resolveServerExecutable} from './serverExecutable';
 import {registerDiagnosticConfigurationSupport} from './diagnosticConfiguration';
 import {
   attachConfigurationClient,
+  projectConfigurationPath,
   readEditorConfiguration,
   registerConfigurationSupport,
 } from './configuration';
@@ -90,7 +91,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             `Shopware LSP is inactive for ${workspaceFolder.uri.fsPath}: no Shopware or Symfony project markers were found`,
           );
           outputChannel.appendLine(
-            'Add .config/shopware-lsp/config.json or set shopwareLSP.activationMode to always to opt in.',
+            `Add ${projectConfigurationPath} or set shopwareLSP.activationMode to always to opt in.`,
           );
           return false;
         }
@@ -220,7 +221,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const current = getOuterMostWorkspaceFolder();
     if (!current || current.uri.toString() !== event.folder.uri.toString()) return;
     if (
-      event.path === '.config/shopware-lsp/config.json' &&
+      event.path === projectConfigurationPath &&
       event.change === 'change' &&
       clientState.client
     ) return;

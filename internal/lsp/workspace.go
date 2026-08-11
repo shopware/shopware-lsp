@@ -11,6 +11,7 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/indexer"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	"github.com/shopware/shopware-lsp/internal/projectconfig"
 	"github.com/shopware/shopware-lsp/internal/projectdetect"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
@@ -72,8 +73,8 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 		}
 		if !detection.Supported {
 			return nil, fmt.Errorf(
-				"unsupported project root %s: no Shopware or Symfony project markers found; add .config/shopware-lsp/config.json or allow unsupported projects explicitly",
-				rootPath,
+				"unsupported project root %s: no Shopware or Symfony project markers found; add %s or allow unsupported projects explicitly",
+				rootPath, projectconfig.ProjectRelativePath,
 			)
 		}
 	}

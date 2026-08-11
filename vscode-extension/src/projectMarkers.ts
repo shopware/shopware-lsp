@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import {projectConfigurationPath} from './configuration';
 
 export type ProjectMarkerChange = 'create' | 'change' | 'delete';
 
@@ -13,7 +14,7 @@ export const projectMarkerPaths = [
   'composer.lock',
   'manifest.xml',
   'config/bundles.php',
-  '.config/shopware-lsp/config.json',
+  projectConfigurationPath,
 ] as const;
 
 export function registerProjectMarkerWatchers(

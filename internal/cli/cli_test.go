@@ -286,7 +286,7 @@ func TestCheckRejectsInvalidWorkerCount(t *testing.T) {
 func TestConfigCommandPrintsEffectiveProjectConfiguration(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
-	configPath := filepath.Join(root, ".config", "shopware-lsp", "config.json")
+	configPath := filepath.Join(root, ".config", "shopware", "lsp.json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(configPath), 0o755))
 	require.NoError(t, os.WriteFile(configPath, []byte(`{
         "version": 1,
@@ -319,7 +319,7 @@ func TestCheckUsesProjectFailurePolicyAndExplicitFlagWins(t *testing.T) {
 	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
 	phpPath := filepath.Join(root, "Broken.php")
 	require.NoError(t, os.WriteFile(phpPath, []byte("<?php function (\n"), 0o644))
-	configPath := filepath.Join(root, ".config", "shopware-lsp", "config.json")
+	configPath := filepath.Join(root, ".config", "shopware", "lsp.json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(configPath), 0o755))
 	require.NoError(t, os.WriteFile(configPath, []byte(`{
         "version": 1,
@@ -341,7 +341,7 @@ func TestCheckUsesProjectFailurePolicyAndExplicitFlagWins(t *testing.T) {
 func TestCLIRejectsInvalidProjectConfigurationBeforeChecking(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
-	configPath := filepath.Join(root, ".config", "shopware-lsp", "config.json")
+	configPath := filepath.Join(root, ".config", "shopware", "lsp.json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(configPath), 0o755))
 	require.NoError(t, os.WriteFile(
 		configPath,
@@ -359,7 +359,7 @@ func TestCLIRejectsInvalidNestedExtensionConfiguration(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
 	configPath := filepath.Join(
-		root, "custom", "plugins", "Example", ".config", "shopware-lsp", "config.json",
+		root, "custom", "plugins", "Example", ".config", "shopware", "lsp.json",
 	)
 	require.NoError(t, os.MkdirAll(filepath.Dir(configPath), 0o755))
 	require.NoError(t, os.WriteFile(

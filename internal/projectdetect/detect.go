@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/shopware/shopware-lsp/internal/projectconfig"
 )
 
 type Kind string
@@ -72,11 +74,12 @@ func Detect(root string) (Result, error) {
 	}
 
 	var configured, shopware, symfony []Evidence
-	if found, err := regularFile(filepath.Join(absolute, ".config", "shopware-lsp", "config.json")); err != nil {
+	configurationPath := projectconfig.ProjectRelativePath
+	if found, err := regularFile(filepath.Join(absolute, filepath.FromSlash(configurationPath))); err != nil {
 		return Result{}, err
 	} else if found {
 		configured = append(configured, Evidence{
-			Path: ".config/shopware-lsp/config.json", Reason: "explicit Shopware LSP configuration",
+			Path: configurationPath, Reason: "explicit Shopware LSP configuration",
 		})
 	}
 

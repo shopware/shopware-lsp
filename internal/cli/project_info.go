@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/shopware/shopware-lsp/internal/projectconfig"
 	"github.com/shopware/shopware-lsp/internal/projectdetect"
 )
 
@@ -47,7 +48,7 @@ func (r *Runner) requireSupportedProject(root string) error {
 		return nil
 	}
 	return fmt.Errorf(
-		"unsupported project root %s: no Shopware or Symfony project markers found; add .config/shopware-lsp/config.json or pass -allow-unsupported-project",
-		root,
+		"unsupported project root %s: no Shopware or Symfony project markers found; add %s or pass -allow-unsupported-project",
+		root, projectconfig.ProjectRelativePath,
 	)
 }
