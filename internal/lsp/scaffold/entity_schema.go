@@ -615,9 +615,9 @@ func (p *Provider) prepareEntitySchema(ctx context.Context, request EntitySchema
 		migration := entityschema.RenderMigration(plugin.BaseNamespace, className, timestamp, statements)
 		appendChangedFile(&pending, migrationPath, "", migration, nil, false)
 		relative, _ := filepath.Rel(plugin.Root, migrationPath)
-		migrations = append(migrations, entityschema.MigrationReference{Path: filepath.ToSlash(relative), Class: plugin.BaseNamespace + `\Migration\` + className, Timestamp: timestamp, SHA256: entityschema.FileSHA256([]byte(migration))})
+		migrations = append(migrations, entityschema.MigrationReference{Path: filepath.ToSlash(relative), Timestamp: timestamp, SHA256: entityschema.FileSHA256([]byte(migration))})
 	}
-	snapshot, err := (entityschema.Snapshot{Parents: parents, Kind: entityschema.SnapshotMigration, Plugin: entityschema.PluginIdentity{ComposerName: plugin.ComposerName, PluginClass: plugin.PluginClass}, ShopwareVersion: plugin.ShopwareVersion, Migrations: migrations, Schema: next, Decisions: request.Decisions}).Seal()
+	snapshot, err := (entityschema.Snapshot{Parents: parents, Kind: entityschema.SnapshotMigration, Plugin: entityschema.PluginIdentity{ComposerName: plugin.ComposerName}, ShopwareVersion: plugin.ShopwareVersion, Migrations: migrations, Schema: next, Decisions: request.Decisions}).Seal()
 	if err != nil {
 		return entitySchemaPrepared{}, err
 	}
@@ -724,11 +724,8 @@ func newEntitySchemaBaseline(
 	history entitySchemaHistory,
 ) (entitySchemaHistory, error) {
 	baseline, err := (entityschema.Snapshot{
-		Kind: entityschema.SnapshotBaseline,
-		Plugin: entityschema.PluginIdentity{
-			ComposerName: plugin.ComposerName,
-			PluginClass:  plugin.PluginClass,
-		},
+		Kind:            entityschema.SnapshotBaseline,
+		Plugin:          entityschema.PluginIdentity{ComposerName: plugin.ComposerName},
 		ShopwareVersion: plugin.ShopwareVersion,
 		Schema:          history.scanned,
 	}).Seal()
@@ -773,7 +770,7 @@ func reconcileEntitySchemaDrift(
 	response.DriftMessage = "Entity definitions differ from the latest committed schema snapshot. Review the returned diff, then preview again with driftDecision=adopt when the current PHP definitions are authoritative, or driftDecision=migrate when the committed snapshot is authoritative and the code changes need migration SQL."
 	switch driftDecision {
 	case "adopt":
-		return adoptEntitySchemaDrift(plugin, leaf, spec, history)
+		return adoptEntitySchemaDrift(plugin, spec, history)
 	case "migrate":
 		return history, nil
 	default:
@@ -788,15 +785,14 @@ func reconcileEntitySchemaDrift(
 
 func adoptEntitySchemaDrift(
 	plugin entityschema.PluginContext,
-	leaf entityschema.Snapshot,
 	spec entityschema.EntitySpec,
 	history entitySchemaHistory,
 ) (entitySchemaHistory, error) {
 	adopted, err := (entityschema.Snapshot{
 		Parents:         history.parents,
 		Kind:            entityschema.SnapshotBaseline,
-		Plugin:          leaf.Plugin,
-		ShopwareVersion: leaf.ShopwareVersion,
+		Plugin:          entityschema.PluginIdentity{ComposerName: plugin.ComposerName},
+		ShopwareVersion: plugin.ShopwareVersion,
 		Schema:          history.scanned,
 		Decisions: []entityschema.Decision{{
 			Kind:   "driftAdopt",
@@ -873,7 +869,7 @@ func (p *Provider) entitySchemaReconcile(ctx context.Context, raw *json.RawMessa
 	for _, leaf := range graph.Leaves {
 		parents = append(parents, leaf.Snapshot.ID)
 	}
-	merged, err := (entityschema.Snapshot{Parents: parents, Kind: entityschema.SnapshotMerge, Plugin: selectedFile.Snapshot.Plugin, ShopwareVersion: selectedFile.Snapshot.ShopwareVersion, Schema: selectedFile.Snapshot.Schema, Decisions: []entityschema.Decision{{Kind: "branchReconcile", Reason: "selected " + selected}}}).Seal()
+	merged, err := (entityschema.Snapshot{Parents: parents, Kind: entityschema.SnapshotMerge, Plugin: entityschema.PluginIdentity{ComposerName: plugin.ComposerName}, ShopwareVersion: plugin.ShopwareVersion, Schema: selectedFile.Snapshot.Schema, Decisions: []entityschema.Decision{{Kind: "branchReconcile", Reason: "selected " + selected}}}).Seal()
 	if err != nil {
 		return nil, err
 	}

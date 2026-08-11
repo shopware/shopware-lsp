@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-const SnapshotFormatVersion = 1
+const SnapshotFormatVersion = 2
 const SnapshotRelativeDirectory = "src/Resources/shopware-lsp/schema"
 
 type SnapshotKind string
@@ -25,12 +25,10 @@ const (
 
 type PluginIdentity struct {
 	ComposerName string `json:"composerName"`
-	PluginClass  string `json:"pluginClass"`
 }
 
 type MigrationReference struct {
 	Path      string `json:"path"`
-	Class     string `json:"class"`
 	Timestamp int64  `json:"timestamp"`
 	SHA256    string `json:"sha256"`
 }

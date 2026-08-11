@@ -117,21 +117,21 @@ func TestMigrationMatrixCoversColumnsIndexesForeignKeysAndJSONConstraints(t *tes
 	before.Entities["example"] = Entity{
 		Name: "example",
 		Columns: map[string]Column{
-			"id":      {Name: "id", Kind: FieldID, SQLType: "BINARY(16)", NotNull: true, PrimaryKey: true},
-			"payload": {Name: "payload", Kind: FieldJSON, SQLType: "JSON"},
-			"name":    {Name: "name", Kind: FieldString, SQLType: "VARCHAR(255)"},
+			"id":      {Name: "id", SQLType: "BINARY(16)", NotNull: true, PrimaryKey: true},
+			"payload": {Name: "payload", SQLType: "JSON"},
+			"name":    {Name: "name", SQLType: "VARCHAR(255)"},
 		},
 		Indexes:     map[string]Index{"idx.example.name": {Name: "idx.example.name", Columns: []string{"name"}}},
 		ForeignKeys: map[string]ForeignKey{},
 	}
 	after := before.Clone()
 	entity := after.Entities["example"]
-	entity.Columns["payload"] = Column{Name: "payload", Kind: FieldString, SQLType: "LONGTEXT"}
-	entity.Columns["name"] = Column{Name: "name", Kind: FieldString, SQLType: "VARCHAR(500)", NotNull: true, BackfillSQL: "'unknown'"}
-	entity.Columns["settings"] = Column{Name: "settings", Kind: FieldObject, SQLType: "JSON"}
-	entity.Columns["active"] = Column{Name: "active", Kind: FieldBool, SQLType: "TINYINT(1)", NotNull: true, BackfillSQL: "0"}
-	entity.Columns["auto_increment"] = Column{Name: "auto_increment", Kind: FieldAutoIncrement, SQLType: "BIGINT UNSIGNED", NotNull: true, AutoIncrement: true}
-	entity.Columns["product_id"] = Column{Name: "product_id", Kind: FieldManyToOne, SQLType: "BINARY(16)"}
+	entity.Columns["payload"] = Column{Name: "payload", SQLType: "LONGTEXT"}
+	entity.Columns["name"] = Column{Name: "name", SQLType: "VARCHAR(500)", NotNull: true, BackfillSQL: "'unknown'"}
+	entity.Columns["settings"] = Column{Name: "settings", SQLType: "JSON"}
+	entity.Columns["active"] = Column{Name: "active", SQLType: "TINYINT(1)", NotNull: true, BackfillSQL: "0"}
+	entity.Columns["auto_increment"] = Column{Name: "auto_increment", SQLType: "BIGINT UNSIGNED", NotNull: true, AutoIncrement: true}
+	entity.Columns["product_id"] = Column{Name: "product_id", SQLType: "BINARY(16)"}
 	delete(entity.Indexes, "idx.example.name")
 	entity.Indexes["uniq.example.name"] = Index{Name: "uniq.example.name", Unique: true, Columns: []string{"name"}}
 	entity.Indexes["idx.example.product_id"] = Index{Name: "idx.example.product_id", Columns: []string{"product_id"}}
@@ -160,11 +160,11 @@ func TestMigrationMatrixCoversColumnsIndexesForeignKeysAndJSONConstraints(t *tes
 func TestJSONColumnRenameReplacesNamedConstraint(t *testing.T) {
 	before := EmptySchema()
 	before.Entities["example"] = Entity{Name: "example", Columns: map[string]Column{
-		"old_payload": {Name: "old_payload", Kind: FieldJSON, SQLType: "JSON"},
+		"old_payload": {Name: "old_payload", SQLType: "JSON"},
 	}}
 	after := EmptySchema()
 	after.Entities["example"] = Entity{Name: "example", Columns: map[string]Column{
-		"payload": {Name: "payload", Kind: FieldList, SQLType: "JSON"},
+		"payload": {Name: "payload", SQLType: "JSON"},
 	}}
 	statements, _, err := MigrationStatements(before, after, []Decision{{Kind: "columnRename", Entity: "example", From: "old_payload", To: "payload"}})
 	require.NoError(t, err)
@@ -177,12 +177,12 @@ func TestJSONColumnRenameReplacesNamedConstraint(t *testing.T) {
 func TestAddingVersionFieldBackfillsAndRebuildsCompositePrimaryKey(t *testing.T) {
 	before := EmptySchema()
 	before.Entities["example"] = Entity{Name: "example", Columns: map[string]Column{
-		"id": {Name: "id", Kind: FieldID, SQLType: "BINARY(16)", NotNull: true, PrimaryKey: true},
+		"id": {Name: "id", SQLType: "BINARY(16)", NotNull: true, PrimaryKey: true},
 	}}
 	after := before.Clone()
 	entity := after.Entities["example"]
 	entity.Columns["version_id"] = Column{
-		Name: "version_id", Kind: FieldVersion, SQLType: "BINARY(16)", NotNull: true, PrimaryKey: true,
+		Name: "version_id", SQLType: "BINARY(16)", NotNull: true, PrimaryKey: true,
 		BackfillSQL: "UNHEX('0fa91ce3e96a4bc2be4bd9ce752c3425')",
 	}
 	after.Entities["example"] = entity

@@ -103,7 +103,7 @@ func (b *migrationSQLBuilder) renameColumns() error {
 		if oldColumn.AutoIncrement {
 			b.statements = append(b.statements, fmt.Sprintf("ALTER TABLE %s DROP INDEX %s;", sqlIdent(change.Entity), sqlIdent(oldColumn.Name)))
 		}
-		if isJSONKind(oldColumn.Kind) {
+		if isJSONColumn(oldColumn) {
 			b.statements = append(b.statements, dropJSONConstraintSQL(change.Entity, oldColumn.Name))
 		}
 		if !oldColumn.NotNull && after.NotNull && !after.AutoIncrement {
@@ -123,7 +123,7 @@ func (b *migrationSQLBuilder) renameColumns() error {
 				sqlIdent(change.Entity), sqlIdent(decision.From), columnSQL(after),
 			))
 		}
-		if isJSONKind(after.Kind) {
+		if isJSONColumn(after) {
 			b.statements = append(b.statements, jsonConstraintSQL(change.Entity, after.Name))
 		}
 		b.renamedFrom[change.Entity+"\x00"+decision.From] = struct{}{}
@@ -137,8 +137,8 @@ func (b *migrationSQLBuilder) changeColumns() error {
 		if change.Before == nil || change.After == nil {
 			continue
 		}
-		beforeJSON := isJSONKind(change.Before.Kind)
-		afterJSON := isJSONKind(change.After.Kind)
+		beforeJSON := isJSONColumn(*change.Before)
+		afterJSON := isJSONColumn(*change.After)
 		if change.Before.AutoIncrement && !change.After.AutoIncrement {
 			b.statements = append(b.statements, fmt.Sprintf("ALTER TABLE %s DROP INDEX %s;", sqlIdent(change.Entity), sqlIdent(change.Before.Name)))
 		}
@@ -178,7 +178,7 @@ func (b *migrationSQLBuilder) addColumns() error {
 			nullable := after
 			nullable.NotNull = false
 			b.statements = append(b.statements, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s;", sqlIdent(change.Entity), columnSQL(nullable)))
-			if isJSONKind(after.Kind) {
+			if isJSONColumn(after) {
 				b.statements = append(b.statements, jsonConstraintSQL(change.Entity, after.Name))
 			}
 			b.statements = append(b.statements, backfillSQL(change.Entity, after), fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s;", sqlIdent(change.Entity), columnSQL(after)))
@@ -188,7 +188,7 @@ func (b *migrationSQLBuilder) addColumns() error {
 			"ALTER TABLE %s ADD COLUMN %s;",
 			sqlIdent(change.Entity), columnSQL(after),
 		))
-		if isJSONKind(change.After.Kind) {
+		if isJSONColumn(*change.After) {
 			b.statements = append(b.statements, jsonConstraintSQL(change.Entity, change.After.Name))
 		}
 	}
@@ -203,7 +203,7 @@ func (b *migrationSQLBuilder) removeColumns() {
 		if _, renamed := b.renamedFrom[change.Entity+"\x00"+change.Before.Name]; renamed {
 			continue
 		}
-		if isJSONKind(change.Before.Kind) {
+		if isJSONColumn(*change.Before) {
 			b.statements = append(b.statements, dropJSONConstraintSQL(change.Entity, change.Before.Name))
 		}
 		b.statements = append(b.statements, fmt.Sprintf(
@@ -245,7 +245,7 @@ func createTableSQL(entity Entity) string {
 		if column.PrimaryKey {
 			primary = append(primary, sqlIdent(column.Name))
 		}
-		if isJSONKind(column.Kind) {
+		if isJSONColumn(column) {
 			definitions = append(definitions, "    "+jsonConstraintDefinition(entity.Name, column.Name))
 		}
 	}
@@ -291,6 +291,10 @@ func columnSQL(column Column) string {
 		suffix = " AUTO_INCREMENT UNIQUE"
 	}
 	return fmt.Sprintf("%s %s %s%s", sqlIdent(column.Name), column.SQLType, nullability, suffix)
+}
+
+func isJSONColumn(column Column) bool {
+	return strings.EqualFold(strings.TrimSpace(column.SQLType), "JSON")
 }
 
 func addIndexSQL(entity string, index Index) string {

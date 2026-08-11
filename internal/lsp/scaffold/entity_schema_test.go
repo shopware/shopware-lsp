@@ -375,6 +375,46 @@ func TestRestoreSnapshotOnlyIndexesDoesNotRestoreObsoleteRelationIndex(t *testin
 	require.NotContains(t, restored.Entities["example"].Indexes, "idx.example.old_id")
 }
 
+func TestEntitySchemaNamespaceMoveDoesNotCauseDrift(t *testing.T) {
+	beforeSpec := entityschema.CompleteSpec(entityschema.EntitySpec{
+		Mode: "edit", Namespace: `Acme\Old\Content\Example`, ClassName: "Example", EntityName: "acme_example",
+		Fields: []entityschema.FieldSpec{
+			{ID: "id", Kind: entityschema.FieldID, Editable: true},
+			{ID: "name", Kind: entityschema.FieldString, PropertyName: "name", StorageName: "name", Editable: true},
+		},
+	})
+	afterSpec := beforeSpec
+	afterSpec.Namespace = `Acme\New\Domain\Example`
+	afterSpec.DefinitionClass = ""
+	afterSpec.EntityClass = ""
+	afterSpec.CollectionClass = ""
+	afterSpec = entityschema.CompleteSpec(afterSpec)
+	beforeEntity, err := entityschema.SchemaFromSpec(beforeSpec)
+	require.NoError(t, err)
+	afterEntity, err := entityschema.SchemaFromSpec(afterSpec)
+	require.NoError(t, err)
+	before := entityschema.EmptySchema()
+	before.Entities[beforeEntity.Name] = beforeEntity
+	after := entityschema.EmptySchema()
+	after.Entities[afterEntity.Name] = afterEntity
+	leaf, err := (entityschema.Snapshot{Kind: entityschema.SnapshotBaseline, Schema: before}).Seal()
+	require.NoError(t, err)
+	response := EntitySchemaPreviewResponse{}
+
+	history, err := reconcileEntitySchemaDrift(
+		entityschema.PluginContext{},
+		leaf,
+		afterSpec,
+		"",
+		&response,
+		entitySchemaHistory{scanned: after, parents: []string{leaf.ID}},
+	)
+	require.NoError(t, err)
+	require.False(t, response.Drift)
+	require.False(t, history.stop)
+	require.Equal(t, before, history.previous)
+}
+
 func TestEntitySchemaEditPreservesCustomCodeAndConfirmsDestructiveDDL(t *testing.T) {
 	root := t.TempDir()
 	directory := filepath.Join(root, "src", "Entity", "Example")

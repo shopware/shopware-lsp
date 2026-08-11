@@ -122,43 +122,26 @@ type EntitySpec struct {
 
 // Schema is the committed database-facing representation. Entity keys are
 // technical entity/table names and column keys are physical storage names.
+// PHP identities and presentation metadata belong to the live EntitySpec and
+// indexes so moving a class or renaming a property cannot create schema drift.
 type Schema struct {
 	Entities map[string]Entity `json:"entities"`
 }
 
 type Entity struct {
-	Name            string                `json:"name"`
-	DefinitionClass string                `json:"definitionClass"`
-	EntityClass     string                `json:"entityClass"`
-	CollectionClass string                `json:"collectionClass"`
-	Columns         map[string]Column     `json:"columns"`
-	Indexes         map[string]Index      `json:"indexes"`
-	ForeignKeys     map[string]ForeignKey `json:"foreignKeys"`
-	Associations    []Association         `json:"associations,omitempty"`
-	OpaqueFields    []OpaqueField         `json:"opaqueFields,omitempty"`
-}
-
-// OpaqueField preserves a custom field expression that the designer cannot
-// safely edit. It participates in snapshot drift detection but never in DDL.
-type OpaqueField struct {
-	ID  string `json:"id"`
-	Raw string `json:"raw"`
+	Name        string                `json:"name"`
+	Columns     map[string]Column     `json:"columns"`
+	Indexes     map[string]Index      `json:"indexes"`
+	ForeignKeys map[string]ForeignKey `json:"foreignKeys"`
 }
 
 type Column struct {
-	Name          string    `json:"name"`
-	PropertyName  string    `json:"propertyName"`
-	Kind          FieldKind `json:"kind"`
-	SQLType       string    `json:"sqlType"`
-	NotNull       bool      `json:"notNull"`
-	PrimaryKey    bool      `json:"primaryKey,omitempty"`
-	AutoIncrement bool      `json:"autoIncrement,omitempty"`
-	APIAware      bool      `json:"apiAware,omitempty"`
-	SearchRanking float64   `json:"searchRanking,omitempty"`
-	Flags         []string  `json:"flags,omitempty"`
-	BeforeFlags   []string  `json:"modifiersBeforeFlags,omitempty"`
-	AfterFlags    []string  `json:"modifiersAfterFlags,omitempty"`
-	BackfillSQL   string    `json:"-"`
+	Name          string `json:"name"`
+	SQLType       string `json:"sqlType"`
+	NotNull       bool   `json:"notNull"`
+	PrimaryKey    bool   `json:"primaryKey,omitempty"`
+	AutoIncrement bool   `json:"autoIncrement,omitempty"`
+	BackfillSQL   string `json:"-"`
 }
 
 type Index struct {
@@ -178,24 +161,6 @@ type ForeignKey struct {
 	OnUpdate         string         `json:"onUpdate"`
 }
 
-type Association struct {
-	Kind                   FieldKind      `json:"kind"`
-	PropertyName           string         `json:"propertyName"`
-	TargetDefinitionClass  string         `json:"targetDefinitionClass"`
-	ReferenceField         string         `json:"referenceField"`
-	StorageName            string         `json:"storageName,omitempty"`
-	DeleteBehavior         DeleteBehavior `json:"deleteBehavior,omitempty"`
-	Flags                  []string       `json:"flags,omitempty"`
-	APIAware               bool           `json:"apiAware,omitempty"`
-	SearchRanking          float64        `json:"searchRanking,omitempty"`
-	MappingDefinitionClass string         `json:"mappingDefinitionClass,omitempty"`
-	MappingLocalColumn     string         `json:"mappingLocalColumn,omitempty"`
-	MappingReferenceColumn string         `json:"mappingReferenceColumn,omitempty"`
-	SourceColumn           string         `json:"sourceColumn,omitempty"`
-	BeforeFlags            []string       `json:"modifiersBeforeFlags,omitempty"`
-	AfterFlags             []string       `json:"modifiersAfterFlags,omitempty"`
-}
-
 func EmptySchema() Schema {
 	return Schema{Entities: make(map[string]Entity)}
 }
@@ -209,9 +174,6 @@ func (s Schema) Clone() Schema {
 		copyEntity := entity
 		copyEntity.Columns = make(map[string]Column, len(entity.Columns))
 		for key, column := range entity.Columns {
-			column.Flags = append([]string(nil), column.Flags...)
-			column.BeforeFlags = append([]string(nil), column.BeforeFlags...)
-			column.AfterFlags = append([]string(nil), column.AfterFlags...)
 			copyEntity.Columns[key] = column
 		}
 		copyEntity.Indexes = make(map[string]Index, len(entity.Indexes))
@@ -225,13 +187,6 @@ func (s Schema) Clone() Schema {
 			foreignKey.ReferenceColumns = append([]string(nil), foreignKey.ReferenceColumns...)
 			copyEntity.ForeignKeys[key] = foreignKey
 		}
-		copyEntity.Associations = append([]Association(nil), entity.Associations...)
-		for index := range copyEntity.Associations {
-			copyEntity.Associations[index].Flags = append([]string(nil), entity.Associations[index].Flags...)
-			copyEntity.Associations[index].BeforeFlags = append([]string(nil), entity.Associations[index].BeforeFlags...)
-			copyEntity.Associations[index].AfterFlags = append([]string(nil), entity.Associations[index].AfterFlags...)
-		}
-		copyEntity.OpaqueFields = append([]OpaqueField(nil), entity.OpaqueFields...)
 		result.Entities[name] = copyEntity
 	}
 	return result
@@ -239,13 +194,10 @@ func (s Schema) Clone() Schema {
 
 func SchemaFromSpec(spec EntitySpec) (Entity, error) {
 	entity := Entity{
-		Name:            spec.EntityName,
-		DefinitionClass: spec.DefinitionClass,
-		EntityClass:     spec.EntityClass,
-		CollectionClass: spec.CollectionClass,
-		Columns:         make(map[string]Column),
-		Indexes:         make(map[string]Index),
-		ForeignKeys:     make(map[string]ForeignKey),
+		Name:        spec.EntityName,
+		Columns:     make(map[string]Column),
+		Indexes:     make(map[string]Index),
+		ForeignKeys: make(map[string]ForeignKey),
 	}
 	referenceVersions := make(map[string]FieldSpec)
 	for _, field := range spec.Fields {
@@ -255,34 +207,9 @@ func SchemaFromSpec(spec EntitySpec) (Entity, error) {
 	}
 	for _, field := range spec.Fields {
 		if !field.Editable && field.Kind == FieldLocked {
-			entity.OpaqueFields = append(entity.OpaqueFields, OpaqueField{ID: field.ID, Raw: strings.TrimSpace(field.Raw)})
 			continue
 		}
 		if field.Kind == FieldOneToMany || field.Kind == FieldManyToMany || (field.Kind == FieldOneToOne && field.UsesExistingColumn) {
-			referenceField := field.ReferenceStorageName
-			if field.Kind == FieldManyToMany {
-				referenceField = field.ReferenceField
-			}
-			if field.Kind == FieldOneToOne {
-				referenceField = field.ReferenceField
-			}
-			entity.Associations = append(entity.Associations, Association{
-				Kind:                   field.Kind,
-				PropertyName:           field.PropertyName,
-				TargetDefinitionClass:  field.TargetDefinitionClass,
-				ReferenceField:         referenceField,
-				StorageName:            field.StorageName,
-				DeleteBehavior:         field.DeleteBehavior,
-				Flags:                  append([]string(nil), field.AssociationFlags...),
-				BeforeFlags:            append([]string(nil), field.AssociationBeforeFlags...),
-				AfterFlags:             append([]string(nil), field.AssociationAfterFlags...),
-				APIAware:               field.AssociationAPIAware,
-				SearchRanking:          field.AssociationSearchRank,
-				MappingDefinitionClass: field.MappingDefinitionClass,
-				MappingLocalColumn:     field.MappingLocalColumn,
-				MappingReferenceColumn: field.MappingReferenceColumn,
-				SourceColumn:           field.SourceColumn,
-			})
 			continue
 		}
 		if field.StorageName == "" {
@@ -292,18 +219,9 @@ func SchemaFromSpec(spec EntitySpec) (Entity, error) {
 		if err != nil {
 			return Entity{}, err
 		}
-		propertyName := field.PropertyName
-		if (field.Kind == FieldManyToOne || field.Kind == FieldOneToOne) && field.ForeignKeyPropertyName != "" {
-			propertyName = field.ForeignKeyPropertyName
-		}
 		column := Column{
-			Name: field.StorageName, PropertyName: propertyName,
-			Kind: field.Kind, SQLType: sqlType, NotNull: field.Required,
-			APIAware: field.APIAware, SearchRanking: field.SearchRanking,
+			Name: field.StorageName, SQLType: sqlType, NotNull: field.Required,
 			BackfillSQL: strings.TrimSpace(field.MigrationDefault),
-			Flags:       append([]string(nil), field.PreservedFlags...),
-			BeforeFlags: append([]string(nil), field.ModifiersBeforeFlags...),
-			AfterFlags:  append([]string(nil), field.ModifiersAfterFlags...),
 		}
 		if field.Primary {
 			column.PrimaryKey = true
@@ -349,16 +267,6 @@ func SchemaFromSpec(spec EntitySpec) (Entity, error) {
 				ReferenceColumns: storedReferenceColumns,
 				OnDelete:         onDelete, OnUpdate: "cascade",
 			}
-			entity.Associations = append(entity.Associations, Association{
-				Kind: field.Kind, PropertyName: field.PropertyName,
-				TargetDefinitionClass: field.TargetDefinitionClass,
-				ReferenceField:        referenceColumn, DeleteBehavior: onDelete,
-				Flags:         append([]string(nil), field.AssociationFlags...),
-				BeforeFlags:   append([]string(nil), field.AssociationBeforeFlags...),
-				AfterFlags:    append([]string(nil), field.AssociationAfterFlags...),
-				APIAware:      field.AssociationAPIAware,
-				SearchRanking: field.AssociationSearchRank,
-			})
 			indexName := "idx." + spec.EntityName + "." + field.StorageName
 			entity.Indexes[indexName] = Index{
 				Name: indexName, Columns: append([]string(nil), columns...),
@@ -371,10 +279,6 @@ func SchemaFromSpec(spec EntitySpec) (Entity, error) {
 			Columns: append([]string(nil), index.Columns...),
 		}
 	}
-	sort.Slice(entity.Associations, func(i, j int) bool {
-		return entity.Associations[i].PropertyName < entity.Associations[j].PropertyName
-	})
-	sort.Slice(entity.OpaqueFields, func(i, j int) bool { return entity.OpaqueFields[i].ID < entity.OpaqueFields[j].ID })
 	return entity, nil
 }
 
@@ -522,28 +426,6 @@ func (s Schema) Normalize() Schema {
 			index.Columns = append([]string(nil), index.Columns...)
 			entity.Indexes[name] = index
 		}
-		for name, column := range entity.Columns {
-			column.Flags = append([]string(nil), column.Flags...)
-			sort.Strings(column.Flags)
-			column.BeforeFlags = append([]string(nil), column.BeforeFlags...)
-			column.AfterFlags = append([]string(nil), column.AfterFlags...)
-			entity.Columns[name] = column
-		}
-		for index := range entity.Associations {
-			entity.Associations[index].Flags = append([]string(nil), entity.Associations[index].Flags...)
-			sort.Strings(entity.Associations[index].Flags)
-			entity.Associations[index].BeforeFlags = append([]string(nil), entity.Associations[index].BeforeFlags...)
-			entity.Associations[index].AfterFlags = append([]string(nil), entity.Associations[index].AfterFlags...)
-		}
-		sort.Slice(entity.Associations, func(i, j int) bool {
-			left := string(entity.Associations[i].Kind) + ":" + entity.Associations[i].PropertyName
-			right := string(entity.Associations[j].Kind) + ":" + entity.Associations[j].PropertyName
-			return left < right
-		})
-		entity.OpaqueFields = append([]OpaqueField(nil), entity.OpaqueFields...)
-		sort.Slice(entity.OpaqueFields, func(i, j int) bool {
-			return entity.OpaqueFields[i].ID < entity.OpaqueFields[j].ID
-		})
 		s.Entities[key] = entity
 	}
 	return s

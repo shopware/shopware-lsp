@@ -288,9 +288,6 @@ func columnSimilarity(left, right Column) int {
 	if left.AutoIncrement == right.AutoIncrement {
 		score += 5
 	}
-	if left.PropertyName == right.PropertyName {
-		score += 10
-	}
 	return score
 }
 

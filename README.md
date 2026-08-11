@@ -323,6 +323,11 @@ exact public names shown by MCP `tools/list`; unknown names are rejected.
 - Snapshot history is a content-addressed DAG. The designer handles baseline
   import, explicit branch reconciliation, manual-drift adoption or migration,
   and explicit column create-versus-rename decisions
+- Snapshot format v2 stores only physical database state: technical entity and
+  storage names, columns, indexes, primary keys, and foreign keys. PHP classes,
+  namespaces, properties, flags, associations without storage, and opaque PHP
+  expressions stay in live indexed source, so moving a definition does not
+  create schema drift
 - Unapplied drafts survive webview reloads, unsaved PHP buffers participate in
   import and rewrite analysis, and a changed snapshot head forces a reload
   instead of silently rebasing a pending schema edit
