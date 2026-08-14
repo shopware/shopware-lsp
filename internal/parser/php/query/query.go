@@ -512,6 +512,24 @@ func AssignedVariable(node *syntax.Node) string {
 	return ""
 }
 
+// AssignmentValue returns the right-hand value of the first simple assignment
+// expression beneath node. Compound and destructuring assignments remain
+// intentionally opaque to callers performing conservative local evaluation.
+func AssignmentValue(node *syntax.Node) *syntax.Node {
+	assignments := Nodes(node, syntax.PhpAssignmentExpression)
+	if len(assignments) == 0 {
+		return nil
+	}
+	var operands []*syntax.Node
+	for child := range assignments[0].ChildNodes() {
+		operands = append(operands, child)
+	}
+	if len(operands) < 2 {
+		return nil
+	}
+	return operands[len(operands)-1]
+}
+
 func CallAt(node *syntax.Node) *syntax.Node {
 	return ancestorOrSelf(node, syntax.PhpMemberCall, syntax.PhpScopedCall, syntax.PhpFunctionCall)
 }
@@ -830,6 +848,12 @@ func ObjectClassName(node *syntax.Node) string {
 
 // ClassConstantName returns the class-like name from a Foo::class expression.
 func ClassConstantName(node *syntax.Node) string {
+	return ScopedAccessClass(node, "class")
+}
+
+// ScopedAccessClass returns the class expression on the left side of a
+// specific static member access such as ProductDefinition::ENTITY_NAME.
+func ScopedAccessClass(node *syntax.Node, memberName string) string {
 	if node == nil {
 		return ""
 	}
@@ -841,7 +865,7 @@ func ClassConstantName(node *syntax.Node) string {
 	for _, member := range candidates {
 		text := compactExpression(member.Text())
 		separator := strings.LastIndex(text, "::")
-		if separator < 0 || !strings.EqualFold(text[separator+2:], "class") {
+		if separator < 0 || !strings.EqualFold(text[separator+2:], memberName) {
 			continue
 		}
 		return strings.TrimSpace(text[:separator])

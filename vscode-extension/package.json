@@ -103,6 +103,7 @@
             "shopware_scaffold_catalog": {"type": "boolean"},
             "shopware_scaffold": {"type": "boolean"},
             "shopware_entity_schema_bootstrap": {"type": "boolean"},
+            "shopware_entity_schema_field_types": {"type": "boolean"},
             "shopware_entity_schema_search": {"type": "boolean"},
             "shopware_entity_schema_load": {"type": "boolean"},
             "shopware_entity_schema_preview": {"type": "boolean"},

@@ -9,21 +9,25 @@ import (
 func MigrationStatements(previous, next Schema, decisions []Decision) ([]string, SchemaDiff, error) {
 	previous = previous.Normalize()
 	next = next.Normalize()
-	diff := DiffSchemas(previous, next)
-	if len(diff.RenameQuestions) != 0 {
-		if _, _, err := ResolveRenameQuestions(diff, decisions); err != nil {
-			return nil, diff, err
-		}
+	resolvedPrevious, diff, normalized, err := ResolveSchemaDiff(previous, next, decisions)
+	if err != nil {
+		return nil, diff, err
 	}
 	builder := migrationSQLBuilder{
-		previous:         previous,
+		originalPrevious: previous,
+		previous:         resolvedPrevious,
+		next:             next,
 		diff:             diff,
 		decisionByTarget: make(map[string]Decision),
 		renamedFrom:      make(map[string]struct{}),
 		renamedTo:        make(map[string]struct{}),
+		droppedJSON:      make(map[string]struct{}),
 	}
-	for _, decision := range decisions {
+	for _, decision := range normalized {
 		builder.decisionByTarget[decision.Entity+"\x00"+decision.To] = decision
+		if decision.Kind == "entityRename" {
+			builder.entityRenames = append(builder.entityRenames, decision)
+		}
 	}
 	statements, err := builder.build()
 	if err != nil {
@@ -33,15 +37,20 @@ func MigrationStatements(previous, next Schema, decisions []Decision) ([]string,
 }
 
 type migrationSQLBuilder struct {
+	originalPrevious Schema
 	previous         Schema
+	next             Schema
 	diff             SchemaDiff
 	decisionByTarget map[string]Decision
 	renamedFrom      map[string]struct{}
 	renamedTo        map[string]struct{}
+	droppedJSON      map[string]struct{}
+	entityRenames    []Decision
 	statements       []string
 }
 
 func (b *migrationSQLBuilder) build() ([]string, error) {
+	b.renameEntities()
 	b.dropForeignKeysAndIndexes()
 	b.dropPrimaryKeys()
 	b.createAndDropEntities()
@@ -57,6 +66,33 @@ func (b *migrationSQLBuilder) build() ([]string, error) {
 	b.removeColumns()
 	b.addPrimaryKeysAndConstraints()
 	return b.statements, nil
+}
+
+func (b *migrationSQLBuilder) renameEntities() {
+	for _, decision := range b.entityRenames {
+		b.statements = append(b.statements, fmt.Sprintf(
+			"RENAME TABLE %s TO %s;",
+			sqlIdent(decision.From), sqlIdent(decision.To),
+		))
+		before := b.originalPrevious.Entities[decision.From]
+		after := b.next.Entities[decision.To]
+		columnNames := make([]string, 0, len(before.Columns))
+		for name := range before.Columns {
+			columnNames = append(columnNames, name)
+		}
+		sort.Strings(columnNames)
+		for _, name := range columnNames {
+			column := before.Columns[name]
+			if !isJSONColumn(column) {
+				continue
+			}
+			b.statements = append(b.statements, dropNamedJSONConstraintSQL(decision.To, jsonConstraintName(decision.From, name)))
+			b.droppedJSON[decision.To+"\x00"+name] = struct{}{}
+			if nextColumn, found := after.Columns[name]; found && isJSONColumn(nextColumn) {
+				b.statements = append(b.statements, jsonConstraintSQL(decision.To, name))
+			}
+		}
+	}
 }
 
 func (b *migrationSQLBuilder) dropForeignKeysAndIndexes() {
@@ -104,7 +140,7 @@ func (b *migrationSQLBuilder) renameColumns() error {
 			b.statements = append(b.statements, fmt.Sprintf("ALTER TABLE %s DROP INDEX %s;", sqlIdent(change.Entity), sqlIdent(oldColumn.Name)))
 		}
 		if isJSONColumn(oldColumn) {
-			b.statements = append(b.statements, dropJSONConstraintSQL(change.Entity, oldColumn.Name))
+			b.dropJSONConstraint(change.Entity, oldColumn.Name)
 		}
 		if !oldColumn.NotNull && after.NotNull && !after.AutoIncrement {
 			if !validBackfillExpression(after.BackfillSQL) {
@@ -143,7 +179,7 @@ func (b *migrationSQLBuilder) changeColumns() error {
 			b.statements = append(b.statements, fmt.Sprintf("ALTER TABLE %s DROP INDEX %s;", sqlIdent(change.Entity), sqlIdent(change.Before.Name)))
 		}
 		if beforeJSON && !afterJSON {
-			b.statements = append(b.statements, dropJSONConstraintSQL(change.Entity, change.Before.Name))
+			b.dropJSONConstraint(change.Entity, change.Before.Name)
 		}
 		if !change.Before.NotNull && change.After.NotNull && !change.After.AutoIncrement {
 			if !validBackfillExpression(change.After.BackfillSQL) {
@@ -204,13 +240,22 @@ func (b *migrationSQLBuilder) removeColumns() {
 			continue
 		}
 		if isJSONColumn(*change.Before) {
-			b.statements = append(b.statements, dropJSONConstraintSQL(change.Entity, change.Before.Name))
+			b.dropJSONConstraint(change.Entity, change.Before.Name)
 		}
 		b.statements = append(b.statements, fmt.Sprintf(
 			"ALTER TABLE %s DROP COLUMN %s;",
 			sqlIdent(change.Entity), sqlIdent(change.Before.Name),
 		))
 	}
+}
+
+func (b *migrationSQLBuilder) dropJSONConstraint(entity, column string) {
+	key := entity + "\x00" + column
+	if _, dropped := b.droppedJSON[key]; dropped {
+		return
+	}
+	b.statements = append(b.statements, dropJSONConstraintSQL(entity, column))
+	b.droppedJSON[key] = struct{}{}
 }
 
 func (b *migrationSQLBuilder) addPrimaryKeysAndConstraints() {
@@ -334,11 +379,17 @@ func dropJSONConstraintSQL(entity, column string) string {
 	return fmt.Sprintf("ALTER TABLE %s DROP CHECK %s;", sqlIdent(entity), sqlIdent(jsonConstraintName(entity, column)))
 }
 
+func dropNamedJSONConstraintSQL(entity, constraint string) string {
+	return fmt.Sprintf("ALTER TABLE %s DROP CHECK %s;", sqlIdent(entity), sqlIdent(constraint))
+}
+
 func jsonConstraintDefinition(entity, column string) string {
 	return fmt.Sprintf("CONSTRAINT %s CHECK (JSON_VALID(%s))", sqlIdent(jsonConstraintName(entity, column)), sqlIdent(column))
 }
 
-func jsonConstraintName(entity, column string) string { return "json." + entity + "." + column }
+func jsonConstraintName(entity, column string) string {
+	return generatedDatabaseObjectName("json", entity, column)
+}
 
 func sqlColumns(columns []string) string {
 	quoted := make([]string, 0, len(columns))

@@ -23,18 +23,24 @@ type RenameQuestion struct {
 	Candidates []RenameCandidate `json:"candidates"`
 }
 
+type EntityRenameQuestion struct {
+	Added      string            `json:"added"`
+	Candidates []RenameCandidate `json:"candidates"`
+}
+
 type SchemaDiff struct {
-	CreatedEntities    []Entity           `json:"createdEntities,omitempty"`
-	RemovedEntities    []Entity           `json:"removedEntities,omitempty"`
-	AddedColumns       []ColumnChange     `json:"addedColumns,omitempty"`
-	RemovedColumns     []ColumnChange     `json:"removedColumns,omitempty"`
-	ChangedColumns     []ColumnChange     `json:"changedColumns,omitempty"`
-	RenameQuestions    []RenameQuestion   `json:"renameQuestions,omitempty"`
-	AddedIndexes       []IndexChange      `json:"addedIndexes,omitempty"`
-	RemovedIndexes     []IndexChange      `json:"removedIndexes,omitempty"`
-	AddedForeignKeys   []ForeignKeyChange `json:"addedForeignKeys,omitempty"`
-	RemovedForeignKeys []ForeignKeyChange `json:"removedForeignKeys,omitempty"`
-	ChangedPrimaryKeys []PrimaryKeyChange `json:"changedPrimaryKeys,omitempty"`
+	CreatedEntities       []Entity               `json:"createdEntities,omitempty"`
+	RemovedEntities       []Entity               `json:"removedEntities,omitempty"`
+	AddedColumns          []ColumnChange         `json:"addedColumns,omitempty"`
+	RemovedColumns        []ColumnChange         `json:"removedColumns,omitempty"`
+	ChangedColumns        []ColumnChange         `json:"changedColumns,omitempty"`
+	RenameQuestions       []RenameQuestion       `json:"renameQuestions,omitempty"`
+	AddedIndexes          []IndexChange          `json:"addedIndexes,omitempty"`
+	RemovedIndexes        []IndexChange          `json:"removedIndexes,omitempty"`
+	AddedForeignKeys      []ForeignKeyChange     `json:"addedForeignKeys,omitempty"`
+	RemovedForeignKeys    []ForeignKeyChange     `json:"removedForeignKeys,omitempty"`
+	ChangedPrimaryKeys    []PrimaryKeyChange     `json:"changedPrimaryKeys,omitempty"`
+	EntityRenameQuestions []EntityRenameQuestion `json:"entityRenameQuestions,omitempty"`
 }
 
 type IndexChange struct {
@@ -57,16 +63,27 @@ func DiffSchemas(previous, next Schema) SchemaDiff {
 	previous = previous.Normalize()
 	next = next.Normalize()
 	var result SchemaDiff
+	var created, removed []Entity
 	entityNames := unionKeys(previous.Entities, next.Entities)
 	for _, entityName := range entityNames {
 		before, hadBefore := previous.Entities[entityName]
 		after, hasAfter := next.Entities[entityName]
 		switch {
 		case !hadBefore && hasAfter:
-			result.CreatedEntities = append(result.CreatedEntities, after)
+			created = append(created, after)
+			if after.External {
+				appendExternalEntityAdded(&result, after)
+			} else {
+				result.CreatedEntities = append(result.CreatedEntities, after)
+			}
 			continue
 		case hadBefore && !hasAfter:
-			result.RemovedEntities = append(result.RemovedEntities, before)
+			removed = append(removed, before)
+			if before.External {
+				appendExternalEntityRemoved(&result, before)
+			} else {
+				result.RemovedEntities = append(result.RemovedEntities, before)
+			}
 			continue
 		}
 		var added, removed []Column
@@ -111,7 +128,55 @@ func DiffSchemas(previous, next Schema) SchemaDiff {
 			result.ChangedPrimaryKeys = append(result.ChangedPrimaryKeys, PrimaryKeyChange{Entity: entityName, Before: beforePrimary, After: afterPrimary})
 		}
 	}
+	appendEntityRenameQuestions(&result, created, removed)
 	return result
+}
+
+func appendEntityRenameQuestions(result *SchemaDiff, created, removed []Entity) {
+	for _, added := range created {
+		if added.External {
+			continue
+		}
+		question := EntityRenameQuestion{Added: added.Name}
+		for _, candidate := range removed {
+			if candidate.External {
+				continue
+			}
+			score := entitySimilarity(candidate, added)
+			if score < 60 {
+				continue
+			}
+			question.Candidates = append(question.Candidates, RenameCandidate{From: candidate.Name, Score: score})
+		}
+		if len(question.Candidates) == 0 {
+			continue
+		}
+		sort.Slice(question.Candidates, func(i, j int) bool {
+			if question.Candidates[i].Score != question.Candidates[j].Score {
+				return question.Candidates[i].Score > question.Candidates[j].Score
+			}
+			return question.Candidates[i].From < question.Candidates[j].From
+		})
+		result.EntityRenameQuestions = append(result.EntityRenameQuestions, question)
+	}
+}
+
+func appendExternalEntityAdded(result *SchemaDiff, entity Entity) {
+	for _, name := range unionKeys(map[string]Column{}, entity.Columns) {
+		column := entity.Columns[name]
+		result.AddedColumns = append(result.AddedColumns, ColumnChange{Entity: entity.Name, After: &column})
+	}
+	appendIndexDiff(result, entity.Name, nil, entity.Indexes)
+	appendForeignKeyDiff(result, entity.Name, nil, entity.ForeignKeys)
+}
+
+func appendExternalEntityRemoved(result *SchemaDiff, entity Entity) {
+	for _, name := range unionKeys(entity.Columns, map[string]Column{}) {
+		column := entity.Columns[name]
+		result.RemovedColumns = append(result.RemovedColumns, ColumnChange{Entity: entity.Name, Before: &column})
+	}
+	appendIndexDiff(result, entity.Name, entity.Indexes, nil)
+	appendForeignKeyDiff(result, entity.Name, entity.ForeignKeys, nil)
 }
 
 func appendIndexDiff(result *SchemaDiff, entity string, before, after map[string]Index) {
@@ -182,6 +247,7 @@ func (d SchemaDiff) Destructive() bool {
 
 func (d SchemaDiff) DatabaseChanged() bool {
 	return len(d.CreatedEntities) != 0 || len(d.RemovedEntities) != 0 ||
+		len(d.EntityRenameQuestions) != 0 ||
 		len(d.AddedColumns) != 0 || len(d.RemovedColumns) != 0 ||
 		len(d.ChangedColumns) != 0 || len(d.AddedIndexes) != 0 ||
 		len(d.RemovedIndexes) != 0 || len(d.AddedForeignKeys) != 0 ||
@@ -254,6 +320,107 @@ func ResolveRenameQuestions(diff SchemaDiff, decisions []Decision) (SchemaDiff, 
 	return diff, normalized, nil
 }
 
+// ResolveSchemaDiff applies explicit technical-entity rename decisions before
+// calculating column-level changes. This lets a table rename and column
+// renames be reviewed independently without ever representing the table as a
+// destructive drop/create pair.
+func ResolveSchemaDiff(previous, next Schema, decisions []Decision) (Schema, SchemaDiff, []Decision, error) {
+	previous = previous.Normalize()
+	next = next.Normalize()
+	raw := DiffSchemas(previous, next)
+	entityDecisions, err := resolveEntityRenameQuestions(raw, decisions)
+	if err != nil {
+		return previous, raw, nil, err
+	}
+	resolvedPrevious, err := applyEntityRenameDecisions(previous, next, entityDecisions)
+	if err != nil {
+		return previous, raw, nil, err
+	}
+	resolved := DiffSchemas(resolvedPrevious, next)
+	resolved.EntityRenameQuestions = raw.EntityRenameQuestions
+	_, columnDecisions, err := ResolveRenameQuestions(resolved, decisions)
+	if err != nil {
+		return resolvedPrevious, resolved, nil, err
+	}
+	normalized := append(entityDecisions, columnDecisions...)
+	return resolvedPrevious, resolved, normalized, nil
+}
+
+func resolveEntityRenameQuestions(diff SchemaDiff, decisions []Decision) ([]Decision, error) {
+	byTarget := make(map[string]Decision)
+	usedSources := make(map[string]struct{})
+	for _, decision := range decisions {
+		if decision.Kind != "entityRename" && decision.Kind != "entityCreate" {
+			continue
+		}
+		if _, duplicate := byTarget[decision.To]; duplicate {
+			return nil, fmt.Errorf("duplicate decision for entity %s", decision.To)
+		}
+		if decision.Kind == "entityRename" {
+			if _, duplicate := usedSources[decision.From]; duplicate {
+				return nil, fmt.Errorf("entity %s is used by more than one rename", decision.From)
+			}
+			usedSources[decision.From] = struct{}{}
+		}
+		byTarget[decision.To] = decision
+	}
+	result := make([]Decision, 0, len(diff.EntityRenameQuestions))
+	for _, question := range diff.EntityRenameQuestions {
+		decision, found := byTarget[question.Added]
+		if !found {
+			return nil, fmt.Errorf("unresolved entity change for %s", question.Added)
+		}
+		if decision.Kind == "entityRename" {
+			valid := false
+			for _, candidate := range question.Candidates {
+				if candidate.From == decision.From {
+					valid = true
+					break
+				}
+			}
+			if !valid {
+				return nil, fmt.Errorf("%s is not a rename candidate for entity %s", decision.From, question.Added)
+			}
+		}
+		result = append(result, decision)
+	}
+	return result, nil
+}
+
+func applyEntityRenameDecisions(previous, next Schema, decisions []Decision) (Schema, error) {
+	result := previous.Clone()
+	for _, decision := range decisions {
+		if decision.Kind != "entityRename" {
+			continue
+		}
+		before, found := result.Entities[decision.From]
+		if !found {
+			return Schema{}, fmt.Errorf("rename source entity %s does not exist", decision.From)
+		}
+		after, found := next.Entities[decision.To]
+		if !found {
+			return Schema{}, fmt.Errorf("rename target entity %s does not exist", decision.To)
+		}
+		if _, collision := result.Entities[decision.To]; collision && decision.From != decision.To {
+			return Schema{}, fmt.Errorf("rename target entity %s already exists", decision.To)
+		}
+		delete(result.Entities, decision.From)
+		before.Name = decision.To
+		before.External = after.External
+		result.Entities[decision.To] = before
+		for name, entity := range result.Entities {
+			for key, foreignKey := range entity.ForeignKeys {
+				if foreignKey.ReferenceEntity == decision.From {
+					foreignKey.ReferenceEntity = decision.To
+					entity.ForeignKeys[key] = foreignKey
+				}
+			}
+			result.Entities[name] = entity
+		}
+	}
+	return result.Normalize(), nil
+}
+
 func sameDatabaseColumn(left, right Column) bool {
 	return left.Name == right.Name && left.SQLType == right.SQLType &&
 		left.NotNull == right.NotNull &&
@@ -287,6 +454,55 @@ func columnSimilarity(left, right Column) int {
 	}
 	if left.AutoIncrement == right.AutoIncrement {
 		score += 5
+	}
+	return score
+}
+
+func entitySimilarity(left, right Entity) int {
+	if len(left.Columns) == 0 || len(right.Columns) == 0 {
+		return 0
+	}
+	leftColumns := make([]Column, 0, len(left.Columns))
+	for _, column := range left.Columns {
+		leftColumns = append(leftColumns, column)
+	}
+	used := make([]bool, len(leftColumns))
+	total := 0
+	for name, column := range right.Columns {
+		bestIndex, best := -1, -1
+		for index, candidate := range leftColumns {
+			if used[index] {
+				continue
+			}
+			score := columnSimilarity(candidate, column)
+			if candidate.Name == name {
+				score += 5
+			}
+			if score > best {
+				bestIndex, best = index, score
+			}
+		}
+		if bestIndex >= 0 {
+			used[bestIndex] = true
+			total += best
+		}
+	}
+	denominator := len(left.Columns)
+	if len(right.Columns) > denominator {
+		denominator = len(right.Columns)
+	}
+	score := total * 80 / (denominator * 100)
+	if sameStrings(primaryColumns(left), primaryColumns(right)) {
+		score += 10
+	}
+	if len(left.Columns) == len(right.Columns) {
+		score += 5
+	}
+	if left.External == right.External {
+		score += 5
+	}
+	if score > 100 {
+		return 100
 	}
 	return score
 }

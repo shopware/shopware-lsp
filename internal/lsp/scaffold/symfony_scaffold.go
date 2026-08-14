@@ -20,6 +20,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/php/project"
 	shopwaredal "github.com/shopware/shopware-lsp/internal/shopware/dal"
+	"github.com/shopware/shopware-lsp/internal/shopware/entityschema"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
@@ -35,6 +36,7 @@ var (
 type Provider struct {
 	root     string
 	phpIndex *php.PHPIndex
+	entities *entityschema.IndexedCatalog
 	console  *console.Index
 	dal      *shopwaredal.Index
 }
@@ -48,12 +50,22 @@ func NewProvider(
 	provider := &Provider{
 		root:     filepath.Clean(root),
 		phpIndex: phpIndex,
+		entities: entityschema.NewIndexedCatalog(phpIndex, nil),
 		console:  consoleIndex,
 	}
 	if len(dalIndexes) != 0 {
 		provider.dal = dalIndexes[0]
 	}
 	return provider
+}
+
+// SetEntityCatalog installs the production catalog, including workspace index
+// readiness. Tests which exercise only the importer can keep the constructor's
+// lightweight PHP-index catalog.
+func (p *Provider) SetEntityCatalog(catalog *entityschema.IndexedCatalog) {
+	if p != nil && catalog != nil {
+		p.entities = catalog
+	}
 }
 
 func (p *Provider) GetCommands(

@@ -34,8 +34,6 @@ func TestSupportedFieldMatrixRendersImportsAndRoundTrips(t *testing.T) {
 		{ID: "json", Kind: FieldJSON, PropertyName: "config", StorageName: "config", Editable: true},
 		{ID: "list", Kind: FieldList, PropertyName: "tags", StorageName: "tags", ElementTypeClass: `Shopware\Core\Framework\DataAbstractionLayer\Field\StringField`, Editable: true},
 		{ID: "object", Kind: FieldObject, PropertyName: "metadata", StorageName: "metadata", Editable: true},
-		{ID: "created", Kind: FieldCreatedAt, Editable: true},
-		{ID: "updated", Kind: FieldUpdatedAt, Editable: true},
 		{ID: "many-one", Kind: FieldManyToOne, PropertyName: "product", ForeignKeyPropertyName: "productId", StorageName: "product_id", TargetDefinitionClass: target.DefinitionClass, TargetEntityClass: target.EntityClass, TargetCollectionClass: target.CollectionClass, TargetEntityName: target.EntityName, AssociationAPIAware: true, Editable: true},
 		{ID: "one-one", Kind: FieldOneToOne, PropertyName: "featuredProduct", ForeignKeyPropertyName: "featuredProductId", StorageName: "featured_product_id", TargetDefinitionClass: target.DefinitionClass, TargetEntityClass: target.EntityClass, TargetCollectionClass: target.CollectionClass, TargetEntityName: target.EntityName, Editable: true},
 		{ID: "inverse-one", Kind: FieldOneToOne, PropertyName: "inverseProduct", StorageName: "id", ReferenceField: "extension_id", ReferenceStorageName: "extension_id", TargetDefinitionClass: target.DefinitionClass, TargetEntityClass: target.EntityClass, TargetCollectionClass: target.CollectionClass, TargetEntityName: target.EntityName, UsesExistingColumn: true, AssociationSearchRank: 0.5, Editable: true},
@@ -110,6 +108,31 @@ func TestVersionAwareRelationUsesCompositeForeignKeyAndIndex(t *testing.T) {
 	require.NoError(t, err)
 	joined := strings.Join(statements, "\n")
 	require.Contains(t, joined, "FOREIGN KEY (`product_id`, `product_version_id`) REFERENCES `product` (`id`, `version_id`)")
+}
+
+func TestGeneratedRelationObjectNamesStayWithinMySQLLimitAndRemainStructural(t *testing.T) {
+	entityName := "a" + strings.Repeat("_entity", 8)
+	storageName := "b" + strings.Repeat("_column", 8)
+	spec := CompleteSpec(EntitySpec{
+		Mode: "new", Namespace: `Acme\Example`, ClassName: "LongMapping", EntityName: entityName,
+		Fields: []FieldSpec{
+			{ID: "id", Kind: FieldID, Editable: true},
+			{ID: "target", Kind: FieldForeignKey, PropertyName: "targetId", StorageName: storageName, TargetDefinitionClass: `Acme\Target\TargetDefinition`, TargetEntityName: "target", Editable: true},
+		},
+	})
+	entity, err := SchemaFromSpec(spec)
+	require.NoError(t, err)
+	require.Len(t, entity.ForeignKeys, 1)
+	require.Len(t, entity.Indexes, 1)
+	for name := range entity.ForeignKeys {
+		require.LessOrEqual(t, len(name), 64)
+		require.Equal(t, name, generatedDatabaseObjectName("fk", entityName, storageName))
+	}
+	for name := range entity.Indexes {
+		require.LessOrEqual(t, len(name), 64)
+		require.Equal(t, name, generatedDatabaseObjectName("idx", entityName, storageName))
+	}
+	require.Empty(t, IndexSpecsFromEntity(spec, entity), "generated relation index must not become a custom designer index")
 }
 
 func TestMigrationMatrixCoversColumnsIndexesForeignKeysAndJSONConstraints(t *testing.T) {

@@ -40,10 +40,10 @@ func ValidateMigration(previous, next Schema, diff SchemaDiff, decisions []Decis
 
 func supportedFieldKind(kind FieldKind) bool {
 	switch kind {
-	case FieldID, FieldString, FieldLongText, FieldInt, FieldFloat, FieldBool,
+	case FieldID, FieldBinaryID, FieldString, FieldEnum, FieldLongText, FieldInt, FieldFloat, FieldBool,
 		FieldDate, FieldDateTime, FieldJSON, FieldList, FieldObject, FieldBlob,
-		FieldAutoIncrement, FieldCreatedAt, FieldUpdatedAt, FieldVersion, FieldReferenceVersion,
-		FieldManyToOne, FieldOneToOne, FieldOneToMany, FieldManyToMany:
+		FieldAutoIncrement, FieldCreatedAt, FieldUpdatedAt, FieldVersion, FieldReferenceVersion, FieldForeignKey,
+		FieldManyToOne, FieldOneToOne, FieldOneToMany, FieldManyToMany, FieldHierarchy:
 		return true
 	default:
 		return false

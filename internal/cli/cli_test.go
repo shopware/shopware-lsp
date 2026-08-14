@@ -222,6 +222,23 @@ func TestApplyWorkspaceEditRejectsCreateOverExistingEmptyFile(t *testing.T) {
 	require.ErrorContains(t, err, "create target already exists")
 }
 
+func TestApplyWorkspaceEditPreviewsAndAppliesDeleteFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "obsolete.php")
+	require.NoError(t, os.WriteFile(path, []byte("obsolete\n"), 0o644))
+	edit := &protocol.WorkspaceEdit{DocumentChanges: []protocol.DocumentChange{{
+		Kind: protocol.DeleteFileOperation,
+		URI:  uriutil.FileURI(path),
+	}}}
+
+	var preview bytes.Buffer
+	require.NoError(t, applyWorkspaceEdit(&preview, edit, editMode{Diff: true}))
+	require.Contains(t, preview.String(), "+++ /dev/null")
+	require.FileExists(t, path)
+
+	require.NoError(t, applyWorkspaceEdit(&bytes.Buffer{}, edit, editMode{Write: true}))
+	require.NoFileExists(t, path)
+}
+
 func TestResolveCheckFilesExpandsDirectoriesAndDeduplicatesTargets(t *testing.T) {
 	root := t.TempDir()
 	sourcePHP := filepath.Join(root, "src", "Example.php")

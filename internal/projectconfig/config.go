@@ -195,6 +195,7 @@ var MCPToolCatalog = []CatalogEntry{
 	{ID: "shopware_scaffold_catalog", Label: "Scaffold Catalog"},
 	{ID: "shopware_scaffold", Label: "Create Scaffold"},
 	{ID: "shopware_entity_schema_bootstrap", Label: "Entity Schema Bootstrap"},
+	{ID: "shopware_entity_schema_field_types", Label: "Entity Schema Field Types"},
 	{ID: "shopware_entity_schema_search", Label: "Entity Schema Search"},
 	{ID: "shopware_entity_schema_load", Label: "Entity Schema Load"},
 	{ID: "shopware_entity_schema_preview", Label: "Entity Schema Preview"},

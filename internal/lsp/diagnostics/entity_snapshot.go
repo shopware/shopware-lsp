@@ -16,9 +16,17 @@ import (
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
-type EntitySnapshotAnalyzer struct{}
+type EntitySnapshotAnalyzer struct {
+	entities *entityschema.IndexedCatalog
+}
 
-func NewEntitySnapshotAnalyzer() *EntitySnapshotAnalyzer { return &EntitySnapshotAnalyzer{} }
+func NewEntitySnapshotAnalyzer(catalogs ...*entityschema.IndexedCatalog) *EntitySnapshotAnalyzer {
+	analyzer := &EntitySnapshotAnalyzer{}
+	if len(catalogs) != 0 {
+		analyzer.entities = catalogs[0]
+	}
+	return analyzer
+}
 
 func (a *EntitySnapshotAnalyzer) Analyze(ctx context.Context, document *lsp.TextDocument) ([]lsp.Problem, error) {
 	if document == nil || !strings.HasSuffix(strings.ToLower(document.URI), ".snapshot.json") || !strings.Contains(filepath.ToSlash(document.URI), "/src/Resources/shopware-lsp/schema/") {
@@ -95,7 +103,17 @@ func (a *EntitySnapshotAnalyzer) Analyze(ctx context.Context, document *lsp.Text
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	scanned, _, scanErr := entityschema.ScanPluginSchema(pluginRoot)
+	var scanned entityschema.Schema
+	var scanErr error
+	if a.entities != nil {
+		scanned, _, scanErr = a.entities.ScanContext(ctx, pluginRoot, nil)
+	} else {
+		// Focused importer tests do not construct a production workspace index.
+		scanned, _, scanErr = entityschema.ScanPluginSchema(pluginRoot)
+	}
+	if errors.Is(scanErr, entityschema.ErrIndexNotReady) {
+		return problems, nil
+	}
 	if scanErr != nil {
 		return nil, scanErr
 	}

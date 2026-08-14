@@ -26,6 +26,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/serializer"
 	"github.com/shopware/shopware-lsp/internal/shopware"
 	shopwaredal "github.com/shopware/shopware-lsp/internal/shopware/dal"
+	"github.com/shopware/shopware-lsp/internal/shopware/entityschema"
 	"github.com/shopware/shopware-lsp/internal/snippet"
 	"github.com/shopware/shopware-lsp/internal/stimulus"
 	"github.com/shopware/shopware-lsp/internal/style"
@@ -278,6 +279,11 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 		return nil, fmt.Errorf("create Shopware DAL index: %w", err)
 	}
 	workspace.indexers = append(workspace.indexers, dalIndex)
+	entitySchemaSources, err := entityschema.NewSourceIndex(cacheDir, workspace.store)
+	if err != nil {
+		return nil, fmt.Errorf("create entity schema source index: %w", err)
+	}
+	workspace.indexers = append(workspace.indexers, entitySchemaSources)
 	appScriptIndex, err := appscript.NewIndex(cacheDir, workspace.store)
 	if err != nil {
 		return nil, fmt.Errorf("create App script index: %w", err)
@@ -299,36 +305,37 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 	}
 
 	registerFeatures(server, root, workspaceServices{
-		symbols:         workspace.symbols,
-		services:        serviceIndex,
-		routes:          routeIndex,
-		routeUsage:      routeUsageIndex,
-		console:         consoleIndex,
-		doctrine:        doctrineIndex,
-		assets:          assetIndex,
-		events:          eventIndex,
-		messenger:       messengerIndex,
-		environment:     environmentIndex,
-		forms:           formIndex,
-		security:        securityIndex,
-		configuration:   configurationIndex,
-		serializer:      serializerIndex,
-		stimulus:        stimulusIndex,
-		styles:          styleIndex,
-		php:             phpIndex,
-		twig:            twigIndex,
-		twigVersioning:  twigVersioning,
-		twigComponents:  twigComponentIndex,
-		snippets:        snippetIndex,
-		translations:    translationIndex,
-		features:        featureIndex,
-		systemConfig:    systemConfigIndex,
-		theme:           themeIndex,
-		extensions:      extensionIndex,
-		admin:           adminIndex,
-		dal:             dalIndex,
-		appScripts:      appScriptIndex,
-		shopwareVersion: shopwareVersion,
+		symbols:             workspace.symbols,
+		services:            serviceIndex,
+		routes:              routeIndex,
+		routeUsage:          routeUsageIndex,
+		console:             consoleIndex,
+		doctrine:            doctrineIndex,
+		assets:              assetIndex,
+		events:              eventIndex,
+		messenger:           messengerIndex,
+		environment:         environmentIndex,
+		forms:               formIndex,
+		security:            securityIndex,
+		configuration:       configurationIndex,
+		serializer:          serializerIndex,
+		stimulus:            stimulusIndex,
+		styles:              styleIndex,
+		php:                 phpIndex,
+		twig:                twigIndex,
+		twigVersioning:      twigVersioning,
+		twigComponents:      twigComponentIndex,
+		snippets:            snippetIndex,
+		translations:        translationIndex,
+		features:            featureIndex,
+		systemConfig:        systemConfigIndex,
+		theme:               themeIndex,
+		extensions:          extensionIndex,
+		admin:               adminIndex,
+		dal:                 dalIndex,
+		entitySchemaSources: entitySchemaSources,
+		appScripts:          appScriptIndex,
+		shopwareVersion:     shopwareVersion,
 	})
 
 	return workspace, nil
@@ -384,7 +391,7 @@ func domainForIndexer(id string) string {
 		return "shopware.extensions"
 	case "admin.component.indexer":
 		return "administration"
-	case "shopware.dal":
+	case "shopware.dal", "shopware.entity_schema.sources":
 		return "shopware.dal"
 	case "shopware.app_script":
 		return "shopware.appScripts"

@@ -28,6 +28,7 @@ type pendingDocumentEdit struct {
 	Exists   bool
 	Created  bool
 	Modified bool
+	Deleted  bool
 }
 
 func applyWorkspaceEdit(
@@ -119,8 +120,14 @@ func (a *workspaceEditApplier) applyDocumentChanges(
 			}
 			continue
 		}
-		if change.TextDocument == nil {
+		if change.Kind == protocol.DeleteFileOperation {
+			if err := a.applyDelete(change); err != nil {
+				return err
+			}
 			continue
+		}
+		if change.TextDocument == nil {
+			return fmt.Errorf("unsupported workspace edit change kind %q", change.Kind)
 		}
 		document, err := a.load(change.TextDocument.URI, false)
 		if err != nil {
@@ -133,6 +140,29 @@ func (a *workspaceEditApplier) applyDocumentChanges(
 		document.After = updated
 		document.Modified = document.After != document.Before
 	}
+	return nil
+}
+
+func (a *workspaceEditApplier) applyDelete(change protocol.DocumentChange) error {
+	if change.Options != nil && change.Options.Recursive {
+		return fmt.Errorf("recursive workspace deletion is not supported")
+	}
+	if change.Options != nil && change.Options.IgnoreIfNotExists {
+		path, err := uriutil.Path(change.URI)
+		if err != nil {
+			return fmt.Errorf("resolve delete URI %q: %w", change.URI, err)
+		}
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return nil
+		}
+	}
+	document, err := a.load(change.URI, false)
+	if err != nil {
+		return err
+	}
+	document.After = ""
+	document.Modified = document.Before != ""
+	document.Deleted = true
 	return nil
 }
 
@@ -160,7 +190,7 @@ func (a *workspaceEditApplier) finish() error {
 	})
 	for _, uri := range a.order {
 		document := a.documents[uri]
-		if !document.Modified && (!document.Created || document.Before != "") {
+		if !document.Deleted && !document.Modified && (!document.Created || document.Before != "") {
 			continue
 		}
 		if err := a.finishDocument(document); err != nil {
@@ -174,11 +204,15 @@ func (a *workspaceEditApplier) finishDocument(
 	document *pendingDocumentEdit,
 ) error {
 	if a.mode.Diff || !a.mode.Write {
+		toFile := document.Path
+		if document.Deleted {
+			toFile = "/dev/null"
+		}
 		diff, err := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
 			A:        difflib.SplitLines(document.Before),
 			B:        difflib.SplitLines(document.After),
 			FromFile: document.Path,
-			ToFile:   document.Path,
+			ToFile:   toFile,
 			Context:  3,
 		})
 		if err != nil {
@@ -189,6 +223,12 @@ func (a *workspaceEditApplier) finishDocument(
 		}
 	}
 	if a.mode.Write {
+		if document.Deleted {
+			if err := os.Remove(document.Path); err != nil {
+				return fmt.Errorf("delete %s: %w", document.Path, err)
+			}
+			return nil
+		}
 		if err := os.MkdirAll(filepath.Dir(document.Path), 0o755); err != nil {
 			return fmt.Errorf("create edit directory: %w", err)
 		}

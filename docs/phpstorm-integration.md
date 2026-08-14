@@ -194,22 +194,89 @@ Build the "New Shopware File" UI from the `scaffolds` array returned by
   returned workspace edit and navigate to `primaryFileUri`.
 - `workflow: "entity-schema"` uses the typed entity workflow below.
 
+The entity workflow exposes schema-owning class-based definitions only.
+Attribute definitions, attribute-only `SerializedField`, dynamic custom-entity
+templates, and non-owning derived definition views are intentionally not
+editable entity-schema targets.
+
 Entity creation or editing must follow this sequence:
 
 1. `shopware/entity-schema/bootstrap` for the selected plugin directory.
 2. Optionally `search` for association targets and `load` for an existing
    definition.
-3. Edit the typed specification in the designer.
+3. Edit the typed specification in the designer. When a returned field type
+   has a `template`, clone that template to add the Shopware-specific field;
+   do not reconstruct its implementation metadata.
+   Use `definitionKind: "mapping"` for `MappingEntityDefinition`; mapping mode
+   has no entity/collection classes or implicit timestamp fields and may use
+   standalone foreign keys as a composite primary key.
+   Use `definitionKind: "extension"` for `EntityExtension`, select an indexed
+   `extendedDefinitionClass`, and retain its matching technical `entityName`.
+   Preserve the selected target's returned `fields` as `extendedFields` so
+   index controls can combine an extension-owned column with verified target
+   columns. The server rehydrates this metadata from the index before
+   validation; an extension index must contain at least one owned column.
+   Shopware accepts only associations, reference-version fields, runtime
+   fields, and a foreign key paired with its association from the same
+   extension. Model persisted extension columns as a `many-to-one` or
+   `one-to-one` row; standalone persisted scalars and foreign keys are invalid.
+   Use `definitionKind: "bulk-extension"` for `BulkEntityExtension`. Keep
+   top-level `fields`, `indexes`, `extendedDefinitionClass`, and `entityName`
+   empty; create one `bulkExtensions` entry per indexed target with its own
+   `entityName`, `extendedDefinitionClass`, rehydrated `extendedFields`,
+   `fields`, and `indexes`. Apply the same EntityExtension field and index
+   validity rules independently to every target.
+   Represent a parent/children tree as one field with `kind: "hierarchy"`.
+   Do not add separate parent FK or reference-version fields: the server owns
+   the native three-field DAL bundle and derives version pairing automatically.
+   For product-style variants set `inheritanceAware: true` and keep that
+   hierarchy. Use the typed `inherited`, `associationInherited`,
+   `translationInherited`, and `reverseInheritedProperty` members; do not add
+   raw `Inherited` or `ReverseInherited` expressions to preserved flags.
+   Use `definitionBehavior.parentDefinitionClass` for aggregate definitions,
+   the optional `versionAware` boolean only when the class explicitly
+   overrides framework inference, and `overrideDefaultFields` when the class
+   owns `defaultFields()`. An empty `defaultFields` list disables the normal
+   implicit timestamps. `overrideBaseFields` and `baseFields` represent a
+   literal `getBaseFields()` override; these fields participate in generated
+   entity accessors, indexed relation metadata, snapshots, and migrations.
+   `restrictDeleteMetaProperties` represents the literal metadata-property
+   filter.
+   Use `definitionMetadata` for `since()`, `getDefaults()`,
+   `getChildDefaults()`, and `getHydratorClass()`; translation-specific values
+   live below `translation.definitionBehavior` and
+   `translation.definitionMetadata`.
+   Retain loaded `conditionalAssociation`, `apiAwareSources`, behavior,
+   metadata, and JSON mapping/default members. They are semantic source data,
+   not disposable presentation hints.
+   For a returned `kind: "enum"` field retain `enumClass`, `enumCase`, and
+   `enumBackingType`; the server verifies the indexed backed enum and owns its
+   PHP and migration representation.
+   Retain every loaded property ending in `MethodRaw` byte-for-byte. It marks
+   a non-literal PHP method that the server preserves but intentionally does
+   not allow clients to synthesize or edit.
 4. Call `preview`; show validation, rename, drift, and destructive-change
    questions and repeat preview only after the specification or decisions
-   change.
+   change. Answer `entityRenameQuestions` with `entityRename` plus the exact
+   old/new table names, or `entityCreate` when the table is intentionally new;
+   never silently translate a technical-name change into drop-and-create.
 5. When preview returns `ready`, call `apply` once with the identical spec and
    exact opaque revision. Do not refresh the preview timestamp or revision.
 6. Use `reconcile` only for divergent committed snapshot history, then restart
    at bootstrap.
 
 The adapter must not generate entity PHP, services, migration, or snapshot
-files itself.
+files itself. Mapping preview/apply returns only the definition, service,
+migration, and snapshot changes. A field with `translated: true` is still part
+of the parent specification: retain the returned `translation` companion
+metadata and let the server preview/apply the complete six-class DAL bundle
+and both database tables atomically. Extension preview/apply returns the
+extension class, `shopware.entity.extension` service registration, and a
+snapshot. Paired to-one foreign keys and reference-version fields alter the
+target table; scalar extension fields must be runtime, and association-only
+extensions intentionally produce no migration. Bulk-extension preview/apply
+returns one class registered with `shopware.bulk.entity.extension` and combines
+all of its target-table contributions in the same migration and snapshot.
 
 ## Native plugin migration checklist
 

@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/shopware/shopware-lsp/internal/indexer"
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	phpindex "github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/shopware/entityschema"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 	"github.com/stretchr/testify/require"
@@ -48,7 +50,40 @@ func TestEntitySnapshotAnalyzerAcceptsExternalRelationsAndSnapshotOnlyIndexes(t 
 	})
 	definition, err := entityschema.RenderDefinition(spec)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(definitionDirectory, "ExampleDefinition.php"), []byte(definition), 0o644))
+	definitionPath := filepath.Join(definitionDirectory, "ExampleDefinition.php")
+	require.NoError(t, os.WriteFile(definitionPath, []byte(definition), 0o644))
+	phpIndex, err := phpindex.NewPHPIndex(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, phpIndex.Close()) })
+	sourceIndex, err := entityschema.NewSourceIndex(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, sourceIndex.Close()) })
+	frameworkPath := filepath.Join(root, "vendor", "shopware", "EntityDefinition.php")
+	framework := []byte(`<?php
+namespace Shopware\Core\Framework\DataAbstractionLayer;
+abstract class EntityDefinition {}
+`)
+	for indexedPath, indexedSource := range map[string][]byte{
+		frameworkPath:  framework,
+		definitionPath: []byte(definition),
+	} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(indexedPath), 0o755))
+		require.NoError(t, os.WriteFile(indexedPath, indexedSource, 0o644))
+		file := indexer.NewParsedFile(indexedPath, indexedSource)
+		require.NoError(t, phpIndex.Index(file))
+		require.NoError(t, sourceIndex.Index(file))
+	}
+	// A valid but unindexed source must not affect request-time drift checks.
+	require.NoError(t, os.WriteFile(filepath.Join(definitionDirectory, "UnindexedDefinition.php"), []byte(`<?php
+namespace Acme\Example\Entity\Example;
+use Shopware\Core\Framework\DataAbstractionLayer\EntityDefinition;
+use Shopware\Core\Framework\DataAbstractionLayer\Field\FieldCollection;
+final class UnindexedDefinition extends EntityDefinition {
+    public const ENTITY_NAME = 'unindexed';
+    protected function defineFields(): FieldCollection { return new FieldCollection([]); }
+}`), 0o644))
+	require.NoError(t, os.Remove(definitionPath))
+	require.NoError(t, os.Remove(frameworkPath))
 	entity, err := entityschema.SchemaFromSpec(spec)
 	require.NoError(t, err)
 	schema := entityschema.EmptySchema()
@@ -63,7 +98,7 @@ func TestEntitySnapshotAnalyzerAcceptsExternalRelationsAndSnapshotOnlyIndexes(t 
 	require.NoError(t, os.WriteFile(path, content, 0o644))
 
 	document := lsp.NewTextDocument(uriutil.FileURI(path), string(content), 1)
-	problems, err := NewEntitySnapshotAnalyzer().Analyze(context.Background(), document)
+	problems, err := NewEntitySnapshotAnalyzer(entityschema.NewIndexedCatalog(phpIndex, sourceIndex)).Analyze(context.Background(), document)
 	require.NoError(t, err)
 	require.NotContains(t, problemIDs(problems), "shopware.entity_snapshot.schema_drift")
 }

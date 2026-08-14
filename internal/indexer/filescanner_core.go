@@ -244,6 +244,15 @@ func (fs *FileScanner) Close() error {
 }
 
 func (fs *FileScanner) IndexAll(ctx context.Context) error {
+	// A previously warm cache must not advertise a complete generation while
+	// the filesystem reconciliation that may invalidate it is still running.
+	// Request-time consumers use this marker to reject destructive previews
+	// against partial or stale indexes.
+	if fs.symbols != nil {
+		if err := fs.symbols.SetReady(ctx, false); err != nil {
+			return fmt.Errorf("mark workspace indexes rebuilding: %w", err)
+		}
+	}
 	files, err := fs.discoverFiles(ctx)
 	if err != nil {
 		return err

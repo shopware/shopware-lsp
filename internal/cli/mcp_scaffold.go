@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -43,7 +44,46 @@ type scaffoldOutput struct {
 }
 
 type entitySchemaBootstrapInput struct {
-	Directory string `json:"directory" jsonschema:"workspace-relative or absolute directory inside the target Shopware plugin; call this first for every create or edit entity request"`
+	Directory string `json:"directory" jsonschema:"workspace-relative or absolute directory inside the target Shopware plugin; call this first for every create or edit entity, mapping-definition, EntityExtension, or BulkEntityExtension request"`
+}
+
+type entitySchemaFieldTypeSummary struct {
+	ID                            string `json:"id"`
+	Kind                          string `json:"kind"`
+	Label                         string `json:"label"`
+	Stored                        bool   `json:"stored"`
+	Specialized                   bool   `json:"specialized,omitempty"`
+	RequiresDefaultFieldsOverride bool   `json:"requiresDefaultFieldsOverride,omitempty"`
+}
+
+type entitySchemaBootstrapOutput struct {
+	Plugin          entityschema.PluginContext            `json:"plugin"`
+	Spec            entityschema.EntitySpec               `json:"spec"`
+	DefinitionKinds []entityschema.DefinitionKind         `json:"definitionKinds"`
+	FieldTypes      []entitySchemaFieldTypeSummary        `json:"fieldTypes"`
+	Graph           scaffold.EntitySchemaGraph            `json:"graph"`
+	Editable        []scaffold.EntitySchemaEditableTarget `json:"editable,omitempty"`
+	NextAction      string                                `json:"nextAction"`
+}
+
+type entitySchemaFieldTypesInput struct {
+	Directory      string                      `json:"directory" jsonschema:"same plugin directory passed to shopware_entity_schema_bootstrap"`
+	ID             string                      `json:"id,omitempty" jsonschema:"exact field type id returned by bootstrap.fieldTypes or by a catalog listing; provide this to get one copyable template"`
+	Query          string                      `json:"query,omitempty" jsonschema:"optional case-insensitive id, kind, or label filter when listing field types"`
+	DefinitionKind entityschema.DefinitionKind `json:"definitionKind,omitempty" jsonschema:"optional entity, mapping, extension, or bulk-extension filter"`
+	Limit          int                         `json:"limit,omitempty" jsonschema:"maximum compact results; defaults to 100 and cannot exceed 200"`
+}
+
+type entitySchemaFieldTypeDetail struct {
+	entitySchemaFieldTypeSummary
+	DefinitionKinds []entityschema.DefinitionKind `json:"definitionKinds,omitempty"`
+	Template        map[string]any                `json:"template,omitempty"`
+	Usage           string                        `json:"usage,omitempty"`
+}
+
+type entitySchemaFieldTypesOutput struct {
+	FieldTypes []entitySchemaFieldTypeDetail `json:"fieldTypes"`
+	NextAction string                        `json:"nextAction"`
 }
 
 type entitySchemaSearchInput struct {
@@ -56,13 +96,14 @@ type entitySchemaSearchOutput struct {
 }
 
 type entitySchemaLoadInput struct {
-	DefinitionClass string `json:"definitionClass,omitempty" jsonschema:"existing indexed definition class to edit after bootstrapping its plugin"`
-	EntityName      string `json:"entityName,omitempty" jsonschema:"existing indexed technical entity name to edit"`
-	Path            string `json:"path,omitempty" jsonschema:"workspace-relative or absolute existing entity definition file to edit"`
+	DefinitionClass string                      `json:"definitionClass,omitempty" jsonschema:"existing indexed definition class to edit after bootstrapping its plugin"`
+	DefinitionKind  entityschema.DefinitionKind `json:"definitionKind,omitempty" jsonschema:"effective class kind from bootstrap.editable; required with definitionClass for classes using custom abstract DAL bases"`
+	EntityName      string                      `json:"entityName,omitempty" jsonschema:"existing indexed technical entity name to edit"`
+	Path            string                      `json:"path,omitempty" jsonschema:"workspace-relative or absolute existing entity definition file to edit"`
 }
 
 type entitySchemaPreviewInput struct {
-	Spec          entityschema.EntitySpec `json:"spec" jsonschema:"typed entity specification returned by bootstrap or load, modified for the requested fields and indexes"`
+	Spec          entityschema.EntitySpec `json:"spec" jsonschema:"typed entity, mapping-definition, EntityExtension, or multi-target BulkEntityExtension specification returned by bootstrap or load"`
 	Decisions     []entityschema.Decision `json:"decisions,omitempty" jsonschema:"answers to rename questions returned by a previous preview"`
 	DriftDecision string                  `json:"driftDecision,omitempty" jsonschema:"adopt or migrate when preview reports manual schema drift"`
 }
@@ -75,17 +116,18 @@ type entitySchemaPreviewFile struct {
 }
 
 type entitySchemaDiffSummary struct {
-	CreatedEntities    []string                      `json:"createdEntities,omitempty"`
-	RemovedEntities    []string                      `json:"removedEntities,omitempty"`
-	AddedColumns       []string                      `json:"addedColumns,omitempty"`
-	RemovedColumns     []string                      `json:"removedColumns,omitempty"`
-	ChangedColumns     []string                      `json:"changedColumns,omitempty"`
-	RenameQuestions    []entityschema.RenameQuestion `json:"renameQuestions,omitempty"`
-	AddedIndexes       []string                      `json:"addedIndexes,omitempty"`
-	RemovedIndexes     []string                      `json:"removedIndexes,omitempty"`
-	AddedForeignKeys   []string                      `json:"addedForeignKeys,omitempty"`
-	RemovedForeignKeys []string                      `json:"removedForeignKeys,omitempty"`
-	ChangedPrimaryKeys []string                      `json:"changedPrimaryKeys,omitempty"`
+	CreatedEntities       []string                            `json:"createdEntities,omitempty"`
+	RemovedEntities       []string                            `json:"removedEntities,omitempty"`
+	AddedColumns          []string                            `json:"addedColumns,omitempty"`
+	RemovedColumns        []string                            `json:"removedColumns,omitempty"`
+	ChangedColumns        []string                            `json:"changedColumns,omitempty"`
+	RenameQuestions       []entityschema.RenameQuestion       `json:"renameQuestions,omitempty"`
+	EntityRenameQuestions []entityschema.EntityRenameQuestion `json:"entityRenameQuestions,omitempty"`
+	AddedIndexes          []string                            `json:"addedIndexes,omitempty"`
+	RemovedIndexes        []string                            `json:"removedIndexes,omitempty"`
+	AddedForeignKeys      []string                            `json:"addedForeignKeys,omitempty"`
+	RemovedForeignKeys    []string                            `json:"removedForeignKeys,omitempty"`
+	ChangedPrimaryKeys    []string                            `json:"changedPrimaryKeys,omitempty"`
 }
 
 type entitySchemaPreviewOutput struct {
@@ -148,27 +190,32 @@ func registerMCPScaffoldTools(
 		Annotations: write,
 	}, runtime.scaffold)
 	addMCPTool(server, runtime, &mcp.Tool{
-		Name: "shopware_entity_schema_bootstrap", Title: "Start creating or editing a Shopware DAL entity",
-		Description: "Always call this first when the user asks to create, generate, or edit a Shopware DAL entity or entity definition. It returns the typed spec to modify, plugin paths, field types, snapshot state, and initial relation targets. Do not create entity PHP files manually.",
+		Name: "shopware_entity_schema_bootstrap", Title: "Start creating or editing a Shopware DAL entity, mapping, or extension",
+		Description: "Always call this first for a Shopware DAL entity, definition, MappingEntityDefinition, EntityExtension, or BulkEntityExtension. The compact result contains the exact spec to modify, available definition kinds and field-type ids, snapshot state, and editable local classes. It intentionally omits relation catalogs and large templates: use shopware_entity_schema_search for a target and shopware_entity_schema_field_types with an exact id for a copyable field template. Use kind=hierarchy for trees and inheritanceAware=true for variants. Never search content.json or temporary MCP payload files. Preserve loaded *MethodRaw values and use preview/apply rather than writing generated files manually.",
 		Annotations: readOnly,
 	}, runtime.entitySchemaBootstrap)
+	addMCPTool(server, runtime, &mcp.Tool{
+		Name: "shopware_entity_schema_field_types", Title: "List or inspect Shopware DAL field types",
+		Description: "Use after entity-schema bootstrap instead of inspecting content.json. With no id it returns a small searchable list of field ids, kinds, labels, and storage behavior. With an exact id it returns one copyable field template and focused usage guidance. Keep specialized template implementation metadata unchanged. Set translated=true on an ordinary scalar field when translation storage is wanted; createdAt and updatedAt are inherited framework fields and normally must not be added.",
+		Annotations: readOnly,
+	}, runtime.entitySchemaFieldTypes)
 	addMCPTool(server, runtime, &mcp.Tool{
 		Name: "shopware_entity_schema_search", Title: "Find Shopware DAL relation targets",
 		Description: "Use after entity-schema bootstrap when a requested association needs an indexed target definition, entity name, fields, or collection class. Feed the selected target into the typed spec before previewing.",
 		Annotations: readOnly,
 	}, runtime.entitySchemaSearch)
 	addMCPTool(server, runtime, &mcp.Tool{
-		Name: "shopware_entity_schema_load", Title: "Load an existing Shopware DAL entity for editing",
-		Description: "Use after bootstrapping the plugin when the user asks to edit an existing DAL entity. Import the indexed definition into the typed spec, modify that spec, and send it to entity-schema preview.",
+		Name: "shopware_entity_schema_load", Title: "Load an existing Shopware DAL entity, mapping, or extension for editing",
+		Description: "Use after bootstrapping the plugin when the user asks to edit an existing DAL entity, mapping definition, EntityExtension, or BulkEntityExtension. Select it from bootstrap.editable and pass its path, definitionClass, and definitionKind so custom abstract DAL bases remain resolvable. Preserve the loaded definitionKind, all extension targets, and every locked *MethodRaw value, then send the modified typed spec to entity-schema preview.",
 		Annotations: readOnly,
 	}, runtime.entitySchemaLoad)
 	addMCPTool(server, runtime, &mcp.Tool{
-		Name: "shopware_entity_schema_preview", Title: "Validate and preview a Shopware DAL entity",
-		Description: "Required after bootstrap/load and before apply. Validate the modified typed spec and return a compact, self-contained summary of all PHP, services.yaml, migration, and committed snapshot changes without writing. Generated file bodies are intentionally omitted to keep the MCP result inline; do not search temporary VS Code payloads. Resolve every returned issue or rename/drift question and preview again. When status=ready, call apply once with the same spec and exact opaque revision without rerunning preview.",
+		Name: "shopware_entity_schema_preview", Title: "Validate and preview a Shopware DAL entity, mapping, or extension",
+		Description: "Required after bootstrap/load and before apply. Validate the modified typed spec and return a compact, self-contained summary of all PHP, services.yaml, migration, and committed snapshot changes without writing. Generated file bodies are intentionally omitted to keep the MCP result inline; do not search temporary VS Code payloads. Resolve every returned issue or rename/drift question and preview again. For entityRenameQuestions answer with kind=entityRename, entity/to equal the added table, and from equal the selected old table; use kind=entityCreate when it is intentionally new. When status=ready, call apply once with the same spec and exact opaque revision without rerunning preview.",
 		Annotations: readOnly,
 	}, runtime.entitySchemaPreview)
 	addMCPTool(server, runtime, &mcp.Tool{
-		Name: "shopware_entity_schema_apply", Title: "Create or update the Shopware DAL entity",
+		Name: "shopware_entity_schema_apply", Title: "Create or update the Shopware DAL entity, mapping, or extension",
 		Description: "Final entity workflow step: write the exact clean revision returned by entity-schema preview. Reuse the previewed spec and opaque revision without refreshing the generated migration timestamp. Use it when the user requested creation or editing; never reproduce the preview with manual file edits. Destructive changes require explicit user confirmation and allowDestructive=true.",
 		Annotations: destructiveWrite,
 	}, runtime.entitySchemaApply)
@@ -305,10 +352,21 @@ func (runtime *mcpRuntime) entitySchemaBootstrap(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	input entitySchemaBootstrapInput,
-) (*mcp.CallToolResult, scaffold.EntitySchemaBootstrapResponse, error) {
-	directoryURI, err := runtime.inputURI(input.Directory, true)
+) (*mcp.CallToolResult, entitySchemaBootstrapOutput, error) {
+	output, err := runtime.entitySchemaBootstrapResponse(ctx, input.Directory)
 	if err != nil {
-		return nil, scaffold.EntitySchemaBootstrapResponse{}, err
+		return nil, entitySchemaBootstrapOutput{}, err
+	}
+	return nil, compactEntitySchemaBootstrap(output), nil
+}
+
+func (runtime *mcpRuntime) entitySchemaBootstrapResponse(
+	ctx context.Context,
+	directory string,
+) (scaffold.EntitySchemaBootstrapResponse, error) {
+	directoryURI, err := runtime.inputURI(directory, true)
+	if err != nil {
+		return scaffold.EntitySchemaBootstrapResponse{}, err
 	}
 	output, err := withMCPSession(ctx, runtime, func(session *cliSession) (scaffold.EntitySchemaBootstrapResponse, error) {
 		return callMCPCommand[scaffold.EntitySchemaBootstrapRequest, scaffold.EntitySchemaBootstrapResponse](
@@ -319,7 +377,65 @@ func (runtime *mcpRuntime) entitySchemaBootstrap(
 	if err == nil {
 		runtime.normalizeBootstrapOutput(&output)
 	}
-	return nil, output, err
+	return output, err
+}
+
+func (runtime *mcpRuntime) entitySchemaFieldTypes(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	input entitySchemaFieldTypesInput,
+) (*mcp.CallToolResult, entitySchemaFieldTypesOutput, error) {
+	limit, err := boundedLimit(input.Limit, 100, 200, "limit")
+	if err != nil {
+		return nil, entitySchemaFieldTypesOutput{}, err
+	}
+	bootstrap, err := runtime.entitySchemaBootstrapResponse(ctx, input.Directory)
+	if err != nil {
+		return nil, entitySchemaFieldTypesOutput{}, err
+	}
+	if input.DefinitionKind != "" && !containsDefinitionKind(bootstrap.DefinitionKinds, input.DefinitionKind) {
+		return nil, entitySchemaFieldTypesOutput{}, fmt.Errorf(
+			"definition kind %q is unavailable for Shopware constraint %q",
+			input.DefinitionKind, bootstrap.Plugin.ShopwareVersion,
+		)
+	}
+	exactID := strings.TrimSpace(input.ID)
+	query := strings.ToLower(strings.TrimSpace(input.Query))
+	result := entitySchemaFieldTypesOutput{}
+	for _, fieldType := range bootstrap.FieldTypes {
+		id := entitySchemaFieldTypeID(fieldType)
+		if exactID != "" && !strings.EqualFold(id, exactID) {
+			continue
+		}
+		if input.DefinitionKind != "" && !containsDefinitionKind(fieldType.DefinitionKinds, input.DefinitionKind) {
+			continue
+		}
+		if query != "" && !strings.Contains(strings.ToLower(id+" "+fieldType.Kind+" "+fieldType.Label), query) {
+			continue
+		}
+		detail := entitySchemaFieldTypeDetail{entitySchemaFieldTypeSummary: summarizeEntitySchemaFieldType(fieldType)}
+		if exactID != "" {
+			detail.DefinitionKinds = append([]entityschema.DefinitionKind(nil), fieldType.DefinitionKinds...)
+			detail.Template = entitySchemaFieldTemplate(fieldType)
+			detail.Usage = entitySchemaFieldTypeUsage(fieldType)
+		}
+		result.FieldTypes = append(result.FieldTypes, detail)
+		if len(result.FieldTypes) >= limit {
+			break
+		}
+	}
+	if exactID != "" && len(result.FieldTypes) == 0 {
+		return nil, entitySchemaFieldTypesOutput{}, fmt.Errorf(
+			"field type %q is unavailable; call shopware_entity_schema_field_types without id to list valid ids",
+			exactID,
+		)
+	}
+	if exactID == "" {
+		result.NextAction = "Call shopware_entity_schema_field_types again with one exact id to receive its copyable template; do not inspect content.json or temporary payload files."
+	} else {
+		result.NextAction = "Copy template into the bootstrapped spec.fields, replace the example identifiers and requested options, then call shopware_entity_schema_preview with the complete spec."
+	}
+	return nil, result, nil
 }
 
 func (runtime *mcpRuntime) entitySchemaSearch(
@@ -361,6 +477,7 @@ func (runtime *mcpRuntime) entitySchemaLoad(
 			ctx, session, scaffold.EntitySchemaLoadCommand,
 			scaffold.EntitySchemaLoadRequest{
 				DefinitionClass: input.DefinitionClass,
+				DefinitionKind:  input.DefinitionKind,
 				EntityName:      input.EntityName, FileURI: fileURI,
 			},
 		)
@@ -465,6 +582,22 @@ func (runtime *mcpRuntime) entitySchemaPreviewRequest(
 		}
 		*value.target = uri
 	}
+	if spec.Translation != nil {
+		for _, value := range []struct {
+			name   string
+			target *string
+		}{
+			{"spec.translation.definitionUri", &spec.Translation.DefinitionURI},
+			{"spec.translation.entityUri", &spec.Translation.EntityURI},
+			{"spec.translation.collectionUri", &spec.Translation.CollectionURI},
+		} {
+			uri, err := runtime.inputURI(*value.target, false)
+			if err != nil {
+				return scaffold.EntitySchemaPreviewRequest{}, fmt.Errorf("%s: %w", value.name, err)
+			}
+			*value.target = uri
+		}
+	}
 	return scaffold.EntitySchemaPreviewRequest{
 		Spec: spec, Decisions: input.Decisions,
 		DriftDecision: input.DriftDecision,
@@ -498,6 +631,141 @@ func (runtime *mcpRuntime) inputURI(value string, required bool) (string, error)
 	return uriutil.FileURI(path), nil
 }
 
+func compactEntitySchemaBootstrap(
+	input scaffold.EntitySchemaBootstrapResponse,
+) entitySchemaBootstrapOutput {
+	fieldTypes := make([]entitySchemaFieldTypeSummary, 0, len(input.FieldTypes))
+	for _, fieldType := range input.FieldTypes {
+		fieldTypes = append(fieldTypes, summarizeEntitySchemaFieldType(fieldType))
+	}
+	return entitySchemaBootstrapOutput{
+		Plugin: input.Plugin, Spec: input.Spec,
+		DefinitionKinds: append([]entityschema.DefinitionKind(nil), input.DefinitionKinds...),
+		FieldTypes:      fieldTypes, Graph: input.Graph,
+		Editable:   append([]scaffold.EntitySchemaEditableTarget(nil), input.Editable...),
+		NextAction: "Modify this exact spec. A normal scalar field is {id, kind, propertyName, storageName, editable:true}; add translated:true for translated storage. Call shopware_entity_schema_field_types with an exact id for a copyable template, or shopware_entity_schema_search for relation targets. Then preview the complete spec. Do not inspect content.json or temporary payload files.",
+	}
+}
+
+func summarizeEntitySchemaFieldType(
+	fieldType scaffold.EntitySchemaFieldType,
+) entitySchemaFieldTypeSummary {
+	return entitySchemaFieldTypeSummary{
+		ID: entitySchemaFieldTypeID(fieldType), Kind: fieldType.Kind,
+		Label: fieldType.Label, Stored: fieldType.Stored,
+		Specialized:                   fieldType.Template != nil,
+		RequiresDefaultFieldsOverride: fieldType.RequiresDefaultFieldsOverride,
+	}
+}
+
+func entitySchemaFieldTypeID(fieldType scaffold.EntitySchemaFieldType) string {
+	if strings.TrimSpace(fieldType.ID) != "" {
+		return fieldType.ID
+	}
+	return fieldType.Kind
+}
+
+func containsDefinitionKind(kinds []entityschema.DefinitionKind, target entityschema.DefinitionKind) bool {
+	for _, kind := range kinds {
+		if kind == target {
+			return true
+		}
+	}
+	return false
+}
+
+func entitySchemaFieldTemplate(fieldType scaffold.EntitySchemaFieldType) map[string]any {
+	field := entitySchemaBasicFieldTemplate(entityschema.FieldKind(fieldType.Kind))
+	if fieldType.Template != nil {
+		field = *fieldType.Template
+		field.ID = "replace-me"
+		field.Editable = true
+		field.Raw = ""
+	}
+	encoded, err := json.Marshal(field)
+	if err != nil {
+		return nil
+	}
+	var result map[string]any
+	if err := json.Unmarshal(encoded, &result); err != nil {
+		return nil
+	}
+	return result
+}
+
+func entitySchemaBasicFieldTemplate(kind entityschema.FieldKind) entityschema.FieldSpec {
+	field := entityschema.FieldSpec{
+		ID: "replace-me", Kind: kind, PropertyName: "replaceMe",
+		StorageName: "replace_me", Editable: true,
+	}
+	switch kind {
+	case entityschema.FieldID:
+		field.ID, field.PropertyName, field.StorageName = "id", "id", "id"
+		field.Required, field.Primary = true, true
+	case entityschema.FieldAutoIncrement:
+		field.PropertyName, field.StorageName, field.Required = "autoIncrement", "auto_increment", true
+	case entityschema.FieldVersion:
+		field.PropertyName, field.StorageName, field.Required, field.Primary = "versionId", "version_id", true, true
+	case entityschema.FieldCreatedAt:
+		field.PropertyName, field.StorageName, field.Required = "createdAt", "created_at", true
+	case entityschema.FieldUpdatedAt:
+		field.PropertyName, field.StorageName = "updatedAt", "updated_at"
+	case entityschema.FieldHierarchy:
+		field.PropertyName, field.StorageName = "children", ""
+	case entityschema.FieldReferenceVersion:
+		field.PropertyName, field.StorageName = "replaceMeVersionId", "replace_me_version_id"
+		field.TargetDefinitionClass = `Vendor\Plugin\Content\ReplaceMe\ReplaceMeDefinition`
+	case entityschema.FieldForeignKey:
+		field.PropertyName, field.StorageName = "replaceMeId", "replace_me_id"
+		field.TargetDefinitionClass = `Vendor\Plugin\Content\ReplaceMe\ReplaceMeDefinition`
+		field.ReferenceField, field.ReferenceStorageName = "id", "id"
+	case entityschema.FieldManyToOne, entityschema.FieldOneToOne:
+		field.ForeignKeyPropertyName = "replaceMeId"
+		field.TargetDefinitionClass = `Vendor\Plugin\Content\ReplaceMe\ReplaceMeDefinition`
+		field.TargetEntityClass = `Vendor\Plugin\Content\ReplaceMe\ReplaceMeEntity`
+		field.TargetCollectionClass = `Vendor\Plugin\Content\ReplaceMe\ReplaceMeCollection`
+		field.TargetEntityName = "replace_me"
+		field.ReferenceField, field.ReferenceStorageName = "id", "id"
+	case entityschema.FieldOneToMany:
+		field.PropertyName, field.StorageName = "replaceMes", ""
+		field.TargetDefinitionClass = `Vendor\Plugin\Content\ReplaceMe\ReplaceMeDefinition`
+		field.TargetEntityClass = `Vendor\Plugin\Content\ReplaceMe\ReplaceMeEntity`
+		field.TargetCollectionClass = `Vendor\Plugin\Content\ReplaceMe\ReplaceMeCollection`
+		field.TargetEntityName = "replace_me"
+		field.ReferenceStorageName, field.SourceColumn = "owner_id", "id"
+	case entityschema.FieldManyToMany:
+		field.PropertyName, field.StorageName = "replaceMes", ""
+		field.TargetDefinitionClass = `Vendor\Plugin\Content\ReplaceMe\ReplaceMeDefinition`
+		field.TargetEntityClass = `Vendor\Plugin\Content\ReplaceMe\ReplaceMeEntity`
+		field.TargetCollectionClass = `Vendor\Plugin\Content\ReplaceMe\ReplaceMeCollection`
+		field.TargetEntityName = "replace_me"
+		field.MappingDefinitionClass = `Vendor\Plugin\Content\ReplaceMe\ReplaceMeMappingDefinition`
+		field.MappingLocalColumn, field.MappingReferenceColumn = "owner_id", "replace_me_id"
+		field.SourceColumn, field.ReferenceField = "id", "id"
+	}
+	return field
+}
+
+func entitySchemaFieldTypeUsage(fieldType scaffold.EntitySchemaFieldType) string {
+	if fieldType.Template != nil {
+		return "Copy the complete template and retain implementation unchanged. Replace id and only the storage/property values that are not fixed by the returned implementation metadata."
+	}
+	switch entityschema.FieldKind(fieldType.Kind) {
+	case entityschema.FieldManyToOne, entityschema.FieldOneToOne,
+		entityschema.FieldOneToMany, entityschema.FieldManyToMany,
+		entityschema.FieldForeignKey, entityschema.FieldReferenceVersion:
+		return "Call shopware_entity_schema_search, replace every ReplaceMe target value with one returned target, and adjust relation/mapping columns."
+	case entityschema.FieldEnum:
+		return "Replace the example identifiers and set enumClass, enumCase, and enumBackingType to string or int."
+	case entityschema.FieldCreatedAt, entityschema.FieldUpdatedAt:
+		return "Normal EntityDefinition classes inherit this field already. Add it only for a mapping or an explicit defaultFields override advertised by the catalog."
+	case entityschema.FieldHierarchy:
+		return "Use exactly one hierarchy row. The server derives parent FK, associations, and version pairing; do not add those rows separately."
+	default:
+		return "Replace the example id, propertyName, and storageName. Set translated=true for translation storage; leave createdAt and updatedAt implicit on normal entities."
+	}
+}
+
 func (runtime *mcpRuntime) normalizeBootstrapOutput(
 	output *scaffold.EntitySchemaBootstrapResponse,
 ) {
@@ -511,6 +779,11 @@ func (runtime *mcpRuntime) normalizeBootstrapOutput(
 	}
 	runtime.normalizeEntitySpecOutput(&output.Spec)
 	runtime.normalizeRelationTargets(output.Existing)
+	for index := range output.Editable {
+		if output.Editable[index].FileURI != "" {
+			output.Editable[index].FileURI = runtime.outputURI(output.Editable[index].FileURI)
+		}
+	}
 }
 
 func (runtime *mcpRuntime) normalizeRelationTargets(
@@ -533,6 +806,17 @@ func (runtime *mcpRuntime) normalizeEntitySpecOutput(spec *entityschema.EntitySp
 	} {
 		if *target != "" {
 			*target = runtime.outputURI(*target)
+		}
+	}
+	if spec.Translation != nil {
+		for _, target := range []*string{
+			&spec.Translation.DefinitionURI,
+			&spec.Translation.EntityURI,
+			&spec.Translation.CollectionURI,
+		} {
+			if *target != "" {
+				*target = runtime.outputURI(*target)
+			}
 		}
 	}
 }
@@ -581,7 +865,10 @@ func (runtime *mcpRuntime) entitySchemaPreviewOutput(
 }
 
 func compactEntitySchemaDiff(diff entityschema.SchemaDiff) entitySchemaDiffSummary {
-	result := entitySchemaDiffSummary{RenameQuestions: diff.RenameQuestions}
+	result := entitySchemaDiffSummary{
+		RenameQuestions:       diff.RenameQuestions,
+		EntityRenameQuestions: diff.EntityRenameQuestions,
+	}
 	for _, entity := range diff.CreatedEntities {
 		result.CreatedEntities = append(result.CreatedEntities, entity.Name)
 	}

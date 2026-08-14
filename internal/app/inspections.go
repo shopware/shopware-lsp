@@ -6,6 +6,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/lsp/diagnostics"
 	"github.com/shopware/shopware-lsp/internal/lsp/inspections"
 	"github.com/shopware/shopware-lsp/internal/lsp/phpsemantic"
+	"github.com/shopware/shopware-lsp/internal/shopware/entityschema"
 )
 
 // registerDiagnosticInspections is the single ownership catalog for every
@@ -216,7 +217,11 @@ func registerDiagnosticInspections(
 		"shopware.entity_snapshot.migration_missing",
 		"shopware.entity_snapshot.migration_changed",
 		"shopware.entity_snapshot.schema_drift",
-	}, diagnostics.NewEntitySnapshotAnalyzer())
+	}, diagnostics.NewEntitySnapshotAnalyzer(entityschema.NewIndexedCatalog(
+		services.php,
+		services.entitySchemaSources,
+		services.symbols,
+	)))
 	server.RegisterInspection(inspections.NewAppScript(
 		services.appScripts,
 		services.extensions,

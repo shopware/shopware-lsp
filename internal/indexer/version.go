@@ -11,7 +11,7 @@ import (
 // IndexVersion is the current version of persisted index contents. Bump it
 // whenever a schema change or extraction-semantics change requires existing
 // workspace caches to be rebuilt.
-const IndexVersion = 161
+const IndexVersion = 165
 
 const versionFileName = "index_version"
 const configurationFingerprintFileName = "configuration_fingerprint"

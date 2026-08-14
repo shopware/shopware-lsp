@@ -95,6 +95,7 @@ export async function openEntityDesigner(
           const fileUri = message.fileUri ? String(message.fileUri) : undefined;
           const spec = await client.sendRequest<EntitySpec>('shopware/entity-schema/load', {
             definitionClass: String(message.definitionClass),
+			definitionKind: message.definitionKind,
             fileUri,
             documents: openDocuments(fileUri ? [fileUri] : []),
           });
@@ -127,6 +128,9 @@ function openEntityDocuments(spec: EntitySpec): Record<string, {text: string; ve
     spec.definitionUri,
     spec.entityUri,
     spec.collectionUri,
+    spec.translation?.definitionUri,
+    spec.translation?.entityUri,
+    spec.translation?.collectionUri,
     spec.serviceUri,
   ].filter((value): value is string => Boolean(value)));
   const result = openDocuments(relevant);

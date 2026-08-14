@@ -46,6 +46,24 @@ class C {
 	}
 }
 
+func TestScopedAccessClassSupportsArbitraryConstants(t *testing.T) {
+	root := phpparser.Parse(`<?php
+class C {
+    public function target(): string { return ProductDefinition::ENTITY_NAME; }
+}`).Tree.Root
+	methods := Methods(Classes(root)[0])
+	if len(methods) != 1 {
+		t.Fatalf("methods = %d", len(methods))
+	}
+	accesses := Nodes(methods[0], syntax.PhpScopedAccess, syntax.PhpMemberAccess)
+	if len(accesses) != 1 {
+		t.Fatalf("scoped accesses = %d\n%s", len(accesses), syntax.DebugTree(root))
+	}
+	if got := ScopedAccessClass(accesses[0], "ENTITY_NAME"); got != "ProductDefinition" {
+		t.Fatalf("scoped access class = %q", got)
+	}
+}
+
 func TestArgumentNameStopsAtNestedPositionalArgument(t *testing.T) {
 	root := phpparser.Parse(`<?php
 configure(fields: [new Type('string')]);
@@ -280,6 +298,9 @@ $services->set(Foo\Bar::class . '.inner');
 	statements := ExpressionStatements(root)
 	if len(statements) != 2 || AssignedVariable(statements[0]) != "$services" {
 		t.Fatalf("assignment query failed: %#v", statements)
+	}
+	if value := AssignmentValue(statements[0]); value == nil || strings.TrimSpace(value.Text()) != "$container->services()" {
+		t.Fatalf("assignment value = %#v (%q)", value, value.Text())
 	}
 	calls := Calls(statements[1])
 	if len(calls) == 0 {

@@ -39,8 +39,8 @@ interface NewFileScaffoldItem extends vscode.QuickPickItem {
 const newFileScaffolds: NewFileScaffoldItem[] = [
   {label: 'Shopware', kind: vscode.QuickPickItemKind.Separator},
   {
-    label: 'DAL Entity Definition',
-    description: 'Visual entity, migration, service, and snapshot designer',
+	label: 'DAL Entity / Mapping / Extensions',
+	description: 'Visual definition, EntityExtension, and BulkEntityExtension designer',
     backend: 'designer',
     scaffoldKind: 'entity-definition',
   },

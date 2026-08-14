@@ -8,6 +8,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/lsp/codeaction"
 	lspintegration "github.com/shopware/shopware-lsp/internal/lsp/integration"
 	"github.com/shopware/shopware-lsp/internal/lsp/scaffold"
+	"github.com/shopware/shopware-lsp/internal/shopware/entityschema"
 	"github.com/shopware/shopware-lsp/internal/snippet"
 	"github.com/shopware/shopware-lsp/internal/twig"
 )
@@ -163,10 +164,16 @@ func registerActionAndCommandProviders(server *lsp.Server, root string, versioni
 			services.twig,
 		),
 	)
-	server.RegisterCommandProvider(scaffold.NewProvider(
+	entityScaffolds := scaffold.NewProvider(
 		root,
 		services.php,
 		services.console,
 		services.dal,
+	)
+	entityScaffolds.SetEntityCatalog(entityschema.NewIndexedCatalog(
+		services.php,
+		services.entitySchemaSources,
+		services.symbols,
 	))
+	server.RegisterCommandProvider(entityScaffolds)
 }

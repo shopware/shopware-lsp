@@ -125,7 +125,7 @@ func ClientCommands() []ClientCommand {
 
 func Scaffolds() []ScaffoldDefinition {
 	return []ScaffoldDefinition{
-		scaffold("shopware", "entity-definition", "DAL Entity Definition", "Visual entity, migration, service, and snapshot workflow", "entity-schema", "product_note"),
+		scaffold("shopware", "entity-definition", "DAL Entity / Mapping / Extensions", "Visual entity, mapping, EntityExtension, or BulkEntityExtension migration, service, and snapshot workflow", "entity-schema", "product_note"),
 		scaffoldWithOptions("shopware", "plugin", "Plugin Skeleton", "Shopware plugin package, class, and YAML service configuration", "workspace-edit", "AcmeExample", []Field{
 			field("namespace", "PHP namespace", "string", false),
 			field("description", "Description", "string", false),

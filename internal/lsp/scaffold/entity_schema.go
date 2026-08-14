@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
+	"github.com/shopware/shopware-lsp/internal/php/semantic"
 	"github.com/shopware/shopware-lsp/internal/rewrite"
 	"github.com/shopware/shopware-lsp/internal/shopware/entityschema"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
@@ -47,27 +49,42 @@ type EntitySchemaGraph struct {
 }
 
 type EntitySchemaFieldType struct {
-	Kind   string `json:"kind"`
-	Label  string `json:"label"`
-	Stored bool   `json:"stored"`
+	Kind                          string                        `json:"kind"`
+	Label                         string                        `json:"label"`
+	Stored                        bool                          `json:"stored"`
+	DefinitionKinds               []entityschema.DefinitionKind `json:"definitionKinds,omitempty"`
+	RequiresDefaultFieldsOverride bool                          `json:"requiresDefaultFieldsOverride,omitempty"`
+	ID                            string                        `json:"id,omitempty"`
+	Template                      *entityschema.FieldSpec       `json:"template,omitempty"`
 }
 
 type EntitySchemaBootstrapResponse struct {
-	Plugin     entityschema.PluginContext   `json:"plugin"`
-	Spec       entityschema.EntitySpec      `json:"spec"`
-	FieldTypes []EntitySchemaFieldType      `json:"fieldTypes"`
-	Graph      EntitySchemaGraph            `json:"graph"`
-	Existing   []EntitySchemaRelationTarget `json:"existing,omitempty"`
+	Plugin          entityschema.PluginContext    `json:"plugin"`
+	Spec            entityschema.EntitySpec       `json:"spec"`
+	DefinitionKinds []entityschema.DefinitionKind `json:"definitionKinds"`
+	FieldTypes      []EntitySchemaFieldType       `json:"fieldTypes"`
+	Graph           EntitySchemaGraph             `json:"graph"`
+	Existing        []EntitySchemaRelationTarget  `json:"existing,omitempty"`
+	Editable        []EntitySchemaEditableTarget  `json:"editable,omitempty"`
+}
+
+type EntitySchemaEditableTarget struct {
+	EntityName      string                      `json:"entityName"`
+	DefinitionClass string                      `json:"definitionClass"`
+	DefinitionKind  entityschema.DefinitionKind `json:"definitionKind"`
+	FileURI         string                      `json:"fileUri"`
 }
 
 type EntitySchemaRelationTarget struct {
-	EntityName      string                             `json:"entityName"`
-	DefinitionClass string                             `json:"definitionClass"`
-	EntityClass     string                             `json:"entityClass,omitempty"`
-	CollectionClass string                             `json:"collectionClass,omitempty"`
-	FileURI         string                             `json:"fileUri,omitempty"`
-	Fields          []entityschema.RelationTargetField `json:"fields,omitempty"`
-	VersionAware    bool                               `json:"versionAware,omitempty"`
+	EntityName       string                             `json:"entityName"`
+	DefinitionClass  string                             `json:"definitionClass"`
+	DefinitionKind   entityschema.DefinitionKind        `json:"definitionKind,omitempty"`
+	EntityClass      string                             `json:"entityClass,omitempty"`
+	CollectionClass  string                             `json:"collectionClass,omitempty"`
+	FileURI          string                             `json:"fileUri,omitempty"`
+	Fields           []entityschema.RelationTargetField `json:"fields,omitempty"`
+	VersionAware     bool                               `json:"versionAware,omitempty"`
+	InheritanceAware bool                               `json:"inheritanceAware,omitempty"`
 }
 
 type EntitySchemaSearchRequest struct {
@@ -77,6 +94,7 @@ type EntitySchemaSearchRequest struct {
 
 type EntitySchemaLoadRequest struct {
 	DefinitionClass string                          `json:"definitionClass,omitempty"`
+	DefinitionKind  entityschema.DefinitionKind     `json:"definitionKind,omitempty"`
 	EntityName      string                          `json:"entityName,omitempty"`
 	FileURI         string                          `json:"fileUri,omitempty"`
 	Documents       map[string]EntitySchemaDocument `json:"documents,omitempty"`
@@ -131,6 +149,7 @@ type entitySchemaPreparedFile struct {
 	path, before, after string
 	version             *int
 	exists              bool
+	delete              bool
 }
 
 type entitySchemaSource struct {
@@ -141,9 +160,12 @@ type entitySchemaSource struct {
 }
 
 type entitySchemaSources struct {
-	definition entitySchemaSource
-	entity     entitySchemaSource
-	collection entitySchemaSource
+	definition            entitySchemaSource
+	entity                entitySchemaSource
+	collection            entitySchemaSource
+	translationDefinition entitySchemaSource
+	translationEntity     entitySchemaSource
+	translationCollection entitySchemaSource
 }
 
 type entitySchemaHistory struct {
@@ -196,11 +218,9 @@ func (p *Provider) entitySchemaBootstrap(ctx context.Context, raw *json.RawMessa
 	}
 	spec := entityschema.CompleteSpec(entityschema.EntitySpec{
 		Mode: "new", PluginRootURI: plugin.RootURI, DirectoryURI: uriutil.FileURI(directory),
-		Namespace: plugin.Namespace, ClassName: name, EntityName: snakeCase(name), CreateMigration: true,
+		Namespace: plugin.Namespace, ClassName: name, EntityName: snakeCase(name), ShopwareVersion: plugin.ShopwareVersion, CreateMigration: true,
 		Fields: []entityschema.FieldSpec{
 			{ID: "id", Kind: entityschema.FieldID, Editable: true},
-			{ID: "created-at", Kind: entityschema.FieldCreatedAt, Editable: true},
-			{ID: "updated-at", Kind: entityschema.FieldUpdatedAt, Editable: true},
 		},
 	})
 	if len(plugin.ServiceURIs) != 0 {
@@ -223,9 +243,23 @@ func (p *Provider) entitySchemaBootstrap(ctx context.Context, raw *json.RawMessa
 	if len(existing) > 100 {
 		existing = existing[:100]
 	}
+	var editable []EntitySchemaEditableTarget
+	lookup, lookupErr := p.entityRelationLookup()
+	if lookupErr == nil {
+		_, definitions, scanErr := p.scanEntitySchema(ctx, plugin.Root, lookup)
+		if scanErr == nil {
+			for _, definition := range definitions {
+				editable = append(editable, EntitySchemaEditableTarget{
+					EntityName: definition.Spec.EntityName, DefinitionClass: definition.Spec.DefinitionClass,
+					DefinitionKind: definition.Spec.DefinitionKind, FileURI: uriutil.FileURI(definition.Path),
+				})
+			}
+		}
+	}
 	return EntitySchemaBootstrapResponse{
 		Plugin: plugin, Spec: spec, Graph: EntitySchemaGraph{SnapshotCount: len(snapshots), Leaves: leaves, Missing: graph.Missing, NeedsReconciliation: len(graph.Leaves) > 1 || len(graph.Missing) > 0},
-		FieldTypes: entitySchemaFieldTypes(), Existing: existing,
+		DefinitionKinds: entityschema.DefinitionKindsForVersion(plugin.ShopwareVersion),
+		FieldTypes:      entitySchemaFieldTypes(plugin.ShopwareVersion, p.specializedFieldClassAvailable), Existing: existing, Editable: editable,
 	}, nil
 }
 
@@ -259,6 +293,26 @@ func (p *Provider) relationTargets(query string) ([]EntitySchemaRelationTarget, 
 	if err != nil {
 		return nil, err
 	}
+	if p.phpIndex != nil {
+		candidates, candidateErr := p.dal.UnresolvedDefinitions()
+		if candidateErr != nil {
+			return nil, candidateErr
+		}
+		snapshot := p.phpIndex.SemanticSnapshot()
+		for _, candidate := range candidates {
+			switch {
+			case snapshot.IsSubtypeOf(candidate.FullyQualifiedClass, `Shopware\Core\Framework\DataAbstractionLayer\EntityTranslationDefinition`):
+				candidate.Kind = "translation"
+			case snapshot.IsSubtypeOf(candidate.FullyQualifiedClass, `Shopware\Core\Framework\DataAbstractionLayer\MappingEntityDefinition`):
+				candidate.Kind = "mapping"
+			case snapshot.IsSubtypeOf(candidate.FullyQualifiedClass, `Shopware\Core\Framework\DataAbstractionLayer\EntityDefinition`):
+				candidate.Kind = "entity"
+			default:
+				continue
+			}
+			definitions = append(definitions, candidate)
+		}
+	}
 	query = strings.ToLower(strings.TrimSpace(query))
 	var results []EntitySchemaRelationTarget
 	for _, definition := range definitions {
@@ -266,14 +320,41 @@ func (p *Provider) relationTargets(query string) ([]EntitySchemaRelationTarget, 
 		if query != "" && !strings.Contains(haystack, query) {
 			continue
 		}
-		target := EntitySchemaRelationTarget{EntityName: definition.Name, DefinitionClass: definition.FullyQualifiedClass, EntityClass: definition.EntityClass, CollectionClass: definition.CollectionClass, FileURI: uriutil.FileURI(definition.File), VersionAware: definition.VersionAware}
+		target := EntitySchemaRelationTarget{EntityName: definition.Name, DefinitionClass: definition.FullyQualifiedClass, DefinitionKind: entityschema.DefinitionKind(definition.Kind), EntityClass: definition.EntityClass, CollectionClass: definition.CollectionClass, FileURI: uriutil.FileURI(definition.File), VersionAware: definition.VersionAware, InheritanceAware: definition.InheritanceAware}
 		for _, field := range definition.Fields {
+			if !field.Stored {
+				continue
+			}
 			target.Fields = append(target.Fields, entityschema.RelationTargetField{PropertyName: field.Name, StorageName: field.StorageName, Primary: field.Primary})
+		}
+		if target.DefinitionKind == entityschema.DefinitionEntity {
+			target.Fields = appendMissingRelationTargetFields(target.Fields,
+				entityschema.RelationTargetField{PropertyName: "createdAt", StorageName: "created_at"},
+				entityschema.RelationTargetField{PropertyName: "updatedAt", StorageName: "updated_at"},
+			)
 		}
 		results = append(results, target)
 	}
 	sort.Slice(results, func(i, j int) bool { return results[i].EntityName < results[j].EntityName })
 	return results, nil
+}
+
+func appendMissingRelationTargetFields(
+	fields []entityschema.RelationTargetField,
+	additional ...entityschema.RelationTargetField,
+) []entityschema.RelationTargetField {
+	seen := make(map[string]struct{}, len(fields)+len(additional))
+	for _, field := range fields {
+		seen[field.StorageName] = struct{}{}
+	}
+	for _, field := range additional {
+		if _, found := seen[field.StorageName]; found {
+			continue
+		}
+		fields = append(fields, field)
+		seen[field.StorageName] = struct{}{}
+	}
+	return fields
 }
 
 func (p *Provider) entitySchemaLoad(ctx context.Context, raw *json.RawMessage) (interface{}, error) {
@@ -314,7 +395,16 @@ func (p *Provider) entitySchemaLoad(ctx context.Context, raw *json.RawMessage) (
 	if !exists {
 		return nil, errors.New("entity definition no longer exists")
 	}
-	spec, err := p.importEntityDefinition(content)
+	var spec entityschema.EntitySpec
+	if request.DefinitionKind != "" && request.DefinitionClass != "" {
+		lookup, lookupErr := p.entityRelationLookup()
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		spec, err = entityschema.ImportClassBasedDefinition(content, request.DefinitionClass, request.DefinitionKind, lookup)
+	} else {
+		spec, err = p.importEntityDefinition(content)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -326,8 +416,60 @@ func (p *Provider) entitySchemaLoad(ctx context.Context, raw *json.RawMessage) (
 	spec.PluginRootURI = uriutil.FileURI(plugin.Root)
 	spec.DirectoryURI = uriutil.FileURI(filepath.Dir(path))
 	spec.DefinitionURI = uriutil.FileURI(path)
-	spec.EntityURI = uriutil.FileURI(filepath.Join(filepath.Dir(path), entityschema.ShortClass(spec.EntityClass)+".php"))
-	spec.CollectionURI = uriutil.FileURI(filepath.Join(filepath.Dir(path), entityschema.ShortClass(spec.CollectionClass)+".php"))
+	if spec.DefinitionKind == entityschema.DefinitionEntity {
+		spec.EntityURI = uriutil.FileURI(filepath.Join(filepath.Dir(path), entityschema.ShortClass(spec.EntityClass)+".php"))
+		spec.CollectionURI = uriutil.FileURI(filepath.Join(filepath.Dir(path), entityschema.ShortClass(spec.CollectionClass)+".php"))
+	} else {
+		spec.EntityURI = ""
+		spec.CollectionURI = ""
+	}
+	spec.ShopwareVersion = plugin.ShopwareVersion
+	if spec.Translation != nil && spec.Translation.Enabled {
+		translationPath := ""
+		if p.dal != nil {
+			definitions, definitionsErr := p.dal.Definitions()
+			if definitionsErr != nil {
+				return nil, definitionsErr
+			}
+			for _, definition := range definitions {
+				if strings.EqualFold(strings.Trim(definition.FullyQualifiedClass, `\`), strings.Trim(spec.Translation.DefinitionClass, `\`)) {
+					translationPath = definition.File
+					break
+				}
+			}
+		}
+		if translationPath == "" {
+			translationPath = defaultTranslationDirectory(filepath.Dir(path), spec)
+			translationPath = filepath.Join(translationPath, entityschema.ShortClass(spec.Translation.DefinitionClass)+".php")
+		}
+		translationSource, _, translationExists, translationErr := sourceForPath(translationPath, request.Documents)
+		if translationErr != nil {
+			return nil, translationErr
+		}
+		if !translationExists {
+			return nil, fmt.Errorf("translation definition %s was not found", spec.Translation.DefinitionClass)
+		}
+		lookup, lookupErr := p.entityRelationLookup()
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		importedTranslation, importErr := entityschema.ImportTranslationDefinition(translationSource, lookup)
+		if importErr != nil {
+			return nil, importErr
+		}
+		if !samePHPClass(spec.Translation.DefinitionClass, importedTranslation.Spec.DefinitionClass) ||
+			!samePHPClass(spec.DefinitionClass, importedTranslation.Spec.ParentDefinitionClass) {
+			return nil, errors.New("translation definition does not match its parent association")
+		}
+		translationDirectory := filepath.Dir(translationPath)
+		importedTranslation.Spec.DefinitionURI = uriutil.FileURI(translationPath)
+		importedTranslation.Spec.EntityURI = uriutil.FileURI(filepath.Join(translationDirectory, entityschema.ShortClass(importedTranslation.Spec.EntityClass)+".php"))
+		importedTranslation.Spec.CollectionURI = uriutil.FileURI(filepath.Join(translationDirectory, entityschema.ShortClass(importedTranslation.Spec.CollectionClass)+".php"))
+		spec = entityschema.AttachTranslation(spec, importedTranslation)
+	}
+	if p.entities != nil {
+		p.entities.EnrichSpec(&spec)
+	}
 	if len(plugin.ServiceURIs) != 0 {
 		spec.ServiceURI = uriutil.FileURI(plugin.ServiceURIs[0])
 	}
@@ -340,9 +482,7 @@ func (p *Provider) entitySchemaLoad(ctx context.Context, raw *json.RawMessage) (
 		return nil, err
 	}
 	if len(graph.Leaves) == 1 {
-		if entity, found := graph.Leaves[0].Snapshot.Schema.Entities[spec.EntityName]; found {
-			spec.Indexes = entityschema.IndexSpecsFromEntity(spec, entity)
-		}
+		entityschema.RestoreSpecIndexesFromEntities(&spec, graph.Leaves[0].Snapshot.Schema)
 	}
 	for _, leaf := range graph.Leaves {
 		spec.BaseSnapshotIDs = append(spec.BaseSnapshotIDs, leaf.Snapshot.ID)
@@ -355,7 +495,13 @@ func (p *Provider) importEntityDefinition(content string) (entityschema.EntitySp
 	if err != nil {
 		return entityschema.EntitySpec{}, err
 	}
-	return entityschema.ImportDefinition(content, lookup)
+	if spec, definitionErr := entityschema.ImportDefinition(content, lookup); definitionErr == nil {
+		return spec, nil
+	}
+	if spec, extensionErr := entityschema.ImportExtension(content, lookup); extensionErr == nil {
+		return spec, nil
+	}
+	return entityschema.ImportBulkExtension(content, lookup)
 }
 
 func (p *Provider) entityRelationLookup() (entityschema.RelationLookup, error) {
@@ -365,7 +511,11 @@ func (p *Provider) entityRelationLookup() (entityschema.RelationLookup, error) {
 	}
 	lookupMap := make(map[string]entityschema.RelationTarget, len(targets))
 	for _, target := range targets {
-		lookupMap[target.DefinitionClass] = entityschema.RelationTarget{DefinitionClass: target.DefinitionClass, EntityClass: target.EntityClass, CollectionClass: target.CollectionClass, EntityName: target.EntityName, FileURI: target.FileURI, Fields: target.Fields, VersionAware: target.VersionAware}
+		relation := entityschema.RelationTarget{DefinitionClass: target.DefinitionClass, DefinitionKind: target.DefinitionKind, EntityClass: target.EntityClass, CollectionClass: target.CollectionClass, EntityName: target.EntityName, FileURI: target.FileURI, Fields: target.Fields, VersionAware: target.VersionAware, InheritanceAware: target.InheritanceAware}
+		lookupMap[target.DefinitionClass] = relation
+		if target.EntityName != "" {
+			lookupMap[target.EntityName] = relation
+		}
 	}
 	return func(class string) (entityschema.RelationTarget, bool) {
 		value, ok := lookupMap[class]
@@ -412,7 +562,9 @@ func (p *Provider) entitySchemaApply(ctx context.Context, raw *json.RawMessage) 
 	plan := rewrite.WorkspacePlan{}
 	for _, file := range prepared.files {
 		uri := uriutil.FileURI(file.path)
-		if !file.exists {
+		if file.delete {
+			plan.Deletes = append(plan.Deletes, rewrite.DeleteFilePlan{URI: uri, Version: file.version, Source: file.before})
+		} else if !file.exists {
 			plan.Creates = append(plan.Creates, rewrite.CreateFilePlan{URI: uri, Content: file.after})
 		} else {
 			plan.Documents = append(plan.Documents, rewrite.NewDocumentPlan(uri, file.version, file.before, []rewrite.Edit{{Range: cst.TextRange{Start: 0, End: uint32(len(file.before))}, NewText: file.after}}))
@@ -434,7 +586,7 @@ func (p *Provider) prepareEntitySchema(ctx context.Context, request EntitySchema
 	if generatedTimestamp {
 		spec.MigrationTimestamp = time.Now().Unix()
 	}
-	response := EntitySchemaPreviewResponse{Issues: entityschema.ValidateSpec(spec), MigrationTimestamp: spec.MigrationTimestamp}
+	response := EntitySchemaPreviewResponse{MigrationTimestamp: spec.MigrationTimestamp}
 	directory, err := uriutil.Path(spec.DirectoryURI)
 	if err != nil {
 		return entitySchemaPrepared{}, fmt.Errorf("resolve entity directory: %w", err)
@@ -460,6 +612,7 @@ func (p *Provider) prepareEntitySchema(ctx context.Context, request EntitySchema
 	if strings.Trim(spec.Namespace, `\`) != strings.Trim(plugin.Namespace, `\`) {
 		return entitySchemaPrepared{}, fmt.Errorf("entity namespace %s does not match the Composer PSR-4 directory namespace %s", spec.Namespace, plugin.Namespace)
 	}
+	spec.ShopwareVersion = plugin.ShopwareVersion
 	if generatedTimestamp {
 		spec.MigrationTimestamp = availableMigrationTimestamp(plugin.SourceRoot, spec.MigrationTimestamp)
 		response.MigrationTimestamp = spec.MigrationTimestamp
@@ -468,38 +621,81 @@ func (p *Provider) prepareEntitySchema(ctx context.Context, request EntitySchema
 	if err != nil {
 		return entitySchemaPrepared{}, err
 	}
-	definitionPath := sources.definition.path
-	definitionSource := sources.definition.content
-	definitionVersion := sources.definition.version
-	definitionExists := sources.definition.exists
-	entityPath := sources.entity.path
-	entitySource := sources.entity.content
-	entityVersion := sources.entity.version
-	entityExists := sources.entity.exists
-	collectionPath := sources.collection.path
-	collectionSource := sources.collection.content
-	collectionVersion := sources.collection.version
-	collectionExists := sources.collection.exists
 	relationLookup, err := p.entityRelationLookup()
 	if err != nil {
 		return entitySchemaPrepared{}, err
 	}
-	scanned, _, err := entityschema.ScanPluginSchemaWithLookup(plugin.Root, relationLookup)
+	previousSpec, err := importPreviousEntitySpec(spec, sources, relationLookup)
 	if err != nil {
 		return entitySchemaPrepared{}, err
 	}
-	var previousSpec *entityschema.EntitySpec
-	if spec.Mode == "edit" && definitionSource != "" {
-		imported, importErr := p.importEntityDefinition(definitionSource)
-		if importErr != nil {
-			return entitySchemaPrepared{}, fmt.Errorf("import current entity definition: %w", importErr)
+	if p.entities != nil {
+		p.entities.EnrichSpec(&spec)
+		p.entities.EnrichSpec(previousSpec)
+	}
+	if previousSpec != nil && strings.TrimSpace(previousSpec.CollectMethodRaw) != "" &&
+		(spec.DefinitionKind != entityschema.DefinitionBulkExtension || spec.CollectMethodRaw != previousSpec.CollectMethodRaw ||
+			len(spec.BulkExtensions) != 0 || len(spec.Fields) != 0 || len(spec.Indexes) != 0) {
+		response.Issues = append(response.Issues, entityIssue(
+			"entity.bulkExtension.collectRaw.locked",
+			"This custom BulkEntityExtension collect method is preserved losslessly and cannot be changed in the entity designer",
+		))
+		return entitySchemaPrepared{response: response}, nil
+	}
+	if previousSpec != nil && !preservedDefinitionRawMethodsEqual(*previousSpec, spec) {
+		response.Issues = append(response.Issues, entityIssue(
+			"entity.definition.raw.locked",
+			"Custom definition behavior is preserved losslessly and cannot be changed in the entity designer",
+		))
+		return entitySchemaPrepared{response: response}, nil
+	}
+	spec = normalizeDefinitionTransition(spec, previousSpec)
+	if spec.DefinitionKind == entityschema.DefinitionExtension {
+		spec.ExtendedFields = nil
+		target, found := relationLookup(spec.ExtendedDefinitionClass)
+		if !found || target.EntityName == "" {
+			response.Issues = append(response.Issues, entityIssue("entity.extension.target.missing", "Select an indexed entity definition to extend"))
+		} else {
+			spec.ExtendedFields = append([]entityschema.RelationTargetField(nil), target.Fields...)
+			if spec.EntityName != target.EntityName {
+				response.Issues = append(response.Issues, entityIssue("entity.extension.target.mismatch", "Extension technical entity name does not match the selected indexed definition"))
+			}
 		}
-		previousSpec = &imported
-		currentEntity, schemaErr := entityschema.SchemaFromSpec(imported)
-		if schemaErr != nil {
-			return entitySchemaPrepared{}, fmt.Errorf("normalize current entity definition: %w", schemaErr)
+	}
+	if spec.DefinitionKind == entityschema.DefinitionBulkExtension {
+		for index := range spec.BulkExtensions {
+			targetSpec := &spec.BulkExtensions[index]
+			targetSpec.ExtendedFields = nil
+			if targetSpec.ExtendedDefinitionClass == "" {
+				continue
+			}
+			target, found := relationLookup(targetSpec.ExtendedDefinitionClass)
+			if !found || target.EntityName == "" {
+				issue := entityIssue("entity.bulkExtension.target.missing", "Select an indexed entity definition for every bulk extension target")
+				issue.FieldID = targetSpec.ID
+				response.Issues = append(response.Issues, issue)
+				continue
+			}
+			targetSpec.ExtendedFields = append([]entityschema.RelationTargetField(nil), target.Fields...)
+			if targetSpec.EntityName != target.EntityName {
+				issue := entityIssue("entity.bulkExtension.target.mismatch", "Bulk extension target entity name does not match its indexed definition")
+				issue.FieldID = targetSpec.ID
+				response.Issues = append(response.Issues, issue)
+			}
 		}
-		scanned.Entities[imported.EntityName] = currentEntity
+	}
+	response.Issues = append(response.Issues, validateEntitySchemaSpec(p, spec)...)
+	scanned, scannedSpecs, err := p.scanEntitySchema(ctx, plugin.Root, relationLookup)
+	if err != nil {
+		return entitySchemaPrepared{}, err
+	}
+	previousIssues, err := mergePreviousEntitySpec(spec, previousSpec, scannedSpecs, &scanned)
+	if err != nil {
+		return entitySchemaPrepared{}, err
+	}
+	if len(previousIssues) != 0 {
+		response.Issues = append(response.Issues, previousIssues...)
+		return entitySchemaPrepared{response: response}, nil
 	}
 	history, err := prepareEntitySchemaHistory(
 		plugin,
@@ -518,22 +714,24 @@ func (p *Provider) prepareEntitySchema(ctx context.Context, request EntitySchema
 	previous := history.previous
 	parents := history.parents
 	pending := history.pending
+	if previousSpec != nil {
+		entityschema.RestoreSpecIndexesFromEntities(previousSpec, previous)
+	}
 	next := scanned.Clone()
-	entity, err := entityschema.SchemaFromSpec(spec)
-	if err != nil && len(response.Issues) == 0 {
+	if err := entityschema.ReplaceSpecSchema(&next, previousSpec, spec); err != nil && len(response.Issues) == 0 {
 		return entitySchemaPrepared{}, err
 	}
-	if err == nil {
-		next.Entities[spec.EntityName] = entity
-	}
-	response.Diff = entityschema.DiffSchemas(previous, next)
+	resolvedPrevious, resolvedDiff, _, decisionErr := entityschema.ResolveSchemaDiff(previous, next, request.Decisions)
+	response.Diff = resolvedDiff
 	response.Destructive = response.Diff.Destructive()
-	if len(response.Diff.RenameQuestions) != 0 {
-		if _, _, decisionErr := entityschema.ResolveRenameQuestions(response.Diff, request.Decisions); decisionErr != nil {
-			response.Issues = append(response.Issues, entityIssue("entity.column.rename.decision", decisionErr.Error()))
+	if decisionErr != nil {
+		code := "entity.table.rename.decision"
+		if strings.Contains(decisionErr.Error(), "column") {
+			code = "entity.column.rename.decision"
 		}
+		response.Issues = append(response.Issues, entityIssue(code, decisionErr.Error()))
 	}
-	response.Issues = append(response.Issues, entityschema.ValidateMigration(previous, next, response.Diff, request.Decisions)...)
+	response.Issues = append(response.Issues, entityschema.ValidateMigration(resolvedPrevious, next, response.Diff, request.Decisions)...)
 	if len(response.Issues) != 0 {
 		return entitySchemaPrepared{response: response}, nil
 	}
@@ -545,35 +743,25 @@ func (p *Provider) prepareEntitySchema(ctx context.Context, request EntitySchema
 		response.Issues = append(response.Issues, entityIssue("entity.migration.required", "Database changes require a migration"))
 		return entitySchemaPrepared{response: response}, nil
 	}
-	definitionAfter, entityAfter, collectionAfter := "", "", ""
-	if spec.Mode == "edit" && definitionSource != "" {
-		if previousSpec == nil {
-			return entitySchemaPrepared{}, errors.New("cannot safely edit an entity that was not imported from the plugin")
-		}
-		definitionAfter, err = entityschema.RewriteDefinition(definitionSource, spec)
-		if err == nil {
-			entityAfter, err = entityschema.RewriteEntity(entitySource, *previousSpec, spec)
-		}
-		if collectionSource != "" {
-			collectionAfter = collectionSource
-		} else {
-			collectionAfter, err = entityschema.RenderCollection(spec)
-		}
-	} else {
-		definitionAfter, err = entityschema.RenderDefinition(spec)
-		if err == nil {
-			entityAfter, err = entityschema.RenderEntity(spec)
-		}
-		if err == nil {
-			collectionAfter, err = entityschema.RenderCollection(spec)
-		}
-	}
+	return finalizeEntitySchemaPreview(spec, previousSpec, sources, plugin, request, pending, statements, parents, next, response)
+}
+
+func finalizeEntitySchemaPreview(
+	spec entityschema.EntitySpec,
+	previousSpec *entityschema.EntitySpec,
+	sources entitySchemaSources,
+	plugin entityschema.PluginContext,
+	request EntitySchemaPreviewRequest,
+	pending []entitySchemaPreparedFile,
+	statements, parents []string,
+	next entityschema.Schema,
+	response EntitySchemaPreviewResponse,
+) (entitySchemaPrepared, error) {
+	phpFiles, err := renderEntitySchemaFiles(spec, previousSpec, sources)
 	if err != nil {
 		return entitySchemaPrepared{}, err
 	}
-	appendChangedFile(&pending, definitionPath, definitionSource, definitionAfter, definitionVersion, definitionExists)
-	appendChangedFile(&pending, entityPath, entitySource, entityAfter, entityVersion, entityExists)
-	appendChangedFile(&pending, collectionPath, collectionSource, collectionAfter, collectionVersion, collectionExists)
+	pending = append(pending, phpFiles...)
 	servicePath := ""
 	if spec.ServiceURI != "" {
 		servicePath, _ = uriutil.Path(spec.ServiceURI)
@@ -591,9 +779,33 @@ func (p *Provider) prepareEntitySchema(ctx context.Context, request EntitySchema
 	if err != nil {
 		return entitySchemaPrepared{}, err
 	}
-	serviceAfter, err := entityschema.PatchServiceConfiguration(servicePath, serviceSource, spec.DefinitionClass)
+	serviceTag := entitySchemaServiceTag(spec.DefinitionKind)
+	serviceAfter := serviceSource
+	if previousSpec != nil {
+		previousTag := entitySchemaServiceTag(previousSpec.DefinitionKind)
+		if previousTag != serviceTag || !samePHPClass(previousSpec.DefinitionClass, spec.DefinitionClass) {
+			serviceAfter, err = entityschema.RemoveServiceConfiguration(servicePath, serviceAfter, previousSpec.DefinitionClass)
+			if err != nil {
+				return entitySchemaPrepared{}, err
+			}
+		}
+	}
+	serviceAfter, err = entityschema.PatchTaggedServiceConfiguration(servicePath, serviceAfter, spec.DefinitionClass, serviceTag)
 	if err != nil {
 		return entitySchemaPrepared{}, err
+	}
+	if previousSpec != nil && previousSpec.Translation != nil && previousSpec.Translation.Enabled &&
+		(spec.Translation == nil || !spec.Translation.Enabled) {
+		serviceAfter, err = entityschema.RemoveServiceConfiguration(servicePath, serviceAfter, previousSpec.Translation.DefinitionClass)
+		if err != nil {
+			return entitySchemaPrepared{}, err
+		}
+	}
+	if spec.Translation != nil && spec.Translation.Enabled {
+		serviceAfter, err = entityschema.PatchServiceConfiguration(servicePath, serviceAfter, spec.Translation.DefinitionClass)
+		if err != nil {
+			return entitySchemaPrepared{}, err
+		}
 	}
 	appendChangedFile(&pending, servicePath, serviceSource, serviceAfter, serviceVersion, serviceExists)
 	timestamp := spec.MigrationTimestamp
@@ -627,12 +839,18 @@ func (p *Provider) prepareEntitySchema(ctx context.Context, request EntitySchema
 	}
 	appendChangedFile(&pending, filepath.Join(plugin.SnapshotDirectory, strconv.FormatInt(timestamp, 10)+"-"+snapshot.ID[:12]+".snapshot.json"), "", string(snapshotContent), nil, false)
 	response.SnapshotID = snapshot.ID
-	response.PrimaryFileURI = uriutil.FileURI(definitionPath)
+	response.PrimaryFileURI = uriutil.FileURI(sources.definition.path)
 	for _, file := range pending {
 		if !safePluginTarget(plugin.Root, file.path) {
 			return entitySchemaPrepared{}, fmt.Errorf("entity output is outside plugin %s: %s", plugin.Root, file.path)
 		}
-		response.Files = append(response.Files, EntitySchemaFilePreview{URI: uriutil.FileURI(file.path), Action: map[bool]string{true: "update", false: "create"}[file.exists], Language: languageForPath(file.path), Before: file.before, After: file.after})
+		action := "create"
+		if file.delete {
+			action = "delete"
+		} else if file.exists {
+			action = "update"
+		}
+		response.Files = append(response.Files, EntitySchemaFilePreview{URI: uriutil.FileURI(file.path), Action: action, Language: languageForPath(file.path), Before: file.before, After: file.after})
 	}
 	revisionRequest := request
 	revisionRequest.Spec = spec
@@ -643,6 +861,386 @@ func (p *Provider) prepareEntitySchema(ctx context.Context, request EntitySchema
 	hash := sha256.Sum256(revisionContent)
 	response.Revision = entitySchemaRevision(spec.MigrationTimestamp, hash)
 	return entitySchemaPrepared{response: response, files: pending}, nil
+}
+
+func (p *Provider) scanEntitySchema(
+	ctx context.Context,
+	pluginRoot string,
+	lookup entityschema.RelationLookup,
+) (entityschema.Schema, []entityschema.ScannedDefinition, error) {
+	if p != nil && p.entities != nil {
+		return p.entities.ScanContext(ctx, pluginRoot, lookup)
+	}
+	// Parser/importer unit tests intentionally construct a provider without a
+	// workspace index. Production providers always use the indexed catalog.
+	return entityschema.ScanPluginSchemaWithLookup(pluginRoot, lookup)
+}
+
+func preservedDefinitionRawMethodsEqual(previous, next entityschema.EntitySpec) bool {
+	behaviorRaw := func(value *entityschema.DefinitionBehaviorSpec) []string {
+		if value == nil {
+			return nil
+		}
+		return []string{value.ParentDefinitionMethodRaw, value.VersionAwareMethodRaw, value.InheritanceAwareMethodRaw, value.DefaultFieldsMethodRaw, value.BaseFieldsMethodRaw, value.RestrictDeleteMetaMethodRaw}
+	}
+	metadataRaw := func(value *entityschema.DefinitionMetadataSpec) []string {
+		if value == nil {
+			return nil
+		}
+		return []string{value.SinceMethodRaw, value.DefaultsMethodRaw, value.ChildDefaultsMethodRaw, value.HydratorMethodRaw}
+	}
+	if !reflect.DeepEqual(behaviorRaw(previous.DefinitionBehavior), behaviorRaw(next.DefinitionBehavior)) ||
+		!reflect.DeepEqual(metadataRaw(previous.DefinitionMetadata), metadataRaw(next.DefinitionMetadata)) {
+		return false
+	}
+	var previousTranslationBehavior, nextTranslationBehavior *entityschema.DefinitionBehaviorSpec
+	var previousTranslationMetadata, nextTranslationMetadata *entityschema.DefinitionMetadataSpec
+	if previous.Translation != nil {
+		previousTranslationBehavior = previous.Translation.DefinitionBehavior
+		previousTranslationMetadata = previous.Translation.DefinitionMetadata
+	}
+	if next.Translation != nil {
+		nextTranslationBehavior = next.Translation.DefinitionBehavior
+		nextTranslationMetadata = next.Translation.DefinitionMetadata
+	}
+	return reflect.DeepEqual(behaviorRaw(previousTranslationBehavior), behaviorRaw(nextTranslationBehavior)) &&
+		reflect.DeepEqual(metadataRaw(previousTranslationMetadata), metadataRaw(nextTranslationMetadata))
+}
+
+func normalizeDefinitionTransition(
+	next entityschema.EntitySpec,
+	previous *entityschema.EntitySpec,
+) entityschema.EntitySpec {
+	if previous == nil || previous.DefinitionKind == next.DefinitionKind {
+		return next
+	}
+	if next.DefinitionKind == entityschema.DefinitionMapping {
+		// The old URIs remain on the edit request so entity/collection files can
+		// be deleted, while the desired mapping definition must not reference
+		// those now-obsolete companion classes.
+		next.EntityClass = ""
+		next.CollectionClass = ""
+		if next.DefinitionMetadata != nil {
+			next.DefinitionMetadata.ChildDefaults = nil
+			next.DefinitionMetadata.ChildDefaultsMethodRaw = ""
+			next.DefinitionMetadata.HydratorClass = ""
+			next.DefinitionMetadata.HydratorMethodRaw = ""
+		}
+		if next.DefinitionBehavior != nil {
+			next.DefinitionBehavior.OverrideDefaultFields = false
+			next.DefinitionBehavior.DefaultFields = nil
+			next.DefinitionBehavior.DefaultFieldsMethodRaw = ""
+			next.DefinitionBehavior.InheritanceAwareMethodRaw = ""
+		}
+	}
+	if next.DefinitionKind == entityschema.DefinitionExtension || next.DefinitionKind == entityschema.DefinitionBulkExtension {
+		next.DefinitionBehavior = nil
+		next.DefinitionMetadata = nil
+	}
+	if (previous.DefinitionKind == entityschema.DefinitionExtension || previous.DefinitionKind == entityschema.DefinitionBulkExtension) &&
+		next.DefinitionKind != entityschema.DefinitionExtension && next.DefinitionKind != entityschema.DefinitionBulkExtension {
+		for index := range next.Fields {
+			clearEntityExtensionFlag(&next.Fields[index].Metadata)
+			clearEntityExtensionFlag(&next.Fields[index].AssociationMetadata)
+		}
+	}
+	return entityschema.CompleteSpec(next)
+}
+
+func clearEntityExtensionFlag(metadata **entityschema.FieldMetadata) {
+	if *metadata == nil {
+		return
+	}
+	(*metadata).Extension = false
+	if reflect.DeepEqual(**metadata, entityschema.FieldMetadata{}) {
+		*metadata = nil
+	}
+}
+
+func entitySchemaServiceTag(kind entityschema.DefinitionKind) string {
+	switch kind {
+	case entityschema.DefinitionExtension:
+		return "shopware.entity.extension"
+	case entityschema.DefinitionBulkExtension:
+		return "shopware.bulk.entity.extension"
+	default:
+		return "shopware.entity.definition"
+	}
+}
+
+func validateEntitySchemaSpec(p *Provider, spec entityschema.EntitySpec) []entityschema.ValidationIssue {
+	issues := entityschema.ValidateSpec(spec)
+	appendUnavailable := func(field entityschema.FieldSpec) {
+		if field.Implementation == nil || p.specializedFieldClassAvailable(field.Implementation.Class) {
+			return
+		}
+		issues = append(issues, entityschema.ValidationIssue{
+			Code:    "entity.field.implementation.unavailable",
+			Message: fmt.Sprintf("Specialized field class %s is not installed in this Shopware project", field.Implementation.Class),
+			FieldID: field.ID, Severity: "error",
+		})
+	}
+	appendEnumIssue := func(field entityschema.FieldSpec) {
+		if field.Kind != entityschema.FieldEnum || p == nil || p.phpIndex == nil || field.EnumClass == "" {
+			return
+		}
+		enum, found := p.phpIndex.FindClass(field.EnumClass)
+		if !found || enum.Kind != semantic.EnumSymbol {
+			issues = append(issues, entityschema.ValidationIssue{
+				Code: "entity.field.enum.class.unavailable", Message: fmt.Sprintf("Enum class %s was not found in the PHP index", field.EnumClass),
+				FieldID: field.ID, Severity: "error",
+			})
+			return
+		}
+		snapshot := p.phpIndex.SemanticSnapshot()
+		caseFound := false
+		for _, member := range snapshot.Members(enum.ID, field.EnumCase) {
+			if member.Kind == semantic.EnumCaseSymbol {
+				caseFound = true
+				break
+			}
+		}
+		if !caseFound {
+			issues = append(issues, entityschema.ValidationIssue{
+				Code: "entity.field.enum.case.unavailable", Message: fmt.Sprintf("Enum case %s::%s was not found", field.EnumClass, field.EnumCase),
+				FieldID: field.ID, Severity: "error",
+			})
+		}
+		actualBacking := ""
+		for _, member := range snapshot.Members(enum.ID, "value") {
+			if member.Kind != semantic.PropertySymbol {
+				continue
+			}
+			switch member.Type.String() {
+			case "string":
+				actualBacking = "string"
+			case "int":
+				actualBacking = "int"
+			}
+		}
+		if actualBacking == "" {
+			issues = append(issues, entityschema.ValidationIssue{
+				Code: "entity.field.enum.backing.unavailable", Message: fmt.Sprintf("Enum %s is not a backed enum", field.EnumClass),
+				FieldID: field.ID, Severity: "error",
+			})
+		} else if field.EnumBackingType != "" && field.EnumBackingType != actualBacking {
+			issues = append(issues, entityschema.ValidationIssue{
+				Code: "entity.field.enum.backing.mismatch", Message: fmt.Sprintf("Enum %s is %s-backed, not %s-backed", field.EnumClass, actualBacking, field.EnumBackingType),
+				FieldID: field.ID, Severity: "error",
+			})
+		}
+	}
+	appendField := func(field entityschema.FieldSpec) {
+		appendUnavailable(field)
+		appendEnumIssue(field)
+	}
+	for _, field := range spec.Fields {
+		appendField(field)
+	}
+	if spec.DefinitionBehavior != nil {
+		for _, field := range spec.DefinitionBehavior.DefaultFields {
+			appendField(field)
+		}
+		for _, field := range spec.DefinitionBehavior.BaseFields {
+			appendField(field)
+		}
+	}
+	if spec.Translation != nil && spec.Translation.DefinitionBehavior != nil {
+		for _, field := range spec.Translation.DefinitionBehavior.DefaultFields {
+			appendField(field)
+		}
+		for _, field := range spec.Translation.DefinitionBehavior.BaseFields {
+			appendField(field)
+		}
+	}
+	for _, target := range spec.BulkExtensions {
+		for _, field := range target.Fields {
+			appendField(field)
+		}
+	}
+	return issues
+}
+
+func mergePreviousEntitySpec(
+	requested entityschema.EntitySpec,
+	previous *entityschema.EntitySpec,
+	scannedSpecs []entityschema.ScannedDefinition,
+	scanned *entityschema.Schema,
+) ([]entityschema.ValidationIssue, error) {
+	if previous == nil {
+		return nil, nil
+	}
+	var diskSpec *entityschema.EntitySpec
+	for index := range scannedSpecs {
+		if samePHPClass(scannedSpecs[index].Spec.DefinitionClass, previous.DefinitionClass) {
+			copySpec := scannedSpecs[index].Spec
+			diskSpec = &copySpec
+			break
+		}
+	}
+	if err := entityschema.ReplaceSpecSchema(scanned, diskSpec, *previous); err != nil {
+		return nil, fmt.Errorf("normalize current entity definition: %w", err)
+	}
+	return nil, nil
+}
+
+func importPreviousEntitySpec(
+	spec entityschema.EntitySpec,
+	sources entitySchemaSources,
+	lookup entityschema.RelationLookup,
+) (*entityschema.EntitySpec, error) {
+	if spec.Mode != "edit" || sources.definition.content == "" {
+		return nil, nil
+	}
+	var imported entityschema.EntitySpec
+	var err error
+	imported, err = entityschema.ImportDefinition(sources.definition.content, lookup)
+	if err != nil {
+		imported, err = entityschema.ImportExtension(sources.definition.content, lookup)
+	}
+	if err != nil {
+		imported, err = entityschema.ImportBulkExtension(sources.definition.content, lookup)
+	}
+	if err != nil && spec.DefinitionClass != "" && spec.DefinitionKind != "" {
+		imported, err = entityschema.ImportClassBasedDefinition(
+			sources.definition.content, spec.DefinitionClass, spec.DefinitionKind, lookup,
+		)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("import current entity definition: %w", err)
+	}
+	if imported.Translation == nil || !imported.Translation.Enabled {
+		return &imported, nil
+	}
+	if sources.translationDefinition.content == "" {
+		return nil, errors.New("current entity references a translation definition that could not be loaded")
+	}
+	translation, err := entityschema.ImportTranslationDefinition(sources.translationDefinition.content, lookup)
+	if err != nil {
+		return nil, fmt.Errorf("import current translation definition: %w", err)
+	}
+	if !samePHPClass(imported.Translation.DefinitionClass, translation.Spec.DefinitionClass) ||
+		!samePHPClass(imported.DefinitionClass, translation.Spec.ParentDefinitionClass) {
+		return nil, errors.New("current translation definition does not match its parent association")
+	}
+	translation.Spec.DefinitionURI = uriutil.FileURI(sources.translationDefinition.path)
+	translation.Spec.EntityURI = uriutil.FileURI(sources.translationEntity.path)
+	translation.Spec.CollectionURI = uriutil.FileURI(sources.translationCollection.path)
+	imported = entityschema.AttachTranslation(imported, translation)
+	return &imported, nil
+}
+
+func renderEntitySchemaFiles(
+	spec entityschema.EntitySpec,
+	previous *entityschema.EntitySpec,
+	sources entitySchemaSources,
+) ([]entitySchemaPreparedFile, error) {
+	var definition string
+	var err error
+	if spec.Mode == "edit" && sources.definition.content != "" {
+		if previous == nil {
+			return nil, fmt.Errorf("cannot safely edit an %s that was not imported from the plugin", spec.DefinitionKind)
+		}
+		definition, err = entityschema.RewriteDefinitionFrom(sources.definition.content, *previous, spec)
+	} else {
+		definition, err = entityschema.RenderDefinition(spec)
+	}
+	if err != nil {
+		return nil, err
+	}
+	var files []entitySchemaPreparedFile
+	appendEntitySchemaSource(&files, sources.definition, definition)
+	if spec.DefinitionKind == entityschema.DefinitionEntity {
+		var entity, collection string
+		if previous != nil && previous.DefinitionKind == entityschema.DefinitionEntity && sources.entity.content != "" {
+			entity, err = entityschema.RewriteEntity(sources.entity.content, *previous, spec)
+			if err == nil && sources.collection.content != "" {
+				collection, err = entityschema.RewriteCollection(sources.collection.content, *previous, spec)
+			}
+		} else {
+			entity, err = entityschema.RenderEntity(spec)
+		}
+		if collection == "" && err == nil {
+			collection, err = entityschema.RenderCollection(spec)
+		}
+		if err != nil {
+			return nil, err
+		}
+		appendEntitySchemaSource(&files, sources.entity, entity)
+		appendEntitySchemaSource(&files, sources.collection, collection)
+	} else if previous != nil && previous.DefinitionKind == entityschema.DefinitionEntity {
+		appendDeletedEntitySchemaSource(&files, sources.entity)
+		appendDeletedEntitySchemaSource(&files, sources.collection)
+	}
+	translationFiles, err := renderTranslationSchemaFiles(spec, previous, sources)
+	if err != nil {
+		return nil, err
+	}
+	return append(files, translationFiles...), nil
+}
+
+func renderTranslationSchemaFiles(
+	spec entityschema.EntitySpec,
+	previous *entityschema.EntitySpec,
+	sources entitySchemaSources,
+) ([]entitySchemaPreparedFile, error) {
+	if spec.Translation == nil || !spec.Translation.Enabled {
+		if previous != nil && previous.Translation != nil && previous.Translation.Enabled {
+			var files []entitySchemaPreparedFile
+			appendDeletedEntitySchemaSource(&files, sources.translationDefinition)
+			appendDeletedEntitySchemaSource(&files, sources.translationEntity)
+			appendDeletedEntitySchemaSource(&files, sources.translationCollection)
+			return files, nil
+		}
+		return nil, nil
+	}
+	var definition, entity, collection string
+	var err error
+	if spec.Mode == "edit" && sources.translationDefinition.content != "" {
+		if previous == nil || previous.Translation == nil {
+			return nil, errors.New("cannot safely edit a translation bundle that was not imported from the plugin")
+		}
+		definition, err = entityschema.RewriteTranslationDefinitionFrom(sources.translationDefinition.content, *previous, spec)
+		if err == nil {
+			entity, err = entityschema.RewriteTranslationEntity(sources.translationEntity.content, *previous, spec)
+		}
+		if err == nil && sources.translationCollection.content != "" {
+			collection, err = entityschema.RewriteTranslationCollection(sources.translationCollection.content, *previous, spec)
+		}
+		if collection == "" && err == nil {
+			collection, err = entityschema.RenderTranslationCollection(spec)
+		}
+	} else {
+		definition, err = entityschema.RenderTranslationDefinition(spec)
+		if err == nil {
+			entity, err = entityschema.RenderTranslationEntity(spec)
+		}
+		if err == nil {
+			collection, err = entityschema.RenderTranslationCollection(spec)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	var files []entitySchemaPreparedFile
+	appendEntitySchemaSource(&files, sources.translationDefinition, definition)
+	appendEntitySchemaSource(&files, sources.translationEntity, entity)
+	appendEntitySchemaSource(&files, sources.translationCollection, collection)
+	return files, nil
+}
+
+func appendEntitySchemaSource(files *[]entitySchemaPreparedFile, source entitySchemaSource, after string) {
+	appendChangedFile(files, source.path, source.content, after, source.version, source.exists)
+}
+
+func appendDeletedEntitySchemaSource(files *[]entitySchemaPreparedFile, source entitySchemaSource) {
+	if !source.exists {
+		return
+	}
+	*files = append(*files, entitySchemaPreparedFile{
+		path: filepath.Clean(source.path), before: source.content,
+		version: source.version, exists: true, delete: true,
+	})
 }
 
 func entitySchemaRevision(timestamp int64, hash [sha256.Size]byte) string {
@@ -906,30 +1504,70 @@ func decodeScaffoldRequest(raw *json.RawMessage, target any) error {
 	return nil
 }
 
-func entitySchemaFieldTypes() []EntitySchemaFieldType {
-	return []EntitySchemaFieldType{
-		{"id", "Primary ID", true},
-		{"auto-increment", "Auto increment", true},
-		{"version", "Version ID", true},
-		{"reference-version", "Reference version", true},
-		{"string", "String", true},
-		{"long-text", "Long text", true},
-		{"blob", "Blob", true},
-		{"int", "Integer", true},
-		{"float", "Float", true},
-		{"bool", "Boolean", true},
-		{"date", "Date", true},
-		{"datetime", "Date/time", true},
-		{"json", "JSON", true},
-		{"list", "List (JSON)", true},
-		{"object", "Object (JSON)", true},
-		{"created-at", "Created at", true},
-		{"updated-at", "Updated at", true},
-		{"many-to-one", "Many to one", true},
-		{"one-to-one", "One to one", true},
-		{"one-to-many", "One to many", false},
-		{"many-to-many", "Many to many", false},
+func entitySchemaFieldTypes(versionConstraint string, available func(string) bool) []EntitySchemaFieldType {
+	all := entityschema.DefinitionKindsForVersion(versionConstraint)
+	entityMapping := []entityschema.DefinitionKind{entityschema.DefinitionEntity, entityschema.DefinitionMapping}
+	entityOnly := []entityschema.DefinitionKind{entityschema.DefinitionEntity}
+	entityExtension := []entityschema.DefinitionKind{entityschema.DefinitionEntity, entityschema.DefinitionExtension}
+	if entityschema.BulkEntityExtensionSupported(versionConstraint) {
+		entityExtension = append(entityExtension, entityschema.DefinitionBulkExtension)
 	}
+	base := func(kind, label string, stored bool, kinds []entityschema.DefinitionKind) EntitySchemaFieldType {
+		return EntitySchemaFieldType{Kind: kind, Label: label, Stored: stored, DefinitionKinds: kinds}
+	}
+	result := []EntitySchemaFieldType{
+		base("id", "Primary ID", true, entityMapping),
+		base("binary-id", "Binary ID", true, all),
+		base("auto-increment", "Auto increment", true, entityMapping),
+		base("version", "Version ID", true, entityOnly),
+		base("reference-version", "Reference version", true, all),
+		base("foreign-key", "Foreign key", true, entityMapping),
+		base("string", "String", true, all),
+		base("long-text", "Long text", true, all),
+		base("blob", "Blob", true, all),
+		base("int", "Integer", true, all),
+		base("float", "Float", true, all),
+		base("bool", "Boolean", true, all),
+		base("date", "Date", true, all),
+		base("datetime", "Date/time", true, all),
+		base("json", "JSON", true, all),
+		base("list", "List (JSON)", true, all),
+		base("object", "Object (JSON)", true, all),
+		{Kind: "created-at", Label: "Created at", Stored: true, DefinitionKinds: entityMapping, RequiresDefaultFieldsOverride: true},
+		{Kind: "updated-at", Label: "Updated at", Stored: true, DefinitionKinds: entityMapping, RequiresDefaultFieldsOverride: true},
+		base("many-to-one", "Many to one", true, all),
+		base("one-to-one", "One to one", true, entityExtension),
+		base("one-to-many", "One to many", false, entityExtension),
+		base("many-to-many", "Many to many", false, entityExtension),
+		base("hierarchy", "Parent / children hierarchy", true, entityOnly),
+	}
+	if entityschema.EnumFieldSupported(versionConstraint) &&
+		(available == nil || available(`Shopware\Core\Framework\DataAbstractionLayer\Field\EnumField`)) {
+		result = append(result, base("enum", "Backed enum", true, all))
+	}
+	for _, template := range entityschema.SpecializedFieldTemplates() {
+		field := template.Field
+		if !entityschema.SpecializedFieldSupported(field.Implementation.Class, versionConstraint) ||
+			available != nil && !available(field.Implementation.Class) {
+			continue
+		}
+		result = append(result, EntitySchemaFieldType{
+			Kind: string(field.Kind), Label: template.Label, Stored: true,
+			DefinitionKinds: all, ID: template.ID, Template: &field,
+		})
+	}
+	return result
+}
+
+func (p *Provider) specializedFieldClassAvailable(className string) bool {
+	if p == nil || p.phpIndex == nil {
+		return true
+	}
+	if _, coreIndexed := p.phpIndex.FindClass(`Shopware\Core\Framework\DataAbstractionLayer\EntityDefinition`); !coreIndexed {
+		return true
+	}
+	_, found := p.phpIndex.FindClass(className)
+	return found
 }
 
 func entityIssue(code, message string) entityschema.ValidationIssue {
@@ -951,34 +1589,114 @@ func sameStringSet(left, right []string) bool {
 	return true
 }
 
+func samePHPClass(left, right string) bool {
+	return strings.EqualFold(strings.Trim(left, `\`), strings.Trim(right, `\`))
+}
+
 func entitySchemaSourcesFor(
 	directory string,
 	spec entityschema.EntitySpec,
 	documents map[string]EntitySchemaDocument,
 ) (entitySchemaSources, error) {
-	paths := []string{
-		filepath.Join(directory, entityschema.ShortClass(spec.DefinitionClass)+".php"),
-		filepath.Join(directory, entityschema.ShortClass(spec.EntityClass)+".php"),
-		filepath.Join(directory, entityschema.ShortClass(spec.CollectionClass)+".php"),
+	definitionPath, err := entitySchemaPath(spec.DefinitionURI, filepath.Join(directory, entityschema.ShortClass(spec.DefinitionClass)+".php"))
+	if err != nil {
+		return entitySchemaSources{}, err
 	}
-	result := make([]entitySchemaSource, len(paths))
-	for index, path := range paths {
-		content, version, exists, err := sourceForPath(path, documents)
+	readSource := func(path string) (entitySchemaSource, error) {
+		content, version, exists, readErr := sourceForPath(path, documents)
+		if readErr != nil {
+			return entitySchemaSource{}, readErr
+		}
+		return entitySchemaSource{path: path, content: content, version: version, exists: exists}, nil
+	}
+	definition, err := readSource(definitionPath)
+	if err != nil {
+		return entitySchemaSources{}, err
+	}
+	sources := entitySchemaSources{definition: definition}
+	var current *entityschema.EntitySpec
+	if definition.content != "" {
+		if imported, importErr := entityschema.ImportDefinition(definition.content, nil); importErr == nil {
+			current = &imported
+		}
+	}
+	entityClass := spec.EntityClass
+	collectionClass := spec.CollectionClass
+	entityURI := spec.EntityURI
+	collectionURI := spec.CollectionURI
+	if current != nil && current.DefinitionKind == entityschema.DefinitionEntity && spec.DefinitionKind != entityschema.DefinitionEntity {
+		entityClass = current.EntityClass
+		collectionClass = current.CollectionClass
+	}
+	if spec.DefinitionKind == entityschema.DefinitionEntity || current != nil && current.DefinitionKind == entityschema.DefinitionEntity {
+		entityPath, pathErr := entitySchemaPath(entityURI, filepath.Join(directory, entityschema.ShortClass(entityClass)+".php"))
+		if pathErr != nil {
+			return entitySchemaSources{}, pathErr
+		}
+		collectionPath, pathErr := entitySchemaPath(collectionURI, filepath.Join(directory, entityschema.ShortClass(collectionClass)+".php"))
+		if pathErr != nil {
+			return entitySchemaSources{}, pathErr
+		}
+		entity, readErr := readSource(entityPath)
+		if readErr != nil {
+			return entitySchemaSources{}, readErr
+		}
+		collection, readErr := readSource(collectionPath)
+		if readErr != nil {
+			return entitySchemaSources{}, readErr
+		}
+		sources.entity = entity
+		sources.collection = collection
+	}
+	translation := spec.Translation
+	translationOwner := spec
+	if (translation == nil || !translation.Enabled) && current != nil && current.Translation != nil && current.Translation.Enabled {
+		translation = current.Translation
+		translationOwner = *current
+	}
+	if translation != nil {
+		translationDirectory := defaultTranslationDirectory(directory, translationOwner)
+		translationDefinitionPath, pathErr := entitySchemaPath(translation.DefinitionURI, filepath.Join(translationDirectory, entityschema.ShortClass(translation.DefinitionClass)+".php"))
+		if pathErr != nil {
+			return entitySchemaSources{}, pathErr
+		}
+		translationEntityPath, pathErr := entitySchemaPath(translation.EntityURI, filepath.Join(translationDirectory, entityschema.ShortClass(translation.EntityClass)+".php"))
+		if pathErr != nil {
+			return entitySchemaSources{}, pathErr
+		}
+		translationCollectionPath, pathErr := entitySchemaPath(translation.CollectionURI, filepath.Join(translationDirectory, entityschema.ShortClass(translation.CollectionClass)+".php"))
+		if pathErr != nil {
+			return entitySchemaSources{}, pathErr
+		}
+		sources.translationDefinition, err = readSource(translationDefinitionPath)
 		if err != nil {
 			return entitySchemaSources{}, err
 		}
-		result[index] = entitySchemaSource{
-			path:    path,
-			content: content,
-			version: version,
-			exists:  exists,
+		sources.translationEntity, err = readSource(translationEntityPath)
+		if err != nil {
+			return entitySchemaSources{}, err
+		}
+		sources.translationCollection, err = readSource(translationCollectionPath)
+		if err != nil {
+			return entitySchemaSources{}, err
 		}
 	}
-	return entitySchemaSources{
-		definition: result[0],
-		entity:     result[1],
-		collection: result[2],
-	}, nil
+	return sources, nil
+}
+
+func entitySchemaPath(uri, fallback string) (string, error) {
+	if uri == "" {
+		return fallback, nil
+	}
+	path, err := uriutil.Path(uri)
+	if err != nil {
+		return "", fmt.Errorf("resolve entity source URI: %w", err)
+	}
+	return path, nil
+}
+
+func defaultTranslationDirectory(parentDirectory string, spec entityschema.EntitySpec) string {
+	return filepath.Join(parentDirectory, "Aggregate", spec.ClassName+"Translation")
 }
 
 func sourceForPath(path string, documents map[string]EntitySchemaDocument) (string, *int, bool, error) {

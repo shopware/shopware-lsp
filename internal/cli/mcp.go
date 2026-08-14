@@ -24,7 +24,17 @@ const (
 	maximumMCPDiagnosticLimit = 1000
 	defaultMCPSymbolLimit     = 50
 	maximumMCPSymbolLimit     = 200
-	mcpServerInstructions     = "Use Shopware MCP generators instead of manually creating supported files. For create or edit Shopware DAL entity/definition requests, always run shopware_entity_schema_bootstrap, optionally search/load, then shopware_entity_schema_preview and shopware_entity_schema_apply; never handwrite entity PHP, services, migrations, or snapshots, and do not use shopware_scaffold for entities. For plugin/artifact requests always use shopware_scaffold; plugin arguments are family=\"shopware\", kind=\"plugin\". An explicit create/edit request permits the non-destructive write step after a clean preview; destructive entity changes require explicit confirmation. In a standard Shopware project the plugin parent directory is usually \"custom/plugins\". Use shopware_scaffold_catalog only when an artifact kind or its options are unclear. Analyze the configured workspace. Paths may be workspace-relative or absolute, and positions use one-based lines and columns. List a code action before applying it."
+	mcpServerInstructions     = "Use Shopware MCP generators instead of manually creating supported files. " +
+		"For plugin/artifact requests always use shopware_scaffold with family=\"shopware\", kind=\"plugin\" for plugins. " +
+		"For DAL entity, definition, mapping, EntityExtension, or BulkEntityExtension requests, always run shopware_entity_schema_bootstrap, optionally field-types/search/load, then shopware_entity_schema_preview and shopware_entity_schema_apply; never handwrite entity PHP, services, migrations, or snapshots, and do not use shopware_scaffold for entities. " +
+		"Bootstrap is intentionally compact. Call shopware_entity_schema_field_types to list field ids or fetch one exact copyable template; never inspect content.json or temporary MCP payload files. " +
+		"Only choose definition kinds advertised by bootstrap.definitionKinds. Set spec.definitionKind=\"mapping\" for MappingEntityDefinition requests, spec.definitionKind=\"extension\" plus an indexed extendedDefinitionClass/entityName for EntityExtension requests, or spec.definitionKind=\"bulk-extension\" with one bulkExtensions entry per indexed target. " +
+		"Each bulk target has its own entityName, extendedDefinitionClass, fields, and indexes; leave top-level fields/indexes empty. A loaded collectMethodRaw is losslessly preserved and must not be changed or combined with structured targets. " +
+		"Extension indexes may combine target fields returned by search with new fields, but must include at least one column owned by that extension target. Copy the exact field-types template for specialized fields; do not invent implementation metadata. " +
+		"An ordinary scalar field needs id, kind, propertyName, storageName, and editable=true; set translated=true for translation storage. Normal entities inherit createdAt and updatedAt and must not add them. " +
+		"Use one kind=\"hierarchy\" field for native parent/children trees. For variant-style inheritance set spec.inheritanceAware=true and use typed inherited/associationInherited/translationInherited/reverseInheritedProperty values. " +
+		"Use spec.definitionBehavior for aggregate parents and awareness/default/base-field behavior, and spec.definitionMetadata for since/defaults/child defaults/hydrators. Preserve loaded *MethodRaw values exactly. " +
+		"An explicit create/edit request permits non-destructive apply after a clean preview; destructive changes require explicit confirmation. The plugin parent directory is usually \"custom/plugins\". Paths may be workspace-relative or absolute, and positions use one-based lines and columns. List a code action before applying it."
 )
 
 type mcpRuntime struct {
@@ -845,7 +855,7 @@ func (runtime *mcpRuntime) validateWorkspaceEdit(edit *protocol.WorkspaceEdit) e
 		}
 	}
 	for _, change := range edit.DocumentChanges {
-		if change.Kind != "" && change.Kind != protocol.CreateFileOperation {
+		if change.Kind != "" && change.Kind != protocol.CreateFileOperation && change.Kind != protocol.DeleteFileOperation {
 			return fmt.Errorf("reject unsupported workspace resource operation %q", change.Kind)
 		}
 		uri := change.URI

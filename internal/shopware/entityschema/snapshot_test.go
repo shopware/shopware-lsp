@@ -180,6 +180,40 @@ func TestSchemaDiffRequiresExplicitRenameResolution(t *testing.T) {
 	require.Len(t, decisions, 1)
 }
 
+func TestSchemaDiffRequiresExplicitEntityRenameResolution(t *testing.T) {
+	before := EmptySchema()
+	before.Entities["old_table"] = Entity{
+		Name: "old_table",
+		Columns: map[string]Column{
+			"id": {Name: "id", SQLType: "BINARY(16)", NotNull: true, PrimaryKey: true},
+		},
+	}
+	after := EmptySchema()
+	after.Entities["new_table"] = Entity{
+		Name: "new_table",
+		Columns: map[string]Column{
+			"id": {Name: "id", SQLType: "BINARY(16)", NotNull: true, PrimaryKey: true},
+		},
+	}
+
+	diff := DiffSchemas(before, after)
+	require.Len(t, diff.EntityRenameQuestions, 1)
+	require.Equal(t, "new_table", diff.EntityRenameQuestions[0].Added)
+	require.Equal(t, "old_table", diff.EntityRenameQuestions[0].Candidates[0].From)
+	_, _, _, err := ResolveSchemaDiff(before, after, nil)
+	require.ErrorContains(t, err, "unresolved entity change")
+
+	resolvedPrevious, resolved, decisions, err := ResolveSchemaDiff(before, after, []Decision{{
+		Kind: "entityRename", Entity: "new_table", From: "old_table", To: "new_table",
+	}})
+	require.NoError(t, err)
+	require.Contains(t, resolvedPrevious.Entities, "new_table")
+	require.NotContains(t, resolvedPrevious.Entities, "old_table")
+	require.Empty(t, resolved.CreatedEntities)
+	require.Empty(t, resolved.RemovedEntities)
+	require.Len(t, decisions, 1)
+}
+
 func TestSnapshotGraphDetectsMissingParentsAndCycles(t *testing.T) {
 	orphan, err := Snapshot{Kind: SnapshotMigration, Parents: []string{"missing"}, Schema: EmptySchema()}.Seal()
 	require.NoError(t, err)

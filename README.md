@@ -93,10 +93,17 @@ references, and workspace-symbol search. It also exposes the production
 Shopware/Symfony scaffold generators through `shopware_scaffold_catalog` and
 `shopware_scaffold`. A scaffold call previews a unified diff by default; pass
 `write: true` to create its validated files. The typed DAL entity workflow is
-available through `shopware_entity_schema_bootstrap`, `_search`, `_load`,
-`_preview`, `_apply`, and `_reconcile`. Apply requires the exact preview
+available through `shopware_entity_schema_bootstrap`, `_field_types`,
+`_search`, `_load`, `_preview`, `_apply`, and `_reconcile`. Bootstrap keeps its
+result inline by returning compact field summaries and omitting relation rows.
+Call `_field_types` without an ID to filter or list available kinds, or with an
+exact returned ID to obtain one copyable template; agents must not inspect
+editor-generated `content.json` payloads. Apply requires the exact preview
 revision, and destructive migrations additionally require
-`allowDestructive: true`.
+`allowDestructive: true`. Loaded definitions retain typed behavior
+and metadata flags, scoped `ApiAware` sources, `JsonField` property mappings
+and defaults, and version-gated to-one association shapes rather than
+flattening them into raw PHP.
 
 Indexing is lazy on the first analysis or scaffold call and the resulting
 workspace session is reused. Tool paths may be absolute or workspace-relative;
@@ -307,18 +314,87 @@ exact public names shown by MCP `tools/list`; unknown names are rejected.
 
 ### Shopware DAL Entity Designer
 
-- `Shopware: New File…` → `DAL Entity Definition` opens a visual designer for
-  new and indexed plugin entities, ordered fields, relations, and indexes
+- `Shopware: New File…` → `DAL Entity / Mapping / Extensions` opens a visual
+  designer for new and indexed plugin entities, mapping definitions, entity
+  extensions, bulk entity extensions, ordered fields, relations, and indexes
 - One preview drives the definition, entity, collection, service registration,
   Shopware migration, and a full-plugin schema snapshot committed below
   `src/Resources/shopware-lsp/schema/`
 - Existing definitions are imported through the native PHP CST. Unknown field
   expressions are locked and preserved; custom definition/entity members are
   retained, and customized managed accessors stop the rewrite safely
-- The field model covers scalar, JSON/list/object/blob, timestamps,
-  auto-increment and version fields, primary flags, reference versions, and
-  owning or inverse to-one/to-many associations. Version-aware relations emit
-  composite foreign keys and indexes automatically
+- The designer targets schema-owning class-based definitions. Shopware's
+  attribute-generated definitions, attribute-only `SerializedField`, dynamic
+  custom-entity templates, and non-owning derived sales-channel definition
+  views are deliberately outside this workflow
+- Class-level definition behavior is typed as well: aggregate
+  `getParentDefinitionClass()` links, explicit `isVersionAware()` overrides,
+  literal `defaultFields()` and `getBaseFields()` overrides, and
+  restrict-delete metadata property sets round-trip through the designer.
+  Base fields feed entity accessors, relation metadata, snapshots, and
+  migrations; an empty default-field override intentionally disables the
+  framework's implicit timestamp fields
+- Definition `since()`, `getDefaults()`, `getChildDefaults()`, and
+  `getHydratorClass()` hooks are editable for parent and applicable translation
+  definitions. Non-literal implementations are shown as locked methods and
+  must be preserved exactly by VS Code, MCP, and other clients
+- Mapping mode generates a `MappingEntityDefinition`, service registration,
+  join table migration, and snapshot without creating entity or collection
+  classes. Standalone or associated foreign keys can form composite primary
+  keys. Unlike normal definitions, mapping definitions have no implicit DAL
+  timestamps, but explicit created/updated timestamp fields remain available
+- Extension mode targets an indexed definition and generates an
+  `EntityExtension` registered with `shopware.entity.extension`. Shopware only
+  accepts associations, reference-version fields, runtime fields, and foreign
+  keys paired with an association from the same extension. To-one relations
+  therefore migrate their paired foreign-key columns with `ALTER TABLE`, while
+  scalar additions are runtime and association-only extensions generate no SQL. The
+  generated compatibility methods follow the plugin's Shopware target: 6.7+
+  uses `getEntityName()`, while older targets also receive
+  `getDefinitionClass()`. Extension indexes can combine contributed columns
+  with verified physical columns from the indexed target; each index must own
+  at least one contributed foreign-key/reference-version column so multiple
+  extensions remain separable
+- Bulk-extension mode generates one `BulkEntityExtension` registered with
+  `shopware.bulk.entity.extension`. It manages any number of indexed targets;
+  every target keeps an independent field list, verified target metadata, and
+  owned indexes. The preview merges all target-table changes into one atomic
+  migration and snapshot, while association-only targets intentionally produce
+  no SQL
+- Existing `EntityExtension` classes round-trip structured `extendFields()`,
+  all supported literal `modifyFields()` flag additions/removals, and
+  `extendProtections()`. Custom method bodies are preserved as locked source
+  instead of being partially rewritten
+- The field model covers scalar, backed PHP enums, JSON/list/object/blob, automatically
+  persisted DAL timestamps, auto-increment and version fields, primary flags,
+  reference versions, and owning or inverse to-one/to-many associations.
+  Version-aware relations emit composite foreign keys and indexes automatically
+- Shopware 6.6.10+ `EnumField` declarations retain the constructor enum case,
+  resolve the enum's `string` or `int` backing type through the shared PHP
+  semantic index, generate enum-typed entity accessors, and use the matching
+  physical SQL type. Unbacked, missing, or mismatched enum declarations are
+  rejected before preview can be applied
+- A hierarchy field atomically generates Shopware's `ParentFkField`,
+  `ParentAssociationField`, and `ChildrenAssociationField` bundle. When the
+  entity is version-aware it also owns `parent_version_id`, the composite
+  self-reference, and its index; deleting a parent cascades to its children
+- Inheritance-aware definitions build on that hierarchy and generate
+  `isInheritanceAware()`. Stored fields, associations, and translated facades
+  expose typed `Inherited` metadata, while inverse associations support
+  `ReverseInherited`; these flags do not create database migrations
+- Many-to-one and one-to-one associations preserve and expose Shopware's
+  `autoload` option, including the different native constructor defaults
+- Stored fields, translated facades, associations, and hierarchy components
+  expose typed `WriteProtected` metadata with optional allowed write scopes;
+  dynamic custom scope expressions remain preserved as raw flags
+- Scalar fields can be marked as translated. The same atomic preview then
+  creates or updates the parent `TranslatedField` facade and translations
+  association, the companion translation definition/entity/collection, both
+  service registrations, and the translation table. Version-aware parents use
+  the required parent-ID/version-ID/language-ID composite key and cascading
+  foreign keys. Existing translation bundles are imported and rewritten with
+  custom members preserved. Named normal or unique indexes can target either
+  the parent table or generated translation table independently
 - A selected-field inspector exposes type-specific limits, integer ranges,
   search ranking, relation delete behavior, mapping columns, and backfill SQL.
   Relation and index columns use indexed choices, and validation is attached to
@@ -328,7 +404,9 @@ exact public names shown by MCP `tools/list`; unknown names are rejected.
   named JSON-check changes are rebuilt explicitly during schema edits
 - Snapshot history is a content-addressed DAG. The designer handles baseline
   import, explicit branch reconciliation, manual-drift adoption or migration,
-  and explicit column create-versus-rename decisions
+  explicit column create-versus-rename decisions, and technical entity/table
+  rename decisions. Accepted table renames use `RENAME TABLE`, preserve data,
+  and rebuild generated index, foreign-key, and JSON-check names safely
 - Snapshot format v2 stores only physical database state: technical entity and
   storage names, columns, indexes, primary keys, and foreign keys. PHP classes,
   namespaces, properties, flags, associations without storage, and opaque PHP
