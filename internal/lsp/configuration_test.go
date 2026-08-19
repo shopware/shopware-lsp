@@ -40,6 +40,10 @@ func TestConfigurationLayersProjectAndEditorValues(t *testing.T) {
 	require.Equal(t, "editor", effective.Origins["features.hover"])
 }
 
+func TestSCSSInspectionUsesSCSSDomain(t *testing.T) {
+	require.Equal(t, "scss", inspectionDomain("scss.variable"))
+}
+
 func TestDiagnosticConfigurationDisablesAndOverridesRules(t *testing.T) {
 	for _, test := range []struct {
 		name        string

@@ -898,7 +898,9 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
   fixes, stale removal, and cache restore; plain HTML is parsed on demand
 
 ### Theme Config Support
-- SCSS variable completion from theme configuration (prefixed with `$`)
+- SCSS variable completion from theme configuration (prefixed with `$`), plus
+  conservative unknown-variable diagnostics backed by workspace declarations
+  and SCSS-enabled `theme.json` fields
 - Twig `theme_config()` function key completion
 - Go-to-definition for theme config fields
 
@@ -1369,7 +1371,7 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
 | JavaScript (.js) | Completion, go-to-definition, hover, diagnostics (admin) |
 | TypeScript (.ts) | Completion, go-to-definition, hover, diagnostics (admin) |
 | Vue SFC (.vue) | Administration component indexing and template/script/style language features |
-| SCSS (.scss) | Completion, go-to-definition, color swatches and color picker |
+| SCSS (.scss) | Completion, go-to-definition, unknown-variable diagnostics, color swatches and color picker |
 | Dotenv (.env, .env.*, *.env) | Go-to-definition, references, hover |
 | Dockerfile / Compose | Environment declaration navigation, references, hover |
 

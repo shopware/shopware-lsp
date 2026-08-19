@@ -65,3 +65,78 @@ func TestIndexSupportsVueTemplateAndStyleSections(t *testing.T) {
 	assert.Equal(t, 1, declarations[0].Start.Line)
 	assert.Equal(t, 0, usages[0].Start.Line)
 }
+
+func TestIndexTracksGlobalAndThemeSCSSVariables(t *testing.T) {
+	idx, err := NewIndex(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, idx.Close()) })
+
+	variablesPath := "/project/_variables.scss"
+	require.NoError(t, idx.Index(indexer.NewParsedFile(
+		variablesPath,
+		[]byte(`$brand-primary: #0042a0;
+.scope { $local-only: red; }`),
+	)))
+	require.NoError(t, idx.Index(indexer.NewParsedFile(
+		"/project/theme.json",
+		[]byte(`{"config":{"fields":{
+            "theme-color":{"type":"color"},
+            "not-in-scss":{"type":"text","scss":false}
+        }}}`),
+	)))
+
+	exists, err := idx.HasVariableDeclaration("brand_primary", "")
+	require.NoError(t, err)
+	assert.True(t, exists)
+	exists, err = idx.HasVariableDeclaration("theme-color", "")
+	require.NoError(t, err)
+	assert.True(t, exists)
+	exists, err = idx.HasVariableDeclaration("local-only", "")
+	require.NoError(t, err)
+	assert.False(t, exists)
+	exists, err = idx.HasVariableDeclaration("not-in-scss", "")
+	require.NoError(t, err)
+	assert.False(t, exists)
+
+	declarations, err := idx.VariableDeclarations("brand-primary")
+	require.NoError(t, err)
+	require.Len(t, declarations, 1)
+	assert.Equal(t, variablesPath, declarations[0].File)
+	assert.Equal(t, 0, declarations[0].Start.Line)
+	assert.Equal(t, 0, declarations[0].Start.Character)
+
+	exists, err = idx.HasVariableDeclaration("brand-primary", variablesPath)
+	require.NoError(t, err)
+	assert.False(t, exists, "the open document must not resolve against its stale disk entry")
+	require.NoError(t, idx.Index(indexer.NewParsedFile(
+		variablesPath, []byte("$replacement: blue;"),
+	)))
+	exists, err = idx.HasVariableDeclaration("brand-primary", "")
+	require.NoError(t, err)
+	assert.False(t, exists)
+	exists, err = idx.HasVariableDeclaration("replacement", "")
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	require.NoError(t, idx.RemovedFiles([]string{"/project/theme.json"}))
+	exists, err = idx.HasVariableDeclaration("theme-color", "")
+	require.NoError(t, err)
+	assert.False(t, exists)
+}
+
+func TestIndexRestoresSCSSVariables(t *testing.T) {
+	configDir := t.TempDir()
+	idx, err := NewIndex(configDir)
+	require.NoError(t, err)
+	require.NoError(t, idx.Index(indexer.NewParsedFile(
+		"/project/_variables.scss", []byte("$persisted: red;"),
+	)))
+	require.NoError(t, idx.Close())
+
+	restored, err := NewIndex(configDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, restored.Close()) })
+	exists, err := restored.HasVariableDeclaration("persisted", "")
+	require.NoError(t, err)
+	assert.True(t, exists)
+}

@@ -135,6 +135,10 @@ func registerDiagnosticInspections(
 		"symfony.service.factory.deprecated",
 	}, diagnostics.NewLegacyConfigurationAnalyzer())
 	server.RegisterInspection(inspections.NewServicesXMLMigration())
+	server.RegisterInspection(inspections.NewSCSSVariable(
+		services.styles,
+		services.symbols,
+	))
 
 	server.RegisterInspection(inspections.NewYAMLCompatibility(services.php.Project()))
 	server.RegisterInspection(inspections.NewController(
