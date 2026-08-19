@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import type {LanguageClient} from 'vscode-languageclient/node';
 import type {ClientState} from './clientState';
 import {setNested} from './configurationModel';
+import {pathWithinRoot} from './workspaceRoots';
 
 export const projectConfigurationDirectory = '.config/shopware';
 export const projectConfigurationPath = `${projectConfigurationDirectory}/lsp.json`;
@@ -149,98 +150,126 @@ export function registerConfigurationSupport(
   context: vscode.ExtensionContext,
   clientState: ClientState,
   output: vscode.OutputChannel,
-  restart: () => Promise<void>,
+  restart: (folder: vscode.WorkspaceFolder) => Promise<void>,
 ): void {
   const diagnostics = vscode.languages.createDiagnosticCollection('shopware-lsp-configuration');
   context.subscriptions.push(diagnostics);
 
   context.subscriptions.push(vscode.commands.registerCommand('shopwareLSP.configure', async () => {
-    const client = clientState.client;
-    if (!client) {
+    const entry = await clientState.resolveEntry(
+      undefined,
+      'Configure Shopware Language Server',
+    );
+    if (!entry) {
       vscode.window.showErrorMessage('Shopware LSP is not running');
       return;
     }
-    await showConfigurationPicker(client);
+    await showConfigurationPicker(entry.client, entry.folder);
   }));
 
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(async event => {
     if (!event.affectsConfiguration('shopwareLSP')) return;
-    const client = clientState.client;
-    if (!client) return;
-    await client.sendNotification('workspace/didChangeConfiguration', {
-      settings: readEditorConfiguration(outermostWorkspaceFolder()?.uri),
-    });
+    await Promise.all(clientState.runningEntries().filter(entry =>
+      event.affectsConfiguration('shopwareLSP', entry.folder.uri)).map(entry =>
+      entry.client.sendNotification('workspace/didChangeConfiguration', {
+        settings: readEditorConfiguration(entry.folder.uri),
+      })));
   }));
 
-  const folder = outermostWorkspaceFolder();
-  if (folder) {
-    const watcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(folder, `**/${projectConfigurationPath}`),
-    );
-    const reload = async () => {
-      const client = clientState.client;
-      if (!client) return;
-      try {
-        const result = await client.sendRequest<ReloadResult>('shopware/configuration/reload');
-        updateConfigurationErrors(diagnostics, folder, result.errors, result.error);
-        if (result.error) output.appendLine(`Configuration error: ${result.error}`);
-      } catch (error) {
-        output.appendLine(`Failed to reload Shopware LSP configuration: ${error}`);
+  const watcher = vscode.workspace.createFileSystemWatcher(`**/${projectConfigurationPath}`);
+  const reload = async (uri: vscode.Uri) => {
+    const entry = clientState.entryForUri(uri);
+    if (!entry) return;
+    try {
+      const result = await entry.client.sendRequest<ReloadResult>('shopware/configuration/reload');
+      updateConfigurationErrors(diagnostics, entry.folder, result.errors, result.error);
+      if (result.error) {
+        output.appendLine(`Configuration error in ${entry.folder.name}: ${result.error}`);
       }
-    };
-    watcher.onDidCreate(reload, undefined, context.subscriptions);
-    watcher.onDidChange(reload, undefined, context.subscriptions);
-    watcher.onDidDelete(reload, undefined, context.subscriptions);
-    context.subscriptions.push(watcher);
-  }
+    } catch (error) {
+      output.appendLine(`Failed to reload Shopware LSP configuration for ${entry.folder.name}: ${error}`);
+    }
+  };
+  watcher.onDidCreate(reload, undefined, context.subscriptions);
+  watcher.onDidChange(reload, undefined, context.subscriptions);
+  watcher.onDidDelete(reload, undefined, context.subscriptions);
+  context.subscriptions.push(watcher);
 
-  context.subscriptions.push({dispose: () => { restartPromptVisible = false; }});
+  context.subscriptions.push({dispose: () => {
+    restartPromptVisible.clear();
+    diagnosticRuleIDs.clear();
+  }});
   configurationDiagnostics = diagnostics;
-  configurationOutput = output;
   configurationRestart = restart;
 }
 
 let configurationDiagnostics: vscode.DiagnosticCollection | undefined;
-let configurationOutput: vscode.OutputChannel | undefined;
-let configurationRestart: (() => Promise<void>) | undefined;
-let restartPromptVisible = false;
-let diagnosticRuleIDs = new Set<string>();
+let configurationRestart: ((folder: vscode.WorkspaceFolder) => Promise<void>) | undefined;
+const restartPromptVisible = new Set<string>();
+const diagnosticRuleIDs = new Map<string, Set<string>>();
 
-export function isKnownDiagnosticRule(id: string): boolean {
-  return diagnosticRuleIDs.has(id);
+export function isKnownDiagnosticRule(uri: vscode.Uri, id: string): boolean {
+  if (uri.scheme !== 'file') return false;
+  return [...diagnosticRuleIDs.entries()]
+    .map(([root, rules]) => ({root: vscode.Uri.parse(root), rules}))
+    .filter(entry => entry.root.scheme === 'file' && pathWithinRoot(entry.root.fsPath, uri.fsPath))
+    .sort((left, right) => right.root.fsPath.length - left.root.fsPath.length)[0]
+    ?.rules.has(id) === true;
 }
 
-function rememberDiagnosticRules(catalog: ConfigurationCatalog): void {
-  diagnosticRuleIDs = new Set(
+function rememberDiagnosticRules(folder: vscode.WorkspaceFolder, catalog: ConfigurationCatalog): void {
+  diagnosticRuleIDs.set(folder.uri.toString(), new Set(
     catalog.inspections.flatMap(inspection => inspection.rules.map(rule => rule.id)),
+  ));
+}
+
+export function attachConfigurationClient(
+  client: LanguageClient,
+  folder: vscode.WorkspaceFolder,
+  output: vscode.OutputChannel,
+): vscode.Disposable {
+  const key = folder.uri.toString();
+  let active = true;
+  const restartNotification = client.onNotification(
+    'shopware/configurationRestartRequired',
+    async (params: {message?: string}) => {
+      if (!active) return;
+      if (restartPromptVisible.has(key)) return;
+      restartPromptVisible.add(key);
+      const selected = await vscode.window.showInformationMessage(
+        `${folder.name}: ${params.message || 'Shopware LSP configuration changes require a restart.'}`,
+        'Restart',
+        'Later',
+      );
+      restartPromptVisible.delete(key);
+      if (selected === 'Restart' && active) await configurationRestart?.(folder);
+    },
   );
-}
-
-export function attachConfigurationClient(client: LanguageClient): void {
-  client.onNotification('shopware/configurationRestartRequired', async (params: {message?: string}) => {
-    if (restartPromptVisible) return;
-    restartPromptVisible = true;
-    const selected = await vscode.window.showInformationMessage(
-      params.message || 'Shopware LSP configuration changes require a restart.',
-      'Restart',
-      'Later',
-    );
-    restartPromptVisible = false;
-    if (selected === 'Restart') await configurationRestart?.();
-  });
   void client.sendRequest<ConfigurationCatalog>('shopware/configuration/catalog').then(catalog => {
-    rememberDiagnosticRules(catalog);
-    const folder = outermostWorkspaceFolder();
-    if (folder) updateConfigurationErrors(
-      configurationDiagnostics, folder, catalog.errors, catalog.error,
-    );
-    if (catalog.error) configurationOutput?.appendLine(`Configuration error: ${catalog.error}`);
-  }, error => configurationOutput?.appendLine(`Failed to read configuration catalog: ${error}`));
+    if (!active) return;
+    rememberDiagnosticRules(folder, catalog);
+    updateConfigurationErrors(configurationDiagnostics, folder, catalog.errors, catalog.error);
+    if (catalog.error) output.appendLine(`Configuration error in ${folder.name}: ${catalog.error}`);
+  }, error => {
+    if (active) output.appendLine(`Failed to read configuration catalog for ${folder.name}: ${error}`);
+  });
+  return {
+    dispose() {
+      active = false;
+      restartNotification.dispose();
+      restartPromptVisible.delete(key);
+      diagnosticRuleIDs.delete(key);
+      updateConfigurationErrors(configurationDiagnostics, folder);
+    },
+  };
 }
 
-async function showConfigurationPicker(client: LanguageClient): Promise<void> {
+async function showConfigurationPicker(
+  client: LanguageClient,
+  folder: vscode.WorkspaceFolder,
+): Promise<void> {
   const catalog = await client.sendRequest<ConfigurationCatalog>('shopware/configuration/catalog');
-  rememberDiagnosticRules(catalog);
+  rememberDiagnosticRules(folder, catalog);
   const items = configurableItems(catalog);
   const selected = await vscode.window.showQuickPick(items, {
     title: 'Shopware Language Server Configuration',
@@ -255,10 +284,10 @@ async function showConfigurationPicker(client: LanguageClient): Promise<void> {
   const scope = await chooseScope();
   if (!scope) return;
   if (scope === 'project') {
-    await updateProjectConfiguration(selected, value);
+    await updateProjectConfiguration(folder, selected, value);
     await client.sendRequest<ReloadResult>('shopware/configuration/reload');
   } else {
-    await updateEditorSetting(selected, value, scope);
+    await updateEditorSetting(folder, selected, value, scope);
   }
 }
 
@@ -357,12 +386,13 @@ async function chooseScope(): Promise<'project' | 'workspace' | 'user' | undefin
 }
 
 async function updateEditorSetting(
+  folder: vscode.WorkspaceFolder,
   item: ConfigurableItem,
   value: boolean | Severity | null,
   scope: 'workspace' | 'user',
 ): Promise<void> {
   const target = scope === 'user' ? vscode.ConfigurationTarget.Global : vscode.ConfigurationTarget.WorkspaceFolder;
-  const configuration = vscode.workspace.getConfiguration('shopwareLSP', outermostWorkspaceFolder()?.uri);
+  const configuration = vscode.workspace.getConfiguration('shopwareLSP', folder.uri);
   if (item.configKind === 'diagnostics' || item.configKind === 'indexing') {
     await configuration.update(item.id, value === null ? undefined : value, target);
     return;
@@ -377,11 +407,10 @@ async function updateEditorSetting(
 }
 
 async function updateProjectConfiguration(
+  folder: vscode.WorkspaceFolder,
   item: ConfigurableItem,
   value: boolean | Severity | null,
 ): Promise<void> {
-  const folder = outermostWorkspaceFolder();
-  if (!folder) throw new Error('A workspace folder is required for project configuration');
   const uri = vscode.Uri.joinPath(folder.uri, projectConfigurationPath);
   let document: Record<string, unknown> = {
     $schema: 'https://raw.githubusercontent.com/shopware/shopware-lsp/main/internal/projectconfig/schema.json',
@@ -410,7 +439,11 @@ function updateConfigurationErrors(
   fallbackMessage?: string,
 ): void {
   if (!collection) return;
-  collection.clear();
+  collection.forEach(uri => {
+    if (uri.scheme === 'file' && pathWithinRoot(folder.uri.fsPath, uri.fsPath)) {
+      collection.delete(uri);
+    }
+  });
   const values = issues?.length ? issues : fallbackMessage ? [{
     path: vscode.Uri.joinPath(folder.uri, projectConfigurationPath).fsPath,
     message: fallbackMessage,
@@ -423,10 +456,4 @@ function updateConfigurationErrors(
     diagnostic.code = 'shopware.config.invalid';
     collection.set(vscode.Uri.file(issue.path), [diagnostic]);
   }
-}
-
-function outermostWorkspaceFolder(): vscode.WorkspaceFolder | undefined {
-  const folders = [...(vscode.workspace.workspaceFolders || [])]
-    .sort((left, right) => left.uri.toString().length - right.uri.toString().length);
-  return folders[0];
 }

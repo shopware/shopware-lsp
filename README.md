@@ -112,9 +112,12 @@ validated against the workspace root. Read and preview tools never modify the
 workspace. Applying a code action requires an exact title returned by
 `shopware_code_actions`, writes the affected files, and returns a unified diff.
 
-The bundled VS Code extension registers this server automatically with VS
-Code's native MCP provider API for every supported workspace folder; manual
-JSON configuration is only needed for other MCP clients. Set
+The bundled VS Code extension runs one language-server and registers one MCP
+definition for each effective supported workspace folder; manual JSON
+configuration is only needed for other MCP clients. In overlapping multi-root
+workspaces, the outermost supported folder owns its descendants so the same
+files are never indexed twice. A supported descendant becomes active when its
+parent is disabled or unsupported. Set
 `shopwareLSP.mcp.enabled` to `false` to opt a workspace folder out. Individual
 tools can be disabled locally with `shopwareLSP.mcp.tools`, or for every client
 through the committed `mcp.tools` project configuration. Tool keys are the

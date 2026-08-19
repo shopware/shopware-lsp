@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import {LanguageClient} from 'vscode-languageclient/node';
+import type {ClientState} from './clientState';
 
 interface TwigTemplateSourceLocation {
   fileUri: string;
@@ -64,12 +65,15 @@ const twigTemplateVariableRequest =
 
 export function registerTwigVariableCommands(
   context: vscode.ExtensionContext,
-  getClient: () => LanguageClient | undefined,
+  clientState: ClientState,
 ): void {
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.analyzeTwigTemplateVariables',
     async () => {
-      const activeClient = getClient();
+      const activeClient = await clientState.resolveClient(
+        undefined,
+        'Analyze Twig Template Variables',
+      );
       if (!activeClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
@@ -147,11 +151,6 @@ export function registerTwigVariableCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.twigVariables',
     async (fileUri: string, variableNames?: string[]) => {
-      const activeClient = getClient();
-      if (!activeClient) {
-        vscode.window.showErrorMessage('Shopware LSP is not running');
-        return;
-      }
       if (typeof fileUri !== 'string' || fileUri.trim() === '') {
         vscode.window.showErrorMessage(
           'Cannot browse Twig variables without a template file.',
@@ -160,6 +159,11 @@ export function registerTwigVariableCommands(
       }
       try {
         const uri = vscode.Uri.parse(fileUri);
+        const activeClient = clientState.clientForUri(uri);
+        if (!activeClient) {
+          vscode.window.showErrorMessage('Shopware LSP is not running for this template');
+          return;
+        }
         const template = templatePathForUri(uri);
         const entries = await loadTwigVariableCatalog(
           activeClient,

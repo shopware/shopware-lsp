@@ -393,14 +393,16 @@ async function applyShopwareScaffoldCreation(
   request: ShopwareScaffoldRequest,
   label: string,
 ): Promise<void> {
-  if (!clientState.client) {
+  const directoryUri = vscode.Uri.parse(request.directoryUri);
+  const languageClient = clientState.clientForUri(directoryUri);
+  if (!languageClient) {
     throw new Error('Shopware LSP is not running');
   }
-  const result = await clientState.client.sendRequest<ShopwareScaffoldCreation>(
+  const result = await languageClient.sendRequest<ShopwareScaffoldCreation>(
     'shopware/scaffold/create',
     request,
   );
-  const edit = await clientState.client.protocol2CodeConverter.asWorkspaceEdit(result.edit);
+  const edit = await languageClient.protocol2CodeConverter.asWorkspaceEdit(result.edit);
   if (!await vscode.workspace.applyEdit(edit)) {
     throw new Error(`Could not create ${label}`);
   }
@@ -515,12 +517,6 @@ export function registerScaffoldCommands(
       resource?: vscode.Uri,
       selectedResources?: vscode.Uri[],
     ) => {
-      const languageClient = clientState.client;
-      if (!languageClient) {
-        vscode.window.showErrorMessage('Shopware LSP is not running');
-        return;
-      }
-
       const scaffold = await vscode.window.showQuickPick(newFileScaffolds, {
         title: 'Shopware: New File',
         placeHolder: 'Select a Shopware or Symfony artifact',
@@ -536,6 +532,13 @@ export function registerScaffoldCommands(
         selectedResources,
       );
       if (!directoryUri) {
+        return;
+      }
+      const languageClient = clientState.clientForUri(directoryUri);
+      if (!languageClient) {
+        vscode.window.showErrorMessage(
+          `Shopware LSP is not running for ${directoryUri.fsPath}`,
+        );
         return;
       }
 

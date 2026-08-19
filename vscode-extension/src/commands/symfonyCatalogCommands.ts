@@ -169,13 +169,11 @@ export function registerSymfonyCatalogCommands(
           resource = undefined;
         }
       }
-      const activeResource = vscode.window.activeTextEditor?.document.uri;
-      const workspaceFolder = resource
-        ? vscode.workspace.getWorkspaceFolder(resource)
-        : activeResource
-          ? vscode.workspace.getWorkspaceFolder(activeResource)
-          : undefined;
-      const folder = workspaceFolder ?? vscode.workspace.workspaceFolders?.[0];
+      const folder = await clientState.resolveWorkspaceFolder(
+        resource,
+        true,
+        'Run Symfony Console Command',
+      );
       if (!folder) {
         vscode.window.showErrorMessage(
           'Open a Symfony workspace before running a console command.',
@@ -229,12 +227,16 @@ export function registerSymfonyCatalogCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.runConsoleCommandPicker',
     async (resource?: vscode.Uri) => {
-      if (!clientState.client) {
+      const entry = await clientState.resolveEntry(
+        resource,
+        'Run Symfony Console Command',
+      );
+      if (!entry) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
       try {
-        const commands = await clientState.client.sendRequest<SymfonyConsoleCatalogEntry[]>(
+        const commands = await entry.client.sendRequest<SymfonyConsoleCatalogEntry[]>(
           'shopware/symfony/console/commands',
           {},
         );
@@ -280,9 +282,7 @@ export function registerSymfonyCatalogCommands(
         if (!selected) {
           return;
         }
-        const commandResource = resource ??
-          vscode.window.activeTextEditor?.document.uri ??
-          vscode.workspace.workspaceFolders?.[0]?.uri;
+        const commandResource = resource ?? entry.folder.uri;
         await vscode.commands.executeCommand(
           'shopware.symfony.runConsoleCommand',
           selected.command.name,
@@ -299,12 +299,16 @@ export function registerSymfonyCatalogCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.browseRoutes',
     async () => {
-      if (!clientState.client) {
+      const languageClient = await clientState.resolveClient(
+        undefined,
+        'Browse Symfony Routes',
+      );
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
       try {
-        const routes = await clientState.client.sendRequest<SymfonyRouteCatalogEntry[]>(
+        const routes = await languageClient.sendRequest<SymfonyRouteCatalogEntry[]>(
           'shopware/symfony/analytics/routes',
           {},
         );
@@ -371,12 +375,16 @@ export function registerSymfonyCatalogCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.browseProfilerRequests',
     async () => {
-      if (!clientState.client) {
+      const languageClient = await clientState.resolveClient(
+        undefined,
+        'Browse Local Symfony Profiler Requests',
+      );
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
       try {
-        const requests = await clientState.client.sendRequest<
+        const requests = await languageClient.sendRequest<
           SymfonyProfilerRequestCatalogEntry[]
         >(
           'shopware/symfony/analytics/profiler/requests',
@@ -529,12 +537,16 @@ export function registerSymfonyCatalogCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.browseDoctrineEntities',
     async () => {
-      if (!clientState.client) {
+      const languageClient = await clientState.resolveClient(
+        undefined,
+        'Browse Doctrine Entities',
+      );
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
       try {
-        const entities = await clientState.client.sendRequest<
+        const entities = await languageClient.sendRequest<
           DoctrineEntityCatalogEntry[]
         >(
           'shopware/symfony/analytics/doctrine/entities',
@@ -572,7 +584,7 @@ export function registerSymfonyCatalogCommands(
         if (!selectedEntity) {
           return;
         }
-        const fields = await clientState.client.sendRequest<
+        const fields = await languageClient.sendRequest<
           DoctrineFieldCatalogEntry[]
         >(
           'shopware/symfony/analytics/doctrine/entityFields',
@@ -645,12 +657,16 @@ export function registerSymfonyCatalogCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.browseFormTypes',
     async () => {
-      if (!clientState.client) {
+      const languageClient = await clientState.resolveClient(
+        undefined,
+        'Browse Symfony Form Types',
+      );
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
       try {
-        const formTypes = await clientState.client.sendRequest<
+        const formTypes = await languageClient.sendRequest<
           SymfonyFormTypeCatalogEntry[]
         >(
           'shopware/symfony/analytics/forms/types',
@@ -689,7 +705,7 @@ export function registerSymfonyCatalogCommands(
         let targetUri = selectedType.formType.fileUri;
         let targetLine = selectedType.formType.sourceLine;
         if (selectedType.formType.optionCount > 0) {
-          const options = await clientState.client.sendRequest<
+          const options = await languageClient.sendRequest<
             SymfonyFormOptionCatalogEntry[]
           >(
             'shopware/symfony/analytics/forms/typeOptions',
@@ -756,7 +772,11 @@ export function registerSymfonyCatalogCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.locateService',
     async (initialIdentifier?: string) => {
-      if (!clientState.client) {
+      const languageClient = await clientState.resolveClient(
+        undefined,
+        'Locate Symfony Service',
+      );
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
@@ -771,7 +791,7 @@ export function registerSymfonyCatalogCommands(
         return;
       }
       try {
-        const services = await clientState.client.sendRequest<
+        const services = await languageClient.sendRequest<
           SymfonyServiceLocatorEntry[]
         >(
           'shopware/symfony/analytics/services/locate',

@@ -26,6 +26,21 @@ server, or `"never"` to disable both LSP and MCP for a workspace folder. Marker
 changes are re-evaluated automatically, so adding a framework dependency or a
 Shopware LSP configuration starts the server without reloading VS Code.
 
+### Multi-root workspaces
+
+Each supported VS Code workspace folder gets an isolated language-server
+process, index, configuration, output channel, and MCP definition. Files and
+file-based commands are routed to the process that owns their path. Commands
+without a file use the active editor, then the only running server; when more
+than one server remains possible, the extension asks which workspace to use.
+Restart and force-reindex operations affect only the selected workspace.
+
+Overlapping workspace folders do not start duplicate indexers. When both a
+parent folder and one of its descendants are supported, the outermost folder
+owns the complete tree and the descendant is suppressed. If the parent is
+disabled or unsupported, the supported descendant starts normally. The same
+selection rule applies to MCP definitions.
+
 ### Symfony Services
 
 Autocomplete service IDs, tags, parameters, and class names in XML and YAML service definitions. Navigate to any service definition with a single click. PHP files show a code lens with service usage counts.
@@ -89,7 +104,7 @@ Full intelligence for the Shopware Admin built with Vue.js:
 ### AI and MCP
 
 On VS Code 1.101 or newer, the extension automatically contributes a Shopware
-MCP server for every supported open workspace folder. VS Code starts the bundled
+MCP server for every effective supported workspace folder. VS Code starts the bundled
 `shopware-lsp` executable lazily when an AI agent uses a Shopware tool, so no
 manual `mcp.json` setup is required. Diagnostics, code actions, hover,
 definitions, references, workspace-symbol search, Shopware/Symfony scaffolds,

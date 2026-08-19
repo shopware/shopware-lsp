@@ -55,7 +55,9 @@ async function main() {
     entryPoints: {
       mcpServerModel: 'src/mcpServerModel.ts',
       serverExecutable: 'src/serverExecutable.ts',
-      projectDetection: 'src/projectDetection.ts'
+      projectDetection: 'src/projectDetection.ts',
+      workspaceRoots: 'src/workspaceRoots.ts',
+      workspaceClientManager: 'src/workspaceClientManager.ts'
     },
     bundle: true,
     format: 'cjs',
@@ -64,6 +66,7 @@ async function main() {
     sourcesContent: false,
     platform: 'node',
     outdir: 'dist',
+    external: ['vscode'],
     logLevel: 'warning',
     plugins: [esbuildProblemMatcherPlugin]
   });

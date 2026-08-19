@@ -130,12 +130,16 @@ export function registerTwigCatalogCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.browseTwigExtensions',
     async () => {
-      if (!clientState.client) {
+      const languageClient = await clientState.resolveClient(
+        undefined,
+        'Browse Twig Extensions',
+      );
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
       try {
-        const extensions = await clientState.client.sendRequest<
+        const extensions = await languageClient.sendRequest<
           TwigExtensionCatalogEntry[]
         >(
           'shopware/symfony/analytics/twig/extensions',
@@ -216,7 +220,11 @@ export function registerTwigCatalogCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.analyzeTwigTemplateUsages',
     async () => {
-      if (!clientState.client) {
+      const languageClient = await clientState.resolveClient(
+        undefined,
+        'Analyze Twig Template Usages',
+      );
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
@@ -229,7 +237,7 @@ export function registerTwigCatalogCommands(
         return;
       }
       try {
-        const entries = await clientState.client.sendRequest<
+        const entries = await languageClient.sendRequest<
           TwigTemplateUsageCatalogEntry[]
         >(
           'shopware/symfony/analytics/twig/templateUsages',
@@ -370,12 +378,16 @@ export function registerTwigCatalogCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.browseTwigComponents',
     async () => {
-      if (!clientState.client) {
+      const languageClient = await clientState.resolveClient(
+        undefined,
+        'Browse Twig Components',
+      );
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
       try {
-        const components = await clientState.client.sendRequest<
+        const components = await languageClient.sendRequest<
           TwigComponentCatalogEntry[]
         >(
           'shopware/symfony/analytics/twig/components',

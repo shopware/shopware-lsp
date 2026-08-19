@@ -40,13 +40,14 @@ type CodeActionResolveSupport struct {
 }
 
 type InitializationOptions struct {
-	PHPExtensions           []string               `json:"phpExtensions,omitempty"`
-	DisabledPHPExtensions   []string               `json:"disabledPhpExtensions,omitempty"`
-	ShopwareTargetVersion   string                 `json:"shopwareTargetVersion,omitempty"`
-	Configuration           *projectconfig.Partial `json:"configuration,omitempty"`
-	AllowUnsupportedProject bool                   `json:"allowUnsupportedProject,omitempty"`
-	CLIMode                 bool                   `json:"cliMode,omitempty"`
-	ShopwareClient          *ShopwareClientOptions `json:"shopwareClient,omitempty"`
+	PHPExtensions              []string               `json:"phpExtensions,omitempty"`
+	DisabledPHPExtensions      []string               `json:"disabledPhpExtensions,omitempty"`
+	ShopwareTargetVersion      string                 `json:"shopwareTargetVersion,omitempty"`
+	Configuration              *projectconfig.Partial `json:"configuration,omitempty"`
+	AllowUnsupportedProject    bool                   `json:"allowUnsupportedProject,omitempty"`
+	OmitExecuteCommandProvider bool                   `json:"omitExecuteCommandProvider,omitempty"`
+	CLIMode                    bool                   `json:"cliMode,omitempty"`
+	ShopwareClient             *ShopwareClientOptions `json:"shopwareClient,omitempty"`
 }
 
 // ShopwareClientOptions negotiates optional integration behavior without

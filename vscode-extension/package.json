@@ -368,6 +368,8 @@
     "test:configuration": "npm run compile && node --test test/configuration.test.js",
     "test:mcp": "npm run compile && node --test test/mcpServer.test.js",
     "test:project-detection": "npm run compile && node --test test/projectDetection.test.js",
+    "test:workspace-roots": "npm run compile && node --test test/workspaceRoots.test.js",
+    "test:workspace-clients": "npm run compile && node --test test/workspaceClientManager.test.js",
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",

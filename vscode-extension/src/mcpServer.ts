@@ -7,6 +7,7 @@ import {
   normalizeActivationMode,
   ProjectDetector,
 } from './projectDetection';
+import {selectOutermostWorkspaceRoots} from './workspaceRoots';
 
 export const shopwareMcpProviderId = 'shopwareLSP.mcp';
 
@@ -32,8 +33,7 @@ export function registerMcpServerDefinitionProvider(
     onDidChangeMcpServerDefinitions: changed.event,
     provideMcpServerDefinitions: async token => {
       const folders = vscode.workspace.workspaceFolders ?? [];
-      const multiRoot = folders.length > 1;
-      const definitions = await Promise.all(folders.map(async folder => {
+      const candidates = await Promise.all(folders.map(async folder => {
         if (token.isCancellationRequested) {
           return undefined;
         }
@@ -76,14 +76,30 @@ export function registerMcpServerDefinitionProvider(
           return undefined;
         }
 
-        const process = createMcpProcessDefinition({
+        return {
+          key: folder.uri.toString(),
+          fsPath: folder.uri.fsPath,
+          enabled: true,
+          folder,
           serverPath,
-          workspaceRoot: folder.uri.fsPath,
-          label: multiRoot ? `Shopware LSP (${folder.name})` : 'Shopware LSP',
+          configuration,
+          decision,
+        };
+      }));
+      const selected = selectOutermostWorkspaceRoots(candidates.filter(
+        (candidate): candidate is NonNullable<typeof candidate> => candidate !== undefined,
+      ));
+      return selected.map(candidate => {
+        const process = createMcpProcessDefinition({
+          serverPath: candidate.serverPath,
+          workspaceRoot: candidate.folder.uri.fsPath,
+          label: selected.length > 1
+            ? `Shopware LSP (${candidate.folder.name})`
+            : 'Shopware LSP',
           version: String(context.extension.packageJSON.version ?? 'dev'),
-          memoryLimitMiB: configuration.get<number>('memoryLimitMiB', 0),
-          editorConfiguration: readEditorConfiguration(folder.uri),
-          allowUnsupportedProject: decision.allowUnsupportedProject,
+          memoryLimitMiB: candidate.configuration.get<number>('memoryLimitMiB', 0),
+          editorConfiguration: readEditorConfiguration(candidate.folder.uri),
+          allowUnsupportedProject: candidate.decision.allowUnsupportedProject,
         });
         const definition = new vscode.McpStdioServerDefinition(
           process.label,
@@ -92,12 +108,9 @@ export function registerMcpServerDefinitionProvider(
           process.env,
           process.version,
         );
-        definition.cwd = folder.uri;
+        definition.cwd = candidate.folder.uri;
         return definition;
-      }));
-      return definitions.filter(
-        (definition): definition is vscode.McpStdioServerDefinition => definition !== undefined,
-      );
+      });
     },
   };
 

@@ -274,6 +274,33 @@ func TestInitializeNegotiatesFrameworkPresentation(t *testing.T) {
 	require.Equal(t, []string{"shopware/test"}, execute["commands"])
 }
 
+func TestInitializeCanOmitExecuteCommandProvider(t *testing.T) {
+	server := NewServer(nil, "", "test")
+	server.commandMap["shopware/test"] = func(
+		context.Context,
+		*json.RawMessage,
+	) (interface{}, error) {
+		return "ok", nil
+	}
+	result, err := server.initialize(context.Background(), &protocol.InitializeParams{
+		RootURI: "file:///workspace",
+		InitializationOptions: protocol.InitializationOptions{
+			OmitExecuteCommandProvider: true,
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, server.CloseAll()) })
+
+	capabilities := result.(map[string]interface{})["capabilities"].(map[string]interface{})
+	require.NotContains(t, capabilities, "executeCommandProvider")
+	response, err := server.handleExecuteCommand(
+		context.Background(),
+		executeCommandRequest(t, `{"command":"shopware/test"}`),
+	)
+	require.NoError(t, err)
+	require.Equal(t, "ok", response)
+}
+
 func TestInitializeRejectsUnsupportedClientContract(t *testing.T) {
 	for name, options := range map[string]*protocol.ShopwareClientOptions{
 		"version": {

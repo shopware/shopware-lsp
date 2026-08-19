@@ -47,7 +47,7 @@ export function registerDiagnosticConfigurationSupport(
           const seen = new Set<string>();
           for (const diagnostic of actionContext.diagnostics) {
             const code = diagnosticCode(diagnostic);
-            if (!code || seen.has(code) || !isKnownDiagnosticRule(code)) continue;
+            if (!code || seen.has(code) || !isKnownDiagnosticRule(document.uri, code)) continue;
             seen.add(code);
             const action = new vscode.CodeAction(
               `Configure Shopware diagnostic '${code}'…`,
@@ -150,7 +150,7 @@ async function configureDiagnostic(
       code,
     );
     if (selectedStorage.value.kind === 'project' || selectedStorage.value.kind === 'extension') {
-      const client = clientState.client;
+      const client = clientState.clientForUri(uri);
       if (client) await client.sendRequest<ReloadResult>('shopware/configuration/reload');
     }
     vscode.window.showInformationMessage(
@@ -277,7 +277,11 @@ function objectValue(value: unknown): Record<string, unknown> {
 }
 
 async function openConfiguration(clientState: ClientState): Promise<void> {
-  const folder = vscode.workspace.workspaceFolders?.[0];
+  const folder = await clientState.resolveWorkspaceFolder(
+    undefined,
+    false,
+    'Open Shopware LSP Configuration',
+  );
   if (!folder) {
     vscode.window.showErrorMessage('A workspace folder is required');
     return;
@@ -287,7 +291,7 @@ async function openConfiguration(clientState: ClientState): Promise<void> {
     description: projectConfigurationPath,
     root: folder.uri,
   }];
-  const client = clientState.client;
+  const client = clientState.entryForUri(folder.uri)?.client;
   if (client) {
     try {
       const catalog = await client.sendRequest<ConfigurationCatalog>('shopware/configuration/catalog');

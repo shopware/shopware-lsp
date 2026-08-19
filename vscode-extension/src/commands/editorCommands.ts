@@ -134,12 +134,11 @@ export function registerEditorCommands(
 
       // Extract relative path from workspace root if possible
       let displayPath = filePath;
-      const workspaceFolders = vscode.workspace.workspaceFolders;
-      if (workspaceFolders && workspaceFolders.length > 0) {
-        const workspaceRoot = workspaceFolders[0].uri.fsPath;
-        if (filePath.startsWith(workspaceRoot)) {
-          displayPath = filePath.substring(workspaceRoot.length + 1); // +1 to remove the leading slash
-        }
+      const workspaceFolder = vscode.workspace.getWorkspaceFolder(
+        vscode.Uri.file(filePath),
+      );
+      if (workspaceFolder && filePath.startsWith(workspaceFolder.uri.fsPath)) {
+        displayPath = path.relative(workspaceFolder.uri.fsPath, filePath);
       }
 
       return {
@@ -192,12 +191,13 @@ export function registerEditorCommands(
   // Register create snippet command handler
   context.subscriptions.push(vscode.commands.registerCommand('shopware.createSnippet', async (snippetKey: string, fileUri: string) => {
     try {
-      if (!clientState.client) {
+      const languageClient = clientState.clientForUri(vscode.Uri.parse(fileUri));
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
 
-      const result = await clientState.client.sendRequest<{paths: SnippetFile[]}>('shopware/snippet/storefront/getPossibleSnippetFiles', {
+      const result = await languageClient.sendRequest<{paths: SnippetFile[]}>('shopware/snippet/storefront/getPossibleSnippetFiles', {
         fileUri,
       });
 
@@ -216,7 +216,7 @@ export function registerEditorCommands(
         return; // User cancelled
       }
 
-      await clientState.client.sendRequest('shopware/snippet/storefront/create', {
+      await languageClient.sendRequest('shopware/snippet/storefront/create', {
         fileUri,
         snippetKey,
         snippets: snippetsWithValues
@@ -229,12 +229,13 @@ export function registerEditorCommands(
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand('shopware.twig.extendBlock', async (textUri: string, blockName: string) => {
-    if (!clientState.client) {
+    const languageClient = clientState.clientForUri(vscode.Uri.parse(textUri));
+    if (!languageClient) {
       vscode.window.showErrorMessage('Shopware LSP is not running');
       return;
     }
 
-    const extensions: { Name: string; }[] = await clientState.client.sendRequest('shopware/extension/all');
+    const extensions: { Name: string; }[] = await languageClient.sendRequest('shopware/extension/all');
 
     if (!extensions || extensions.length === 0) {
       vscode.window.showErrorMessage('No extensions found');
@@ -256,7 +257,7 @@ export function registerEditorCommands(
       return;
     }
 
-    const result: {code: string, message: string} | {uri: string, line: number} = await clientState.client.sendRequest('shopware/twig/extendBlock', {
+    const result: {code: string, message: string} | {uri: string, line: number} = await languageClient.sendRequest('shopware/twig/extendBlock', {
       textUri,
       blockName,
       extension: selected.label,
@@ -279,13 +280,14 @@ export function registerEditorCommands(
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand('shopware.admin.overrideTwigBlock', async (textUri: string, blockName: string) => {
-    if (!clientState.client) {
+    const languageClient = clientState.clientForUri(vscode.Uri.parse(textUri));
+    if (!languageClient) {
       vscode.window.showErrorMessage('Shopware LSP is not running');
       return;
     }
 
     try {
-      const extensions: { Name: string; Type: number; Path: string }[] = await clientState.client.sendRequest('shopware/extension/all');
+      const extensions: { Name: string; Type: number; Path: string }[] = await languageClient.sendRequest('shopware/extension/all');
       const plugins = (extensions || []).filter(extension => extension.Type === 0);
       if (plugins.length === 0) {
         vscode.window.showErrorMessage('No Shopware plugins found in this workspace');
@@ -315,7 +317,7 @@ export function registerEditorCommands(
         line: number;
         component: string;
         scriptUri: string;
-      } = await clientState.client.sendRequest('shopware/admin/twig/override', {
+      } = await languageClient.sendRequest('shopware/admin/twig/override', {
         textUri,
         blockName,
         extension: selected.plugin.Name,
@@ -339,7 +341,8 @@ export function registerEditorCommands(
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand('shopware.twig.showBlockDiff', async (textUri: string, blockName: string) => {
-    if (!clientState.client) {
+    const languageClient = clientState.clientForUri(vscode.Uri.parse(textUri));
+    if (!languageClient) {
       vscode.window.showErrorMessage('Shopware LSP is not running');
       return;
     }
@@ -353,7 +356,7 @@ export function registerEditorCommands(
         currentVersion: string;
       };
 
-      const result: { code: string; message: string } | BlockDiffResponse = await clientState.client.sendRequest('shopware/twig/getBlockDiff', {
+      const result: { code: string; message: string } | BlockDiffResponse = await languageClient.sendRequest('shopware/twig/getBlockDiff', {
         textUri,
         blockName,
       });
@@ -383,14 +386,14 @@ export function registerEditorCommands(
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand('shopware.insertSnippet', async () => {
-    if (!clientState.client) {
-      vscode.window.showErrorMessage('Shopware LSP is not running');
-      return;
-    }
-
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
       vscode.window.showErrorMessage('No active editor');
+      return;
+    }
+    const languageClient = clientState.clientForUri(editor.document.uri);
+    if (!languageClient) {
+      vscode.window.showErrorMessage('Shopware LSP is not running for this file');
       return;
     }
 
@@ -403,11 +406,11 @@ export function registerEditorCommands(
 
     if (isAdminFile) {
       // Fetch admin snippets
-      snippets = await clientState.client.sendRequest('shopware/snippet/admin/all');
+      snippets = await languageClient.sendRequest('shopware/snippet/admin/all');
       insertFormat = "{{ \\$t('${label}') }}";
     } else {
       // Fetch frontend snippets
-      snippets = await clientState.client.sendRequest('shopware/snippet/storefront/all');
+      snippets = await languageClient.sendRequest('shopware/snippet/storefront/all');
       insertFormat = "{{ '${label}'|trans }}";
     }
 
@@ -454,7 +457,8 @@ export function registerEditorCommands(
 
   context.subscriptions.push(vscode.commands.registerCommand('shopware.createSnippetFromSelection', async (fileUri: string, selectedText: string) => {
     try {
-      if (!clientState.client) {
+      const languageClient = clientState.clientForUri(vscode.Uri.parse(fileUri));
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
@@ -476,7 +480,7 @@ export function registerEditorCommands(
       }
 
       // Get possible snippet files
-      const result = await clientState.client.sendRequest<{paths: SnippetFile[]}>('shopware/snippet/storefront/getPossibleSnippetFiles', {
+      const result = await languageClient.sendRequest<{paths: SnippetFile[]}>('shopware/snippet/storefront/getPossibleSnippetFiles', {
         fileUri,
       });
 
@@ -498,7 +502,7 @@ export function registerEditorCommands(
       }
 
       // Create the snippet
-      await clientState.client.sendRequest('shopware/snippet/storefront/create', {
+      await languageClient.sendRequest('shopware/snippet/storefront/create', {
         fileUri,
         snippetKey,
         snippets: snippetsWithValues
@@ -524,12 +528,13 @@ export function registerEditorCommands(
   // Register create admin snippet command handler
   context.subscriptions.push(vscode.commands.registerCommand('shopware.createAdminSnippet', async (snippetKey: string, fileUri: string) => {
     try {
-      if (!clientState.client) {
+      const languageClient = clientState.clientForUri(vscode.Uri.parse(fileUri));
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
 
-      const result = await clientState.client.sendRequest<{paths: SnippetFile[]}>('shopware/snippet/admin/getPossibleSnippetFiles', {
+      const result = await languageClient.sendRequest<{paths: SnippetFile[]}>('shopware/snippet/admin/getPossibleSnippetFiles', {
         fileUri,
       });
 
@@ -548,7 +553,7 @@ export function registerEditorCommands(
         return; // User cancelled
       }
 
-      await clientState.client.sendRequest('shopware/snippet/admin/create', {
+      await languageClient.sendRequest('shopware/snippet/admin/create', {
         fileUri,
         snippetKey,
         snippets: snippetsWithValues
@@ -563,7 +568,8 @@ export function registerEditorCommands(
   // Register create admin snippet from selection command handler
   context.subscriptions.push(vscode.commands.registerCommand('shopware.createAdminSnippetFromSelection', async (fileUri: string, selectedText: string) => {
     try {
-      if (!clientState.client) {
+      const languageClient = clientState.clientForUri(vscode.Uri.parse(fileUri));
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
@@ -585,7 +591,7 @@ export function registerEditorCommands(
       }
 
       // Get possible admin snippet files
-      const result = await clientState.client.sendRequest<{paths: SnippetFile[]}>('shopware/snippet/admin/getPossibleSnippetFiles', {
+      const result = await languageClient.sendRequest<{paths: SnippetFile[]}>('shopware/snippet/admin/getPossibleSnippetFiles', {
         fileUri,
       });
 
@@ -607,7 +613,7 @@ export function registerEditorCommands(
       }
 
       // Create the snippet
-      await clientState.client.sendRequest('shopware/snippet/admin/create', {
+      await languageClient.sendRequest('shopware/snippet/admin/create', {
         fileUri,
         snippetKey,
         snippets: snippetsWithValues

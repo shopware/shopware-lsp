@@ -57,6 +57,8 @@ run = [
   "npm run test:configuration",
   "npm run test:mcp",
   "npm run test:project-detection",
+  "npm run test:workspace-roots",
+  "npm run test:workspace-clients",
 ]
 
 [tasks.release]

@@ -12,7 +12,9 @@ is written in Go; the VS Code client is TypeScript.
 Keep these invariants intact:
 
 - The server supports one workspace folder per process. Clients implement
-  multi-root support by starting one process per workspace folder.
+  multi-root support by starting one process per effective workspace folder;
+  overlapping supported roots are owned by the outermost root so files are not
+  indexed twice.
 - The editor, CLI, and MCP server use the same production workspace,
   configuration, indexes, diagnostics, providers, and rewrite engine. Do not
   implement a second analysis path for one frontend.
@@ -284,7 +286,9 @@ commands, configuration models, executable discovery, MCP wiring, and complex
 webviews in their existing focused modules.
 
 - The extension is a client and UI layer; domain analysis belongs in Go.
-- Launch one language-server and MCP definition per workspace folder.
+- Launch one language-server and MCP definition per effective workspace
+  folder. For overlapping supported roots, the outermost root owns its
+  descendants; an enabled child may run when its parent is inactive.
 - Pass the same editor-local diagnostic overrides to LSP and MCP processes.
 - Accept both `WorkspaceEdit.changes` and `documentChanges`, including create
   operations, when handling server responses.

@@ -106,7 +106,8 @@ export function registerSymfonyGenerationCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.generateService',
     async (fileUri: string, className: string) => {
-      if (!clientState.client) {
+      const languageClient = clientState.clientForUri(vscode.Uri.parse(fileUri));
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
@@ -162,7 +163,7 @@ export function registerSymfonyGenerationCommands(
         const sourceDocument = await vscode.workspace.openTextDocument(
           vscode.Uri.parse(fileUri),
         );
-        const result = await clientState.client.sendRequest<SymfonyServiceGeneration>(
+        const result = await languageClient.sendRequest<SymfonyServiceGeneration>(
           'shopware/symfony/service/generate',
           {
             className,
@@ -193,7 +194,11 @@ export function registerSymfonyGenerationCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.generateServiceDefinitions',
     async () => {
-      if (!clientState.client) {
+      const languageClient = await clientState.resolveClient(
+        undefined,
+        'Generate Symfony Service Definitions',
+      );
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
@@ -243,7 +248,7 @@ export function registerSymfonyGenerationCommands(
         return;
       }
       try {
-        const result = await clientState.client.sendRequest<
+        const result = await languageClient.sendRequest<
           SymfonyServiceDefinitionCollection
         >(
           'shopware/symfony/analytics/services/generateDefinitions',
@@ -297,7 +302,8 @@ export function registerSymfonyGenerationCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.createCompilerPass',
     async (bundleUri: string, bundleClass: string) => {
-      if (!clientState.client) {
+      const languageClient = clientState.clientForUri(vscode.Uri.parse(bundleUri));
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
@@ -322,7 +328,7 @@ export function registerSymfonyGenerationCommands(
       try {
         const uri = vscode.Uri.parse(bundleUri);
         const bundleDocument = await vscode.workspace.openTextDocument(uri);
-        const result = await clientState.client.sendRequest<CompilerPassCreation>(
+        const result = await languageClient.sendRequest<CompilerPassCreation>(
           'shopware/symfony/compilerPass/create',
           {
             bundleUri,
@@ -377,7 +383,8 @@ export function registerSymfonyGenerationCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.generateFormFields',
     async (fileUri: string, className: string) => {
-      if (!clientState.client) {
+      const languageClient = clientState.clientForUri(vscode.Uri.parse(fileUri));
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
@@ -385,7 +392,7 @@ export function registerSymfonyGenerationCommands(
       try {
         const uri = vscode.Uri.parse(fileUri);
         let document = await vscode.workspace.openTextDocument(uri);
-        const candidates = await clientState.client.sendRequest<FormFieldCandidates>(
+        const candidates = await languageClient.sendRequest<FormFieldCandidates>(
           'shopware/symfony/form/fields/candidates',
           {
             fileUri,
@@ -423,7 +430,7 @@ export function registerSymfonyGenerationCommands(
         }
 
         document = await vscode.workspace.openTextDocument(uri);
-        const generated = await clientState.client.sendRequest<FormFieldGeneration>(
+        const generated = await languageClient.sendRequest<FormFieldGeneration>(
           'shopware/symfony/form/fields/generate',
           {
             fileUri,
@@ -462,13 +469,14 @@ export function registerSymfonyGenerationCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.generateTwigFormFields',
     async (fileUri: string) => {
-      if (!clientState.client) {
+      const languageClient = clientState.clientForUri(vscode.Uri.parse(fileUri));
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
 
       try {
-        const candidates = await clientState.client.sendRequest<TwigFormFieldCandidates>(
+        const candidates = await languageClient.sendRequest<TwigFormFieldCandidates>(
           'shopware/symfony/twig/form/fields/candidates',
           {fileUri},
         );
@@ -512,7 +520,7 @@ export function registerSymfonyGenerationCommands(
         if (!fields || fields.length === 0) {
           return;
         }
-        const generated = await clientState.client.sendRequest<FormFieldGeneration>(
+        const generated = await languageClient.sendRequest<FormFieldGeneration>(
           'shopware/symfony/twig/form/fields/generate',
           {
             fileUri,
@@ -543,14 +551,15 @@ export function registerSymfonyGenerationCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.generateTwigExtends',
     async (fileUri: string) => {
-      if (!clientState.client) {
+      const languageClient = clientState.clientForUri(vscode.Uri.parse(fileUri));
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
       try {
         const uri = vscode.Uri.parse(fileUri);
         const document = await vscode.workspace.openTextDocument(uri);
-        const candidates = await clientState.client.sendRequest<TwigTemplateCandidates>(
+        const candidates = await languageClient.sendRequest<TwigTemplateCandidates>(
           'shopware/symfony/twig/extends/candidates',
           {
             fileUri,
@@ -567,7 +576,7 @@ export function registerSymfonyGenerationCommands(
         if (!selected) {
           return;
         }
-        const generated = await clientState.client.sendRequest<FormFieldGeneration>(
+        const generated = await languageClient.sendRequest<FormFieldGeneration>(
           'shopware/symfony/twig/extends/generate',
           {
             fileUri,
@@ -593,14 +602,15 @@ export function registerSymfonyGenerationCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.generateTwigBlocks',
     async (fileUri: string) => {
-      if (!clientState.client) {
+      const languageClient = clientState.clientForUri(vscode.Uri.parse(fileUri));
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
       try {
         const uri = vscode.Uri.parse(fileUri);
         const document = await vscode.workspace.openTextDocument(uri);
-        const candidates = await clientState.client.sendRequest<TwigBlockCandidates>(
+        const candidates = await languageClient.sendRequest<TwigBlockCandidates>(
           'shopware/symfony/twig/blocks/candidates',
           {
             fileUri,
@@ -618,7 +628,7 @@ export function registerSymfonyGenerationCommands(
         if (!selected || selected.length === 0) {
           return;
         }
-        const generated = await clientState.client.sendRequest<FormFieldGeneration>(
+        const generated = await languageClient.sendRequest<FormFieldGeneration>(
           'shopware/symfony/twig/blocks/generate',
           {
             fileUri,
@@ -645,14 +655,15 @@ export function registerSymfonyGenerationCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.extractTwigTranslation',
     async (fileUri: string, selectedRange: LspRange) => {
-      if (!clientState.client) {
+      const languageClient = clientState.clientForUri(vscode.Uri.parse(fileUri));
+      if (!languageClient) {
         vscode.window.showErrorMessage('Shopware LSP is not running');
         return;
       }
       try {
         const uri = vscode.Uri.parse(fileUri);
         let document = await vscode.workspace.openTextDocument(uri);
-        const prepared = await clientState.client.sendRequest<TwigTranslationExtractionPreparation>(
+        const prepared = await languageClient.sendRequest<TwigTranslationExtractionPreparation>(
           'shopware/symfony/translation/extract/prepare',
           {
             fileUri,
@@ -704,7 +715,7 @@ export function registerSymfonyGenerationCommands(
         }
 
         document = await vscode.workspace.openTextDocument(uri);
-        const generated = await clientState.client.sendRequest<TwigTranslationExtractionEdits>(
+        const generated = await languageClient.sendRequest<TwigTranslationExtractionEdits>(
           'shopware/symfony/translation/extract/generate',
           {
             fileUri,

@@ -93,7 +93,8 @@ func (s *Server) serverCapabilities() map[string]interface{} {
 			},
 		}
 	}
-	if len(s.commandMap) > 0 && s.featureEnabled("commands") {
+	if len(s.commandMap) > 0 && s.featureEnabled("commands") &&
+		!s.initializationOptions.OmitExecuteCommandProvider {
 		commands := make([]string, 0, len(s.commandMap))
 		for command := range s.commandMap {
 			commands = append(commands, command)
