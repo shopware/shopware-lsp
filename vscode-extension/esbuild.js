@@ -56,6 +56,7 @@ async function main() {
       mcpServerModel: 'src/mcpServerModel.ts',
       serverExecutable: 'src/serverExecutable.ts',
       projectDetection: 'src/projectDetection.ts',
+      languageConfigurationModel: 'src/languageConfigurationModel.ts',
       workspaceRoots: 'src/workspaceRoots.ts',
       workspaceClientManager: 'src/workspaceClientManager.ts'
     },

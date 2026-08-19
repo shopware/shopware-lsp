@@ -32,6 +32,7 @@ import {
 } from './configuration';
 import type {WorkspaceClientEntry} from './clientState';
 import {IndexingStatus} from './indexingStatus';
+import {registerTwigLanguageConfiguration} from './languageConfiguration';
 import {
   WorkspaceClientManager,
   type WorkspaceClientPlan,
@@ -44,6 +45,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   const indexingStatus = new IndexingStatus(statusItem);
   context.subscriptions.push(coordinatorOutput, statusItem, indexingStatus);
+  registerTwigLanguageConfiguration(context);
   const projectDetector = new ProjectDetector();
 
   let manager: WorkspaceClientManager;
