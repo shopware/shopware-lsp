@@ -1453,9 +1453,12 @@ Run the tests with:
 go test ./...
 ```
 
-The parser has an opt-in Go 1.27 SIMD implementation for delimiter, control
-byte, line-start, and ASCII-run scans. Normal builds use the scalar fallback.
-Run the same parser tests with SIMD enabled using:
+The parser has a Go 1.27 SIMD implementation for delimiter, control byte,
+line-start, and ASCII-run scans. Published amd64 and arm64 release binaries
+enable it; amd64 releases require the x86-64-v3 instruction baseline. Normal
+Darwin arm64 releases target ARMv8.4 with cryptographic extensions. Normal
+local builds use the scalar fallback. Run the same parser tests with SIMD
+enabled using:
 
 ```bash
 mise run test:simd

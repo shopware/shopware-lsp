@@ -7,12 +7,15 @@ builds:
       - darwin
     goarch:
       - amd64
+    goamd64:
+      - v3
     env:
       - PKG_CONFIG_SYSROOT_DIR=/sysroot/macos/amd64
       - PKG_CONFIG_PATH=/sysroot/macos/amd64/usr/local/lib/pkgconfig
       - CC=o64-clang
       - CXX=o64-clang++
       - CGO_ENABLED=1
+      - GOEXPERIMENT=simd
     ldflags:
       - -s -w -X main.version={{.Version}}
   - id: darwin-arm64
@@ -22,12 +25,15 @@ builds:
       - darwin
     goarch:
       - arm64
+    goarm64:
+      - v8.4,crypto
     env:
       - PKG_CONFIG_SYSROOT_DIR=/sysroot/macos/arm64
       - PKG_CONFIG_PATH=/sysroot/macos/arm64/usr/local/lib/pkgconfig
       - CC=oa64-clang
       - CXX=oa64-clang++
       - CGO_ENABLED=1
+      - GOEXPERIMENT=simd
     ldflags:
       - -s -w -X main.version={{.Version}}
   - id: linux-amd64
@@ -37,6 +43,8 @@ builds:
       - linux
     goarch:
       - amd64
+    goamd64:
+      - v3
     ldflags:
       - -s -w -linkmode external -extldflags -static -X main.version={{.Version}}
     env:
@@ -45,6 +53,7 @@ builds:
       - CC=x86_64-linux-gnu-gcc
       - CXX=x86_64-linux-gnu-g++
       - CGO_ENABLED=1
+      - GOEXPERIMENT=simd
   - id: linux-arm64
     main: ./
     binary: shopware-lsp
@@ -60,6 +69,7 @@ builds:
       - CC=aarch64-linux-gnu-gcc
       - CXX=aarch64-linux-gnu-g++
       - CGO_ENABLED=1
+      - GOEXPERIMENT=simd
   - id: linux-armv7
     main: ./
     binary: shopware-lsp
@@ -82,12 +92,15 @@ builds:
       - windows
     goarch:
       - amd64
+    goamd64:
+      - v3
     ldflags:
       - -s -w -X main.version={{.Version}}
     env:
       - CC=x86_64-w64-mingw32-gcc
       - CXX=x86_64-w64-mingw32-g++
       - CGO_ENABLED=1
+      - GOEXPERIMENT=simd
 archives:
   - id: golang-cross
     ids:
