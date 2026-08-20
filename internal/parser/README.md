@@ -32,5 +32,11 @@ The important parser guarantees are:
 - ranges are byte offsets into the original source;
 - trivia and malformed input remain represented in the tree.
 
-Twig, JSON, YAML, SCSS, and XML are migrated. Other language backends can be replaced
-incrementally without coupling their consumers to language-specific kinds.
+PHP, Twig/HTML, JSON, YAML, SCSS, XML, JavaScript/TypeScript, Vue, and XPath all
+run on this foundation. Further language backends can be added incrementally
+without coupling their consumers to language-specific kinds.
+
+For the detailed walkthrough — the kind registry, the event/marker parser, the
+sink, the CST API, positions, embedded languages, the query packages, and how to
+add a language — see
+[`docs/parser-architecture.md`](../../docs/parser-architecture.md).

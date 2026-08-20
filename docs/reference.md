@@ -1402,6 +1402,14 @@ FSEvents on macOS. FSEvents avoids kqueue's one-descriptor-per-file cost on
 large Shopware workspaces. All workspace resources are closed by the
 application lifecycle.
 
+The contributor-facing architecture documentation is indexed in
+[`docs/README.md`](README.md). Start with the
+[system architecture overview](architecture.md), then the subsystem you need:
+[parser, CST, and queries](parser-architecture.md),
+[indexing and persistence](indexing.md),
+[LSP server and providers](lsp-server.md),
+[diagnostics and quick fixes](diagnostics-pipeline.md), or the
+[refactoring engine](refactoring-engine.md).
 The PHP semantic pipeline and its extension contracts are documented in
 [`php-semantic-engine.md`](php-semantic-engine.md).
 The staged feature mapping from the PhpStorm Symfony plugin to LSP capabilities

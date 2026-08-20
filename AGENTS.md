@@ -3,6 +3,10 @@
 This file applies to the entire repository. Add a more specific `AGENTS.md`
 inside a subdirectory only when that area needs additional rules.
 
+This file is the rulebook: what to do and what not to do. For the *why* — how
+each subsystem actually works — see [`docs/README.md`](docs/README.md), starting
+with [`docs/architecture.md`](docs/architecture.md).
+
 ## Product and architectural invariants
 
 Shopware LSP provides completion, navigation, hover, diagnostics, refactoring,

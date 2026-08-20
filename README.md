@@ -269,8 +269,18 @@ VS Code settings or in committed project configuration.
 
 ## Documentation
 
+- [Documentation index](docs/README.md) — start here for architecture
 - [Full feature, command, configuration, and performance reference](docs/reference.md)
 - [Symfony feature coverage](docs/symfony-plugin-roadmap.md)
+
+Architecture, for contributors:
+
+- [System architecture](docs/architecture.md)
+- [Parser, CST, and query architecture](docs/parser-architecture.md)
+- [Indexing and persistence](docs/indexing.md)
+- [LSP server, documents, and providers](docs/lsp-server.md)
+- [Diagnostics and quick-fix pipeline](docs/diagnostics-pipeline.md)
+- [Refactoring engine](docs/refactoring-engine.md)
 - [PHP semantic engine](docs/php-semantic-engine.md)
 - [PhpStorm and editor integration](docs/phpstorm-integration.md)
 - [Custom LSP commands and Neovim example](LSP.md)
