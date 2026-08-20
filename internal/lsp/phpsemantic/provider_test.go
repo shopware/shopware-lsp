@@ -400,6 +400,77 @@ class Consumer {
 	require.Contains(t, messages, "Undefined variable $missing")
 }
 
+func TestProviderReportsPHPDocFinalExtension(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	declarationPath := filepath.Join(root, "ExtensionPoint.php")
+	declaration := `<?php
+namespace Vendor;
+/** @final */
+class ExtensionPoint {}
+/** @final */
+final class ClosedExtensionPoint {}
+`
+	idx, err := php.NewPHPIndex(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, idx.Close()) })
+	require.NoError(t, idx.Index(indexer.NewParsedFile(
+		declarationPath,
+		[]byte(declaration),
+	)))
+
+	usage := `<?php
+namespace App;
+use Vendor\ExtensionPoint;
+use Vendor\ClosedExtensionPoint;
+
+/** @phpstan-ignore class.extendsFinal */
+class Suppressed extends ExtensionPoint {}
+
+class Invalid extends ExtensionPoint {}
+
+class NativeInvalid extends ClosedExtensionPoint {}
+
+function consume(ExtensionPoint $extension): void {}
+`
+	usagePath := filepath.Join(root, "Usage.php")
+	document := lsp.NewTextDocument(uriutil.FileURI(usagePath), usage, 1)
+	diagnostics, err := New(idx).Analyze(context.Background(), document)
+	require.NoError(t, err)
+
+	var inheritance []lsp.Problem
+	for _, diagnostic := range diagnostics {
+		if diagnostic.ID == "php.inheritance" {
+			inheritance = append(inheritance, diagnostic)
+		}
+	}
+	require.Len(t, inheritance, 2)
+	var problem *lsp.Problem
+	nativeErrors := 0
+	for index := range inheritance {
+		switch inheritance[index].Severity {
+		case protocol.DiagnosticSeverityWarning:
+			problem = &inheritance[index]
+		case protocol.DiagnosticSeverityError:
+			nativeErrors++
+		}
+	}
+	require.NotNil(t, problem)
+	require.Equal(t, 1, nativeErrors)
+	require.Equal(t, protocol.DiagnosticSeverityWarning, problem.Severity)
+	require.Equal(
+		t,
+		"Class Vendor\\ExtensionPoint is marked @final and should not be extended",
+		problem.Message,
+	)
+	require.Equal(
+		t,
+		"ExtensionPoint",
+		usage[problem.Range.Start:problem.Range.End],
+	)
+	require.Equal(t, 8, problemStartLine(document, *problem))
+}
+
 func TestProviderDiagnosesOnlyExplicitlyUnavailablePHPExtensions(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

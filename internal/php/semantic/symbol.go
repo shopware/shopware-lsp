@@ -59,6 +59,7 @@ const (
 	SyntheticFlag
 	GeneratedStubFlag
 	ClassAliasFlag
+	SoftFinalFlag
 )
 
 func (f Flags) Has(flag Flags) bool {

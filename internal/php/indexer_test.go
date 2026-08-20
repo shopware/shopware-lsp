@@ -139,6 +139,7 @@ func TestPHPIndexRebuildsSemanticDocumentsOnDemand(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "Product.php")
 	source := []byte(`<?php
 namespace App;
+/** @final */
 class Product {
     #[\Deprecated]
     public string $legacy;
@@ -166,6 +167,11 @@ class Product {
 		idx.FindProperties("App\\Product", "legacy")[0].
 			Flags.Has(semantic.DeprecatedFlag),
 	)
+	require.True(
+		t,
+		idx.SemanticSnapshot().Classes("App\\Product")[0].
+			Flags.Has(semantic.SoftFinalFlag),
+	)
 	require.NoError(t, idx.Close())
 
 	reopened, err := NewPHPIndex(configDir)
@@ -186,6 +192,11 @@ class Product {
 		t,
 		reopened.FindProperties("App\\Product", "legacy")[0].
 			Flags.Has(semantic.DeprecatedFlag),
+	)
+	require.True(
+		t,
+		reopened.SemanticSnapshot().Classes("App\\Product")[0].
+			Flags.Has(semantic.SoftFinalFlag),
 	)
 }
 

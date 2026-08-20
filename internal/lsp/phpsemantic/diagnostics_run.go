@@ -5,6 +5,8 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
+	phpsyntax "github.com/shopware/shopware-lsp/internal/parser/php/syntax"
 	"github.com/shopware/shopware-lsp/internal/php/languagelevel"
 	"github.com/shopware/shopware-lsp/internal/php/semantic"
 	"github.com/shopware/shopware-lsp/internal/php/suppression"
@@ -104,6 +106,7 @@ func (r *phpDiagnosticRun) addResolvedReferenceProblems(
 	candidates []semantic.Symbol,
 ) {
 	r.addDeprecationProblem(reference, candidates)
+	r.addSoftFinalExtensionProblem(reference, candidates)
 	if reference.Kind != semantic.MemberName || anyMemberAccessible(
 		r.semantic,
 		r.snapshot,
@@ -120,6 +123,44 @@ func (r *phpDiagnosticRun) addResolvedReferenceProblems(
 		Source:   "shopware-php",
 		Message:  inaccessibleMemberMessage(reference, candidates[0]),
 	})
+}
+
+func (r *phpDiagnosticRun) addSoftFinalExtensionProblem(
+	reference semantic.Reference,
+	candidates []semantic.Symbol,
+) {
+	if reference.Kind != semantic.ClassName ||
+		r.suppressions.Suppresses(reference.Range.Start, "php.inheritance") {
+		return
+	}
+	node := r.document.SyntaxTree.Root.NodeAtOffset(reference.Range.Start)
+	class := phpquery.ClassAt(node)
+	if class == nil || class.Kind() != phpsyntax.PhpClassDeclaration {
+		return
+	}
+	extends := phpquery.DirectChild(class, phpsyntax.PhpExtendsClause)
+	if extends == nil || !extends.Range().Contains(reference.Range.Start) {
+		return
+	}
+	for _, symbol := range candidates {
+		if symbol.Kind != semantic.ClassSymbol ||
+			!symbol.Flags.Has(semantic.SoftFinalFlag) ||
+			symbol.Flags.Has(semantic.FinalFlag) {
+			continue
+		}
+		r.diagnostics = append(r.diagnostics, lsp.Problem{
+			Range:    reference.Range,
+			Severity: protocol.DiagnosticSeverityWarning,
+			ID:       "php.inheritance",
+			Source:   "shopware-php",
+			Message: "Class " + symbol.FullyQualified +
+				" is marked @final and should not be extended",
+			Payload: map[string]any{
+				"class": symbol.FullyQualified,
+			},
+		})
+		return
+	}
 }
 
 func (r *phpDiagnosticRun) addDeprecationProblem(

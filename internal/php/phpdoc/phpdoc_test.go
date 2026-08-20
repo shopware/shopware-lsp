@@ -22,6 +22,7 @@ func TestParseRichPHPDoc(t *testing.T) {
  * @throws RuntimeException
  * @phpstan-type EntityMap array<string, TEntity>
  * @deprecated
+ * @final
  */`)
 
 	require.Equal(t, "Product repository contract.", document.Summary)
@@ -42,6 +43,7 @@ func TestParseRichPHPDoc(t *testing.T) {
 	require.Equal(t, []string{"Route", "Service"}, document.ParamTags["$items"])
 	require.Equal(t, "array<string,TEntity>", document.Aliases["EntityMap"].String())
 	require.True(t, document.Deprecated)
+	require.True(t, document.Final)
 }
 
 func TestUntypedMagicMethodParameterIsMixed(t *testing.T) {

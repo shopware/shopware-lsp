@@ -978,6 +978,30 @@ class Legacy {
 	)
 }
 
+func TestBindPHPDocFinalSeparatelyFromNativeFinal(t *testing.T) {
+	t.Parallel()
+	root := phpparser.Parse(`<?php
+namespace App;
+/** @final */
+class ExtensionPoint {}
+final class ClosedClass {}
+`).Tree.Root
+	document := New().Bind("/classes.php", 1, root)
+
+	extensionPoint := findSymbol(
+		t,
+		document,
+		semantic.ClassSymbol,
+		"ExtensionPoint",
+	)
+	require.True(t, extensionPoint.Flags.Has(semantic.SoftFinalFlag))
+	require.False(t, extensionPoint.Flags.Has(semantic.FinalFlag))
+
+	closedClass := findSymbol(t, document, semantic.ClassSymbol, "ClosedClass")
+	require.True(t, closedClass.Flags.Has(semantic.FinalFlag))
+	require.False(t, closedClass.Flags.Has(semantic.SoftFinalFlag))
+}
+
 func TestBindConstantAttributeArgumentsOnSymbolsAndParameters(t *testing.T) {
 	t.Parallel()
 	root := phpparser.Parse(`<?php

@@ -30,7 +30,7 @@ func TestWorkspaceDocumentRoundTripPreservesEveryRetainedSymbolField(t *testing.
 		Visibility:         Protected,
 		WriteVisibility:    Private,
 		HasWriteVisibility: true,
-		Flags:              StaticFlag | FinalFlag,
+		Flags:              StaticFlag | FinalFlag | SoftFinalFlag,
 		Type:               types.MustParse("callable(int): Product"),
 		NativeType:         types.MustParse("Product"),
 		DocType:            types.MustParse("Product|null"),

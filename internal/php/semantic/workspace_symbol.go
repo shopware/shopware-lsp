@@ -142,7 +142,7 @@ func (symbol *workspaceSymbol) container() SymbolID {
 const (
 	workspaceCompactRangeMissing = math.MaxUint16
 
-	workspaceSymbolRangeIndexShift = 12
+	workspaceSymbolRangeIndexShift = 13
 	workspaceSymbolFlagsMask       = 1<<workspaceSymbolRangeIndexShift - 1
 	workspaceSymbolRangeIndexMask  = 1<<(32-workspaceSymbolRangeIndexShift) - 1
 

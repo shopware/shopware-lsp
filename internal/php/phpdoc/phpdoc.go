@@ -26,6 +26,7 @@ type Document struct {
 	Imports    map[string]TypeImport
 	Deprecated bool
 	Internal   bool
+	Final      bool
 }
 
 // TypeImport records a PHPStan/Psalm type alias imported from another
@@ -185,6 +186,8 @@ func Parse(source string) Document {
 			document.Deprecated = true
 		case "@internal":
 			document.Internal = true
+		case "@final":
+			document.Final = true
 		}
 	}
 	document.Summary = strings.Join(summary, " ")

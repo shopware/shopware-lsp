@@ -244,6 +244,9 @@ func applyDocumentFlags(symbol *semantic.Symbol, documentation phpdoc.Document) 
 	if documentation.Internal {
 		symbol.Flags |= semantic.InternalFlag
 	}
+	if documentation.Final {
+		symbol.Flags |= semantic.SoftFinalFlag
+	}
 }
 
 func applyAttributeFlags(symbol *semantic.Symbol) {
