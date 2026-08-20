@@ -14,6 +14,8 @@ jobs:
     name: Build preview packages
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      preview-version: ${{ steps.preview-version.outputs.version }}
 
     steps:
       - name: Checkout code
@@ -36,6 +38,7 @@ jobs:
         env:
           PREVIEW_PATCH: ${{ github.run_number }}
         run: |
+          # shellcheck disable=SC2016
           version="$(node -e 'const manifest = require("./vscode-extension/package.json"); const [major, minor] = manifest.version.split(".").map(Number); const previewMinor = minor % 2 === 0 ? minor + 1 : minor; process.stdout.write(`${major}.${previewMinor}.${process.env.PREVIEW_PATCH}`);')"
           npm version --prefix vscode-extension "$version" --no-git-tag-version --allow-same-version
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -138,16 +141,72 @@ jobs:
           PREVIEW_VERSION: ${{ steps.preview-version.outputs.version }}
           WIN32_X64_URL: ${{ steps.upload_win32_x64.outputs.artifact-url }}
         run: |
-          echo "### VSIX preview ${PREVIEW_VERSION}" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- [macOS x64](${DARWIN_X64_URL})" >> "$GITHUB_STEP_SUMMARY"
-          echo "- [macOS arm64](${DARWIN_ARM64_URL})" >> "$GITHUB_STEP_SUMMARY"
-          echo "- [Linux x64](${LINUX_X64_URL})" >> "$GITHUB_STEP_SUMMARY"
-          echo "- [Linux arm64](${LINUX_ARM64_URL})" >> "$GITHUB_STEP_SUMMARY"
-          echo "- [Linux armhf](${LINUX_ARMHF_URL})" >> "$GITHUB_STEP_SUMMARY"
-          echo "- [Alpine x64](${ALPINE_X64_URL})" >> "$GITHUB_STEP_SUMMARY"
-          echo "- [Alpine arm64](${ALPINE_ARM64_URL})" >> "$GITHUB_STEP_SUMMARY"
-          echo "- [Windows x64](${WIN32_X64_URL})" >> "$GITHUB_STEP_SUMMARY"
-          echo "- [SHA-256 checksums](${CHECKSUMS_URL})" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Artifacts expire after 14 days and are not published to a registry." >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### VSIX preview ${PREVIEW_VERSION}"
+            echo ""
+            echo "- [macOS x64](${DARWIN_X64_URL})"
+            echo "- [macOS arm64](${DARWIN_ARM64_URL})"
+            echo "- [Linux x64](${LINUX_X64_URL})"
+            echo "- [Linux arm64](${LINUX_ARM64_URL})"
+            echo "- [Linux armhf](${LINUX_ARMHF_URL})"
+            echo "- [Alpine x64](${ALPINE_X64_URL})"
+            echo "- [Alpine arm64](${ALPINE_ARM64_URL})"
+            echo "- [Windows x64](${WIN32_X64_URL})"
+            echo "- [SHA-256 checksums](${CHECKSUMS_URL})"
+            echo ""
+            echo "Artifacts expire after 14 days. Publishing is handled by the preview deployment job."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publish preview packages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: preview
+
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install publishing tools
+        run: npm install --global @vscode/vsce@3.9.1 ovsx@1.1.1
+
+      - name: Download preview packages
+        uses: actions/download-artifact@v8
+        with:
+          pattern: "*.vsix"
+          path: out
+          merge-multiple: true
+
+      - name: Download preview checksums
+        uses: actions/download-artifact@v8
+        with:
+          name: shopware-lsp-${{ needs.build.outputs.preview-version }}-checksums-${{ github.sha }}
+          path: out
+
+      - name: Verify preview packages
+        working-directory: out
+        run: sha256sum --check SHA256SUMS
+
+      - name: Publish to Visual Studio Marketplace
+        run: vsce publish --pre-release --skip-duplicate --packagePath out/*.vsix
+        env:
+          VSCE_PAT: ${{ secrets.VSCODE_PUBLISH_TOKEN }}
+
+      - name: Publish to Open VSX
+        run: ovsx publish --pre-release --skip-duplicate --packagePath out/*.vsix
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PUBLISH_TOKEN }}
+
+      - name: Add publishing summary
+        env:
+          PREVIEW_VERSION: ${{ needs.build.outputs.preview-version }}
+        run: |
+          {
+            echo "### Published VSIX preview ${PREVIEW_VERSION}"
+            echo ""
+            echo "- [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=shopware.shopware-lsp)"
+            echo "- [Open VSX](https://open-vsx.org/extension/shopware/shopware-lsp)"
+          } >> "$GITHUB_STEP_SUMMARY"
