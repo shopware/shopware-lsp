@@ -1406,7 +1406,7 @@ is tracked in [`docs/symfony-plugin-roadmap.md`](docs/symfony-plugin-roadmap.md)
 
 ### Requirements
 
-- Go 1.26.5 or higher
+- Go 1.27.0 or higher
 - A C compiler with CGO enabled (the index uses native SQLite)
 - Node.js 24 for VSCode extension development
 - Docker for cross-compiling release binaries
@@ -1451,6 +1451,25 @@ Run the tests with:
 
 ```bash
 go test ./...
+```
+
+The parser has an opt-in Go 1.27 SIMD implementation for delimiter, control
+byte, line-start, and ASCII-run scans. Normal builds use the scalar fallback.
+Run the same parser tests with SIMD enabled using:
+
+```bash
+mise run test:simd
+```
+
+The parser, lexer, byte-scan, and line-index benchmarks can be compared with
+and without `GOEXPERIMENT=simd`:
+
+```bash
+go test ./internal/parser ./internal/parser/bytescan ./internal/parser/cst \
+  -run '^$' -bench . -benchmem
+GOEXPERIMENT=simd go test \
+  ./internal/parser ./internal/parser/bytescan ./internal/parser/cst \
+  -run '^$' -bench . -benchmem
 ```
 
 Or run tests with race condition detection:

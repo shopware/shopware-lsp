@@ -3,6 +3,7 @@ package lexer
 import (
 	"strings"
 
+	"github.com/shopware/shopware-lsp/internal/parser/bytescan"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	"github.com/shopware/shopware-lsp/internal/parser/parsekit"
 	"github.com/shopware/shopware-lsp/internal/parser/yaml/syntax"
@@ -175,11 +176,7 @@ func scanLineBreak(source string, position int) int {
 }
 
 func lineEnd(source string, position int) int {
-	end := position
-	for end < len(source) && source[end] != '\r' && source[end] != '\n' {
-		end++
-	}
-	return end
+	return bytescan.IndexAny2(source, position, '\r', '\n')
 }
 
 func hasMarker(source string, position int, marker string) bool {
@@ -216,12 +213,13 @@ func colonIsIndicator(source string, position, flowDepth int) bool {
 }
 
 func scanSingleQuoted(source string, position int) int {
-	for end := position + 1; end < len(source); end++ {
-		if source[end] != '\'' {
-			continue
+	for end := position + 1; end < len(source); {
+		end = bytescan.IndexByte(source, end, '\'')
+		if end >= len(source) {
+			break
 		}
 		if end+1 < len(source) && source[end+1] == '\'' {
-			end++
+			end += 2
 			continue
 		}
 		return end + 1
@@ -230,18 +228,15 @@ func scanSingleQuoted(source string, position int) int {
 }
 
 func scanDoubleQuoted(source string, position int) int {
-	escaped := false
-	for end := position + 1; end < len(source); end++ {
-		if escaped {
-			escaped = false
-			continue
+	for end := position + 1; end < len(source); {
+		end = bytescan.IndexAny2(source, end, '"', '\\')
+		if end >= len(source) {
+			break
 		}
-		switch source[end] {
-		case '\\':
-			escaped = true
-		case '"':
+		if source[end] == '"' {
 			return end + 1
 		}
+		end += 2
 	}
 	return len(source)
 }
@@ -309,6 +304,10 @@ func indentation(source string, start, end int) (int, int) {
 }
 
 func scanPlain(source string, position, flowDepth int) int {
+	if flowDepth == 0 {
+		return scanBlockPlain(source, position)
+	}
+
 	end := position
 	for end < len(source) {
 		value := source[end]
@@ -321,13 +320,27 @@ func scanPlain(source string, position, flowDepth int) int {
 		if value == '#' && (end == position || source[end-1] == ' ' || source[end-1] == '\t') {
 			break
 		}
-		if flowDepth > 0 {
-			switch value {
-			case ',', '[', ']', '{', '}':
-				return end
-			}
+		switch value {
+		case ',', '[', ']', '{', '}':
+			return end
 		}
 		end++
 	}
 	return end
+}
+
+func scanBlockPlain(source string, position int) int {
+	for end := position; end < len(source); end++ {
+		end = bytescan.IndexAny4(source, end, '\r', '\n', ':', '#')
+		if end >= len(source) || source[end] == '\r' || source[end] == '\n' {
+			return end
+		}
+		if source[end] == ':' && colonIsIndicator(source, end, 0) {
+			return end
+		}
+		if source[end] == '#' && (end == position || source[end-1] == ' ' || source[end-1] == '\t') {
+			return end
+		}
+	}
+	return len(source)
 }

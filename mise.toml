@@ -1,7 +1,7 @@
 [tools]
-go = "1.26.5"
+go = "1.27.0"
 node = "24.18.1"
-golangci-lint = "2.12.2"
+golangci-lint = "2.13.0"
 "npm:@vscode/vsce" = "3.9.1"
 
 [env]
@@ -21,6 +21,10 @@ run = "go build ./..."
 [tasks.test]
 description = "Run the Go test suite"
 run = "go test ./..."
+
+[tasks."test:simd"]
+description = "Run parser tests with Go's experimental SIMD implementation"
+run = "GOEXPERIMENT=simd go test ./internal/parser/..."
 
 [tasks."test:race"]
 description = "Run internal Go tests with the race detector"

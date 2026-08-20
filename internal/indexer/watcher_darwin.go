@@ -130,6 +130,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/cgo"
+	"sync"
 	"time"
 	"unsafe"
 )
@@ -137,7 +138,14 @@ import (
 const watcherDebounce = 200 * time.Millisecond
 
 type platformWatcherState struct {
-	watcherLive bool
+	watcherMu    sync.Mutex
+	nativeEvents chan fileSystemEvent
+	watcherLive  bool
+}
+
+type fileSystemEvent struct {
+	path  string
+	flags uint32
 }
 
 // StartWatcher uses FSEvents on macOS. fsnotify's kqueue backend opens one

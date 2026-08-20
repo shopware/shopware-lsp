@@ -3,6 +3,7 @@ package parser
 import (
 	"unicode/utf8"
 
+	"github.com/shopware/shopware-lsp/internal/parser/bytescan"
 	"github.com/shopware/shopware-lsp/internal/parser/json/lexer"
 	"github.com/shopware/shopware-lsp/internal/parser/json/syntax"
 	"github.com/shopware/shopware-lsp/internal/parser/parsekit"
@@ -108,12 +109,14 @@ func validJSONString(text string) bool {
 		return false
 	}
 	for position := 0; position < len(content); position++ {
-		switch value := content[position]; {
-		case value < 0x20:
+		position = bytescan.IndexByteOrLessThan(content, position, '\\', 0x20)
+		if position >= len(content) {
+			break
+		}
+		if content[position] < 0x20 {
 			return false
-		case value != '\\':
-			continue
-		case position+1 >= len(content):
+		}
+		if position+1 >= len(content) {
 			return false
 		}
 

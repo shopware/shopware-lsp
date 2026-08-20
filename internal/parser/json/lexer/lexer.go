@@ -1,6 +1,7 @@
 package lexer
 
 import (
+	"github.com/shopware/shopware-lsp/internal/parser/bytescan"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	"github.com/shopware/shopware-lsp/internal/parser/json/syntax"
 	"github.com/shopware/shopware-lsp/internal/parser/parsekit"
@@ -95,6 +96,10 @@ func next(source string, position int) (syntax.Kind, int) {
 
 func scanString(source string, position int) int {
 	for end := position + 1; end < len(source); {
+		end = bytescan.IndexAny4(source, end, '"', '\\', '\r', '\n')
+		if end >= len(source) {
+			break
+		}
 		switch source[end] {
 		case '"':
 			return end - position + 1
@@ -106,8 +111,6 @@ func scanString(source string, position int) int {
 			}
 		case '\r', '\n':
 			return end - position
-		default:
-			end++
 		}
 	}
 	return len(source) - position

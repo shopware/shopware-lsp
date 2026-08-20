@@ -116,7 +116,7 @@ recovery behavior or hot-path latency.
   scenario body is explicitly tracked below.
 - Added a 2,500-line production-file regression test, a cognitive-complexity
   ceiling of 65, integration-suite compilation to normal validation, and
-  aligned CI with the Go 1.26.5 / golangci-lint 2.12.2 toolchain in `mise.toml`.
+  aligned CI with the Go 1.27.0 / golangci-lint 2.13.0 toolchain in `mise.toml`.
 
 ## Recommended sequence
 

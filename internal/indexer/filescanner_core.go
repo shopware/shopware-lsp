@@ -42,27 +42,20 @@ var defaultSkipDirs = map[string]bool{
 // FileScanner scans the project for files and tracks changes
 type FileScanner struct {
 	platformWatcherState
-	projectRoot  string
-	pharCache    string
-	db           *sql.DB
-	store        *Store
-	symbols      *WorkspaceSymbolCatalog
-	indexer      []Indexer
-	watcherCtx   context.Context
-	cancel       context.CancelFunc
-	watcherWg    sync.WaitGroup
-	watcherMu    sync.Mutex
-	nativeEvents chan fileSystemEvent
-	onUpdate     func()
-	workerCount  int
-	operationMu  sync.Mutex
-	closeOnce    sync.Once
-	closeErr     error
-}
-
-type fileSystemEvent struct {
-	path  string
-	flags uint32
+	projectRoot string
+	pharCache   string
+	db          *sql.DB
+	store       *Store
+	symbols     *WorkspaceSymbolCatalog
+	indexer     []Indexer
+	watcherCtx  context.Context
+	cancel      context.CancelFunc
+	watcherWg   sync.WaitGroup
+	onUpdate    func()
+	workerCount int
+	operationMu sync.Mutex
+	closeOnce   sync.Once
+	closeErr    error
 }
 
 type FileScannerStats struct {

@@ -32,7 +32,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: '1.26.5'
+        go-version: '1.27.0'
         cache: true
 
     - name: Install dependencies
@@ -57,13 +57,13 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: '1.26.5'
+        go-version: '1.27.0'
         cache: true
 
     - name: Run linting
       uses: golangci/golangci-lint-action@v9
       with:
-        version: v2.12.2
+        version: v2.13.0
         args: --timeout=5m
 
   build:
@@ -77,7 +77,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: '1.26.5'
+        go-version: '1.27.0'
         cache: true
 
     - name: Build LSP server

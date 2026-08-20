@@ -22,7 +22,7 @@ const extensionDirectory = path.join(repositoryRoot, 'vscode-extension');
 const outputDirectory = path.join(repositoryRoot, 'out');
 const goreleaserDirectory = path.join(repositoryRoot, 'dist');
 const crossImage = process.env.GORELEASER_CROSS_IMAGE ||
-  'ghcr.io/goreleaser/goreleaser-cross:v1.26.5';
+  'ghcr.io/shyim/goreleaser-cross:v1.27.0';
 
 const options = new Set(process.argv.slice(2));
 if (options.has('--help')) {

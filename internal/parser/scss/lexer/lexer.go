@@ -1,6 +1,7 @@
 package lexer
 
 import (
+	"github.com/shopware/shopware-lsp/internal/parser/bytescan"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	"github.com/shopware/shopware-lsp/internal/parser/parsekit"
 	"github.com/shopware/shopware-lsp/internal/parser/scss/syntax"
@@ -122,7 +123,8 @@ func next(source string, position int) (syntax.Kind, int) {
 
 func scanBlockComment(source string, position int) int {
 	for end := position + 2; end+1 < len(source); end++ {
-		if source[end] == '*' && source[end+1] == '/' {
+		end = bytescan.IndexByte(source, end, '*')
+		if end+1 < len(source) && source[end+1] == '/' {
 			return end - position + 2
 		}
 	}
@@ -130,28 +132,20 @@ func scanBlockComment(source string, position int) int {
 }
 
 func scanLineComment(source string, position int) int {
-	end := position + 2
-	for end < len(source) && source[end] != '\r' && source[end] != '\n' {
-		end++
-	}
+	end := bytescan.IndexAny2(source, position+2, '\r', '\n')
 	return end - position
 }
 
 func scanQuoted(source string, position int, quote byte) int {
-	escaped := false
-	for end := position + 1; end < len(source); end++ {
-		if escaped {
-			escaped = false
-			continue
+	for end := position + 1; end < len(source); {
+		end = bytescan.IndexAny2(source, end, quote, '\\')
+		if end >= len(source) {
+			break
 		}
-		switch source[end] {
-		case '\\':
-			escaped = true
-		default:
-			if source[end] == quote {
-				return end - position + 1
-			}
+		if source[end] == quote {
+			return end - position + 1
 		}
+		end += 2
 	}
 	return len(source) - position
 }

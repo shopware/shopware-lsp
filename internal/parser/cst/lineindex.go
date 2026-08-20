@@ -1,6 +1,10 @@
 package cst
 
-import "unicode/utf8"
+import (
+	"unicode/utf8"
+
+	"github.com/shopware/shopware-lsp/internal/parser/bytescan"
+)
 
 // LineIndex maps byte offsets to line/column positions and back. Line and
 // column numbers are 0-based. Columns are byte offsets from the start of the
@@ -26,9 +30,10 @@ func NewLineIndex(src string) *LineIndex {
 		maxEstimatedLineCapacity,
 	)
 	starts := make([]uint32, 1, estimatedCapacity)
-	for i := 0; i < len(src); i++ {
-		if src[i] == '\n' {
-			starts = append(starts, uint32(i+1))
+	for position := 0; position < len(src); position++ {
+		position = bytescan.IndexByte(src, position, '\n')
+		if position < len(src) {
+			starts = append(starts, uint32(position+1))
 		}
 	}
 	return &LineIndex{source: src, lineStarts: starts}
@@ -69,6 +74,13 @@ func (li *LineIndex) PositionUTF16(offset uint32) (line, col uint32) {
 	start := li.lineStarts[l]
 	var units uint32
 	for i := start; i < offset; {
+		asciiEnd := uint32(bytescan.IndexNonASCII(li.source[:offset], int(i)))
+		units += asciiEnd - i
+		i = asciiEnd
+		if i >= offset {
+			break
+		}
+
 		// Decode against the full remaining source, not the offset-truncated
 		// slice: otherwise a multi-byte rune straddling `offset` would decode as
 		// repeated (RuneError, size 1) and each of its bytes would be counted as a
@@ -163,6 +175,18 @@ func (li *LineIndex) OffsetUTF16(line, col uint32) uint32 {
 	i := start
 	var units uint32
 	for i < lineEnd && units < col {
+		asciiEnd := uint32(bytescan.IndexNonASCII(li.source[:lineEnd], int(i)))
+		asciiUnits := asciiEnd - i
+		remaining := col - units
+		if asciiUnits >= remaining {
+			return i + remaining
+		}
+		units += asciiUnits
+		i = asciiEnd
+		if i >= lineEnd {
+			break
+		}
+
 		r, size := utf8.DecodeRuneInString(li.source[i:])
 		if r == utf8.RuneError && size <= 1 {
 			// Invalid byte: count as one unit and advance one byte, mirroring

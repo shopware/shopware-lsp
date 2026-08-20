@@ -1,6 +1,6 @@
 module github.com/shopware/shopware-lsp
 
-go 1.26.5
+go 1.27.0
 
 require (
 	github.com/charlievieth/fastwalk v1.0.14

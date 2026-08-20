@@ -3,6 +3,7 @@ package vue
 import (
 	"strings"
 
+	"github.com/shopware/shopware-lsp/internal/parser/bytescan"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	javascriptparser "github.com/shopware/shopware-lsp/internal/parser/javascript"
 	"github.com/shopware/shopware-lsp/internal/parser/parsekit"
@@ -234,14 +235,20 @@ func scanTag(source string, start int) (
 	name = strings.ToLower(source[nameStart:index])
 	quote := byte(0)
 	for index < len(source) {
-		value := source[index]
 		if quote != 0 {
-			if value == quote {
-				quote = 0
+			index = bytescan.IndexByte(source, index, quote)
+			if index >= len(source) {
+				break
 			}
+			quote = 0
 			index++
 			continue
 		}
+		index = bytescan.IndexAny3(source, index, '\'', '"', '>')
+		if index >= len(source) {
+			break
+		}
+		value := source[index]
 		if value == '\'' || value == '"' {
 			quote = value
 			index++

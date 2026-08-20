@@ -1,6 +1,78 @@
 package cst
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
+
+var benchmarkLineIndex *LineIndex
+var benchmarkLine, benchmarkColumn, benchmarkOffset uint32
+
+func BenchmarkNewLineIndex(b *testing.B) {
+	benchmarkNewLineIndex(b, NewLineIndex)
+}
+
+func BenchmarkNewLineIndexDirect(b *testing.B) {
+	benchmarkNewLineIndex(b, newLineIndexDirect)
+}
+
+func benchmarkNewLineIndex(b *testing.B, build func(string) *LineIndex) {
+	b.Helper()
+	for _, width := range []int{16, 40, 80, 256, 4096} {
+		b.Run(fmt.Sprintf("width_%d", width), func(b *testing.B) {
+			source := strings.Repeat(strings.Repeat("x", width)+"\n", 256)
+			b.SetBytes(int64(len(source)))
+			for b.Loop() {
+				benchmarkLineIndex = build(source)
+			}
+		})
+	}
+}
+
+func newLineIndexDirect(src string) *LineIndex {
+	const (
+		estimatedBytesPerLine    = 128
+		maxEstimatedLineCapacity = 256
+	)
+	estimatedCapacity := min(
+		len(src)/estimatedBytesPerLine+1,
+		maxEstimatedLineCapacity,
+	)
+	starts := make([]uint32, 1, estimatedCapacity)
+	for position := 0; position < len(src); position++ {
+		if src[position] == '\n' {
+			starts = append(starts, uint32(position+1))
+		}
+	}
+	return &LineIndex{source: src, lineStarts: starts}
+}
+
+func BenchmarkPositionUTF16ASCII(b *testing.B) {
+	for _, width := range []int{16, 40, 80, 256, 4096} {
+		b.Run(fmt.Sprintf("width_%d", width), func(b *testing.B) {
+			source := strings.Repeat("x", width)
+			lineIndex := NewLineIndex(source)
+			b.SetBytes(int64(len(source)))
+			for b.Loop() {
+				benchmarkLine, benchmarkColumn = lineIndex.PositionUTF16(uint32(len(source)))
+			}
+		})
+	}
+}
+
+func BenchmarkOffsetUTF16ASCII(b *testing.B) {
+	for _, width := range []int{16, 40, 80, 256, 4096} {
+		b.Run(fmt.Sprintf("width_%d", width), func(b *testing.B) {
+			source := strings.Repeat("x", width)
+			lineIndex := NewLineIndex(source)
+			b.SetBytes(int64(len(source)))
+			for b.Loop() {
+				benchmarkOffset = lineIndex.OffsetUTF16(0, uint32(len(source)))
+			}
+		})
+	}
+}
 
 func TestLineIndexBasic(t *testing.T) {
 	li := NewLineIndex("abc\ndef\nghi")

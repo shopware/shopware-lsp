@@ -1,6 +1,7 @@
 package lexer
 
 import (
+	"github.com/shopware/shopware-lsp/internal/parser/bytescan"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	"github.com/shopware/shopware-lsp/internal/parser/parsekit"
 	"github.com/shopware/shopware-lsp/internal/parser/xpath/syntax"
@@ -128,10 +129,9 @@ func next(source string, position int) (syntax.Kind, int) {
 }
 
 func scanQuoted(source string, position int, quote byte) int {
-	for end := position + 1; end < len(source); end++ {
-		if source[end] == quote {
-			return end - position + 1
-		}
+	end := bytescan.IndexByte(source, position+1, quote)
+	if end < len(source) {
+		return end - position + 1
 	}
 	return len(source) - position
 }

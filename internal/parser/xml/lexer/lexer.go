@@ -3,6 +3,7 @@ package lexer
 import (
 	"strings"
 
+	"github.com/shopware/shopware-lsp/internal/parser/bytescan"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	"github.com/shopware/shopware-lsp/internal/parser/parsekit"
 	"github.com/shopware/shopware-lsp/internal/parser/xml/syntax"
@@ -183,22 +184,15 @@ func scanEntity(source string, position int) int {
 }
 
 func scanText(source string, position int) int {
-	position++
-	for position < len(source) && source[position] != '<' && source[position] != '&' {
-		position++
-	}
-	return position
+	return bytescan.IndexAny2(source, position+1, '<', '&')
 }
 
 func scanQuoted(source string, position int, quote byte) int {
-	position++
-	for position < len(source) {
-		if source[position] == quote {
-			return position + 1
-		}
-		position++
+	end := bytescan.IndexByte(source, position+1, quote)
+	if end < len(source) {
+		return end + 1
 	}
-	return position
+	return end
 }
 
 func scanName(source string, position int) int {

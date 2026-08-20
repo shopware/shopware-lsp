@@ -1,5 +1,5 @@
 PACKAGE_NAME          := shopware-cli
-GOLANG_CROSS_VERSION  ?= v1.26.5
+GOLANG_CROSS_VERSION  ?= v1.27.0
 PUBLISH               ?= 0
 VSCODE_OS             ?= $(OS)
 
@@ -10,7 +10,7 @@ release-dry-run:
 		-e CGO_ENABLED=1 \
 		-v `pwd`:/go/src/$(PACKAGE_NAME) \
 		-w /go/src/$(PACKAGE_NAME) \
-		ghcr.io/goreleaser/goreleaser-cross:${GOLANG_CROSS_VERSION} \
+		ghcr.io/shyim/goreleaser-cross:${GOLANG_CROSS_VERSION} \
 		--clean --skip=validate --skip=publish --snapshot
 
 .PHONY: release
@@ -22,7 +22,7 @@ release:
 		-e HOMEBREW_TAP_GITHUB_TOKEN \
 		-v `pwd`:/go/src/$(PACKAGE_NAME) \
 		-w /go/src/$(PACKAGE_NAME) \
-		ghcr.io/goreleaser/goreleaser-cross:${GOLANG_CROSS_VERSION} \
+		ghcr.io/shyim/goreleaser-cross:${GOLANG_CROSS_VERSION} \
 		release --clean
 
 .PHONY: release-build-extension

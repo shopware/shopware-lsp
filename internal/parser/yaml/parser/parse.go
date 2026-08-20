@@ -3,6 +3,7 @@ package parser
 import (
 	"strings"
 
+	"github.com/shopware/shopware-lsp/internal/parser/bytescan"
 	"github.com/shopware/shopware-lsp/internal/parser/parsekit"
 	"github.com/shopware/shopware-lsp/internal/parser/yaml/lexer"
 	"github.com/shopware/shopware-lsp/internal/parser/yaml/syntax"
@@ -515,8 +516,9 @@ func hasInvalidDoubleQuotedEscape(text string) bool {
 		return true
 	}
 	for position := 1; position < len(text)-1; position++ {
-		if text[position] != '\\' {
-			continue
+		position = bytescan.IndexByte(text[:len(text)-1], position, '\\')
+		if position >= len(text)-1 {
+			break
 		}
 		position++
 		if position >= len(text)-1 {

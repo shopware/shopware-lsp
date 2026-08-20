@@ -3,6 +3,7 @@ package lexer
 import (
 	"strings"
 
+	"github.com/shopware/shopware-lsp/internal/parser/bytescan"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	"github.com/shopware/shopware-lsp/internal/parser/parsekit"
 	"github.com/shopware/shopware-lsp/internal/parser/php/syntax"
@@ -147,16 +148,14 @@ func next(source string, position int) (syntax.Kind, int) {
 }
 
 func scanLineComment(source string, position, prefix int) int {
-	end := position + prefix
-	for end < len(source) && source[end] != '\r' && source[end] != '\n' {
-		end++
-	}
+	end := bytescan.IndexAny2(source, position+prefix, '\r', '\n')
 	return end - position
 }
 
 func scanBlockComment(source string, position int) int {
 	for end := position + 2; end+1 < len(source); end++ {
-		if source[end] == '*' && source[end+1] == '/' {
+		end = bytescan.IndexByte(source, end, '*')
+		if end+1 < len(source) && source[end+1] == '/' {
 			return end - position + 2
 		}
 	}
@@ -164,29 +163,21 @@ func scanBlockComment(source string, position int) int {
 }
 
 func scanQuoted(source string, position int, quote byte) int {
-	escaped := false
-	for end := position + 1; end < len(source); end++ {
-		if escaped {
-			escaped = false
-			continue
-		}
-		if source[end] == '\\' {
-			escaped = true
-			continue
+	for end := position + 1; end < len(source); {
+		end = bytescan.IndexAny2(source, end, quote, '\\')
+		if end >= len(source) {
+			break
 		}
 		if source[end] == quote {
 			return end - position + 1
 		}
+		end += 2
 	}
 	return len(source) - position
 }
 
 func scanHeredoc(source string, position int) int {
-	headerEnd := position
-	for headerEnd < len(source) &&
-		source[headerEnd] != '\r' && source[headerEnd] != '\n' {
-		headerEnd++
-	}
+	headerEnd := bytescan.IndexAny2(source, position, '\r', '\n')
 	header := strings.TrimSpace(source[position+3 : headerEnd])
 	if len(header) >= 2 &&
 		(header[0] == '\'' || header[0] == '"') &&
@@ -204,11 +195,7 @@ func scanHeredoc(source string, position int) int {
 		lineStart++
 	}
 	for lineStart < len(source) {
-		lineEnd := lineStart
-		for lineEnd < len(source) &&
-			source[lineEnd] != '\r' && source[lineEnd] != '\n' {
-			lineEnd++
-		}
+		lineEnd := bytescan.IndexAny2(source, lineStart, '\r', '\n')
 		line := source[lineStart:lineEnd]
 		trimmed := strings.TrimLeft(line, " \t")
 		if strings.HasPrefix(trimmed, header) {
