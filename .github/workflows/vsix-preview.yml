@@ -47,81 +47,73 @@ jobs:
         id: upload_darwin_x64
         uses: actions/upload-artifact@v7
         with:
-          name: shopware-lsp-${{ steps.preview-version.outputs.version }}-darwin-x64-${{ github.sha }}
           path: out/*-darwin-x64.vsix
+          archive: false
           if-no-files-found: error
           retention-days: 14
-          compression-level: 0
 
       - name: Upload macOS arm64 preview
         id: upload_darwin_arm64
         uses: actions/upload-artifact@v7
         with:
-          name: shopware-lsp-${{ steps.preview-version.outputs.version }}-darwin-arm64-${{ github.sha }}
           path: out/*-darwin-arm64.vsix
+          archive: false
           if-no-files-found: error
           retention-days: 14
-          compression-level: 0
 
       - name: Upload Linux x64 preview
         id: upload_linux_x64
         uses: actions/upload-artifact@v7
         with:
-          name: shopware-lsp-${{ steps.preview-version.outputs.version }}-linux-x64-${{ github.sha }}
           path: out/*-linux-x64.vsix
+          archive: false
           if-no-files-found: error
           retention-days: 14
-          compression-level: 0
 
       - name: Upload Linux arm64 preview
         id: upload_linux_arm64
         uses: actions/upload-artifact@v7
         with:
-          name: shopware-lsp-${{ steps.preview-version.outputs.version }}-linux-arm64-${{ github.sha }}
           path: out/*-linux-arm64.vsix
+          archive: false
           if-no-files-found: error
           retention-days: 14
-          compression-level: 0
 
       - name: Upload Linux armhf preview
         id: upload_linux_armhf
         uses: actions/upload-artifact@v7
         with:
-          name: shopware-lsp-${{ steps.preview-version.outputs.version }}-linux-armhf-${{ github.sha }}
           path: out/*-linux-armhf.vsix
+          archive: false
           if-no-files-found: error
           retention-days: 14
-          compression-level: 0
 
       - name: Upload Alpine x64 preview
         id: upload_alpine_x64
         uses: actions/upload-artifact@v7
         with:
-          name: shopware-lsp-${{ steps.preview-version.outputs.version }}-alpine-x64-${{ github.sha }}
           path: out/*-alpine-x64.vsix
+          archive: false
           if-no-files-found: error
           retention-days: 14
-          compression-level: 0
 
       - name: Upload Alpine arm64 preview
         id: upload_alpine_arm64
         uses: actions/upload-artifact@v7
         with:
-          name: shopware-lsp-${{ steps.preview-version.outputs.version }}-alpine-arm64-${{ github.sha }}
           path: out/*-alpine-arm64.vsix
+          archive: false
           if-no-files-found: error
           retention-days: 14
-          compression-level: 0
 
       - name: Upload Windows x64 preview
         id: upload_win32_x64
         uses: actions/upload-artifact@v7
         with:
-          name: shopware-lsp-${{ steps.preview-version.outputs.version }}-win32-x64-${{ github.sha }}
           path: out/*-win32-x64.vsix
+          archive: false
           if-no-files-found: error
           retention-days: 14
-          compression-level: 0
 
       - name: Upload preview checksums
         id: upload_checksums
