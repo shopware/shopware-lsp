@@ -90,6 +90,9 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 	if err != nil {
 		return nil, fmt.Errorf("create file scanner: %w", err)
 	}
+	if err := workspace.scanner.SetExcludedPaths(configuration.Indexing.Exclude); err != nil {
+		return nil, err
+	}
 	workspace.scanner.SetWorkspaceSymbolCatalog(workspace.symbols)
 
 	phpIndex, err := php.NewPHPIndex(cacheDir, workspace.store)

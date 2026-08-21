@@ -42,7 +42,7 @@ transport. Multi-root support requires one process per root.
 
 Before starting, use the same bounded project markers as the server: Shopware
 Composer metadata, Shopware app manifests, Symfony FrameworkBundle evidence,
-or committed `.config/shopware/lsp.json`. The server still performs its own
+or committed `.config/shopware/lsp.yaml`. The server still performs its own
 check. An unsupported editor project returns a successful initialize response
 with:
 
@@ -113,7 +113,7 @@ response contains the authoritative scaffold catalog.
 
 Forward editor-local configuration in `initializationOptions.configuration`
 and through `workspace/didChangeConfiguration`. Committed configuration stays
-in `.config/shopware/lsp.json`; nested extension configuration remains
+in `.config/shopware/lsp.yaml`; nested extension configuration remains
 diagnostics-only. Use `shopware/configuration/catalog`, `/effective`, and
 `/reload` for the settings UI.
 

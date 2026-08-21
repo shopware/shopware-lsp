@@ -408,7 +408,12 @@ func (runtime *mcpRuntime) diagnostics(
 		if err != nil {
 			return diagnosticsOutput{}, err
 		}
-		paths, err := resolveCheckFiles(ctx, []string{target})
+		paths, err := resolveCheckFilesWithExclusions(
+			ctx,
+			runtime.root,
+			[]string{target},
+			session.configuration.Effective.Indexing.Exclude,
+		)
 		if err != nil {
 			return diagnosticsOutput{}, err
 		}

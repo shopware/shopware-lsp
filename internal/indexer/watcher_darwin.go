@@ -269,7 +269,8 @@ func (fs *FileScanner) watchFSEvents() {
 				continue
 			}
 			if err == nil {
-				if isPHARArchivePath(path) {
+				if isPHARArchivePath(path) &&
+					!fs.isExplicitlyExcluded(path, false) {
 					fullScan = true
 				} else if fs.shouldIndexPath(path) {
 					adds = append(adds, path)

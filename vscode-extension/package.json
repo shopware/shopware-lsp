@@ -56,7 +56,7 @@
             "never"
           ],
           "enumDescriptions": [
-            "Start only when the workspace root is detected as Shopware or Symfony, or contains .config/shopware/lsp.json.",
+            "Start only when the workspace root is detected as Shopware or Symfony, or contains .config/shopware/lsp.yaml.",
             "Always start for this workspace and explicitly allow unsupported project roots.",
             "Never start the language server or expose its MCP server for this workspace."
           ],
@@ -151,6 +151,15 @@
           "default": true,
           "scope": "resource",
           "description": "Enable persistent workspace indexing. Changing this structural setting requires a language-server restart."
+        },
+        "shopwareLSP.indexing.exclude": {
+          "type": "array",
+          "default": [],
+          "scope": "resource",
+          "items": {
+            "type": "string"
+          },
+          "description": "Workspace-relative glob patterns excluded from persistent indexing. Open documents remain available for document-local language features. Changing this structural setting requires a language-server restart."
         },
         "shopwareLSP.domains": {
           "type": "object",
@@ -344,9 +353,9 @@
         }
       ]
     },
-    "jsonValidation": [
+    "yamlValidation": [
       {
-        "fileMatch": "**/.config/shopware/lsp.json",
+        "fileMatch": "**/.config/shopware/lsp.yaml",
         "url": "./dist/shopware-lsp.schema.json"
       }
     ],
@@ -378,7 +387,8 @@
     "package": "npm run check-types && node esbuild.js --production"
   },
   "dependencies": {
-    "vscode-languageclient": "^8.1.0"
+    "vscode-languageclient": "^8.1.0",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/node": "^16.18.34",

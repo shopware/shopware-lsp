@@ -121,7 +121,7 @@ VSCodium and other Open VSX clients can install the extension from
 
 The default activation mode is conservative. The extension starts only when it
 recognizes Shopware Composer metadata, a Shopware app manifest, Symfony's
-`config/bundles.php`, or an explicit `.config/shopware/lsp.json` file. It does
+`config/bundles.php`, or an explicit `.config/shopware/lsp.yaml` file. It does
 not index unrelated PHP projects.
 
 ### Preview builds
@@ -184,29 +184,25 @@ whole workspace.
 
 No configuration file is required for normal projects. Use **Shopware:
 Configure Language Server...** for a searchable settings UI, or commit
-`.config/shopware/lsp.json` when the team should share the same policy.
+`.config/shopware/lsp.yaml` when the team should share the same policy.
 
-```json
-{
-  "$schema": "https://raw.githubusercontent.com/shopware/shopware-lsp/main/internal/projectconfig/schema.json",
-  "version": 1,
-  "shopware": {
-    "targetVersion": "6.7"
-  },
-  "diagnostics": {
-    "overrides": [
-      {
-        "files": ["src/Generated/**"],
-        "enabled": false
-      }
-    ]
-  }
-}
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/shopware/shopware-lsp/main/internal/projectconfig/schema.json
+version: 1
+shopware:
+  targetVersion: "6.7"
+indexing:
+  exclude:
+    - "**/generated/**"
+diagnostics:
+  overrides:
+    - files: [src/Generated/**]
+      enabled: false
 ```
 
 Root configuration controls features, domains, indexing, PHP extensions, the
 Shopware target version, diagnostics, MCP tools, and CLI defaults. A plugin or
-extension may contain its own `.config/shopware/lsp.json` for diagnostics below
+extension may contain its own `.config/shopware/lsp.yaml` for diagnostics below
 that directory. VS Code user and workspace settings remain local overrides.
 
 See the [project configuration reference](docs/reference.md#project-configuration)

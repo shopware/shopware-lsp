@@ -16,6 +16,7 @@ func TestResolveLayersAndExplicitEmptyArrays(t *testing.T) {
         "version": 1,
         "php": {"extensions": ["redis"]},
         "features": {"hover": false},
+        "indexing": {"exclude": ["**/generated/**"]},
         "diagnostics": {"rules": {"php.arguments": "error"}},
         "check": {"failOn": "warning"}
     }`))
@@ -25,6 +26,7 @@ func TestResolveLayersAndExplicitEmptyArrays(t *testing.T) {
 	editor := Partial{
 		PHP:      &PHPConfig{Extensions: &empty},
 		Features: map[string]bool{"hover": true},
+		Indexing: &IndexingConfig{Exclude: &empty},
 		Diagnostics: &DiagnosticsConfig{
 			Enabled: &enabled,
 			Rules:   map[string]Severity{"php.arguments": SeverityOff},
@@ -33,6 +35,7 @@ func TestResolveLayersAndExplicitEmptyArrays(t *testing.T) {
 	effective := Resolve(project, editor)
 	require.Empty(t, effective.PHP.Extensions)
 	require.True(t, effective.Features["hover"])
+	require.Empty(t, effective.Indexing.Exclude)
 	require.Equal(t, SeverityOff, effective.Diagnostics.Rules["php.arguments"])
 	require.Equal(t, SeverityWarning, effective.Check.FailOn)
 	require.Equal(t, "editor", effective.Origins["php.extensions"])
@@ -66,10 +69,16 @@ func TestSchemaCatalogsStayInSync(t *testing.T) {
 
 func TestLoadUsesShopwareLSPConfigurationPath(t *testing.T) {
 	root := t.TempDir()
-	require.Equal(t, filepath.Join(root, ".config", "shopware", "lsp.json"), Path(root))
+	require.Equal(t, filepath.Join(root, ".config", "shopware", "lsp.yaml"), Path(root))
 	require.NoError(t, os.MkdirAll(filepath.Dir(Path(root)), 0o755))
-	require.NoError(t, os.WriteFile(Path(root), []byte(`{"version":1}`), 0o644))
+	legacyPath := filepath.Join(root, ".config", "shopware", "lsp.json")
+	require.NoError(t, os.WriteFile(legacyPath, []byte(`{"version":1}`), 0o644))
 	_, found, err := Load(root)
+	require.NoError(t, err)
+	require.False(t, found)
+
+	require.NoError(t, os.WriteFile(Path(root), []byte("version: 1\n"), 0o644))
+	_, found, err = Load(root)
 	require.NoError(t, err)
 	require.True(t, found)
 }
@@ -91,7 +100,7 @@ func TestDecodeRejectsUnknownAndInvalidValues(t *testing.T) {
 	_, err = Decode([]byte(`{"version":1,"diagnostics":{"rules":{"php.arguments":"loud"}}}`))
 	require.ErrorContains(t, err, "invalid severity")
 	_, err = Decode([]byte(`{"version":1,"unknown":true}`))
-	require.ErrorContains(t, err, "unknown field")
+	require.ErrorContains(t, err, "field unknown not found")
 	_, err = Decode([]byte(`{"version":1,"shopware":{"targetVersion":"next"}}`))
 	require.ErrorContains(t, err, "invalid Shopware target version")
 	_, err = Decode([]byte(`{"version":1,"mcp":{"tools":{"future_tool":false}}}`))
@@ -100,6 +109,34 @@ func TestDecodeRejectsUnknownAndInvalidValues(t *testing.T) {
 	require.ErrorContains(t, err, "files must not be empty")
 	_, err = Decode([]byte(`{"version":1,"diagnostics":{"overrides":[{"files":["../outside/**"],"enabled":false}]}}`))
 	require.ErrorContains(t, err, "must not escape")
+}
+
+func TestDecodeYAMLIndexingExclusions(t *testing.T) {
+	t.Parallel()
+	project, err := Decode([]byte(`version: 1
+indexing:
+  exclude:
+    - "**/generated/**"
+    - custom/plugins/{Legacy,Archived}/**/*.php
+`))
+	require.NoError(t, err)
+	effective := Resolve(project, Partial{})
+	require.Equal(t, []string{
+		"**/generated/**",
+		"custom/plugins/{Legacy,Archived}/**/*.php",
+	}, effective.Indexing.Exclude)
+}
+
+func TestDecodeRejectsUnsafeOrMalformedIndexingExclusions(t *testing.T) {
+	t.Parallel()
+	for _, source := range []string{
+		"version: 1\nindexing:\n  exclude: ['../outside/**']\n",
+		"version: 1\nindexing:\n  exclude: ['src/[broken']\n",
+		"version: 1\nindexing:\n  exclude: ['']\n",
+	} {
+		_, err := Decode([]byte(source))
+		require.Error(t, err)
+	}
 }
 
 func TestResolveMCPToolOverrides(t *testing.T) {
@@ -174,5 +211,8 @@ func TestStructuralFingerprintIgnoresLiveSettings(t *testing.T) {
 	second.Diagnostics.Enabled = false
 	require.Equal(t, first.StructuralFingerprint(), second.StructuralFingerprint())
 	second.Domains["scss"] = false
+	require.NotEqual(t, first.StructuralFingerprint(), second.StructuralFingerprint())
+	second = Default()
+	second.Indexing.Exclude = []string{"**/generated/**"}
 	require.NotEqual(t, first.StructuralFingerprint(), second.StructuralFingerprint())
 }

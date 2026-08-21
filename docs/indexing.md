@@ -232,7 +232,9 @@ them would hide dependency source. Application-level cache directories stay
 excluded.
 
 A `SupplementalPathIndexer` can reopen a skipped directory — that is how public
-assets get indexed without every indexer walking generated media.
+assets get indexed without every indexer walking generated media. Explicit
+workspace patterns from `indexing.exclude` are applied first and cannot be
+reopened by a supplemental indexer.
 
 **Files** — `IsScannedPath` accepts anything the language registry recognizes,
 with two deliberate exclusions:
@@ -242,8 +244,11 @@ with two deliberate exclusions:
   large generated frontend trees contain thousands of HTML artifacts. They stay
   available on demand without joining the persistent scan.
 
-`ShouldSkipRelativePath` and `IsScannedPath` are exported so CLI commands can
-discover exactly the same file set as the scanner.
+`ShouldSkipRelativePath`, `PathExclusions`, and `IsScannedPath` are exported so
+CLI commands can discover exactly the same file set as the scanner. Configured
+patterns are compiled once, use workspace-relative slash-normalized paths, and
+filter initial discovery, direct index requests, watcher events, and PHAR
+archives consistently.
 
 Discovered files are sorted. That is not cosmetic: sorted order lets
 `scanFileStates` align the discovery result with the ordered SQLite state in one

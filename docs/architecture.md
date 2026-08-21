@@ -246,7 +246,7 @@ command it runs the server on stdin/stdout.
 3. **Project detection.** Unless explicitly allowed, `projectdetect.Detect`
    must find Shopware Composer metadata, an app manifest,
    `symfony/framework-bundle`, `config/bundles.php`, or a committed
-   `.config/shopware/lsp.json`. An unsupported root makes the server return an
+   `.config/shopware/lsp.yaml`. An unsupported root makes the server return an
    *inactive* capability set rather than indexing a random directory. In CLI
    mode it is a hard error.
 4. Load configuration (workspace file, nested extension scopes, editor
@@ -369,8 +369,8 @@ Shared mutable state to be careful with:
 Configuration is layered, in increasing precedence:
 
 1. built-in defaults (`projectconfig.Default()`);
-2. workspace `.config/shopware/lsp.json`;
-3. nested extension `.config/shopware/lsp.json` files, applying to files below
+2. workspace `.config/shopware/lsp.yaml`;
+3. nested extension `.config/shopware/lsp.yaml` files, applying to files below
    that extension — **diagnostics-only**, with path patterns relative to the
    extension root;
 4. editor-local overrides supplied by the client.

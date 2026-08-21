@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import {parse, stringify} from 'yaml';
 import type {ClientState} from './clientState';
 import {
   type ConfigurationCatalog,
@@ -192,7 +193,7 @@ async function writeDiagnosticConfiguration(
     await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(storage.root, projectConfigurationDirectory));
     await vscode.workspace.fs.writeFile(
       configUri,
-      new TextEncoder().encode(`${JSON.stringify(config, null, 2)}\n`),
+      new TextEncoder().encode(stringify(config)),
     );
     return;
   }
@@ -250,9 +251,9 @@ function configurationPattern(
 async function readConfiguration(uri: vscode.Uri): Promise<Record<string, unknown>> {
   try {
     const source = new TextDecoder().decode(await vscode.workspace.fs.readFile(uri));
-    const parsed: unknown = JSON.parse(source);
+    const parsed: unknown = parse(source);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error(`${uri.fsPath} must contain a JSON object`);
+      throw new Error(`${uri.fsPath} must contain a YAML mapping`);
     }
     return parsed as Record<string, unknown>;
   } catch (error) {
@@ -330,7 +331,7 @@ async function openConfiguration(clientState: ClientState): Promise<void> {
     await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(selected.root, projectConfigurationDirectory));
     await vscode.workspace.fs.writeFile(
       uri,
-      new TextEncoder().encode(`${JSON.stringify({$schema: schemaURL, version: 1}, null, 2)}\n`),
+      new TextEncoder().encode(stringify({$schema: schemaURL, version: 1})),
     );
   }
   await vscode.window.showTextDocument(uri, {preview: false});

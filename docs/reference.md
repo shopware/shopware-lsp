@@ -39,7 +39,7 @@ shopware-lsp -root /path/to/project mcp
 Workspace commands run only for detected Shopware or Symfony roots. Detection
 is intentionally bounded to root metadata: Shopware Composer metadata or app
 manifest files, `symfony/framework-bundle` or `config/bundles.php`, and the
-committed `.config/shopware/lsp.json` opt-in. Use `project-info` to see
+committed `.config/shopware/lsp.yaml` opt-in. Use `project-info` to see
 the detected kind and its evidence without creating a workspace cache. For an
 unusual but intentional root, either add the project configuration or pass the
 global `-allow-unsupported-project` flag before the command. The same guard is
@@ -1574,59 +1574,47 @@ to be unavailable.
 ### Project configuration
 
 Shopware LSP reads the committed project configuration from
-`.config/shopware/lsp.json`. The same configuration is used by editor
+`.config/shopware/lsp.yaml`. The same configuration is used by editor
 sessions and CLI commands, so diagnostic policy does not need to be duplicated
 in CI. VS Code user and workspace settings are local overrides; explicit CLI
 flags such as `check -severity` and `check -fail-on` take final precedence.
 
-```json
-{
-  "$schema": "https://raw.githubusercontent.com/shopware/shopware-lsp/main/internal/projectconfig/schema.json",
-  "version": 1,
-  "php": {
-    "extensions": ["redis"],
-    "disabledExtensions": []
-  },
-  "shopware": {
-    "targetVersion": "6.7"
-  },
-  "features": {
-    "codeLens": false
-  },
-  "mcp": {
-    "tools": {
-      "shopware_apply_code_action": false,
-      "shopware_entity_schema_apply": false
-    }
-  },
-  "domains": {
-    "symfony.doctrine": false
-  },
-  "diagnostics": {
-    "enabled": true,
-    "inspections": {
-      "shopware.admin": false
-    },
-    "rules": {
-      "php.arguments": "error",
-      "admin.component.unknown-instance-member": "off"
-    },
-    "overrides": [
-      {
-        "files": ["src/Generated/**"],
-        "enabled": false
-      },
-      {
-        "files": ["custom/plugins/FroshTools/**"],
-        "rules": {"php.arguments": "off"}
-      }
-    ]
-  },
-  "check": {
-    "severity": "warning",
-    "failOn": "error"
-  }
-}
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/shopware/shopware-lsp/main/internal/projectconfig/schema.json
+version: 1
+php:
+  extensions: [redis]
+  disabledExtensions: []
+shopware:
+  targetVersion: "6.7"
+features:
+  codeLens: false
+indexing:
+  exclude:
+    - "**/generated/**"
+    - custom/plugins/LegacyPlugin/**
+mcp:
+  tools:
+    shopware_apply_code_action: false
+    shopware_entity_schema_apply: false
+domains:
+  symfony.doctrine: false
+diagnostics:
+  enabled: true
+  inspections:
+    shopware.admin: false
+  rules:
+    php.arguments: error
+    admin.component.unknown-instance-member: off
+  overrides:
+    - files: [src/Generated/**]
+      enabled: false
+    - files: [custom/plugins/FroshTools/**]
+      rules:
+        php.arguments: off
+check:
+  severity: warning
+  failOn: error
 ```
 
 Unspecified values inherit the built-in defaults, which keep all current
@@ -1636,14 +1624,23 @@ inspection skips its analyzer; disabling every rule in an inspection has the
 same optimization. Domain dependencies cascade off, so disabling PHP also
 disables PHP-backed Symfony and Twig domains.
 
+`indexing.exclude` contains workspace-relative glob patterns. Excluded files do
+not enter persistent indexes or workspace-wide results, while explicitly open
+documents remain available for document-local language features. Patterns use
+forward-slash paths and support `*`, `?`, `**`, brace alternatives such as
+`*.{php,twig}`, and character classes such as `[0-9]`. Absolute paths and `..`
+components are rejected. Changing exclusions requires a server restart and
+invalidates the structurally incompatible workspace cache.
+
 Shopware extensions may commit their own
-`.config/shopware/lsp.json`, for example
-`custom/plugins/FroshTools/.config/shopware/lsp.json`. Nested files are
+`.config/shopware/lsp.yaml`, for example
+`custom/plugins/FroshTools/.config/shopware/lsp.yaml`. Nested files are
 diagnostics-only and apply to their containing directory. Their `files`
 patterns are relative to the extension root, so the same file works when the
 extension is installed in a project or opened as its own repository. Scoped
 configuration is applied from the workspace root toward the nearest extension;
-VS Code-local overrides apply last. Patterns support `*`, `?`, and `**`.
+VS Code-local overrides apply last. Patterns use the same glob syntax described
+above.
 
 The VS Code command `Shopware: Configure Language Server…` provides searchable
 feature, domain, inspection, and rule controls and can write either the shared

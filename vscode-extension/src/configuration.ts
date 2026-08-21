@@ -1,11 +1,12 @@
 import * as vscode from 'vscode';
+import {parse, stringify} from 'yaml';
 import type {LanguageClient} from 'vscode-languageclient/node';
 import type {ClientState} from './clientState';
 import {setNested} from './configurationModel';
 import {pathWithinRoot} from './workspaceRoots';
 
 export const projectConfigurationDirectory = '.config/shopware';
-export const projectConfigurationPath = `${projectConfigurationDirectory}/lsp.json`;
+export const projectConfigurationPath = `${projectConfigurationDirectory}/lsp.yaml`;
 
 export type Severity = 'off' | 'hint' | 'information' | 'warning' | 'error';
 
@@ -20,7 +21,7 @@ export interface PartialConfiguration {
   php?: {extensions?: string[]; disabledExtensions?: string[]};
   shopware?: {targetVersion?: string};
   features?: Record<string, boolean>;
-  indexing?: {enabled?: boolean};
+  indexing?: {enabled?: boolean; exclude?: string[]};
   mcp?: {tools?: Record<string, boolean>};
   domains?: Record<string, boolean>;
   diagnostics?: {
@@ -59,7 +60,7 @@ interface InspectionEntry {
 
 interface EffectiveConfiguration {
   features: Record<string, boolean>;
-  indexing: {enabled: boolean};
+  indexing: {enabled: boolean; exclude?: string[]};
   mcp?: {tools: Record<string, boolean>};
   domains: Record<string, boolean>;
   diagnostics: {
@@ -118,7 +119,12 @@ export function readEditorConfiguration(resource?: vscode.Uri): PartialConfigura
   const domains = explicitValue<Record<string, boolean>>(configuration, 'domains');
   if (domains !== undefined) result.domains = domains;
   const indexing = explicitValue<boolean>(configuration, 'indexing.enabled');
-  if (indexing !== undefined) result.indexing = {enabled: indexing};
+  const indexingExclude = explicitValue<string[]>(configuration, 'indexing.exclude');
+  if (indexing !== undefined || indexingExclude !== undefined) {
+    result.indexing = {};
+    if (indexing !== undefined) result.indexing.enabled = indexing;
+    if (indexingExclude !== undefined) result.indexing.exclude = indexingExclude;
+  }
   const mcpTools = explicitValue<Record<string, boolean>>(configuration, 'mcp.tools');
   if (mcpTools !== undefined) result.mcp = {tools: mcpTools};
 
@@ -417,7 +423,11 @@ async function updateProjectConfiguration(
     version: 1,
   };
   try {
-    document = JSON.parse(new TextDecoder().decode(await vscode.workspace.fs.readFile(uri)));
+    const parsed: unknown = parse(new TextDecoder().decode(await vscode.workspace.fs.readFile(uri)));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error(`${uri.fsPath} must contain a YAML mapping`);
+    }
+    document = parsed as Record<string, unknown>;
   } catch (error) {
     if (!(error instanceof vscode.FileSystemError && error.code === 'FileNotFound')) throw error;
   }
@@ -428,7 +438,7 @@ async function updateProjectConfiguration(
     item.configKind === 'rule' ? ['diagnostics', 'rules', item.id] : item.id.split('.');
   setNested(document, path, value);
   await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(folder.uri, projectConfigurationDirectory));
-  await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(`${JSON.stringify(document, null, 2)}\n`));
+  await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(stringify(document)));
   await vscode.window.showTextDocument(uri, {preview: false});
 }
 

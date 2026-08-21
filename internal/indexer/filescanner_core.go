@@ -53,6 +53,7 @@ type FileScanner struct {
 	watcherWg   sync.WaitGroup
 	onUpdate    func()
 	workerCount int
+	exclusions  PathExclusions
 	operationMu sync.Mutex
 	closeOnce   sync.Once
 	closeErr    error
@@ -171,6 +172,17 @@ func (fs *FileScanner) SetWorkerCount(count int) {
 	fs.operationMu.Lock()
 	fs.workerCount = count
 	fs.operationMu.Unlock()
+}
+
+// SetExcludedPaths installs the immutable workspace-relative exclusion policy.
+// It must be called before indexing or starting the watcher.
+func (fs *FileScanner) SetExcludedPaths(patterns []string) error {
+	exclusions, err := NewPathExclusions(patterns)
+	if err != nil {
+		return fmt.Errorf("configure excluded paths: %w", err)
+	}
+	fs.exclusions = exclusions
+	return nil
 }
 
 func (fs *FileScanner) AddIndexer(indexer Indexer) {
@@ -319,7 +331,7 @@ func (fs *FileScanner) discoverFiles(ctx context.Context) ([]string, error) {
 			return nil
 		}
 
-		if isPHARArchivePath(path) {
+		if isPHARArchivePath(path) && !fs.isExplicitlyExcluded(path, false) {
 			filesMu.Lock()
 			archives = append(archives, path)
 			filesMu.Unlock()
@@ -732,6 +744,9 @@ func (fs *FileScanner) shouldEnterDirectory(path string) bool {
 		return false
 	}
 	relative, within := relativePathWithin(fs.projectRoot, path)
+	if within && fs.exclusions.ExcludesDirectory(relative) {
+		return false
+	}
 	if !within || !shouldSkipRelPath(relative) {
 		return true
 	}
@@ -749,6 +764,9 @@ func (fs *FileScanner) shouldIndexPath(path string) bool {
 		return true
 	}
 	relative, within := relativePathWithin(fs.projectRoot, path)
+	if within && fs.exclusions.Excludes(relative) {
+		return false
+	}
 	if within &&
 		!shouldSkipRelPath(relative) &&
 		isScannedPath(path) {
@@ -768,6 +786,9 @@ func (fs *FileScanner) shouldPreparsePath(path string) bool {
 		return true
 	}
 	relative, within := relativePathWithin(fs.projectRoot, path)
+	if within && fs.exclusions.Excludes(relative) {
+		return false
+	}
 	if within &&
 		!shouldSkipRelPath(relative) &&
 		isScannedPath(path) {
@@ -784,6 +805,17 @@ func (fs *FileScanner) shouldPreparsePath(path string) bool {
 		}
 	}
 	return false
+}
+
+func (fs *FileScanner) isExplicitlyExcluded(path string, directory bool) bool {
+	relative, within := relativePathWithin(fs.projectRoot, path)
+	if !within {
+		return false
+	}
+	if directory {
+		return fs.exclusions.ExcludesDirectory(relative)
+	}
+	return fs.exclusions.Excludes(relative)
 }
 
 // ClearHashes clears all file hashes, forcing reindexing

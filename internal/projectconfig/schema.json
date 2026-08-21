@@ -27,7 +27,19 @@
     "indexing": {
       "type": "object",
       "additionalProperties": false,
-      "properties": { "enabled": { "type": "boolean" } }
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "exclude": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Workspace-relative glob patterns excluded from persistent indexing. Open documents remain available for document-local language features.",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "not": { "pattern": "^(?:/|[A-Za-z]:)|(?:^|/)\\.\\.(?:/|$)" }
+          }
+        }
+      }
     },
     "mcp": {
       "type": "object",

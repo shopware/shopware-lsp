@@ -269,6 +269,34 @@ func TestResolveCheckFilesExpandsDirectoriesAndDeduplicatesTargets(t *testing.T)
 	require.ErrorContains(t, err, "inspect check target")
 }
 
+func TestResolveCheckFilesHonorsConfiguredExclusionsButKeepsExplicitFiles(t *testing.T) {
+	root := t.TempDir()
+	regular := filepath.Join(root, "src", "Service.php")
+	generated := filepath.Join(root, "src", "generated", "Model.php")
+	for _, path := range []string{regular, generated} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte("<?php"), 0o644))
+	}
+
+	files, err := resolveCheckFilesWithExclusions(
+		context.Background(),
+		root,
+		[]string{root},
+		[]string{"**/generated/**"},
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{regular}, files)
+
+	files, err = resolveCheckFilesWithExclusions(
+		context.Background(),
+		root,
+		[]string{generated},
+		[]string{"**/generated/**"},
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{generated}, files)
+}
+
 func TestCheckEmptyDirectoryReturnsAnEmptyJSONArray(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(
@@ -303,7 +331,7 @@ func TestCheckRejectsInvalidWorkerCount(t *testing.T) {
 func TestConfigCommandPrintsEffectiveProjectConfiguration(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
-	configPath := filepath.Join(root, ".config", "shopware", "lsp.json")
+	configPath := filepath.Join(root, ".config", "shopware", "lsp.yaml")
 	require.NoError(t, os.MkdirAll(filepath.Dir(configPath), 0o755))
 	require.NoError(t, os.WriteFile(configPath, []byte(`{
         "version": 1,
@@ -336,7 +364,7 @@ func TestCheckUsesProjectFailurePolicyAndExplicitFlagWins(t *testing.T) {
 	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
 	phpPath := filepath.Join(root, "Broken.php")
 	require.NoError(t, os.WriteFile(phpPath, []byte("<?php function (\n"), 0o644))
-	configPath := filepath.Join(root, ".config", "shopware", "lsp.json")
+	configPath := filepath.Join(root, ".config", "shopware", "lsp.yaml")
 	require.NoError(t, os.MkdirAll(filepath.Dir(configPath), 0o755))
 	require.NoError(t, os.WriteFile(configPath, []byte(`{
         "version": 1,
@@ -358,7 +386,7 @@ func TestCheckUsesProjectFailurePolicyAndExplicitFlagWins(t *testing.T) {
 func TestCLIRejectsInvalidProjectConfigurationBeforeChecking(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
-	configPath := filepath.Join(root, ".config", "shopware", "lsp.json")
+	configPath := filepath.Join(root, ".config", "shopware", "lsp.yaml")
 	require.NoError(t, os.MkdirAll(filepath.Dir(configPath), 0o755))
 	require.NoError(t, os.WriteFile(
 		configPath,
@@ -376,7 +404,7 @@ func TestCLIRejectsInvalidNestedExtensionConfiguration(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
 	configPath := filepath.Join(
-		root, "custom", "plugins", "Example", ".config", "shopware", "lsp.json",
+		root, "custom", "plugins", "Example", ".config", "shopware", "lsp.yaml",
 	)
 	require.NoError(t, os.MkdirAll(filepath.Dir(configPath), 0o755))
 	require.NoError(t, os.WriteFile(

@@ -15,7 +15,8 @@ func TestDetectProjectKinds(t *testing.T) {
 		kind  Kind
 	}{
 		{name: "unknown PHP", files: map[string]string{"src/Test.php": "<?php"}, kind: KindUnknown},
-		{name: "configured", files: map[string]string{".config/shopware/lsp.json": `{"version":1}`}, kind: KindConfigured},
+		{name: "legacy JSON ignored", files: map[string]string{".config/shopware/lsp.json": `{"version":1}`}, kind: KindUnknown},
+		{name: "configured", files: map[string]string{".config/shopware/lsp.yaml": "version: 1\n"}, kind: KindConfigured},
 		{name: "platform", files: map[string]string{"composer.json": `{"name":"shopware/platform"}`}, kind: KindShopware},
 		{name: "production package", files: map[string]string{"composer.json": `{"name":"shopware/production"}`}, kind: KindShopware},
 		{name: "plugin type", files: map[string]string{"composer.json": `{"type":"shopware-platform-plugin"}`}, kind: KindShopware},
@@ -68,7 +69,7 @@ func TestDetectRejectsMalformedComposerMetadata(t *testing.T) {
 func TestExplicitConfigurationStillOptsIntoMalformedProjectMetadata(t *testing.T) {
 	root := t.TempDir()
 	writeFiles(t, root, map[string]string{
-		".config/shopware/lsp.json": `{"version":1}`,
+		".config/shopware/lsp.yaml": "version: 1\n",
 		"composer.json":             `{`,
 	})
 	result, err := Detect(root)

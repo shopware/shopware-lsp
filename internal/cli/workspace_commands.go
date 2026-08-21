@@ -211,15 +211,20 @@ func (r *Runner) runCheck(ctx context.Context, args []string) error {
 	if *workers < 1 {
 		return usageError("check workers must be at least 1")
 	}
-	paths, err := resolveCheckFiles(ctx, flags.Args())
-	if err != nil {
-		return err
-	}
 	session, err := r.connect(ctx)
 	if err != nil {
 		return err
 	}
 	defer closeIgnoringError(session)
+	paths, err := resolveCheckFilesWithExclusions(
+		ctx,
+		session.root,
+		flags.Args(),
+		session.configuration.Effective.Indexing.Exclude,
+	)
+	if err != nil {
+		return err
+	}
 	effectiveSeverity := *severityName
 	if effectiveSeverity == "" {
 		effectiveSeverity = string(session.configuration.Effective.Check.Severity)
@@ -326,6 +331,19 @@ func (r *Runner) runCheck(ctx context.Context, args []string) error {
 }
 
 func resolveCheckFiles(ctx context.Context, targets []string) ([]string, error) {
+	return resolveCheckFilesWithExclusions(ctx, "", targets, nil)
+}
+
+func resolveCheckFilesWithExclusions(
+	ctx context.Context,
+	workspaceRoot string,
+	targets,
+	excludedPatterns []string,
+) ([]string, error) {
+	exclusions, err := indexer.NewPathExclusions(excludedPatterns)
+	if err != nil {
+		return nil, fmt.Errorf("configure excluded check paths: %w", err)
+	}
 	seen := make(map[string]struct{})
 	files := make([]string, 0, len(targets))
 	add := func(path string) {
@@ -377,13 +395,16 @@ func resolveCheckFiles(ctx context.Context, targets []string) ([]string, error) 
 			if err != nil {
 				return err
 			}
+			workspaceRelative, withinWorkspace := relativeCheckPath(workspaceRoot, path)
 			if entry.IsDir() {
-				if path != absolute && indexer.ShouldSkipRelativePath(relative) {
+				if path != absolute && (indexer.ShouldSkipRelativePath(relative) ||
+					(withinWorkspace && exclusions.ExcludesDirectory(workspaceRelative))) {
 					return fs.SkipDir
 				}
 				return nil
 			}
 			if indexer.ShouldSkipRelativePath(relative) ||
+				(withinWorkspace && exclusions.Excludes(workspaceRelative)) ||
 				!indexer.IsScannedPath(path) {
 				return nil
 			}
@@ -396,6 +417,20 @@ func resolveCheckFiles(ctx context.Context, targets []string) ([]string, error) 
 
 	slices.Sort(files)
 	return files, nil
+}
+
+func relativeCheckPath(root, candidate string) (string, bool) {
+	if root == "" {
+		return "", false
+	}
+	relative, err := filepath.Rel(filepath.Clean(root), filepath.Clean(candidate))
+	if err != nil || relative == ".." || strings.HasPrefix(
+		relative,
+		".."+string(filepath.Separator),
+	) {
+		return "", false
+	}
+	return relative, true
 }
 
 func findingsAtSeverity(

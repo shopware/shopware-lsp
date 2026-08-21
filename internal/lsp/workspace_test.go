@@ -85,7 +85,7 @@ func TestInitializeAcceptsConfiguredOrExplicitlyAllowedProject(t *testing.T) {
 		filepath.Join(configured, ".config", "shopware"), 0o755,
 	))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(configured, ".config", "shopware", "lsp.json"),
+		filepath.Join(configured, ".config", "shopware", "lsp.yaml"),
 		[]byte(`{"version":1}`), 0o644,
 	))
 	server := NewServer(nil, "", "test")

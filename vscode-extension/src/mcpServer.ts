@@ -129,6 +129,7 @@ export function registerMcpServerDefinitionProvider(
         event.affectsConfiguration('shopwareLSP.features') ||
         event.affectsConfiguration('shopwareLSP.mcp.tools') ||
         event.affectsConfiguration('shopwareLSP.indexing.enabled') ||
+        event.affectsConfiguration('shopwareLSP.indexing.exclude') ||
         event.affectsConfiguration('shopwareLSP.domains') ||
         event.affectsConfiguration('shopwareLSP.diagnostics')
       ) {

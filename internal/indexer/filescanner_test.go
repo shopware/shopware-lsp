@@ -591,6 +591,70 @@ func TestFileScanner_SupplementalIndexerSelectivelyReopensSkippedDirectory(
 	assert.False(t, mock.indexedFiles[mediaPath])
 }
 
+func TestFileScanner_ConfiguredExclusionsVetoNormalAndSupplementalPaths(
+	t *testing.T,
+) {
+	root := t.TempDir()
+	generatedPath := filepath.Join(root, "src", "generated", "Model.php")
+	regularPath := filepath.Join(root, "src", "Service.php")
+	publicBuild := filepath.Join(root, "public", "build")
+	publicPath := filepath.Join(publicBuild, "app.js")
+	for _, path := range []string{generatedPath, regularPath, publicPath} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte("fixture"), 0o644))
+	}
+
+	mock := &supplementalMockIndexer{
+		mockIndexer: mockIndexer{indexedFiles: make(map[string]bool)},
+		publicBuild: publicBuild,
+	}
+	scanner, err := NewFileScanner(root, filepath.Join(root, "scanner.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, scanner.Close()) })
+	require.NoError(t, scanner.SetExcludedPaths([]string{
+		"**/generated/**",
+		"public/build/**",
+	}))
+	scanner.AddIndexer(mock)
+
+	require.NoError(t, scanner.IndexAll(context.Background()))
+	assert.True(t, mock.indexedFiles[regularPath])
+	assert.False(t, mock.indexedFiles[generatedPath])
+	assert.False(t, mock.indexedFiles[publicPath])
+
+	require.NoError(t, scanner.IndexFiles(
+		context.Background(),
+		[]string{generatedPath, publicPath},
+	))
+	assert.False(t, mock.indexedFiles[generatedPath])
+	assert.False(t, mock.indexedFiles[publicPath])
+}
+
+func TestFileScanner_ConfiguredExclusionsRemoveWarmTrackedFiles(t *testing.T) {
+	root := t.TempDir()
+	cache := t.TempDir()
+	generatedPath := filepath.Join(root, "src", "generated", "Model.php")
+	require.NoError(t, os.MkdirAll(filepath.Dir(generatedPath), 0o755))
+	require.NoError(t, os.WriteFile(generatedPath, []byte("<?php"), 0o644))
+
+	mock := &mockIndexer{indexedFiles: make(map[string]bool)}
+	dbPath := filepath.Join(cache, "scanner.db")
+	first, err := NewFileScanner(root, dbPath)
+	require.NoError(t, err)
+	first.AddIndexer(mock)
+	require.NoError(t, first.IndexAll(context.Background()))
+	require.True(t, mock.indexedFiles[generatedPath])
+	require.NoError(t, first.Close())
+
+	second, err := NewFileScanner(root, dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, second.Close()) })
+	require.NoError(t, second.SetExcludedPaths([]string{"**/generated/**"}))
+	second.AddIndexer(mock)
+	require.NoError(t, second.IndexAll(context.Background()))
+	require.False(t, mock.indexedFiles[generatedPath])
+}
+
 func TestFileScanner_DoesNotPreparseSupplementalResourceFiles(t *testing.T) {
 	tempDir := t.TempDir()
 	publicBuild := filepath.Join(tempDir, "public", "build")

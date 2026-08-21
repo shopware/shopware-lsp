@@ -16,12 +16,14 @@ import (
 	"slices"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/shopware/shopware-lsp/internal/pathmatch"
 )
 
 const (
 	CurrentVersion      = 1
-	ProjectRelativePath = ".config/shopware/lsp.json"
+	ProjectRelativePath = ".config/shopware/lsp.yaml"
 )
 
 type Severity string
@@ -47,56 +49,57 @@ var targetVersionPattern = regexp.MustCompile(
 )
 
 type PHPConfig struct {
-	Extensions         *[]string `json:"extensions,omitempty"`
-	DisabledExtensions *[]string `json:"disabledExtensions,omitempty"`
+	Extensions         *[]string `json:"extensions,omitempty" yaml:"extensions,omitempty"`
+	DisabledExtensions *[]string `json:"disabledExtensions,omitempty" yaml:"disabledExtensions,omitempty"`
 }
 
 type ShopwareConfig struct {
-	TargetVersion *string `json:"targetVersion,omitempty"`
+	TargetVersion *string `json:"targetVersion,omitempty" yaml:"targetVersion,omitempty"`
 }
 
 type IndexingConfig struct {
-	Enabled *bool `json:"enabled,omitempty"`
+	Enabled *bool     `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	Exclude *[]string `json:"exclude,omitempty" yaml:"exclude,omitempty"`
 }
 
 type MCPConfig struct {
-	Tools map[string]bool `json:"tools,omitempty"`
+	Tools map[string]bool `json:"tools,omitempty" yaml:"tools,omitempty"`
 }
 
 type DiagnosticsConfig struct {
-	Enabled     *bool                `json:"enabled,omitempty"`
-	Inspections map[string]bool      `json:"inspections,omitempty"`
-	Rules       map[string]Severity  `json:"rules,omitempty"`
-	Overrides   []DiagnosticOverride `json:"overrides,omitempty"`
+	Enabled     *bool                `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	Inspections map[string]bool      `json:"inspections,omitempty" yaml:"inspections,omitempty"`
+	Rules       map[string]Severity  `json:"rules,omitempty" yaml:"rules,omitempty"`
+	Overrides   []DiagnosticOverride `json:"overrides,omitempty" yaml:"overrides,omitempty"`
 }
 
 // DiagnosticOverride applies diagnostic settings to workspace-scope-relative
 // files. Overrides are ordered; later matching entries win.
 type DiagnosticOverride struct {
-	Files       []string            `json:"files"`
-	Enabled     *bool               `json:"enabled,omitempty"`
-	Inspections map[string]bool     `json:"inspections,omitempty"`
-	Rules       map[string]Severity `json:"rules,omitempty"`
+	Files       []string            `json:"files" yaml:"files"`
+	Enabled     *bool               `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	Inspections map[string]bool     `json:"inspections,omitempty" yaml:"inspections,omitempty"`
+	Rules       map[string]Severity `json:"rules,omitempty" yaml:"rules,omitempty"`
 }
 
 type CheckConfig struct {
-	Severity *Severity `json:"severity,omitempty"`
-	FailOn   *Severity `json:"failOn,omitempty"`
+	Severity *Severity `json:"severity,omitempty" yaml:"severity,omitempty"`
+	FailOn   *Severity `json:"failOn,omitempty" yaml:"failOn,omitempty"`
 }
 
 // Partial is an overlay. Pointer fields distinguish an omitted value from an
 // explicitly configured zero value.
 type Partial struct {
-	Schema      string             `json:"$schema,omitempty"`
-	Version     *int               `json:"version,omitempty"`
-	PHP         *PHPConfig         `json:"php,omitempty"`
-	Shopware    *ShopwareConfig    `json:"shopware,omitempty"`
-	Features    map[string]bool    `json:"features,omitempty"`
-	Indexing    *IndexingConfig    `json:"indexing,omitempty"`
-	MCP         *MCPConfig         `json:"mcp,omitempty"`
-	Domains     map[string]bool    `json:"domains,omitempty"`
-	Diagnostics *DiagnosticsConfig `json:"diagnostics,omitempty"`
-	Check       *CheckConfig       `json:"check,omitempty"`
+	Schema      string             `json:"$schema,omitempty" yaml:"$schema,omitempty"`
+	Version     *int               `json:"version,omitempty" yaml:"version,omitempty"`
+	PHP         *PHPConfig         `json:"php,omitempty" yaml:"php,omitempty"`
+	Shopware    *ShopwareConfig    `json:"shopware,omitempty" yaml:"shopware,omitempty"`
+	Features    map[string]bool    `json:"features,omitempty" yaml:"features,omitempty"`
+	Indexing    *IndexingConfig    `json:"indexing,omitempty" yaml:"indexing,omitempty"`
+	MCP         *MCPConfig         `json:"mcp,omitempty" yaml:"mcp,omitempty"`
+	Domains     map[string]bool    `json:"domains,omitempty" yaml:"domains,omitempty"`
+	Diagnostics *DiagnosticsConfig `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty"`
+	Check       *CheckConfig       `json:"check,omitempty" yaml:"check,omitempty"`
 }
 
 type Effective struct {
@@ -122,7 +125,8 @@ type EffectiveShopware struct {
 }
 
 type EffectiveIndexing struct {
-	Enabled bool `json:"enabled"`
+	Enabled bool     `json:"enabled"`
+	Exclude []string `json:"exclude,omitempty"`
 }
 
 type EffectiveMCP struct {
@@ -289,8 +293,8 @@ func Load(root string) (Partial, bool, error) {
 }
 
 func Decode(data []byte) (Partial, error) {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
 	var value Partial
 	if err := decoder.Decode(&value); err != nil {
 		return Partial{}, fmt.Errorf("decode configuration: %w", err)
@@ -331,6 +335,13 @@ func Validate(value Partial) error {
 				if strings.TrimSpace(current) == "" {
 					return fmt.Errorf("%s must not contain an empty extension", label)
 				}
+			}
+		}
+	}
+	if value.Indexing != nil && value.Indexing.Exclude != nil {
+		for _, pattern := range *value.Indexing.Exclude {
+			if err := validatePathPattern(pattern); err != nil {
+				return fmt.Errorf("indexing.exclude: %w", err)
 			}
 		}
 	}
@@ -411,6 +422,10 @@ func validateDiagnosticMaps(inspections map[string]bool, rules map[string]Severi
 }
 
 func validateDiagnosticPattern(pattern string) error {
+	return validatePathPattern(pattern)
+}
+
+func validatePathPattern(pattern string) error {
 	pattern = filepath.ToSlash(strings.ReplaceAll(strings.TrimSpace(pattern), `\`, "/"))
 	if pattern == "" {
 		return errors.New("pattern must not be empty")
@@ -424,6 +439,9 @@ func validateDiagnosticPattern(pattern string) error {
 		if component == ".." {
 			return fmt.Errorf("pattern %q must not escape its configuration scope", pattern)
 		}
+	}
+	if _, err := pathmatch.Compile([]string{pattern}); err != nil {
+		return err
 	}
 	return nil
 }
@@ -462,6 +480,10 @@ func apply(target *Effective, value Partial, source string) {
 	if value.Indexing != nil && value.Indexing.Enabled != nil {
 		target.Indexing.Enabled = *value.Indexing.Enabled
 		target.Origins["indexing.enabled"] = source
+	}
+	if value.Indexing != nil && value.Indexing.Exclude != nil {
+		target.Indexing.Exclude = normalizePathPatterns(*value.Indexing.Exclude)
+		target.Origins["indexing.exclude"] = source
 	}
 	if value.MCP != nil {
 		for id, enabled := range value.MCP.Tools {
@@ -643,6 +665,21 @@ func normalizeStrings(values []string) []string {
 		result = append(result, value)
 	}
 	slices.Sort(result)
+	return result
+}
+
+func normalizePathPatterns(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = filepath.ToSlash(strings.ReplaceAll(strings.TrimSpace(value), `\`, "/"))
+		value = strings.TrimPrefix(value, "./")
+		if _, found := seen[value]; value == "" || found {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
 	return result
 }
 

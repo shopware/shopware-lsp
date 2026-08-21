@@ -97,7 +97,8 @@ func (fs *FileScanner) watch() {
 			if !ok {
 				return
 			}
-			if isPHARArchivePath(event.Name) {
+			if isPHARArchivePath(event.Name) &&
+				!fs.isExplicitlyExcluded(event.Name, false) {
 				// An archive update can add, modify, and remove thousands of
 				// logical PHP sources. A normal workspace scan atomically
 				// refreshes its materialized view and removes stale entries.
