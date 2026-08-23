@@ -60,6 +60,29 @@ func TestTwigTypesTagFeedsVariableAndMemberCompletion(t *testing.T) {
 	assert.Contains(t, completionLabels(memberItems), "email")
 }
 
+func TestTwigTypesTagCompletionIncludesDocumentationAndOptionality(
+	t *testing.T,
+) {
+	provider := twigTypesCompletionFixture(t)
+	items := twigTypesCompletionItems(
+		t,
+		provider,
+		`{% types {
+    ## User shown in the profile card.
+    user?: 'App\\User',
+} %}
+{{ us<caret> }}`,
+	)
+	user := requireCompletion(t, items, "user")
+	assert.Equal(t, "App\\User", user.Detail)
+	assert.Contains(t, user.Documentation.Value, "Optional variable")
+	assert.Contains(
+		t,
+		user.Documentation.Value,
+		"User shown in the profile card.",
+	)
+}
+
 func TestTwigTypesTagFeedsForLoopElementCompletion(t *testing.T) {
 	provider := twigTypesCompletionFixture(t)
 	items := twigTypesCompletionItems(

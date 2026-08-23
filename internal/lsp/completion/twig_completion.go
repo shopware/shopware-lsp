@@ -446,15 +446,15 @@ func (p *TwigCompletionProvider) twigVariableCompletions(
 	root *twigsyntax.Node,
 ) []protocol.CompletionItem {
 	variables := p.templateVariables(uri)
-	annotations := twig.TwigTypeAnnotations(root)
+	declarations := twig.TwigTypeDeclarations(root)
 	items := make(
 		[]protocol.CompletionItem,
 		0,
-		len(variables)+len(annotations),
+		len(variables)+len(declarations),
 	)
-	seen := make(map[string]struct{}, len(variables)+len(annotations))
-	annotationNames := make([]string, 0, len(annotations))
-	for name := range annotations {
+	seen := make(map[string]struct{}, len(variables)+len(declarations))
+	annotationNames := make([]string, 0, len(declarations))
+	for name := range declarations {
 		annotationNames = append(annotationNames, name)
 	}
 	sort.Slice(annotationNames, func(left, right int) bool {
@@ -462,14 +462,27 @@ func (p *TwigCompletionProvider) twigVariableCompletions(
 			strings.ToLower(annotationNames[right])
 	})
 	for _, name := range annotationNames {
+		declaration := declarations[name]
 		seen[name] = struct{}{}
 		item := protocol.CompletionItem{
 			Label:  name,
 			Kind:   int(protocol.VariableCompletion),
-			Detail: annotations[name].String(),
+			Detail: declaration.Type.String(),
 		}
 		item.Documentation.Kind = string(protocol.Markdown)
 		item.Documentation.Value = "Declared by a Twig type annotation."
+		if declaration.FromTypesTag {
+			status := "Required"
+			if declaration.Optional {
+				status = "Optional"
+			}
+			item.Documentation.Value = status +
+				" variable declared by the Twig `types` tag."
+		}
+		if declaration.Documentation != "" {
+			item.Documentation.Value += "\n\n" +
+				declaration.Documentation
+		}
 		items = append(items, item)
 	}
 	for _, variable := range variables {

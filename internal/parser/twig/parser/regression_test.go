@@ -3,6 +3,8 @@ package parser
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	"github.com/shopware/shopware-lsp/internal/parser/twig/syntax"
 )
@@ -65,4 +67,36 @@ func TestParseTwigControlFlowInHTMLAttributes(t *testing.T) {
 	if !foundIf || !foundVariable {
 		t.Fatalf("attribute Twig nodes missing:\n%s", syntax.DebugTree(result.Tree.Root))
 	}
+}
+
+func TestParseTwigDocumentationCommentsOnBindings(t *testing.T) {
+	source := `{% types {
+    ## The user displayed by the page.
+    user?: 'App\\User',
+} %}
+{% set
+    ## The user's given name.
+    first_name,
+    ## The user's family name.
+    last_name
+    = user.first_name, user.last_name
+%}
+{% for
+    ## The product identifier.
+    product_id,
+    ## The product for the current iteration.
+    product
+    in products
+%}{% endfor %}
+{% macro input(
+    ## The HTML field name.
+    name,
+    ## The initial field value.
+    value = null,
+) %}{% endmacro %}`
+
+	result := Parse(source)
+	require.Empty(t, result.Errors)
+	require.Equal(t, source, result.Tree.Root.Text())
+	require.Len(t, findNodes(result.Tree.Root, syntax.TwigComment), 6)
 }

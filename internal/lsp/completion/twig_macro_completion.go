@@ -148,13 +148,18 @@ func macroCompletionItem(label string, macro twig.Macro) protocol.CompletionItem
 	if macro.Name != "" {
 		detail = macro.Signature()
 	}
-	return protocol.CompletionItem{
+	item := protocol.CompletionItem{
 		Label:            label,
 		Kind:             int(protocol.MethodCompletion),
 		Detail:           detail,
 		InsertText:       label + "($0)",
 		InsertTextFormat: int(protocol.SnippetTextFormat),
 	}
+	if macro.Documentation != "" {
+		item.Documentation.Kind = string(protocol.Markdown)
+		item.Documentation.Value = macro.Documentation
+	}
+	return item
 }
 
 func containsTemplateName(values []string, candidate string) bool {

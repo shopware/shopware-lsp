@@ -60,6 +60,10 @@ func (p *TwigMacroHoverProvider) GetHover(
 		"**Twig macro** `%s`",
 		escapeTwigMacroMarkdown(macro.Signature()),
 	)
+	if macro.Documentation != "" {
+		markdown.WriteString("\n\n")
+		markdown.WriteString(macro.Documentation)
+	}
 	display := macro.FilePath
 	if relative, err := filepath.Rel(p.root, macro.FilePath); err == nil {
 		display = relative

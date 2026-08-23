@@ -93,14 +93,27 @@ func (p *TwigMacroSignatureProvider) GetSignatureHelp(
 			Label:           signature,
 			ActiveParameter: active,
 		}
+		if macro.Documentation != "" {
+			information.Documentation = &protocol.MarkupContent{
+				Kind:  protocol.Markdown,
+				Value: macro.Documentation,
+			}
+		}
 		for _, parameter := range macro.Parameters {
 			label := parameter.Name
 			if parameter.Default != "" {
 				label += " = " + parameter.Default
 			}
+			parameterInformation := protocol.ParameterInformation{Label: label}
+			if parameter.Documentation != "" {
+				parameterInformation.Documentation = &protocol.MarkupContent{
+					Kind:  protocol.Markdown,
+					Value: parameter.Documentation,
+				}
+			}
 			information.Parameters = append(
 				information.Parameters,
-				protocol.ParameterInformation{Label: label},
+				parameterInformation,
 			)
 		}
 		result.Signatures = append(result.Signatures, information)

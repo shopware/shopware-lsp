@@ -69,6 +69,133 @@ class ProductController {
 	assert.Contains(t, result.Contents.Value, "src/ProductController.php")
 }
 
+func TestTwigTypesVariableHoverIncludesDocumentationAndOptionality(
+	t *testing.T,
+) {
+	source := `{% types {
+    ## User shown in the profile card.
+    user?: 'App\\User',
+} %}
+{{ user }}`
+	document := lsp.NewTextDocument(
+		"file:///project/templates/profile.html.twig",
+		source,
+		1,
+	)
+	offset := strings.LastIndex(source, "user") + 1
+	line, character := document.LineIndex.PositionUTF16(uint32(offset))
+	params := &protocol.HoverParams{}
+	params.TextDocument.URI = document.URI
+	params.Position.Line = int(line)
+	params.Position.Character = int(character)
+	result, err := NewTwigHoverProvider(
+		"/project",
+		nil,
+		nil,
+		nil,
+	).GetHover(context.Background(), &lsp.HoverRequest{
+		HoverParams: params,
+		SyntaxContext: lsp.SyntaxContext{
+			Document:        document,
+			Language:        document.SyntaxLanguage,
+			DocumentContent: document.Text,
+			DocumentTree:    document.SyntaxTree,
+			LineIndex:       document.LineIndex,
+			Root:            document.SyntaxTree.Root,
+			Node: document.SyntaxTree.Root.NodeAtOffset(
+				uint32(offset),
+			),
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Contains(t, result.Contents.Value, "Declared type: `App\\User`")
+	assert.Contains(t, result.Contents.Value, "Optional in the Twig `types` tag")
+	assert.Contains(t, result.Contents.Value, "User shown in the profile card.")
+}
+
+func TestTwigConstructHoverShowsDocumentationComment(t *testing.T) {
+	source := `{## Main page content. ##}
+{% block content %}{% endblock %}`
+	document := lsp.NewTextDocument(
+		"file:///project/templates/profile.html.twig",
+		source,
+		1,
+	)
+	offset := strings.Index(source, "block") + 1
+	line, character := document.LineIndex.PositionUTF16(uint32(offset))
+	params := &protocol.HoverParams{}
+	params.TextDocument.URI = document.URI
+	params.Position.Line = int(line)
+	params.Position.Character = int(character)
+	result, err := NewTwigHoverProvider(
+		"/project",
+		nil,
+		nil,
+		nil,
+	).GetHover(context.Background(), &lsp.HoverRequest{
+		HoverParams: params,
+		SyntaxContext: lsp.SyntaxContext{
+			Document:        document,
+			Language:        document.SyntaxLanguage,
+			DocumentContent: document.Text,
+			DocumentTree:    document.SyntaxTree,
+			LineIndex:       document.LineIndex,
+			Root:            document.SyntaxTree.Root,
+			Node: document.SyntaxTree.Root.NodeAtOffset(
+				uint32(offset),
+			),
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "Main page content.", result.Contents.Value)
+}
+
+func TestTwigOutputDocumentationEnrichesVariableHover(t *testing.T) {
+	source := `{# @var user App\User #}
+{## User rendered by this expression. #}
+{{ user }}`
+	document := lsp.NewTextDocument(
+		"file:///project/templates/profile.html.twig",
+		source,
+		1,
+	)
+	offset := strings.LastIndex(source, "user") + 1
+	line, character := document.LineIndex.PositionUTF16(uint32(offset))
+	params := &protocol.HoverParams{}
+	params.TextDocument.URI = document.URI
+	params.Position.Line = int(line)
+	params.Position.Character = int(character)
+	result, err := NewTwigHoverProvider(
+		"/project",
+		nil,
+		nil,
+		nil,
+	).GetHover(context.Background(), &lsp.HoverRequest{
+		HoverParams: params,
+		SyntaxContext: lsp.SyntaxContext{
+			Document:        document,
+			Language:        document.SyntaxLanguage,
+			DocumentContent: document.Text,
+			DocumentTree:    document.SyntaxTree,
+			LineIndex:       document.LineIndex,
+			Root:            document.SyntaxTree.Root,
+			Node: document.SyntaxTree.Root.NodeAtOffset(
+				uint32(offset),
+			),
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Contains(t, result.Contents.Value, "Declared type: `App\\User`")
+	assert.Contains(
+		t,
+		result.Contents.Value,
+		"User rendered by this expression.",
+	)
+}
+
 func TestTwigGlobalVariableHover(t *testing.T) {
 	root := t.TempDir()
 	twigIndex, err := twig.NewTwigIndexer(filepath.Join(root, ".cache"))

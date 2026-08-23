@@ -41,6 +41,31 @@ func TestTypesTagDeclarationsSupportOptionalMultilineAndEscapedTypes(
 	}
 }
 
+func TestTypesTagDeclarationsIncludeDocumentationComments(t *testing.T) {
+	source := []byte(`{% types {
+    ## Unique identifier.
+    ## Used in generated markup.
+    id: 'string',
+
+    # A regular comment remains non-documentation.
+    ## Whether several items can be open.
+    multiple?: 'boolean',
+} %}`)
+
+	declarations := TypesTagDeclarations(source)
+	require.Len(t, declarations, 2)
+	assert.Equal(
+		t,
+		"Unique identifier.\nUsed in generated markup.",
+		declarations[0].Documentation,
+	)
+	assert.Equal(
+		t,
+		"Whether several items can be open.",
+		declarations[1].Documentation,
+	)
+}
+
 func TestTypesTagCompletionAndClassReferences(t *testing.T) {
 	sourceWithCaret := `{% types {
     user: 'App\\Ent<caret>ity\\User',

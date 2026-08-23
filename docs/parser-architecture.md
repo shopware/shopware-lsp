@@ -102,6 +102,7 @@ while the tree stays lossless.
 | `internal/parser/<lang>/parser` | The grammar; exposes `Parse(source) Result` |
 | `internal/parser/<lang>/query` | Semantic queries over that language's trees |
 | `internal/parser/twig/ast` | Generated typed node wrappers for Twig (the only language with this layer) |
+| `internal/parser/twig/formatter` | Twig/HTML CST-to-text formatting with a private formatting IR |
 | `internal/parser/<lang>` (root file) | Thin public entry point re-exporting `Parse` |
 | `internal/language` | Extension → frontend registry used by every consumer |
 

@@ -32,7 +32,8 @@ abstract class AbstractController {}`),
 	t.Cleanup(func() { require.NoError(t, twigIndex.Close()) })
 	require.NoError(t, twigIndex.Index(indexer.NewParsedFile(
 		filepath.Join(root, "templates", "base.html.twig"),
-		[]byte(`{% block content %}{% endblock %}`),
+		[]byte(`{## Main page content. ##}
+{% block content %}{% endblock %}`),
 	)))
 
 	source := `<?php
@@ -81,7 +82,8 @@ class Controller extends \Symfony\Bundle\FrameworkBundle\Controller\AbstractCont
 	assert.Contains(t, result.Contents.Value, "Twig block")
 	assert.Contains(t, result.Contents.Value, "`content`")
 	assert.Contains(t, result.Contents.Value, "`base.html.twig`")
-	assert.Contains(t, result.Contents.Value, "templates/base.html.twig:1")
+	assert.Contains(t, result.Contents.Value, "templates/base.html.twig:2")
+	assert.Contains(t, result.Contents.Value, "Main page content.")
 	require.NotNil(t, result.Range)
 	require.Equal(t, len("content"), result.Range.End.Character-result.Range.Start.Character)
 }

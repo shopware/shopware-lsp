@@ -1,23 +1,31 @@
-package twigfmt
+package formatter
 
 import "strings"
 
-// AttributeEntityEncodingFromTo specifies a pair of strings used during
+// attributeEntityEncoding specifies a pair of strings used during
 // HTML attribute value encoding.
-type AttributeEntityEncodingFromTo struct {
+type attributeEntityEncoding struct {
 	From string
 	To   string
 }
 
 // fromTextToEntities is applied when emitting attribute values: literal
 // characters are replaced with their HTML entity form.
-var fromTextToEntities = []AttributeEntityEncodingFromTo{
+var fromTextToEntities = []attributeEntityEncoding{
 	{From: "\"", To: "&quot;"},
 }
 
-func (a *Attribute) Dump(indent int) string {
+type renderer struct {
+	config indentConfig
+}
+
+func (r *renderer) render(nodes nodeList) string {
+	return nodes.dump(r, 0)
+}
+
+func (a *attribute) dump(r *renderer, indent int) string {
 	var builder strings.Builder
-	indentStr := indentConfig.GetIndent()
+	indentStr := r.config.getIndent()
 
 	for range indent {
 		builder.WriteString(indentStr)
@@ -36,47 +44,45 @@ func (a *Attribute) Dump(indent int) string {
 	return builder.String() + a.Key + "=\"" + val + "\""
 }
 
-// IndentConfig controls how the formatter emits indentation.
-type IndentConfig struct {
+// indentConfig controls how the formatter emits indentation.
+type indentConfig struct {
 	SpaceIndent             bool
 	IndentSize              int
 	TwigBlockIndentChildren bool
 }
 
-// DefaultIndentConfig creates a default indentation config with spaces.
-func DefaultIndentConfig() IndentConfig {
-	return IndentConfig{
+// defaultIndentConfig creates a default indentation config with spaces.
+func defaultIndentConfig() indentConfig {
+	return indentConfig{
 		SpaceIndent:             true,
 		IndentSize:              4,
 		TwigBlockIndentChildren: true,
 	}
 }
 
-// GetIndent returns the indentation string based on configuration.
-func (c IndentConfig) GetIndent() string {
+// getIndent returns the indentation string based on configuration.
+func (c indentConfig) getIndent() string {
 	if c.SpaceIndent {
 		return strings.Repeat(" ", c.IndentSize)
 	}
 	return "\t"
 }
 
-var indentConfig = DefaultIndentConfig()
-
-func (nodeList NodeList) Dump(indent int) string {
+func (nodeList nodeList) dump(r *renderer, indent int) string {
 	var builder strings.Builder
 	for i, node := range nodeList {
-		if _, ok := node.(*CommentNode); ok {
-			builder.WriteString(node.Dump(indent))
+		if _, ok := node.(*commentNode); ok {
+			builder.WriteString(node.dump(r, indent))
 			builder.WriteString("\n")
 			continue
 		}
-		nodeOut := node.Dump(indent)
+		nodeOut := node.dump(r, indent)
 		if i > 0 {
 			// Add newline between non-comment nodes if not first
-			if _, ok := nodeList[i-1].(*CommentNode); !ok {
+			if _, ok := nodeList[i-1].(*commentNode); !ok {
 				// Skip the separator when either side already supplies a
 				// newline at the boundary — the previous node's output
-				// ending with "\n" (e.g. a RawNode whose source text
+				// ending with "\n" (e.g. a rawNode whose source text
 				// ended at a line break), or the next node's output
 				// starting with "\n". Without this, parse → format →
 				// parse → format adds one newline per pass at that
@@ -110,23 +116,23 @@ func (nodeList NodeList) Dump(indent int) string {
 	return result
 }
 
-// blockHasInlineMixedContent reports whether a TwigBlockNode's body is
-// inline-mixed: at least one RawNode carries non-whitespace text and all
+// blockHasInlineMixedContent reports whether a twigBlockNode's body is
+// inline-mixed: at least one rawNode carries non-whitespace text and all
 // children are inline types. This is the JS/CSS-in-{% block %} case where
 // flowing children as-is is correct; inserting blank lines between them
 // (the default block-content formatting) would compound on every pass.
-func blockHasInlineMixedContent(children NodeList) bool {
+func blockHasInlineMixedContent(children nodeList) bool {
 	if len(children) == 0 {
 		return false
 	}
 	hasMeaningfulRaw := false
 	for _, c := range children {
 		switch n := c.(type) {
-		case *RawNode:
+		case *rawNode:
 			if strings.TrimSpace(n.Text) != "" {
 				hasMeaningfulRaw = true
 			}
-		case *TemplateExpressionNode, *CommentNode, *TwigCommentNode:
+		case *templateExpressionNode, *commentNode, *twigCommentNode:
 			// inline
 		default:
 			return false
@@ -135,15 +141,15 @@ func blockHasInlineMixedContent(children NodeList) bool {
 	return hasMeaningfulRaw
 }
 
-// isStructuredChild reports whether a node's Dump output starts with its
+// isStructuredChild reports whether a node's dump output starts with its
 // own indent prefix (vs. an inline value like {{ x }} or <span> text).
 // Used by the <p>-children formatter to avoid double-counting whitespace
-// when a preceding RawNode already supplies it.
-func isStructuredChild(n Node) bool {
+// when a preceding rawNode already supplies it.
+func isStructuredChild(n node) bool {
 	switch n.(type) {
-	case *TwigBlockNode, *TwigIfNode, *TwigGenericBlockNode,
-		*TwigStandaloneTagNode, *TwigVerbatimNode, *TwigCommentNode,
-		*ParentNode, *CommentNode:
+	case *twigBlockNode, *twigIfNode, *twigGenericBlockNode,
+		*twigStandaloneTagNode, *twigVerbatimNode, *twigCommentNode,
+		*parentNode, *commentNode:
 		return true
 	}
 	return false
@@ -163,28 +169,28 @@ var whitespacePreservingTags = map[string]bool{
 // re-indenting would change what the browser displays. Nested elements are
 // emitted inline (attributes on one line) and their children recurse in
 // verbatim mode too.
-func dumpVerbatim(builder *strings.Builder, nodes NodeList) {
+func dumpVerbatim(r *renderer, builder *strings.Builder, nodes nodeList) {
 	for _, node := range nodes {
 		switch n := node.(type) {
-		case *ElementNode:
+		case *elementNode:
 			builder.WriteString("<")
 			builder.WriteString(n.Tag)
 			for _, attr := range n.Attributes {
 				builder.WriteString(" ")
-				builder.WriteString(attr.Dump(0))
+				builder.WriteString(attr.dump(r, 0))
 			}
 			if n.SelfClosing {
 				builder.WriteString("/>")
 				continue
 			}
 			builder.WriteString(">")
-			dumpVerbatim(builder, n.Children)
+			dumpVerbatim(r, builder, n.Children)
 			if !n.Unclosed {
 				builder.WriteString("</")
 				builder.WriteString(n.Tag)
 				builder.WriteString(">")
 			}
-		case *TwigIfNode:
+		case *twigIfNode:
 			for i, br := range n.Branches {
 				builder.WriteString(openStmt(br.Trim.Left))
 				if i == 0 {
@@ -197,28 +203,28 @@ func dumpVerbatim(builder *strings.Builder, nodes NodeList) {
 					builder.WriteString(" ")
 				}
 				builder.WriteString(closeStmt(br.Trim.Right))
-				dumpVerbatim(builder, br.Body)
+				dumpVerbatim(r, builder, br.Body)
 			}
 			if len(n.ElseChildren) > 0 {
 				builder.WriteString(openStmt(n.ElseTrim.Left))
 				builder.WriteString(" else ")
 				builder.WriteString(closeStmt(n.ElseTrim.Right))
-				dumpVerbatim(builder, n.ElseChildren)
+				dumpVerbatim(r, builder, n.ElseChildren)
 			}
 			builder.WriteString(openStmt(n.EndTrim.Left))
 			builder.WriteString(" endif ")
 			builder.WriteString(closeStmt(n.EndTrim.Right))
-		case *TwigBlockNode:
+		case *twigBlockNode:
 			builder.WriteString(openStmt(n.OpenTrim.Left))
 			builder.WriteString(" block ")
 			builder.WriteString(n.Name)
 			builder.WriteString(" ")
 			builder.WriteString(closeStmt(n.OpenTrim.Right))
-			dumpVerbatim(builder, n.Children)
+			dumpVerbatim(r, builder, n.Children)
 			builder.WriteString(openStmt(n.CloseTrim.Left))
 			builder.WriteString(" endblock ")
 			builder.WriteString(closeStmt(n.CloseTrim.Right))
-		case *TwigGenericBlockNode:
+		case *twigGenericBlockNode:
 			builder.WriteString(openStmt(n.OpenTrim.Left))
 			builder.WriteString(" ")
 			builder.WriteString(n.Name)
@@ -228,12 +234,12 @@ func dumpVerbatim(builder *strings.Builder, nodes NodeList) {
 			}
 			builder.WriteString(" ")
 			builder.WriteString(closeStmt(n.OpenTrim.Right))
-			dumpVerbatim(builder, n.Body)
+			dumpVerbatim(r, builder, n.Body)
 			if len(n.Else) > 0 {
 				builder.WriteString(openStmt(n.ElseTrim.Left))
 				builder.WriteString(" else ")
 				builder.WriteString(closeStmt(n.ElseTrim.Right))
-				dumpVerbatim(builder, n.Else)
+				dumpVerbatim(r, builder, n.Else)
 			}
 			builder.WriteString(openStmt(n.CloseTrim.Left))
 			builder.WriteString(" ")
@@ -241,29 +247,29 @@ func dumpVerbatim(builder *strings.Builder, nodes NodeList) {
 			builder.WriteString(" ")
 			builder.WriteString(closeStmt(n.CloseTrim.Right))
 		default:
-			builder.WriteString(node.Dump(0))
+			builder.WriteString(node.dump(r, 0))
 		}
 	}
 }
 
-func isTemplateElement(node Node) bool {
-	if elem, ok := node.(*ElementNode); ok {
+func isTemplateElement(node node) bool {
+	if elem, ok := node.(*elementNode); ok {
 		return elem.Tag == "template"
 	}
 	// Also consider twig blocks as template elements for spacing purposes
-	if _, ok := node.(*TwigBlockNode); ok {
+	if _, ok := node.(*twigBlockNode); ok {
 		return true
 	}
 	return false
 }
 
-func (r *RawNode) Dump(indent int) string {
-	return r.Text
+func (n *rawNode) dump(_ *renderer, _ int) string {
+	return n.Text
 }
 
-func (c *CommentNode) Dump(indent int) string {
+func (c *commentNode) dump(r *renderer, indent int) string {
 	var builder strings.Builder
-	indentStr := indentConfig.GetIndent()
+	indentStr := r.config.getIndent()
 	for range indent {
 		builder.WriteString(indentStr)
 	}
@@ -275,18 +281,18 @@ func (c *CommentNode) Dump(indent int) string {
 	return builder.String()
 }
 
-func (t *TemplateExpressionNode) Dump(indent int) string {
+func (t *templateExpressionNode) dump(_ *renderer, _ int) string {
 	return openExpr(t.Trim.Left) + t.Expression + closeExpr(t.Trim.Right)
 }
 
-// Dump renders an HTML element with attributes, children, and end tag.
-func (e *ElementNode) Dump(indent int) string {
+// dump renders an HTML element with attributes, children, and end tag.
+func (e *elementNode) dump(r *renderer, indent int) string {
 	var builder strings.Builder
-	indentStr := indentConfig.GetIndent()
+	indentStr := r.config.getIndent()
 	writeIndent(&builder, indent, indentStr)
 	builder.WriteString("<")
 	builder.WriteString(e.Tag)
-	if e.dumpAttributes(&builder, indent) {
+	if e.dumpAttributes(r, &builder, indent) {
 		writeIndent(&builder, indent, indentStr)
 	}
 	if e.SelfClosing {
@@ -296,28 +302,32 @@ func (e *ElementNode) Dump(indent int) string {
 	builder.WriteString(">")
 	if len(e.Children) > 0 {
 		if whitespacePreservingTags[strings.ToLower(e.Tag)] {
-			dumpVerbatim(&builder, e.Children)
+			dumpVerbatim(r, &builder, e.Children)
 			e.writeClosingTag(&builder)
 			return builder.String()
 		}
 		if e.Tag == "p" {
-			e.dumpParagraphChildren(&builder, indent)
+			e.dumpParagraphChildren(r, &builder, indent)
 		} else {
-			e.dumpChildren(&builder, indent)
+			e.dumpChildren(r, &builder, indent)
 		}
 	}
 	e.writeClosingTag(&builder)
 	return builder.String()
 }
 
-func (e *ElementNode) dumpAttributes(builder *strings.Builder, indent int) bool {
+func (e *elementNode) dumpAttributes(
+	r *renderer,
+	builder *strings.Builder,
+	indent int,
+) bool {
 	if len(e.Attributes) == 0 {
 		return false
 	}
 	if len(e.Attributes) == 1 {
 		attribute := e.Attributes[0]
-		attributeText := attribute.Dump(indent + 1)
-		_, isIf := attribute.(*TwigIfNode)
+		attributeText := attribute.dump(r, indent+1)
+		_, isIf := attribute.(*twigIfNode)
 		if len(attributeText) > 80 || isIf {
 			builder.WriteString("\n")
 			builder.WriteString(attributeText)
@@ -325,20 +335,24 @@ func (e *ElementNode) dumpAttributes(builder *strings.Builder, indent int) bool 
 			return true
 		}
 		builder.WriteString(" ")
-		builder.WriteString(attribute.Dump(0))
+		builder.WriteString(attribute.dump(r, 0))
 		return false
 	}
 	for _, attribute := range e.Attributes {
 		builder.WriteString("\n")
-		builder.WriteString(attribute.Dump(indent + 1))
+		builder.WriteString(attribute.dump(r, indent+1))
 	}
 	builder.WriteString("\n")
 	return true
 }
 
-func (e *ElementNode) dumpParagraphChildren(builder *strings.Builder, indent int) {
-	if hasLongTemplateExpression(e.Children) {
-		dumpExpandedInlineChildren(builder, e.Children, indent)
+func (e *elementNode) dumpParagraphChildren(
+	r *renderer,
+	builder *strings.Builder,
+	indent int,
+) {
+	if hasLongTemplateExpression(r, e.Children) {
+		dumpExpandedInlineChildren(r, builder, e.Children, indent)
 		return
 	}
 	for _, child := range e.Children {
@@ -347,11 +361,11 @@ func (e *ElementNode) dumpParagraphChildren(builder *strings.Builder, indent int
 			builder.Reset()
 			builder.WriteString(text)
 		}
-		if _, ok := child.(*ElementNode); ok {
-			builder.WriteString(child.Dump(0))
+		if _, ok := child.(*elementNode); ok {
+			builder.WriteString(child.dump(r, 0))
 			continue
 		}
-		builder.WriteString(child.Dump(indent))
+		builder.WriteString(child.dump(r, indent))
 	}
 }
 
@@ -362,38 +376,46 @@ type childLayout struct {
 	multipleShortExpressions  bool
 }
 
-func (e *ElementNode) dumpChildren(builder *strings.Builder, indent int) {
-	layout := analyzeChildLayout(e.Children, indent)
+func (e *elementNode) dumpChildren(
+	r *renderer,
+	builder *strings.Builder,
+	indent int,
+) {
+	layout := analyzeChildLayout(r, e.Children, indent)
 	if !layout.simple {
-		dumpComplexChildren(builder, e.Children, indent)
+		dumpComplexChildren(r, builder, e.Children, indent)
 		return
 	}
 	if layout.hasLongTemplateExpression ||
 		(layout.templateExpressions > 1 && !layout.multipleShortExpressions) {
-		dumpExpandedInlineChildren(builder, e.Children, indent)
+		dumpExpandedInlineChildren(r, builder, e.Children, indent)
 		return
 	}
 	for _, child := range e.Children {
-		builder.WriteString(child.Dump(indent))
+		builder.WriteString(child.dump(r, indent))
 	}
 }
 
-func analyzeChildLayout(children NodeList, indent int) childLayout {
+func analyzeChildLayout(
+	r *renderer,
+	children nodeList,
+	indent int,
+) childLayout {
 	layout := childLayout{simple: true}
 	for _, child := range children {
 		switch value := child.(type) {
-		case *TemplateExpressionNode:
+		case *templateExpressionNode:
 			layout.templateExpressions++
 			layout.hasLongTemplateExpression = layout.hasLongTemplateExpression ||
-				len(value.Dump(0)) > 30
-		case *RawNode, *CommentNode:
+				len(value.dump(r, 0)) > 30
+		case *rawNode, *commentNode:
 		default:
 			layout.simple = false
 			return layout
 		}
 	}
 	if len(children) == 1 {
-		if raw, ok := children[0].(*RawNode); ok && rawHasIndentedContent(raw.Text) {
+		if raw, ok := children[0].(*rawNode); ok && rawHasIndentedContent(raw.Text) {
 			layout.simple = false
 			return layout
 		}
@@ -401,8 +423,8 @@ func analyzeChildLayout(children NodeList, indent int) childLayout {
 	if layout.templateExpressions > 1 && !layout.hasLongTemplateExpression {
 		totalLength := 0
 		for _, child := range children {
-			if expression, ok := child.(*TemplateExpressionNode); ok {
-				totalLength += len(expression.Dump(indent + 1))
+			if expression, ok := child.(*templateExpressionNode); ok {
+				totalLength += len(expression.dump(r, indent+1))
 			}
 		}
 		layout.multipleShortExpressions = totalLength <= 100
@@ -423,26 +445,31 @@ func rawHasIndentedContent(text string) bool {
 	return false
 }
 
-func hasLongTemplateExpression(children NodeList) bool {
+func hasLongTemplateExpression(r *renderer, children nodeList) bool {
 	for _, child := range children {
-		if expression, ok := child.(*TemplateExpressionNode); ok &&
-			len(expression.Dump(0)) > 30 {
+		if expression, ok := child.(*templateExpressionNode); ok &&
+			len(expression.dump(r, 0)) > 30 {
 			return true
 		}
 	}
 	return false
 }
 
-func dumpExpandedInlineChildren(builder *strings.Builder, children NodeList, indent int) {
-	indentStr := indentConfig.GetIndent()
+func dumpExpandedInlineChildren(
+	r *renderer,
+	builder *strings.Builder,
+	children nodeList,
+	indent int,
+) {
+	indentStr := r.config.getIndent()
 	builder.WriteString("\n")
 	for _, child := range children {
 		switch value := child.(type) {
-		case *TemplateExpressionNode:
+		case *templateExpressionNode:
 			writeIndent(builder, indent+1, indentStr)
-			builder.WriteString(value.Dump(indent + 1))
+			builder.WriteString(value.dump(r, indent+1))
 			builder.WriteString("\n")
-		case *RawNode:
+		case *rawNode:
 			trimmed := strings.TrimSpace(value.Text)
 			if trimmed != "" {
 				writeIndent(builder, indent+1, indentStr)
@@ -450,29 +477,34 @@ func dumpExpandedInlineChildren(builder *strings.Builder, children NodeList, ind
 				builder.WriteString("\n")
 			}
 		default:
-			builder.WriteString(child.Dump(indent + 1))
+			builder.WriteString(child.dump(r, indent+1))
 		}
 	}
 	writeIndent(builder, indent, indentStr)
 }
 
-func dumpComplexChildren(builder *strings.Builder, children NodeList, indent int) {
+func dumpComplexChildren(
+	r *renderer,
+	builder *strings.Builder,
+	children nodeList,
+	indent int,
+) {
 	children = nonEmptyNodes(children)
 	for index, child := range children {
 		builder.WriteString("\n")
 		if index > 0 && isTemplateElement(child) && isTemplateElement(children[index-1]) {
 			builder.WriteString("\n")
 		}
-		dumpComplexChild(builder, child, indent)
+		dumpComplexChild(r, builder, child, indent)
 	}
 	builder.WriteString("\n")
-	writeIndent(builder, indent, indentConfig.GetIndent())
+	writeIndent(builder, indent, r.config.getIndent())
 }
 
-func nonEmptyNodes(children NodeList) NodeList {
-	result := make(NodeList, 0, len(children))
+func nonEmptyNodes(children nodeList) nodeList {
+	result := make(nodeList, 0, len(children))
 	for _, child := range children {
-		if raw, ok := child.(*RawNode); ok && strings.TrimSpace(raw.Text) == "" {
+		if raw, ok := child.(*rawNode); ok && strings.TrimSpace(raw.Text) == "" {
 			continue
 		}
 		result = append(result, child)
@@ -480,23 +512,33 @@ func nonEmptyNodes(children NodeList) NodeList {
 	return result
 }
 
-func dumpComplexChild(builder *strings.Builder, child Node, indent int) {
+func dumpComplexChild(
+	r *renderer,
+	builder *strings.Builder,
+	child node,
+	indent int,
+) {
 	switch value := child.(type) {
-	case *ElementNode:
-		builder.WriteString(value.Dump(indent + 1))
-	case *TwigBlockNode:
-		builder.WriteString(value.Dump(indent + 1))
-	case *RawNode:
-		dumpComplexRaw(builder, value.Text, indent)
+	case *elementNode:
+		builder.WriteString(value.dump(r, indent+1))
+	case *twigBlockNode:
+		builder.WriteString(value.dump(r, indent+1))
+	case *rawNode:
+		dumpComplexRaw(r, builder, value.Text, indent)
 	default:
-		writeIndent(builder, indent+1, indentConfig.GetIndent())
-		builder.WriteString(strings.TrimSpace(child.Dump(indent + 1)))
+		writeIndent(builder, indent+1, r.config.getIndent())
+		builder.WriteString(strings.TrimSpace(child.dump(r, indent+1)))
 	}
 }
 
-func dumpComplexRaw(builder *strings.Builder, text string, indent int) {
+func dumpComplexRaw(
+	r *renderer,
+	builder *strings.Builder,
+	text string,
+	indent int,
+) {
 	if !strings.Contains(text, "\n") {
-		writeIndent(builder, indent+1, indentConfig.GetIndent())
+		writeIndent(builder, indent+1, r.config.getIndent())
 		builder.WriteString(strings.TrimSpace(text))
 		return
 	}
@@ -507,7 +549,7 @@ func dumpComplexRaw(builder *strings.Builder, text string, indent int) {
 		}
 	}
 	for index, line := range lines {
-		writeIndent(builder, indent+1, indentConfig.GetIndent())
+		writeIndent(builder, indent+1, r.config.getIndent())
 		builder.WriteString(line)
 		if index < len(lines)-1 {
 			builder.WriteString("\n")
@@ -515,7 +557,7 @@ func dumpComplexRaw(builder *strings.Builder, text string, indent int) {
 	}
 }
 
-func (e *ElementNode) writeClosingTag(builder *strings.Builder) {
+func (e *elementNode) writeClosingTag(builder *strings.Builder) {
 	if e.Unclosed {
 		return
 	}
@@ -530,9 +572,9 @@ func writeIndent(builder *strings.Builder, indent int, indentStr string) {
 	}
 }
 
-func (t *TwigBlockNode) Dump(indent int) string {
+func (t *twigBlockNode) dump(r *renderer, indent int) string {
 	var builder strings.Builder
-	indentStr := indentConfig.GetIndent()
+	indentStr := r.config.getIndent()
 	for range indent {
 		builder.WriteString(indentStr)
 	}
@@ -552,13 +594,13 @@ func (t *TwigBlockNode) Dump(indent int) string {
 		for _, child := range t.Children {
 			// Twig comments inside inline-mixed bodies (e.g. {# note #}
 			// between JS statements) get their visible indent from the
-			// preceding RawNode; calling Dump(indent) would have them add
+			// preceding rawNode; calling dump(indent) would have them add
 			// their own indent on top, compounding on every pass.
-			if _, ok := child.(*TwigCommentNode); ok {
-				builder.WriteString(child.Dump(0))
+			if _, ok := child.(*twigCommentNode); ok {
+				builder.WriteString(child.dump(r, 0))
 				continue
 			}
-			builder.WriteString(child.Dump(indent))
+			builder.WriteString(child.dump(r, indent))
 		}
 		builder.WriteString(openStmt(t.CloseTrim.Left))
 		builder.WriteString(" endblock ")
@@ -567,14 +609,14 @@ func (t *TwigBlockNode) Dump(indent int) string {
 	}
 
 	// Filter out empty nodes and normalize newlines
-	var nonEmptyChildren NodeList
+	var nonEmptyChildren nodeList
 	for _, child := range t.Children {
-		if raw, ok := child.(*RawNode); ok {
+		if raw, ok := child.(*rawNode); ok {
 			if strings.TrimSpace(raw.Text) != "" {
 				nonEmptyChildren = append(nonEmptyChildren, raw)
 			}
-		} else if twigBlock, ok := child.(*TwigBlockNode); ok {
-			if strings.TrimSpace(twigBlock.Dump(0)) != "" {
+		} else if twigBlock, ok := child.(*twigBlockNode); ok {
+			if strings.TrimSpace(twigBlock.dump(r, 0)) != "" {
 				nonEmptyChildren = append(nonEmptyChildren, twigBlock)
 			}
 		} else {
@@ -585,31 +627,31 @@ func (t *TwigBlockNode) Dump(indent int) string {
 	if len(nonEmptyChildren) > 0 {
 		builder.WriteString("\n")
 		childIndent := indent
-		if indentConfig.TwigBlockIndentChildren {
+		if r.config.TwigBlockIndentChildren {
 			childIndent = indent + 1
 		}
 
 		for i, child := range nonEmptyChildren {
-			if elementChild, ok := child.(*ElementNode); ok {
-				builder.WriteString(elementChild.Dump(childIndent))
-			} else if tplChild, ok := child.(*TemplateExpressionNode); ok {
+			if elementChild, ok := child.(*elementNode); ok {
+				builder.WriteString(elementChild.dump(r, childIndent))
+			} else if tplChild, ok := child.(*templateExpressionNode); ok {
 				// Template expressions need proper indentation when they're direct children of twig blocks
 				for j := 0; j < childIndent; j++ {
 					builder.WriteString(indentStr)
 				}
-				builder.WriteString(tplChild.Dump(childIndent))
-			} else if rawChild, ok := child.(*RawNode); ok {
+				builder.WriteString(tplChild.dump(r, childIndent))
+			} else if rawChild, ok := child.(*rawNode); ok {
 				// Trim incidental whitespace from the source so re-formats
-				// don't compound newlines on either side of the RawNode.
+				// don't compound newlines on either side of the rawNode.
 				for j := 0; j < childIndent; j++ {
 					builder.WriteString(indentStr)
 				}
 				builder.WriteString(strings.TrimSpace(rawChild.Text))
 			} else {
-				builder.WriteString(child.Dump(childIndent))
+				builder.WriteString(child.dump(r, childIndent))
 			}
 
-			_, isComment := child.(*CommentNode)
+			_, isComment := child.(*commentNode)
 
 			if i < len(nonEmptyChildren)-1 {
 				// Add an extra newline between elements
@@ -638,9 +680,9 @@ func (t *TwigBlockNode) Dump(indent int) string {
 	return builder.String()
 }
 
-func (t *TwigIfNode) Dump(indent int) string {
+func (t *twigIfNode) dump(r *renderer, indent int) string {
 	var builder strings.Builder
-	indentStr := indentConfig.GetIndent()
+	indentStr := r.config.getIndent()
 	writeIndent := func(n int) {
 		for i := 0; i < n; i++ {
 			builder.WriteString(indentStr)
@@ -660,7 +702,7 @@ func (t *TwigIfNode) Dump(indent int) string {
 		builder.WriteString(br.Condition)
 		builder.WriteString(" ")
 		builder.WriteString(closeStmt(br.Trim.Right))
-		writeIfBranchBody(&builder, br.Body, indent, indentStr)
+		writeIfBranchBody(r, &builder, br.Body, indent, indentStr)
 	}
 
 	if len(t.ElseChildren) > 0 {
@@ -668,7 +710,7 @@ func (t *TwigIfNode) Dump(indent int) string {
 		builder.WriteString(openStmt(t.ElseTrim.Left))
 		builder.WriteString(" else ")
 		builder.WriteString(closeStmt(t.ElseTrim.Right))
-		writeIfBranchBody(&builder, t.ElseChildren, indent, indentStr)
+		writeIfBranchBody(r, &builder, t.ElseChildren, indent, indentStr)
 	}
 
 	writeIndent(indent)
@@ -680,10 +722,16 @@ func (t *TwigIfNode) Dump(indent int) string {
 
 // writeIfBranchBody emits the body of a single if/elseif/else branch,
 // filtering whitespace-only RawNodes and one-level-indented per child.
-func writeIfBranchBody(builder *strings.Builder, children NodeList, indent int, indentStr string) {
-	var nonEmpty NodeList
+func writeIfBranchBody(
+	r *renderer,
+	builder *strings.Builder,
+	children nodeList,
+	indent int,
+	indentStr string,
+) {
+	var nonEmpty nodeList
 	for _, child := range children {
-		if raw, ok := child.(*RawNode); ok {
+		if raw, ok := child.(*rawNode); ok {
 			if strings.TrimSpace(raw.Text) == "" {
 				continue
 			}
@@ -697,13 +745,13 @@ func writeIfBranchBody(builder *strings.Builder, children NodeList, indent int, 
 	}
 	builder.WriteString("\n")
 	for i, child := range nonEmpty {
-		if elementChild, ok := child.(*ElementNode); ok {
-			builder.WriteString(elementChild.Dump(indent + 1))
+		if elementChild, ok := child.(*elementNode); ok {
+			builder.WriteString(elementChild.dump(r, indent+1))
 		} else {
 			for j := 0; j < indent+1; j++ {
 				builder.WriteString(indentStr)
 			}
-			builder.WriteString(strings.TrimSpace(child.Dump(indent + 1)))
+			builder.WriteString(strings.TrimSpace(child.dump(r, indent+1)))
 		}
 		if i < len(nonEmpty)-1 {
 			builder.WriteString("\n")
@@ -712,9 +760,9 @@ func writeIfBranchBody(builder *strings.Builder, children NodeList, indent int, 
 	builder.WriteString("\n")
 }
 
-func (p *ParentNode) Dump(indent int) string {
+func (p *parentNode) dump(r *renderer, indent int) string {
 	var builder strings.Builder
-	indentStr := indentConfig.GetIndent()
+	indentStr := r.config.getIndent()
 	for i := 0; i < indent; i++ {
 		builder.WriteString(indentStr)
 	}

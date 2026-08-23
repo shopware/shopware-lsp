@@ -47,13 +47,14 @@ func (p *TwigHoverProvider) GetHover(ctx context.Context, params *lsp.HoverReque
 	if params.Node == nil {
 		return nil, nil
 	}
+	documentation := twig.DocumentationForNode(params.Node)
 
 	if memberHover, err := p.twigPHPMemberHover(params); memberHover != nil || err != nil {
-		return memberHover, err
+		return appendTwigDocumentation(memberHover, documentation), err
 	}
 
 	if variableHover, err := p.twigVariableHover(params); variableHover != nil || err != nil {
-		return variableHover, err
+		return appendTwigDocumentation(variableHover, documentation), err
 	}
 
 	// Check if hovering over sw_icon
@@ -109,7 +110,7 @@ func (p *TwigHoverProvider) GetHover(ctx context.Context, params *lsp.HoverReque
 				displayPath,
 			)
 
-			return &protocol.Hover{
+			return appendTwigDocumentation(&protocol.Hover{
 				Contents: protocol.MarkupContent{
 					Kind:  protocol.Markdown,
 					Value: markdownContent,
@@ -124,11 +125,36 @@ func (p *TwigHoverProvider) GetHover(ctx context.Context, params *lsp.HoverReque
 						Character: params.Position.Character + len(iconName),
 					},
 				},
-			}, nil
+			}, documentation), nil
 		}
 	}
 
+	if documentation != "" {
+		return &protocol.Hover{
+			Contents: protocol.MarkupContent{
+				Kind:  protocol.Markdown,
+				Value: documentation,
+			},
+			Range: twigVariableHoverRange(params.Node, params),
+		}, nil
+	}
+
 	return nil, nil
+}
+
+func appendTwigDocumentation(
+	hover *protocol.Hover,
+	documentation string,
+) *protocol.Hover {
+	if hover == nil || documentation == "" {
+		return hover
+	}
+	if hover.Contents.Value != "" {
+		hover.Contents.Value += "\n\n"
+	}
+	hover.Contents.Kind = protocol.Markdown
+	hover.Contents.Value += documentation
+	return hover
 }
 
 func (p *TwigHoverProvider) twigPHPMemberHover(
@@ -218,6 +244,33 @@ func (p *TwigHoverProvider) twigVariableHover(
 	path, err := uriutil.Path(request.TextDocument.URI)
 	if err != nil {
 		return nil, err
+	}
+	if declaration, found := twig.TwigTypeDeclarations(request.Root)[name]; found {
+		var markdown strings.Builder
+		fmt.Fprintf(
+			&markdown,
+			"**Twig variable** `%s`\n\nDeclared type: `%s`",
+			name,
+			declaration.Type.String(),
+		)
+		if declaration.FromTypesTag {
+			status := "Required"
+			if declaration.Optional {
+				status = "Optional"
+			}
+			fmt.Fprintf(&markdown, "\n\n%s in the Twig `types` tag.", status)
+		}
+		if declaration.Documentation != "" {
+			markdown.WriteString("\n\n")
+			markdown.WriteString(declaration.Documentation)
+		}
+		return &protocol.Hover{
+			Contents: protocol.MarkupContent{
+				Kind:  protocol.Markdown,
+				Value: markdown.String(),
+			},
+			Range: twigVariableHoverRange(nameNode, request),
+		}, nil
 	}
 	if p.phpIndex != nil {
 		variables, variableErr := p.phpIndex.TwigTemplateVariables(

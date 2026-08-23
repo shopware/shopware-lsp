@@ -27,10 +27,11 @@ type RenderBlockReference struct {
 // TemplateBlock is one block declaration reachable from a concrete template,
 // including declarations inherited through Twig extends.
 type TemplateBlock struct {
-	Name     string
-	FilePath string
-	Range    cst.TextRange
-	Line     int
+	Name          string
+	Documentation string
+	FilePath      string
+	Range         cst.TextRange
+	Line          int
 }
 
 func RenderBlockReferencesInPHP(
@@ -166,10 +167,11 @@ func (idx *TwigIndexer) GetTemplateBlocks(
 				}
 				seenBlocks[key] = struct{}{}
 				result = append(result, TemplateBlock{
-					Name:     block.Name,
-					FilePath: file.Path,
-					Range:    block.NameRange,
-					Line:     block.Line,
+					Name:          block.Name,
+					Documentation: block.Documentation,
+					FilePath:      file.Path,
+					Range:         block.NameRange,
+					Line:          block.Line,
 				})
 			}
 			if file.ExtendsFile != "" {
@@ -221,10 +223,11 @@ func (idx *TwigIndexer) GetAllTemplateBlocks() ([]TemplateBlock, error) {
 			}
 			seen[key] = struct{}{}
 			result = append(result, TemplateBlock{
-				Name:     block.Name,
-				FilePath: file.Path,
-				Range:    block.NameRange,
-				Line:     block.Line,
+				Name:          block.Name,
+				Documentation: block.Documentation,
+				FilePath:      file.Path,
+				Range:         block.NameRange,
+				Line:          block.Line,
 			})
 		}
 	}

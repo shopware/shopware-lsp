@@ -12,11 +12,12 @@ import (
 // TypesTagDeclaration is one variable/type pair from Twig's static-analysis
 // tag, for example `{% types { product: 'App\\Product' } %}`.
 type TypesTagDeclaration struct {
-	Name      string
-	Type      string
-	Optional  bool
-	NameRange cst.TextRange
-	TypeRange cst.TextRange
+	Name          string
+	Type          string
+	Optional      bool
+	Documentation string
+	NameRange     cst.TextRange
+	TypeRange     cst.TextRange
 }
 
 type TypesTagClassReference struct {
@@ -146,16 +147,25 @@ func parseTypesTagDeclarations(
 	}
 	cursor++
 	var result []TypesTagDeclaration
+	var pendingDocumentation []string
 	for cursor < end {
-		skipTypesTagSeparators(content, &cursor, end)
+		skipTypesTagSeparators(
+			content,
+			&cursor,
+			end,
+			&pendingDocumentation,
+		)
 		if cursor >= end || content[cursor] == '}' {
 			break
 		}
 		name, nameRange, found := parseTypesTagKey(content, &cursor, end)
 		if !found {
+			pendingDocumentation = nil
 			cursor++
 			continue
 		}
+		documentation := strings.Join(pendingDocumentation, "\n")
+		pendingDocumentation = nil
 		for cursor < end && isTwigTagSpace(content[cursor]) {
 			cursor++
 		}
@@ -194,10 +204,11 @@ func parseTypesTagDeclarations(
 		}
 		rawType := string(content[typeStart:typeEnd])
 		result = append(result, TypesTagDeclaration{
-			Name:      name,
-			Type:      normalizeTwigTypeString(rawType),
-			Optional:  optional,
-			NameRange: nameRange,
+			Name:          name,
+			Type:          normalizeTwigTypeString(rawType),
+			Optional:      optional,
+			Documentation: documentation,
+			NameRange:     nameRange,
 			TypeRange: cst.TextRange{
 				Start: uint32(typeStart),
 				End:   uint32(typeEnd),
@@ -211,10 +222,31 @@ func skipTypesTagSeparators(
 	content []byte,
 	cursor *int,
 	end int,
+	documentation *[]string,
 ) {
-	for *cursor < end &&
-		(isTwigTagSpace(content[*cursor]) || content[*cursor] == ',') {
-		(*cursor)++
+	for *cursor < end {
+		for *cursor < end &&
+			(isTwigTagSpace(content[*cursor]) || content[*cursor] == ',') {
+			(*cursor)++
+		}
+		if *cursor >= end || content[*cursor] != '#' {
+			return
+		}
+		documented := *cursor+1 < end && content[*cursor+1] == '#'
+		start := *cursor + 1
+		if documented {
+			start++
+		}
+		finish := start
+		for finish < end && content[finish] != '\n' && content[finish] != '\r' {
+			finish++
+		}
+		if documented {
+			if value := normalizeDocumentation(string(content[start:finish])); value != "" {
+				*documentation = append(*documentation, value)
+			}
+		}
+		*cursor = finish
 	}
 }
 

@@ -1,29 +1,29 @@
-package twigfmt
+package formatter
 
 import "strings"
 
-// TwigGenericBlockNode represents a Twig statement tag that opens a block,
+// twigGenericBlockNode represents a Twig statement tag that opens a block,
 // e.g. `{% for x in xs %}body{% endfor %}` or `{% embed 't' %}body{%
 // endembed %}`. The body is parsed recursively as Twig+HTML content.
 //
 // Else is populated when the block tag supports an `{% else %}` follower
 // (currently just `{% for %}`); it holds the body between `{% else %}` and
 // the block's EndTag. Else is nil/empty for tags without an else clause.
-type TwigGenericBlockNode struct {
+type twigGenericBlockNode struct {
 	Name      string
 	Args      string // raw args body, with leading/trailing space stripped
 	EndTag    string
-	Body      NodeList
-	Else      NodeList
-	OpenTrim  TwigTrim
-	ElseTrim  TwigTrim
-	CloseTrim TwigTrim
+	Body      nodeList
+	Else      nodeList
+	OpenTrim  twigTrim
+	ElseTrim  twigTrim
+	CloseTrim twigTrim
 	Line      int
 }
 
-func (n *TwigGenericBlockNode) Dump(indent int) string {
+func (n *twigGenericBlockNode) dump(r *renderer, indent int) string {
 	var b strings.Builder
-	indentStr := indentConfig.GetIndent()
+	indentStr := r.config.getIndent()
 	for i := 0; i < indent; i++ {
 		b.WriteString(indentStr)
 	}
@@ -45,11 +45,11 @@ func (n *TwigGenericBlockNode) Dump(indent int) string {
 	// the else clause needs the structured block layout.
 	if len(n.Else) == 0 && blockHasInlineMixedContent(n.Body) {
 		for _, child := range n.Body {
-			if _, ok := child.(*TwigCommentNode); ok {
-				b.WriteString(child.Dump(0))
+			if _, ok := child.(*twigCommentNode); ok {
+				b.WriteString(child.dump(r, 0))
 				continue
 			}
-			b.WriteString(child.Dump(indent))
+			b.WriteString(child.dump(r, indent))
 		}
 		b.WriteString(openStmt(n.CloseTrim.Left))
 		b.WriteString(" ")
@@ -62,13 +62,13 @@ func (n *TwigGenericBlockNode) Dump(indent int) string {
 	if len(n.Body) > 0 {
 		b.WriteString("\n")
 		for i, child := range n.Body {
-			if elem, ok := child.(*ElementNode); ok {
-				b.WriteString(elem.Dump(indent + 1))
+			if elem, ok := child.(*elementNode); ok {
+				b.WriteString(elem.dump(r, indent+1))
 			} else {
 				for j := 0; j < indent+1; j++ {
 					b.WriteString(indentStr)
 				}
-				b.WriteString(strings.TrimSpace(child.Dump(indent + 1)))
+				b.WriteString(strings.TrimSpace(child.dump(r, indent+1)))
 			}
 			if i < len(n.Body)-1 {
 				b.WriteString("\n")
@@ -86,13 +86,13 @@ func (n *TwigGenericBlockNode) Dump(indent int) string {
 		b.WriteString(closeStmt(n.ElseTrim.Right))
 		b.WriteString("\n")
 		for i, child := range n.Else {
-			if elem, ok := child.(*ElementNode); ok {
-				b.WriteString(elem.Dump(indent + 1))
+			if elem, ok := child.(*elementNode); ok {
+				b.WriteString(elem.dump(r, indent+1))
 			} else {
 				for j := 0; j < indent+1; j++ {
 					b.WriteString(indentStr)
 				}
-				b.WriteString(strings.TrimSpace(child.Dump(indent + 1)))
+				b.WriteString(strings.TrimSpace(child.dump(r, indent+1)))
 			}
 			if i < len(n.Else)-1 {
 				b.WriteString("\n")
@@ -112,19 +112,19 @@ func (n *TwigGenericBlockNode) Dump(indent int) string {
 	return b.String()
 }
 
-// TwigStandaloneTagNode represents a Twig tag with no body, e.g.
+// twigStandaloneTagNode represents a Twig tag with no body, e.g.
 // `{% include "x.twig" %}`, `{% extends "@base" %}`, `{% set x = 1 %}`,
 // `{% sw_include "..." with {} %}`.
-type TwigStandaloneTagNode struct {
+type twigStandaloneTagNode struct {
 	Name string
 	Args string
-	Trim TwigTrim
+	Trim twigTrim
 	Line int
 }
 
-func (n *TwigStandaloneTagNode) Dump(indent int) string {
+func (n *twigStandaloneTagNode) dump(r *renderer, indent int) string {
 	var b strings.Builder
-	indentStr := indentConfig.GetIndent()
+	indentStr := r.config.getIndent()
 	for i := 0; i < indent; i++ {
 		b.WriteString(indentStr)
 	}

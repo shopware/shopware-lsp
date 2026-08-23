@@ -85,7 +85,9 @@ func TestTwigIndexerStoresAndRestoresMacrosAndUsages(t *testing.T) {
 	pagePath := "/project/templates/page.html.twig"
 	require.NoError(t, idx.Index(indexer.NewParsedFile(
 		macroPath,
-		[]byte(`{% macro input(name, value = '') %}{% endmacro %}`),
+		[]byte(`{## Renders a form input. ##}
+{% macro input(## Field name.
+name, value = '') %}{% endmacro %}`),
 	)))
 	require.NoError(t, idx.Index(indexer.NewParsedFile(
 		pagePath,
@@ -98,6 +100,8 @@ func TestTwigIndexerStoresAndRestoresMacrosAndUsages(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, macros, 1)
 	require.Equal(t, "input(name, value = '')", macros[0].Signature())
+	require.Equal(t, "Renders a form input.", macros[0].Documentation)
+	require.Equal(t, "Field name.", macros[0].Parameters[0].Documentation)
 	usages, err := idx.GetMacroUsages(
 		"macros/forms.html.twig",
 		"input",
@@ -113,6 +117,8 @@ func TestTwigIndexerStoresAndRestoresMacrosAndUsages(t *testing.T) {
 	macros, err = restored.FindMacro("macros/forms.html.twig", "input")
 	require.NoError(t, err)
 	require.Len(t, macros, 1)
+	require.Equal(t, "Renders a form input.", macros[0].Documentation)
+	require.Equal(t, "Field name.", macros[0].Parameters[0].Documentation)
 	usages, err = restored.GetMacroUsages(
 		"macros/forms.html.twig",
 		"input",

@@ -330,6 +330,7 @@ const (
 	TwigAssetic
 	TwigAsseticStartingBlock
 	TwigAsseticEndingBlock
+	TwigTypes
 )
 
 // init registers the twig language with the cst kind registry. Twig owns the
@@ -608,6 +609,7 @@ var kindNames = [...]string{
 	TwigAssetic:                            "TWIG_ASSETIC",
 	TwigAsseticStartingBlock:               "TWIG_ASSETIC_STARTING_BLOCK",
 	TwigAsseticEndingBlock:                 "TWIG_ASSETIC_ENDING_BLOCK",
+	TwigTypes:                              "TWIG_TYPES",
 	TwigTrans:                              "TWIG_TRANS",
 	TwigTransStartingBlock:                 "TWIG_TRANS_STARTING_BLOCK",
 	TwigTransEndingBlock:                   "TWIG_TRANS_ENDING_BLOCK",

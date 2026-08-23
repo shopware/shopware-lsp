@@ -1,22 +1,22 @@
-package twigfmt
+package formatter
 
 import "strings"
 
-// TwigVerbatimNode represents `{% verbatim %}...{% endverbatim %}`.
+// twigVerbatimNode represents `{% verbatim %}...{% endverbatim %}`.
 // The body is preserved as raw text — the parser does NOT recurse into
 // the body, since the whole point of `{% verbatim %}` is to disable Twig
 // interpretation for its contents.
-type TwigVerbatimNode struct {
+type twigVerbatimNode struct {
 	Body      string
-	OpenTrim  TwigTrim
-	CloseTrim TwigTrim
+	OpenTrim  twigTrim
+	CloseTrim twigTrim
 	Line      int
 }
 
-// Dump renders the verbatim block with its body byte-identical to source.
-func (v *TwigVerbatimNode) Dump(indent int) string {
+// dump renders the verbatim block with its body byte-identical to source.
+func (v *twigVerbatimNode) dump(r *renderer, indent int) string {
 	var b strings.Builder
-	indentStr := indentConfig.GetIndent()
+	indentStr := r.config.getIndent()
 	for i := 0; i < indent; i++ {
 		b.WriteString(indentStr)
 	}

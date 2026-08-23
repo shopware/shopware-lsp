@@ -503,11 +503,21 @@ func TwigAttributeName(method string) string {
 	return ""
 }
 
-// TwigTypeAnnotations parses the portable form used by Twig tooling:
-// "{# @var variable \Fully\Qualified\Type #}". The PHPDoc-style
-// "{# @var \Fully\Qualified\Type $variable #}" form is accepted as well.
-func TwigTypeAnnotations(root *twigsyntax.Node) map[string]types.Type {
-	result := make(map[string]types.Type)
+// TwigTypeDeclaration is type and documentation metadata declared in a Twig
+// template through a types tag or the portable @var compatibility syntax.
+type TwigTypeDeclaration struct {
+	Type          types.Type
+	Optional      bool
+	Documentation string
+	FromTypesTag  bool
+}
+
+// TwigTypeDeclarations parses Twig's native types tag together with the
+// portable "{# @var variable \Fully\Qualified\Type #}" compatibility form.
+func TwigTypeDeclarations(
+	root *twigsyntax.Node,
+) map[string]TwigTypeDeclaration {
+	result := make(map[string]TwigTypeDeclaration)
 	if root == nil {
 		return result
 	}
@@ -534,7 +544,7 @@ func TwigTypeAnnotations(root *twigsyntax.Node) map[string]types.Type {
 				typeName = strings.TrimPrefix(typeName, "\\")
 				if value, err := parseTwigAnnotationType(typeName); err == nil &&
 					!value.IsUnknown() && name != "" {
-					result[name] = value
+					result[name] = TwigTypeDeclaration{Type: value}
 				}
 			}
 			if end := strings.IndexAny(source, "\r\n"); end >= 0 {
@@ -552,8 +562,23 @@ func TwigTypeAnnotations(root *twigsyntax.Node) map[string]types.Type {
 		}
 		value, err := parseTwigAnnotationType(declaration.Type)
 		if err == nil && !value.IsUnknown() {
-			result[declaration.Name] = value
+			result[declaration.Name] = TwigTypeDeclaration{
+				Type:          value,
+				Optional:      declaration.Optional,
+				Documentation: declaration.Documentation,
+				FromTypesTag:  true,
+			}
 		}
+	}
+	return result
+}
+
+// TwigTypeAnnotations retains the type-only view used by inference consumers.
+func TwigTypeAnnotations(root *twigsyntax.Node) map[string]types.Type {
+	declarations := TwigTypeDeclarations(root)
+	result := make(map[string]types.Type, len(declarations))
+	for name, declaration := range declarations {
+		result[name] = declaration.Type
 	}
 	return result
 }

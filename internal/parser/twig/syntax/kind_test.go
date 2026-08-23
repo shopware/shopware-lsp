@@ -55,6 +55,7 @@ func TestKindString(t *testing.T) {
 		TkWord:                     "TK_WORD",
 		TkCurlyPercent:             "TK_CURLY_PERCENT",
 		TwigBlock:                  "TWIG_BLOCK",
+		TwigTypes:                  "TWIG_TYPES",
 		ShopwareTwigSwExtends:      "SHOPWARE_TWIG_SW_EXTENDS",
 		LudtwigDirectiveFileIgnore: "LUDTWIG_DIRECTIVE_FILE_IGNORE",
 		Error:                      "ERROR",

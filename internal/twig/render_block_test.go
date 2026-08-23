@@ -45,7 +45,8 @@ func TestGetTemplateBlocksFollowsExtendsAndRestoresRanges(t *testing.T) {
 	childPath := filepath.Join(root, "templates", "child.html.twig")
 	require.NoError(t, index.Index(indexer.NewParsedFile(
 		basePath,
-		[]byte(`{% block content %}{% endblock %}
+		[]byte(`{## Main content. ##}
+{% block content %}{% endblock %}
 {% block sidebar %}{% endblock %}`),
 	)))
 	require.NoError(t, index.Index(indexer.NewParsedFile(
@@ -69,6 +70,16 @@ func TestGetTemplateBlocksFollowsExtendsAndRestoresRanges(t *testing.T) {
 		"sidebar",
 		"child",
 	}, names)
+	var documented *TemplateBlock
+	for index := range blocks {
+		if blocks[index].FilePath == basePath && blocks[index].Name == "content" {
+			documented = &blocks[index]
+			break
+		}
+	}
+	require.NotNil(t, documented)
+	require.Equal(t, "Main content.", documented.Documentation)
+	require.Equal(t, 2, documented.Line)
 	require.NoError(t, index.Close())
 
 	restored, err := NewTwigIndexer(cache)

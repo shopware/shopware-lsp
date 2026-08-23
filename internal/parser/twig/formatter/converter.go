@@ -1,4 +1,4 @@
-package twigfmt
+package formatter
 
 import (
 	"regexp"
@@ -14,11 +14,11 @@ var parentStatementPattern = regexp.MustCompile(
 	`(?s)^\s*\{%([-~]?)\s*parent(?:\(\))?\s*([-~]?)%\}\s*$`,
 )
 
-func (converter) nodeList(parent *cst.Node) NodeList {
+func (converter) nodeList(parent *cst.Node) nodeList {
 	if parent == nil {
 		return nil
 	}
-	var result NodeList
+	var result nodeList
 	for child := range parent.ChildNodes() {
 		if prefix := structuralPrefix(parent, child); prefix != "" {
 			appendRaw(&result, prefix)
@@ -27,19 +27,19 @@ func (converter) nodeList(parent *cst.Node) NodeList {
 		if node == nil {
 			continue
 		}
-		if raw, ok := node.(*RawNode); ok {
+		if raw, ok := node.(*rawNode); ok {
 			appendRaw(&result, raw.Text)
 			continue
 		}
 		result = append(result, node)
 	}
 	for index, node := range result {
-		raw, ok := node.(*RawNode)
+		raw, ok := node.(*rawNode)
 		if !ok {
 			continue
 		}
 		if match := parentStatementPattern.FindStringSubmatch(raw.Text); match != nil {
-			result[index] = &ParentNode{Trim: TwigTrim{
+			result[index] = &parentNode{Trim: twigTrim{
 				Left: firstByte(match[1]), Right: firstByte(match[2]),
 			}}
 		}
@@ -47,7 +47,7 @@ func (converter) nodeList(parent *cst.Node) NodeList {
 	return result
 }
 
-func appendRaw(nodes *NodeList, text string) {
+func appendRaw(nodes *nodeList, text string) {
 	if text == "" {
 		return
 	}
@@ -55,18 +55,18 @@ func appendRaw(nodes *NodeList, text string) {
 		previous.Text += text
 		return
 	}
-	*nodes = append(*nodes, &RawNode{Text: text})
+	*nodes = append(*nodes, &rawNode{Text: text})
 }
 
-func lastRaw(nodes NodeList) (*RawNode, bool) {
+func lastRaw(nodes nodeList) (*rawNode, bool) {
 	if len(nodes) == 0 {
 		return nil, false
 	}
-	raw, ok := nodes[len(nodes)-1].(*RawNode)
+	raw, ok := nodes[len(nodes)-1].(*rawNode)
 	return raw, ok
 }
 
-func (c converter) node(node *cst.Node) Node {
+func (c converter) node(node *cst.Node) node {
 	if node == nil || node.Range().Len() == 0 {
 		return nil
 	}
@@ -76,23 +76,33 @@ func (c converter) node(node *cst.Node) Node {
 	case syntax.HtmlTag:
 		return c.htmlTag(node)
 	case syntax.HtmlText, syntax.HtmlRawText, syntax.HtmlDoctype, syntax.Error:
-		return &RawNode{Text: node.Text()}
+		return &rawNode{Text: node.Text()}
 	case syntax.HtmlComment:
-		return &CommentNode{Text: delimitedBody(node.Text(), "<!--", "-->")}
+		return &commentNode{Text: delimitedBody(node.Text(), "<!--", "-->")}
 	case syntax.HtmlAttribute:
 		return c.htmlAttribute(node)
 	case syntax.TwigVar:
 		body, trim, ok := parseDelimited(node.Text(), "{{", "}}")
 		if !ok {
-			return &RawNode{Text: node.Text()}
+			return &rawNode{Text: node.Text()}
 		}
-		return &TemplateExpressionNode{Expression: body, Trim: trim}
+		return &templateExpressionNode{Expression: body, Trim: trim}
 	case syntax.TwigComment:
+		if body, trim, symmetric, ok := parseDocumentationComment(
+			node.Text(),
+		); ok {
+			return &twigCommentNode{
+				Body:          body,
+				Trim:          trim,
+				Documentation: true,
+				Symmetric:     symmetric,
+			}
+		}
 		body, trim, ok := parseDelimited(node.Text(), "{#", "#}")
 		if !ok {
-			return &RawNode{Text: node.Text()}
+			return &rawNode{Text: node.Text()}
 		}
-		return &TwigCommentNode{Body: body, Trim: trim}
+		return &twigCommentNode{Body: body, Trim: trim}
 	case syntax.TwigBlock:
 		return c.twigBlock(node)
 	case syntax.TwigIf:
@@ -136,30 +146,30 @@ func (c converter) node(node *cst.Node) Node {
 		syntax.ShopwareIcon, syntax.ShopwareThumbnails:
 		return c.standalone(node)
 	default:
-		return &RawNode{Text: node.Text()}
+		return &rawNode{Text: node.Text()}
 	}
 }
 
 // nodeListNode lets nested generic BODY/attribute-list nodes participate in
 // conversion without flattening at every call site.
-type nodeListNode struct{ nodes NodeList }
+type nodeListNode struct{ nodes nodeList }
 
-func (n nodeListNode) Dump(indent int) string { return n.nodes.Dump(indent) }
+func (n nodeListNode) dump(r *renderer, indent int) string { return n.nodes.dump(r, indent) }
 
-func (c converter) htmlTag(node *cst.Node) Node {
+func (c converter) htmlTag(node *cst.Node) node {
 	starting := childNode(node, syntax.HtmlStartingTag)
 	if starting == nil {
-		return &RawNode{Text: node.Text()}
+		return &rawNode{Text: node.Text()}
 	}
 	name := tagName(starting)
 	if name == "" {
-		return &RawNode{Text: node.Text()}
+		return &rawNode{Text: node.Text()}
 	}
-	attributes := NodeList(nil)
+	attributes := nodeList(nil)
 	if list := childNode(starting, syntax.HtmlAttributeList); list != nil {
 		attributes = c.nodeList(list)
 	}
-	body := NodeList(nil)
+	body := nodeList(nil)
 	if bodyNode := childNode(node, syntax.Body); bodyNode != nil {
 		body = c.nodeList(bodyNode)
 	}
@@ -172,7 +182,7 @@ func (c converter) htmlTag(node *cst.Node) Node {
 		// Incomplete and deliberately non-HTML text such as `<<Success>>`
 		// must remain byte-identical. Formatting a speculative unclosed element
 		// can otherwise split or synthesize markup while the user is typing.
-		return &RawNode{Text: node.Text()}
+		return &rawNode{Text: node.Text()}
 	}
 	if closed {
 		endingText := ending.Text()
@@ -180,7 +190,7 @@ func (c converter) htmlTag(node *cst.Node) Node {
 			appendRaw(&body, endingText[:delimiter])
 		}
 	}
-	return &ElementNode{
+	return &elementNode{
 		Tag: name, Attributes: attributes, Children: body,
 		SelfClosing: selfClosing,
 		Unclosed:    !selfClosing && !closed,
@@ -223,14 +233,14 @@ func bodyBelongsToTag(body *cst.Node, name string) bool {
 	return starting != nil && strings.EqualFold(tagName(starting), name)
 }
 
-func (converter) htmlAttribute(node *cst.Node) Node {
+func (converter) htmlAttribute(node *cst.Node) node {
 	text := strings.TrimSpace(node.Text())
 	if text == "" {
 		return nil
 	}
 	equal := strings.IndexByte(text, '=')
 	if equal < 0 {
-		return &Attribute{Key: text}
+		return &attribute{Key: text}
 	}
 	key := strings.TrimSpace(text[:equal])
 	value := strings.TrimSpace(text[equal+1:])
@@ -238,76 +248,76 @@ func (converter) htmlAttribute(node *cst.Node) Node {
 		(value[0] == '\'' && value[len(value)-1] == '\'')) {
 		value = value[1 : len(value)-1]
 	}
-	return &Attribute{Key: key, Value: value}
+	return &attribute{Key: key, Value: value}
 }
 
-func (c converter) twigBlock(node *cst.Node) Node {
+func (c converter) twigBlock(node *cst.Node) node {
 	starting := childNode(node, syntax.TwigStartingBlock)
 	ending := childNode(node, syntax.TwigEndingBlock)
 	body := childNode(node, syntax.Body)
 	if starting == nil || ending == nil || ending.Range().Len() == 0 {
-		return &RawNode{Text: node.Text()}
+		return &rawNode{Text: node.Text()}
 	}
 	name, args, openTrim, ok := parseStatement(starting.Text())
 	if !ok || name != "block" {
-		return &RawNode{Text: node.Text()}
+		return &rawNode{Text: node.Text()}
 	}
 	_, _, closeTrim, ok := parseStatement(ending.Text())
 	if !ok {
-		return &RawNode{Text: node.Text()}
+		return &rawNode{Text: node.Text()}
 	}
 	blockName := strings.Fields(args)
 	if len(blockName) == 0 {
-		return &RawNode{Text: node.Text()}
+		return &rawNode{Text: node.Text()}
 	}
-	return &TwigBlockNode{
+	return &twigBlockNode{
 		Name: blockName[0], Children: c.nodeList(body),
 		OpenTrim: openTrim, CloseTrim: closeTrim,
 	}
 }
 
-func (c converter) twigIf(node *cst.Node) Node {
+func (c converter) twigIf(node *cst.Node) node {
 	children := directNodes(node)
-	var branches []TwigIfBranch
-	var elseChildren NodeList
-	var elseTrim, endTrim TwigTrim
+	var branches []twigIfBranch
+	var elseChildren nodeList
+	var elseTrim, endTrim twigTrim
 	for index := 0; index < len(children); index++ {
 		child := children[index]
 		switch child.Kind() {
 		case syntax.TwigIfBlock, syntax.TwigElseIfBlock:
 			name, condition, trim, ok := parseStatement(child.Text())
 			if !ok || (name != "if" && name != "elseif") {
-				return &RawNode{Text: node.Text()}
+				return &rawNode{Text: node.Text()}
 			}
 			body := nextBody(children, index)
-			branches = append(branches, TwigIfBranch{
+			branches = append(branches, twigIfBranch{
 				Condition: condition, Body: c.nodeList(body), Trim: trim,
 			})
 		case syntax.TwigElseBlock:
 			_, _, trim, ok := parseStatement(child.Text())
 			if !ok {
-				return &RawNode{Text: node.Text()}
+				return &rawNode{Text: node.Text()}
 			}
 			elseTrim = trim
 			elseChildren = c.nodeList(nextBody(children, index))
 		case syntax.TwigEndifBlock:
 			_, _, trim, ok := parseStatement(child.Text())
 			if !ok {
-				return &RawNode{Text: node.Text()}
+				return &rawNode{Text: node.Text()}
 			}
 			endTrim = trim
 		}
 	}
 	if len(branches) == 0 {
-		return &RawNode{Text: node.Text()}
+		return &rawNode{Text: node.Text()}
 	}
-	return &TwigIfNode{
+	return &twigIfNode{
 		Branches: branches, ElseChildren: elseChildren,
 		ElseTrim: elseTrim, EndTrim: endTrim,
 	}
 }
 
-func (c converter) genericBlock(node *cst.Node, fallbackName, fallbackEnd string) Node {
+func (c converter) genericBlock(node *cst.Node, fallbackName, fallbackEnd string) node {
 	children := directNodes(node)
 	var header, ending *cst.Node
 	var bodies []*cst.Node
@@ -332,15 +342,15 @@ func (c converter) genericBlock(node *cst.Node, fallbackName, fallbackEnd string
 		}
 	}
 	if header == nil || ending == nil {
-		return &RawNode{Text: node.Text()}
+		return &rawNode{Text: node.Text()}
 	}
 	name, args, openTrim, ok := parseStatement(header.Text())
 	if !ok {
-		return &RawNode{Text: node.Text()}
+		return &rawNode{Text: node.Text()}
 	}
 	endName, _, closeTrim, ok := parseStatement(ending.Text())
 	if !ok {
-		return &RawNode{Text: node.Text()}
+		return &rawNode{Text: node.Text()}
 	}
 	if fallbackName != "" {
 		name = fallbackName
@@ -348,64 +358,64 @@ func (c converter) genericBlock(node *cst.Node, fallbackName, fallbackEnd string
 	if fallbackEnd != "" {
 		endName = fallbackEnd
 	}
-	var body, elseBody NodeList
+	var body, elseBody nodeList
 	if len(bodies) > 0 {
 		body = c.nodeList(bodies[0])
 	}
 	if len(bodies) > 1 {
 		elseBody = c.nodeList(bodies[1])
 	}
-	var elseTrim TwigTrim
+	var elseTrim twigTrim
 	if elseHeader != nil {
 		_, _, elseTrim, _ = parseStatement(elseHeader.Text())
 	}
-	return &TwigGenericBlockNode{
+	return &twigGenericBlockNode{
 		Name: name, Args: args, EndTag: endName,
 		Body: body, Else: elseBody,
 		OpenTrim: openTrim, ElseTrim: elseTrim, CloseTrim: closeTrim,
 	}
 }
 
-func (converter) standalone(node *cst.Node) Node {
+func (converter) standalone(node *cst.Node) node {
 	name, args, trim, ok := parseStatement(node.Text())
 	if !ok {
-		return &RawNode{Text: node.Text()}
+		return &rawNode{Text: node.Text()}
 	}
-	return &TwigStandaloneTagNode{Name: name, Args: args, Trim: trim}
+	return &twigStandaloneTagNode{Name: name, Args: args, Trim: trim}
 }
 
-func (converter) verbatim(node *cst.Node) Node {
+func (converter) verbatim(node *cst.Node) node {
 	children := directNodes(node)
 	if len(children) < 3 {
-		return &RawNode{Text: node.Text()}
+		return &rawNode{Text: node.Text()}
 	}
 	header := children[0]
 	ending := children[len(children)-1]
 	_, _, openTrim, ok := parseStatement(header.Text())
 	if !ok {
-		return &RawNode{Text: node.Text()}
+		return &rawNode{Text: node.Text()}
 	}
 	_, _, closeTrim, ok := parseStatement(ending.Text())
 	if !ok {
-		return &RawNode{Text: node.Text()}
+		return &rawNode{Text: node.Text()}
 	}
 	body := childNode(node, syntax.Body)
 	if body == nil {
-		return &RawNode{Text: node.Text()}
+		return &rawNode{Text: node.Text()}
 	}
-	return &TwigVerbatimNode{
+	return &twigVerbatimNode{
 		Body: body.Text(), OpenTrim: openTrim, CloseTrim: closeTrim,
 	}
 }
 
-func parseStatement(text string) (string, string, TwigTrim, bool) {
+func parseStatement(text string) (string, string, twigTrim, bool) {
 	body, trim, ok := parseDelimited(text, "{%", "%}")
 	if !ok {
-		return "", "", TwigTrim{}, false
+		return "", "", twigTrim{}, false
 	}
 	body = strings.TrimSpace(body)
 	if body == "" {
-		return "", "", TwigTrim{}, false
+		return "", "", twigTrim{}, false
 	}
 	end := strings.IndexAny(body, " \t\r\n")
 	if end < 0 {
@@ -414,15 +424,15 @@ func parseStatement(text string) (string, string, TwigTrim, bool) {
 	return body[:end], strings.TrimSpace(body[end:]), trim, true
 }
 
-func parseDelimited(text, open, close string) (string, TwigTrim, bool) {
+func parseDelimited(text, open, close string) (string, twigTrim, bool) {
 	start := strings.Index(text, open)
 	end := strings.LastIndex(text, close)
 	if start < 0 || end < start+len(open) {
-		return "", TwigTrim{}, false
+		return "", twigTrim{}, false
 	}
 	bodyStart := start + len(open)
 	bodyEnd := end
-	var trim TwigTrim
+	var trim twigTrim
 	if bodyStart < len(text) && (text[bodyStart] == '-' || text[bodyStart] == '~') {
 		trim.Left = text[bodyStart]
 		bodyStart++
@@ -432,6 +442,42 @@ func parseDelimited(text, open, close string) (string, TwigTrim, bool) {
 		bodyEnd--
 	}
 	return text[bodyStart:bodyEnd], trim, true
+}
+
+func parseDocumentationComment(
+	text string,
+) (string, twigTrim, bool, bool) {
+	start := strings.Index(text, "{#")
+	if start < 0 || !strings.HasPrefix(text[start:], "{##") {
+		return "", twigTrim{}, false, false
+	}
+	bodyStart := start + len("{##")
+	var trim twigTrim
+	if bodyStart < len(text) &&
+		(text[bodyStart] == '-' || text[bodyStart] == '~') {
+		trim.Left = text[bodyStart]
+		bodyStart++
+	}
+	for _, closing := range []struct {
+		text      string
+		control   byte
+		symmetric bool
+	}{
+		{"-##}", '-', true},
+		{"~##}", '~', true},
+		{"##}", 0, true},
+		{"-#}", '-', false},
+		{"~#}", '~', false},
+		{"#}", 0, false},
+	} {
+		end := strings.LastIndex(text, closing.text)
+		if end < bodyStart {
+			continue
+		}
+		trim.Right = closing.control
+		return text[bodyStart:end], trim, closing.symmetric, true
+	}
+	return "", twigTrim{}, false, false
 }
 
 func delimitedBody(text, open, close string) string {

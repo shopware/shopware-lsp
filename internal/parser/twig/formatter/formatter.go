@@ -1,11 +1,10 @@
-// Package twigfmt formats Twig/HTML documents from the native lossless Twig
+// Package formatter formats Twig/HTML documents from the native lossless Twig
 // CST. Its rendering rules are adapted from shopware-cli's internal HTML
 // formatter, while parsing remains owned by internal/parser/twig.
-package twigfmt
+package formatter
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	twigparser "github.com/shopware/shopware-lsp/internal/parser/twig"
@@ -17,8 +16,6 @@ type Options struct {
 	TabSize                 int
 	TwigBlockIndentChildren bool
 }
-
-var formatMu sync.Mutex
 
 // Format parses source with the native Twig parser and formats its lossless
 // CST. LSP callers should prefer FormatTree so the current editor snapshot is
@@ -34,7 +31,7 @@ func FormatTree(tree *cst.Tree, options Options) (string, error) {
 		return "", fmt.Errorf("format twig: missing syntax tree")
 	}
 
-	config := DefaultIndentConfig()
+	config := defaultIndentConfig()
 	config.SpaceIndent = options.InsertSpaces
 	if options.TabSize > 0 {
 		config.IndentSize = options.TabSize
@@ -42,10 +39,5 @@ func FormatTree(tree *cst.Tree, options Options) (string, error) {
 	config.TwigBlockIndentChildren = options.TwigBlockIndentChildren
 
 	nodes := converter{}.nodeList(tree.Root)
-	formatMu.Lock()
-	defer formatMu.Unlock()
-	oldConfig := indentConfig
-	defer func() { indentConfig = oldConfig }()
-	indentConfig = config
-	return nodes.Dump(0), nil
+	return (&renderer{config: config}).render(nodes), nil
 }

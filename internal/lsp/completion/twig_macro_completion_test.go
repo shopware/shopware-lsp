@@ -21,7 +21,8 @@ func TestTwigMacroCompletionForNamespaceAndDirectImports(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, index.Close()) })
 	require.NoError(t, index.Index(indexer.NewParsedFile(
 		"/project/templates/macros/forms.html.twig",
-		[]byte(`{% macro input(name, value = '') %}{% endmacro %}`),
+		[]byte(`{## Renders a form input. ##}
+{% macro input(name, value = '') %}{% endmacro %}`),
 	)))
 	provider := NewTwigMacroCompletionProvider(index)
 
@@ -66,6 +67,7 @@ func TestTwigMacroCompletionForNamespaceAndDirectImports(t *testing.T) {
 			}
 		}
 		assert.Contains(t, found.Detail, "input(name, value = '')")
+		assert.Equal(t, "Renders a form input.", found.Documentation.Value)
 	}
 }
 

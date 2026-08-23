@@ -67,6 +67,7 @@ type TwigBlockHash struct {
 
 type TwigBlock struct {
 	Name                 string
+	Documentation        string
 	Range                cst.TextRange
 	NameRange            cst.TextRange
 	Line                 int
@@ -101,24 +102,27 @@ func findBlocks(root *twigsyntax.Node, source string, lineIndex *twigsyntax.Line
 		var versionCommentRange *cst.TextRange
 		hasVersioningComment := false
 		deprecation := BlockDeprecation(node, source)
-		if previous := findPreviousBlockComment(node); previous != nil {
+		for _, previous := range findPreviousBlockComments(node) {
 			commentRange := previous.RangeTrimmedTrivia()
 			line, _ := lineIndex.Position(commentRange.Start)
 			comment := source[commentRange.Start:commentRange.End]
-			hasVersioningComment = strings.Contains(comment, VersionCommentPrefix)
-			if hasVersioningComment {
-				copyRange := commentRange
-				versionCommentRange = &copyRange
+			if !strings.Contains(comment, VersionCommentPrefix) {
+				continue
 			}
+			hasVersioningComment = true
+			copyRange := commentRange
+			versionCommentRange = &copyRange
 			versionComment = ParseVersionComment(comment, int(line)+1)
 			if versionComment != nil {
 				versionComment.Range = commentRange
 			}
+			break
 		}
 
 		line, _ := lineIndex.Position(name.Range().Start)
 		file.Blocks[name.Text()] = TwigBlock{
 			Name:                 name.Text(),
+			Documentation:        DocumentationBefore(node),
 			Range:                blockRange,
 			NameRange:            name.Range(),
 			Line:                 int(line) + 1,
@@ -136,34 +140,39 @@ func findBlocks(root *twigsyntax.Node, source string, lineIndex *twigsyntax.Line
 // comment immediately preceding a block declaration. Administration component
 // templates and Storefront block versioning share this source convention.
 func BlockDeprecation(blockNode *twigsyntax.Node, source string) string {
-	previous := findPreviousBlockComment(blockNode)
-	if previous == nil {
-		return ""
+	for _, previous := range findPreviousBlockComments(blockNode) {
+		commentRange := previous.RangeTrimmedTrivia()
+		if commentRange.End > uint32(len(source)) {
+			continue
+		}
+		if deprecation := parseBlockDeprecation(
+			source[commentRange.Start:commentRange.End],
+		); deprecation != "" {
+			return deprecation
+		}
 	}
-	commentRange := previous.RangeTrimmedTrivia()
-	if commentRange.End > uint32(len(source)) {
-		return ""
-	}
-	return parseBlockDeprecation(source[commentRange.Start:commentRange.End])
+	return ""
 }
 
-func findPreviousBlockComment(blockNode *twigsyntax.Node) *twigsyntax.Node {
+func findPreviousBlockComments(blockNode *twigsyntax.Node) []*twigsyntax.Node {
+	var result []*twigsyntax.Node
 	for sibling := blockNode.PrevSibling(); sibling != nil; {
 		switch previous := sibling.(type) {
 		case *twigsyntax.Token:
 			sibling = previous.PrevSibling()
 		case *twigsyntax.Node:
 			if previous.Kind() == twigsyntax.TwigBlock {
-				return nil
+				return result
 			}
 			if previous.Kind() == twigsyntax.TwigComment {
-				return previous
+				result = append(result, previous)
+				sibling = previous.PrevSibling()
+				continue
 			}
-			sibling = previous.PrevSibling()
+			return result
 		}
 	}
-
-	return nil
+	return result
 }
 
 func parseBlockDeprecation(comment string) string {

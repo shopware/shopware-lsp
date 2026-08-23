@@ -562,6 +562,11 @@ exact public names shown by MCP `tools/list`; unknown names are rejected.
 - Native `{% types { variable: 'PHP\\Type' } %}` declarations with optional
   keys, class completion/navigation, persistent PHP references, typed member
   intelligence, loop-element inference, and `if`/`for` statement suggestions
+- Twig 3.29 documentation comments on output expressions, tags, blocks,
+  macros, type declarations, assignments, loop targets, and macro arguments.
+  `{## ... #}` / `{## ... ##}` construct documentation is available on hover;
+  `## ...` binding documentation enriches `types` completion and hover plus
+  persisted block and macro completion, hover, and signature help
 - Standard semantic coloration for both Twig `{# @var variable Type #}` and
   `{# @var Type variable #}` annotations, including unions, array types,
   multiple declarations, and PHPDoc-style `$variable` names

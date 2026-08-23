@@ -89,7 +89,8 @@ editing.
   flow-sensitive inference, completion, hover, definitions, references,
   signature help, rename, and diagnostics.
 - Typed Twig variables from controllers, components, globals, forms, and
-  annotations, including member completion and navigation back to PHP.
+  annotations, including Twig 3.29 documentation comments, member completion,
+  hover documentation, and navigation back to PHP.
 - Framework-aware diagnostics for missing symbols, incompatible arguments,
   invalid configuration, deprecated APIs, `@final` inheritance, and more.
 

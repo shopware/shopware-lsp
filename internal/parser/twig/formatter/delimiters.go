@@ -1,4 +1,4 @@
-package twigfmt
+package formatter
 
 // Helpers that emit Twig delimiter pairs, honoring whitespace-control
 // modifiers. The lexer captures `{%-`, `-%}`, `{{-`, `-}}`, `{#-`, `-#}` on

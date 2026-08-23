@@ -71,6 +71,9 @@ func (p *TwigRenderBlockCompletionProvider) GetCompletions(
 		item.Documentation.Kind = string(protocol.Markdown)
 		item.Documentation.Value = "Block reachable from `" +
 			reference.Template + "`."
+		if block.Documentation != "" {
+			item.Documentation.Value += "\n\n" + block.Documentation
+		}
 		items = append(items, item)
 	}
 	sort.Slice(items, func(left, right int) bool {

@@ -20,7 +20,14 @@ func TestTwigMacroSignatureHelp(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, index.Close()) })
 	require.NoError(t, index.Index(indexer.NewParsedFile(
 		"/project/templates/macros/forms.html.twig",
-		[]byte(`{% macro input(name, value = '', required = false) %}{% endmacro %}`),
+		[]byte(`{## Renders a form input. ##}
+{% macro input(
+    ## HTML field name.
+    name,
+    ## Initial field value.
+    value = '',
+    required = false,
+) %}{% endmacro %}`),
 	)))
 	source := `{% import 'macros/forms.html.twig' as forms %}
 {{ forms.input('email', 'value') }}
@@ -63,4 +70,22 @@ func TestTwigMacroSignatureHelp(t *testing.T) {
 	assert.Equal(t, 1, result.ActiveParameter)
 	assert.Equal(t, 1, result.Signatures[0].ActiveParameter)
 	require.Len(t, result.Signatures[0].Parameters, 3)
+	require.NotNil(t, result.Signatures[0].Documentation)
+	assert.Equal(
+		t,
+		"Renders a form input.",
+		result.Signatures[0].Documentation.Value,
+	)
+	require.NotNil(t, result.Signatures[0].Parameters[0].Documentation)
+	assert.Equal(
+		t,
+		"HTML field name.",
+		result.Signatures[0].Parameters[0].Documentation.Value,
+	)
+	require.NotNil(t, result.Signatures[0].Parameters[1].Documentation)
+	assert.Equal(
+		t,
+		"Initial field value.",
+		result.Signatures[0].Parameters[1].Documentation.Value,
+	)
 }

@@ -10,7 +10,14 @@ import (
 )
 
 func TestMacrosInDocumentCollectsSignatureAndRanges(t *testing.T) {
-	source := `{% macro input(name, value = '', required = false) %}
+	source := `{## Renders a form input. ##}
+{% macro input(
+    ## HTML field name.
+    name,
+    ## Initial field value.
+    value = '',
+    required = false,
+) %}
 <input name="{{ name }}" value="{{ value }}">
 {% endmacro %}
 `
@@ -23,6 +30,7 @@ func TestMacrosInDocumentCollectsSignatureAndRanges(t *testing.T) {
 	macro := macros[0]
 	require.Equal(t, "input", macro.Name)
 	require.Equal(t, "input(name, value = '', required = false)", macro.Signature())
+	require.Equal(t, "Renders a form input.", macro.Documentation)
 	require.Equal(t, []string{"macros/forms.html.twig"}, macro.Templates)
 	require.Equal(t, "input", source[macro.NameRange.Start:macro.NameRange.End])
 	require.Equal(t, []string{"name", "value", "required"}, []string{
@@ -30,6 +38,9 @@ func TestMacrosInDocumentCollectsSignatureAndRanges(t *testing.T) {
 		macro.Parameters[1].Name,
 		macro.Parameters[2].Name,
 	})
+	require.Equal(t, "HTML field name.", macro.Parameters[0].Documentation)
+	require.Equal(t, "Initial field value.", macro.Parameters[1].Documentation)
+	require.Empty(t, macro.Parameters[2].Documentation)
 }
 
 func TestMacroReferencesResolveNamespaceDirectAliasAndSelf(t *testing.T) {

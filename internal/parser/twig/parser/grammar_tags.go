@@ -109,6 +109,10 @@ func parseTwigBlockStatement(p *parser, childParser parseFunction) (completedMar
 		return parseTwigProps(p, m), true
 	case p.at(syntax.TkWord) &&
 		p.peekToken() != nil &&
+		p.peekToken().Text() == "types":
+		return parseTwigTypes(p, m), true
+	case p.at(syntax.TkWord) &&
+		p.peekToken() != nil &&
 		p.peekToken().Text() == "form_theme":
 		return parseTwigFormTheme(p, m), true
 	case p.at(syntax.TkWord) &&
@@ -126,6 +130,19 @@ func parseTwigBlockStatement(p *parser, childParser parseFunction) (completedMar
 		p.complete(m, syntax.Error)
 		return completedMarker{}, false
 	}
+}
+
+// parseTwigTypes gives Twig's static-analysis types tag a stable, lossless
+// native boundary. Its type grammar intentionally remains tolerant because
+// editor input and custom type spellings can be incomplete; semantic queries
+// extract validated declarations from the exact source range.
+func parseTwigTypes(p *parser, outer *marker) completedMarker {
+	p.bump()
+	for !p.atEnd() && !p.atTwigBlockClose() {
+		p.bump()
+	}
+	p.expectAny(twigBlockCloseSet, nil)
+	return p.complete(outer, syntax.TwigTypes)
 }
 
 // parseTwigAssetic parses the legacy Assetic block tags:
@@ -439,6 +456,9 @@ func parseTwigMacro(p *parser, outer *marker, childParser parseFunction) complet
 			syntax.TkPercentCurly, syntax.TkMinusPercentCurly, syntax.TkTildePercentCurly, syntax.TkCloseParenthesis,
 		})
 	}, func(p *parser) {
+		if _, ok := parseTwigInlineComment(p); ok {
+			return
+		}
 		parseTwigFunctionArgument(p)
 		if p.at(syntax.TkComma) {
 			p.bump()
@@ -1052,6 +1072,7 @@ func parseTwigFor(p *parser, outer *marker, childParser parseFunction) completed
 	p.bump()
 
 	// parse key, value identifiers
+	parseTwigInlineComments(p)
 	if _, ok := parseTwigName(p); !ok {
 		p.addError(newErrorBuilder("variable name"))
 		p.recover([]syntax.Kind{
@@ -1067,6 +1088,7 @@ func parseTwigFor(p *parser, outer *marker, childParser parseFunction) completed
 	}
 	if p.at(syntax.TkComma) {
 		p.bump()
+		parseTwigInlineComments(p)
 		if _, ok := parseTwigName(p); !ok {
 			p.addError(newErrorBuilder("variable name"))
 			p.recover([]syntax.Kind{
@@ -1175,6 +1197,9 @@ func parseTwigSet(p *parser, outer *marker, childParser parseFunction) completed
 			syntax.TkEqual, syntax.TkPercentCurly, syntax.TkMinusPercentCurly, syntax.TkTildePercentCurly,
 		})
 	}, func(p *parser) {
+		if _, ok := parseTwigInlineComment(p); ok {
+			return
+		}
 		if _, ok := parseTwigName(p); ok {
 			declarationCount++
 		} else {

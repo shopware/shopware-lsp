@@ -7,7 +7,7 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/language"
 	"github.com/shopware/shopware-lsp/internal/lsp"
-	"github.com/shopware/shopware-lsp/internal/twigfmt"
+	twigformatter "github.com/shopware/shopware-lsp/internal/parser/twig/formatter"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
@@ -32,9 +32,9 @@ func (*TwigProvider) FormatDocument(
 	if err != nil {
 		return "", true, err
 	}
-	formatted, err := twigfmt.FormatTree(
+	formatted, err := twigformatter.FormatTree(
 		request.Document.SyntaxTree,
-		twigfmt.Options{
+		twigformatter.Options{
 			InsertSpaces:            request.Options.InsertSpaces,
 			TabSize:                 request.Options.TabSize,
 			TwigBlockIndentChildren: !isAdministrationTemplate(path),

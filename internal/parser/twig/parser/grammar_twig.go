@@ -47,6 +47,50 @@ func parseTwigPlainComment(p *parser, outer *marker) completedMarker {
 	return p.complete(outer, syntax.TwigComment)
 }
 
+// parseTwigInlineComment consumes Twig's line-scoped comment syntax inside a
+// supported binding list. Both regular `# ...` comments and Twig 3.29
+// documentation comments (`## ...`) are represented as TwigComment nodes; the
+// semantic distinction remains available from their lossless source text.
+//
+// The mode-less lexer deliberately tokenizes comment contents normally. Use a
+// raw token count here so trivia before the marker and inside the comment is
+// preserved without allowing Bump's trivia skipping to cross the line break.
+func parseTwigInlineComment(p *parser) (completedMarker, bool) {
+	if !p.at(syntax.TkHashtag) {
+		return completedMarker{}, false
+	}
+
+	count := 0
+	seenMarker := false
+	for token := p.peekNthToken(count); token != nil; token = p.peekNthToken(count) {
+		if seenMarker && token.Kind == syntax.TkLineBreak {
+			break
+		}
+		if !seenMarker && !token.Kind.IsTrivia() {
+			if token.Kind != syntax.TkHashtag {
+				return completedMarker{}, false
+			}
+			seenMarker = true
+		}
+		count++
+	}
+	if !seenMarker || count == 0 {
+		return completedMarker{}, false
+	}
+
+	m := p.start()
+	p.bumpNextNAs(count, syntax.TkWord)
+	return p.complete(m, syntax.TwigComment), true
+}
+
+func parseTwigInlineComments(p *parser) {
+	for {
+		if _, ok := parseTwigInlineComment(p); !ok {
+			return
+		}
+	}
+}
+
 // parseTwigVarStatement parses a {{ expr }} output statement. Port of
 // grammar/twig.rs:parse_twig_var_statement.
 func parseTwigVarStatement(p *parser) completedMarker {

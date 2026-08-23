@@ -12,6 +12,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/twig"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,7 +64,8 @@ class Controller extends \Symfony\Bundle\FrameworkBundle\Controller\AbstractCont
 				LineIndex:       document.LineIndex,
 			},
 		})
-		requireCompletion(t, items, "content")
+		content := requireCompletion(t, items, "content")
+		assert.Contains(t, content.Documentation.Value, "Main page content.")
 		requireCompletion(t, items, "sidebar")
 		requireCompletion(t, items, "child")
 		start = offset + 1
@@ -129,7 +131,8 @@ abstract class AbstractController {}`),
 	t.Cleanup(func() { require.NoError(t, twigIndex.Close()) })
 	require.NoError(t, twigIndex.Index(indexer.NewParsedFile(
 		filepath.Join(root, "templates", "base.html.twig"),
-		[]byte(`{% block content %}{% endblock %}
+		[]byte(`{## Main page content. ##}
+{% block content %}{% endblock %}
 {% block sidebar %}{% endblock %}`),
 	)))
 	require.NoError(t, twigIndex.Index(indexer.NewParsedFile(

@@ -87,6 +87,14 @@ func (p *TwigRenderBlockHoverProvider) GetHover(
 			block.Line,
 		)
 	}
+	for _, block := range declarations {
+		if block.Documentation == "" {
+			continue
+		}
+		markdown.WriteString("\n\n")
+		markdown.WriteString(block.Documentation)
+		break
+	}
 	rng := renderBlockHoverRange(reference.BlockRange, request.LineIndex)
 	return &protocol.Hover{
 		Contents: protocol.MarkupContent{

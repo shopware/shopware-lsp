@@ -11,18 +11,20 @@ import (
 )
 
 type MacroParameter struct {
-	Name    string
-	Default string
-	Range   cst.TextRange
+	Name          string
+	Default       string
+	Documentation string
+	Range         cst.TextRange
 }
 
 type Macro struct {
-	Name       string
-	Parameters []MacroParameter
-	FilePath   string
-	Templates  []string
-	Range      cst.TextRange
-	NameRange  cst.TextRange
+	Name          string
+	Parameters    []MacroParameter
+	Documentation string
+	FilePath      string
+	Templates     []string
+	Range         cst.TextRange
+	NameRange     cst.TextRange
 }
 
 func (macro Macro) Signature() string {
@@ -108,20 +110,36 @@ func MacrosInDocument(
 			continue
 		}
 		macro := Macro{
-			Name:      nameToken.Text(),
-			FilePath:  path,
-			Templates: append([]string(nil), templates...),
-			Range:     node.RangeTrimmedTrivia(),
-			NameRange: nameToken.Range(),
+			Name:          nameToken.Text(),
+			Documentation: DocumentationBefore(node),
+			FilePath:      path,
+			Templates:     append([]string(nil), templates...),
+			Range:         node.RangeTrimmedTrivia(),
+			NameRange:     nameToken.Range(),
 		}
 		arguments := directChild(start, twigsyntax.TwigArguments)
 		if arguments != nil {
+			var parameterDocumentation []string
 			for child := range arguments.ChildNodes() {
 				switch child.Kind() {
+				case twigsyntax.TwigComment:
+					if documentation, documented := DocumentationCommentText(
+						child.Text(),
+					); documented && documentation != "" {
+						parameterDocumentation = append(
+							parameterDocumentation,
+							documentation,
+						)
+					}
 				case twigsyntax.TwigExpression, twigsyntax.TwigNamedArgument:
 					if parameter, found := macroParameter(child); found {
+						parameter.Documentation = strings.Join(
+							parameterDocumentation,
+							"\n",
+						)
 						macro.Parameters = append(macro.Parameters, parameter)
 					}
+					parameterDocumentation = nil
 				}
 			}
 		}

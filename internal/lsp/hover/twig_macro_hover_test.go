@@ -20,7 +20,8 @@ func TestTwigMacroHoverShowsSignatureAndUsageCount(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, index.Close()) })
 	require.NoError(t, index.Index(indexer.NewParsedFile(
 		"/project/templates/macros/forms.html.twig",
-		[]byte(`{% macro input(name, value = '') %}{% endmacro %}`),
+		[]byte(`{## Renders a form input. ##}
+{% macro input(name, value = '') %}{% endmacro %}`),
 	)))
 	source := `{% import 'macros/forms.html.twig' as forms %}
 {{ forms.input('email') }}
@@ -59,6 +60,7 @@ func TestTwigMacroHoverShowsSignatureAndUsageCount(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Contains(t, result.Contents.Value, "input(name, value = '')")
+	assert.Contains(t, result.Contents.Value, "Renders a form input.")
 	assert.Contains(t, result.Contents.Value, "macros/forms.html.twig")
 	assert.Contains(t, result.Contents.Value, "1 indexed use")
 }
