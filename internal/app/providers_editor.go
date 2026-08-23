@@ -2,6 +2,7 @@ package app
 
 import (
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	lspformatting "github.com/shopware/shopware-lsp/internal/lsp/formatting"
 	"github.com/shopware/shopware-lsp/internal/lsp/inlay"
 	"github.com/shopware/shopware-lsp/internal/lsp/phpsemantic"
 	"github.com/shopware/shopware-lsp/internal/lsp/refactor"
@@ -10,6 +11,7 @@ import (
 )
 
 func registerEditorProviders(server *lsp.Server, phpFeatures *phpsemantic.Provider, services workspaceServices) {
+	server.RegisterDocumentFormattingProvider(lspformatting.NewTwigProvider())
 	server.RegisterSignatureHelpProvider(signature.NewTwigMacroSignatureProvider(
 		services.twig,
 	))

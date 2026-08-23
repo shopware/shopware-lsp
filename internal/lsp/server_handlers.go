@@ -83,6 +83,7 @@ func (s *Server) protocolMethodHandlers() map[string]rpcMethodHandler {
 		"textDocument/documentHighlight":    rpcResultHandler(s.documentHighlights),
 		"textDocument/linkedEditingRange":   rpcResultHandler(s.linkedEditingRanges),
 		"textDocument/foldingRange":         rpcResultHandler(s.foldingRanges),
+		"textDocument/formatting":           rpcResultHandler(s.formatting),
 		"textDocument/selectionRange":       rpcResultHandler(s.selectionRanges),
 		"textDocument/documentColor":        rpcResultHandler(s.documentColors),
 		"textDocument/colorPresentation":    rpcResultHandler(s.colorPresentations),

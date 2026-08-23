@@ -83,6 +83,8 @@ editing.
 ### PHP and Twig semantics
 
 - Native, lossless PHP and Twig parsers designed for incomplete editor input.
+- Native Twig/HTML document formatting with separate Shopware Administration
+  and Storefront block-indentation behavior and editor-provided tab settings.
 - Workspace-wide PHP symbols, inheritance, traits, types, PHPDoc generics,
   flow-sensitive inference, completion, hover, definitions, references,
   signature help, rename, and diagnostics.
@@ -172,7 +174,7 @@ whole workspace.
 | File type | Examples of framework support |
 |---|---|
 | PHP | Semantic types, completion, navigation, references, rename, diagnostics, code actions, code lenses |
-| Twig and HTML | Templates, blocks, routes, translations, components, forms, assets, Stimulus, typed variables |
+| Twig and HTML | Formatting, templates, blocks, routes, translations, components, forms, assets, Stimulus, typed variables |
 | XML and YAML | Services, routes, Doctrine mappings, configuration, translations, validation, security |
 | JavaScript and TypeScript | Administration components, snippets, routes, assets, Stimulus |
 | Vue | Shopware Administration component templates, scripts, styles, props, slots, events, and blocks |

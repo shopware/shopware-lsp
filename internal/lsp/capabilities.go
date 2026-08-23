@@ -38,6 +38,7 @@ func (s *Server) serverCapabilities() map[string]interface{} {
 	setProviderCapability(capabilities, "documentHighlightProvider", len(s.documentHighlightProviders), s.featureEnabled("documentHighlights"))
 	setProviderCapability(capabilities, "linkedEditingRangeProvider", len(s.linkedEditingProviders), s.featureEnabled("linkedEditing"))
 	setProviderCapability(capabilities, "foldingRangeProvider", len(s.foldingRangeProviders), s.featureEnabled("foldingRanges"))
+	setProviderCapability(capabilities, "documentFormattingProvider", len(s.documentFormattingProviders), s.featureEnabled("formatting"))
 	setProviderCapability(capabilities, "selectionRangeProvider", len(s.selectionRangeProviders), s.featureEnabled("selectionRanges"))
 	setProviderCapability(capabilities, "colorProvider", len(s.documentColorProviders), s.featureEnabled("documentColors"))
 	setProviderCapability(capabilities, "hoverProvider", len(s.hoverProviders), s.featureEnabled("hover"))

@@ -115,6 +115,13 @@ type FoldingRangeProvider interface {
 	) ([]protocol.FoldingRange, error)
 }
 
+type DocumentFormattingProvider interface {
+	FormatDocument(
+		ctx context.Context,
+		request *DocumentFormattingRequest,
+	) (formatted string, handled bool, err error)
+}
+
 type SelectionRangeProvider interface {
 	GetSelectionRanges(
 		ctx context.Context,

@@ -323,6 +323,15 @@ func parseHtmlElement(p *parser) completedMarker {
 // parseHtmlAttributeOrTwig parses one HTML attribute or a twig construct sitting
 // in the attribute list. Port of html.rs:parse_html_attribute_or_twig.
 func parseHtmlAttributeOrTwig(p *parser) (completedMarker, bool) {
+	// Twig constructs are valid entries in an HTML attribute list. Check for
+	// them before attempting to classify an attribute name: delimiter tokens
+	// such as `{%` and `{{` are deliberately not valid HTML name prefixes.
+	// Returning false for them here makes parseMany stop and prematurely closes
+	// the starting tag, leaving the complete attribute list in the tag body.
+	if p.atTwigBlockOpen() || p.atTwigVarOpen() || p.atTwigCommentOpen() {
+		return parseAnyTwig(p, parseHtmlAttributeOrTwig)
+	}
+
 	nameTokenCount, tokenText := htmlAttributeName(p)
 	if nameTokenCount == 0 {
 		return completedMarker{}, false

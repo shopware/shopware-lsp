@@ -696,6 +696,8 @@ func featureForMethod(method string) string {
 		return "linkedEditing"
 	case "textDocument/foldingRange":
 		return "foldingRanges"
+	case "textDocument/formatting":
+		return "formatting"
 	case "textDocument/selectionRange":
 		return "selectionRanges"
 	case "textDocument/documentColor", "textDocument/colorPresentation":

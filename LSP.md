@@ -18,6 +18,10 @@ The initialize result reports the negotiated state at
 through standard `executeCommandProvider` and can be called with
 `workspace/executeCommand`; direct custom requests remain supported.
 
+The server also advertises standard `textDocument/formatting` support when the
+`formatting` feature is enabled. Twig files are formatted from the current open
+document snapshot; no custom request is required.
+
 ### `shopware/integration/catalog`
 
 * **Parameters:** none

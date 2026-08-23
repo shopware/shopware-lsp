@@ -177,6 +177,7 @@ var FeatureCatalog = []CatalogEntry{
 	{ID: "documentHighlights", Label: "Document Highlights"},
 	{ID: "linkedEditing", Label: "Linked Editing"},
 	{ID: "foldingRanges", Label: "Folding Ranges"},
+	{ID: "formatting", Label: "Document Formatting"},
 	{ID: "selectionRanges", Label: "Selection Ranges"},
 	{ID: "documentColors", Label: "Document Colors"},
 	{ID: "semanticTokens", Label: "Semantic Tokens"},

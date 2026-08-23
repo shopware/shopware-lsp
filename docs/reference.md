@@ -493,6 +493,13 @@ exact public names shown by MCP `tools/list`; unknown names are rejected.
   operators with exact PHP host ranges
 
 ### Twig Template Support
+- Native whole-document Twig/HTML formatting through
+  `textDocument/formatting`, using the current unsaved CST and the editor's
+  `tabSize` / `insertSpaces` options. Templates below
+  `Resources/app/administration` keep Shopware's flat Twig-block children;
+  Storefront and ordinary Twig templates indent block children. Twig whitespace
+  controls (`-` and `~`), comments, and whitespace-sensitive `pre` / `textarea`
+  bodies are preserved.
 - Template path completion in Twig files (`extends`, `include`, `sw_extends`, `sw_include` tags)
 - Template path completion in PHP files (`renderStorefront` method calls)
 - Go-to-definition for template paths in Twig and PHP files

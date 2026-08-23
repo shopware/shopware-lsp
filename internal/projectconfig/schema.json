@@ -108,6 +108,7 @@
         "inlayHints": { "type": "boolean" }, "documentLinks": { "type": "boolean" },
         "documentSymbols": { "type": "boolean" }, "documentHighlights": { "type": "boolean" },
         "linkedEditing": { "type": "boolean" }, "foldingRanges": { "type": "boolean" },
+        "formatting": { "type": "boolean" },
         "selectionRanges": { "type": "boolean" }, "documentColors": { "type": "boolean" },
         "semanticTokens": { "type": "boolean" }, "codeActions": { "type": "boolean" },
         "workspaceSymbols": { "type": "boolean" }, "fileRename": { "type": "boolean" },

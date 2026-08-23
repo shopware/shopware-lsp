@@ -104,6 +104,11 @@ type FoldingRangeRequest struct {
 	Document *TextDocument
 }
 
+type DocumentFormattingRequest struct {
+	*protocol.DocumentFormattingParams
+	Document *TextDocument
+}
+
 type SelectionRangeRequest struct {
 	*protocol.SelectionRangeParams
 	Document *TextDocument

@@ -377,7 +377,7 @@ Configuration is layered, in increasing precedence:
 
 Three orthogonal switches gate behavior:
 
-- **Features** (`completion`, `hover`, `codeActions`, …) gate LSP capabilities
+- **Features** (`completion`, `hover`, `formatting`, `codeActions`, …) gate LSP capabilities
   and method dispatch. A disabled feature's method returns a disabled result.
 - **Domains** (`php`, `symfony.routes`, `shopware.snippets`, `administration`,
   …) gate whole subsystems: an index may not even be constructed, and its

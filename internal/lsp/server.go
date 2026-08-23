@@ -50,6 +50,7 @@ type Server struct {
 	documentHighlightProviders      []DocumentHighlightProvider
 	linkedEditingProviders          []LinkedEditingRangeProvider
 	foldingRangeProviders           []FoldingRangeProvider
+	documentFormattingProviders     []DocumentFormattingProvider
 	selectionRangeProviders         []SelectionRangeProvider
 	documentColorProviders          []DocumentColorProvider
 	semanticTokensProviders         []SemanticTokensProvider
@@ -137,43 +138,44 @@ const diagnosticsDebounce = 150 * time.Millisecond
 func NewServer(filescanner *indexer.FileScanner, rootPath, version string) *Server {
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	s := &Server{
-		completionProviders:        make([]CompletionProvider, 0),
-		definitionProviders:        make([]GotoDefinitionProvider, 0),
-		implementationProviders:    make([]ImplementationProvider, 0),
-		typeHierarchyProviders:     make([]TypeHierarchyProvider, 0),
-		callHierarchyProviders:     make([]CallHierarchyProvider, 0),
-		referencesProviders:        make([]ReferencesProvider, 0),
-		codeLensProviders:          make([]CodeLensProvider, 0),
-		actionProviders:            make([]ActionProvider, 0),
-		inspections:                newInspectionRegistry(),
-		hoverProviders:             make([]HoverProvider, 0),
-		signatureProviders:         make([]SignatureHelpProvider, 0),
-		renameProviders:            make([]RenameProvider, 0),
-		inlayHintProviders:         make([]InlayHintProvider, 0),
-		documentLinkProviders:      make([]DocumentLinkProvider, 0),
-		documentSymbolProviders:    make([]DocumentSymbolProvider, 0),
-		documentHighlightProviders: make([]DocumentHighlightProvider, 0),
-		linkedEditingProviders:     make([]LinkedEditingRangeProvider, 0),
-		foldingRangeProviders:      make([]FoldingRangeProvider, 0),
-		selectionRangeProviders:    make([]SelectionRangeProvider, 0),
-		documentColorProviders:     make([]DocumentColorProvider, 0),
-		semanticTokensProviders:    make([]SemanticTokensProvider, 0),
-		fileRenameProviders:        make([]FileRenameProvider, 0),
-		workspaceSymbolProviders:   make([]WorkspaceSymbolProvider, 0),
-		commandProviders:           make([]CommandProvider, 0),
-		commandMap:                 make(map[string]CommandFunc),
-		supportedClientCommands:    make(map[string]struct{}),
-		contextEnrichers:           make(map[language.ID]ContextEnricher),
-		documentManager:            NewDocumentManager(),
-		fileScanner:                filescanner,
-		rootPath:                   rootPath,
-		version:                    version,
-		lifecycleCtx:               lifecycleCtx,
-		lifecycleCancel:            lifecycleCancel,
-		diagnosticsJobs:            make(map[string]*diagnosticsJob),
-		diagnosticsGenerations:     make(map[string]uint64),
-		diagnosticsCache:           make(map[string]diagnosticsCacheEntry),
-		effectiveConfiguration:     projectconfig.Default(),
+		completionProviders:         make([]CompletionProvider, 0),
+		definitionProviders:         make([]GotoDefinitionProvider, 0),
+		implementationProviders:     make([]ImplementationProvider, 0),
+		typeHierarchyProviders:      make([]TypeHierarchyProvider, 0),
+		callHierarchyProviders:      make([]CallHierarchyProvider, 0),
+		referencesProviders:         make([]ReferencesProvider, 0),
+		codeLensProviders:           make([]CodeLensProvider, 0),
+		actionProviders:             make([]ActionProvider, 0),
+		inspections:                 newInspectionRegistry(),
+		hoverProviders:              make([]HoverProvider, 0),
+		signatureProviders:          make([]SignatureHelpProvider, 0),
+		renameProviders:             make([]RenameProvider, 0),
+		inlayHintProviders:          make([]InlayHintProvider, 0),
+		documentLinkProviders:       make([]DocumentLinkProvider, 0),
+		documentSymbolProviders:     make([]DocumentSymbolProvider, 0),
+		documentHighlightProviders:  make([]DocumentHighlightProvider, 0),
+		linkedEditingProviders:      make([]LinkedEditingRangeProvider, 0),
+		foldingRangeProviders:       make([]FoldingRangeProvider, 0),
+		documentFormattingProviders: make([]DocumentFormattingProvider, 0),
+		selectionRangeProviders:     make([]SelectionRangeProvider, 0),
+		documentColorProviders:      make([]DocumentColorProvider, 0),
+		semanticTokensProviders:     make([]SemanticTokensProvider, 0),
+		fileRenameProviders:         make([]FileRenameProvider, 0),
+		workspaceSymbolProviders:    make([]WorkspaceSymbolProvider, 0),
+		commandProviders:            make([]CommandProvider, 0),
+		commandMap:                  make(map[string]CommandFunc),
+		supportedClientCommands:     make(map[string]struct{}),
+		contextEnrichers:            make(map[language.ID]ContextEnricher),
+		documentManager:             NewDocumentManager(),
+		fileScanner:                 filescanner,
+		rootPath:                    rootPath,
+		version:                     version,
+		lifecycleCtx:                lifecycleCtx,
+		lifecycleCancel:             lifecycleCancel,
+		diagnosticsJobs:             make(map[string]*diagnosticsJob),
+		diagnosticsGenerations:      make(map[string]uint64),
+		diagnosticsCache:            make(map[string]diagnosticsCacheEntry),
+		effectiveConfiguration:      projectconfig.Default(),
 	}
 	s.methodHandlers = s.protocolMethodHandlers()
 
@@ -226,6 +228,17 @@ func (s *Server) RegisterLinkedEditingRangeProvider(
 func (s *Server) RegisterFoldingRangeProvider(provider FoldingRangeProvider) {
 	if provider != nil {
 		s.foldingRangeProviders = append(s.foldingRangeProviders, provider)
+	}
+}
+
+func (s *Server) RegisterDocumentFormattingProvider(
+	provider DocumentFormattingProvider,
+) {
+	if provider != nil {
+		s.documentFormattingProviders = append(
+			s.documentFormattingProviders,
+			provider,
+		)
 	}
 }
 
