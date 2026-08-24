@@ -18,6 +18,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/indexer"
 	"github.com/shopware/shopware-lsp/internal/language"
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/lsp/phpanalysis"
 	"github.com/shopware/shopware-lsp/internal/lsp/phpsemantic"
 	"github.com/shopware/shopware-lsp/internal/messenger"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
@@ -81,13 +82,7 @@ func registerFeatures(server *lsp.Server, root string, services workspaceService
 		registerAdministrationDocumentObserver(server, services.admin)
 	}
 	server.RegisterContextEnricher(language.PHP, func(ctx context.Context, syntax lsp.SyntaxContext) context.Context {
-		path := ""
-		version := 0
-		if syntax.Document != nil {
-			path, _ = uriutil.Path(syntax.Document.URI)
-			version = syntax.Document.Version
-		}
-		return services.php.AddDocumentContext(ctx, path, version, syntax.Node, syntax.Root)
+		return enrichPHPContext(ctx, services.php, syntax)
 	})
 	phpFeatures := phpsemantic.New(services.php)
 
@@ -100,6 +95,33 @@ func registerFeatures(server *lsp.Server, root string, services workspaceService
 	versioning := registerHoverProviders(server, root, phpFeatures, services)
 	registerEditorProviders(server, phpFeatures, services)
 	registerActionAndCommandProviders(server, root, versioning, services)
+}
+
+func enrichPHPContext(
+	ctx context.Context,
+	index *php.PHPIndex,
+	syntax lsp.SyntaxContext,
+) context.Context {
+	if index == nil || syntax.Document == nil {
+		return ctx
+	}
+	analysis, err := phpanalysis.ForDocument(index, syntax.Document)
+	if err == nil && analysis != nil {
+		return index.AddAnalyzedSnapshotContext(
+			ctx,
+			syntax.Node,
+			analysis.Document,
+			analysis.Snapshot,
+		)
+	}
+	path, _ := uriutil.Path(syntax.Document.URI)
+	return index.AddDocumentContext(
+		ctx,
+		path,
+		syntax.Document.Version,
+		syntax.Node,
+		syntax.Root,
+	)
 }
 
 func registerAdministrationDocumentObserver(

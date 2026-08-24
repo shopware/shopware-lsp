@@ -75,7 +75,27 @@ func (p *PHPIndex) addAnalyzedDocumentContext(
 	node *phpsyntax.Node,
 	document *semantic.Document,
 ) context.Context {
-	snapshot := p.SemanticSnapshot().WithDocument(document)
+	return p.AddAnalyzedSnapshotContext(
+		ctx,
+		node,
+		document,
+		p.SemanticSnapshot().WithDocument(document),
+	)
+}
+
+// AddAnalyzedSnapshotContext enriches a request with a semantic document and
+// its already-constructed overlay snapshot. LSP requests use this boundary to
+// share one revision-aware analysis instead of rebuilding the open document
+// and its overlay for every provider fan-out.
+func (p *PHPIndex) AddAnalyzedSnapshotContext(
+	ctx context.Context,
+	node *phpsyntax.Node,
+	document *semantic.Document,
+	snapshot *semantic.Snapshot,
+) context.Context {
+	if snapshot == nil {
+		snapshot = p.SemanticSnapshot().WithDocument(document)
+	}
 	var class *semantic.Symbol
 	if node != nil {
 		offset := node.Range().Start

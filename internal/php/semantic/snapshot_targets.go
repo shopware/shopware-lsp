@@ -6,6 +6,71 @@ import (
 	"github.com/shopware/shopware-lsp/internal/php/types"
 )
 
+// referenceMayTargetPacked cheaply rejects references which cannot resolve to
+// target before the more expensive inheritance-aware resolution runs. Open
+// document snapshots must resolve retained references against the overlay so
+// newly added declarations remain visible, but an inherited method lookup does
+// not need to traverse the hierarchy for every unrelated member name in the
+// workspace.
+func (s *Snapshot) referenceMayTargetPacked(
+	document *workspaceDocument,
+	reference *workspaceReference,
+	target SymbolView,
+) bool {
+	if s == nil || document == nil || reference == nil {
+		return false
+	}
+	switch reference.kind() {
+	case ClassName:
+		return isClassLikeKind(target.Kind())
+	case FunctionName:
+		return target.Kind() == FunctionSymbol
+	case ConstantName:
+		return target.Kind() == GlobalConstantSymbol
+	case MemberName:
+		if !memberReferenceKindMatches(reference.targetKind(), target.Kind()) {
+			return false
+		}
+		return s.lowerName(
+			document.referenceString(reference.nameIndex()),
+			true,
+		) == s.lowerName(target.Name(), true)
+	case VariableName:
+		return packedReferenceRecordsTarget(document, reference, target.ID())
+	default:
+		return true
+	}
+}
+
+func memberReferenceKindMatches(referenceKind, targetKind SymbolKind) bool {
+	if referenceKind == targetKind {
+		return true
+	}
+	return referenceKind == ClassConstantSymbol && targetKind == EnumCaseSymbol
+}
+
+func packedReferenceRecordsTarget(
+	document *workspaceDocument,
+	reference *workspaceReference,
+	target SymbolID,
+) bool {
+	if target == "" {
+		return false
+	}
+	if SymbolID(document.referenceString(reference.resolvedIndex())) == target {
+		return true
+	}
+	valueStart := int(reference.valueStart(document))
+	candidateStart := valueStart + int(reference.qualifiedCount())
+	candidateEnd := candidateStart + int(reference.candidateCount())
+	for valueIndex := candidateStart; valueIndex < candidateEnd; valueIndex++ {
+		if SymbolID(document.referenceValue(valueIndex)) == target {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Snapshot) referenceTargetsPacked(
 	document *workspaceDocument,
 	reference *workspaceReference,

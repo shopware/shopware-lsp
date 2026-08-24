@@ -403,10 +403,17 @@ func (s *Snapshot) ReferencesTo(id SymbolID) []ReferenceLocation {
 		return nil
 	}
 	if s.base != nil {
+		target, found := s.SymbolView(id)
+		if !found {
+			return nil
+		}
 		var result []ReferenceLocation
 		s.visitPathReferences(func(path string, document *workspaceDocument) {
 			for index := range document.References {
 				reference := &document.References[index]
+				if !s.referenceMayTargetPacked(document, reference, target) {
+					continue
+				}
 				rng := reference.rangeValue(document)
 				for _, target := range s.referenceTargetsPacked(
 					document,
@@ -422,6 +429,24 @@ func (s *Snapshot) ReferencesTo(id SymbolID) []ReferenceLocation {
 					}
 				}
 			}
+		})
+		slices.SortFunc(result, func(left, right ReferenceLocation) int {
+			if compared := strings.Compare(left.Path, right.Path); compared != 0 {
+				return compared
+			}
+			if left.RangeStart < right.RangeStart {
+				return -1
+			}
+			if left.RangeStart > right.RangeStart {
+				return 1
+			}
+			if left.RangeEnd < right.RangeEnd {
+				return -1
+			}
+			if left.RangeEnd > right.RangeEnd {
+				return 1
+			}
+			return 0
 		})
 		return result
 	}

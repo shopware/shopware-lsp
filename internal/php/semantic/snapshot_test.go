@@ -1547,6 +1547,69 @@ func TestOverlayResolvesReferencesFromOtherDocuments(t *testing.T) {
 	}}, overlay.ReferencesTo(service.ID))
 }
 
+func TestOverlayReferencesPrefilterUnrelatedInheritedMembers(t *testing.T) {
+	t.Parallel()
+	parent := Symbol{
+		ID:             "parent",
+		Kind:           ClassSymbol,
+		Name:           "ParentService",
+		FullyQualified: "App\\ParentService",
+		Path:           "/parent.php",
+	}
+	method := Symbol{
+		ID:        "execute",
+		Kind:      MethodSymbol,
+		Name:      "execute",
+		Container: parent.ID,
+		Path:      parent.Path,
+	}
+	child := Symbol{
+		ID:             "child",
+		Kind:           ClassSymbol,
+		Name:           "ChildService",
+		FullyQualified: "App\\ChildService",
+		Path:           "/child.php",
+		Extends:        []string{parent.FullyQualified},
+	}
+	consumer := &Document{
+		Path: "/consumer.php",
+		References: []Reference{{
+			Name:       "execute",
+			Kind:       MemberName,
+			Receiver:   types.Named(child.FullyQualified),
+			TargetKind: MethodSymbol,
+			Range:      cst.TextRange{Start: 10, End: 17},
+		}, {
+			Name:       "unrelated",
+			Kind:       MemberName,
+			Receiver:   types.Named(child.FullyQualified),
+			TargetKind: MethodSymbol,
+			Range:      cst.TextRange{Start: 30, End: 39},
+		}},
+	}
+	snapshot := NewSnapshot(1, []*Document{
+		{Path: parent.Path, Symbols: []Symbol{parent, method}},
+		{Path: child.Path, Symbols: []Symbol{child}},
+		consumer,
+	}).WithDocument(&Document{Path: "/open.php"})
+
+	target, found := snapshot.SymbolView(method.ID)
+	require.True(t, found)
+	packed := snapshot.base.pathRefs[consumer.Path]
+	require.NotNil(t, packed)
+	require.True(t, snapshot.referenceMayTargetPacked(
+		packed, &packed.References[0], target,
+	))
+	require.False(t, snapshot.referenceMayTargetPacked(
+		packed, &packed.References[1], target,
+	))
+	require.Equal(t, []ReferenceLocation{{
+		Path:       consumer.Path,
+		RangeStart: 10,
+		RangeEnd:   17,
+	}}, snapshot.ReferencesTo(method.ID))
+}
+
 func TestUpdatedSymbolOverlayIsImmutableAndReusesIndexes(t *testing.T) {
 	t.Parallel()
 	method := Symbol{
