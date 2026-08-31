@@ -561,6 +561,28 @@ func TestShouldSkipRelPathKeepsComposerPackagesNamedCache(t *testing.T) {
 	)))
 }
 
+func TestShouldSkipRelPathIgnoresToolingDirectoriesAtAnyDepth(t *testing.T) {
+	t.Parallel()
+
+	for _, directory := range []string{
+		".claude",
+		".codex",
+		".continue",
+		".cursor",
+		".delta",
+		".ddev",
+		".devbox",
+		".devenv",
+		".direnv",
+		".fleet",
+		".windsurf",
+		".zed",
+	} {
+		require.True(t, shouldSkipRelPath(filepath.Join(directory, "config.yaml")))
+		require.True(t, shouldSkipRelPath(filepath.Join("nested", directory, "config.yaml")))
+	}
+}
+
 func TestFileScanner_SupplementalIndexerSelectivelyReopensSkippedDirectory(
 	t *testing.T,
 ) {

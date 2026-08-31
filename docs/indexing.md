@@ -222,7 +222,8 @@ count as indexing. Two filters apply.
 
 ```
 node_modules  var  vendor-bin  bin  cache  dist  .tmp  .git  .github
-.gitlab  .run  .idea  .vscode  tests  public  .devenv  .direnv
+.gitlab  .claude  .codex  .continue  .cursor  .delta  .windsurf  .run
+.idea  .vscode  .fleet  .zed  tests  public  .ddev  .devbox  .devenv  .direnv
 ```
 
 with one important refinement: inside a `vendor` tree, the entries `cache`,
