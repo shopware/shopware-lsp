@@ -177,17 +177,28 @@ func applicationContainerReceiverName(
 
 func applicationContainerConstAliasNames(
 	root *jssyntax.Node,
+	analysis *JavaScriptDocumentAnalysis,
 ) map[string]bool {
 	if root == nil {
 		return nil
 	}
 	result := make(map[string]bool)
-	for _, declaration := range jsquery.Nodes(
-		root, jssyntax.JsVariableDeclaration,
-	) {
-		name, initializer, found := directComponentConstInitializer(
-			declaration.Text(),
-		)
+	var declarations []*jssyntax.Node
+	if analysis != nil {
+		declarations = analysis.Nodes(jssyntax.JsVariableDeclaration)
+	} else {
+		declarations = jsquery.Nodes(root, jssyntax.JsVariableDeclaration)
+	}
+	for _, declaration := range declarations {
+		var name, initializer string
+		var found bool
+		if analysis != nil {
+			name, initializer, found = analysis.constInitializer(declaration)
+		} else {
+			name, initializer, found = directComponentConstInitializer(
+				declaration.Text(),
+			)
+		}
 		if !found {
 			continue
 		}

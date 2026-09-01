@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	jsquery "github.com/shopware/shopware-lsp/internal/parser/javascript/query"
 	jssyntax "github.com/shopware/shopware-lsp/internal/parser/javascript/syntax"
 	twigparser "github.com/shopware/shopware-lsp/internal/parser/twig"
+	twigsyntax "github.com/shopware/shopware-lsp/internal/parser/twig/syntax"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -143,6 +145,93 @@ other.EventBus.emit('save');
 	assert.Len(t, eventSet.Occurrences, 3)
 	for _, occurrence := range eventSet.Occurrences {
 		assert.False(t, occurrence.Declaration)
+	}
+}
+
+func TestCollectJavaScriptUsagesDoesNotPublishMixinEvents(t *testing.T) {
+	source := `
+Shopware.Component.register('sw-owner', { emits: ['component-event'] });
+Shopware.Mixin.register('shared', { emits: ['mixin-event'] });
+`
+	sets := CollectJavaScriptUsages(
+		javascriptparser.Parse(source).Tree.Root,
+		"/project/consumer.ts",
+		jssyntax.NewLineIndex(source),
+	)
+	events := make(map[string]bool)
+	for _, set := range sets {
+		if set.Kind == AdminSymbolComponentEvent {
+			events[set.Name] = true
+		}
+	}
+	require.Equal(t, map[string]bool{"component-event": true}, events)
+}
+
+func BenchmarkCollectJavaScriptUsages(b *testing.B) {
+	var source strings.Builder
+	source.WriteString(`const { EventBus } = Shopware.Utils;
+export default {
+    inject: ['acl'],
+    props: { productId: String },
+    data() { return {`)
+	for index := range 40 {
+		fmt.Fprintf(&source, " value%d: %d,", index, index)
+	}
+	source.WriteString(` }; },
+    methods: {`)
+	for index := range 40 {
+		fmt.Fprintf(
+			&source,
+			" member%d() { EventBus.emit('event-%d'); return this.value%d + this.productId + this.acl; },",
+			index,
+			index,
+			index,
+		)
+	}
+	source.WriteString(` }
+};`)
+	content := source.String()
+	root := javascriptparser.Parse(content).Tree.Root
+	lineIndex := jssyntax.NewLineIndex(content)
+	b.ReportAllocs()
+	b.ResetTimer()
+	var result []AdminUsageSet
+	for range b.N {
+		result = CollectJavaScriptUsages(
+			root, "/project/consumer.ts", lineIndex,
+		)
+	}
+	if len(result) == 0 {
+		b.Fatal("expected Administration usages")
+	}
+}
+
+func BenchmarkCollectTwigUsages(b *testing.B) {
+	var source strings.Builder
+	source.WriteString(`<sw-data-grid #default="{ item }">
+<div v-for="(entry, index) in items" :key="entry.id">`)
+	for index := range 80 {
+		fmt.Fprintf(
+			&source,
+			`<span :title="entry.name + item.label + globalValue%d">{{ entry.value + item.label + globalValue%d }}</span>`,
+			index,
+			index,
+		)
+	}
+	source.WriteString(`</div></sw-data-grid>`)
+	content := source.String()
+	root := twigparser.Parse(content).Tree.Root
+	lineIndex := twigsyntax.NewLineIndex(content)
+	b.ReportAllocs()
+	b.ResetTimer()
+	var result []AdminUsageSet
+	for range b.N {
+		result = CollectTwigUsages(
+			root, "/project/template.html.twig", lineIndex,
+		)
+	}
+	if len(result) == 0 {
+		b.Fatal("expected Administration usages")
 	}
 }
 

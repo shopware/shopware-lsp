@@ -367,10 +367,38 @@ func TwigScopedSlotsAtOffset(
 	root *twigsyntax.Node,
 	offset uint32,
 ) []TwigScopedSlot {
+	return twigScopedSlotsAtOffset(TwigScopedSlots(root), offset)
+}
+
+func twigScopedSlotsAtOffset(
+	scopes []TwigScopedSlot,
+	offset uint32,
+) []TwigScopedSlot {
 	var result []TwigScopedSlot
-	seen := make(map[string]bool)
+	for _, scope := range scopes {
+		if offset >= scope.TemplateRange.Start &&
+			offset <= scope.TemplateRange.End {
+			result = append(result, scope)
+		}
+	}
+	return result
+}
+
+// TwigScopedSlots returns every lexical scoped-slot declaration in outermost
+// to innermost range order. Document-wide analyses can retain this immutable
+// snapshot and filter it for several offsets without reparsing every tag.
+func TwigScopedSlots(root *twigsyntax.Node) []TwigScopedSlot {
+	var result []TwigScopedSlot
+	type scopeKey struct {
+		template cst.TextRange
+		binding  cst.TextRange
+	}
+	seen := make(map[scopeKey]bool)
 	add := func(scope TwigScopedSlot) {
-		key := scope.TemplateRange.String() + "\x00" + scope.BindingRange.String()
+		key := scopeKey{
+			template: scope.TemplateRange,
+			binding:  scope.BindingRange,
+		}
 		if seen[key] {
 			return
 		}
@@ -383,9 +411,6 @@ func TwigScopedSlotsAtOffset(
 			continue
 		}
 		templateRange := node.RangeTrimmedTrivia()
-		if offset < templateRange.Start || offset > templateRange.End {
-			continue
-		}
 		startingTag, ok := tag.StartingTag()
 		if !ok {
 			continue

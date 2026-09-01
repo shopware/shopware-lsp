@@ -196,6 +196,32 @@ func TestWorkspaceSymbolCatalogBulkInsertPreservesFTSDocIDs(t *testing.T) {
 	require.Equal(t, "BulkSymbol160", result[0].Name)
 }
 
+func TestWorkspaceSymbolIndexTextNormalization(t *testing.T) {
+	symbol := WorkspaceSymbol{
+		Name:          "SystemConfigServiceFactory42",
+		ContainerName: `Shopware\\Core\\System\\SystemConfigService`,
+		Aliases: []string{
+			`Shopware\\Core\\System\\SystemConfig\\SystemConfigServiceFactory42`,
+			"system-config-service-factory-42",
+		},
+	}
+	require.Equal(
+		t,
+		"system config service factory 42 "+
+			"systemconfigservicefactory42 configservicefactory42 "+
+			"servicefactory42 factory42 systemconfigservice configservice",
+		workspaceSymbolIndexText(symbol),
+	)
+	require.Equal(t, "RésuméÜber", workspaceSymbolLeafName("Vendor·RésuméÜber"))
+	require.Equal(t, "RésuméÜber", workspaceSymbolLeafName("Vendor·RésuméÜber/"))
+	require.Equal(t, `\\`, workspaceSymbolLeafName(`\\`))
+	require.Equal(
+		t,
+		"xml http request 2 xmlhttprequest2 httprequest2 request2 résumé über résuméüber",
+		workspaceSymbolSearchText("XMLHttpRequest2", "RésuméÜber"),
+	)
+}
+
 func TestFileScannerMaintainsWorkspaceSymbolCatalogLifecycle(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -246,4 +272,82 @@ func TestFileScannerMaintainsWorkspaceSymbolCatalogLifecycle(t *testing.T) {
 	ready, err = catalog.Ready(ctx)
 	require.NoError(t, err)
 	require.False(t, ready)
+}
+
+func BenchmarkWorkspaceSymbolIndexText(b *testing.B) {
+	symbol := WorkspaceSymbol{
+		Name:          "SystemConfigServiceFactory42",
+		ContainerName: `Shopware\\Core\\System\\SystemConfigService`,
+		Aliases: []string{
+			`Shopware\\Core\\System\\SystemConfig\\SystemConfigServiceFactory42`,
+			"system-config-service-factory-42",
+		},
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	var result string
+	for range b.N {
+		result = workspaceSymbolIndexText(symbol)
+	}
+	if result == "" {
+		b.Fatal("expected workspace symbol search text")
+	}
+}
+
+func BenchmarkWorkspaceSymbolCatalogReplaceFilesBulk(b *testing.B) {
+	ctx := context.Background()
+	store, err := NewStore(filepath.Join(b.TempDir(), "indexes.db"))
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, store.Close()) })
+	catalog, err := NewWorkspaceSymbolCatalog(store)
+	require.NoError(b, err)
+	catalog.BeginBulkPopulation()
+
+	files := benchmarkWorkspaceSymbolDocuments(50, 20)
+	require.NoError(b, catalog.ReplaceFiles(ctx, files))
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		require.NoError(b, catalog.ReplaceFiles(ctx, files))
+	}
+}
+
+func benchmarkWorkspaceSymbolDocuments(
+	fileCount int,
+	symbolsPerFile int,
+) []WorkspaceSymbolDocument {
+	files := make([]WorkspaceSymbolDocument, 0, fileCount)
+	for fileIndex := range fileCount {
+		path := fmt.Sprintf("/project/src/Domain%03d.php", fileIndex)
+		symbols := make([]WorkspaceSymbol, 0, symbolsPerFile)
+		for symbolIndex := range symbolsPerFile {
+			name := fmt.Sprintf(
+				"Domain%03dProductConfigurationService%03d",
+				fileIndex,
+				symbolIndex,
+			)
+			symbols = append(symbols, WorkspaceSymbol{
+				Name:          name,
+				ContainerName: `Shopware\\Core\\Content\\Product`,
+				Aliases: []string{
+					`Shopware\\Core\\Content\\Product\\` + name,
+					"product-configuration-" + name,
+				},
+				Path:     path,
+				Domain:   "php",
+				Kind:     WorkspaceSymbolMethod,
+				Priority: WorkspaceSymbolPriorityPHPMember,
+				Range: WorkspaceSymbolRange{
+					Start: WorkspaceSymbolPosition{Line: symbolIndex},
+					End: WorkspaceSymbolPosition{
+						Line: symbolIndex, Character: len(name),
+					},
+				},
+			})
+		}
+		files = append(files, WorkspaceSymbolDocument{
+			Path: path, Symbols: symbols,
+		})
+	}
+	return files
 }

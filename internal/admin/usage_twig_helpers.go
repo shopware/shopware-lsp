@@ -45,7 +45,13 @@ func twigVueRootIdentifierIsLocal(
 	content []byte,
 	identifier TwigVueMember,
 ) bool {
-	return TwigVueRootIdentifierIsLocal(root, content, identifier)
+	return twigVueRootIdentifierIsLocalIn(
+		root,
+		content,
+		TwigVueBindings(root, content),
+		TwigScopedSlots(root),
+		identifier,
+	)
 }
 
 // TwigVueRootIdentifierIsLocal reports whether identifier resolves to a
@@ -56,13 +62,29 @@ func TwigVueRootIdentifierIsLocal(
 	content []byte,
 	identifier TwigVueMember,
 ) bool {
-	if binding, found := TwigVueBindingAtOffset(
-		root, content, identifier.Range.Start,
+	return twigVueRootIdentifierIsLocalIn(
+		root,
+		content,
+		TwigVueBindings(root, content),
+		TwigScopedSlots(root),
+		identifier,
+	)
+}
+
+func twigVueRootIdentifierIsLocalIn(
+	root *twigsyntax.Node,
+	content []byte,
+	bindings []TwigVueBinding,
+	scopes []TwigScopedSlot,
+	identifier TwigVueMember,
+) bool {
+	if binding, found := twigVueBindingAtOffset(
+		root, content, bindings, identifier.Range.Start,
 	); found && binding != nil {
 		return true
 	}
-	for _, scope := range TwigScopedSlotsAtOffset(
-		root, identifier.Range.Start,
+	for _, scope := range twigScopedSlotsAtOffset(
+		scopes, identifier.Range.Start,
 	) {
 		for _, binding := range scope.Bindings {
 			if binding.LocalName == identifier.Name {

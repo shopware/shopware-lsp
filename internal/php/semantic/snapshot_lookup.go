@@ -144,9 +144,17 @@ func (s *Snapshot) visitCallContracts(
 	entries func(*Snapshot) []indexedCallContract,
 	visit func(CallContract) bool,
 ) bool {
+	// Analysis normally has one open-document overlay. Keep that path inline so
+	// every call-contract lookup does not allocate a map merely to shadow the
+	// current document's persisted metadata. A map is only needed for the rare
+	// chain containing distinct document overlays.
+	shadowedPath := ""
 	var shadowedPaths map[string]struct{}
 	for current := s; current != nil; current = current.base {
 		for _, entry := range entries(current) {
+			if entry.path == shadowedPath {
+				continue
+			}
 			if _, shadowed := shadowedPaths[entry.path]; shadowed {
 				continue
 			}
@@ -155,10 +163,18 @@ func (s *Snapshot) visitCallContracts(
 			}
 		}
 		if current.overlayPath != "" {
-			if shadowedPaths == nil {
-				shadowedPaths = make(map[string]struct{})
+			switch {
+			case shadowedPath == "":
+				shadowedPath = current.overlayPath
+			case shadowedPath == current.overlayPath:
+			case shadowedPaths == nil:
+				shadowedPaths = map[string]struct{}{
+					shadowedPath:        {},
+					current.overlayPath: {},
+				}
+			default:
+				shadowedPaths[current.overlayPath] = struct{}{}
 			}
-			shadowedPaths[current.overlayPath] = struct{}{}
 		}
 	}
 	return true

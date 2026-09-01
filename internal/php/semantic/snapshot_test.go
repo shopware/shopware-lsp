@@ -1050,6 +1050,55 @@ func TestSnapshotDocumentOverlayReplacesPersistedSymbols(t *testing.T) {
 	require.Len(t, snapshot.Classes("App\\New"), 1)
 }
 
+func TestSnapshotCallContractsRespectMultipleDocumentOverlays(t *testing.T) {
+	contract := func(argument uint16) CallContract {
+		return CallContract{
+			Target: NewFunctionCallTarget("make"),
+			Return: CallReturnContract{
+				Kind: CallReturnArgumentType, Argument: argument,
+			},
+		}
+	}
+	snapshot := NewSnapshot(1, []*Document{
+		{Path: "/one.php", CallContracts: []CallContract{contract(1)}},
+		{Path: "/two.php", CallContracts: []CallContract{contract(2)}},
+	})
+	snapshot = snapshot.WithDocument(&Document{Path: "/one.php"})
+	snapshot = snapshot.WithDocument(&Document{
+		Path: "/two.php", CallContracts: []CallContract{contract(3)},
+	})
+	var arguments []uint16
+	snapshot.VisitFunctionCallContracts("make", func(current CallContract) bool {
+		arguments = append(arguments, current.Return.Argument)
+		return true
+	})
+	require.Equal(t, []uint16{3}, arguments)
+}
+
+func BenchmarkSnapshotVisitFunctionCallContractsOverlay(b *testing.B) {
+	contract := CallContract{
+		Target: NewFunctionCallTarget("make"),
+		Return: CallReturnContract{
+			Kind: CallReturnArgumentType, Argument: 1,
+		},
+	}
+	snapshot := NewSnapshot(1, []*Document{{
+		Path: "/meta.php", CallContracts: []CallContract{contract},
+	}}).WithDeclarations(&Document{Path: "/consumer.php"})
+	b.ReportAllocs()
+	b.ResetTimer()
+	visits := 0
+	for range b.N {
+		snapshot.VisitFunctionCallContracts("make", func(CallContract) bool {
+			visits++
+			return true
+		})
+	}
+	if visits != b.N {
+		b.Fatalf("expected %d visits, got %d", b.N, visits)
+	}
+}
+
 func TestSnapshotGlobalSymbolsExcludeMembersAndRespectOverlays(t *testing.T) {
 	t.Parallel()
 	oldClass := Symbol{

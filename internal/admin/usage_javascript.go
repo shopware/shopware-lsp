@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"strconv"
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
@@ -15,10 +14,18 @@ func parseAdminJavaScriptUsages(
 	lineIndex *cst.LineIndex,
 ) []AdminUsageSet {
 	collector := newAdminUsageCollector(filePath, lineIndex)
-	collectComponentEventUsages(root, filePath, collector)
-	collectComponentMemberUsages(root, filePath, collector)
-	for _, literal := range jsquery.Nodes(root, jssyntax.JsString) {
-		if _, eventName, found := JavaScriptShopwareEventBusEventAt(
+	analysis := NewJavaScriptDocumentAnalysis(root)
+	componentObjects := componentUsageObjects(analysis)
+	for _, object := range componentObjects {
+		if object.events {
+			collectComponentEventObjectUsages(object.node, filePath, collector)
+		}
+	}
+	for _, object := range componentObjects {
+		collectComponentMemberObjectUsages(object.node, filePath, collector)
+	}
+	for _, literal := range analysis.Nodes(jssyntax.JsString) {
+		if _, eventName, found := analysis.ShopwareEventBusEventAt(
 			literal,
 		); found && eventName != "" {
 			collector.addJSString(
@@ -72,7 +79,7 @@ func parseAdminJavaScriptUsages(
 		}
 	}
 
-	for _, call := range jsquery.Calls(root) {
+	for _, call := range analysis.Calls() {
 		name := jsquery.CallName(call)
 		method := jsquery.CallMethodName(call)
 		switch name {
@@ -122,15 +129,18 @@ func parseAdminJavaScriptUsages(
 		}
 	}
 
-	applicationContainerAliases := applicationContainerConstAliasNames(root)
-	for _, member := range jsquery.Nodes(root, jssyntax.JsMemberExpression) {
+	applicationContainerAliases := applicationContainerConstAliasNames(
+		root, analysis,
+	)
+	members := analysis.Nodes(jssyntax.JsMemberExpression)
+	for _, member := range members {
 		containerName, memberName, containerMatched :=
 			"", "", false
 		if potentialApplicationContainerMember(
 			member, applicationContainerAliases,
 		) {
 			containerName, memberName, containerMatched =
-				JavaScriptApplicationContainerMember(member)
+				analysis.ApplicationContainerMember(member)
 		}
 		if containerMatched && containerName == "service" && memberName != "" {
 			collector.addNode(
@@ -155,7 +165,7 @@ func parseAdminJavaScriptUsages(
 		for _, name := range definition.Injected {
 			injected[name] = true
 		}
-		for _, member := range jsquery.Nodes(root, jssyntax.JsMemberExpression) {
+		for _, member := range members {
 			name, matched := jsquery.ThisMember(member)
 			if !matched || !injected[name] {
 				continue
@@ -184,31 +194,39 @@ func CollectJavaScriptUsages(
 	return parseAdminJavaScriptUsages(root, filePath, lineIndex)
 }
 
-func collectComponentMemberUsages(
-	root *jssyntax.Node,
-	filePath string,
-	collector *adminUsageCollector,
-) {
-	if root == nil || collector == nil {
-		return
+type componentUsageObject struct {
+	node   *jssyntax.Node
+	events bool
+}
+
+func componentUsageObjects(
+	analysis *JavaScriptDocumentAnalysis,
+) []componentUsageObject {
+	if analysis == nil {
+		return nil
 	}
-	objects := make(map[string]*jssyntax.Node)
-	addObject := func(object *jssyntax.Node) {
+	seen := make(map[cst.TextRange]int)
+	var objects []componentUsageObject
+	addObject := func(object *jssyntax.Node, events bool) {
 		if object == nil {
 			return
 		}
 		rangeValue := object.RangeTrimmedTrivia()
-		key := strconv.FormatUint(uint64(rangeValue.Start), 10) + ":" +
-			strconv.FormatUint(uint64(rangeValue.End), 10)
-		objects[key] = object
+		if position, found := seen[rangeValue]; found {
+			objects[position].events = objects[position].events || events
+			return
+		}
+		seen[rangeValue] = len(objects)
+		objects = append(objects, componentUsageObject{
+			node: object, events: events,
+		})
 	}
-	for _, export := range jsquery.ExportDefaults(root) {
+	for _, export := range analysis.Nodes(jssyntax.JsExportDefault) {
 		addObject(componentDefinitionObject(
 			jsquery.ExportDefaultExpression(export),
-		))
+		), true)
 	}
-	for _, call := range jsquery.Calls(
-		root,
+	for _, call := range analysis.Calls(
 		"Component.register",
 		"Shopware.Component.register",
 		"Component.extend",
@@ -218,132 +236,95 @@ func collectComponentMemberUsages(
 		"Mixin.register",
 		"Shopware.Mixin.register",
 	) {
+		callName := jsquery.CallName(call)
 		argument := 1
-		if strings.HasSuffix(jsquery.CallName(call), ".extend") {
+		if strings.HasSuffix(callName, ".extend") {
 			argument = 2
 		}
 		addObject(componentDefinitionObject(
 			jsquery.ArgumentExpression(call, argument),
-		))
+		), callName != "Mixin.register" && callName != "Shopware.Mixin.register")
 	}
-	for _, object := range objects {
-		definition := &ComponentDefinition{FilePath: filePath}
-		parseDefinitionObject(object, definition, collector.lineIndex)
-		setDefinitionFilePath(definition, filePath)
-		component := VueComponent{
-			DefinitionPath: filePath, Props: definition.Props,
-			Injected: definition.Injected, Members: definition.Members,
-			LocalDirectives: definition.LocalDirectives,
-		}
-		for _, directive := range definition.LocalDirectives {
-			style := AdminNameExact
-			if directive.Shorthand {
-				style = AdminNameShorthand
-			} else if !directive.Quoted {
-				style = AdminNameCamel
-			}
-			collector.addSourceRange(
-				AdminSymbolDirective,
-				directive.FilePath,
-				directive.Name,
-				directive.NameRange,
-				style,
-			)
-		}
-		for _, member := range definition.Members {
-			if !member.Renameable() {
-				continue
-			}
-			style := AdminNameExact
-			if member.Shorthand {
-				style = AdminNameShorthand
-			}
-			collector.addSourceRange(
-				AdminSymbolComponentMember,
-				member.SourceIdentity(),
-				member.Name,
-				member.NameRange,
-				style,
-			)
-		}
-		for _, expression := range jsquery.Nodes(
-			object, jssyntax.JsMemberExpression,
-		) {
-			name, matched := jsquery.ThisMember(expression)
-			if !matched || name == "" {
-				continue
-			}
-			if _, prop := component.ComponentProp(name); prop {
-				continue
-			}
-			injected := false
-			for _, service := range component.Injected {
-				if service == name {
-					injected = true
-					break
-				}
-			}
-			if injected {
-				continue
-			}
-			owner := ""
-			if member, found := component.TemplateMember(name); found &&
-				member.Renameable() {
-				owner = member.SourceIdentity()
-			}
-			collector.addNode(
-				AdminSymbolComponentMember,
-				owner,
-				name,
-				jsquery.ThisMemberNameNode(expression),
-				false,
-			)
-		}
-	}
+	return objects
 }
 
-func collectComponentEventUsages(
-	root *jssyntax.Node,
+func collectComponentMemberObjectUsages(
+	object *jssyntax.Node,
 	filePath string,
 	collector *adminUsageCollector,
 ) {
-	if root == nil || collector == nil {
+	if object == nil || collector == nil {
 		return
 	}
-	objects := make(map[string]*jssyntax.Node)
-	addObject := func(object *jssyntax.Node) {
-		if object == nil {
-			return
+	definition := &ComponentDefinition{FilePath: filePath}
+	parseDefinitionObject(object, definition, collector.lineIndex)
+	setDefinitionFilePath(definition, filePath)
+	component := VueComponent{
+		DefinitionPath: filePath, Props: definition.Props,
+		Injected: definition.Injected, Members: definition.Members,
+		LocalDirectives: definition.LocalDirectives,
+	}
+	for _, directive := range definition.LocalDirectives {
+		style := AdminNameExact
+		if directive.Shorthand {
+			style = AdminNameShorthand
+		} else if !directive.Quoted {
+			style = AdminNameCamel
 		}
-		rangeValue := object.RangeTrimmedTrivia()
-		key := strconv.FormatUint(uint64(rangeValue.Start), 10) + ":" +
-			strconv.FormatUint(uint64(rangeValue.End), 10)
-		objects[key] = object
+		collector.addSourceRange(
+			AdminSymbolDirective,
+			directive.FilePath,
+			directive.Name,
+			directive.NameRange,
+			style,
+		)
 	}
-	for _, export := range jsquery.ExportDefaults(root) {
-		addObject(componentDefinitionObject(
-			jsquery.ExportDefaultExpression(export),
-		))
+	for _, member := range definition.Members {
+		if !member.Renameable() {
+			continue
+		}
+		style := AdminNameExact
+		if member.Shorthand {
+			style = AdminNameShorthand
+		}
+		collector.addSourceRange(
+			AdminSymbolComponentMember,
+			member.SourceIdentity(),
+			member.Name,
+			member.NameRange,
+			style,
+		)
 	}
-	for _, call := range jsquery.Calls(
-		root,
-		"Component.register",
-		"Shopware.Component.register",
-		"Component.extend",
-		"Shopware.Component.extend",
-		"Component.override",
-		"Shopware.Component.override",
+	props := make(map[string]bool, len(component.Props))
+	for _, prop := range component.Props {
+		props[prop.Name] = true
+	}
+	injected := make(map[string]bool, len(component.Injected))
+	for _, service := range component.Injected {
+		injected[service] = true
+	}
+	templateMembers := make(map[string]VueComponentMember)
+	for _, member := range component.TemplateMembers() {
+		templateMembers[member.Name] = member
+	}
+	for _, expression := range jsquery.Nodes(
+		object, jssyntax.JsMemberExpression,
 	) {
-		argument := 1
-		if strings.HasSuffix(jsquery.CallName(call), ".extend") {
-			argument = 2
+		name, matched := jsquery.ThisMember(expression)
+		if !matched || name == "" || props[name] || injected[name] {
+			continue
 		}
-		addObject(componentDefinitionObject(
-			jsquery.ArgumentExpression(call, argument),
-		))
-	}
-	for _, object := range objects {
-		collectComponentEventObjectUsages(object, filePath, collector)
+		owner := ""
+		if member, found := templateMembers[name]; found && member.Renameable() {
+			owner = member.SourceIdentity()
+		}
+		collector.addNode(
+			AdminSymbolComponentMember,
+			owner,
+			name,
+			jsquery.ThisMemberNameNode(expression),
+			false,
+		)
 	}
 }
 

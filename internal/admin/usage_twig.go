@@ -13,6 +13,8 @@ type adminTwigUsageScanner struct {
 	content               []byte
 	collector             *adminUsageCollector
 	shorthandMemberRanges map[cst.TextRange]bool
+	vueBindings           []TwigVueBinding
+	scopedSlots           []TwigScopedSlot
 }
 
 func parseAdminTwigUsages(
@@ -27,6 +29,8 @@ func parseAdminTwigUsages(
 		collector:             newAdminUsageCollector(filePath, lineIndex),
 		shorthandMemberRanges: make(map[cst.TextRange]bool),
 	}
+	scanner.vueBindings = TwigVueBindings(root, scanner.content)
+	scanner.scopedSlots = TwigScopedSlots(root)
 	scanner.collectRegistryReferences()
 	scanner.collectStartingTags()
 	scanner.collectEndingTags()
@@ -366,7 +370,13 @@ func (scanner *adminTwigUsageScanner) collectInstanceMembers() {
 		scanner.root,
 		scanner.content,
 	) {
-		if twigVueRootIdentifierIsLocal(scanner.root, scanner.content, identifier) {
+		if twigVueRootIdentifierIsLocalIn(
+			scanner.root,
+			scanner.content,
+			scanner.vueBindings,
+			scanner.scopedSlots,
+			identifier,
+		) {
 			continue
 		}
 		style := AdminNameExact

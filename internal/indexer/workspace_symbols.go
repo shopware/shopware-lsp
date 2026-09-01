@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"unicode"
+	"unicode/utf8"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
@@ -374,39 +375,26 @@ func (catalog *WorkspaceSymbolCatalog) ReplaceFilesIn(
 		aliases      string
 		searchText   string
 	}
-	var inserts []symbolInsert
-	for _, file := range files {
-		for _, symbol := range file.Symbols {
-			if symbol.Name == "" || file.Path == "" {
-				continue
-			}
-			aliases := strings.Join(compactStrings(symbol.Aliases), "\x1f")
-			searchText := workspaceSymbolIndexText(symbol)
-			locationPath := symbol.Path
-			if locationPath == file.Path {
-				locationPath = ""
-			}
-			inserts = append(inserts, symbolInsert{
-				ownerPath: file.Path, locationPath: locationPath,
-				symbol: symbol, aliases: aliases, searchText: searchText,
-			})
-		}
-	}
 	// Thirteen parameters per symbol stay below SQLite's traditional 999
 	// parameter limit. Each batch crosses cgo only twice: once for metadata and
 	// once for FTS, rather than twice per declaration.
 	const insertBatchSize = 75
-	for start := 0; start < len(inserts); start += insertBatchSize {
-		end := min(start+insertBatchSize, len(inserts))
-		batch := inserts[start:end]
+	bulk := catalog.bulk.Load()
+	inserts := make([]symbolInsert, 0, insertBatchSize)
+	args := make([]any, 0, insertBatchSize*13)
+	ftsArgs := make([]any, 0, insertBatchSize*2)
+	flush := func() error {
+		if len(inserts) == 0 {
+			return nil
+		}
 		symbolStatement, err := mutation.Prepare(
-			workspaceSymbolInsertSQL(len(batch)),
+			workspaceSymbolInsertSQL(len(inserts)),
 		)
 		if err != nil {
 			return err
 		}
-		args := make([]any, 0, len(batch)*13)
-		for _, insert := range batch {
+		args = args[:0]
+		for _, insert := range inserts {
 			symbol := insert.symbol
 			args = append(args,
 				insert.ownerPath,
@@ -432,29 +420,90 @@ func (catalog *WorkspaceSymbolCatalog) ReplaceFilesIn(
 		if err != nil {
 			return err
 		}
-		firstID := lastID - int64(len(batch)) + 1
-		if catalog.bulk.Load() {
-			continue
-		}
-		ftsStatement, err := mutation.Prepare(
-			workspaceSymbolFTSInsertSQL(len(batch)),
-		)
-		if err != nil {
-			return err
-		}
-		ftsArgs := make([]any, 0, len(batch)*2)
-		for index, insert := range batch {
-			ftsArgs = append(
-				ftsArgs,
-				firstID+int64(index),
-				insert.searchText,
+		if !bulk {
+			ftsStatement, err := mutation.Prepare(
+				workspaceSymbolFTSInsertSQL(len(inserts)),
 			)
+			if err != nil {
+				return err
+			}
+			firstID := lastID - int64(len(inserts)) + 1
+			ftsArgs = ftsArgs[:0]
+			for index, insert := range inserts {
+				ftsArgs = append(
+					ftsArgs,
+					firstID+int64(index),
+					insert.searchText,
+				)
+			}
+			if _, err := ftsStatement.Exec(ftsArgs...); err != nil {
+				return fmt.Errorf("index workspace symbol batch: %w", err)
+			}
 		}
-		if _, err := ftsStatement.Exec(ftsArgs...); err != nil {
-			return fmt.Errorf("index workspace symbol batch: %w", err)
+		clear(args)
+		clear(ftsArgs)
+		clear(inserts)
+		inserts = inserts[:0]
+		return nil
+	}
+	for _, file := range files {
+		for _, symbol := range file.Symbols {
+			if symbol.Name == "" || file.Path == "" {
+				continue
+			}
+			aliases := workspaceSymbolAliases(symbol.Aliases)
+			searchText := workspaceSymbolIndexText(symbol)
+			locationPath := symbol.Path
+			if locationPath == file.Path {
+				locationPath = ""
+			}
+			inserts = append(inserts, symbolInsert{
+				ownerPath: file.Path, locationPath: locationPath,
+				symbol: symbol, aliases: aliases, searchText: searchText,
+			})
+			if len(inserts) == insertBatchSize {
+				if err := flush(); err != nil {
+					return err
+				}
+			}
 		}
 	}
-	return nil
+	return flush()
+}
+
+func workspaceSymbolAliases(aliases []string) string {
+	first := ""
+	var result strings.Builder
+	for index, alias := range aliases {
+		alias = strings.TrimSpace(alias)
+		if alias == "" {
+			continue
+		}
+		duplicate := false
+		for _, previous := range aliases[:index] {
+			if strings.TrimSpace(previous) == alias {
+				duplicate = true
+				break
+			}
+		}
+		if duplicate {
+			continue
+		}
+		if first == "" {
+			first = alias
+			continue
+		}
+		if result.Len() == 0 {
+			result.Grow(len(first) + len(alias) + 1)
+			result.WriteString(first)
+		}
+		result.WriteByte('\x1f')
+		result.WriteString(alias)
+	}
+	if result.Len() == 0 {
+		return first
+	}
+	return result.String()
 }
 
 func workspaceSymbolInsertSQL(count int) string {
@@ -742,59 +791,114 @@ func workspaceSymbolMatchQuery(query string) string {
 }
 
 func workspaceSymbolIndexText(symbol WorkspaceSymbol) string {
-	values := []string{symbol.Name}
+	text := workspaceSymbolText{}
+	text.add(symbol.Name)
 	if container := workspaceSymbolLeafName(symbol.ContainerName); container != "" {
-		values = append(values, container)
+		text.add(container)
 	}
 	for _, alias := range symbol.Aliases {
 		if leaf := workspaceSymbolLeafName(alias); leaf != "" {
-			values = append(values, leaf)
+			text.add(leaf)
 		}
 	}
-	return workspaceSymbolSearchText(values...)
+	return text.String()
 }
 
 func workspaceSymbolLeafName(value string) string {
-	parts := strings.FieldsFunc(value, func(current rune) bool {
-		return current == '\\' || current == '/' || current == '·' ||
-			current == ':'
-	})
-	if len(parts) == 0 {
+	segmentStart := 0
+	lastStart, lastEnd := 0, 0
+	found := false
+	for index, current := range value {
+		if current == '\\' || current == '/' || current == '·' || current == ':' {
+			if segmentStart < index {
+				lastStart, lastEnd, found = segmentStart, index, true
+			}
+			segmentStart = index + utf8.RuneLen(current)
+		}
+	}
+	if segmentStart < len(value) {
+		lastStart, lastEnd, found = segmentStart, len(value), true
+	}
+	if !found {
 		return strings.TrimSpace(value)
 	}
-	return strings.TrimSpace(parts[len(parts)-1])
+	return strings.TrimSpace(value[lastStart:lastEnd])
 }
 
 func workspaceSymbolSearchText(values ...string) string {
-	var result []string
-	seen := make(map[string]struct{})
+	text := workspaceSymbolText{}
 	for _, value := range values {
-		for _, chunk := range strings.FieldsFunc(value, func(current rune) bool {
-			return !unicode.IsLetter(current) && !unicode.IsDigit(current)
-		}) {
-			words := identifierWords(chunk)
-			for _, word := range words {
-				appendUniqueString(&result, seen, strings.ToLower(word))
+		text.add(value)
+	}
+	return text.String()
+}
+
+type workspaceSymbolText struct {
+	values     []string
+	wordBuffer [16]string
+}
+
+func (text *workspaceSymbolText) add(value string) {
+	start := -1
+	for index, current := range value {
+		if unicode.IsLetter(current) || unicode.IsDigit(current) {
+			if start < 0 {
+				start = index
 			}
-			for start := 0; start < len(words); start++ {
-				var joined strings.Builder
-				for _, word := range words[start:] {
-					joined.WriteString(word)
-				}
-				appendUniqueString(
-					&result,
-					seen,
-					strings.ToLower(joined.String()),
-				)
-			}
+			continue
+		}
+		if start >= 0 {
+			text.addChunk(value[start:index])
+			start = -1
 		}
 	}
-	return strings.Join(result, " ")
+	if start >= 0 {
+		text.addChunk(value[start:])
+	}
+}
+
+func (text *workspaceSymbolText) addChunk(chunk string) {
+	words := appendIdentifierWords(text.wordBuffer[:0], chunk)
+	for index, word := range words {
+		words[index] = strings.ToLower(word)
+		text.append(words[index])
+	}
+	if len(words) < 2 {
+		return
+	}
+	joined := strings.Join(words, "")
+	offset := 0
+	for _, word := range words[:len(words)-1] {
+		text.append(joined[offset:])
+		offset += len(word)
+	}
+}
+
+func (text *workspaceSymbolText) append(value string) {
+	if value == "" {
+		return
+	}
+	for _, existing := range text.values {
+		if existing == value {
+			return
+		}
+	}
+	text.values = append(text.values, value)
+}
+
+func (text *workspaceSymbolText) String() string {
+	return strings.Join(text.values, " ")
 }
 
 func identifierWords(value string) []string {
+	return appendIdentifierWords(nil, value)
+}
+
+func appendIdentifierWords(words []string, value string) []string {
+	if isASCII(value) {
+		return appendASCIIIdentifierWords(words, value)
+	}
 	runes := []rune(value)
-	var words []string
 	start := -1
 	for index, current := range runes {
 		if !unicode.IsLetter(current) && !unicode.IsDigit(current) {
@@ -821,33 +925,60 @@ func identifierWords(value string) []string {
 	if start >= 0 {
 		words = append(words, string(runes[start:]))
 	}
-	return compactStrings(words)
+	return words
 }
 
-func compactStrings(values []string) []string {
-	result := make([]string, 0, len(values))
-	seen := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
+func appendASCIIIdentifierWords(words []string, value string) []string {
+	start := -1
+	for index, current := range []byte(value) {
+		if !isASCIIAlphaNumeric(current) {
+			if start >= 0 {
+				words = append(words, value[start:index])
+				start = -1
+			}
 			continue
 		}
-		if _, exists := seen[value]; exists {
+		if start < 0 {
+			start = index
 			continue
 		}
-		seen[value] = struct{}{}
-		result = append(result, value)
+		previous := value[index-1]
+		nextLower := index+1 < len(value) && isASCIILower(value[index+1])
+		boundary := isASCIIUpper(current) && isASCIILower(previous) ||
+			isASCIIUpper(current) && isASCIIUpper(previous) && nextLower ||
+			isASCIIDigit(current) != isASCIIDigit(previous)
+		if boundary {
+			words = append(words, value[start:index])
+			start = index
+		}
 	}
-	return result
+	if start >= 0 {
+		words = append(words, value[start:])
+	}
+	return words
 }
 
-func appendUniqueString(result *[]string, seen map[string]struct{}, value string) {
-	if value == "" {
-		return
+func isASCII(value string) bool {
+	for index := range len(value) {
+		if value[index] >= utf8.RuneSelf {
+			return false
+		}
 	}
-	if _, exists := seen[value]; exists {
-		return
-	}
-	seen[value] = struct{}{}
-	*result = append(*result, value)
+	return true
+}
+
+func isASCIIAlphaNumeric(value byte) bool {
+	return isASCIIUpper(value) || isASCIILower(value) || isASCIIDigit(value)
+}
+
+func isASCIIUpper(value byte) bool {
+	return value >= 'A' && value <= 'Z'
+}
+
+func isASCIILower(value byte) bool {
+	return value >= 'a' && value <= 'z'
+}
+
+func isASCIIDigit(value byte) bool {
+	return value >= '0' && value <= '9'
 }

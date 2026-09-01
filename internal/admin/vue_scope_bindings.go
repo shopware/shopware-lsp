@@ -112,7 +112,17 @@ func TwigVueBindingAtOffset(
 	content []byte,
 	offset uint32,
 ) (*TwigVueBinding, bool) {
-	bindings := TwigVueBindings(root, content)
+	return twigVueBindingAtOffset(
+		root, content, TwigVueBindings(root, content), offset,
+	)
+}
+
+func twigVueBindingAtOffset(
+	root *twigsyntax.Node,
+	content []byte,
+	bindings []TwigVueBinding,
+	offset uint32,
+) (*TwigVueBinding, bool) {
 	for _, binding := range bindings {
 		if binding.IsDeclarationOffset(offset) {
 			resolved := binding
