@@ -26,7 +26,6 @@ func TestCompileAdministrationTwigMigrations(t *testing.T) {
 		{"colorpicker", "colorpicker", `<sw-colorpicker :value="color"><template #label>{{ $t('color') }}</template></sw-colorpicker>`, `<mt-colorpicker :model-value="color" :label="$t('color')"></mt-colorpicker>`},
 		{"datepicker", "datepicker", `<sw-datepicker v-model:value="date" />`, `<mt-datepicker v-model="date" />`},
 		{"email", "email-field", `<sw-email-field value="a@example.com" size="medium" />`, `<mt-email-field model-value="a@example.com" size="default" />`},
-		{"external link", "external-link", `<sw-external-link icon>Docs</sw-external-link>`, `<mt-external-link>Docs</mt-external-link>`},
 		{"icon", "icon", `<sw-icon name="regular-times-s" small />`, `<mt-icon name="regular-times-s" size="16px" />`},
 		{"loader", "loader", `<sw-loader />`, `<mt-loader />`},
 		{"number", "number-field", `<sw-number-field :value="amount" @update:value="changed" />`, `<mt-number-field :model-value="amount" @update:model-value="changed" />`},
@@ -83,6 +82,15 @@ func TestCompileRejectsLossyUpstreamFixes(t *testing.T) {
 		_, err := Compile(test.source, tags[0], rule)
 		require.ErrorIs(t, err, ErrUnsafe)
 	}
+}
+
+func TestRulesExcludeUnavailableExternalLinkMigration(t *testing.T) {
+	t.Parallel()
+
+	_, found := RuleByID("external-link")
+	require.False(t, found)
+	_, found = RuleForTag("sw-external-link")
+	require.False(t, found)
 }
 
 func compileSource(t *testing.T, source string, rule Rule) string {

@@ -34,7 +34,6 @@ var rules = []Rule{
 	{ID: "colorpicker", SourceTag: "sw-colorpicker", TargetTag: "mt-colorpicker", Message: "sw-colorpicker is removed; use mt-colorpicker and review its label"},
 	{ID: "datepicker", SourceTag: "sw-datepicker", TargetTag: "mt-datepicker", Message: "sw-datepicker is removed; use mt-datepicker and review its label"},
 	{ID: "email-field", SourceTag: "sw-email-field", TargetTag: "mt-email-field", Message: "sw-email-field is removed; use mt-email-field and review props, events, and slots"},
-	{ID: "external-link", SourceTag: "sw-external-link", TargetTag: "mt-external-link", Message: "sw-external-link is removed; use mt-external-link"},
 	{ID: "icon", SourceTag: "sw-icon", TargetTag: "mt-icon", Message: "sw-icon is removed; use mt-icon with an explicit size"},
 	{ID: "loader", SourceTag: "sw-loader", TargetTag: "mt-loader", Message: "sw-loader is removed; use mt-loader"},
 	{ID: "number-field", SourceTag: "sw-number-field", TargetTag: "mt-number-field", Message: "sw-number-field is removed; use mt-number-field and review props, events, and slots"},
@@ -153,8 +152,6 @@ func compileRule(editor *tagEditor, id string) error {
 			}
 		}
 		return editor.migrateSlotProps(map[string]slotPolicy{"label": slotToProp})
-	case "external-link":
-		return editor.deleteMany("icon")
 	case "icon":
 		return migrateIcon(editor)
 	case "loader", "skeleton-bar":
