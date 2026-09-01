@@ -44,7 +44,7 @@ func (p *EnvironmentHoverProvider) GetHover(
 	if !found {
 		current, found = environment.OccurrenceAt(
 			path,
-			string(request.DocumentContent),
+			request.SourceString(),
 			offset,
 		)
 	}

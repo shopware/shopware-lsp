@@ -121,6 +121,9 @@ func (s *Snapshot) withDocument(
 		dynamicNames:     s.dynamicNames,
 		reverseHierarchy: &reverseHierarchyIndex{},
 	}
+	if includeReferences {
+		result.referenceQueries = &referenceQueryCache{}
+	}
 	if len(document.CallContracts) > 0 {
 		contractDocument := &workspaceDocument{
 			Path:          document.Path,

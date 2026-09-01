@@ -226,7 +226,7 @@ func (p *AdminHoverProvider) templateMemberHover(
 		return nil, nil
 	}
 	component, err := p.adminIndexer.GetComponentForDocument(
-		path, params.Root, string(params.DocumentContent), params.LineIndex,
+		path, params.Root, params.SourceString(), params.LineIndex,
 	)
 	if err != nil || component == nil {
 		return nil, err

@@ -419,23 +419,47 @@ func (s *Snapshot) ReferencesTo(id SymbolID) []ReferenceLocation {
 		return nil
 	}
 	if s.base != nil {
+		return s.cachedOverlayReferencesTo(id)
+	}
+	s.ensureReverseReferences()
+	index := s.reverseReferences
+	if index == nil {
+		return nil
+	}
+	var result []ReferenceLocation
+	for _, location := range index.references[id] {
+		result = append(result, ReferenceLocation{
+			Path:       index.paths[location.pathID],
+			RangeStart: location.rangeStart,
+			RangeEnd:   location.rangeEnd,
+		})
+	}
+	return result
+}
+
+func (s *Snapshot) cachedOverlayReferencesTo(id SymbolID) []ReferenceLocation {
+	compute := func() []ReferenceLocation {
 		target, found := s.SymbolView(id)
 		if !found {
 			return nil
 		}
+		documentFilter := newPackedReferenceTargetFilter(target)
 		var result []ReferenceLocation
 		s.visitPathReferences(func(path string, document *workspaceDocument) {
+			if !documentFilter.matchesDocument(document) {
+				return
+			}
 			for index := range document.References {
 				reference := &document.References[index]
 				if !s.referenceMayTargetPacked(document, reference, target) {
 					continue
 				}
 				rng := reference.rangeValue(document)
-				for _, target := range s.referenceTargetsPacked(
+				for _, candidate := range s.referenceTargetsPacked(
 					document,
 					reference,
 				) {
-					if target == id {
+					if candidate == id {
 						result = append(result, ReferenceLocation{
 							Path:       path,
 							RangeStart: rng.Start,
@@ -466,20 +490,10 @@ func (s *Snapshot) ReferencesTo(id SymbolID) []ReferenceLocation {
 		})
 		return result
 	}
-	s.ensureReverseReferences()
-	index := s.reverseReferences
-	if index == nil {
-		return nil
+	if s.referenceQueries == nil {
+		return compute()
 	}
-	var result []ReferenceLocation
-	for _, location := range index.references[id] {
-		result = append(result, ReferenceLocation{
-			Path:       index.paths[location.pathID],
-			RangeStart: location.rangeStart,
-			RangeEnd:   location.rangeEnd,
-		})
-	}
-	return result
+	return s.referenceQueries.loadOrCompute(id, compute)
 }
 
 func (s *Snapshot) AllSymbols() []Symbol {

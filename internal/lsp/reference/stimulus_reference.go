@@ -105,7 +105,7 @@ func (p *StimulusReferenceProvider) GetReferences(
 		source := ""
 		lineIndex := (*cst.LineIndex)(nil)
 		if usage.File == currentPath {
-			source = string(request.DocumentContent)
+			source = request.SourceString()
 			lineIndex = request.LineIndex
 		}
 		location, locationFound := stimulusFileRangeLocation(

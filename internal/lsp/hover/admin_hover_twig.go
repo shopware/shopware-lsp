@@ -19,7 +19,7 @@ func (p *AdminHoverProvider) twigHover(_ context.Context, params *lsp.HoverReque
 	node := params.Node
 	templatePath := adminHoverTemplatePath(params.TextDocument.URI)
 	liveOwner, _ := p.adminIndexer.GetComponentForDocument(
-		templatePath, params.Root, string(params.DocumentContent), params.LineIndex,
+		templatePath, params.Root, params.SourceString(), params.LineIndex,
 	)
 	if blockName, found := admin.TwigBlockNameAt(node, params.Token); found {
 		return p.parentBlockHover(

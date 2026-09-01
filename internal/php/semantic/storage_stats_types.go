@@ -109,6 +109,8 @@ type WorkspaceStorageStats struct {
 	MaxReferenceValuesPerDocument  int
 
 	ReferenceStringCapacity int
+	ReferenceBloomDocuments int
+	ReferenceBloomBytes     int
 
 	SymbolsUsingDocumentPath    int
 	SymbolStringSlots           int

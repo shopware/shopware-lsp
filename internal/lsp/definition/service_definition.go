@@ -491,7 +491,7 @@ func (p *serviceXMLDefinitionProvider) phpDefinition(ctx context.Context, params
 	}
 	if kind == symfony.PHPConfigReferenceNone &&
 		(strings.Contains(
-			string(params.DocumentContent),
+			params.SourceString(),
 			"ContainerConfigurator",
 		) || symfony.PHPArrayServiceContextAt(params.Node)) {
 		kind = symfony.PHPConfigReferenceAt(params.Node)

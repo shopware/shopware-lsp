@@ -22,6 +22,18 @@ type TextDocument struct {
 	analysisCache *documentAnalysisCache
 }
 
+// SourceString returns the immutable string view owned by the document. The
+// byte fallback keeps zero-value and hand-built documents usable in tests.
+func (d *TextDocument) SourceString() string {
+	if d == nil {
+		return ""
+	}
+	if d.Source != "" || len(d.Text) == 0 {
+		return d.Source
+	}
+	return string(d.Text)
+}
+
 type documentAnalysisCache struct {
 	mu      sync.Mutex
 	entries map[any]documentAnalysisCacheEntry

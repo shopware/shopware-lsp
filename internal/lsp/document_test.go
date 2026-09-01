@@ -22,6 +22,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var benchmarkSyntaxSource string
+
 func syntaxAtTestPosition(
 	t *testing.T,
 	manager *DocumentManager,
@@ -57,6 +59,38 @@ func TestDocumentManagerUsesInjectedLanguageRegistry(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, language.ID("custom"), syntax.Language)
 	require.Equal(t, "content", syntax.Root.Text())
+}
+
+func TestSyntaxContextSourceStringReusesDocumentSnapshot(t *testing.T) {
+	source := strings.Repeat("{{ product.name }}\n", 256)
+	document := NewTextDocument("file:///tmp/example.html.twig", source, 1)
+	syntax := newSyntaxContext(document, 0, 2)
+	require.Equal(t, source, syntax.SourceString())
+	require.Zero(t, testing.AllocsPerRun(100, func() {
+		benchmarkSyntaxSource = syntax.SourceString()
+	}))
+
+	fallback := SyntaxContext{DocumentContent: []byte("fallback")}
+	require.Equal(t, "fallback", fallback.SourceString())
+}
+
+func TestProviderPerformanceTraceConfiguration(t *testing.T) {
+	for _, test := range []struct {
+		value   string
+		enabled bool
+	}{
+		{"", false},
+		{"0", false},
+		{" false ", false},
+		{"OFF", false},
+		{"1", true},
+		{"true", true},
+	} {
+		t.Run(test.value, func(t *testing.T) {
+			t.Setenv("SHOPWARE_LSP_TRACE_PROVIDERS", test.value)
+			require.Equal(t, test.enabled, providerPerformanceTraceEnabled())
+		})
+	}
 }
 
 func TestDocumentManagerObserverReplaysUpdatesAndCloses(t *testing.T) {

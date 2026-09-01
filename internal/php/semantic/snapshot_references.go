@@ -4,6 +4,30 @@ import (
 	"slices"
 )
 
+func (c *referenceQueryCache) loadOrCompute(
+	id SymbolID,
+	compute func() []ReferenceLocation,
+) []ReferenceLocation {
+	c.mu.Lock()
+	if c.entries == nil {
+		c.entries = make(map[SymbolID]*referenceQueryCacheEntry)
+	}
+	entry, exists := c.entries[id]
+	if !exists {
+		entry = &referenceQueryCacheEntry{ready: make(chan struct{})}
+		c.entries[id] = entry
+	}
+	c.mu.Unlock()
+
+	if exists {
+		<-entry.ready
+		return slices.Clone(entry.locations)
+	}
+	entry.locations = compute()
+	close(entry.ready)
+	return slices.Clone(entry.locations)
+}
+
 func cloneReferences(references []Reference) []Reference {
 	result := slices.Clone(references)
 	for index := range result {
@@ -25,6 +49,20 @@ func cloneReferences(references []Reference) []Reference {
 func (s *Snapshot) visitPathReferences(
 	visitor func(path string, document *workspaceDocument),
 ) {
+	// Request-time semantic snapshots normally contain one open-document
+	// overlay over one published workspace generation. Avoid allocating and
+	// filling a workspace-sized seen set for that overwhelmingly common shape.
+	if s != nil && s.base != nil && s.base.base == nil && len(s.pathRefs) == 0 {
+		if s.overlayReferences != nil {
+			visitor(s.overlayPath, s.overlayReferences)
+		}
+		for path, document := range s.base.pathRefs {
+			if path != s.overlayPath {
+				visitor(path, document)
+			}
+		}
+		return
+	}
 	seen := make(map[string]struct{})
 	for current := s; current != nil; current = current.base {
 		if current.overlayPath != "" {

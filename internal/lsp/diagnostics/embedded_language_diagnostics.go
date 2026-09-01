@@ -39,7 +39,7 @@ func (p *EmbeddedLanguageAnalyzer) Analyze(
 		p.phpIndex,
 		path,
 		document.Version,
-		string(document.Text),
+		document.SourceString(),
 		document.SyntaxTree.Root,
 	)
 	var result []lsp.Problem

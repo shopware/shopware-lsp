@@ -748,12 +748,33 @@ func TestWorkspaceReferenceStringsShareBatchTableWithLocalIDs(t *testing.T) {
 		len(first.document.referenceStrings.Values),
 		cap(first.document.referenceStrings.Values),
 	)
+	require.NotEqual(t, [2]uint64{}, second.document.referenceBloom)
 
 	encoded, err := msgpack.Marshal(second)
 	require.NoError(t, err)
 	var decoded WorkspaceGraph
 	require.NoError(t, msgpack.Unmarshal(encoded, &decoded))
+	require.Equal(
+		t,
+		second.document.referenceBloom,
+		decoded.document.referenceBloom,
+	)
 	requireMsgpackEquivalent(t, second.Document(), decoded.Document())
+}
+
+func TestReferenceBloomHashNormalizesReferencePrefixesAndCase(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(
+		t,
+		referenceBloomHash("\\App\\Target"),
+		referenceBloomHash("app\\target"),
+	)
+	require.Equal(
+		t,
+		referenceBloomHash("$Variable"),
+		referenceBloomHash("variable"),
+	)
 }
 
 func TestWorkspaceSymbolStringsShareBatchTableWithRemappedIndexes(

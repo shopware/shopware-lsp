@@ -46,7 +46,7 @@ func (p *EmbeddedXPathAnalyzer) Analyze(
 		p.phpIndex,
 		path,
 		document.Version,
-		string(document.Text),
+		document.SourceString(),
 		document.SyntaxTree.Root,
 	) {
 		if ctx.Err() != nil {

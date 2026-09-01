@@ -43,7 +43,7 @@ func (p *SecurityDefinitionProvider) GetDefinition(
 		request.TextDocument.URI,
 		request.Root,
 		request.Node,
-		string(request.DocumentContent),
+		request.SourceString(),
 		offset,
 	)
 	if !ok {

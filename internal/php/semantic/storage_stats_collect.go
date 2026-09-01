@@ -271,6 +271,10 @@ func (c *workspaceStatsCollector) collectDocumentStringTables(document *workspac
 	}
 	c.stats.ReferenceTypes += len(document.referenceTypes)
 	c.stats.ReferenceValues += len(document.referenceValues)
+	if document.referenceBloom != [2]uint64{} {
+		c.stats.ReferenceBloomDocuments++
+		c.stats.ReferenceBloomBytes += len(document.referenceBloom) * 8
+	}
 }
 
 func (c *workspaceStatsCollector) collectSymbols(path string, document *workspaceDocument) {

@@ -79,7 +79,7 @@ func (p *AdminHoverProvider) twigVueMemberHover(
 	}
 	templatePath := adminHoverTemplatePath(params.TextDocument.URI)
 	liveComponent, _ := p.adminIndexer.GetComponentForDocument(
-		templatePath, params.Root, string(params.DocumentContent), params.LineIndex,
+		templatePath, params.Root, params.SourceString(), params.LineIndex,
 	)
 	resolvedSlot, err := p.adminIndexer.ResolveTwigScopedSlotMemberForOwner(
 		params.Root, params.Node, params.DocumentContent, offset,

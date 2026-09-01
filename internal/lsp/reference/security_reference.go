@@ -45,7 +45,7 @@ func (p *SecurityReferenceProvider) GetReferences(
 		request.TextDocument.URI,
 		request.Root,
 		request.Node,
-		string(request.DocumentContent),
+		request.SourceString(),
 		offset,
 	)
 	if !ok {
@@ -66,7 +66,7 @@ func (p *SecurityReferenceProvider) GetReferences(
 	for _, occurrence := range security.OccurrencesInDocument(
 		currentPath,
 		request.Root,
-		string(request.DocumentContent),
+		request.SourceString(),
 	) {
 		if strings.EqualFold(occurrence.Name, current.Name) {
 			occurrences = append(occurrences, occurrence)

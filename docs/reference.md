@@ -1507,14 +1507,23 @@ go test -race ./...
 The production indexing composition also has an opt-in real-world test. It
 uses `~/Developer/sw-trunk` by default, or a checkout selected through
 `SHOPWARE_LSP_REAL_WORLD_ROOT`, and reports cold indexing, warm no-op, cache
-restore, class count, heap measurements, and p50/p95 end-to-end JSON-RPC
-latency for hover, code-action, diagnostic, document-link, and document-symbol
-requests. The latency census executes through an in-memory LSP transport with
-the production provider composition and enforces broad interactive budgets:
+restore, class count, heap measurements, and first/p50/p95 end-to-end JSON-RPC
+latency for hover, definition, references, code-action, diagnostic,
+document-link, and document-symbol requests. The latency census executes
+through an in-memory LSP transport with the production provider composition
+and enforces broad interactive budgets:
 
 ```bash
 go test -tags=integration ./internal/app \
   -run '^TestShopwareTrunkIndexing$' -count=1 -v
+```
+
+The same request census can run independently of the broader moving-fixture
+feature assertions:
+
+```bash
+go test -tags=integration ./internal/app \
+  -run '^TestShopwareTrunkRequestLatency$' -count=1 -v
 ```
 
 The integration build tag keeps ordinary tests and CI independent of a
@@ -1525,9 +1534,13 @@ elapsed time and finding count of every inspection plus normalization and
 total diagnostic-request time. This is intended for profiling a slow document;
 leave it unset during ordinary editing to avoid verbose output.
 
+Set `SHOPWARE_LSP_TRACE_PROVIDERS=1` to log per-provider and total timings for
+hover, definition, and references requests. This isolates cold or path-specific
+framework providers without adding timing overhead during normal requests.
+
 The real-world integration benchmark uses 21 request samples by default. Set
 `SHOPWARE_LSP_LATENCY_SAMPLES` to a value of at least 2 for a shorter profiling
-run; the first request remains an unmeasured warm-up.
+run; the first request is reported separately and excluded from p50/p95.
 
 One representative August 2026 run against a 60,811-file `sw-trunk` checkout
 reported the following warm request latency after indexing. These are local

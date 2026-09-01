@@ -3,6 +3,7 @@ package semantic
 import (
 	"fmt"
 	"math"
+	"unicode"
 	"unsafe"
 
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
@@ -44,6 +45,47 @@ type workspaceReferenceFull struct {
 
 type workspaceReferenceExtras struct {
 	Values []workspaceReferenceFull
+}
+
+func referenceBloomHash(value string) uint64 {
+	if value == "" {
+		return 0
+	}
+	start := 0
+	if value[0] == '\\' || value[0] == '$' {
+		start = 1
+	}
+	const (
+		offset = uint64(14695981039346656037)
+		prime  = uint64(1099511628211)
+	)
+	hash := offset
+	for _, current := range value[start:] {
+		hash ^= uint64(unicode.ToLower(current))
+		hash *= prime
+	}
+	return hash
+}
+
+func (document *workspaceDocument) addReferenceBloomValue(value string) {
+	hash := referenceBloomHash(value)
+	if document == nil || hash == 0 {
+		return
+	}
+	document.referenceBloom[0] |= uint64(1) << (hash & 63)
+	document.referenceBloom[1] |= uint64(1) << ((hash >> 17) & 63)
+}
+
+func (document *workspaceDocument) rebuildReferenceBloom() {
+	if document == nil {
+		return
+	}
+	document.referenceBloom = [2]uint64{}
+	for index := 1; index <= document.referenceStringCount(); index++ {
+		document.addReferenceBloomValue(
+			document.referenceString(uint32(index)),
+		)
+	}
 }
 
 type workspaceReferenceStringTable = workspaceSharedStringTable
@@ -911,4 +953,5 @@ func (packer *workspaceReferencePacker) finishTables() {
 		}
 		packer.document.referenceTypes = values
 	}
+	packer.document.rebuildReferenceBloom()
 }

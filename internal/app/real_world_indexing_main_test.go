@@ -8404,7 +8404,7 @@ function real_world_translation_assistant(string $key, string $domain): void {}
 		assistantTranslationKey,
 	)
 
-	measureRealWorldLSPRequestLatency(t, ctx, realWorldServer, root)
+	measureRealWorldLSPRequestLatency(t, ctx, realWorldServer, root, true)
 
 	require.NoError(t, workspace.Close())
 	workspace = nil

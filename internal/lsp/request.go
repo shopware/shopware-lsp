@@ -31,6 +31,17 @@ type SyntaxContext struct {
 	Node            *cst.Node
 }
 
+// SourceString returns the exact immutable source snapshot without converting
+// the byte view again for every provider in a request fan-out. Hand-built
+// request values without a TextDocument retain the byte-slice fallback.
+func (s SyntaxContext) SourceString() string {
+	if s.Document != nil &&
+		(s.Document.Source != "" || len(s.DocumentContent) == 0) {
+		return s.Document.SourceString()
+	}
+	return string(s.DocumentContent)
+}
+
 func newSyntaxContext(document *TextDocument, line, character int) SyntaxContext {
 	if document == nil {
 		return SyntaxContext{}

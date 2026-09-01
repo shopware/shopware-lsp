@@ -516,7 +516,7 @@ func (p *AdminDocumentSymbolProvider) templateSymbols(
 		if !ok || block.Name() == nil || blockName == "" {
 			continue
 		}
-		deprecation := twig.BlockDeprecation(node, string(document.Text))
+		deprecation := twig.BlockDeprecation(node, document.SourceString())
 		detail := "Twig block"
 		if deprecation != "" {
 			detail += " · deprecated"

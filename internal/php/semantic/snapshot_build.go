@@ -17,6 +17,7 @@ type Snapshot struct {
 	// every file while binding and inferring a cold workspace.
 	overlayPath       string
 	overlayReferences *workspaceDocument
+	referenceQueries  *referenceQueryCache
 
 	symbols workspaceSymbolIndex
 	// Overlay symbols already live in expandedData. Store compact indexes
@@ -56,6 +57,21 @@ type reverseReferenceIndex struct {
 	once       sync.Once
 	paths      []string
 	references map[SymbolID][]compactReferenceLocation
+}
+
+// referenceQueryCache keeps only reference targets requested from a document
+// overlay. Building a complete reverse index for every open document would
+// multiply the workspace graph's retained memory, while rescanning the graph
+// on every repeated LSP request makes warm references linear in workspace
+// size.
+type referenceQueryCache struct {
+	mu      sync.Mutex
+	entries map[SymbolID]*referenceQueryCacheEntry
+}
+
+type referenceQueryCacheEntry struct {
+	ready     chan struct{}
+	locations []ReferenceLocation
 }
 
 type symbolNameIndex struct {

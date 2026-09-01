@@ -45,7 +45,7 @@ func (p *EmbeddedLanguageProvider) GetSemanticTokens(
 		p.phpIndex,
 		path,
 		document.Version,
-		string(document.Text),
+		document.SourceString(),
 		document.SyntaxTree.Root,
 	)
 	var result []lsp.SemanticToken

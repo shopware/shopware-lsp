@@ -41,6 +41,7 @@ type workspaceDocument struct {
 	referenceStringIDs []uint32
 	referenceTypes     []types.Type
 	referenceValues    []uint32
+	referenceBloom     [2]uint64
 }
 
 // WorkspaceGraph is an opaque, compact declaration/reference graph ready for
@@ -959,6 +960,7 @@ func (graph *WorkspaceGraph) decodeMsgpack(
 			return err
 		}
 	}
+	document.rebuildReferenceBloom()
 	if length == 10 {
 		var contracts []CallContract
 		if err := decoder.Decode(&contracts); err != nil {

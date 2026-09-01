@@ -61,7 +61,7 @@ func (p *AdminDefinitionProvider) twigDefinition(_ context.Context, params *lsp.
 	node := params.Node
 	templatePath := adminDefinitionTemplatePath(params.TextDocument.URI)
 	liveOwner, _ := p.adminIndexer.GetComponentForDocument(
-		templatePath, params.Root, string(params.DocumentContent), params.LineIndex,
+		templatePath, params.Root, params.SourceString(), params.LineIndex,
 	)
 	if blockName, found := admin.TwigBlockNameAt(node, params.Token); found {
 		return p.parentBlockDefinition(templatePath, blockName)
@@ -271,7 +271,7 @@ func (p *AdminDefinitionProvider) twigVueMemberDefinition(
 	}
 	templatePath := adminDefinitionTemplatePath(params.TextDocument.URI)
 	liveComponent, _ := p.adminIndexer.GetComponentForDocument(
-		templatePath, params.Root, string(params.DocumentContent), params.LineIndex,
+		templatePath, params.Root, params.SourceString(), params.LineIndex,
 	)
 	resolvedSlot, slotErr :=
 		p.adminIndexer.ResolveTwigScopedSlotMemberForOwner(
@@ -531,7 +531,7 @@ func (p *AdminDefinitionProvider) templateMemberDefinition(
 		return nil
 	}
 	component, err := p.adminIndexer.GetComponentForDocument(
-		path, params.Root, string(params.DocumentContent), params.LineIndex,
+		path, params.Root, params.SourceString(), params.LineIndex,
 	)
 	if err != nil || component == nil {
 		return nil

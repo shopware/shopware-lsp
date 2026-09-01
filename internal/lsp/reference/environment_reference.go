@@ -42,7 +42,7 @@ func (p *EnvironmentReferenceProvider) GetReferences(
 	if !found {
 		occurrence, found = environment.OccurrenceAt(
 			path,
-			string(request.DocumentContent),
+			request.SourceString(),
 			offset,
 		)
 	}

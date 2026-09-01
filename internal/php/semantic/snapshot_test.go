@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"unsafe"
 
@@ -95,6 +96,7 @@ func TestPublishedSnapshotNormalizesNamesConcurrently(t *testing.T) {
 var benchmarkNormalizedName string
 var benchmarkMemberID SymbolID
 var benchmarkSymbolRange cst.TextRange
+var benchmarkReferenceLocations []ReferenceLocation
 
 func BenchmarkSnapshotNormalizedNameLookup(b *testing.B) {
 	const name = "App\\Service"
@@ -1191,6 +1193,11 @@ func TestSnapshotDocumentOverlayReplacesReverseReferences(t *testing.T) {
 	references := overlay.ReferencesTo(target.ID)
 	require.Len(t, references, 1)
 	require.Equal(t, uint32(20), references[0].RangeStart)
+	references[0].RangeStart = 99
+	require.Equal(
+		t, uint32(20), overlay.ReferencesTo(target.ID)[0].RangeStart,
+		"cached reference query results must remain immutable",
+	)
 }
 
 func TestSnapshotDeclarationOverlayDoesNotPackReferences(t *testing.T) {
@@ -1576,6 +1583,48 @@ func TestSnapshotBuildsReverseReferencesOnceConcurrently(t *testing.T) {
 	}
 }
 
+func TestOverlayReferenceQueryCacheSharesConcurrentComputation(t *testing.T) {
+	t.Parallel()
+	cache := &referenceQueryCache{}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	results := make(chan []ReferenceLocation, 17)
+	var calls atomic.Int32
+	var wait sync.WaitGroup
+
+	compute := func() []ReferenceLocation {
+		calls.Add(1)
+		close(started)
+		<-release
+		return []ReferenceLocation{{
+			Path: "/consumer.php", RangeStart: 10, RangeEnd: 16,
+		}}
+	}
+	wait.Add(1)
+	go func() {
+		defer wait.Done()
+		results <- cache.loadOrCompute("target", compute)
+	}()
+	<-started
+	for range 16 {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			results <- cache.loadOrCompute("target", compute)
+		}()
+	}
+	close(release)
+	wait.Wait()
+	close(results)
+
+	require.Equal(t, int32(1), calls.Load())
+	for locations := range results {
+		require.Equal(t, []ReferenceLocation{{
+			Path: "/consumer.php", RangeStart: 10, RangeEnd: 16,
+		}}, locations)
+	}
+}
+
 func TestSnapshotRelationsTreatClassNamesCaseInsensitively(t *testing.T) {
 	t.Parallel()
 	snapshot := NewSnapshot(1, []*Document{{
@@ -1684,6 +1733,185 @@ func TestOverlayReferencesPrefilterUnrelatedInheritedMembers(t *testing.T) {
 		RangeStart: 10,
 		RangeEnd:   17,
 	}}, snapshot.ReferencesTo(method.ID))
+}
+
+func TestOverlayReferencesPrefilterUnrelatedGlobalNames(t *testing.T) {
+	t.Parallel()
+	target := Symbol{
+		ID:             "target",
+		Kind:           ClassSymbol,
+		Name:           "Target",
+		FullyQualified: "App\\Target",
+		Path:           "/target.php",
+	}
+	consumer := &Document{
+		Path: "/consumer.php",
+		References: []Reference{
+			referenceWithTargets(Reference{
+				Name:  "Unrelated",
+				Kind:  ClassName,
+				Range: cst.TextRange{Start: 10, End: 19},
+			}, []string{"App\\Unrelated"}, nil),
+			referenceWithTargets(Reference{
+				Name:  "Target",
+				Kind:  ClassName,
+				Range: cst.TextRange{Start: 30, End: 36},
+			}, []string{"APP\\TARGET"}, nil),
+		},
+	}
+	snapshot := NewSnapshot(1, []*Document{
+		{Path: target.Path, Symbols: []Symbol{target}},
+		consumer,
+	}).WithDocument(&Document{Path: "/open.php"})
+	targetView, found := snapshot.SymbolView(target.ID)
+	require.True(t, found)
+	packed := snapshot.base.pathRefs[consumer.Path]
+	require.NotNil(t, packed)
+	require.False(t, snapshot.referenceMayTargetPacked(
+		packed, &packed.References[0], targetView,
+	))
+	require.True(t, snapshot.referenceMayTargetPacked(
+		packed, &packed.References[1], targetView,
+	))
+	require.Equal(t, []ReferenceLocation{{
+		Path:       consumer.Path,
+		RangeStart: 30,
+		RangeEnd:   36,
+	}}, snapshot.ReferencesTo(target.ID))
+}
+
+func BenchmarkSnapshotOverlayReferencesToCachedTarget(b *testing.B) {
+	snapshot, targetID := benchmarkSnapshotOverlayReferences(b)
+	if locations := snapshot.ReferencesTo(targetID); len(locations) != 1 {
+		b.Fatalf("expected one target reference, got %d", len(locations))
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		benchmarkReferenceLocations = snapshot.ReferencesTo(targetID)
+	}
+}
+
+func BenchmarkSnapshotOverlayReferencesToColdTarget(b *testing.B) {
+	snapshot, targetID := benchmarkSnapshotOverlayReferences(b)
+	// Bypass the queried-target cache to isolate the first-request workspace
+	// scan without rebuilding the large immutable fixture in the timed loop.
+	snapshot.referenceQueries = nil
+	if locations := snapshot.ReferencesTo(targetID); len(locations) != 1 {
+		b.Fatalf("expected one target reference, got %d", len(locations))
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		benchmarkReferenceLocations = snapshot.ReferencesTo(targetID)
+	}
+}
+
+func BenchmarkSnapshotOverlayReferencesToColdTargetDenseDocuments(b *testing.B) {
+	target := Symbol{
+		ID:             "target",
+		Kind:           ClassSymbol,
+		Name:           "Target",
+		FullyQualified: "App\\Target",
+		Path:           "/target.php",
+	}
+	unrelated := Symbol{
+		ID:             "unrelated",
+		Kind:           ClassSymbol,
+		Name:           "Unrelated",
+		FullyQualified: "App\\Unrelated",
+		Path:           "/unrelated.php",
+	}
+	documents := make([]*Document, 0, 1_027)
+	documents = append(documents,
+		&Document{Path: target.Path, Symbols: []Symbol{target}},
+		&Document{Path: unrelated.Path, Symbols: []Symbol{unrelated}},
+	)
+	for index := range 1_024 {
+		references := make([]Reference, 64)
+		for referenceIndex := range references {
+			references[referenceIndex] = Reference{
+				Name:     "Unrelated",
+				Kind:     ClassName,
+				Resolved: unrelated.ID,
+				Range: cst.TextRange{
+					Start: uint32(referenceIndex * 10),
+					End:   uint32(referenceIndex*10 + 9),
+				},
+			}
+		}
+		documents = append(documents, &Document{
+			Path:       "/dense-consumer-" + strconv.Itoa(index) + ".php",
+			References: references,
+		})
+	}
+	documents = append(documents, &Document{
+		Path: "/matching-consumer.php",
+		References: []Reference{{
+			Name:     "Target",
+			Kind:     ClassName,
+			Resolved: target.ID,
+			Range:    cst.TextRange{Start: 20, End: 26},
+		}},
+	})
+	snapshot := NewSnapshot(1, documents).WithDocument(&Document{
+		Path: "/open.php",
+	})
+	snapshot.referenceQueries = nil
+	if locations := snapshot.ReferencesTo(target.ID); len(locations) != 1 {
+		b.Fatalf("expected one target reference, got %d", len(locations))
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		benchmarkReferenceLocations = snapshot.ReferencesTo(target.ID)
+	}
+}
+
+func benchmarkSnapshotOverlayReferences(b *testing.B) (*Snapshot, SymbolID) {
+	b.Helper()
+	target := Symbol{
+		ID:             "target",
+		Kind:           ClassSymbol,
+		Name:           "Target",
+		FullyQualified: "App\\Target",
+		Path:           "/target.php",
+	}
+	unrelated := Symbol{
+		ID:             "unrelated",
+		Kind:           ClassSymbol,
+		Name:           "Unrelated",
+		FullyQualified: "App\\Unrelated",
+		Path:           "/unrelated.php",
+	}
+	documents := make([]*Document, 0, 4_099)
+	documents = append(documents,
+		&Document{Path: target.Path, Symbols: []Symbol{target}},
+		&Document{Path: unrelated.Path, Symbols: []Symbol{unrelated}},
+	)
+	for index := range 4_096 {
+		documents = append(documents, &Document{
+			Path: "/consumer-" + strconv.Itoa(index) + ".php",
+			References: []Reference{{
+				Resolved: unrelated.ID,
+				Range:    cst.TextRange{Start: 10, End: 19},
+			}},
+		})
+	}
+	documents = append(documents, &Document{
+		Path: "/matching-consumer.php",
+		References: []Reference{{
+			Resolved: target.ID,
+			Range:    cst.TextRange{Start: 20, End: 26},
+		}},
+	})
+	snapshot := NewSnapshot(1, documents).WithDocument(&Document{
+		Path: "/open.php",
+	})
+	return snapshot, target.ID
 }
 
 func TestUpdatedSymbolOverlayIsImmutableAndReusesIndexes(t *testing.T) {

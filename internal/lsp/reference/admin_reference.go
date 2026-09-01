@@ -108,7 +108,7 @@ func (p *AdminReferenceProvider) adminScopedSlotLocalReferences(
 		return nil, false, err
 	}
 	liveOwner, err := p.index.GetComponentForDocument(
-		templatePath, params.Root, string(params.DocumentContent), params.LineIndex,
+		templatePath, params.Root, params.SourceString(), params.LineIndex,
 	)
 	if err != nil {
 		return nil, false, err
@@ -179,7 +179,7 @@ func (p *AdminReferenceProvider) adminDynamicComponentSlotReferences(
 		return nil, true, err
 	}
 	liveOwner, err := p.index.GetComponentForDocument(
-		templatePath, params.Root, string(params.DocumentContent), params.LineIndex,
+		templatePath, params.Root, params.SourceString(), params.LineIndex,
 	)
 	if err != nil {
 		return nil, true, err
@@ -232,7 +232,7 @@ func (p *AdminReferenceProvider) adminComponentObjectBindingReferences(
 		return nil, true, err
 	}
 	liveOwner, err := p.index.GetComponentForDocument(
-		templatePath, params.Root, string(params.DocumentContent), params.LineIndex,
+		templatePath, params.Root, params.SourceString(), params.LineIndex,
 	)
 	if err != nil {
 		return nil, true, err
@@ -294,7 +294,7 @@ func (p *AdminReferenceProvider) adminDynamicComponentAttributeReferences(
 		return nil, true, err
 	}
 	liveOwner, err := p.index.GetComponentForDocument(
-		templatePath, params.Root, string(params.DocumentContent), params.LineIndex,
+		templatePath, params.Root, params.SourceString(), params.LineIndex,
 	)
 	if err != nil {
 		return nil, true, err
@@ -589,7 +589,7 @@ func (p *AdminReferenceProvider) adminComponentModelReferences(
 		return nil, true, err
 	}
 	liveOwner, err := p.index.GetComponentForDocument(
-		path, params.Root, string(params.DocumentContent), params.LineIndex,
+		path, params.Root, params.SourceString(), params.LineIndex,
 	)
 	if err != nil {
 		return nil, true, err
@@ -1037,7 +1037,7 @@ func (p *AdminReferenceProvider) adminScopedSlotMemberReferences(
 		return nil, true, pathErr
 	}
 	liveOwner, err := p.index.GetComponentForDocument(
-		templatePath, params.Root, string(params.DocumentContent), params.LineIndex,
+		templatePath, params.Root, params.SourceString(), params.LineIndex,
 	)
 	if err != nil {
 		return nil, true, err
@@ -1157,7 +1157,7 @@ func (p *AdminReferenceProvider) adminVueInstanceMemberReferences(
 		return nil, false, err
 	}
 	liveComponent, err := p.index.GetComponentForDocument(
-		templatePath, params.Root, string(params.DocumentContent), params.LineIndex,
+		templatePath, params.Root, params.SourceString(), params.LineIndex,
 	)
 	if err != nil {
 		return nil, false, err

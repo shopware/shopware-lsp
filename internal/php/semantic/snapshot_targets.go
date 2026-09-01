@@ -6,6 +6,107 @@ import (
 	"github.com/shopware/shopware-lsp/internal/php/types"
 )
 
+type packedReferenceTargetFilter struct {
+	id                 string
+	name               string
+	fullyQualified     string
+	caseInsensitive    bool
+	trimVariablePrefix bool
+	bloomMasks         [2][2]uint64
+	bloomCount         uint8
+}
+
+func newPackedReferenceTargetFilter(
+	target SymbolView,
+) packedReferenceTargetFilter {
+	kind := target.Kind()
+	filter := packedReferenceTargetFilter{
+		id:                 string(target.ID()),
+		name:               strings.TrimPrefix(target.Name(), "$"),
+		fullyQualified:     strings.TrimPrefix(target.FullyQualified(), "\\"),
+		caseInsensitive:    isClassLikeKind(kind) || kind == FunctionSymbol || isMemberSymbol(kind),
+		trimVariablePrefix: isMemberSymbol(kind) || kind == LocalSymbol || kind == ParameterSymbol,
+	}
+	filter.addBloomValue(filter.id)
+	switch {
+	case isClassLikeKind(kind), kind == FunctionSymbol,
+		kind == GlobalConstantSymbol:
+		filter.addBloomValue(filter.fullyQualified)
+		if filter.fullyQualified == "" {
+			filter.addBloomValue(filter.name)
+		}
+	case isMemberSymbol(kind):
+		filter.addBloomValue(filter.name)
+	}
+	return filter
+}
+
+func (filter *packedReferenceTargetFilter) addBloomValue(value string) {
+	hash := referenceBloomHash(value)
+	if filter == nil || hash == 0 {
+		return
+	}
+	first := uint64(1) << (hash & 63)
+	second := uint64(1) << ((hash >> 17) & 63)
+	for index := range filter.bloomCount {
+		if filter.bloomMasks[index][0] == first &&
+			filter.bloomMasks[index][1] == second {
+			return
+		}
+	}
+	index := filter.bloomCount
+	filter.bloomMasks[index] = [2]uint64{first, second}
+	filter.bloomCount++
+}
+
+// matchesDocument uses a derived Bloom filter to reject documents which
+// cannot reference the target. Every packed reference contributes its name,
+// resolved ID, qualified names, and fallback candidate IDs, so Bloom misses
+// are definitive. False positives are handled by the full resolver below.
+func (filter packedReferenceTargetFilter) matchesDocument(
+	document *workspaceDocument,
+) bool {
+	if document == nil || len(document.References) == 0 {
+		return false
+	}
+	if document.referenceBloom != [2]uint64{} {
+		for index := range filter.bloomCount {
+			mask := filter.bloomMasks[index]
+			if document.referenceBloom[0]&mask[0] != 0 &&
+				document.referenceBloom[1]&mask[1] != 0 {
+				return true
+			}
+		}
+		return false
+	}
+	// Preserve correctness for a hand-built or legacy packed document whose
+	// derived filter has not been initialized.
+	for stringIndex := 1; stringIndex <= document.referenceStringCount(); stringIndex++ {
+		value := document.referenceString(uint32(stringIndex))
+		if value == filter.id {
+			return true
+		}
+		value = strings.TrimPrefix(value, "\\")
+		if filter.trimVariablePrefix {
+			value = strings.TrimPrefix(value, "$")
+		}
+		if filter.caseInsensitive {
+			if filter.name != "" && strings.EqualFold(value, filter.name) ||
+				filter.fullyQualified != "" && strings.EqualFold(
+					value, filter.fullyQualified,
+				) {
+				return true
+			}
+			continue
+		}
+		if value == filter.name ||
+			filter.fullyQualified != "" && value == filter.fullyQualified {
+			return true
+		}
+	}
+	return false
+}
+
 // referenceMayTargetPacked cheaply rejects references which cannot resolve to
 // target before the more expensive inheritance-aware resolution runs. Open
 // document snapshots must resolve retained references against the overlay so
@@ -22,11 +123,20 @@ func (s *Snapshot) referenceMayTargetPacked(
 	}
 	switch reference.kind() {
 	case ClassName:
-		return isClassLikeKind(target.Kind())
+		return isClassLikeKind(target.Kind()) &&
+			packedReferenceMayResolveGlobal(
+				document, reference, target, true,
+			)
 	case FunctionName:
-		return target.Kind() == FunctionSymbol
+		return target.Kind() == FunctionSymbol &&
+			packedReferenceMayResolveGlobal(
+				document, reference, target, true,
+			)
 	case ConstantName:
-		return target.Kind() == GlobalConstantSymbol
+		return target.Kind() == GlobalConstantSymbol &&
+			packedReferenceMayResolveGlobal(
+				document, reference, target, false,
+			)
 	case MemberName:
 		if !memberReferenceKindMatches(reference.targetKind(), target.Kind()) {
 			return false
@@ -40,6 +150,33 @@ func (s *Snapshot) referenceMayTargetPacked(
 	default:
 		return true
 	}
+}
+
+func packedReferenceMayResolveGlobal(
+	document *workspaceDocument,
+	reference *workspaceReference,
+	target SymbolView,
+	caseInsensitive bool,
+) bool {
+	if packedReferenceRecordsTarget(document, reference, target.ID()) {
+		return true
+	}
+	targetName := strings.TrimPrefix(target.FullyQualified(), "\\")
+	if targetName == "" {
+		return false
+	}
+	valueStart := int(reference.valueStart(document))
+	qualifiedEnd := valueStart + int(reference.qualifiedCount())
+	for valueIndex := valueStart; valueIndex < qualifiedEnd; valueIndex++ {
+		candidate := strings.TrimPrefix(
+			document.referenceValue(valueIndex), "\\",
+		)
+		if candidate == targetName ||
+			caseInsensitive && strings.EqualFold(candidate, targetName) {
+			return true
+		}
+	}
+	return false
 }
 
 func memberReferenceKindMatches(referenceKind, targetKind SymbolKind) bool {

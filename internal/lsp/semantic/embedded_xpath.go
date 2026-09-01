@@ -44,7 +44,7 @@ func (p *EmbeddedXPathProvider) GetSemanticTokens(
 		p.phpIndex,
 		path,
 		document.Version,
-		string(document.Text),
+		document.SourceString(),
 		document.SyntaxTree.Root,
 	) {
 		if ctx.Err() != nil {

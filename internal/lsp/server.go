@@ -87,6 +87,7 @@ type Server struct {
 	configurationErr                error
 	configurationIssues             []ConfigurationIssue
 	pendingConfigurationFingerprint string
+	traceProviders                  bool
 }
 
 func (s *Server) InitializationOptions() protocol.InitializationOptions {
@@ -176,6 +177,7 @@ func NewServer(filescanner *indexer.FileScanner, rootPath, version string) *Serv
 		diagnosticsGenerations:      make(map[string]uint64),
 		diagnosticsCache:            make(map[string]diagnosticsCacheEntry),
 		effectiveConfiguration:      projectconfig.Default(),
+		traceProviders:              providerPerformanceTraceEnabled(),
 	}
 	s.methodHandlers = s.protocolMethodHandlers()
 
