@@ -62,7 +62,21 @@ func resolveContractedCallSignatures(
 	if len(contracts) == 0 {
 		return types.Type{}, false
 	}
-	var symbols []semantic.Symbol
+	foundSymbol := false
+	var effective []types.Type
+	visitSymbol := func(symbol semantic.Symbol) bool {
+		foundSymbol = true
+		resolved := resolver.ResolveSignatureWithContracts(
+			context.Snapshot.Relations(),
+			symbol,
+			context.Arguments,
+			contracts,
+		)
+		if resolved.Compatible && resolved.ContractApplied {
+			effective = append(effective, resolved.ReturnType)
+		}
+		return true
+	}
 	if context.Receiver.IsUnknown() {
 		nameContext := resolver.NewNameContext("")
 		if context.Document != nil {
@@ -81,37 +95,28 @@ func resolveContractedCallSignatures(
 			context.Snapshot.VisitFunctionViews(
 				candidate,
 				func(view semantic.SymbolView) bool {
-					symbols = append(symbols, view.Materialize())
-					return true
+					return visitSymbol(view.Materialize())
 				},
 			)
 			return true
 		})
 	} else {
-		for _, member := range (resolver.MemberResolver{
+		(resolver.MemberResolver{
 			Snapshot: context.Snapshot,
-		}).Methods(context.Receiver, context.Name) {
-			symbols = append(symbols, member.Symbol)
-		}
+		}).VisitMethods(
+			context.Receiver,
+			context.Name,
+			func(member resolver.ResolvedMember) bool {
+				return visitSymbol(member.Symbol)
+			},
+		)
 	}
-	if len(symbols) == 0 {
+	if !foundSymbol {
 		return resolver.EffectiveCallReturnType(
 			context.Snapshot.Relations(),
 			context.Arguments,
 			contracts,
 		)
-	}
-	var effective []types.Type
-	for _, symbol := range symbols {
-		resolved := resolver.ResolveSignatureWithContracts(
-			context.Snapshot.Relations(),
-			symbol,
-			context.Arguments,
-			contracts,
-		)
-		if resolved.Compatible && resolved.ContractApplied {
-			effective = append(effective, resolved.ReturnType)
-		}
 	}
 	if len(effective) == 0 {
 		return types.Type{}, false

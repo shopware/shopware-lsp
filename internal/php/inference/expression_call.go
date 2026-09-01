@@ -111,44 +111,50 @@ func (s *functionState) inferCall(
 	if extension, ok := s.extensionType(node, name, receiver, arguments, static); ok {
 		return extension
 	}
-	members := resolver.MemberResolver{Snapshot: s.analyzer.Snapshot}.Methods(receiver, name)
+	hasMembers := false
 	var results []types.Type
 	var generatedFallbacks []types.Type
-	for _, member := range members {
-		selfType := s.memberSelfType(member.Symbol, receiver)
-		symbol := resolveMemberSpecialTypes(
-			member.Symbol,
-			lateStaticReceiver,
-			selfType,
-		)
-		resolved := resolver.ResolveSignature(
-			s.relations,
-			symbol,
-			arguments,
-		)
-		if resolved.Compatible {
-			s.applyByReferenceArguments(
-				node,
+	(resolver.MemberResolver{Snapshot: s.analyzer.Snapshot}).VisitMethods(
+		receiver,
+		name,
+		func(member resolver.ResolvedMember) bool {
+			hasMembers = true
+			selfType := s.memberSelfType(member.Symbol, receiver)
+			symbol := resolveMemberSpecialTypes(
+				member.Symbol,
+				lateStaticReceiver,
+				selfType,
+			)
+			resolved := resolver.ResolveSignature(
+				s.relations,
 				symbol,
 				arguments,
-				env,
 			)
-			s.recordReturnDependency(member.Symbol)
-			results = append(
-				results,
-				resolved.ReturnType,
-			)
-		} else if member.Symbol.Flags.Has(semantic.GeneratedStubFlag) {
-			generatedFallbacks = append(
-				generatedFallbacks,
-				resolved.ReturnType,
-			)
-		}
-	}
+			if resolved.Compatible {
+				s.applyByReferenceArguments(
+					node,
+					symbol,
+					arguments,
+					env,
+				)
+				s.recordReturnDependency(member.Symbol)
+				results = append(
+					results,
+					resolved.ReturnType,
+				)
+			} else if member.Symbol.Flags.Has(semantic.GeneratedStubFlag) {
+				generatedFallbacks = append(
+					generatedFallbacks,
+					resolved.ReturnType,
+				)
+			}
+			return true
+		},
+	)
 	if len(results) == 0 && len(generatedFallbacks) > 0 {
 		results = generatedFallbacks
 	}
-	if len(members) > 0 && len(results) == 0 && !uncertainUnpack {
+	if hasMembers && len(results) == 0 && !uncertainUnpack {
 		s.report(
 			node,
 			"php.arguments",
@@ -235,9 +241,9 @@ func (s *functionState) inferFirstClassCallable(
 	}
 	receiver := s.inferReceiver(nodes.At(0), env, static)
 	name := phpquery.NameValue(nodes.At(1))
-	for _, member := range (resolver.MemberResolver{
+	(resolver.MemberResolver{
 		Snapshot: s.analyzer.Snapshot,
-	}).Methods(receiver, name) {
+	}).VisitMethods(receiver, name, func(member resolver.ResolvedMember) bool {
 		selfType := s.memberSelfType(member.Symbol, receiver)
 		symbol := resolveMemberSpecialTypes(
 			member.Symbol,
@@ -245,7 +251,8 @@ func (s *functionState) inferFirstClassCallable(
 			selfType,
 		)
 		callables = append(callables, callableFromSymbol(symbol))
-	}
+		return true
+	})
 	return joinTypes(s.relations, callables)
 }
 

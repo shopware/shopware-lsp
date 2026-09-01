@@ -18,23 +18,26 @@ var AttributeContracts Extension = ExtensionFunc(func(
 		return semantic.TypeFact{}, false
 	}
 	matched := false
-	visit := func(symbol semantic.Symbol) {
-		if matched {
-			return
-		}
-		attribute, ok := semantic.AttributeNamed(symbol.Attributes, "NoReturn")
+	visit := func(symbol semantic.SymbolView) bool {
+		attribute, ok := semantic.AttributeNamed(symbol.Attributes(), "NoReturn")
 		if ok && noReturnAttributeMatches(context, attribute) {
 			matched = true
 		}
+		return !matched
 	}
 	if context.Receiver.IsUnknown() {
 		visitAttributeFunctionCandidates(context, visit)
 	} else {
-		for _, member := range (resolver.MemberResolver{
+		(resolver.MemberResolver{
 			Snapshot: context.Snapshot,
-		}).Methods(context.Receiver, context.Name) {
-			visit(member.Symbol)
-		}
+		}).VisitMethodIDs(
+			context.Receiver,
+			context.Name,
+			func(id semantic.SymbolID) bool {
+				member, found := context.Snapshot.SymbolView(id)
+				return !found || visit(member)
+			},
+		)
 	}
 	if !matched {
 		return semantic.TypeFact{}, false
@@ -49,7 +52,7 @@ var AttributeContracts Extension = ExtensionFunc(func(
 
 func visitAttributeFunctionCandidates(
 	context CallContext,
-	visit func(semantic.Symbol),
+	visit func(semantic.SymbolView) bool,
 ) {
 	nameContext := resolver.NewNameContext("")
 	if context.Document != nil {
@@ -67,10 +70,7 @@ func visitAttributeFunctionCandidates(
 	nameContext.VisitFunctionNames(context.Name, func(candidate string) bool {
 		return context.Snapshot.VisitFunctionViews(
 			candidate,
-			func(view semantic.SymbolView) bool {
-				visit(view.Materialize())
-				return true
-			},
+			visit,
 		)
 	})
 }

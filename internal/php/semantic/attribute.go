@@ -5,16 +5,24 @@ import "strings"
 // AttributeNamed returns the first attribute matching either a short or fully
 // qualified PHP class name. Attribute names are case-insensitive in PHP.
 func AttributeNamed(attributes []Attribute, expected string) (*Attribute, bool) {
-	expected = normalizedAttributeName(expected)
+	expected = trimAttributeName(expected)
 	for index := range attributes {
-		candidate := normalizedAttributeName(attributes[index].Name)
-		if candidate == expected ||
-			(!strings.Contains(expected, "\\") &&
-				strings.HasSuffix(candidate, "\\"+expected)) {
+		candidate := trimAttributeName(attributes[index].Name)
+		if strings.EqualFold(candidate, expected) ||
+			attributeHasShortName(candidate, expected) {
 			return &attributes[index], true
 		}
 	}
 	return nil, false
+}
+
+func attributeHasShortName(candidate, expected string) bool {
+	if strings.Contains(expected, "\\") {
+		return false
+	}
+	separator := strings.LastIndexByte(candidate, '\\')
+	return separator >= 0 &&
+		strings.EqualFold(candidate[separator+1:], expected)
 }
 
 // Argument returns a named argument when present, otherwise the positional
@@ -40,8 +48,8 @@ func (attribute *Attribute) Argument(
 	return AttributeValue{}, false
 }
 
-func normalizedAttributeName(name string) string {
-	return strings.ToLower(strings.Trim(strings.TrimSpace(name), "\\"))
+func trimAttributeName(name string) string {
+	return strings.Trim(strings.TrimSpace(name), "\\")
 }
 
 // Deprecation describes the structured JetBrains/PHP attribute payload used

@@ -28,12 +28,12 @@ func (s *functionState) narrowCallAssertions(
 	falseEnv := cloneEnvironment(env)
 	narrowed := false
 	arguments, _ := s.inferArguments(call, env)
-	for _, member := range (resolver.MemberResolver{
+	(resolver.MemberResolver{
 		Snapshot: s.analyzer.Snapshot,
-	}).Methods(receiver, methodName) {
+	}).VisitMethods(receiver, methodName, func(member resolver.ResolvedMember) bool {
 		resolved := resolver.ResolveSignature(s.relations, member.Symbol, arguments)
 		if !resolved.Compatible {
-			continue
+			return true
 		}
 		for _, assertion := range member.Symbol.Assertions {
 			if !assertion.Conditional {
@@ -77,7 +77,8 @@ func (s *functionState) narrowCallAssertions(
 			}
 			narrowed = true
 		}
-	}
+		return true
+	})
 	return trueEnv, falseEnv, narrowed
 }
 
@@ -100,21 +101,27 @@ func (s *functionState) applyUnconditionalCallAssertions(
 			env,
 			call.Kind() == phpsyntax.PhpScopedCall,
 		)
-		for _, member := range (resolver.MemberResolver{
+		(resolver.MemberResolver{
 			Snapshot: s.analyzer.Snapshot,
-		}).Methods(receiver, methodName) {
+		}).VisitMethods(receiver, methodName, func(member resolver.ResolvedMember) bool {
 			symbols = append(symbols, member.Symbol)
-		}
+			return true
+		})
 		if len(symbols) == 0 && s.currentClassIsTrait() {
 			// A trait does not declare which class will consume it, so static
 			// PHPUnit assertions cannot be resolved through the trait's own
 			// hierarchy. Use Assert's indexed declarations as the implicit
 			// contract instead of duplicating their assertion semantics here.
-			for _, member := range (resolver.MemberResolver{
+			(resolver.MemberResolver{
 				Snapshot: s.analyzer.Snapshot,
-			}).Methods(types.Named("PHPUnit\\Framework\\Assert"), methodName) {
-				symbols = append(symbols, member.Symbol)
-			}
+			}).VisitMethods(
+				types.Named("PHPUnit\\Framework\\Assert"),
+				methodName,
+				func(member resolver.ResolvedMember) bool {
+					symbols = append(symbols, member.Symbol)
+					return true
+				},
+			)
 		}
 	} else if call.Kind() == phpsyntax.PhpFunctionCall {
 		name := methodName
@@ -256,14 +263,15 @@ func (s *functionState) assertionReceiverMemberTarget(
 	var returns []types.Type
 	memberResolver := resolver.MemberResolver{Snapshot: s.analyzer.Snapshot}
 	if methodTarget {
-		for _, member := range memberResolver.Methods(receiver, memberName) {
+		memberResolver.VisitMethods(receiver, memberName, func(member resolver.ResolvedMember) bool {
 			selfType := s.memberSelfType(member.Symbol, receiver)
 			symbol := resolveMemberSpecialTypes(member.Symbol, receiver, selfType)
 			resolved := resolver.ResolveSignature(s.relations, symbol, nil)
 			if resolved.Compatible {
 				returns = append(returns, resolved.ReturnType)
 			}
-		}
+			return true
+		})
 	} else {
 		returns = append(returns, memberResolver.PropertyTypes(receiver, memberName)...)
 	}

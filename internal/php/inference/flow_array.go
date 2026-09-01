@@ -142,17 +142,18 @@ func (s *functionState) narrowHasAccessor(
 		return environment{}, environment{}, false
 	}
 	hasCompatible := false
-	for _, member := range (resolver.MemberResolver{
+	(resolver.MemberResolver{
 		Snapshot: s.analyzer.Snapshot,
-	}).Methods(receiver, name) {
+	}).VisitMethods(receiver, name, func(member resolver.ResolvedMember) bool {
 		selfType := s.memberSelfType(member.Symbol, receiver)
 		symbol := resolveMemberSpecialTypes(member.Symbol, receiver, selfType)
 		resolved := resolver.ResolveSignature(s.relations, symbol, arguments)
 		if resolved.Compatible && s.relations.IsAssignableTo(resolved.ReturnType, types.Bool()) {
 			hasCompatible = true
-			break
+			return false
 		}
-	}
+		return true
+	})
 	if !hasCompatible {
 		return environment{}, environment{}, false
 	}
@@ -161,16 +162,17 @@ func (s *functionState) narrowHasAccessor(
 		targetArguments = nil
 	}
 	var returns []types.Type
-	for _, member := range (resolver.MemberResolver{
+	(resolver.MemberResolver{
 		Snapshot: s.analyzer.Snapshot,
-	}).Methods(receiver, targetName) {
+	}).VisitMethods(receiver, targetName, func(member resolver.ResolvedMember) bool {
 		selfType := s.memberSelfType(member.Symbol, receiver)
 		symbol := resolveMemberSpecialTypes(member.Symbol, receiver, selfType)
 		resolved := resolver.ResolveSignature(s.relations, symbol, targetArguments)
 		if resolved.Compatible {
 			returns = append(returns, resolved.ReturnType)
 		}
-	}
+		return true
+	})
 	if len(returns) == 0 {
 		return environment{}, environment{}, false
 	}

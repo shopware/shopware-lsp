@@ -19,8 +19,116 @@ type ResolvedMember struct {
 	Type   types.Type
 }
 
+type memberNameTracker struct {
+	named      bool
+	matched    bool
+	mixedKinds bool
+	seen       map[string]struct{}
+}
+
+func newMemberNameTracker(name string, mixedKinds bool) memberNameTracker {
+	return memberNameTracker{
+		named:      name != "",
+		mixedKinds: mixedKinds,
+	}
+}
+
+func (t *memberNameTracker) contains(
+	name string,
+	kind semantic.SymbolKind,
+) bool {
+	if t.named {
+		return t.matched
+	}
+	_, exists := t.seen[memberResolutionKey(name, kind, t.mixedKinds)]
+	return exists
+}
+
+func (t *memberNameTracker) add(
+	name string,
+	kind semantic.SymbolKind,
+) bool {
+	if t.named {
+		if t.matched {
+			return false
+		}
+		t.matched = true
+		return true
+	}
+	key := memberResolutionKey(name, kind, t.mixedKinds)
+	if _, exists := t.seen[key]; exists {
+		return false
+	}
+	if t.seen == nil {
+		t.seen = make(map[string]struct{})
+	}
+	t.seen[key] = struct{}{}
+	return true
+}
+
+const inlineMemberClassCount = 4
+
+type memberClassTracker struct {
+	inline   [inlineMemberClassCount]semantic.SymbolID
+	count    uint8
+	overflow map[semantic.SymbolID]struct{}
+}
+
+func (t *memberClassTracker) add(id semantic.SymbolID) bool {
+	for index := range int(t.count) {
+		if t.inline[index] == id {
+			return false
+		}
+	}
+	if _, exists := t.overflow[id]; exists {
+		return false
+	}
+	if int(t.count) < len(t.inline) {
+		t.inline[t.count] = id
+		t.count++
+		return true
+	}
+	if t.overflow == nil {
+		t.overflow = make(map[semantic.SymbolID]struct{})
+	}
+	t.overflow[id] = struct{}{}
+	return true
+}
+
+func (t memberClassTracker) clone() memberClassTracker {
+	t.overflow = maps.Clone(t.overflow)
+	return t
+}
+
 func (r MemberResolver) Methods(receiver types.Type, name string) []ResolvedMember {
 	return r.members(receiver, name, semantic.MethodSymbol)
+}
+
+// VisitMethods visits effective matching methods without materializing the
+// compatibility result slice. Returning false stops the traversal.
+func (r MemberResolver) VisitMethods(
+	receiver types.Type,
+	name string,
+	visit func(ResolvedMember) bool,
+) bool {
+	if r.Snapshot == nil || visit == nil {
+		return true
+	}
+	if receiver.Kind() == types.UnionKind ||
+		receiver.Kind() == types.IntersectionKind {
+		for _, member := range r.Methods(receiver, name) {
+			if !visit(member) {
+				return false
+			}
+		}
+		return true
+	}
+	return r.visitObjectMembers(
+		receiver,
+		name,
+		semantic.MethodSymbol,
+		visit,
+	)
 }
 
 func (r MemberResolver) Properties(receiver types.Type, name string) []ResolvedMember {
@@ -540,38 +648,56 @@ func (r MemberResolver) members(
 		return nil
 	}
 	var result []ResolvedMember
-	seenNames := make(map[string]struct{})
-	visited := make(map[semantic.SymbolID]struct{})
-	r.Snapshot.VisitClassViews(receiver.Name(), func(classView semantic.SymbolView) bool {
+	r.visitObjectMembers(
+		receiver,
+		name,
+		kind,
+		func(member ResolvedMember) bool {
+			result = append(result, member)
+			return true
+		},
+	)
+	return result
+}
+
+func (r MemberResolver) visitObjectMembers(
+	receiver types.Type,
+	name string,
+	kind semantic.SymbolKind,
+	visit func(ResolvedMember) bool,
+) bool {
+	if receiver.Kind() != types.ObjectKind || receiver.Name() == "" {
+		return true
+	}
+	seenNames := newMemberNameTracker(name, kind == 255)
+	var visited memberClassTracker
+	return r.Snapshot.VisitClassViews(receiver.Name(), func(classView semantic.SymbolView) bool {
 		class := classView.Materialize()
 		templates := bindClassTemplatesFromType(class, receiver)
-		r.collectClassMembers(
+		return r.visitClassMembers(
 			class,
 			name,
 			kind,
 			templates,
-			seenNames,
-			visited,
-			&result,
+			&seenNames,
+			&visited,
+			visit,
 		)
-		return true
 	})
-	return result
 }
 
-func (r MemberResolver) collectClassMembers(
+func (r MemberResolver) visitClassMembers(
 	class semantic.Symbol,
 	name string,
 	kind semantic.SymbolKind,
 	templates map[string]types.Type,
-	seenNames map[string]struct{},
-	visited map[semantic.SymbolID]struct{},
-	result *[]ResolvedMember,
-) {
-	if _, exists := visited[class.ID]; exists {
-		return
+	seenNames *memberNameTracker,
+	visited *memberClassTracker,
+	visit func(ResolvedMember) bool,
+) bool {
+	if !visited.add(class.ID) {
+		return true
 	}
-	visited[class.ID] = struct{}{}
 
 	visitCandidate := func(candidateView semantic.SymbolView) bool {
 		candidate := candidateView.Materialize()
@@ -581,125 +707,168 @@ func (r MemberResolver) collectClassMembers(
 		if kind != 255 && candidate.Kind != kind {
 			return true
 		}
-		key := memberResolutionKey(
-			candidate.Name,
-			candidate.Kind,
-			kind == 255,
-		)
-		if _, exists := seenNames[key]; exists {
+		if !seenNames.add(candidate.Name, candidate.Kind) {
 			return true
 		}
-		seenNames[key] = struct{}{}
 		specialized := specializeMember(candidate, class, templates)
 		memberType := specialized.Type
 		if specialized.IsFunctionLike() {
 			memberType = specialized.ReturnType
 		}
-		*result = append(*result, ResolvedMember{
+		return visit(ResolvedMember{
 			Symbol: specialized,
 			Type:   memberType,
 		})
-		return true
 	}
 	if name == "" {
 		for _, candidate := range r.Snapshot.MemberViewsOf(class.ID) {
-			visitCandidate(candidate)
+			if !visitCandidate(candidate) {
+				return false
+			}
 		}
-	} else {
-		r.Snapshot.VisitMemberViews(class.ID, name, visitCandidate)
+	} else if !r.Snapshot.VisitMemberViews(class.ID, name, visitCandidate) {
+		return false
 	}
 	if kind == semantic.MethodSymbol || kind == 255 {
-		r.collectTraitAliasMembers(
+		if !r.visitTraitAliasMembers(
 			class,
 			name,
 			templates,
 			seenNames,
 			visited,
-			result,
-		)
+			visit,
+		) {
+			return false
+		}
 	}
 
 	for _, traitName := range class.Traits {
-		r.Snapshot.VisitClassViews(traitName, func(traitView semantic.SymbolView) bool {
+		if !r.Snapshot.VisitClassViews(traitName, func(traitView semantic.SymbolView) bool {
 			trait := traitView.Materialize()
-			r.collectClassMembers(
+			return r.visitClassMembers(
 				trait,
 				name,
 				kind,
 				templates,
 				seenNames,
 				visited,
-				result,
+				visit,
 			)
-			return true
-		})
+		}) {
+			return false
+		}
 	}
-	parentTypes := append(append([]types.Type(nil), class.ExtendsTypes...), class.ImplementsTypes...)
-	parentNames := append(append([]string(nil), class.Extends...), class.Implements...)
+	if !r.visitRelatedClassMembers(
+		class.Extends,
+		class.ExtendsTypes,
+		name,
+		kind,
+		templates,
+		seenNames,
+		visited,
+		visit,
+	) {
+		return false
+	}
+	return r.visitRelatedClassMembers(
+		class.Implements,
+		class.ImplementsTypes,
+		name,
+		kind,
+		templates,
+		seenNames,
+		visited,
+		visit,
+	)
+}
+
+func (r MemberResolver) visitRelatedClassMembers(
+	parentNames []string,
+	parentTypes []types.Type,
+	name string,
+	kind semantic.SymbolKind,
+	templates map[string]types.Type,
+	seenNames *memberNameTracker,
+	visited *memberClassTracker,
+	visit func(ResolvedMember) bool,
+) bool {
 	for _, parentName := range parentNames {
-		r.Snapshot.VisitClassViews(parentName, func(parentView semantic.SymbolView) bool {
+		if !r.Snapshot.VisitClassViews(parentName, func(parentView semantic.SymbolView) bool {
 			parent := parentView.Materialize()
 			var arguments []types.Type
-			for _, parentType := range parentTypes {
-				if strings.EqualFold(parentType.Name(), parentName) {
-					arguments = parentType.Arguments()
-					for index := range arguments {
-						arguments[index] = types.Substitute(arguments[index], templates)
+			if len(parent.Templates) > 0 {
+				for _, parentType := range parentTypes {
+					if strings.EqualFold(parentType.Name(), parentName) {
+						arguments = make(
+							[]types.Type,
+							parentType.ArgumentCount(),
+						)
+						for index := range arguments {
+							arguments[index] = types.Substitute(
+								parentType.Argument(index),
+								templates,
+							)
+						}
+						break
 					}
-					break
 				}
 			}
 			parentTemplates := bindClassTemplates(parent, arguments)
-			r.collectClassMembers(
+			return r.visitClassMembers(
 				parent,
 				name,
 				kind,
 				parentTemplates,
 				seenNames,
 				visited,
-				result,
+				visit,
 			)
-			return true
-		})
+		}) {
+			return false
+		}
 	}
+	return true
 }
 
-func (r MemberResolver) collectTraitAliasMembers(
+func (r MemberResolver) visitTraitAliasMembers(
 	class semantic.Symbol,
 	name string,
 	templates map[string]types.Type,
-	seenNames map[string]struct{},
-	visited map[semantic.SymbolID]struct{},
-	result *[]ResolvedMember,
-) {
+	seenNames *memberNameTracker,
+	visited *memberClassTracker,
+	visit func(ResolvedMember) bool,
+) bool {
 	for _, alias := range class.TraitAliases {
 		if name != "" && !strings.EqualFold(alias.Alias, name) {
 			continue
 		}
-		key := memberResolutionKey(alias.Alias, semantic.MethodSymbol, false)
-		if _, exists := seenNames[key]; exists {
+		if seenNames.contains(alias.Alias, semantic.MethodSymbol) {
 			continue
 		}
 		var targets []ResolvedMember
+		targetNames := newMemberNameTracker(alias.Method, false)
+		targetVisited := visited.clone()
 		r.Snapshot.VisitClassViews(
 			alias.Trait,
 			func(traitView semantic.SymbolView) bool {
-				r.collectClassMembers(
+				return r.visitClassMembers(
 					traitView.Materialize(),
 					alias.Method,
 					semantic.MethodSymbol,
 					templates,
-					make(map[string]struct{}),
-					maps.Clone(visited),
-					&targets,
+					&targetNames,
+					&targetVisited,
+					func(member ResolvedMember) bool {
+						targets = append(targets, member)
+						return true
+					},
 				)
-				return true
 			},
 		)
 		if len(targets) == 0 {
 			continue
 		}
-		seenNames[key] = struct{}{}
+		seenNames.add(alias.Alias, semantic.MethodSymbol)
 		for _, target := range targets {
 			symbol := target.Symbol
 			symbol.Name = alias.Alias
@@ -708,12 +877,15 @@ func (r MemberResolver) collectTraitAliasMembers(
 			if alias.HasVisibility {
 				symbol.Visibility = alias.Visibility
 			}
-			*result = append(*result, ResolvedMember{
+			if !visit(ResolvedMember{
 				Symbol: symbol,
 				Type:   target.Type,
-			})
+			}) {
+				return false
+			}
 		}
 	}
+	return true
 }
 
 func bindClassTemplates(class semantic.Symbol, arguments []types.Type) map[string]types.Type {
@@ -754,6 +926,12 @@ func specializeMember(
 	class semantic.Symbol,
 	templates map[string]types.Type,
 ) semantic.Symbol {
+	if len(templates) == 0 && len(class.Templates) == 0 {
+		// Materialized snapshot slices are immutable. When neither the receiver
+		// nor its declaring class contributes templates, specialization is an
+		// identity operation and the nested signature data can remain shared.
+		return member
+	}
 	member.Parameters = append([]semantic.Parameter(nil), member.Parameters...)
 	member.Templates = append(
 		[]semantic.TemplateParameter(nil),

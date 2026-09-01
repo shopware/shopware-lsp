@@ -582,7 +582,7 @@ func (s *analyzerState) inheritedMethodParameterTypes(
 	result := make([]types.Type, len(method.Parameters))
 	members := resolver.MemberResolver{Snapshot: s.analyzer.Snapshot}
 	for _, parent := range parents {
-		for _, inherited := range members.Methods(parent, method.Name) {
+		members.VisitMethods(parent, method.Name, func(inherited resolver.ResolvedMember) bool {
 			parameterCount := min(
 				len(method.Parameters),
 				len(inherited.Symbol.Parameters),
@@ -607,7 +607,8 @@ func (s *analyzerState) inheritedMethodParameterTypes(
 					)
 				}
 			}
-		}
+			return true
+		})
 	}
 	return result
 }

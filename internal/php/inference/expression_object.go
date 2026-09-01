@@ -89,10 +89,46 @@ func (s *functionState) inferObjectCreation(
 					templateArguments...,
 				)
 			}
-			constructors := resolver.MemberResolver{
+			foundConstructor := false
+			(resolver.MemberResolver{
 				Snapshot: s.analyzer.Snapshot,
-			}.Methods(constructorReceiver, "__construct")
-			if len(constructors) == 0 {
+			}).VisitMethods(
+				constructorReceiver,
+				"__construct",
+				func(constructor resolver.ResolvedMember) bool {
+					foundConstructor = true
+					hasConstructor = true
+					resolved := resolver.ResolveSignature(
+						s.relations,
+						constructor.Symbol,
+						arguments,
+					)
+					if resolved.Compatible {
+						s.applyByReferenceArguments(
+							node,
+							constructor.Symbol,
+							arguments,
+							env,
+						)
+						inferred = append(
+							inferred,
+							s.genericObjectType(
+								class,
+								mergeMissingTemplates(
+									resolved.Templates,
+									currentTemplates,
+								),
+							),
+						)
+					} else if constructor.Symbol.Flags.Has(
+						semantic.GeneratedStubFlag,
+					) {
+						permissiveConstructor = true
+					}
+					return true
+				},
+			)
+			if !foundConstructor {
 				if len(arguments) == 0 {
 					inferred = append(
 						inferred,
@@ -100,36 +136,6 @@ func (s *functionState) inferObjectCreation(
 					)
 				}
 				return true
-			}
-			hasConstructor = true
-			for _, constructor := range constructors {
-				resolved := resolver.ResolveSignature(
-					s.relations,
-					constructor.Symbol,
-					arguments,
-				)
-				if resolved.Compatible {
-					s.applyByReferenceArguments(
-						node,
-						constructor.Symbol,
-						arguments,
-						env,
-					)
-					inferred = append(
-						inferred,
-						s.genericObjectType(
-							class,
-							mergeMissingTemplates(
-								resolved.Templates,
-								currentTemplates,
-							),
-						),
-					)
-				} else if constructor.Symbol.Flags.Has(
-					semantic.GeneratedStubFlag,
-				) {
-					permissiveConstructor = true
-				}
 			}
 			return true
 		},

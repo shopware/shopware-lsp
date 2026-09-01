@@ -61,25 +61,27 @@ func (s *analyzerState) validateOverrides(class semantic.Symbol) {
 		var inherited []semantic.Symbol
 		seen := make(map[semantic.SymbolID]struct{})
 		for _, parent := range parents {
-			var candidates []resolver.ResolvedMember
 			memberResolver := resolver.MemberResolver{Snapshot: s.analyzer.Snapshot}
-			if member.Kind == semantic.MethodSymbol {
-				candidates = memberResolver.Methods(parent, member.Name)
-			} else {
-				candidates = memberResolver.Properties(parent, member.Name)
-			}
-			for _, candidate := range candidates {
+			visitCandidate := func(candidate resolver.ResolvedMember) bool {
 				if candidate.Symbol.Visibility == semantic.Private {
-					continue
+					return true
 				}
 				if candidate.Symbol.Flags.Has(semantic.SyntheticFlag) {
-					continue
+					return true
 				}
 				if _, exists := seen[candidate.Symbol.ID]; exists {
-					continue
+					return true
 				}
 				seen[candidate.Symbol.ID] = struct{}{}
 				inherited = append(inherited, candidate.Symbol)
+				return true
+			}
+			if member.Kind == semantic.MethodSymbol {
+				memberResolver.VisitMethods(parent, member.Name, visitCandidate)
+			} else {
+				for _, candidate := range memberResolver.Properties(parent, member.Name) {
+					visitCandidate(candidate)
+				}
 			}
 		}
 

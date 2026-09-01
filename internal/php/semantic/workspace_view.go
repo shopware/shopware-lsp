@@ -96,6 +96,18 @@ func (view SymbolView) Visibility() Visibility {
 	return view.workspace.Visibility
 }
 
+// Attributes returns immutable snapshot-owned symbol attributes without
+// materializing the full symbol and its signature.
+func (view SymbolView) Attributes() []Attribute {
+	if view.expanded != nil {
+		return view.expanded.Attributes
+	}
+	if view.workspace == nil {
+		return nil
+	}
+	return view.workspace.metadata().attributes()
+}
+
 func (view SymbolView) Path() string {
 	if view.expanded != nil {
 		return view.expanded.Path

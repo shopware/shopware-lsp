@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/shopware/shopware-lsp/internal/php/semantic"
@@ -266,6 +267,59 @@ func TestMemberIDVisitorsMatchSliceAPIsAndStopEarly(t *testing.T) {
 	require.Equal(t, 1, visited)
 }
 
+func TestResolvedMethodVisitorMatchesUnionAndStopsEarly(t *testing.T) {
+	t.Parallel()
+	documents := make([]*semantic.Document, 0, 2)
+	for _, className := range []string{"First", "Second"} {
+		classID := semantic.SymbolID(strings.ToLower(className))
+		documents = append(documents, &semantic.Document{
+			Path: "/" + className + ".php",
+			Symbols: []semantic.Symbol{
+				{
+					ID:             classID,
+					Kind:           semantic.ClassSymbol,
+					Name:           className,
+					FullyQualified: className,
+					Path:           "/" + className + ".php",
+				},
+				{
+					ID:             semantic.SymbolID(className + "::run"),
+					Kind:           semantic.MethodSymbol,
+					Name:           "run",
+					FullyQualified: className + "::run",
+					Container:      classID,
+					ReturnType:     types.Named(className),
+					Path:           "/" + className + ".php",
+				},
+			},
+		})
+	}
+	resolver := MemberResolver{Snapshot: semantic.NewSnapshot(1, documents)}
+	receiver := types.Union(types.Named("First"), types.Named("Second"))
+	expected := resolver.Methods(receiver, "run")
+	var actual []ResolvedMember
+	require.True(t, resolver.VisitMethods(
+		receiver,
+		"run",
+		func(member ResolvedMember) bool {
+			actual = append(actual, member)
+			return true
+		},
+	))
+	require.Equal(t, expected, actual)
+
+	visited := 0
+	require.False(t, resolver.VisitMethods(
+		receiver,
+		"run",
+		func(ResolvedMember) bool {
+			visited++
+			return false
+		},
+	))
+	require.Equal(t, 1, visited)
+}
+
 func BenchmarkMemberResolverPropertyTypes(b *testing.B) {
 	classID := semantic.SymbolID("collection")
 	snapshot := semantic.NewSnapshot(1, []*semantic.Document{{
@@ -297,6 +351,66 @@ func BenchmarkMemberResolverPropertyTypes(b *testing.B) {
 		result := resolver.PropertyTypes(receiver, "current")
 		if len(result) != 1 {
 			b.Fatalf("resolved %d properties", len(result))
+		}
+	}
+}
+
+func benchmarkMemberResolverMethods() (MemberResolver, types.Type) {
+	classID := semantic.SymbolID("service")
+	snapshot := semantic.NewSnapshot(1, []*semantic.Document{{
+		Path: "/service.php",
+		Symbols: []semantic.Symbol{
+			{
+				ID:             classID,
+				Kind:           semantic.ClassSymbol,
+				Name:           "Service",
+				FullyQualified: "Service",
+				Path:           "/service.php",
+			},
+			{
+				ID:             "run",
+				Kind:           semantic.MethodSymbol,
+				Name:           "run",
+				FullyQualified: "Service::run",
+				Container:      classID,
+				Parameters: []semantic.Parameter{{
+					Name: "$value",
+					Type: types.String(),
+				}},
+				ReturnType: types.Int(),
+				Path:       "/service.php",
+			},
+		},
+	}})
+	return MemberResolver{Snapshot: snapshot}, types.Named("Service")
+}
+
+func BenchmarkMemberResolverMethods(b *testing.B) {
+	resolver, receiver := benchmarkMemberResolverMethods()
+	b.ReportAllocs()
+	for b.Loop() {
+		result := resolver.Methods(receiver, "run")
+		if len(result) != 1 || len(result[0].Symbol.Parameters) != 1 {
+			b.Fatalf("resolved %d methods", len(result))
+		}
+	}
+}
+
+func BenchmarkMemberResolverVisitMethods(b *testing.B) {
+	resolver, receiver := benchmarkMemberResolverMethods()
+	b.ReportAllocs()
+	for b.Loop() {
+		count := 0
+		resolver.VisitMethods(
+			receiver,
+			"run",
+			func(member ResolvedMember) bool {
+				count += len(member.Symbol.Parameters)
+				return true
+			},
+		)
+		if count != 1 {
+			b.Fatalf("visited %d method parameters", count)
 		}
 	}
 }
