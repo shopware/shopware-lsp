@@ -254,7 +254,7 @@ func slotDeclarationIdentity(
 			lineIndex, nameToken.Range().Start, nameToken.Range().End, false,
 		),
 	}
-	for _, attribute := range tag.Attributes() {
+	for attribute := range tag.Attributes() {
 		attributeName := twigquery.HTMLAttributeName(attribute.Syntax())
 		switch attributeName {
 		case ":name", "v-bind:name":
@@ -361,7 +361,7 @@ func slotDeclarationMembers(
 ) ([]VueComponentSlotMember, bool) {
 	var members []VueComponentSlotMember
 	complete := true
-	for _, attribute := range tag.Attributes() {
+	for attribute := range tag.Attributes() {
 		attributeName := twigquery.HTMLAttributeName(attribute.Syntax())
 		if attributeName == "v-bind" {
 			if value, valueRange, ok := staticHTMLAttributeValueRange(attribute); ok &&

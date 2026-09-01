@@ -433,7 +433,7 @@ func TwigScopedSlots(root *twigsyntax.Node) []TwigScopedSlot {
 				componentName = tag.Name().Text()
 			}
 		}
-		for _, attribute := range startingTag.Attributes() {
+		for attribute := range startingTag.Attributes() {
 			attributeName := twigquery.HTMLAttributeName(attribute.Syntax())
 			slotName := NormalizeSlotName(attributeName)
 			if slotName == "" && !isDynamicVueSlotDirective(attributeName) {

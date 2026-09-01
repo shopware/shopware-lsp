@@ -41,7 +41,7 @@ func TwigDynamicComponentSelector(
 	if !ok {
 		return VueDynamicComponentSelector{}, false
 	}
-	for _, attribute := range tag.Attributes() {
+	for attribute := range tag.Attributes() {
 		attributeName := twigquery.HTMLAttributeName(attribute.Syntax())
 		if attributeName != "is" && attributeName != ":is" &&
 			attributeName != "v-bind:is" {

@@ -213,7 +213,7 @@ func TestShopwareTrunkAdminMarkupAudit(t *testing.T) {
 				selector, dynamic := adminpkg.TwigDynamicComponentSelector(startTag)
 				var boundFields []adminpkg.VueObjectBindingField
 				if tag, ok := twigast.CastHtmlStartingTag(startTag); ok {
-					for _, attribute := range tag.Attributes() {
+					for attribute := range tag.Attributes() {
 						if twigquery.HTMLAttributeName(attribute.Syntax()) != "v-bind" {
 							continue
 						}

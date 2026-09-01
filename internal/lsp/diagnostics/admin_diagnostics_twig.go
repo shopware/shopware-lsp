@@ -127,14 +127,11 @@ func (p *AdminAnalyzer) adminTwigDiagnosticDocument(
 		components: make(map[string]adminTwigComponentResolution),
 	}
 	if liveOwner != nil {
-		result.localIdentifiers = make(map[cst.TextRange]bool)
-		for _, identifier := range result.rootIdentifiers {
-			if admin.TwigVueRootIdentifierIsLocal(
-				document.SyntaxTree.Root, document.Text, identifier,
-			) {
-				result.localIdentifiers[identifier.Range] = true
-			}
-		}
+		result.localIdentifiers = admin.TwigVueLocalRootIdentifierRanges(
+			document.SyntaxTree.Root,
+			document.Text,
+			result.rootIdentifiers,
+		)
 	}
 	return result, nil
 }

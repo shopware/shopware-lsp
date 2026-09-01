@@ -1,6 +1,10 @@
 package ast
 
-import "github.com/shopware/shopware-lsp/internal/parser/twig/syntax"
+import (
+	"iter"
+
+	"github.com/shopware/shopware-lsp/internal/parser/twig/syntax"
+)
 
 // --- TwigBlock ---
 
@@ -64,14 +68,18 @@ func (x HtmlTag) IsSelfClosing() bool {
 	return !ok
 }
 
-// Attributes returns the tag's attributes, via the starting tag. Falls back to
-// an empty slice when there is no starting tag.
-func (x HtmlTag) Attributes() []HtmlAttribute {
-	st, ok := x.StartingTag()
-	if !ok {
-		return nil
+// Attributes iterates the tag's attributes via the starting tag.
+func (x HtmlTag) Attributes() iter.Seq[HtmlAttribute] {
+	return func(yield func(HtmlAttribute) bool) {
+		startingTag := firstChildNode(x.n, syntax.HtmlStartingTag)
+		if startingTag == nil {
+			return
+		}
+		iterateHTMLAttributes(
+			firstChildNode(startingTag, syntax.HtmlAttributeList),
+			yield,
+		)
 	}
-	return st.Attributes()
 }
 
 // IsTwigComponent reports whether the tag is a twig component, e.g.
@@ -103,22 +111,30 @@ func (x HtmlStartingTag) Name() *syntax.Token {
 	return firstTokenWithKind(x.n, syntax.TkWord, syntax.TkTwigComponentName)
 }
 
-// Attributes returns the attributes held by the HTML_ATTRIBUTE_LIST child.
-// Falls back to an empty slice when there is no attribute list.
-func (x HtmlStartingTag) Attributes() []HtmlAttribute {
-	list := firstChildNode(x.n, syntax.HtmlAttributeList)
-	if list == nil {
-		return nil
+// Attributes iterates the attributes held by the HTML_ATTRIBUTE_LIST child.
+func (x HtmlStartingTag) Attributes() iter.Seq[HtmlAttribute] {
+	return func(yield func(HtmlAttribute) bool) {
+		iterateHTMLAttributes(
+			firstChildNode(x.n, syntax.HtmlAttributeList),
+			yield,
+		)
 	}
-	var out []HtmlAttribute
+}
+
+func iterateHTMLAttributes(
+	list *syntax.Node,
+	yield func(HtmlAttribute) bool,
+) {
+	if list == nil {
+		return
+	}
 	cursor := list.ChildNodeCursor()
 	for cursor.Next() {
-		child := cursor.Node()
-		if attr, ok := CastHtmlAttribute(child); ok {
-			out = append(out, attr)
+		attribute, ok := CastHtmlAttribute(cursor.Node())
+		if ok && !yield(attribute) {
+			return
 		}
 	}
-	return out
 }
 
 // HtmlTag returns the parent complete html tag.

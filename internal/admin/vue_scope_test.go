@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,13 @@ import (
 	twigparser "github.com/shopware/shopware-lsp/internal/parser/twig"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+)
+
+var (
+	benchmarkTwigVueBindings []TwigVueBinding
+	benchmarkTwigVueBinding  *TwigVueBinding
+	benchmarkTwigVueRanges   []cst.TextRange
+	benchmarkTwigVueLocals   map[cst.TextRange]bool
 )
 
 func TestTwigVueRootIdentifiersExcludeKeywordsAndArrowLocals(t *testing.T) {
@@ -24,6 +32,23 @@ func TestTwigVueRootIdentifiersExcludeKeywordsAndArrowLocals(t *testing.T) {
 	assert.NotContains(t, names, "in")
 	assert.NotContains(t, names, "candidate")
 	assert.NotContains(t, names, "label")
+}
+
+func TestTwigVueLocalRootIdentifierRanges(t *testing.T) {
+	source := `<div v-for="row in rows"><button @click="save(row, $event)">{{ row.name }} {{ outside }}</button></div>`
+	content := []byte(source)
+	root := twigparser.Parse(source).Tree.Root
+	identifiers := TwigVueExpressionRootIdentifiers(root, content)
+	localRanges := TwigVueLocalRootIdentifierRanges(
+		root, content, identifiers,
+	)
+	var localNames []string
+	for _, identifier := range identifiers {
+		if localRanges[identifier.Range] {
+			localNames = append(localNames, identifier.Name)
+		}
+	}
+	assert.Equal(t, []string{"row", "row", "$event", "row"}, localNames)
 }
 
 func TestTwigVueForBindingsAreLexicalAndShadowed(t *testing.T) {
@@ -106,6 +131,138 @@ func TestTwigVueEventBindingAndPayloadType(t *testing.T) {
 	assert.Equal(t, "boolean", binding.Type)
 	assert.Equal(t, "/meteor/MtSwitch.d.ts", binding.DefinitionPath)
 	assert.Equal(t, 17, binding.DefinitionLine)
+}
+
+func BenchmarkTwigVueBindingsAtOffsetEventHeavy(b *testing.B) {
+	var source strings.Builder
+	source.WriteString(`<section>`)
+	for index := range 80 {
+		fmt.Fprintf(
+			&source,
+			`<button @click="handle%d($event)" @focus="focus%d($event)"></button>`,
+			index,
+			index,
+		)
+	}
+	source.WriteString(`</section>`)
+	content := source.String()
+	contentBytes := []byte(content)
+	root := twigparser.Parse(content).Tree.Root
+	offset := uint32(strings.LastIndex(content, "$event") + 2)
+	b.ReportAllocs()
+	for range b.N {
+		benchmarkTwigVueBindings = TwigVueBindingsAtOffset(
+			root, contentBytes, offset,
+		)
+	}
+	if len(benchmarkTwigVueBindings) != 1 {
+		b.Fatalf(
+			"expected one visible event binding, got %d",
+			len(benchmarkTwigVueBindings),
+		)
+	}
+}
+
+func BenchmarkTwigVueBindingAtOffsetEventHeavy(b *testing.B) {
+	var source strings.Builder
+	source.WriteString(`<section>`)
+	for index := range 80 {
+		fmt.Fprintf(
+			&source,
+			`<button @click="handle%d($event)" @focus="focus%d($event)"></button>`,
+			index,
+			index,
+		)
+	}
+	source.WriteString(`</section>`)
+	content := source.String()
+	contentBytes := []byte(content)
+	root := twigparser.Parse(content).Tree.Root
+	offset := uint32(strings.LastIndex(content, "$event") + 2)
+	b.ReportAllocs()
+	for range b.N {
+		binding, found := TwigVueBindingAtOffset(root, contentBytes, offset)
+		if !found {
+			b.Fatal("expected an event binding")
+		}
+		benchmarkTwigVueBinding = binding
+	}
+}
+
+func BenchmarkTwigVueBindingReferencesEventHeavy(b *testing.B) {
+	var source strings.Builder
+	source.WriteString(`<section>`)
+	for index := range 80 {
+		fmt.Fprintf(
+			&source,
+			`<button @click="handle%d($event)" @focus="focus%d($event)"></button>`,
+			index,
+			index,
+		)
+	}
+	source.WriteString(`</section>`)
+	content := source.String()
+	contentBytes := []byte(content)
+	root := twigparser.Parse(content).Tree.Root
+	offset := uint32(strings.LastIndex(content, "$event") + 2)
+	bindings := TwigVueBindingsAtOffset(root, contentBytes, offset)
+	if len(bindings) != 1 {
+		b.Fatalf("expected one visible event binding, got %d", len(bindings))
+	}
+	target := bindings[0]
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		benchmarkTwigVueRanges = TwigVueBindingReferences(
+			root, contentBytes, target,
+		)
+	}
+	if len(benchmarkTwigVueRanges) != 1 {
+		b.Fatalf(
+			"expected one event reference, got %d",
+			len(benchmarkTwigVueRanges),
+		)
+	}
+}
+
+func BenchmarkTwigVueRootIdentifierLocalityEventHeavy(b *testing.B) {
+	var source strings.Builder
+	source.WriteString(`<section v-for="row in rows">`)
+	for index := range 80 {
+		fmt.Fprintf(
+			&source,
+			`<button @click="handle%d(row, $event)">{{ row.label + label%d }}</button>`,
+			index,
+			index,
+		)
+	}
+	source.WriteString(`</section>`)
+	content := source.String()
+	contentBytes := []byte(content)
+	root := twigparser.Parse(content).Tree.Root
+	identifiers := TwigVueExpressionRootIdentifiers(root, contentBytes)
+	b.Run("individual", func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			locals := make(map[cst.TextRange]bool)
+			for _, identifier := range identifiers {
+				if TwigVueRootIdentifierIsLocal(
+					root, contentBytes, identifier,
+				) {
+					locals[identifier.Range] = true
+				}
+			}
+			benchmarkTwigVueLocals = locals
+		}
+	})
+	b.Run("batch", func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			benchmarkTwigVueLocals = TwigVueLocalRootIdentifierRanges(
+				root, contentBytes, identifiers,
+			)
+		}
+	})
 }
 
 func TestTwigVueForBindingGetsIterableElementType(t *testing.T) {

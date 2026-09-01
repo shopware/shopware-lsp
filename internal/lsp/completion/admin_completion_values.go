@@ -176,7 +176,7 @@ func componentPropValueContext(
 		if !ok {
 			continue
 		}
-		for _, attribute := range tag.Attributes() {
+		for attribute := range tag.Attributes() {
 			name := twigquery.HTMLAttributeName(attribute.Syntax())
 			bound := strings.HasPrefix(name, ":") ||
 				strings.HasPrefix(name, "v-bind:")

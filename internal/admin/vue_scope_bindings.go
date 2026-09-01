@@ -14,20 +14,59 @@ func TwigVueBindings(
 	root *twigsyntax.Node,
 	content []byte,
 ) []TwigVueBinding {
+	return twigVueBindings(root, content, twigVueBindingScan{
+		includeEvents: true,
+	})
+}
+
+func twigVueForBindings(
+	root *twigsyntax.Node,
+	content []byte,
+) []TwigVueBinding {
+	return twigVueBindings(root, content, twigVueBindingScan{})
+}
+
+func twigVueBindingsForTarget(
+	root *twigsyntax.Node,
+	content []byte,
+	target TwigVueBinding,
+) []TwigVueBinding {
+	bindings := twigVueForBindings(root, content)
+	if target.Kind == TwigVueBindingEvent {
+		bindings = append(bindings, target)
+	}
+	return bindings
+}
+
+type twigVueBindingScan struct {
+	includeEvents bool
+	atOffset      bool
+	offset        uint32
+}
+
+func twigVueBindings(
+	root *twigsyntax.Node,
+	content []byte,
+	scan twigVueBindingScan,
+) []TwigVueBinding {
 	if root == nil {
 		return nil
 	}
 	var result []TwigVueBinding
 	for _, node := range twigquery.Nodes(root, twigsyntax.HtmlTag) {
 		tag, ok := twigast.CastHtmlTag(node)
-		if !ok || tag.Name() == nil {
+		if !ok {
+			continue
+		}
+		tagName := tag.Name()
+		if tagName == nil {
 			continue
 		}
 		startingTag, ok := tag.StartingTag()
 		if !ok {
 			continue
 		}
-		for _, attribute := range startingTag.Attributes() {
+		for attribute := range startingTag.Attributes() {
 			name := twigquery.HTMLAttributeName(attribute.Syntax())
 			value, hasValue := attribute.Value()
 			if !hasValue {
@@ -41,20 +80,33 @@ func TwigVueBindings(
 			if expressionRange.End > uint32(len(content)) {
 				continue
 			}
-			switch {
-			case name == "v-for":
+			if name == "v-for" {
+				scopeRange := node.RangeTrimmedTrivia()
+				if scan.atOffset &&
+					(scan.offset < scopeRange.Start ||
+						scan.offset > scopeRange.End) {
+					continue
+				}
 				result = append(result, parseTwigVueForBindings(
 					inner.Syntax().Text(), expressionRange.Start,
-					node.RangeTrimmedTrivia(), expressionRange,
+					scopeRange, expressionRange,
 				)...)
-			case NormalizeEventName(name) != "":
-				result = append(result, TwigVueBinding{
-					Name: "$event", Kind: TwigVueBindingEvent,
-					ScopeRange: expressionRange, ExpressionRange: expressionRange,
-					ComponentName: tag.Name().Text(),
-					EventName:     NormalizeEventName(name),
-				})
+				continue
 			}
+			if !scan.includeEvents || scan.atOffset &&
+				(scan.offset < expressionRange.Start ||
+					scan.offset > expressionRange.End) {
+				continue
+			}
+			eventName := NormalizeEventName(name)
+			if eventName == "" {
+				continue
+			}
+			result = append(result, TwigVueBinding{
+				Name: "$event", Kind: TwigVueBindingEvent,
+				ScopeRange: expressionRange, ExpressionRange: expressionRange,
+				ComponentName: tagName.Text(), EventName: eventName,
+			})
 		}
 	}
 	return result
@@ -68,7 +120,15 @@ func TwigVueBindingsAtOffset(
 	content []byte,
 	offset uint32,
 ) []TwigVueBinding {
-	return twigVueBindingsAtOffset(TwigVueBindings(root, content), offset)
+	return twigVueBindingsAtOffset(twigVueBindings(
+		root,
+		content,
+		twigVueBindingScan{
+			includeEvents: true,
+			atOffset:      true,
+			offset:        offset,
+		},
+	), offset)
 }
 
 func twigVueBindingsAtOffset(
@@ -112,17 +172,7 @@ func TwigVueBindingAtOffset(
 	content []byte,
 	offset uint32,
 ) (*TwigVueBinding, bool) {
-	return twigVueBindingAtOffset(
-		root, content, TwigVueBindings(root, content), offset,
-	)
-}
-
-func twigVueBindingAtOffset(
-	root *twigsyntax.Node,
-	content []byte,
-	bindings []TwigVueBinding,
-	offset uint32,
-) (*TwigVueBinding, bool) {
+	bindings := TwigVueBindingsAtOffset(root, content, offset)
 	for _, binding := range bindings {
 		if binding.IsDeclarationOffset(offset) {
 			resolved := binding
@@ -135,7 +185,7 @@ func twigVueBindingAtOffset(
 	if !found {
 		return nil, false
 	}
-	for _, binding := range twigVueBindingsAtOffset(bindings, offset) {
+	for _, binding := range bindings {
 		if binding.Name == name {
 			resolved := binding
 			return &resolved, true
@@ -155,7 +205,7 @@ func TwigVueBindingReferences(
 	if root == nil || target.Name == "" {
 		return nil
 	}
-	bindings := TwigVueBindings(root, content)
+	bindings := twigVueBindingsForTarget(root, content, target)
 	var result []cst.TextRange
 	seen := make(map[cst.TextRange]bool)
 	add := func(value cst.TextRange) {

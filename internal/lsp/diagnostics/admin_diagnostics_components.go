@@ -156,7 +156,7 @@ func (p *AdminAnalyzer) checkDeprecatedComponentContractAttributes(
 	if !ok {
 		return
 	}
-	for _, attribute := range tag.Attributes() {
+	for attribute := range tag.Attributes() {
 		nameToken := attribute.Name()
 		if nameToken == nil {
 			continue
@@ -292,7 +292,7 @@ func (p *AdminAnalyzer) checkUnknownComponentContractAttributes(
 	if !ok {
 		return
 	}
-	for _, attribute := range tag.Attributes() {
+	for attribute := range tag.Attributes() {
 		p.checkUnknownComponentContractAttribute(
 			attribute,
 			catalog,
@@ -505,7 +505,7 @@ func (p *AdminAnalyzer) checkComponentSlotNames(
 		return nil
 	}
 	var references []admin.VueAttributeReference
-	for _, attribute := range tag.Attributes() {
+	for attribute := range tag.Attributes() {
 		nameToken := attribute.Name()
 		if nameToken == nil {
 			continue

@@ -7,8 +7,13 @@ import (
 	"github.com/shopware/shopware-lsp/internal/parser/twig/syntax"
 )
 
+var (
+	benchmarkHTMLAttribute      HtmlAttribute
+	benchmarkHTMLAttributeCount int
+)
+
 // parseNoErr parses src, fails the test on any parse error, and returns the root.
-func parseNoErr(t *testing.T, src string) *syntax.Node {
+func parseNoErr(t testing.TB, src string) *syntax.Node {
 	t.Helper()
 	res := parser.Parse(src)
 	if len(res.Errors) != 0 {
@@ -89,7 +94,10 @@ func TestHtmlTagAndAttributes(t *testing.T) {
 		t.Fatal("no ending tag")
 	}
 
-	attrs := tag.Attributes()
+	var attrs []HtmlAttribute
+	for attribute := range tag.Attributes() {
+		attrs = append(attrs, attribute)
+	}
 	if len(attrs) != 1 {
 		t.Fatalf("attributes = %d, want 1", len(attrs))
 	}
@@ -118,6 +126,68 @@ func TestHtmlTagAndAttributes(t *testing.T) {
 	stFromTag, _ := tag.StartingTag()
 	if st.Syntax() != stFromTag.Syntax() {
 		t.Fatal("attribute grandparent is not the starting tag")
+	}
+}
+
+func TestHtmlTagAttributesIteration(t *testing.T) {
+	root := parseNoErr(t, `<div first="1" second="2" third="3"></div>`)
+	tag, ok := CastHtmlTag(findNode(root, syntax.HtmlTag))
+	if !ok {
+		t.Fatal("no HTML tag")
+	}
+	visited := 0
+	for attribute := range tag.Attributes() {
+		visited++
+		mustToken(t, attribute.Name(), "first")
+		break
+	}
+	if visited != 1 {
+		t.Fatalf("visited attributes = %d, want 1", visited)
+	}
+
+	emptyRoot := parseNoErr(t, `<div></div>`)
+	emptyTag, ok := CastHtmlTag(findNode(emptyRoot, syntax.HtmlTag))
+	if !ok {
+		t.Fatal("no empty HTML tag")
+	}
+	for attribute := range emptyTag.Attributes() {
+		t.Fatalf("unexpected attribute %q", attribute.Syntax().Text())
+	}
+}
+
+func BenchmarkHtmlStartingTagAttributes(b *testing.B) {
+	root := parseNoErr(b, `<sw-card class="card" :title="title" disabled
+		@click="submit" data-id="42" aria-label="Card">content</sw-card>`)
+	tag, ok := CastHtmlStartingTag(findNode(root, syntax.HtmlStartingTag))
+	if !ok {
+		b.Fatal("no HTML starting tag")
+	}
+	b.ReportAllocs()
+	for range b.N {
+		count := 0
+		for attribute := range tag.Attributes() {
+			benchmarkHTMLAttribute = attribute
+			count++
+		}
+		benchmarkHTMLAttributeCount = count
+	}
+}
+
+func BenchmarkHtmlTagAttributes(b *testing.B) {
+	root := parseNoErr(b, `<sw-card class="card" :title="title" disabled
+		@click="submit" data-id="42" aria-label="Card">content</sw-card>`)
+	tag, ok := CastHtmlTag(findNode(root, syntax.HtmlTag))
+	if !ok {
+		b.Fatal("no HTML tag")
+	}
+	b.ReportAllocs()
+	for range b.N {
+		count := 0
+		for attribute := range tag.Attributes() {
+			benchmarkHTMLAttribute = attribute
+			count++
+		}
+		benchmarkHTMLAttributeCount = count
 	}
 }
 

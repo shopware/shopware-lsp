@@ -29,7 +29,7 @@ func parseAdminTwigUsages(
 		collector:             newAdminUsageCollector(filePath, lineIndex),
 		shorthandMemberRanges: make(map[cst.TextRange]bool),
 	}
-	scanner.vueBindings = TwigVueBindings(root, scanner.content)
+	scanner.vueBindings = twigVueForBindings(root, scanner.content)
 	scanner.scopedSlots = TwigScopedSlots(root)
 	scanner.collectRegistryReferences()
 	scanner.collectStartingTags()
@@ -93,7 +93,7 @@ func (scanner *adminTwigUsageScanner) collectStartingTag(
 			false,
 		)
 	}
-	for _, attribute := range tag.Attributes() {
+	for attribute := range tag.Attributes() {
 		scanner.collectAttribute(
 			node,
 			attribute,
@@ -372,7 +372,6 @@ func (scanner *adminTwigUsageScanner) collectInstanceMembers() {
 	) {
 		if twigVueRootIdentifierIsLocalIn(
 			scanner.root,
-			scanner.content,
 			scanner.vueBindings,
 			scanner.scopedSlots,
 			identifier,

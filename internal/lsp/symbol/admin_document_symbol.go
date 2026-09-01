@@ -576,7 +576,7 @@ func adminTwigSlotMemberSymbols(
 ) []protocol.DocumentSymbol {
 	var result []protocol.DocumentSymbol
 	seen := make(map[string]bool)
-	for _, attribute := range tag.Attributes() {
+	for attribute := range tag.Attributes() {
 		if attribute.Name() == nil {
 			continue
 		}
@@ -630,7 +630,7 @@ func adminTwigSlotNameRange(
 	tag twigast.HtmlStartingTag,
 	lineIndex *cst.LineIndex,
 ) protocol.Range {
-	for _, attribute := range tag.Attributes() {
+	for attribute := range tag.Attributes() {
 		name := twigquery.HTMLAttributeName(attribute.Syntax())
 		if name != "name" && name != ":name" && name != "v-bind:name" {
 			continue

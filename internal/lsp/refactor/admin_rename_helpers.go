@@ -258,7 +258,7 @@ func (p *AdminRenameProvider) dynamicTwigSlotRenameRanges(
 		if !ok {
 			continue
 		}
-		for _, attribute := range tag.Attributes() {
+		for attribute := range tag.Attributes() {
 			nameToken := attribute.Name()
 			if nameToken == nil {
 				continue

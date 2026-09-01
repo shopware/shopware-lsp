@@ -343,7 +343,7 @@ func TwigVueBindingMembers(
 	if root == nil || target.Name == "" {
 		return nil
 	}
-	bindings := TwigVueBindings(root, content)
+	bindings := twigVueBindingsForTarget(root, content, target)
 	seen := make(map[string]bool)
 	var result []TwigVueMember
 	for start := 0; start < len(content); {
@@ -413,7 +413,7 @@ func TwigVueBindingMemberPathReferences(
 	if len(memberPath) == 0 || memberPath[len(memberPath)-1] == "" {
 		return nil
 	}
-	bindings := TwigVueBindings(root, content)
+	bindings := twigVueBindingsForTarget(root, content, target)
 	var result []cst.TextRange
 	for _, access := range TwigVueExpressionMemberAccesses(root, content) {
 		if access.Root != target.Name ||
@@ -447,7 +447,7 @@ func TwigVueBindingMemberAccessReferences(
 	if targetAccess.Member == "" {
 		return nil
 	}
-	bindings := TwigVueBindings(root, content)
+	bindings := twigVueBindingsForTarget(root, content, target)
 	var result []cst.TextRange
 	for _, access := range TwigVueExpressionMemberAccesses(root, content) {
 		if !access.SamePath(targetAccess) {

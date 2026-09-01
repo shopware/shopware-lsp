@@ -379,7 +379,7 @@ func newTagEditor(source string, tag twigast.HtmlTag) (*tagEditor, error) {
 		builder: rewrite.NewBuilder(source), attrs: make(map[string]twigast.HtmlAttribute),
 		added: make(map[string]struct{}),
 	}
-	for _, attribute := range starting.Attributes() {
+	for attribute := range starting.Attributes() {
 		name := twigquery.HTMLAttributeName(attribute.Syntax())
 		if name == "" {
 			continue
@@ -652,9 +652,14 @@ func (e *tagEditor) finish() ([]rewrite.Edit, error) {
 }
 
 func (e *tagEditor) attributeIndent() string {
-	attributes := e.starting.Attributes()
-	if len(attributes) != 0 {
-		attribute := attributes[len(attributes)-1].Syntax()
+	var lastAttribute twigast.HtmlAttribute
+	hasAttribute := false
+	for attribute := range e.starting.Attributes() {
+		lastAttribute = attribute
+		hasAttribute = true
+	}
+	if hasAttribute {
+		attribute := lastAttribute.Syntax()
 		prefix := e.source[attribute.Range().Start:attribute.RangeTrimmedTrivia().Start]
 		if newline := strings.LastIndexByte(prefix, '\n'); newline >= 0 {
 			indent := prefix[newline+1:]
@@ -679,7 +684,7 @@ func attributeValue(attribute twigast.HtmlAttribute) (string, bool) {
 }
 
 func templateSlotName(tag twigast.HtmlTag) string {
-	for _, attribute := range tag.Attributes() {
+	for attribute := range tag.Attributes() {
 		name := twigquery.HTMLAttributeName(attribute.Syntax())
 		switch {
 		case strings.HasPrefix(name, "#"):
@@ -729,7 +734,7 @@ func templateSlotValue(tag twigast.HtmlTag) (value string, expression, empty, ok
 }
 
 func optionValue(option twigast.HtmlTag) (string, bool) {
-	for _, attribute := range option.Attributes() {
+	for attribute := range option.Attributes() {
 		name := twigquery.HTMLAttributeName(attribute.Syntax())
 		value, ok := attributeValue(attribute)
 		if !ok {

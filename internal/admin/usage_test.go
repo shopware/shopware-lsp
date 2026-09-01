@@ -235,6 +235,53 @@ func BenchmarkCollectTwigUsages(b *testing.B) {
 	}
 }
 
+func BenchmarkCollectTwigEventUsages(b *testing.B) {
+	var source strings.Builder
+	source.WriteString(`<section>`)
+	for index := range 80 {
+		fmt.Fprintf(
+			&source,
+			`<button @click="handle%d($event)" @focus="focus%d($event)">{{ label%d }}</button>`,
+			index,
+			index,
+			index,
+		)
+	}
+	source.WriteString(`</section>`)
+	content := source.String()
+	root := twigparser.Parse(content).Tree.Root
+	lineIndex := twigsyntax.NewLineIndex(content)
+	b.ReportAllocs()
+	b.ResetTimer()
+	var result []AdminUsageSet
+	for range b.N {
+		result = CollectTwigUsages(
+			root, "/project/event-template.html.twig", lineIndex,
+		)
+	}
+	if len(result) == 0 {
+		b.Fatal("expected Administration event usages")
+	}
+}
+
+func TestCollectTwigUsagesTreatsEventLocalLexically(t *testing.T) {
+	source := `<button @click.stop="save($event)">{{ $event }}</button>`
+	sets := CollectTwigUsages(
+		twigparser.Parse(source).Tree.Root,
+		"/project/event-template.html.twig",
+		twigsyntax.NewLineIndex(source),
+	)
+	members := make(map[string]int)
+	for _, set := range sets {
+		if set.Kind != AdminSymbolComponentMember {
+			continue
+		}
+		members[set.Name] += len(set.Occurrences)
+	}
+	assert.Equal(t, 1, members["save"])
+	assert.Equal(t, 1, members["$event"])
+}
+
 func TestAdminServiceUsagesIncludeApplicationContainerMembers(t *testing.T) {
 	root := t.TempDir()
 	idx, err := NewAdminComponentIndexer(filepath.Join(root, "cache"))

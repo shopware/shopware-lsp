@@ -208,7 +208,7 @@ func LiveActionArgumentReferencesInTwig(
 		}
 		var action LiveActionReference
 		var arguments []LiveActionArgumentReference
-		for _, attribute := range tag.Attributes() {
+		for attribute := range tag.Attributes() {
 			attributeNode := attribute.Syntax()
 			if reference, found := liveActionReferenceFromHTMLAttribute(
 				path,
@@ -352,7 +352,7 @@ func liveEventReferencesInTwig(
 		var eventRange cst.TextRange
 		var contextRange cst.TextRange
 		var currentArguments []LiveEventArgumentReference
-		for _, attribute := range tag.Attributes() {
+		for attribute := range tag.Attributes() {
 			attributeNode := attribute.Syntax()
 			attributeName := strings.ToLower(
 				twigquery.HTMLAttributeName(attributeNode),

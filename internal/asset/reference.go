@@ -149,7 +149,7 @@ func htmlAttributeEquals(
 	if !found {
 		return false
 	}
-	for _, attribute := range typed.Attributes() {
+	for attribute := range typed.Attributes() {
 		if !strings.EqualFold(
 			twigquery.HTMLAttributeName(attribute.Syntax()),
 			name,

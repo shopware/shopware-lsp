@@ -78,7 +78,7 @@ func (collector *adminMarkupTokenCollector) collectStartingTag(
 	if err != nil {
 		return err
 	}
-	for _, attribute := range start.Attributes() {
+	for attribute := range start.Attributes() {
 		if err := collector.collectAttribute(
 			attribute,
 			component,
@@ -143,7 +143,7 @@ func (collector *adminMarkupTokenCollector) slotComponents(
 	node *twigsyntax.Node,
 ) ([]admin.VueComponent, error) {
 	hasSlotAttribute := false
-	for _, attribute := range start.Attributes() {
+	for attribute := range start.Attributes() {
 		if admin.NormalizeSlotName(twigquery.HTMLAttributeName(attribute.Syntax())) != "" {
 			hasSlotAttribute = true
 			break

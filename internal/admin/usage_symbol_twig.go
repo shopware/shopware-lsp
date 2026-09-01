@@ -53,7 +53,7 @@ func twigStartingTagSymbolAtOffset(
 			Kind: AdminSymbolComponent, Name: tagName,
 		}, true
 	}
-	for _, attribute := range tag.Attributes() {
+	for attribute := range tag.Attributes() {
 		if target, found := twigAttributeSymbolAtOffset(
 			node,
 			attribute,
@@ -187,7 +187,7 @@ func twigSlotDeclarationAtOffset(
 	tag twigast.HtmlStartingTag,
 	offset uint32,
 ) (AdminSymbolTarget, bool) {
-	for _, attribute := range tag.Attributes() {
+	for attribute := range tag.Attributes() {
 		if twigquery.HTMLAttributeName(attribute.Syntax()) != "name" {
 			continue
 		}

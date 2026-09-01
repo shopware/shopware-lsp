@@ -47,8 +47,7 @@ func twigVueRootIdentifierIsLocal(
 ) bool {
 	return twigVueRootIdentifierIsLocalIn(
 		root,
-		content,
-		TwigVueBindings(root, content),
+		twigVueForBindings(root, content),
 		TwigScopedSlots(root),
 		identifier,
 	)
@@ -64,23 +63,48 @@ func TwigVueRootIdentifierIsLocal(
 ) bool {
 	return twigVueRootIdentifierIsLocalIn(
 		root,
-		content,
-		TwigVueBindings(root, content),
+		twigVueForBindings(root, content),
 		TwigScopedSlots(root),
 		identifier,
 	)
 }
 
-func twigVueRootIdentifierIsLocalIn(
+// TwigVueLocalRootIdentifierRanges resolves all lexical v-for, event, and
+// scoped-slot identifiers with one shared scope scan. The returned set is
+// keyed by the exact source range supplied in identifiers.
+func TwigVueLocalRootIdentifierRanges(
 	root *twigsyntax.Node,
 	content []byte,
+	identifiers []TwigVueMember,
+) map[cst.TextRange]bool {
+	if root == nil || len(identifiers) == 0 {
+		return nil
+	}
+	bindings := twigVueForBindings(root, content)
+	scopes := TwigScopedSlots(root)
+	var result map[cst.TextRange]bool
+	for _, identifier := range identifiers {
+		if !twigVueRootIdentifierIsLocalIn(
+			root, bindings, scopes, identifier,
+		) {
+			continue
+		}
+		if result == nil {
+			result = make(map[cst.TextRange]bool)
+		}
+		result[identifier.Range] = true
+	}
+	return result
+}
+
+func twigVueRootIdentifierIsLocalIn(
+	root *twigsyntax.Node,
 	bindings []TwigVueBinding,
 	scopes []TwigScopedSlot,
 	identifier TwigVueMember,
 ) bool {
-	if binding, found := twigVueBindingAtOffset(
-		root, content, bindings, identifier.Range.Start,
-	); found && binding != nil {
+	if twigVueEventIdentifierIsLocal(root, identifier) ||
+		twigVueBindingIdentifierIsLocal(bindings, identifier) {
 		return true
 	}
 	for _, scope := range twigScopedSlotsAtOffset(
@@ -95,12 +119,50 @@ func twigVueRootIdentifierIsLocalIn(
 	return false
 }
 
+func twigVueEventIdentifierIsLocal(
+	root *twigsyntax.Node,
+	identifier TwigVueMember,
+) bool {
+	if root == nil || identifier.Name != "$event" {
+		return false
+	}
+	node := root.NodeAtOffset(identifier.Range.Start)
+	attribute := twigquery.HTMLAttributeAt(node)
+	return attribute != nil &&
+		NormalizeEventName(twigquery.HTMLAttributeName(attribute)) != ""
+}
+
+func twigVueBindingIdentifierIsLocal(
+	bindings []TwigVueBinding,
+	identifier TwigVueMember,
+) bool {
+	offset := identifier.Range.Start
+	for _, binding := range bindings {
+		if binding.Name != identifier.Name {
+			continue
+		}
+		if binding.IsDeclarationOffset(offset) {
+			return true
+		}
+		if offset < binding.ScopeRange.Start || offset > binding.ScopeRange.End {
+			continue
+		}
+		if binding.Kind == TwigVueBindingFor &&
+			offset >= binding.ExpressionRange.Start &&
+			offset <= binding.ExpressionRange.End {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 func collectSlotDeclaration(
 	tag twigast.HtmlStartingTag,
 	filePath string,
 	collector *adminUsageCollector,
 ) {
-	for _, attribute := range tag.Attributes() {
+	for attribute := range tag.Attributes() {
 		if twigquery.HTMLAttributeName(attribute.Syntax()) != "name" {
 			continue
 		}

@@ -181,7 +181,7 @@ func TwigComponentObjectBindingFieldAtOffset(
 		if !ok {
 			continue
 		}
-		for _, attribute := range tag.Attributes() {
+		for attribute := range tag.Attributes() {
 			if twigquery.HTMLAttributeName(attribute.Syntax()) != "v-bind" {
 				continue
 			}
@@ -226,7 +226,7 @@ func TwigComponentObjectBindingValueAtOffset(
 		if !ok {
 			continue
 		}
-		for _, attribute := range tag.Attributes() {
+		for attribute := range tag.Attributes() {
 			if twigquery.HTMLAttributeName(attribute.Syntax()) != "v-bind" {
 				continue
 			}
@@ -282,7 +282,7 @@ func TwigComponentObjectBindingKeyContextAtOffset(
 		if !ok {
 			continue
 		}
-		for _, attribute := range tag.Attributes() {
+		for attribute := range tag.Attributes() {
 			if twigquery.HTMLAttributeName(attribute.Syntax()) != "v-bind" {
 				continue
 			}
