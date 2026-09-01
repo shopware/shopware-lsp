@@ -18,6 +18,11 @@ type fileCandidate struct {
 	state *storedFileState
 }
 
+type skippedFileWork struct {
+	stats   SkippedFileStats
+	tracked bool
+}
+
 type fileIndexRun struct {
 	scanner      *FileScanner
 	ctx          context.Context
@@ -27,6 +32,7 @@ type fileIndexRun struct {
 	resultMu      sync.Mutex
 	resultErrors  []error
 	updatedStates []fileState
+	skippedFiles  []skippedFileWork
 	batchIndexers []BatchIndexer
 }
 
@@ -50,6 +56,7 @@ func (fs *FileScanner) indexFiles(
 	if len(files) == 0 {
 		return nil
 	}
+	fs.clearSkippedFiles(files)
 
 	run := &fileIndexRun{
 		scanner:      fs,
@@ -72,6 +79,7 @@ func (fs *FileScanner) indexFiles(
 	if !run.runWorkers() {
 		return errors.Join(run.resultErrors...)
 	}
+	run.commitSkippedFiles()
 	run.commitFileStates()
 	return errors.Join(run.resultErrors...)
 }
@@ -147,6 +155,40 @@ func (run *fileIndexRun) recordError(err error) {
 	run.resultMu.Unlock()
 }
 
+func (run *fileIndexRun) recordSkipped(file SkippedFileStats, tracked bool) {
+	run.resultMu.Lock()
+	run.skippedFiles = append(run.skippedFiles, skippedFileWork{
+		stats: file, tracked: tracked,
+	})
+	run.resultMu.Unlock()
+}
+
+func (run *fileIndexRun) commitSkippedFiles() {
+	if len(run.skippedFiles) == 0 {
+		return
+	}
+	stats := make([]SkippedFileStats, 0, len(run.skippedFiles))
+	tracked := make([]string, 0, len(run.skippedFiles))
+	for _, file := range run.skippedFiles {
+		stats = append(stats, file.stats)
+		if file.tracked {
+			tracked = append(tracked, file.stats.Path)
+		}
+	}
+	if len(tracked) > 0 {
+		if err := run.scanner.removeFilesLocked(run.ctx, tracked); err != nil {
+			run.recordError(fmt.Errorf("remove oversized index entries: %w", err))
+		}
+	}
+	run.scanner.recordSkippedFiles(stats)
+	for _, file := range stats[:min(len(stats), fileStatsLimit)] {
+		logSkippedFile(file)
+	}
+	if len(stats) > fileStatsLimit {
+		logSkippedFileCount(len(stats))
+	}
+}
+
 // runWorkers returns false when the producer observed cancellation. That path
 // intentionally skips file-state publication, matching the pre-refactor
 // lifecycle even if a worker had already prepared a partial batch.
@@ -201,13 +243,18 @@ func (run *fileIndexRun) worker(fileChan <-chan fileCandidate) {
 				return
 			}
 		}
-		needsIndexing, content, info, err := run.scanner.fileNeedsIndexing(
-			run.ctx,
-			candidate.path,
-			candidate.state,
-		)
+		needsIndexing, content, info, skipped, tracked, err :=
+			run.scanner.fileNeedsIndexing(
+				run.ctx,
+				candidate.path,
+				candidate.state,
+			)
 		if err != nil {
 			run.recordError(fmt.Errorf("read %s: %w", candidate.path, err))
+			continue
+		}
+		if skipped != nil {
+			run.recordSkipped(*skipped, tracked)
 			continue
 		}
 		if !needsIndexing {

@@ -63,6 +63,98 @@ func TestPreparationBatchReadyBoundsFilesAndSourceWeight(t *testing.T) {
 	))
 }
 
+func TestFileScannerSourceSizeRejection(t *testing.T) {
+	t.Parallel()
+
+	scanner := &FileScanner{}
+	scanner.maxFileSize.Store(8 << 20)
+	reason, limit, rejected := scanner.sourceSizeRejection(8 << 20)
+	require.False(t, rejected)
+	require.Empty(t, reason)
+	require.Zero(t, limit)
+
+	reason, limit, rejected = scanner.sourceSizeRejection(8<<20 + 1)
+	require.True(t, rejected)
+	require.Equal(t, skippedConfiguredLimit, reason)
+	require.EqualValues(t, 8<<20, limit)
+
+	scanner.maxFileSize.Store(0)
+	reason, limit, rejected = scanner.sourceSizeRejection(MaximumSourceFileBytes + 1)
+	require.True(t, rejected)
+	require.Equal(t, skippedParserRange, reason)
+	require.Equal(t, MaximumSourceFileBytes, limit)
+}
+
+func TestFileScannerSkipsOversizedFilesAndReportsLargestFiles(t *testing.T) {
+	root := t.TempDir()
+	smallPath := filepath.Join(root, "small.php")
+	largePath := filepath.Join(root, "large.php")
+	require.NoError(t, os.WriteFile(smallPath, []byte("<?php"), 0o644))
+	require.NoError(t, os.WriteFile(
+		largePath,
+		[]byte("<?php generated source"),
+		0o644,
+	))
+
+	idx := &mockIndexer{indexedFiles: make(map[string]bool)}
+	scanner, err := NewFileScanner(root, filepath.Join(t.TempDir(), "scanner.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, scanner.Close()) })
+	scanner.SetMaxFileSizeBytes(8)
+	scanner.AddIndexer(idx)
+
+	require.NoError(t, scanner.IndexAll(context.Background()))
+	require.True(t, idx.indexedFiles[smallPath])
+	require.False(t, idx.indexedFiles[largePath])
+
+	stats, err := scanner.Stats(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, stats.TrackedFiles)
+	require.EqualValues(t, len("<?php"), stats.TrackedBytes)
+	require.EqualValues(t, 8, stats.MaxFileSizeBytes)
+	require.Equal(t, []FileSizeStats{{
+		Path: smallPath, Bytes: int64(len("<?php")),
+	}}, stats.LargestIndexedFiles)
+	require.Equal(t, 1, stats.SkippedOversizedCount)
+	require.EqualValues(t, len("<?php generated source"), stats.SkippedOversizedBytes)
+	require.Equal(t, []SkippedFileStats{{
+		Path: largePath, Bytes: int64(len("<?php generated source")),
+		LimitBytes: 8, Reason: skippedConfiguredLimit,
+	}}, stats.LargestSkippedFiles)
+}
+
+func TestFileScannerRemovesFileThatGrowsBeyondLimit(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "generated.php")
+	require.NoError(t, os.WriteFile(path, []byte("<?php"), 0o644))
+
+	idx := &mockIndexer{indexedFiles: make(map[string]bool)}
+	scanner, err := NewFileScanner(root, filepath.Join(t.TempDir(), "scanner.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, scanner.Close()) })
+	scanner.SetMaxFileSizeBytes(8)
+	scanner.AddIndexer(idx)
+
+	require.NoError(t, scanner.IndexFiles(context.Background(), []string{path}))
+	require.True(t, idx.indexedFiles[path])
+	require.NoError(t, os.WriteFile(path, []byte("<?php generated source"), 0o644))
+	require.NoError(t, scanner.IndexFiles(context.Background(), []string{path}))
+	require.False(t, idx.indexedFiles[path])
+
+	stats, err := scanner.Stats(context.Background())
+	require.NoError(t, err)
+	require.Zero(t, stats.TrackedFiles)
+	require.Equal(t, 1, stats.SkippedOversizedCount)
+
+	scanner.SetMaxFileSizeBytes(64)
+	require.NoError(t, scanner.IndexFiles(context.Background(), []string{path}))
+	require.True(t, idx.indexedFiles[path])
+	stats, err = scanner.Stats(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, stats.TrackedFiles)
+	require.Zero(t, stats.SkippedOversizedCount)
+}
+
 func TestShouldSkipRelPathChecksComponentsWithoutAllocating(t *testing.T) {
 	separator := string(os.PathSeparator)
 

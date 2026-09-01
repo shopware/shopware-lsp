@@ -1602,6 +1602,8 @@ shopware:
 features:
   codeLens: false
 indexing:
+  # Zero disables this configurable ceiling; the parser limit remains.
+  maxFileSizeMiB: 8
   exclude:
     - "**/generated/**"
     - custom/plugins/LegacyPlugin/**
@@ -1643,6 +1645,13 @@ forward-slash paths and support `*`, `?`, `**`, brace alternatives such as
 `*.{php,twig}`, and character classes such as `[0-9]`. Absolute paths and `..`
 components are rejected. Changing exclusions requires a server restart and
 invalidates the structurally incompatible workspace cache.
+
+`indexing.maxFileSizeMiB` defaults to `8`. Larger source files are skipped
+before reading or parsing and are listed by `shopware-lsp stats`. Set it to `0`
+to disable the configurable ceiling; files outside the parser's 32-bit source
+range are always rejected. The corresponding local VS Code override is
+`shopwareLSP.indexing.maxFileSizeMiB`. Changing the limit requires a server
+restart.
 
 Shopware extensions may commit their own
 `.config/shopware/lsp.yaml`, for example

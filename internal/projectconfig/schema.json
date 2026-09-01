@@ -29,6 +29,13 @@
       "additionalProperties": false,
       "properties": {
         "enabled": { "type": "boolean" },
+        "maxFileSizeMiB": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4095,
+          "default": 8,
+          "description": "Maximum source-file size included in persistent indexing, in MiB. Use 0 to disable the configurable limit; the parser's 32-bit source-range limit still applies."
+        },
         "exclude": {
           "type": "array",
           "uniqueItems": true,

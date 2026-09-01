@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unsafe"
 
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	"github.com/shopware/shopware-lsp/internal/php/types"
@@ -39,6 +40,32 @@ func TestPublishedSnapshotUsesLazyLowercaseCache(t *testing.T) {
 	normalized, found := snapshot.dynamicNames.Load("APP\\SERVICE")
 	require.True(t, found)
 	require.Equal(t, "app\\service", normalized)
+}
+
+func TestPublishedSnapshotOwnsLazyLowercaseCacheKeys(t *testing.T) {
+	t.Parallel()
+
+	const name = "App\\Service"
+	backing := strings.Repeat("x", 1<<20) + name + strings.Repeat("y", 1<<20)
+	query := backing[1<<20 : 1<<20+len(name)]
+	snapshot := NewSnapshot(1, nil)
+
+	require.Equal(t, "app\\service", snapshot.lowerName(query, false))
+	var cachedKey, cachedValue string
+	snapshot.dynamicNames.Range(func(key, value any) bool {
+		cachedKey = key.(string)
+		cachedValue = value.(string)
+		return false
+	})
+	require.Equal(t, name, cachedKey)
+	require.Equal(t, "app\\service", cachedValue)
+
+	backingStart := uintptr(unsafe.Pointer(unsafe.StringData(backing)))
+	backingEnd := backingStart + uintptr(len(backing))
+	keyStart := uintptr(unsafe.Pointer(unsafe.StringData(cachedKey)))
+	valueStart := uintptr(unsafe.Pointer(unsafe.StringData(cachedValue)))
+	require.False(t, keyStart >= backingStart && keyStart < backingEnd)
+	require.False(t, valueStart >= backingStart && valueStart < backingEnd)
 }
 
 func TestPublishedSnapshotNormalizesNamesConcurrently(t *testing.T) {

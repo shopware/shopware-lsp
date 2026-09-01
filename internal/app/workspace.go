@@ -93,6 +93,9 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 	if err := workspace.scanner.SetExcludedPaths(configuration.Indexing.Exclude); err != nil {
 		return nil, err
 	}
+	workspace.scanner.SetMaxFileSizeBytes(
+		configuration.Indexing.MaxFileSizeMiB << 20,
+	)
 	workspace.scanner.SetWorkspaceSymbolCatalog(workspace.symbols)
 
 	phpIndex, err := php.NewPHPIndex(cacheDir, workspace.store)

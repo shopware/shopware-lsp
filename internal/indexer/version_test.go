@@ -11,7 +11,7 @@ import (
 )
 
 func TestCheckAndMigrateCache_FreshCache(t *testing.T) {
-	assert.Equal(t, 168, IndexVersion)
+	assert.Equal(t, 169, IndexVersion)
 	cacheDir := t.TempDir()
 
 	// Fresh cache should be marked as cleared (needs rebuild)

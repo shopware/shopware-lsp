@@ -21,7 +21,7 @@ export interface PartialConfiguration {
   php?: {extensions?: string[]; disabledExtensions?: string[]};
   shopware?: {targetVersion?: string};
   features?: Record<string, boolean>;
-  indexing?: {enabled?: boolean; exclude?: string[]};
+  indexing?: {enabled?: boolean; exclude?: string[]; maxFileSizeMiB?: number};
   mcp?: {tools?: Record<string, boolean>};
   domains?: Record<string, boolean>;
   diagnostics?: {
@@ -60,7 +60,7 @@ interface InspectionEntry {
 
 interface EffectiveConfiguration {
   features: Record<string, boolean>;
-  indexing: {enabled: boolean; exclude?: string[]};
+  indexing: {enabled: boolean; exclude?: string[]; maxFileSizeMiB?: number};
   mcp?: {tools: Record<string, boolean>};
   domains: Record<string, boolean>;
   diagnostics: {
@@ -120,10 +120,15 @@ export function readEditorConfiguration(resource?: vscode.Uri): PartialConfigura
   if (domains !== undefined) result.domains = domains;
   const indexing = explicitValue<boolean>(configuration, 'indexing.enabled');
   const indexingExclude = explicitValue<string[]>(configuration, 'indexing.exclude');
-  if (indexing !== undefined || indexingExclude !== undefined) {
+  const indexingMaxFileSize = explicitValue<number>(configuration, 'indexing.maxFileSizeMiB');
+  if (indexing !== undefined || indexingExclude !== undefined ||
+    indexingMaxFileSize !== undefined) {
     result.indexing = {};
     if (indexing !== undefined) result.indexing.enabled = indexing;
     if (indexingExclude !== undefined) result.indexing.exclude = indexingExclude;
+    if (indexingMaxFileSize !== undefined) {
+      result.indexing.maxFileSizeMiB = indexingMaxFileSize;
+    }
   }
   const mcpTools = explicitValue<Record<string, boolean>>(configuration, 'mcp.tools');
   if (mcpTools !== undefined) result.mcp = {tools: mcpTools};

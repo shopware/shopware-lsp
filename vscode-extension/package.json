@@ -152,6 +152,14 @@
           "scope": "resource",
           "description": "Enable persistent workspace indexing. Changing this structural setting requires a language-server restart."
         },
+        "shopwareLSP.indexing.maxFileSizeMiB": {
+          "type": "integer",
+          "default": 8,
+          "minimum": 0,
+          "maximum": 4095,
+          "scope": "resource",
+          "description": "Maximum source-file size included in persistent indexing, in MiB. Set to 0 to disable this configurable limit; the parser's 32-bit source-range limit still applies. Changing this structural setting requires a language-server restart."
+        },
         "shopwareLSP.indexing.exclude": {
           "type": "array",
           "default": [],

@@ -737,6 +737,12 @@ shopware-lsp -root /path/to/project stats          # tracked files, cache size, 
 shopware-lsp -root /path/to/project -json stats
 ```
 
+Persistent indexing skips source files larger than `indexing.maxFileSizeMiB`
+(8 MiB by default). Set it to `0` to disable the configurable ceiling. Files
+outside the parser's 32-bit source range are always rejected. `stats` reports
+the ten largest indexed files plus the count, total size, and largest examples
+of skipped oversized files.
+
 The cache is a plain SQLite file, so it is directly inspectable:
 
 ```bash

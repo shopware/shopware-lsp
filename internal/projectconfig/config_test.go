@@ -127,6 +127,37 @@ indexing:
 	}, effective.Indexing.Exclude)
 }
 
+func TestResolveIndexingMaxFileSize(t *testing.T) {
+	t.Parallel()
+	require.EqualValues(t, 8, Default().Indexing.MaxFileSizeMiB)
+
+	project, err := Decode([]byte(`version: 1
+indexing:
+  maxFileSizeMiB: 64
+`))
+	require.NoError(t, err)
+	effective := Resolve(project, Partial{})
+	require.EqualValues(t, 64, effective.Indexing.MaxFileSizeMiB)
+	require.Equal(t, "project", effective.Origins["indexing.maxFileSizeMiB"])
+
+	disabled := int64(0)
+	effective = Resolve(project, Partial{Indexing: &IndexingConfig{
+		MaxFileSizeMiB: &disabled,
+	}})
+	require.Zero(t, effective.Indexing.MaxFileSizeMiB)
+	require.Equal(t, "editor", effective.Origins["indexing.maxFileSizeMiB"])
+}
+
+func TestDecodeRejectsInvalidIndexingMaxFileSize(t *testing.T) {
+	t.Parallel()
+	for _, size := range []string{"-1", "4096"} {
+		_, err := Decode([]byte(
+			"version: 1\nindexing:\n  maxFileSizeMiB: " + size + "\n",
+		))
+		require.ErrorContains(t, err, "indexing.maxFileSizeMiB")
+	}
+}
+
 func TestDecodeRejectsUnsafeOrMalformedIndexingExclusions(t *testing.T) {
 	t.Parallel()
 	for _, source := range []string{
@@ -214,5 +245,8 @@ func TestStructuralFingerprintIgnoresLiveSettings(t *testing.T) {
 	require.NotEqual(t, first.StructuralFingerprint(), second.StructuralFingerprint())
 	second = Default()
 	second.Indexing.Exclude = []string{"**/generated/**"}
+	require.NotEqual(t, first.StructuralFingerprint(), second.StructuralFingerprint())
+	second = Default()
+	second.Indexing.MaxFileSizeMiB++
 	require.NotEqual(t, first.StructuralFingerprint(), second.StructuralFingerprint())
 }

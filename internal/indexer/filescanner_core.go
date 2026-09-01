@@ -11,8 +11,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/charlievieth/fastwalk"
@@ -49,6 +51,15 @@ var defaultSkipDirs = map[string]bool{
 	".direnv":      true,
 }
 
+const (
+	DefaultMaxFileSizeBytes = int64(8 << 20)
+	MaximumSourceFileBytes  = int64(^uint32(0))
+	fileStatsLimit          = 10
+
+	skippedConfiguredLimit = "configured file size limit"
+	skippedParserRange     = "32-bit parser source range"
+)
+
 // FileScanner scans the project for files and tracks changes
 type FileScanner struct {
 	platformWatcherState
@@ -64,16 +75,36 @@ type FileScanner struct {
 	onUpdate    func()
 	workerCount int
 	exclusions  PathExclusions
+	maxFileSize atomic.Int64
+	statsMu     sync.RWMutex
+	skipped     map[string]SkippedFileStats
 	operationMu sync.Mutex
 	closeOnce   sync.Once
 	closeErr    error
 }
 
 type FileScannerStats struct {
-	TrackedFiles int   `json:"trackedFiles"`
-	TrackedBytes int64 `json:"trackedBytes"`
-	Indexers     int   `json:"indexers"`
-	Workers      int   `json:"workers"`
+	TrackedFiles          int                `json:"trackedFiles"`
+	TrackedBytes          int64              `json:"trackedBytes"`
+	Indexers              int                `json:"indexers"`
+	Workers               int                `json:"workers"`
+	MaxFileSizeBytes      int64              `json:"maxFileSizeBytes"`
+	SkippedOversizedCount int                `json:"skippedOversizedCount"`
+	SkippedOversizedBytes int64              `json:"skippedOversizedBytes"`
+	LargestIndexedFiles   []FileSizeStats    `json:"largestIndexedFiles,omitempty"`
+	LargestSkippedFiles   []SkippedFileStats `json:"largestSkippedFiles,omitempty"`
+}
+
+type FileSizeStats struct {
+	Path  string `json:"path"`
+	Bytes int64  `json:"bytes"`
+}
+
+type SkippedFileStats struct {
+	Path       string `json:"path"`
+	Bytes      int64  `json:"bytes"`
+	LimitBytes int64  `json:"limitBytes"`
+	Reason     string `json:"reason"`
 }
 
 // NewFileScanner creates a new file scanner
@@ -133,9 +164,11 @@ func NewFileScanner(projectRoot string, dbPath string, stores ...*Store) (*FileS
 		pharCache:   filepath.Join(filepath.Dir(dbPath), "phar-sources"),
 		db:          db,
 		indexer:     []Indexer{},
+		skipped:     make(map[string]SkippedFileStats),
 		watcherCtx:  ctx,
 		cancel:      cancel,
 	}
+	scanner.maxFileSize.Store(DefaultMaxFileSizeBytes)
 	if len(stores) > 0 {
 		scanner.store = stores[0]
 	}
@@ -163,6 +196,31 @@ func (fs *FileScanner) Stats(ctx context.Context) (FileScannerStats, error) {
 	).Scan(&stats.TrackedFiles, &stats.TrackedBytes); err != nil {
 		return FileScannerStats{}, fmt.Errorf("query tracked file statistics: %w", err)
 	}
+	rows, err := fs.db.QueryContext(
+		ctx,
+		"SELECT path, size FROM file_hashes ORDER BY size DESC, path LIMIT ?",
+		fileStatsLimit,
+	)
+	if err != nil {
+		return FileScannerStats{}, fmt.Errorf("query largest tracked files: %w", err)
+	}
+	for rows.Next() {
+		var file FileSizeStats
+		if err := rows.Scan(&file.Path, &file.Bytes); err != nil {
+			_ = rows.Close()
+			return FileScannerStats{}, fmt.Errorf("scan largest tracked file: %w", err)
+		}
+		stats.LargestIndexedFiles = append(stats.LargestIndexedFiles, file)
+	}
+	if err := rows.Close(); err != nil {
+		return FileScannerStats{}, fmt.Errorf("close largest tracked files: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return FileScannerStats{}, fmt.Errorf("iterate largest tracked files: %w", err)
+	}
+	stats.MaxFileSizeBytes = fs.maxFileSize.Load()
+	stats.SkippedOversizedCount, stats.SkippedOversizedBytes,
+		stats.LargestSkippedFiles = fs.skippedFileStats()
 	stats.Indexers = len(fs.indexer)
 	stats.Workers = defaultIndexWorkerCount(runtime.NumCPU())
 	fs.operationMu.Lock()
@@ -171,6 +229,102 @@ func (fs *FileScanner) Stats(ctx context.Context) (FileScannerStats, error) {
 	}
 	fs.operationMu.Unlock()
 	return stats, nil
+}
+
+// SetMaxFileSizeBytes sets the configurable source-file indexing limit. Zero
+// disables the configurable ceiling; the parser's 32-bit range remains a hard
+// limit. It must be called before indexing or starting the watcher.
+func (fs *FileScanner) SetMaxFileSizeBytes(size int64) {
+	if size < 0 {
+		size = 0
+	}
+	fs.maxFileSize.Store(size)
+}
+
+func (fs *FileScanner) sourceSizeRejection(size int64) (string, int64, bool) {
+	if size > MaximumSourceFileBytes {
+		return skippedParserRange, MaximumSourceFileBytes, true
+	}
+	limit := fs.maxFileSize.Load()
+	if limit > 0 && size > limit {
+		return skippedConfiguredLimit, limit, true
+	}
+	return "", 0, false
+}
+
+func (fs *FileScanner) skippedFileStats() (int, int64, []SkippedFileStats) {
+	fs.statsMu.RLock()
+	files := make([]SkippedFileStats, 0, len(fs.skipped))
+	var bytes int64
+	for _, file := range fs.skipped {
+		files = append(files, file)
+		bytes += file.Bytes
+	}
+	fs.statsMu.RUnlock()
+	sort.Slice(files, func(left, right int) bool {
+		if files[left].Bytes == files[right].Bytes {
+			return files[left].Path < files[right].Path
+		}
+		return files[left].Bytes > files[right].Bytes
+	})
+	return len(files), bytes, files[:min(len(files), fileStatsLimit)]
+}
+
+func (fs *FileScanner) replaceSkippedFiles(files map[string]SkippedFileStats) {
+	fs.statsMu.Lock()
+	fs.skipped = files
+	fs.statsMu.Unlock()
+}
+
+func (fs *FileScanner) recordSkippedFiles(files []SkippedFileStats) {
+	if len(files) == 0 {
+		return
+	}
+	fs.statsMu.Lock()
+	if fs.skipped == nil {
+		fs.skipped = make(map[string]SkippedFileStats)
+	}
+	for _, file := range files {
+		fs.skipped[file.Path] = file
+	}
+	fs.statsMu.Unlock()
+}
+
+func (fs *FileScanner) clearSkippedFiles(paths []string) {
+	if len(paths) == 0 {
+		return
+	}
+	fs.statsMu.Lock()
+	for _, path := range paths {
+		delete(fs.skipped, path)
+	}
+	fs.statsMu.Unlock()
+}
+
+func (fs *FileScanner) refreshSkippedFiles(paths []string) {
+	if len(paths) == 0 {
+		return
+	}
+	fs.statsMu.Lock()
+	defer fs.statsMu.Unlock()
+	if fs.skipped == nil {
+		fs.skipped = make(map[string]SkippedFileStats)
+	}
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil || info.IsDir() || !fs.shouldIndexPath(path) {
+			delete(fs.skipped, path)
+			continue
+		}
+		reason, limit, rejected := fs.sourceSizeRejection(info.Size())
+		if !rejected {
+			delete(fs.skipped, path)
+			continue
+		}
+		fs.skipped[path] = SkippedFileStats{
+			Path: path, Bytes: info.Size(), LimitBytes: limit, Reason: reason,
+		}
+	}
 }
 
 // SetWorkerCount overrides the automatic indexing concurrency. A value of
@@ -362,6 +516,9 @@ func (fs *FileScanner) discoverFiles(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	files = append(files, archiveFiles...)
+	// A complete scan rebuilds skipped-file telemetry from the same Stat calls
+	// workers already need, avoiding another metadata syscall for every source.
+	fs.replaceSkippedFiles(make(map[string]SkippedFileStats))
 	slices.Sort(files)
 	return files, nil
 }
@@ -457,13 +614,13 @@ func (fs *FileScanner) fileNeedsIndexing(
 	ctx context.Context,
 	path string,
 	state *storedFileState,
-) (bool, []byte, os.FileInfo, error) {
+) (bool, []byte, os.FileInfo, *SkippedFileStats, bool, error) {
 	if err := ctx.Err(); err != nil {
-		return false, nil, nil, err
+		return false, nil, nil, nil, false, err
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return false, nil, nil, err
+		return false, nil, nil, nil, false, err
 	}
 
 	var stored storedFileState
@@ -482,29 +639,49 @@ func (fs *FileScanner) fileNeedsIndexing(
 			exists = true
 		case sql.ErrNoRows:
 		default:
-			return false, nil, info, fmt.Errorf("query file state: %w", err)
+			return false, nil, info, nil, false,
+				fmt.Errorf("query file state: %w", err)
 		}
+	}
+	if reason, limit, rejected := fs.sourceSizeRejection(info.Size()); rejected {
+		return false, nil, info, &SkippedFileStats{
+			Path: path, Bytes: info.Size(), LimitBytes: limit, Reason: reason,
+		}, exists, nil
 	}
 
 	if exists &&
 		stored.size == info.Size() &&
 		stored.mtime == info.ModTime().UnixNano() {
-		return false, nil, info, nil
+		return false, nil, info, nil, false, nil
 	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return false, nil, info, err
+		return false, nil, info, nil, false, err
+	}
+	// The file may have grown between Stat and ReadFile. Check the actual
+	// allocation before handing it to a parser.
+	if reason, limit, rejected := fs.sourceSizeRejection(int64(len(content))); rejected {
+		return false, nil, info, &SkippedFileStats{
+			Path: path, Bytes: int64(len(content)), LimitBytes: limit, Reason: reason,
+		}, exists, nil
 	}
 
-	return true, content, info, nil
+	return true, content, info, nil, false, nil
 }
 
 // RemoveFiles removes multiple files from the index
 func (fs *FileScanner) RemoveFiles(ctx context.Context, paths []string) error {
 	fs.operationMu.Lock()
 	defer fs.operationMu.Unlock()
+	if err := fs.removeFilesLocked(ctx, paths); err != nil {
+		return err
+	}
+	fs.refreshSkippedFiles(paths)
+	return nil
+}
 
+func (fs *FileScanner) removeFilesLocked(ctx context.Context, paths []string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -626,6 +803,23 @@ func (fs *FileScanner) RemoveFiles(ctx context.Context, paths []string) error {
 	}
 
 	return nil
+}
+
+func logSkippedFile(file SkippedFileStats) {
+	log.Printf(
+		"Skipping oversized source file %s (%d bytes): exceeds %s (%d bytes)",
+		file.Path,
+		file.Bytes,
+		file.Reason,
+		file.LimitBytes,
+	)
+}
+
+func logSkippedFileCount(count int) {
+	log.Printf(
+		"Skipped %d oversized source files; use stats for the largest files",
+		count,
+	)
 }
 
 func (fs *FileScanner) updateFileStates(ctx context.Context, files []fileState) error {

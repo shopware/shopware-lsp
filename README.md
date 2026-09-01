@@ -195,6 +195,8 @@ version: 1
 shopware:
   targetVersion: "6.7"
 indexing:
+  # Files above this size are skipped before reading and parsing.
+  maxFileSizeMiB: 8
   exclude:
     - "**/generated/**"
 diagnostics:

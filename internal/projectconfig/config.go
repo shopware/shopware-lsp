@@ -22,8 +22,10 @@ import (
 )
 
 const (
-	CurrentVersion      = 1
-	ProjectRelativePath = ".config/shopware/lsp.yaml"
+	CurrentVersion           = 1
+	ProjectRelativePath      = ".config/shopware/lsp.yaml"
+	DefaultMaxFileSizeMiB    = 8
+	maximumConfiguredFileMiB = 4095
 )
 
 type Severity string
@@ -58,8 +60,9 @@ type ShopwareConfig struct {
 }
 
 type IndexingConfig struct {
-	Enabled *bool     `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-	Exclude *[]string `json:"exclude,omitempty" yaml:"exclude,omitempty"`
+	Enabled        *bool     `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	Exclude        *[]string `json:"exclude,omitempty" yaml:"exclude,omitempty"`
+	MaxFileSizeMiB *int64    `json:"maxFileSizeMiB,omitempty" yaml:"maxFileSizeMiB,omitempty"`
 }
 
 type MCPConfig struct {
@@ -125,8 +128,9 @@ type EffectiveShopware struct {
 }
 
 type EffectiveIndexing struct {
-	Enabled bool     `json:"enabled"`
-	Exclude []string `json:"exclude,omitempty"`
+	Enabled        bool     `json:"enabled"`
+	Exclude        []string `json:"exclude,omitempty"`
+	MaxFileSizeMiB int64    `json:"maxFileSizeMiB"`
 }
 
 type EffectiveMCP struct {
@@ -261,9 +265,12 @@ func Default() Effective {
 	}
 	return Effective{
 		Features: features,
-		Indexing: EffectiveIndexing{Enabled: true},
-		MCP:      EffectiveMCP{Tools: mcpTools},
-		Domains:  domains,
+		Indexing: EffectiveIndexing{
+			Enabled:        true,
+			MaxFileSizeMiB: DefaultMaxFileSizeMiB,
+		},
+		MCP:     EffectiveMCP{Tools: mcpTools},
+		Domains: domains,
 		Diagnostics: EffectiveDiagnostics{
 			Enabled: true, Inspections: map[string]bool{}, Rules: map[string]Severity{},
 		},
@@ -344,6 +351,15 @@ func Validate(value Partial) error {
 			if err := validatePathPattern(pattern); err != nil {
 				return fmt.Errorf("indexing.exclude: %w", err)
 			}
+		}
+	}
+	if value.Indexing != nil && value.Indexing.MaxFileSizeMiB != nil {
+		size := *value.Indexing.MaxFileSizeMiB
+		if size < 0 || size > maximumConfiguredFileMiB {
+			return fmt.Errorf(
+				"indexing.maxFileSizeMiB must be between 0 and %d",
+				maximumConfiguredFileMiB,
+			)
 		}
 	}
 	featureIDs := catalogIDs(FeatureCatalog)
@@ -485,6 +501,10 @@ func apply(target *Effective, value Partial, source string) {
 	if value.Indexing != nil && value.Indexing.Exclude != nil {
 		target.Indexing.Exclude = normalizePathPatterns(*value.Indexing.Exclude)
 		target.Origins["indexing.exclude"] = source
+	}
+	if value.Indexing != nil && value.Indexing.MaxFileSizeMiB != nil {
+		target.Indexing.MaxFileSizeMiB = *value.Indexing.MaxFileSizeMiB
+		target.Origins["indexing.maxFileSizeMiB"] = source
 	}
 	if value.MCP != nil {
 		for id, enabled := range value.MCP.Tools {

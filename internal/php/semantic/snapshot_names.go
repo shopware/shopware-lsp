@@ -133,8 +133,14 @@ func (s *Snapshot) lowerName(name string, member bool) string {
 	if normalized, ok := s.dynamicNames.Load(name); ok {
 		return normalized.(string)
 	}
-	normalized := strings.ToLower(name)
-	actual, _ := s.dynamicNames.LoadOrStore(name, normalized)
+	// Query names commonly arrive as zero-copy slices of a complete source
+	// document. A sync.Map key owns its backing string, so caching that slice
+	// directly would keep the complete source buffer alive for the lifetime of
+	// the published snapshot. Clone only on a cache miss; repeated lookups stay
+	// allocation-free.
+	ownedName := strings.Clone(name)
+	normalized := strings.ToLower(ownedName)
+	actual, _ := s.dynamicNames.LoadOrStore(ownedName, normalized)
 	return actual.(string)
 }
 

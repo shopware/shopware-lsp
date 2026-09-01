@@ -58,14 +58,24 @@ func (r *Runner) runIndex(ctx context.Context, args []string) error {
 	if r.json {
 		return writeJSON(r.out, output)
 	}
-	return writeFormatted(
-		r.out,
+	var formatted strings.Builder
+	_, _ = fmt.Fprintf(
+		&formatted,
 		"Indexed %d files (%s) with %d indexers in %s\n",
 		scanner.TrackedFiles,
 		formatBytes(scanner.TrackedBytes),
 		scanner.Indexers,
 		time.Duration(result.TimeInSeconds*float64(time.Second)).Round(time.Millisecond),
 	)
+	if scanner.SkippedOversizedCount > 0 {
+		_, _ = fmt.Fprintf(
+			&formatted,
+			"Skipped %d oversized files (%s); run stats for details\n",
+			scanner.SkippedOversizedCount,
+			formatBytes(scanner.SkippedOversizedBytes),
+		)
+	}
+	return writeFormatted(r.out, "%s", formatted.String())
 }
 
 type cacheStats struct {
@@ -124,11 +134,14 @@ func (r *Runner) runStats(ctx context.Context, args []string) error {
 	if r.json {
 		return writeJSON(r.out, result)
 	}
-	return writeFormatted(
-		r.out,
+	var formatted strings.Builder
+	_, _ = fmt.Fprintf(
+		&formatted,
 		"Workspace:       %s\n"+
 			"Index duration:  %s\n"+
 			"Tracked files:   %d (%s)\n"+
+			"Max file size:   %s\n"+
+			"Skipped files:   %d (%s)\n"+
 			"Indexers:        %d\n"+
 			"Index workers:   %d\n"+
 			"Cache:           %s in %d files\n"+
@@ -140,6 +153,8 @@ func (r *Runner) runStats(ctx context.Context, args []string) error {
 		session.root,
 		time.Duration(session.initialIndex.TimeInSeconds*float64(time.Second)).Round(time.Millisecond),
 		scanner.TrackedFiles, formatBytes(scanner.TrackedBytes),
+		formatFileSizeLimit(scanner.MaxFileSizeBytes),
+		scanner.SkippedOversizedCount, formatBytes(scanner.SkippedOversizedBytes),
 		scanner.Indexers, scanner.Workers,
 		formatBytes(cache.Bytes), cache.Files,
 		formatBytes(int64(memory.HeapAllocBytes)), memory.HeapObjects,
@@ -148,6 +163,30 @@ func (r *Runner) runStats(ctx context.Context, args []string) error {
 		formatBytes(int64(memory.TotalAllocBytes)),
 		memory.Collections,
 	)
+	if len(scanner.LargestIndexedFiles) > 0 {
+		formatted.WriteString("Largest indexed files:\n")
+		for _, file := range scanner.LargestIndexedFiles {
+			_, _ = fmt.Fprintf(
+				&formatted,
+				"  %9s  %s\n",
+				formatBytes(file.Bytes),
+				displayWorkspacePath(session.root, file.Path),
+			)
+		}
+	}
+	if len(scanner.LargestSkippedFiles) > 0 {
+		formatted.WriteString("Largest skipped files:\n")
+		for _, file := range scanner.LargestSkippedFiles {
+			_, _ = fmt.Fprintf(
+				&formatted,
+				"  %9s  %s (%s)\n",
+				formatBytes(file.Bytes),
+				displayWorkspacePath(session.root, file.Path),
+				file.Reason,
+			)
+		}
+	}
+	return writeFormatted(r.out, "%s", formatted.String())
 }
 
 func inspectCache(path string) (cacheStats, error) {
@@ -188,6 +227,24 @@ func formatBytes(bytes int64) string {
 		}
 	}
 	return fmt.Sprintf("%d B", bytes)
+}
+
+func formatFileSizeLimit(bytes int64) string {
+	if bytes == 0 {
+		return "disabled (32-bit parser limit remains)"
+	}
+	return formatBytes(bytes)
+}
+
+func displayWorkspacePath(root, path string) string {
+	relative, err := filepath.Rel(root, path)
+	if err != nil || relative == ".." || strings.HasPrefix(
+		relative,
+		".."+string(os.PathSeparator),
+	) {
+		return path
+	}
+	return filepath.ToSlash(relative)
 }
 
 type diagnosticOutput struct {
