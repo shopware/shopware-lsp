@@ -2411,6 +2411,17 @@ allocations to 84 ns, 320 bytes, and two allocations. A controlled one-worker
 52,059-file comparison removed 5.4 MiB of cumulative allocation and about
 76,800 allocations; retained heap stayed flat.
 
+JavaScript call-name queries now borrow the exact CST source slice when the
+callee contains no trivia and reserve one compact token buffer only for the
+uncommon commented or spaced expression. Identifier lookup uses the direct
+token cursor, and indexed argument lookup no longer materializes the complete
+argument slice. The representative call-name benchmark fell from roughly
+520--580 ns, 136 bytes, and seven allocations to 33--39 ns with no allocation;
+identifier and indexed-argument lookup are likewise allocation-free. On the
+38,960-file Shopware checkout this removed about 15.6 million mallocs and
+279 MiB of cumulative allocation. Retained heap stayed at 231.7 MiB and normal
+cold indexing remained approximately 29 seconds.
+
 The latest empty-cache resource run covered a growing 52,440-file checkout:
 6.12 seconds cold, 267 milliseconds warm, 134.6 MiB retained Go heap,
 547.7 MiB retained RSS, 555.8 MiB maximum RSS, 5.14 GiB cumulative Go

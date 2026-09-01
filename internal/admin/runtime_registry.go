@@ -290,8 +290,8 @@ func preferredCMSRegistrations(
 }
 
 func serviceImplementationName(call *jssyntax.Node) string {
-	arguments := jsquery.Arguments(call)
-	if len(arguments) < 2 {
+	arguments := jsquery.IterateArguments(call)
+	if arguments.Len() < 2 {
 		return ""
 	}
 	// The intentionally shallow JavaScript parser can recover `() => new X()`
@@ -299,8 +299,12 @@ func serviceImplementationName(call *jssyntax.Node) string {
 	// factory tail keeps implementation discovery correct for that valid syntax.
 	// It also avoids scanning the receiver of a fluent service-provider chain.
 	var factoryText strings.Builder
-	for _, argument := range arguments[1:] {
-		factoryText.WriteString(argument.Text())
+	index := 0
+	for arguments.Next() {
+		if index > 0 {
+			factoryText.WriteString(arguments.Node().Text())
+		}
+		index++
 	}
 	text := factoryText.String()
 	for _, pattern := range serviceImplementationPatterns {

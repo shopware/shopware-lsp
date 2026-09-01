@@ -484,10 +484,13 @@ func callbackArgumentCall(
 		if call == nil || call.Kind() != jssyntax.JsCallExpression {
 			return nil, nil, -1
 		}
-		for index, argument := range jsquery.Arguments(call) {
-			if argument == current {
+		iterator := jsquery.IterateArguments(call)
+		index := 0
+		for iterator.Next() {
+			if iterator.Node() == current {
 				return current, call, index
 			}
+			index++
 		}
 		return nil, nil, -1
 	}

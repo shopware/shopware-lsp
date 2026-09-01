@@ -10,6 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var (
+	benchmarkQueryString string
+	benchmarkQueryNode   *syntax.Node
+	benchmarkQueryInt    int
+)
+
 func TestComponentCallQueries(t *testing.T) {
 	root := javascriptparser.Parse(`Component.extend('child', 'parent', { props: { title: String } });`).Tree.Root
 	calls := Calls(root, "Component.extend")
@@ -23,6 +29,15 @@ func TestComponentCallQueries(t *testing.T) {
 	require.NotNil(t, props)
 	require.NotNil(t, PropertyNameNode(props))
 	assert.Equal(t, syntax.JsObject, PropertyValue(props).Kind())
+	require.Len(t, Arguments(calls[0]), 3)
+
+	iterator := IterateArguments(calls[0])
+	require.Equal(t, 3, iterator.Len())
+	for expected := 0; expected < 3; expected++ {
+		require.True(t, iterator.Next())
+		assert.Same(t, Argument(calls[0], expected), iterator.Node())
+	}
+	assert.False(t, iterator.Next())
 }
 
 func TestNodeIndexMatchesWholeTreeQueries(t *testing.T) {
@@ -108,6 +123,19 @@ Shopware.Component.register('sw-card', {});`
 	require.Len(t, Calls(root, "Shopware.Component.register"), 1)
 }
 
+func TestCallNamePreservesTriviaInsideComputedMemberLiterals(t *testing.T) {
+	root := javascriptparser.Parse(
+		`registry["a b"].handlers["https://example.test"]();`,
+	).Tree.Root
+	calls := Calls(root)
+	require.Len(t, calls, 1)
+	assert.Equal(
+		t,
+		`registry["a b"].handlers["https://example.test"]`,
+		CallName(calls[0]),
+	)
+}
+
 func TestPropertyNameIgnoresLeadingCommentsAndMethodModifiers(t *testing.T) {
 	source := `({ methods: {
         // eslint-disable-next-line
@@ -144,4 +172,71 @@ func TestStoreMemberContext(t *testing.T) {
 	require.True(t, found)
 	assert.Equal(t, "context", store)
 	assert.Empty(t, member)
+}
+
+func BenchmarkCallNameCompactExpression(b *testing.B) {
+	root := javascriptparser.Parse(
+		`Shopware.Component.register('sw-card', {});`,
+	).Tree.Root
+	call := Calls(root)[0]
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		benchmarkQueryString = CallName(call)
+	}
+}
+
+func BenchmarkCallNameExpressionWithTrivia(b *testing.B) {
+	root := javascriptparser.Parse(
+		`Shopware /* keep */ . Component . register('sw-card', {});`,
+	).Tree.Root
+	call := Calls(root)[0]
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		benchmarkQueryString = CallName(call)
+	}
+}
+
+func BenchmarkIdentifierText(b *testing.B) {
+	root := javascriptparser.Parse(
+		`Shopware.Component.register('sw-card', {});`,
+	).Tree.Root
+	identifier := MemberNameNode(CallCallee(Calls(root)[0]))
+	require.NotNil(b, identifier)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		benchmarkQueryString = IdentifierText(identifier)
+	}
+}
+
+func BenchmarkArgumentExpression(b *testing.B) {
+	root := javascriptparser.Parse(
+		`Shopware.Component.register('sw-card', {}, options);`,
+	).Tree.Root
+	call := Calls(root)[0]
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		benchmarkQueryNode = ArgumentExpression(call, 2)
+	}
+}
+
+func BenchmarkStringArgumentIndex(b *testing.B) {
+	root := javascriptparser.Parse(
+		`Shopware.Component.extend('child', 'parent', {});`,
+	).Tree.Root
+	literal := StringArgument(Calls(root)[0], 1)
+	require.NotNil(b, literal)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		benchmarkQueryInt = StringArgumentIndex(literal)
+	}
 }

@@ -83,15 +83,18 @@ func (p *AdminParameterProvider) GetInlayHints(
 			if ctx.Err() != nil {
 				return result, nil
 			}
-			arguments := jsquery.Arguments(call)
-			if len(arguments) == 0 {
+			arguments := jsquery.IterateArguments(call)
+			argumentCount := arguments.Len()
+			if argumentCount == 0 {
 				continue
 			}
-			argumentRanges := make([]cst.TextRange, 0, len(arguments))
-			for index, argument := range arguments {
-				expression := jsquery.ArgumentExpression(call, index)
-				if expression == nil {
-					expression = argument
+			argumentRanges := make([]cst.TextRange, 0, argumentCount)
+			for arguments.Next() {
+				argument := arguments.Node()
+				expression := argument
+				cursor := argument.ChildNodeCursor()
+				if cursor.Next() {
+					expression = cursor.Node()
 				}
 				argumentRanges = append(
 					argumentRanges, expression.RangeTrimmedTrivia(),

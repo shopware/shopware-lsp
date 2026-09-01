@@ -726,7 +726,7 @@ func resolveAdminRouteObject(
 	}
 	name := jsquery.CallName(expression)
 	if name == "" || strings.Contains(name, ".") ||
-		len(jsquery.Arguments(expression)) != 0 {
+		jsquery.IterateArguments(expression).Len() != 0 {
 		return nil
 	}
 	for _, function := range jsquery.Nodes(root, jssyntax.JsFunction) {

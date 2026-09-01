@@ -219,30 +219,75 @@ func MemberNameNode(node *syntax.Node) *syntax.Node {
 }
 
 func Arguments(node *syntax.Node) []*syntax.Node {
-	call := ancestorOrSelf(node, syntax.JsCallExpression)
-	if call == nil {
+	iterator := IterateArguments(node)
+	count := iterator.Len()
+	if count == 0 {
 		return nil
 	}
-	list := directChild(call, syntax.JsArgumentList)
-	if list == nil {
-		return nil
-	}
-	var result []*syntax.Node
-	for index := 0; index < list.ChildCount(); index++ {
-		child, ok := list.Child(index).(*syntax.Node)
-		if ok && child.Kind() == syntax.JsArgument {
-			result = append(result, child)
-		}
+	result := make([]*syntax.Node, 0, count)
+	for iterator.Next() {
+		result = append(result, iterator.Node())
 	}
 	return result
 }
 
+type ArgumentIterator struct {
+	list    *syntax.Node
+	index   int
+	current *syntax.Node
+}
+
+func IterateArguments(node *syntax.Node) ArgumentIterator {
+	call := ancestorOrSelf(node, syntax.JsCallExpression)
+	return ArgumentIterator{list: directChild(call, syntax.JsArgumentList)}
+}
+
+func (iterator ArgumentIterator) Len() int {
+	if iterator.list == nil {
+		return 0
+	}
+	count := 0
+	for index := 0; index < iterator.list.ChildCount(); index++ {
+		child, ok := iterator.list.Child(index).(*syntax.Node)
+		if ok && child.Kind() == syntax.JsArgument {
+			count++
+		}
+	}
+	return count
+}
+
+func (iterator *ArgumentIterator) Next() bool {
+	if iterator.list == nil {
+		return false
+	}
+	for iterator.index < iterator.list.ChildCount() {
+		child, ok := iterator.list.Child(iterator.index).(*syntax.Node)
+		iterator.index++
+		if ok && child.Kind() == syntax.JsArgument {
+			iterator.current = child
+			return true
+		}
+	}
+	iterator.current = nil
+	return false
+}
+
+func (iterator *ArgumentIterator) Node() *syntax.Node {
+	return iterator.current
+}
+
 func Argument(node *syntax.Node, index int) *syntax.Node {
-	arguments := Arguments(node)
-	if index < 0 || index >= len(arguments) {
+	if index < 0 {
 		return nil
 	}
-	return arguments[index]
+	iterator := IterateArguments(node)
+	for iterator.Next() {
+		if index == 0 {
+			return iterator.Node()
+		}
+		index--
+	}
+	return nil
 }
 
 func ArgumentExpression(node *syntax.Node, index int) *syntax.Node {
@@ -323,10 +368,13 @@ func StringArgumentIndex(node *syntax.Node) int {
 	if call == nil {
 		return -1
 	}
-	for index, argument := range Arguments(call) {
-		if contains(argument, stringNode) {
+	iterator := IterateArguments(call)
+	index := 0
+	for iterator.Next() {
+		if contains(iterator.Node(), stringNode) {
 			return index
 		}
+		index++
 	}
 	return -1
 }
@@ -577,7 +625,9 @@ func identifierTokenText(identifier *syntax.Node) string {
 	if identifier == nil {
 		return ""
 	}
-	for token := range identifier.ChildTokens() {
+	cursor := identifier.ChildTokenCursor()
+	for cursor.Next() {
+		token := cursor.Token()
 		if token.Kind() == syntax.TkIdentifier || token.Kind() == syntax.TkKeyword {
 			return token.Text()
 		}
@@ -636,13 +686,43 @@ func compactNodeExpression(node *syntax.Node) string {
 	if node == nil {
 		return ""
 	}
-	var builder strings.Builder
-	for element := range node.Descendants() {
-		token, ok := element.(*syntax.Token)
-		if !ok || token.Kind().IsTrivia() {
-			continue
-		}
-		builder.WriteString(token.Text())
+	text := node.Text()
+	if !mayContainJavaScriptTrivia(text) {
+		return text
 	}
+	var builder strings.Builder
+	builder.Grow(len(text))
+	appendCompactNodeExpression(&builder, node)
 	return builder.String()
+}
+
+func mayContainJavaScriptTrivia(text string) bool {
+	for index := 0; index < len(text); index++ {
+		switch text[index] {
+		case ' ', '\t', '\f', '\r', '\n':
+			return true
+		case '/':
+			if index+1 < len(text) &&
+				(text[index+1] == '/' || text[index+1] == '*') {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func appendCompactNodeExpression(
+	builder *strings.Builder,
+	node *syntax.Node,
+) {
+	for index := 0; index < node.ChildCount(); index++ {
+		switch child := node.Child(index).(type) {
+		case *syntax.Node:
+			appendCompactNodeExpression(builder, child)
+		case *syntax.Token:
+			if !child.Kind().IsTrivia() {
+				builder.WriteString(child.Text())
+			}
+		}
+	}
 }

@@ -205,10 +205,10 @@ func (p *AdminAnalyzer) shopwareEventBusDiagnostics(
 			// The core EventBus map is open to extensions and legacy events.
 			continue
 		}
-		arguments := jsquery.Arguments(call)
+		secondArgument := jsquery.Argument(call, 1)
 		switch operation {
 		case "emit":
-			if len(arguments) < 2 {
+			if secondArgument == nil {
 				if !admin.VueTypeAllowsUndefined(event.Type) {
 					diagnostics = append(diagnostics, lsp.Problem{
 						Range: javaScriptStringContentRange(
@@ -228,7 +228,7 @@ func (p *AdminAnalyzer) shopwareEventBusDiagnostics(
 				continue
 			}
 			diagnostic, diagnosticErr := p.eventBusArgumentDiagnostic(
-				path, eventName, event.Type, arguments[1], "emit",
+				path, eventName, event.Type, secondArgument, "emit",
 			)
 			if diagnosticErr != nil {
 				return nil, diagnosticErr
@@ -237,7 +237,7 @@ func (p *AdminAnalyzer) shopwareEventBusDiagnostics(
 				diagnostics = append(diagnostics, *diagnostic)
 			}
 		case "on":
-			if len(arguments) < 2 {
+			if secondArgument == nil {
 				diagnostics = append(diagnostics, lsp.Problem{
 					Range: javaScriptStringContentRange(eventNode, document.Text),
 					Message: fmt.Sprintf(
@@ -250,7 +250,7 @@ func (p *AdminAnalyzer) shopwareEventBusDiagnostics(
 				continue
 			}
 			diagnostic, diagnosticErr := p.eventBusArgumentDiagnostic(
-				path, eventName, "Function", arguments[1], "on",
+				path, eventName, "Function", secondArgument, "on",
 			)
 			if diagnosticErr != nil {
 				return nil, diagnosticErr
@@ -259,11 +259,11 @@ func (p *AdminAnalyzer) shopwareEventBusDiagnostics(
 				diagnostics = append(diagnostics, *diagnostic)
 			}
 		case "off":
-			if len(arguments) < 2 {
+			if secondArgument == nil {
 				continue
 			}
 			diagnostic, diagnosticErr := p.eventBusArgumentDiagnostic(
-				path, eventName, "Function", arguments[1], "off",
+				path, eventName, "Function", secondArgument, "off",
 			)
 			if diagnosticErr != nil {
 				return nil, diagnosticErr

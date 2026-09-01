@@ -152,7 +152,8 @@ func adminMethodGroup(method, call *jssyntax.Node) string {
 	if object == nil || object.Kind() != jssyntax.JsObject {
 		return ""
 	}
-	registration := jsquery.ObjectArgument(call, len(jsquery.Arguments(call))-1)
+	argumentCount := jsquery.IterateArguments(call).Len()
+	registration := jsquery.ObjectArgument(call, argumentCount-1)
 	if registration == object {
 		return ""
 	}
