@@ -21,7 +21,77 @@ import (
 var (
 	benchmarkShapeFields  []types.ShapeField
 	benchmarkShapeIndices map[string]int
+	benchmarkResolvedType types.Type
 )
+
+func BenchmarkResolveOrdinaryCompositeType(b *testing.B) {
+	value := types.Array(
+		types.String(),
+		types.List(types.Named("Shopware\\Core\\Content\\Product")),
+	)
+	receiver := types.Named("Shopware\\Core\\Content\\Product")
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		benchmarkResolvedType = resolveSpecialType(value, receiver, receiver)
+	}
+}
+
+func TestResolveOrdinaryCompositeTypeDoesNotAllocate(t *testing.T) {
+	value := types.Array(
+		types.String(),
+		types.List(types.Named("Shopware\\Core\\Content\\Product")),
+	)
+	receiver := types.Named("Shopware\\Core\\Content\\Product")
+
+	allocations := testing.AllocsPerRun(100, func() {
+		benchmarkResolvedType = resolveSpecialType(value, receiver, receiver)
+	})
+	require.Zero(t, allocations)
+	require.True(t, benchmarkResolvedType.Equal(value))
+}
+
+func TestResolveSpecialTypeRebuildsContextDependentChildren(t *testing.T) {
+	t.Parallel()
+
+	stable := types.Named("Stable")
+	current := types.Named("Current")
+	receiver := types.Named("Receiver")
+	tests := []struct {
+		value    types.Type
+		expected types.Type
+	}{
+		{
+			value:    types.Array(stable, types.List(types.Self())),
+			expected: types.Array(stable, types.List(current)),
+		},
+		{
+			value: types.Callable(
+				[]types.CallableParameter{{Type: stable}},
+				types.Static(),
+			),
+			expected: types.Callable(
+				[]types.CallableParameter{{Type: stable}},
+				receiver,
+			),
+		},
+		{
+			value: types.ArrayShape([]types.ShapeField{
+				{Name: "stable", Type: stable},
+				{Name: "current", Type: types.Self()},
+			}, false),
+			expected: types.ArrayShape([]types.ShapeField{
+				{Name: "stable", Type: stable},
+				{Name: "current", Type: current},
+			}, false),
+		},
+	}
+	for _, test := range tests {
+		actual := resolveSpecialType(test.value, receiver, current)
+		require.True(t, test.expected.Equal(actual))
+	}
+}
 
 func BenchmarkSmallShapeFieldCollection(b *testing.B) {
 	const fieldCount = 8

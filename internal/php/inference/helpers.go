@@ -317,183 +317,127 @@ func resolveSpecialTypeAtDepth(
 	nextDepth := depth + 1
 	switch value.Kind() {
 	case types.SelfKind:
-		return applySpecialTypeArguments(currentClass, value.Arguments())
+		return applySpecialTypeArguments(currentClass, value)
 	case types.StaticKind:
-		return applySpecialTypeArguments(receiver, value.Arguments())
+		return applySpecialTypeArguments(receiver, value)
 	case types.ParentKind:
 		return types.Unknown()
 	case types.UnionKind:
-		members := value.Arguments()
-		for index := range members {
-			members[index] = resolveSpecialTypeAtDepth(
-				members[index],
-				receiver,
-				currentClass,
-				nextDepth,
-			)
+		members, changed, _ := resolveSpecialTypeArguments(
+			value, receiver, currentClass, nextDepth, false,
+		)
+		if !changed {
+			return value
 		}
 		return types.Union(members...)
 	case types.IntersectionKind:
-		members := value.Arguments()
-		for index := range members {
-			members[index] = resolveSpecialTypeAtDepth(
-				members[index],
-				receiver,
-				currentClass,
-				nextDepth,
-			)
+		members, changed, _ := resolveSpecialTypeArguments(
+			value, receiver, currentClass, nextDepth, false,
+		)
+		if !changed {
+			return value
 		}
 		return types.Intersection(members...)
 	case types.ObjectKind:
 		if value.Name() == "" {
 			return value
 		}
-		arguments := value.Arguments()
-		for index := range arguments {
-			original := arguments[index]
-			arguments[index] = resolveSpecialTypeAtDepth(
-				arguments[index],
-				receiver,
-				currentClass,
-				nextDepth,
-			)
-			if arguments[index].IsUnknown() && !original.IsUnknown() {
-				// A concrete nested type was truncated by the depth bound.
-				// Keeping only the outer nominal shell would make later
-				// parent-return calls look definite when they are not.
-				return types.Unknown()
-			}
+		arguments, changed, valid := resolveSpecialTypeArguments(
+			value, receiver, currentClass, nextDepth, true,
+		)
+		if !valid {
+			// A concrete nested type was truncated by the depth bound.
+			// Keeping only the outer nominal shell would make later
+			// parent-return calls look definite when they are not.
+			return types.Unknown()
+		}
+		if !changed {
+			return value
 		}
 		return types.Named(value.Name(), arguments...)
 	case types.ArrayKind:
-		arguments := value.Arguments()
-		if len(arguments) != 2 {
+		if value.ArgumentCount() != 2 {
 			return value
 		}
-		return types.Array(
-			resolveSpecialTypeAtDepth(
-				arguments[0],
-				receiver,
-				currentClass,
-				nextDepth,
-			),
-			resolveSpecialTypeAtDepth(
-				arguments[1],
-				receiver,
-				currentClass,
-				nextDepth,
-			),
+		arguments, changed, _ := resolveSpecialTypeArguments(
+			value, receiver, currentClass, nextDepth, false,
 		)
+		if !changed {
+			return value
+		}
+		return types.Array(arguments[0], arguments[1])
 	case types.NonEmptyArrayKind:
-		arguments := value.Arguments()
-		if len(arguments) != 2 {
+		if value.ArgumentCount() != 2 {
 			return value
 		}
-		return types.NonEmptyArray(
-			resolveSpecialTypeAtDepth(
-				arguments[0], receiver, currentClass, nextDepth,
-			),
-			resolveSpecialTypeAtDepth(
-				arguments[1], receiver, currentClass, nextDepth,
-			),
+		arguments, changed, _ := resolveSpecialTypeArguments(
+			value, receiver, currentClass, nextDepth, false,
 		)
+		if !changed {
+			return value
+		}
+		return types.NonEmptyArray(arguments[0], arguments[1])
 	case types.ListKind:
-		arguments := value.Arguments()
-		if len(arguments) != 1 {
+		if value.ArgumentCount() != 1 {
 			return value
 		}
-		return types.List(resolveSpecialTypeAtDepth(
-			arguments[0],
-			receiver,
-			currentClass,
-			nextDepth,
-		))
-	case types.NonEmptyListKind:
-		arguments := value.Arguments()
-		if len(arguments) != 1 {
-			return value
-		}
-		return types.NonEmptyList(resolveSpecialTypeAtDepth(
-			arguments[0],
-			receiver,
-			currentClass,
-			nextDepth,
-		))
-	case types.IterableKind:
-		arguments := value.Arguments()
-		if len(arguments) != 2 {
-			return value
-		}
-		return types.Iterable(
-			resolveSpecialTypeAtDepth(
-				arguments[0],
-				receiver,
-				currentClass,
-				nextDepth,
-			),
-			resolveSpecialTypeAtDepth(
-				arguments[1],
-				receiver,
-				currentClass,
-				nextDepth,
-			),
+		arguments, changed, _ := resolveSpecialTypeArguments(
+			value, receiver, currentClass, nextDepth, false,
 		)
-	case types.ClassStringKind:
-		arguments := value.Arguments()
-		if len(arguments) != 1 {
+		if !changed {
 			return value
 		}
-		return types.ClassString(resolveSpecialTypeAtDepth(
-			arguments[0],
-			receiver,
-			currentClass,
-			nextDepth,
-		))
-	case types.CallableKind:
-		parameters := value.Parameters()
-		for index := range parameters {
-			parameters[index].Type = resolveSpecialTypeAtDepth(
-				parameters[index].Type,
-				receiver,
-				currentClass,
-				nextDepth,
-			)
+		return types.List(arguments[0])
+	case types.NonEmptyListKind:
+		if value.ArgumentCount() != 1 {
+			return value
 		}
-		return types.Callable(
-			parameters,
-			resolveSpecialTypeAtDepth(
-				value.Result(),
-				receiver,
-				currentClass,
-				nextDepth,
-			),
+		arguments, changed, _ := resolveSpecialTypeArguments(
+			value, receiver, currentClass, nextDepth, false,
+		)
+		if !changed {
+			return value
+		}
+		return types.NonEmptyList(arguments[0])
+	case types.IterableKind:
+		if value.ArgumentCount() != 2 {
+			return value
+		}
+		arguments, changed, _ := resolveSpecialTypeArguments(
+			value, receiver, currentClass, nextDepth, false,
+		)
+		if !changed {
+			return value
+		}
+		return types.Iterable(arguments[0], arguments[1])
+	case types.ClassStringKind:
+		if value.ArgumentCount() != 1 {
+			return value
+		}
+		arguments, changed, _ := resolveSpecialTypeArguments(
+			value, receiver, currentClass, nextDepth, false,
+		)
+		if !changed {
+			return value
+		}
+		return types.ClassString(arguments[0])
+	case types.CallableKind:
+		return resolveSpecialCallableType(
+			value, receiver, currentClass, nextDepth,
 		)
 	case types.ArrayShapeKind, types.ObjectShapeKind:
-		fields := value.Fields()
-		for index := range fields {
-			fields[index].Type = resolveSpecialTypeAtDepth(
-				fields[index].Type,
-				receiver,
-				currentClass,
-				nextDepth,
-			)
-		}
-		if value.Kind() == types.ArrayShapeKind {
-			return types.ArrayShape(fields, value.IsOpenShape())
-		}
-		return types.ObjectShape(fields, value.IsOpenShape())
+		return resolveSpecialShapeType(
+			value, receiver, currentClass, nextDepth,
+		)
 	case types.ConditionalKind:
-		arguments := value.Arguments()
-		if len(arguments) != 4 {
+		if value.ArgumentCount() != 4 {
 			return value
 		}
-		for index := range arguments {
-			arguments[index] = resolveSpecialTypeAtDepth(
-				arguments[index],
-				receiver,
-				currentClass,
-				nextDepth,
-			)
+		arguments, changed, _ := resolveSpecialTypeArguments(
+			value, receiver, currentClass, nextDepth, false,
+		)
+		if !changed {
+			return value
 		}
 		return types.Conditional(
 			arguments[0],
@@ -506,13 +450,131 @@ func resolveSpecialTypeAtDepth(
 	}
 }
 
+func resolveSpecialTypeArguments(
+	value,
+	receiver,
+	currentClass types.Type,
+	depth int,
+	rejectTruncatedConcrete bool,
+) ([]types.Type, bool, bool) {
+	count := value.ArgumentCount()
+	var result []types.Type
+	for index := 0; index < count; index++ {
+		original := value.Argument(index)
+		resolved := resolveSpecialTypeAtDepth(
+			original, receiver, currentClass, depth,
+		)
+		if rejectTruncatedConcrete &&
+			resolved.IsUnknown() && !original.IsUnknown() {
+			return nil, false, false
+		}
+		if resolved.Equal(original) {
+			if result != nil {
+				result[index] = original
+			}
+			continue
+		}
+		if result == nil {
+			result = make([]types.Type, count)
+			for previous := 0; previous < index; previous++ {
+				result[previous] = value.Argument(previous)
+			}
+		}
+		result[index] = resolved
+	}
+	return result, result != nil, true
+}
+
+func resolveSpecialCallableType(
+	value,
+	receiver,
+	currentClass types.Type,
+	depth int,
+) types.Type {
+	result := resolveSpecialTypeAtDepth(
+		value.Result(), receiver, currentClass, depth,
+	)
+	resultChanged := !result.Equal(value.Result())
+	var parameters []types.CallableParameter
+	for index := 0; index < value.ParameterCount(); index++ {
+		parameter := value.Parameter(index)
+		resolved := resolveSpecialTypeAtDepth(
+			parameter.Type, receiver, currentClass, depth,
+		)
+		if resolved.Equal(parameter.Type) {
+			continue
+		}
+		if parameters == nil {
+			parameters = copyCallableParameters(value)
+		}
+		parameters[index].Type = resolved
+	}
+	if parameters == nil && !resultChanged {
+		return value
+	}
+	if parameters == nil {
+		parameters = copyCallableParameters(value)
+	}
+	return types.Callable(parameters, result)
+}
+
+func resolveSpecialShapeType(
+	value,
+	receiver,
+	currentClass types.Type,
+	depth int,
+) types.Type {
+	var fields []types.ShapeField
+	for index := 0; index < value.FieldCount(); index++ {
+		field := value.Field(index)
+		resolved := resolveSpecialTypeAtDepth(
+			field.Type, receiver, currentClass, depth,
+		)
+		if resolved.Equal(field.Type) {
+			continue
+		}
+		if fields == nil {
+			fields = copyShapeFields(value)
+		}
+		fields[index].Type = resolved
+	}
+	if fields == nil {
+		return value
+	}
+	if value.Kind() == types.ArrayShapeKind {
+		return types.ArrayShapeOwned(fields, value.IsOpenShape())
+	}
+	return types.ObjectShape(fields, value.IsOpenShape())
+}
+
+func copyCallableParameters(value types.Type) []types.CallableParameter {
+	result := make([]types.CallableParameter, value.ParameterCount())
+	for index := range result {
+		result[index] = value.Parameter(index)
+	}
+	return result
+}
+
+func copyShapeFields(value types.Type) []types.ShapeField {
+	result := make([]types.ShapeField, value.FieldCount())
+	for index := range result {
+		result[index] = value.Field(index)
+	}
+	return result
+}
+
 func applySpecialTypeArguments(
 	base types.Type,
-	arguments []types.Type,
+	special types.Type,
 ) types.Type {
-	if len(arguments) == 0 || base.Kind() != types.ObjectKind ||
+	argumentCount := special.ArgumentCount()
+	if argumentCount == 0 || base.Kind() != types.ObjectKind ||
 		base.Name() == "" {
 		return base
+	}
+	arguments := make([]types.Type, argumentCount)
+	for index := range arguments {
+		arguments[index] = special.Argument(index)
 	}
 	return types.Named(base.Name(), arguments...)
 }
@@ -526,6 +588,27 @@ func joinTypes(relations types.Relations, values []types.Type) types.Type {
 		joiner.Add(value)
 	}
 	return joiner.Value()
+}
+
+type namedTypeCache struct {
+	name  string
+	value types.Type
+}
+
+func (cache *namedTypeCache) typeFor(name string) types.Type {
+	if name != "" && name == cache.name {
+		return cache.value
+	}
+	value := types.Named(name)
+	if name != "" {
+		cache.name = name
+		cache.value = value
+	}
+	return value
+}
+
+func (s *functionState) namedType(name string) types.Type {
+	return s.namedTypes.typeFor(name)
 }
 
 func castType(node *phpsyntax.Node) types.Type {

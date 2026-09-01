@@ -388,12 +388,15 @@ func (s *analyzerState) parentReceiverTypes(class semantic.Symbol) []types.Type 
 	result := make([]types.Type, 0, len(names))
 	seen := make(map[string]struct{}, len(names))
 	for _, name := range names {
-		value := types.Named(name)
+		value := types.Unknown()
 		for _, candidate := range declared {
 			if strings.EqualFold(candidate.Name(), name) {
 				value = candidate
 				break
 			}
+		}
+		if value.IsUnknown() {
+			value = types.Named(name)
 		}
 		if _, exists := seen[value.Key()]; exists {
 			continue

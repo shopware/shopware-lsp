@@ -248,6 +248,11 @@ type analyzerState struct {
 	environments          environmentArena
 	arguments             callArgumentArena
 	readonlyPropertyTypes map[semantic.SymbolID]types.Type
+	cachedClassTypeID     semantic.SymbolID
+	cachedClassType       types.Type
+	cachedParentClassID   semantic.SymbolID
+	cachedParentReceivers []types.Type
+	cachedParentsReady    bool
 }
 
 // environment is a small copy-on-write variable frame. Most PHP functions only
@@ -498,6 +503,7 @@ type functionState struct {
 	symbol       semantic.Symbol
 	scope        semantic.ScopeID
 	currentClass types.Type
+	namedTypes   namedTypeCache
 	generator    bool
 	returns      []types.Type
 	dependencies map[semantic.SymbolID]struct{}
@@ -569,7 +575,7 @@ func (s *analyzerState) inheritedMethodParameterTypes(
 	if !found || !class.IsClassLike() {
 		return nil
 	}
-	parents := inheritedReceiverTypes(class)
+	parents := s.inheritedReceiverTypes(class)
 	if len(parents) == 0 {
 		return nil
 	}
@@ -606,7 +612,13 @@ func (s *analyzerState) inheritedMethodParameterTypes(
 	return result
 }
 
-func inheritedReceiverTypes(class semantic.Symbol) []types.Type {
+func (s *analyzerState) inheritedReceiverTypes(
+	class semantic.Symbol,
+) []types.Type {
+	if class.ID != "" && s.cachedParentsReady &&
+		s.cachedParentClassID == class.ID {
+		return s.cachedParentReceivers
+	}
 	names := append(append([]string(nil), class.Extends...), class.Implements...)
 	typed := append(
 		append([]types.Type(nil), class.ExtendsTypes...),
@@ -614,7 +626,7 @@ func inheritedReceiverTypes(class semantic.Symbol) []types.Type {
 	)
 	result := make([]types.Type, 0, len(names))
 	for _, name := range names {
-		receiver := types.Named(name)
+		receiver := types.Unknown()
 		for _, candidate := range typed {
 			if candidate.Kind() == types.ObjectKind &&
 				strings.EqualFold(candidate.Name(), name) {
@@ -622,7 +634,15 @@ func inheritedReceiverTypes(class semantic.Symbol) []types.Type {
 				break
 			}
 		}
+		if receiver.IsUnknown() {
+			receiver = types.Named(name)
+		}
 		result = append(result, receiver)
+	}
+	if class.ID != "" {
+		s.cachedParentClassID = class.ID
+		s.cachedParentReceivers = result
+		s.cachedParentsReady = true
 	}
 	return result
 }
@@ -1323,6 +1343,9 @@ func (s *analyzerState) classType(id semantic.SymbolID) types.Type {
 	if id == "" {
 		return types.Unknown()
 	}
+	if s.cachedClassTypeID == id {
+		return s.cachedClassType
+	}
 	symbol, ok := s.analyzer.Snapshot.Symbol(id)
 	if !ok {
 		for _, candidate := range s.document.Symbols {
@@ -1339,5 +1362,8 @@ func (s *analyzerState) classType(id semantic.SymbolID) types.Type {
 	for _, template := range symbol.Templates {
 		args = append(args, types.Template(template.Name))
 	}
-	return types.Named(symbol.FullyQualified, args...)
+	result := types.Named(symbol.FullyQualified, args...)
+	s.cachedClassTypeID = id
+	s.cachedClassType = result
+	return result
 }

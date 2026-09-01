@@ -2422,6 +2422,16 @@ identifier and indexed-argument lookup are likewise allocation-free. On the
 279 MiB of cumulative allocation. Retained heap stayed at 231.7 MiB and normal
 cold indexing remained approximately 29 seconds.
 
+PHP special-type resolution now preserves immutable type subgraphs that do not
+contain `self`, `static`, or another context-dependent child instead of cloning
+the complete graph. Recent class and receiver types are reused within one
+document analysis without a workspace-global cache. Resolving a representative
+ordinary composite type fell from 602--811 ns, 232 bytes, and seven allocations
+to 26 ns with no allocation. On the same 38,960-file checkout these changes
+removed another 1.64 million mallocs and 40.1 MiB of cumulative allocation;
+retained heap stayed near 230 MiB and cold indexing remained approximately
+29 seconds.
+
 The latest empty-cache resource run covered a growing 52,440-file checkout:
 6.12 seconds cold, 267 milliseconds warm, 134.6 MiB retained Go heap,
 547.7 MiB retained RSS, 555.8 MiB maximum RSS, 5.14 GiB cumulative Go

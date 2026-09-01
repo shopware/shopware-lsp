@@ -58,7 +58,7 @@ func (s *functionState) inferObjectCreation(
 			)
 		}
 	}
-	result := types.Named(className)
+	result := s.namedType(className)
 	arguments, uncertainUnpack := s.inferArguments(node, env)
 
 	var inferred []types.Type
@@ -75,7 +75,7 @@ func (s *functionState) inferObjectCreation(
 				s.currentClass,
 				preserveCurrentTemplates,
 			)
-			constructorReceiver := types.Named(class.FullyQualified)
+			constructorReceiver := s.namedType(class.FullyQualified)
 			if len(class.Templates) > 0 {
 				templateArguments := make(
 					[]types.Type,
@@ -96,7 +96,7 @@ func (s *functionState) inferObjectCreation(
 				if len(arguments) == 0 {
 					inferred = append(
 						inferred,
-						genericObjectType(class, currentTemplates),
+						s.genericObjectType(class, currentTemplates),
 					)
 				}
 				return true
@@ -117,7 +117,7 @@ func (s *functionState) inferObjectCreation(
 					)
 					inferred = append(
 						inferred,
-						genericObjectType(
+						s.genericObjectType(
 							class,
 							mergeMissingTemplates(
 								resolved.Templates,
@@ -219,12 +219,12 @@ func dynamicObjectType(value types.Type) types.Type {
 	return types.Unknown()
 }
 
-func genericObjectType(
+func (s *functionState) genericObjectType(
 	class semantic.Symbol,
 	inferred map[string]types.Type,
 ) types.Type {
 	if len(class.Templates) == 0 {
-		return types.Named(class.FullyQualified)
+		return s.namedType(class.FullyQualified)
 	}
 	arguments := make([]types.Type, 0, len(class.Templates))
 	for _, template := range class.Templates {
@@ -233,7 +233,7 @@ func genericObjectType(
 			value = template.Default
 		}
 		if value.IsUnknown() {
-			return types.Named(class.FullyQualified)
+			return s.namedType(class.FullyQualified)
 		}
 		arguments = append(arguments, value)
 	}

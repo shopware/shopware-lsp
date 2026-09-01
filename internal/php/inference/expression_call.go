@@ -332,7 +332,7 @@ func (s *functionState) memberSelfType(
 					}
 				}
 			}
-			return types.Named(symbol.FullyQualified)
+			return s.namedType(symbol.FullyQualified)
 		}
 		container = symbol.Container
 	}
@@ -505,7 +505,7 @@ func (s *functionState) inferReceiver(
 					func(classView semantic.SymbolView) bool {
 						class := classView.Materialize()
 						if len(class.Extends) > 0 {
-							parent = types.Named(class.Extends[0])
+							parent = s.namedType(class.Extends[0])
 						}
 						return false
 					},
@@ -516,7 +516,9 @@ func (s *functionState) inferReceiver(
 			}
 			return types.Unknown()
 		default:
-			return types.Named(s.nameContextAt(node.Range().Start).ResolveClass(name))
+			return s.namedType(
+				s.nameContextAt(node.Range().Start).ResolveClass(name),
+			)
 		}
 	}
 	return s.infer(node, env)

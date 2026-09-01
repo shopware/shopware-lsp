@@ -36,6 +36,7 @@ func LinkMembersOwned(
 	}
 	result := document
 	memberResolver := resolver.MemberResolver{Snapshot: snapshot}
+	var staticReceiverTypes namedTypeCache
 	phpquery.Visit(root, func(node *phpsyntax.Node) bool {
 		nodes := directNodes(node)
 		if nodes.Len() < 2 {
@@ -60,6 +61,7 @@ func LinkMembersOwned(
 				snapshot,
 				phpquery.NameValue(receiverNode),
 				receiverNode.Range().Start,
+				&staticReceiverTypes,
 			)
 		}
 		nameNode := nodes.At(1)
@@ -198,19 +200,22 @@ func staticReceiverType(
 	snapshot *semantic.Snapshot,
 	name string,
 	offset uint32,
+	namedTypes *namedTypeCache,
 ) types.Type {
 	switch strings.ToLower(name) {
 	case "self", "static":
 		if class, ok := enclosingClassAt(document, snapshot, offset); ok {
-			return types.Named(class.FullyQualified)
+			return namedTypes.typeFor(class.FullyQualified)
 		}
 	case "parent":
 		if class, ok := enclosingClassAt(document, snapshot, offset); ok &&
 			len(class.Extends) > 0 {
-			return types.Named(class.Extends[0])
+			return namedTypes.typeFor(class.Extends[0])
 		}
 	default:
-		return types.Named(nameContext(document, offset).ResolveClass(name))
+		return namedTypes.typeFor(
+			nameContext(document, offset).ResolveClass(name),
+		)
 	}
 	return types.Unknown()
 }
