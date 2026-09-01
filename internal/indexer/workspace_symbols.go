@@ -791,7 +791,7 @@ func workspaceSymbolMatchQuery(query string) string {
 }
 
 func workspaceSymbolIndexText(symbol WorkspaceSymbol) string {
-	text := workspaceSymbolText{}
+	text := newWorkspaceSymbolText()
 	text.add(symbol.Name)
 	if container := workspaceSymbolLeafName(symbol.ContainerName); container != "" {
 		text.add(container)
@@ -826,7 +826,7 @@ func workspaceSymbolLeafName(value string) string {
 }
 
 func workspaceSymbolSearchText(values ...string) string {
-	text := workspaceSymbolText{}
+	text := newWorkspaceSymbolText()
 	for _, value := range values {
 		text.add(value)
 	}
@@ -836,6 +836,12 @@ func workspaceSymbolSearchText(values ...string) string {
 type workspaceSymbolText struct {
 	values     []string
 	wordBuffer [16]string
+}
+
+func newWorkspaceSymbolText() workspaceSymbolText {
+	return workspaceSymbolText{
+		values: make([]string, 0, 8),
+	}
 }
 
 func (text *workspaceSymbolText) add(value string) {

@@ -3,6 +3,8 @@ package admin
 import (
 	"testing"
 
+	javascriptparser "github.com/shopware/shopware-lsp/internal/parser/javascript"
+	jsquery "github.com/shopware/shopware-lsp/internal/parser/javascript/query"
 	jssyntax "github.com/shopware/shopware-lsp/internal/parser/javascript/syntax"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -342,6 +344,112 @@ export default {
 	assert.True(t, byName["inputComponent"].ReturnsComplete)
 	require.Equal(t, []string{"'sw-card'"}, byName["incomplete"].ReturnExpressions)
 	assert.False(t, byName["incomplete"].ReturnsComplete)
+}
+
+func TestVueMethodReturnsCompleteControlFlow(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		body     string
+		complete bool
+	}{
+		{name: "top-level return", body: `return value;`, complete: true},
+		{name: "semicolonless return", body: `return value`, complete: true},
+		{
+			name: "statement after return",
+			body: `return value; consume(value);`,
+		},
+		{name: "nested return", body: `if (value) { return value; }`},
+		{
+			name: "complete fallthrough switch",
+			body: `switch (value) {
+                case 'a':
+                case 'b': return first;
+                default: throw failure;
+            }`,
+			complete: true,
+		},
+		{
+			name: "switch missing default",
+			body: `switch (value) { case 'a': return first; }`,
+		},
+		{
+			name: "switch breaks",
+			body: `switch (value) {
+                case 'a': break;
+                default: return fallback;
+            }`,
+		},
+		{
+			name: "statement after switch",
+			body: `switch (value) { default: return fallback; }
+                consume(value);`,
+		},
+		{
+			name: "last switch wins",
+			body: `switch (first) { default: break; }
+                switch (second) {
+                    case 'a': return first;
+                    default: return fallback;
+                }`,
+			complete: true,
+		},
+		{
+			name: "final return supersedes switch",
+			body: `switch (value) { default: break; }
+                return fallback;`,
+			complete: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := javascriptparser.Parse(
+				"export default { value() {" + test.body + "} };",
+			).Tree.Root
+			methods := jsquery.Nodes(root, jssyntax.JsMethod)
+			require.Len(t, methods, 1)
+			assert.Equal(t, test.complete, vueMethodReturnsComplete(methods[0]))
+		})
+	}
+}
+
+func BenchmarkVueMethodReturnAnalysis(b *testing.B) {
+	root := javascriptparser.Parse(`
+export default {
+    computed: {
+        inputComponent() {
+            switch (this.fieldType) {
+                case 'uuid': return 'sw-entity-multi-id-select';
+                case 'float':
+                case 'int': return 'sw-number-field';
+                default: return 'sw-text-field';
+            }
+        },
+    },
+};`).Tree.Root
+	methods := jsquery.Nodes(root, jssyntax.JsMethod)
+	if len(methods) != 1 {
+		b.Fatalf("expected one method, got %d", len(methods))
+	}
+	method := methods[0]
+	b.Run("expressions", func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			result := vueMethodReturnExpressions(method)
+			if len(result) != 3 {
+				b.Fatalf("expected three return expressions, got %d", len(result))
+			}
+		}
+	})
+	b.Run("completeness", func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			if !vueMethodReturnsComplete(method) {
+				b.Fatal("expected a complete switch")
+			}
+		}
+	})
 }
 
 func TestComputedReturnInferenceStaysOpenAcrossAttributeFallback(t *testing.T) {

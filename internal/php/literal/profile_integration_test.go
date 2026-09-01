@@ -33,6 +33,7 @@ func TestShopwareTrunkLiteralProfile(t *testing.T) {
 	stringCounts := make(map[string]int)
 	numberCounts := make(map[string]int)
 	var documents, stringsTotal, numbersTotal int
+	var distinctStringsPerDocument, distinctNumbersPerDocument int
 	err := filepath.WalkDir(root, func(
 		path string,
 		entry fs.DirEntry,
@@ -50,6 +51,8 @@ func TestShopwareTrunkLiteralProfile(t *testing.T) {
 			return err
 		}
 		tree := phpparser.ParseBytes(content).Tree
+		documentStrings := make(map[string]struct{})
+		documentNumbers := make(map[string]struct{})
 		documents++
 		for element := range tree.Root.Descendants() {
 			node, ok := element.(*phpsyntax.Node)
@@ -60,29 +63,39 @@ func TestShopwareTrunkLiteralProfile(t *testing.T) {
 			case phpsyntax.PhpString:
 				value := phpquery.StringValue(node)
 				incrementOwned(stringCounts, value)
+				documentStrings[value] = struct{}{}
 				stringsTotal++
 			case phpsyntax.PhpNumber:
 				value, ok := TypeOf(node)
 				if !ok {
 					continue
 				}
-				incrementOwned(numberCounts, value.String())
+				normalized := value.String()
+				incrementOwned(numberCounts, normalized)
+				documentNumbers[normalized] = struct{}{}
 				numbersTotal++
 			}
 		}
+		distinctStringsPerDocument += len(documentStrings)
+		distinctNumbersPerDocument += len(documentNumbers)
 		return nil
 	})
 	require.NoError(t, err)
 
 	t.Logf(
-		"literal profile: documents=%d strings=%d unique=%d top=%s "+
-			"numbers=%d unique=%d top=%s",
+		"literal profile: documents=%d "+
+			"strings=%d unique=%d per_document_unique=%d repeat_upper_bound=%d top=%s "+
+			"numbers=%d unique=%d per_document_unique=%d repeat_upper_bound=%d top=%s",
 		documents,
 		stringsTotal,
 		len(stringCounts),
+		distinctStringsPerDocument,
+		stringsTotal-distinctStringsPerDocument,
 		formatTopLiterals(stringCounts, 20),
 		numbersTotal,
 		len(numberCounts),
+		distinctNumbersPerDocument,
+		numbersTotal-distinctNumbersPerDocument,
 		formatTopLiterals(numberCounts, 10),
 	)
 }

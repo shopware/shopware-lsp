@@ -333,16 +333,27 @@ func KebabToCamel(s string) string {
 //	"myPropName"         -> "my-prop-name"
 //	"label"              -> "label"
 func CamelToKebab(s string) string {
-	var result []byte
-	for i, c := range s {
-		if c >= 'A' && c <= 'Z' {
-			if i > 0 {
-				result = append(result, '-')
-			}
-			result = append(result, byte(c+'a'-'A'))
-		} else {
-			result = append(result, byte(c))
+	uppercase := 0
+	for index := range len(s) {
+		if s[index] >= 'A' && s[index] <= 'Z' {
+			uppercase++
 		}
 	}
-	return string(result)
+	if uppercase == 0 {
+		return s
+	}
+	var result strings.Builder
+	result.Grow(len(s) + uppercase)
+	for i := range len(s) {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			if i > 0 {
+				result.WriteByte('-')
+			}
+			result.WriteByte(c + 'a' - 'A')
+		} else {
+			result.WriteByte(c)
+		}
+	}
+	return result.String()
 }

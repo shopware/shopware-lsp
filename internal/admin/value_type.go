@@ -467,26 +467,43 @@ func vueLooseReturnExpressions(node *jssyntax.Node) []string {
 	if node == nil {
 		return nil
 	}
-	tokens := vueSyntaxTokens(node)
+	nodeRange := node.Range()
+	text := node.Text()
 	var result []string
-	for index, token := range tokens {
-		if token.Kind() != jssyntax.TkKeyword || token.Text() != "return" {
+	var inlinePending [4]uint32
+	pending := inlinePending[:0]
+	visitVueSyntaxTokens(node, func(token *jssyntax.Token) {
+		if token.Kind() == jssyntax.TkKeyword && token.Text() == "return" {
+			pending = append(pending, token.Range().End)
+		}
+		if token.Kind() != jssyntax.TkSemicolon || len(pending) == 0 {
+			return
+		}
+		result = appendVueLooseReturnExpressions(
+			result, pending, token.Range().Start, nodeRange.Start, nodeRange.End, text,
+		)
+		pending = pending[:0]
+	})
+	result = appendVueLooseReturnExpressions(
+		result, pending, nodeRange.End, nodeRange.Start, nodeRange.End, text,
+	)
+	return result
+}
+
+func appendVueLooseReturnExpressions(
+	result []string,
+	starts []uint32,
+	end uint32,
+	rangeStart uint32,
+	rangeEnd uint32,
+	text string,
+) []string {
+	for _, start := range starts {
+		if start > end || start < rangeStart || end > rangeEnd {
 			continue
 		}
-		end := node.Range().End
-		for next := index + 1; next < len(tokens); next++ {
-			if tokens[next].Kind() == jssyntax.TkSemicolon {
-				end = tokens[next].Range().Start
-				break
-			}
-		}
-		start := token.Range().End
-		if start > end || start < node.Range().Start || end > node.Range().End {
-			continue
-		}
-		text := node.Text()
-		relativeStart := start - node.Range().Start
-		relativeEnd := end - node.Range().Start
+		relativeStart := start - rangeStart
+		relativeEnd := end - rangeStart
 		if relativeEnd > uint32(len(text)) {
 			continue
 		}
@@ -513,20 +530,145 @@ func vueMethodReturnsComplete(method *jssyntax.Node) bool {
 		return method.Kind() == jssyntax.JsArrowFunction &&
 			len(vueMethodReturnExpressions(method)) == 1
 	}
-	tokens := vueControlTokens(block)
-	if len(tokens) == 0 {
-		return false
-	}
-	if vueTokensEndWithTopLevelReturn(tokens) {
-		return true
-	}
-	return vueTokensEndWithCompleteSwitch(tokens)
+	flow := vueControlFlowCompleteness{}
+	visitVueSyntaxTokens(block, flow.visit)
+	return flow.topLevelReturn.complete() || flow.terminalSwitch.complete()
 }
 
-type vueControlToken struct {
-	text  string
-	kind  jssyntax.Kind
-	depth int
+type vueControlFlowCompleteness struct {
+	topLevelReturn vueTopLevelReturnFlow
+	terminalSwitch vueTerminalSwitchFlow
+	depth          int
+}
+
+func (flow *vueControlFlowCompleteness) visit(token *jssyntax.Token) {
+	kind := token.Kind()
+	switch kind {
+	case jssyntax.TkWhitespace, jssyntax.TkLineBreak,
+		jssyntax.TkLineComment, jssyntax.TkBlockComment:
+		return
+	}
+	depth := flow.depth
+	if kind == jssyntax.TkOpenBrace {
+		depth++
+		flow.depth = depth
+	}
+	text := ""
+	if kind == jssyntax.TkKeyword {
+		text = token.Text()
+	}
+	flow.topLevelReturn.observe(kind, text, depth)
+	flow.terminalSwitch.observe(kind, text, depth)
+	if kind == jssyntax.TkCloseBrace {
+		flow.depth--
+	}
+}
+
+type vueTopLevelReturnFlow struct {
+	found     bool
+	semicolon bool
+	invalid   bool
+}
+
+func (flow *vueTopLevelReturnFlow) observe(
+	kind jssyntax.Kind,
+	text string,
+	depth int,
+) {
+	if kind == jssyntax.TkKeyword && text == "return" && depth == 1 {
+		flow.found = true
+		flow.semicolon = false
+		flow.invalid = false
+		return
+	}
+	if !flow.found {
+		return
+	}
+	if kind == jssyntax.TkSemicolon {
+		if depth == 1 {
+			flow.semicolon = true
+		}
+		return
+	}
+	if depth > 1 || kind == jssyntax.TkCloseBrace && depth == 1 {
+		return
+	}
+	if flow.semicolon {
+		flow.invalid = true
+	}
+}
+
+func (flow vueTopLevelReturnFlow) complete() bool {
+	return flow.found && !flow.invalid
+}
+
+type vueSwitchPhase uint8
+
+const (
+	vueSwitchAbsent vueSwitchPhase = iota
+	vueSwitchSeekingBody
+	vueSwitchInBody
+	vueSwitchClosed
+)
+
+type vueTerminalSwitchFlow struct {
+	phase      vueSwitchPhase
+	hasEntry   bool
+	hasDefault bool
+	pending    bool
+	invalid    bool
+}
+
+func (flow *vueTerminalSwitchFlow) observe(
+	kind jssyntax.Kind,
+	text string,
+	depth int,
+) {
+	if kind == jssyntax.TkKeyword && text == "switch" && depth == 1 {
+		*flow = vueTerminalSwitchFlow{phase: vueSwitchSeekingBody}
+		return
+	}
+	switch flow.phase {
+	case vueSwitchSeekingBody:
+		if kind == jssyntax.TkOpenBrace && depth == 2 {
+			flow.phase = vueSwitchInBody
+		}
+	case vueSwitchInBody:
+		if kind == jssyntax.TkCloseBrace && depth == 2 {
+			flow.invalid = flow.invalid || flow.pending
+			flow.phase = vueSwitchClosed
+			return
+		}
+		if kind != jssyntax.TkKeyword || depth != 2 {
+			return
+		}
+		switch text {
+		case "case":
+			flow.hasEntry = true
+			flow.pending = true
+		case "default":
+			flow.hasEntry = true
+			flow.hasDefault = true
+			flow.pending = true
+		case "return", "throw":
+			flow.pending = false
+		case "break":
+			if flow.pending {
+				flow.invalid = true
+				flow.pending = false
+			}
+		}
+	case vueSwitchClosed:
+		if kind != jssyntax.TkSemicolon &&
+			(kind != jssyntax.TkCloseBrace || depth != 1) {
+			flow.invalid = true
+		}
+	}
+}
+
+func (flow vueTerminalSwitchFlow) complete() bool {
+	return flow.phase == vueSwitchClosed && flow.hasEntry && flow.hasDefault &&
+		!flow.invalid
 }
 
 func directJavaScriptBlock(method *jssyntax.Node) *jssyntax.Node {
@@ -542,157 +684,21 @@ func directJavaScriptBlock(method *jssyntax.Node) *jssyntax.Node {
 	return nil
 }
 
-func vueControlTokens(block *jssyntax.Node) []vueControlToken {
-	if block == nil {
-		return nil
+func visitVueSyntaxTokens(
+	node *jssyntax.Node,
+	visit func(*jssyntax.Token),
+) {
+	if node == nil {
+		return
 	}
-	depth := 0
-	var result []vueControlToken
-	for _, token := range vueSyntaxTokens(block) {
-		switch token.Kind() {
-		case jssyntax.TkWhitespace, jssyntax.TkLineBreak,
-			jssyntax.TkLineComment, jssyntax.TkBlockComment:
-			continue
-		case jssyntax.TkOpenBrace:
-			depth++
-			result = append(result, vueControlToken{
-				text: token.Text(), kind: token.Kind(), depth: depth,
-			})
-		case jssyntax.TkCloseBrace:
-			result = append(result, vueControlToken{
-				text: token.Text(), kind: token.Kind(), depth: depth,
-			})
-			depth--
-		default:
-			result = append(result, vueControlToken{
-				text: token.Text(), kind: token.Kind(), depth: depth,
-			})
+	for element := range node.ChildElements() {
+		switch child := element.(type) {
+		case *jssyntax.Node:
+			visitVueSyntaxTokens(child, visit)
+		case *jssyntax.Token:
+			visit(child)
 		}
 	}
-	return result
-}
-
-func vueSyntaxTokens(node *jssyntax.Node) []*jssyntax.Token {
-	var result []*jssyntax.Token
-	var visit func(*jssyntax.Node)
-	visit = func(current *jssyntax.Node) {
-		for element := range current.ChildElements() {
-			switch child := element.(type) {
-			case *jssyntax.Node:
-				visit(child)
-			case *jssyntax.Token:
-				result = append(result, child)
-			}
-		}
-	}
-	if node != nil {
-		visit(node)
-	}
-	return result
-}
-
-func vueTokensEndWithTopLevelReturn(tokens []vueControlToken) bool {
-	returnIndex := -1
-	for index, token := range tokens {
-		if token.kind == jssyntax.TkKeyword && token.text == "return" &&
-			token.depth == 1 {
-			returnIndex = index
-		}
-	}
-	if returnIndex < 0 {
-		return false
-	}
-	for index := returnIndex + 1; index < len(tokens); index++ {
-		token := tokens[index]
-		if token.depth > 1 || token.kind == jssyntax.TkSemicolon ||
-			token.kind == jssyntax.TkCloseBrace && token.depth == 1 {
-			continue
-		}
-		// Tokens in the return expression are expected before its semicolon.
-		// Once that semicolon is seen, no further top-level statement is safe.
-		semicolon := false
-		for before := returnIndex + 1; before < index; before++ {
-			if tokens[before].kind == jssyntax.TkSemicolon &&
-				tokens[before].depth == 1 {
-				semicolon = true
-				break
-			}
-		}
-		if semicolon {
-			return false
-		}
-	}
-	return true
-}
-
-func vueTokensEndWithCompleteSwitch(tokens []vueControlToken) bool {
-	switchIndex := -1
-	for index, token := range tokens {
-		if token.kind == jssyntax.TkKeyword && token.text == "switch" &&
-			token.depth == 1 {
-			switchIndex = index
-		}
-	}
-	if switchIndex < 0 {
-		return false
-	}
-	open := -1
-	close := -1
-	for index := switchIndex + 1; index < len(tokens); index++ {
-		if open < 0 && tokens[index].kind == jssyntax.TkOpenBrace &&
-			tokens[index].depth == 2 {
-			open = index
-			continue
-		}
-		if open >= 0 && tokens[index].kind == jssyntax.TkCloseBrace &&
-			tokens[index].depth == 2 {
-			close = index
-			break
-		}
-	}
-	if open < 0 || close < 0 {
-		return false
-	}
-	for index := close + 1; index < len(tokens); index++ {
-		if tokens[index].kind != jssyntax.TkSemicolon &&
-			(tokens[index].kind != jssyntax.TkCloseBrace ||
-				tokens[index].depth != 1) {
-			return false
-		}
-	}
-	var entries []int
-	hasDefault := false
-	for index := open + 1; index < close; index++ {
-		token := tokens[index]
-		if token.depth != 2 || token.kind != jssyntax.TkKeyword ||
-			(token.text != "case" && token.text != "default") {
-			continue
-		}
-		entries = append(entries, index)
-		hasDefault = hasDefault || token.text == "default"
-	}
-	if !hasDefault || len(entries) == 0 {
-		return false
-	}
-	for _, entry := range entries {
-		returned := false
-		for index := entry + 1; index < close; index++ {
-			token := tokens[index]
-			if token.depth == 2 && token.kind == jssyntax.TkKeyword {
-				if token.text == "return" || token.text == "throw" {
-					returned = true
-					break
-				}
-				if token.text == "break" {
-					break
-				}
-			}
-		}
-		if !returned {
-			return false
-		}
-	}
-	return true
 }
 
 func vueReturnStatementExpression(statement *jssyntax.Node) string {

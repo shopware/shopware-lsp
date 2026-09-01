@@ -8,6 +8,39 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var benchmarkPatternString string
+
+func TestCamelToKebab(t *testing.T) {
+	t.Parallel()
+
+	for input, expected := range map[string]string{
+		"":                   "",
+		"label":              "label",
+		"positionIdentifier": "position-identifier",
+		"myPropName":         "my-prop-name",
+		"ABC":                "a-b-c",
+		"already-kebab":      "already-kebab",
+		"RésuméValue":        "résumé-value",
+	} {
+		assert.Equal(t, expected, CamelToKebab(input), input)
+	}
+}
+
+func BenchmarkCamelToKebab(b *testing.B) {
+	b.Run("already_normalized", func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			benchmarkPatternString = CamelToKebab("already-kebab")
+		}
+	})
+	b.Run("camel_case", func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			benchmarkPatternString = CamelToKebab("positionIdentifier")
+		}
+	})
+}
+
 func TestVueDirectiveReferenceForAttribute(t *testing.T) {
 	for _, test := range []struct {
 		attribute string

@@ -13,6 +13,7 @@ import (
 var (
 	benchmarkQueryString string
 	benchmarkQueryNode   *syntax.Node
+	benchmarkQueryNodes  []*syntax.Node
 	benchmarkQueryInt    int
 )
 
@@ -51,11 +52,42 @@ Shopware.Component.register('sw-card', {});
 		Nodes(root, syntax.JsVariableDeclaration),
 		index.Nodes(syntax.JsVariableDeclaration),
 	)
+	assert.Equal(t,
+		Nodes(root, syntax.JsVariableDeclaration, syntax.JsCallExpression),
+		index.Nodes(syntax.JsVariableDeclaration, syntax.JsCallExpression),
+	)
 	assert.Equal(t, Calls(root), index.Calls())
 	assert.Equal(t,
 		Calls(root, "Shopware.Component.register"),
 		index.Calls("Shopware.Component.register"),
 	)
+}
+
+func BenchmarkCallsAndNodeIndex(b *testing.B) {
+	root := javascriptparser.Parse(strings.Repeat(`
+Shopware.Component.register('sw-card', {});
+Shopware.Module.register('sw-module', {});
+other();
+`, 64)).Tree.Root
+	b.Run("calls/all", func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			benchmarkQueryNodes = Calls(root)
+		}
+	})
+	b.Run("calls/named", func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			benchmarkQueryNodes = Calls(root, "Shopware.Component.register")
+		}
+	})
+	b.Run("node_index", func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			index := NewNodeIndex(root)
+			benchmarkQueryNodes = index.Nodes(syntax.JsCallExpression)
+		}
+	})
 }
 
 func TestExportAndImportQueries(t *testing.T) {

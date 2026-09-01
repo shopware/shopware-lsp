@@ -40,12 +40,13 @@ func appendNodes(
 // several whole-document queries. The returned slices are immutable views and
 // remain valid for the lifetime of the parsed tree.
 type NodeIndex struct {
-	all    []*syntax.Node
+	root   *syntax.Node
 	byKind map[syntax.Kind][]*syntax.Node
 }
 
 func NewNodeIndex(root *syntax.Node) *NodeIndex {
 	index := &NodeIndex{
+		root:   root,
 		byKind: make(map[syntax.Kind][]*syntax.Node),
 	}
 	index.append(root)
@@ -56,7 +57,6 @@ func (index *NodeIndex) append(node *syntax.Node) {
 	if node == nil {
 		return
 	}
-	index.all = append(index.all, node)
 	kind := node.Kind()
 	index.byKind[kind] = append(index.byKind[kind], node)
 	cursor := node.ChildNodeCursor()
@@ -72,17 +72,7 @@ func (index *NodeIndex) Nodes(kinds ...syntax.Kind) []*syntax.Node {
 	if len(kinds) == 1 {
 		return index.byKind[kinds[0]]
 	}
-	accepted := make(map[syntax.Kind]struct{}, len(kinds))
-	for _, kind := range kinds {
-		accepted[kind] = struct{}{}
-	}
-	result := make([]*syntax.Node, 0)
-	for _, node := range index.all {
-		if _, found := accepted[node.Kind()]; found {
-			result = append(result, node)
-		}
-	}
-	return result
+	return Nodes(index.root, kinds...)
 }
 
 func (index *NodeIndex) Calls(names ...string) []*syntax.Node {
@@ -112,16 +102,29 @@ func Calls(root *syntax.Node, names ...string) []*syntax.Node {
 		accepted[name] = struct{}{}
 	}
 	var result []*syntax.Node
-	for _, call := range Nodes(root, syntax.JsCallExpression) {
+	appendCalls(&result, root, accepted)
+	return result
+}
+
+func appendCalls(
+	result *[]*syntax.Node,
+	node *syntax.Node,
+	accepted map[string]struct{},
+) {
+	if node == nil {
+		return
+	}
+	if node.Kind() == syntax.JsCallExpression {
 		if len(accepted) == 0 {
-			result = append(result, call)
-			continue
-		}
-		if _, ok := accepted[CallName(call)]; ok {
-			result = append(result, call)
+			*result = append(*result, node)
+		} else if _, found := accepted[CallName(node)]; found {
+			*result = append(*result, node)
 		}
 	}
-	return result
+	cursor := node.ChildNodeCursor()
+	for cursor.Next() {
+		appendCalls(result, cursor.Node(), accepted)
+	}
 }
 
 func CallAt(node *syntax.Node) *syntax.Node {
