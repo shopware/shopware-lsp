@@ -140,7 +140,7 @@ func enrichDefinitionCollectionElementMembers(
 	if object == nil || definition == nil {
 		return
 	}
-	for _, call := range jsquery.Calls(object) {
+	for call := range jsquery.IterateCalls(object) {
 		if jsquery.CallMethodName(call) != "forEach" {
 			continue
 		}

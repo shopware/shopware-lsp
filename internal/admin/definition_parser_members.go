@@ -142,7 +142,7 @@ func parseMixinNames(node *jssyntax.Node) []string {
 		return nil
 	}
 	var names []string
-	for _, call := range jsquery.Calls(
+	for call := range jsquery.IterateCalls(
 		node,
 		"Mixin.getByName",
 		"Shopware.Mixin.getByName",

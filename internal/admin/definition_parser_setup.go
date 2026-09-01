@@ -311,7 +311,7 @@ func componentSetupBindingInference(
 	}
 	sourceExpression = initializer
 	compactInitializer := compactJavaScriptText(initializer)
-	for _, call := range jsquery.Calls(declaration) {
+	for call := range jsquery.IterateCalls(declaration) {
 		callName := jsquery.CallName(call)
 		if callName != "ref" && callName != "shallowRef" &&
 			callName != "reactive" && callName != "computed" {

@@ -98,7 +98,7 @@ func parseWebpackConfig(path string, tree *cst.Tree) []Resource {
 		return nil
 	}
 	var result []Resource
-	for _, call := range jsquery.Calls(tree.Root) {
+	for call := range jsquery.IterateCalls(tree.Root) {
 		name := jsquery.CallName(call)
 		lower := strings.ToLower(name)
 		if !strings.HasSuffix(lower, "addentry") &&

@@ -865,6 +865,24 @@ func (text *workspaceSymbolText) add(value string) {
 
 func (text *workspaceSymbolText) addChunk(chunk string) {
 	words := appendIdentifierWords(text.wordBuffer[:0], chunk)
+	if isASCII(chunk) {
+		lowered := strings.ToLower(chunk)
+		offset := 0
+		for _, word := range words {
+			next := offset + len(word)
+			text.append(lowered[offset:next])
+			offset = next
+		}
+		if len(words) < 2 {
+			return
+		}
+		offset = 0
+		for _, word := range words[:len(words)-1] {
+			text.append(lowered[offset:])
+			offset += len(word)
+		}
+		return
+	}
 	for index, word := range words {
 		words[index] = strings.ToLower(word)
 		text.append(words[index])

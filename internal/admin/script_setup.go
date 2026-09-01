@@ -38,7 +38,7 @@ func parseScriptSetupDefinition(
 	}
 	definition := &ComponentDefinition{FilePath: filePath}
 
-	for _, call := range jsquery.Calls(program, "defineProps") {
+	for call := range jsquery.IterateCalls(program, "defineProps") {
 		if closestJavaScriptFunction(call) != nil {
 			continue
 		}
@@ -81,7 +81,7 @@ func parseScriptSetupDefinition(
 		definition.Props, definition.ScriptSetupPropDefaults,
 	)
 
-	for _, call := range jsquery.Calls(program, "defineEmits") {
+	for call := range jsquery.IterateCalls(program, "defineEmits") {
 		if closestJavaScriptFunction(call) != nil {
 			continue
 		}
@@ -293,7 +293,7 @@ func applyScriptSetupDefaults(
 	}
 	var result []ScriptSetupPropDefault
 	resultPositions := make(map[string]int)
-	for _, call := range jsquery.Calls(program, "withDefaults") {
+	for call := range jsquery.IterateCalls(program, "withDefaults") {
 		if closestJavaScriptFunction(call) != nil {
 			continue
 		}
@@ -704,7 +704,7 @@ func scriptSetupPropMembers(
 	lineIndex *cst.LineIndex,
 ) []VueComponentMember {
 	locations := make(map[string]*jssyntax.Node)
-	for _, call := range jsquery.Calls(program, "defineProps") {
+	for call := range jsquery.IterateCalls(program, "defineProps") {
 		for _, property := range jsquery.Properties(
 			jsquery.ArgumentExpression(call, 0),
 		) {

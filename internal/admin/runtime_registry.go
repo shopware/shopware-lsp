@@ -121,7 +121,7 @@ func parseAdminRuntimeRegistries(
 ) ([]AdminService, []AdminStore) {
 	var services []AdminService
 	var stores []AdminStore
-	for _, call := range jsquery.Calls(root) {
+	for call := range jsquery.IterateCalls(root) {
 		if kind, matched := serviceRegistrationKind(call); matched {
 			nameNode := jsquery.StringArgument(call, 0)
 			name := jsquery.StringValue(nameNode)
@@ -168,7 +168,7 @@ func parseAdminDirectives(
 		return nil
 	}
 	var result []AdminDirective
-	for _, call := range jsquery.Calls(
+	for call := range jsquery.IterateCalls(
 		root,
 		"Directive.register",
 		"Shopware.Directive.register",
@@ -195,7 +195,7 @@ func parseAdminFilters(
 		return nil
 	}
 	var result []AdminFilter
-	for _, call := range jsquery.Calls(
+	for call := range jsquery.IterateCalls(
 		root,
 		"Filter.register",
 		"Shopware.Filter.register",
@@ -226,7 +226,7 @@ func parseAdminCMSRegistrations(
 		return nil
 	}
 	var result []AdminCMSRegistration
-	for _, call := range jsquery.Calls(root) {
+	for call := range jsquery.IterateCalls(root) {
 		var kind AdminCMSRegistrationKind
 		switch jsquery.CallMethodName(call) {
 		case "registerCmsElement":

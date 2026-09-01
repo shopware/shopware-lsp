@@ -38,7 +38,7 @@ func ControllersInJavaScript(
 		if len(match) < 2 {
 			continue
 		}
-		for _, call := range jsquery.Calls(root, match[1]+".register") {
+		for call := range jsquery.IterateCalls(root, match[1]+".register") {
 			if jsquery.Argument(call, 1) == nil {
 				continue
 			}

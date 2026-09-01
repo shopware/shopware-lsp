@@ -292,7 +292,7 @@ func (p *AdminCallHierarchyProvider) resolvedCalls(
 	var result []resolvedAdminCall
 	switch document.SyntaxLanguage {
 	case language.JavaScript:
-		for _, call := range jsquery.Calls(document.SyntaxTree.Root) {
+		for call := range jsquery.IterateCalls(document.SyntaxTree.Root) {
 			callee := jsquery.CallCallee(call)
 			if callee == nil {
 				continue

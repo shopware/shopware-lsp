@@ -34,7 +34,7 @@ func parseComponentRegistrationsWithLineIndex(
 		"Component.override",
 	}
 	var components []VueComponent
-	for _, call := range jsquery.Calls(root, callNames...) {
+	for call := range jsquery.IterateCalls(root, callNames...) {
 		name := jsquery.CallName(call)
 		line, _ := lineIndex.Position(call.RangeTrimmedTrivia().Start)
 		component := VueComponent{FilePath: filePath, Line: int(line) + 1, Kind: ComponentRegister}
@@ -421,7 +421,7 @@ func isVueApplicationComponentCollection(
 	collectionName string,
 ) bool {
 	wantedReceiver := "Object.entries(" + collectionName + ")"
-	for _, call := range jsquery.Calls(root) {
+	for call := range jsquery.IterateCalls(root) {
 		receiver, found := staticCallbackCallReceiver(call, "forEach")
 		if !found || compactJavaScriptText(receiver) != wantedReceiver {
 			continue
@@ -448,7 +448,7 @@ func parseMixinsAndModules(
 	lineIndex *cst.LineIndex,
 ) ([]AdminMixin, []AdminModule) {
 	var mixins []AdminMixin
-	for _, call := range jsquery.Calls(
+	for call := range jsquery.IterateCalls(
 		root,
 		"Shopware.Mixin.register",
 		"Mixin.register",
@@ -475,7 +475,7 @@ func parseMixinsAndModules(
 	}
 
 	var modules []AdminModule
-	for _, call := range jsquery.Calls(
+	for call := range jsquery.IterateCalls(
 		root,
 		"Shopware.Module.register",
 		"Module.register",
@@ -557,7 +557,7 @@ func appendAdminRouteMiddlewareRoutes(
 	for _, route := range destination {
 		positions[route.Name] = true
 	}
-	for _, call := range jsquery.Calls(middleware) {
+	for call := range jsquery.IterateCalls(middleware) {
 		callName := jsquery.CallName(call)
 		if callName != "children.push" &&
 			!strings.HasSuffix(callName, ".children.push") {

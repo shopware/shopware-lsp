@@ -74,7 +74,7 @@ func parseEmittedEvents(
 	lineIndex *cst.LineIndex,
 ) []VueComponentEvent {
 	var events []VueComponentEvent
-	for _, call := range jsquery.Calls(object) {
+	for call := range jsquery.IterateCalls(object) {
 		switch jsquery.CallName(call) {
 		case "this.$emit", "$emit", "emit", "context.emit":
 		default:

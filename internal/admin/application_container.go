@@ -167,7 +167,7 @@ func applicationContainerReceiverName(
 	if parsed.Tree == nil || parsed.Tree.Root == nil {
 		return "", false
 	}
-	for _, call := range jsquery.Calls(parsed.Tree.Root) {
+	for call := range jsquery.IterateCalls(parsed.Tree.Root) {
 		if name, matched := applicationContainerCallValue(call); matched {
 			return name, true
 		}
@@ -209,7 +209,7 @@ func applicationContainerConstAliasNames(
 		if parsed.Tree == nil || parsed.Tree.Root == nil {
 			continue
 		}
-		for _, call := range jsquery.Calls(parsed.Tree.Root) {
+		for call := range jsquery.IterateCalls(parsed.Tree.Root) {
 			if _, matched := applicationContainerCallValue(call); matched {
 				result[name] = true
 				break

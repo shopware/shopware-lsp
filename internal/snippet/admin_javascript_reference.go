@@ -28,7 +28,7 @@ func AdminJavaScriptStringReference(node *jssyntax.Node) bool {
 // supported Administration JavaScript translation call and module manifest.
 func AdminJavaScriptStringReferences(root *jssyntax.Node) []*jssyntax.Node {
 	var result []*jssyntax.Node
-	for _, call := range jsquery.Calls(root) {
+	for call := range jsquery.IterateCalls(root) {
 		if !isAdminJavaScriptSnippetCall(call) {
 			continue
 		}

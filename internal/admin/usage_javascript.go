@@ -79,7 +79,7 @@ func parseAdminJavaScriptUsages(
 		}
 	}
 
-	for _, call := range analysis.Calls() {
+	for call := range analysis.IterateCalls() {
 		name := jsquery.CallName(call)
 		method := jsquery.CallMethodName(call)
 		switch name {
@@ -226,7 +226,7 @@ func componentUsageObjects(
 			jsquery.ExportDefaultExpression(export),
 		), true)
 	}
-	for _, call := range analysis.Calls(
+	for call := range analysis.IterateCalls(
 		"Component.register",
 		"Shopware.Component.register",
 		"Component.extend",
@@ -412,7 +412,7 @@ func collectComponentEventObjectUsages(
 			)
 		}
 	}
-	for _, call := range jsquery.Calls(object) {
+	for call := range jsquery.IterateCalls(object) {
 		switch jsquery.CallName(call) {
 		case "this.$emit", "$emit", "emit", "context.emit":
 		default:

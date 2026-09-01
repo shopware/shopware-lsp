@@ -1,6 +1,8 @@
 package query
 
 import (
+	"iter"
+	"slices"
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/parser/javascript/syntax"
@@ -96,6 +98,22 @@ func (index *NodeIndex) Calls(names ...string) []*syntax.Node {
 	return result
 }
 
+func (index *NodeIndex) IterateCalls(names ...string) iter.Seq[*syntax.Node] {
+	return func(yield func(*syntax.Node) bool) {
+		if index == nil {
+			return
+		}
+		for _, call := range index.Nodes(syntax.JsCallExpression) {
+			if len(names) != 0 && !slices.Contains(names, CallName(call)) {
+				continue
+			}
+			if !yield(call) {
+				return
+			}
+		}
+	}
+}
+
 func Calls(root *syntax.Node, names ...string) []*syntax.Node {
 	accepted := make(map[string]struct{}, len(names))
 	for _, name := range names {
@@ -104,6 +122,37 @@ func Calls(root *syntax.Node, names ...string) []*syntax.Node {
 	var result []*syntax.Node
 	appendCalls(&result, root, accepted)
 	return result
+}
+
+func IterateCalls(
+	root *syntax.Node,
+	names ...string,
+) iter.Seq[*syntax.Node] {
+	return func(yield func(*syntax.Node) bool) {
+		iterateCalls(root, names, yield)
+	}
+}
+
+func iterateCalls(
+	node *syntax.Node,
+	names []string,
+	yield func(*syntax.Node) bool,
+) bool {
+	if node == nil {
+		return true
+	}
+	if node.Kind() == syntax.JsCallExpression &&
+		(len(names) == 0 || slices.Contains(names, CallName(node))) &&
+		!yield(node) {
+		return false
+	}
+	cursor := node.ChildNodeCursor()
+	for cursor.Next() {
+		if !iterateCalls(cursor.Node(), names, yield) {
+			return false
+		}
+	}
+	return true
 }
 
 func appendCalls(
@@ -689,7 +738,7 @@ func compactNodeExpression(node *syntax.Node) string {
 	if node == nil {
 		return ""
 	}
-	text := node.Text()
+	text := strings.TrimSpace(node.Text())
 	if !mayContainJavaScriptTrivia(text) {
 		return text
 	}

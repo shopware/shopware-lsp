@@ -42,7 +42,7 @@ func (*AdminI18nDeprecationAnalyzer) Analyze(
 
 	var result []lsp.Problem
 	if ext == ".js" || ext == ".ts" || ext == ".vue" {
-		for _, call := range jsquery.Calls(document.SyntaxTree.Root) {
+		for call := range jsquery.IterateCalls(document.SyntaxTree.Root) {
 			callee := jsquery.CallCallee(call)
 			name := jsquery.MemberNameNode(callee)
 			if name == nil || strings.TrimSpace(name.Text()) != "$tc" {

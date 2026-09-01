@@ -55,7 +55,7 @@ func parseAdminPrivileges(
 	lineIndex *cst.LineIndex,
 ) []AdminPrivilege {
 	var privileges []AdminPrivilege
-	for _, call := range jsquery.Calls(root) {
+	for call := range jsquery.IterateCalls(root) {
 		if jsquery.CallMethodName(call) != "addPrivilegeMappingEntry" ||
 			!strings.HasSuffix(jsquery.CallName(call), ".addPrivilegeMappingEntry") {
 			continue

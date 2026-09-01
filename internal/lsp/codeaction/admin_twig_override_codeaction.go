@@ -337,7 +337,7 @@ func validateAdminOverrideScript(
 	if jsquery.ImportPath(root, "template") != templateImport {
 		return fmt.Errorf("template import must point to %q", templateImport)
 	}
-	for _, call := range jsquery.Calls(
+	for call := range jsquery.IterateCalls(
 		root,
 		"Shopware.Component.override",
 		"Component.override",

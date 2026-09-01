@@ -94,7 +94,7 @@ func (p *AdminDocumentSymbolProvider) scriptSymbols(
 	lineIndex := document.LineIndex
 	var result []protocol.DocumentSymbol
 	coveredObjects := make(map[string]bool)
-	for _, call := range jsquery.Calls(
+	for call := range jsquery.IterateCalls(
 		root,
 		"Component.register",
 		"Shopware.Component.register",

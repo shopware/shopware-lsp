@@ -79,7 +79,7 @@ func (p *AdminParameterProvider) GetInlayHints(
 	var result []protocol.InlayHint
 	switch document.SyntaxLanguage {
 	case language.JavaScript:
-		for _, call := range jsquery.Calls(document.SyntaxTree.Root) {
+		for call := range jsquery.IterateCalls(document.SyntaxTree.Root) {
 			if ctx.Err() != nil {
 				return result, nil
 			}

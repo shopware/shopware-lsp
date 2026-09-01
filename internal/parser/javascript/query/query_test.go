@@ -1,6 +1,7 @@
 package query
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -61,6 +62,19 @@ Shopware.Component.register('sw-card', {});
 		Calls(root, "Shopware.Component.register"),
 		index.Calls("Shopware.Component.register"),
 	)
+	assert.Equal(t, Calls(root), slices.Collect(IterateCalls(root)))
+	assert.Equal(t,
+		Calls(root, "Shopware.Component.register"),
+		slices.Collect(IterateCalls(root, "Shopware.Component.register")),
+	)
+	assert.Equal(t, Calls(root), slices.Collect(index.IterateCalls()))
+
+	visited := 0
+	for range IterateCalls(root) {
+		visited++
+		break
+	}
+	assert.Equal(t, 1, visited)
 }
 
 func BenchmarkCallsAndNodeIndex(b *testing.B) {
@@ -81,11 +95,40 @@ other();
 			benchmarkQueryNodes = Calls(root, "Shopware.Component.register")
 		}
 	})
+	b.Run("iterate_calls/all", func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			for call := range IterateCalls(root) {
+				benchmarkQueryNode = call
+			}
+		}
+	})
+	b.Run("iterate_calls/named", func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			for call := range IterateCalls(
+				root,
+				"Shopware.Component.register",
+			) {
+				benchmarkQueryNode = call
+			}
+		}
+	})
 	b.Run("node_index", func(b *testing.B) {
 		b.ReportAllocs()
 		for range b.N {
 			index := NewNodeIndex(root)
 			benchmarkQueryNodes = index.Nodes(syntax.JsCallExpression)
+		}
+	})
+	b.Run("node_index/iterate_calls", func(b *testing.B) {
+		index := NewNodeIndex(root)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for range b.N {
+			for call := range index.IterateCalls() {
+				benchmarkQueryNode = call
+			}
 		}
 	})
 }
@@ -211,6 +254,20 @@ func BenchmarkCallNameCompactExpression(b *testing.B) {
 		`Shopware.Component.register('sw-card', {});`,
 	).Tree.Root
 	call := Calls(root)[0]
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		benchmarkQueryString = CallName(call)
+	}
+}
+
+func BenchmarkCallNameExpressionWithOuterTrivia(b *testing.B) {
+	root := javascriptparser.Parse(
+		"\n    Shopware.Component.register('sw-card', {});\n",
+	).Tree.Root
+	call := Calls(root)[0]
+	require.Equal(b, "Shopware.Component.register", CallName(call))
 
 	b.ReportAllocs()
 	b.ResetTimer()

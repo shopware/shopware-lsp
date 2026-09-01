@@ -189,7 +189,7 @@ func (p *AdminAnalyzer) shopwareEventBusDiagnostics(
 		return nil, nil
 	}
 	var diagnostics []lsp.Problem
-	for _, call := range analysis.Calls() {
+	for call := range analysis.IterateCalls() {
 		eventNode := jsquery.StringArgument(call, 0)
 		operation, eventName, matched :=
 			analysis.ShopwareEventBusEventAt(eventNode)
@@ -675,7 +675,7 @@ func adminInstanceMemberScopes(
 		scopes = append(scopes, scope)
 	}
 
-	for _, call := range analysis.Calls(
+	for call := range analysis.IterateCalls(
 		"Component.register",
 		"Shopware.Component.register",
 		"Component.extend",

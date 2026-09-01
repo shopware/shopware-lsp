@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"iter"
+
 	jsquery "github.com/shopware/shopware-lsp/internal/parser/javascript/query"
 	jssyntax "github.com/shopware/shopware-lsp/internal/parser/javascript/syntax"
 )
@@ -87,6 +89,15 @@ func (analysis *JavaScriptDocumentAnalysis) Calls(
 		return nil
 	}
 	return analysis.index.Calls(names...)
+}
+
+func (analysis *JavaScriptDocumentAnalysis) IterateCalls(
+	names ...string,
+) iter.Seq[*jssyntax.Node] {
+	if analysis == nil {
+		return jsquery.IterateCalls(nil, names...)
+	}
+	return analysis.index.IterateCalls(names...)
 }
 
 func (analysis *JavaScriptDocumentAnalysis) ShopwareUtilsMember(
