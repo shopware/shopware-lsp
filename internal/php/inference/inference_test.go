@@ -200,6 +200,110 @@ func TestEnvironmentForkCopiesOnWrite(t *testing.T) {
 	require.Equal(t, types.Int(), forkItem)
 }
 
+func TestEnvironmentForkSkipsNoopCopies(t *testing.T) {
+	t.Parallel()
+
+	original := newEnvironment(smallEnvironmentLimit + 1)
+	for index := 0; index <= smallEnvironmentLimit; index++ {
+		original.set("$item"+strconv.Itoa(index), types.Int())
+	}
+
+	unchanged := cloneEnvironment(original)
+	unchanged.set("$item0", types.Int())
+	require.True(t, unchanged.handle.shared)
+
+	withoutMatchingPrefix := cloneEnvironment(original)
+	withoutMatchingPrefix.deletePrefix("$missing->")
+	require.True(t, withoutMatchingPrefix.handle.shared)
+
+	original.set("$item0", types.String())
+	for _, environment := range []environment{unchanged, withoutMatchingPrefix} {
+		value, found := environment.get("$item0")
+		require.True(t, found)
+		require.Equal(t, types.Int(), value)
+	}
+}
+
+func TestEnvironmentForkKeepsSingleOverrideInline(t *testing.T) {
+	t.Parallel()
+
+	original := newEnvironment(2)
+	original.set("$value", types.Int())
+	original.set("$stable", types.Bool())
+
+	fork := cloneEnvironment(original)
+	fork.set("$value", types.String())
+	require.True(t, fork.handle.shared)
+	require.True(t, fork.handle.hasOverride)
+	require.Equal(t, 2, fork.len())
+
+	visited := make(map[string]types.Type)
+	fork.visit(func(name string, value types.Type) {
+		visited[name] = value
+	})
+	require.Equal(t, map[string]types.Type{
+		"$value":  types.String(),
+		"$stable": types.Bool(),
+	}, visited)
+
+	clonedOverride := cloneEnvironment(fork)
+	fork.set("$value", types.Float())
+	value, found := clonedOverride.get("$value")
+	require.True(t, found)
+	require.Equal(t, types.String(), value)
+
+	fork.set("$added", types.Null())
+	require.False(t, fork.handle.shared)
+	require.False(t, fork.handle.hasOverride)
+	require.Equal(t, 3, fork.len())
+
+	withDerivedValue := cloneEnvironment(original)
+	withDerivedValue.set("$value->name", types.String())
+	withDerivedValue.deletePrefix("$value->")
+	_, found = withDerivedValue.get("$value->name")
+	require.False(t, found)
+	value, found = original.get("$value")
+	require.True(t, found)
+	require.Equal(t, types.Int(), value)
+}
+
+func BenchmarkEnvironmentForkMutation(b *testing.B) {
+	original := newEnvironment(smallEnvironmentLimit + 1)
+	for index := 0; index <= smallEnvironmentLimit; index++ {
+		original.set("$item"+strconv.Itoa(index), types.Int())
+	}
+
+	b.Run("same value", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			fork := cloneEnvironment(original)
+			fork.set("$item0", types.Int())
+		}
+	})
+	b.Run("changed value", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			fork := cloneEnvironment(original)
+			fork.set("$item0", types.String())
+		}
+	})
+	b.Run("second changed value", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			fork := cloneEnvironment(original)
+			fork.set("$item0", types.String())
+			fork.set("$item1", types.Bool())
+		}
+	})
+	b.Run("missing prefix", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			fork := cloneEnvironment(original)
+			fork.deletePrefix("$missing->")
+		}
+	})
+}
+
 func TestRuntimeExceptionProvidesConcreteThrowableMethods(t *testing.T) {
 	t.Parallel()
 	source := `<?php

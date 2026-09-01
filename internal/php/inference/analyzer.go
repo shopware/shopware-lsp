@@ -257,9 +257,10 @@ type analyzerState struct {
 
 // environment is a small copy-on-write variable frame. Most PHP functions only
 // track a handful of values, so those bindings stay in a compact linear slice;
-// larger frames graduate to a map. Forks share immutable storage and copy it
-// only when one side writes. Ordinary value copies share a handle, preserving
-// the reference semantics used while evaluating an expression.
+// larger frames graduate to a map. Forks share immutable storage and keep their
+// first divergent binding inline; a second distinct mutation materializes the
+// frame. Ordinary value copies share a handle, preserving the reference
+// semantics used while evaluating an expression.
 type environment struct {
 	handle *environmentHandle
 }
@@ -270,10 +271,12 @@ type environmentBinding struct {
 }
 
 type environmentHandle struct {
-	bindings []environmentBinding
-	table    map[string]types.Type
-	arena    *environmentArena
-	shared   bool
+	bindings    []environmentBinding
+	table       map[string]types.Type
+	override    environmentBinding
+	arena       *environmentArena
+	shared      bool
+	hasOverride bool
 }
 
 // environmentArena amortizes the stable handle identity required by
@@ -380,6 +383,9 @@ func (e environment) get(name string) (types.Type, bool) {
 	if e.handle == nil {
 		return types.Type{}, false
 	}
+	if e.handle.hasOverride && e.handle.override.name == name {
+		return e.handle.override.value, true
+	}
 	if e.handle.table != nil {
 		value, ok := e.handle.table[name]
 		return value, ok
@@ -397,6 +403,21 @@ func (e environment) set(name string, value types.Type) {
 		panic("set value on an uninitialized inference environment")
 	}
 	if e.handle.shared {
+		if e.handle.hasOverride && e.handle.override.name == name {
+			if e.handle.override.value.Equal(value) {
+				return
+			}
+			e.handle.override.value = value
+			return
+		}
+		if current, exists := e.get(name); exists && current.Equal(value) {
+			return
+		}
+		if !e.handle.hasOverride {
+			e.handle.override = environmentBinding{name: name, value: value}
+			e.handle.hasOverride = true
+			return
+		}
 		e.handle.detach()
 	}
 	if e.handle.table != nil {
@@ -433,12 +454,27 @@ func (e environment) visit(visitor func(string, types.Type)) {
 	}
 	if e.handle.table != nil {
 		for name, value := range e.handle.table {
+			if e.handle.hasOverride && e.handle.override.name == name {
+				continue
+			}
 			visitor(name, value)
+		}
+		if e.handle.hasOverride {
+			visitor(e.handle.override.name, e.handle.override.value)
 		}
 		return
 	}
+	overrideVisited := false
 	for _, binding := range e.handle.bindings {
+		if e.handle.hasOverride && e.handle.override.name == binding.name {
+			visitor(binding.name, e.handle.override.value)
+			overrideVisited = true
+			continue
+		}
 		visitor(binding.name, binding.value)
+	}
+	if e.handle.hasOverride && !overrideVisited {
+		visitor(e.handle.override.name, e.handle.override.value)
 	}
 }
 
@@ -447,6 +483,9 @@ func (e environment) deletePrefix(prefix string) {
 		return
 	}
 	if e.handle.shared {
+		if !e.hasPrefix(prefix) {
+			return
+		}
 		e.handle.detach()
 	}
 	if e.handle.table != nil {
@@ -466,36 +505,90 @@ func (e environment) deletePrefix(prefix string) {
 	e.handle.bindings = kept
 }
 
+func (e environment) hasPrefix(prefix string) bool {
+	if e.handle == nil {
+		return false
+	}
+	if e.handle.hasOverride && strings.HasPrefix(e.handle.override.name, prefix) {
+		return true
+	}
+	if e.handle.table != nil {
+		for name := range e.handle.table {
+			if strings.HasPrefix(name, prefix) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, binding := range e.handle.bindings {
+		if strings.HasPrefix(binding.name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func (handle *environmentHandle) detach() {
 	if handle == nil || !handle.shared {
 		return
 	}
+	override := handle.override
+	hasOverride := handle.hasOverride
 	if handle.table != nil {
 		source := handle.table
-		handle.table = make(map[string]types.Type, len(source)+1)
+		handle.table = make(map[string]types.Type, len(source)+2)
 		for name, value := range source {
 			handle.table[name] = value
 		}
 	} else if handle.bindings != nil {
 		capacity := cap(handle.bindings)
-		if capacity < len(handle.bindings)+1 {
-			capacity = len(handle.bindings) + 1
+		if capacity < len(handle.bindings)+2 {
+			capacity = len(handle.bindings) + 2
 		}
 		bindings := make([]environmentBinding, len(handle.bindings), capacity)
 		copy(bindings, handle.bindings)
 		handle.bindings = bindings
+	} else if hasOverride {
+		handle.bindings = make([]environmentBinding, 0, 2)
 	}
 	handle.shared = false
+	handle.override = environmentBinding{}
+	handle.hasOverride = false
+	if hasOverride {
+		environment{handle: handle}.set(override.name, override.value)
+	}
 }
 
 func (e environment) len() int {
 	if e.handle == nil {
 		return 0
 	}
+	length := len(e.handle.bindings)
 	if e.handle.table != nil {
-		return len(e.handle.table)
+		length = len(e.handle.table)
 	}
-	return len(e.handle.bindings)
+	if e.handle.hasOverride {
+		if _, exists := e.baseValue(e.handle.override.name); !exists {
+			length++
+		}
+	}
+	return length
+}
+
+func (e environment) baseValue(name string) (types.Type, bool) {
+	if e.handle == nil {
+		return types.Type{}, false
+	}
+	if e.handle.table != nil {
+		value, exists := e.handle.table[name]
+		return value, exists
+	}
+	for _, binding := range e.handle.bindings {
+		if binding.name == name {
+			return binding.value, true
+		}
+	}
+	return types.Type{}, false
 }
 
 type functionState struct {

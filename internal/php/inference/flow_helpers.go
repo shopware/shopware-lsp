@@ -133,6 +133,8 @@ func cloneEnvironment(source environment) environment {
 	handle := newEnvironmentHandle(source.handle.arena)
 	handle.bindings = source.handle.bindings
 	handle.table = source.handle.table
+	handle.override = source.handle.override
+	handle.hasOverride = source.handle.hasOverride
 	handle.shared = true
 	return environment{handle: handle}
 }
@@ -180,29 +182,65 @@ func joinLeftEnvironmentValues(
 		return
 	}
 	if left.handle.table != nil {
+		overrideVisited := false
 		for name, value := range left.handle.table {
-			other, present := right.get(name)
-			if strings.HasPrefix(name, booleanAliasBindingPrefix) && !present {
-				continue
+			if left.handle.hasOverride && left.handle.override.name == name {
+				value = left.handle.override.value
+				overrideVisited = true
 			}
-			if present {
-				value = relations.Join(value, other)
-			}
-			result.set(name, value)
+			joinEnvironmentValue(relations, result, right, name, value)
+		}
+		if left.handle.hasOverride && !overrideVisited {
+			joinEnvironmentValue(
+				relations,
+				result,
+				right,
+				left.handle.override.name,
+				left.handle.override.value,
+			)
 		}
 		return
 	}
+	overrideVisited := false
 	for _, binding := range left.handle.bindings {
-		value := binding.value
-		other, present := right.get(binding.name)
-		if strings.HasPrefix(binding.name, booleanAliasBindingPrefix) && !present {
-			continue
+		if left.handle.hasOverride && left.handle.override.name == binding.name {
+			binding.value = left.handle.override.value
+			overrideVisited = true
 		}
-		if present {
-			value = relations.Join(value, other)
-		}
-		result.set(binding.name, value)
+		joinEnvironmentValue(
+			relations,
+			result,
+			right,
+			binding.name,
+			binding.value,
+		)
 	}
+	if left.handle.hasOverride && !overrideVisited {
+		joinEnvironmentValue(
+			relations,
+			result,
+			right,
+			left.handle.override.name,
+			left.handle.override.value,
+		)
+	}
+}
+
+func joinEnvironmentValue(
+	relations types.Relations,
+	result,
+	right environment,
+	name string,
+	value types.Type,
+) {
+	other, present := right.get(name)
+	if strings.HasPrefix(name, booleanAliasBindingPrefix) && !present {
+		return
+	}
+	if present {
+		value = relations.Join(value, other)
+	}
+	result.set(name, value)
 }
 
 func addMissingEnvironmentValues(result, source environment) {
@@ -210,22 +248,49 @@ func addMissingEnvironmentValues(result, source environment) {
 		return
 	}
 	if source.handle.table != nil {
+		overrideVisited := false
 		for name, value := range source.handle.table {
-			if strings.HasPrefix(name, booleanAliasBindingPrefix) {
-				continue
+			if source.handle.hasOverride && source.handle.override.name == name {
+				value = source.handle.override.value
+				overrideVisited = true
 			}
-			if _, exists := result.get(name); !exists {
-				result.set(name, value)
-			}
+			addMissingEnvironmentValue(result, name, value)
+		}
+		if source.handle.hasOverride && !overrideVisited {
+			addMissingEnvironmentValue(
+				result,
+				source.handle.override.name,
+				source.handle.override.value,
+			)
 		}
 		return
 	}
+	overrideVisited := false
 	for _, binding := range source.handle.bindings {
-		if strings.HasPrefix(binding.name, booleanAliasBindingPrefix) {
-			continue
+		if source.handle.hasOverride && source.handle.override.name == binding.name {
+			binding.value = source.handle.override.value
+			overrideVisited = true
 		}
-		if _, exists := result.get(binding.name); !exists {
-			result.set(binding.name, binding.value)
-		}
+		addMissingEnvironmentValue(result, binding.name, binding.value)
+	}
+	if source.handle.hasOverride && !overrideVisited {
+		addMissingEnvironmentValue(
+			result,
+			source.handle.override.name,
+			source.handle.override.value,
+		)
+	}
+}
+
+func addMissingEnvironmentValue(
+	result environment,
+	name string,
+	value types.Type,
+) {
+	if strings.HasPrefix(name, booleanAliasBindingPrefix) {
+		return
+	}
+	if _, exists := result.get(name); !exists {
+		result.set(name, value)
 	}
 }
