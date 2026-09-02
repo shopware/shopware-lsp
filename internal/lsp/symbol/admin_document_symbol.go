@@ -507,7 +507,7 @@ func (p *AdminDocumentSymbolProvider) templateSymbols(
 	root := document.SyntaxTree.Root
 	lineIndex := document.LineIndex
 	var blocks []protocol.DocumentSymbol
-	for _, node := range twigquery.Nodes(root, twigsyntax.TwigBlock) {
+	for node := range twigquery.IterateNodes(root, twigsyntax.TwigBlock) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -531,7 +531,7 @@ func (p *AdminDocumentSymbolProvider) templateSymbols(
 		})
 	}
 	var topLevelSlots []protocol.DocumentSymbol
-	for _, node := range twigquery.Nodes(root, twigsyntax.HtmlStartingTag) {
+	for node := range twigquery.IterateNodes(root, twigsyntax.HtmlStartingTag) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}

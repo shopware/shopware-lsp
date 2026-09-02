@@ -31,7 +31,7 @@ func SeeReferences(root *twigsyntax.Node) []SeeReference {
 	}
 	var result []SeeReference
 	excluded := seeVerbatimRanges([]byte(root.Text()))
-	for _, comment := range twigquery.Nodes(root, twigsyntax.TwigComment) {
+	for comment := range twigquery.IterateNodes(root, twigsyntax.TwigComment) {
 		if seeRangeExcluded(comment.Range(), excluded) {
 			continue
 		}
@@ -68,7 +68,7 @@ func SeeCompletionAt(
 		return SeeCompletionContext{}, false
 	}
 	excluded := seeVerbatimRanges([]byte(root.Text()))
-	for _, comment := range twigquery.Nodes(root, twigsyntax.TwigComment) {
+	for comment := range twigquery.IterateNodes(root, twigsyntax.TwigComment) {
 		if offset < comment.Range().Start || offset > comment.Range().End {
 			continue
 		}

@@ -33,7 +33,7 @@ func (collector *adminMarkupTokenCollector) resolve(
 }
 
 func (collector *adminMarkupTokenCollector) collectMarkup() error {
-	for _, node := range twigquery.Nodes(
+	for node := range twigquery.IterateNodes(
 		collector.root,
 		twigsyntax.HtmlStartingTag,
 		twigsyntax.HtmlEndingTag,

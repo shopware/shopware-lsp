@@ -51,7 +51,7 @@ func (p *TwigUXToolkitProvider) GetSemanticTokens(
 	}
 
 	var result []lsp.SemanticToken
-	for _, comment := range twigquery.Nodes(
+	for comment := range twigquery.IterateNodes(
 		request.Document.SyntaxTree.Root,
 		twigsyntax.TwigComment,
 	) {

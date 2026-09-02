@@ -85,7 +85,7 @@ func TemplateInputVariablesInDocument(
 
 	variables := make(map[string]TemplateVariable)
 	propRanges := make(map[string]cst.TextRange)
-	for _, declaration := range twigquery.Nodes(
+	for declaration := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigPropDeclaration,
 	) {
@@ -107,7 +107,7 @@ func TemplateInputVariablesInDocument(
 
 	globalLocals := collectGlobalTemplateLocals(filePath, root)
 	scopedLocals := collectScopedTemplateLocals(root)
-	for _, nameNode := range twigquery.Nodes(
+	for nameNode := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigLiteralName,
 	) {
@@ -176,7 +176,7 @@ func TemplateDependenciesInDocument(
 		twigsyntax.ShopwareTwigSwInclude,
 		twigsyntax.TwigEmbedStartingBlock,
 	} {
-		for _, node := range twigquery.Nodes(root, kind) {
+		for node := range twigquery.IterateNodes(root, kind) {
 			template := directTemplateString(node)
 			if template == "" {
 				continue
@@ -194,7 +194,7 @@ func TemplateDependenciesInDocument(
 			result = append(result, dependency)
 		}
 	}
-	for _, call := range twigquery.Nodes(
+	for call := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigFunctionCall,
 	) {
@@ -249,7 +249,7 @@ func IncludeParameterAt(
 		return IncludeParameter{}, false
 	}
 	hash := hashAtOffset(root, node, offset)
-	for _, key := range twigquery.Nodes(
+	for key := range twigquery.IterateNodes(
 		hash,
 		twigsyntax.TwigLiteralHashKey,
 	) {
@@ -280,7 +280,7 @@ func collectGlobalTemplateLocals(
 	root *twigsyntax.Node,
 ) map[string]struct{} {
 	result := make(map[string]struct{})
-	for _, assignment := range twigquery.Nodes(
+	for assignment := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigAssignment,
 	) {
@@ -315,7 +315,7 @@ func collectScopedTemplateLocals(
 	root *twigsyntax.Node,
 ) []templateLocalScope {
 	var result []templateLocalScope
-	for _, loop := range twigquery.Nodes(root, twigsyntax.TwigFor) {
+	for loop := range twigquery.IterateNodes(root, twigsyntax.TwigFor) {
 		start := directChild(loop, twigsyntax.TwigForBlock)
 		if start == nil {
 			continue
@@ -338,7 +338,7 @@ func collectScopedTemplateLocals(
 			names: names,
 		})
 	}
-	for _, macro := range twigquery.Nodes(root, twigsyntax.TwigMacro) {
+	for macro := range twigquery.IterateNodes(root, twigsyntax.TwigMacro) {
 		start := directChild(macro, twigsyntax.TwigMacroStartingBlock)
 		arguments := directChild(start, twigsyntax.TwigArguments)
 		if arguments == nil {
@@ -432,8 +432,10 @@ func isAccessorMember(node *twigsyntax.Node) bool {
 	if accessor == nil {
 		return false
 	}
-	names := twigquery.Nodes(accessor, twigsyntax.TwigLiteralName)
-	return len(names) > 0 && names[0] != node
+	for first := range twigquery.IterateNodes(accessor, twigsyntax.TwigLiteralName) {
+		return first != node
+	}
+	return false
 }
 
 func isComponentInvocationName(node *twigsyntax.Node) bool {
@@ -512,7 +514,7 @@ func hashAtOffset(
 		}
 	}
 	var result *twigsyntax.Node
-	for _, hash := range twigquery.Nodes(root, twigsyntax.TwigLiteralHash) {
+	for hash := range twigquery.IterateNodes(root, twigsyntax.TwigLiteralHash) {
 		if !rangeContainsOffset(hash.Range(), offset) {
 			continue
 		}
@@ -524,7 +526,7 @@ func hashAtOffset(
 }
 
 func directTemplateString(node *twigsyntax.Node) string {
-	for _, literal := range twigquery.Nodes(
+	for literal := range twigquery.IterateNodes(
 		node,
 		twigsyntax.TwigLiteralString,
 	) {
@@ -553,7 +555,7 @@ func directWithHash(node *twigsyntax.Node) *twigsyntax.Node {
 }
 
 func directExpressionHash(container *twigsyntax.Node) *twigsyntax.Node {
-	for _, hash := range twigquery.Nodes(
+	for hash := range twigquery.IterateNodes(
 		container,
 		twigsyntax.TwigLiteralHash,
 	) {
@@ -574,7 +576,7 @@ func directExpressionHash(container *twigsyntax.Node) *twigsyntax.Node {
 }
 
 func directFunctionHash(call *twigsyntax.Node) *twigsyntax.Node {
-	for _, hash := range twigquery.Nodes(call, twigsyntax.TwigLiteralHash) {
+	for hash := range twigquery.IterateNodes(call, twigsyntax.TwigLiteralHash) {
 		if twigquery.FunctionCallAt(hash) == call &&
 			twigquery.FunctionArgumentIndex(hash) == 1 {
 			return hash
@@ -585,7 +587,7 @@ func directFunctionHash(call *twigsyntax.Node) *twigsyntax.Node {
 
 func directHashKeys(hash *twigsyntax.Node) []string {
 	var result []string
-	for _, key := range twigquery.Nodes(
+	for key := range twigquery.IterateNodes(
 		hash,
 		twigsyntax.TwigLiteralHashKey,
 	) {
@@ -622,7 +624,7 @@ func firstLiteralName(node *twigsyntax.Node) *twigsyntax.Node {
 	if node == nil {
 		return nil
 	}
-	for _, candidate := range twigquery.Nodes(
+	for candidate := range twigquery.IterateNodes(
 		node,
 		twigsyntax.TwigLiteralName,
 	) {

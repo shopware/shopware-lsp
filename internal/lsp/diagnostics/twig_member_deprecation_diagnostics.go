@@ -53,7 +53,7 @@ func (p *TwigMemberDeprecationAnalyzer) Analyze(
 	snapshot := p.phpIndex.SemanticSnapshot()
 	seen := make(map[string]struct{})
 	var result []lsp.Problem
-	for _, accessor := range twigquery.Nodes(root, twigsyntax.TwigAccessor) {
+	for accessor := range twigquery.IterateNodes(root, twigsyntax.TwigAccessor) {
 		if ctx.Err() != nil {
 			return nil, nil
 		}

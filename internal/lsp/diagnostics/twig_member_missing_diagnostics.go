@@ -50,7 +50,7 @@ func (p *TwigMemberMissingAnalyzer) Analyze(
 		Twig: p.twigIndex,
 	}
 	var result []lsp.Problem
-	for _, accessor := range twigquery.Nodes(
+	for accessor := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigAccessor,
 	) {

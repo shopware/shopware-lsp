@@ -34,14 +34,11 @@ func cloneReferences(references []Reference) []Reference {
 		if result[index].targets == nil {
 			continue
 		}
-		result[index].targets = &referenceTargets{
-			qualified: slices.Clone(
-				result[index].targets.qualified,
-			),
-			candidates: slices.Clone(
-				result[index].targets.candidates,
-			),
-		}
+		qualified := slices.Clone(result[index].targets.qualified)
+		candidates := slices.Clone(result[index].CandidateIDs())
+		result[index].targets = nil
+		result[index].SetQualifiedNames(qualified)
+		result[index].SetCandidateIDs(candidates)
 	}
 	return result
 }

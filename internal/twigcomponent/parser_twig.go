@@ -22,7 +22,7 @@ func usagesInTwig(
 		return nil
 	}
 	var result []Usage
-	for _, call := range twigquery.Nodes(
+	for call := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigFunctionCall,
 	) {
@@ -47,7 +47,7 @@ func usagesInTwig(
 			Kind:  FunctionUsage,
 		})
 	}
-	for _, start := range twigquery.Nodes(
+	for start := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigComponentStartingBlock,
 	) {
@@ -62,7 +62,7 @@ func usagesInTwig(
 			Kind:  BlockUsage,
 		})
 	}
-	for _, start := range twigquery.Nodes(
+	for start := range twigquery.IterateNodes(
 		root,
 		twigsyntax.HtmlStartingTag,
 	) {
@@ -99,7 +99,7 @@ func liveActionReferencesInTwig(
 		return nil
 	}
 	var result []LiveActionReference
-	for _, call := range twigquery.Nodes(
+	for call := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigFunctionCall,
 	) {
@@ -122,7 +122,7 @@ func liveActionReferencesInTwig(
 			Kind:         LiveActionHelperReference,
 		})
 	}
-	for _, node := range twigquery.Nodes(
+	for node := range twigquery.IterateNodes(
 		root,
 		twigsyntax.HtmlAttribute,
 	) {
@@ -198,7 +198,7 @@ func LiveActionArgumentReferencesInTwig(
 		return nil
 	}
 	var result []LiveActionArgumentReference
-	for _, node := range twigquery.Nodes(
+	for node := range twigquery.IterateNodes(
 		root,
 		twigsyntax.HtmlStartingTag,
 	) {
@@ -237,7 +237,7 @@ func LiveActionArgumentReferencesInTwig(
 			result = append(result, arguments[index])
 		}
 	}
-	for _, call := range twigquery.Nodes(
+	for call := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigFunctionCall,
 	) {
@@ -253,7 +253,7 @@ func LiveActionArgumentReferencesInTwig(
 		if action == "" {
 			continue
 		}
-		for _, key := range twigquery.Nodes(
+		for key := range twigquery.IterateNodes(
 			call,
 			twigsyntax.TwigLiteralHashKey,
 		) {
@@ -317,7 +317,7 @@ func LiveActionArgumentContext(
 		return "", nil, false
 	}
 	var present []string
-	for _, key := range twigquery.Nodes(
+	for key := range twigquery.IterateNodes(
 		hash,
 		twigsyntax.TwigLiteralHashKey,
 	) {
@@ -338,7 +338,7 @@ func liveEventReferencesInTwig(
 	}
 	var references []LiveEventReference
 	var arguments []LiveEventArgumentReference
-	for _, node := range twigquery.Nodes(
+	for node := range twigquery.IterateNodes(
 		root,
 		twigsyntax.HtmlStartingTag,
 	) {
@@ -689,7 +689,7 @@ func BlockUsagesInTwig(
 		return nil
 	}
 	var result []ComponentBlockUsage
-	for _, attribute := range twigquery.Nodes(
+	for attribute := range twigquery.IterateNodes(
 		root,
 		twigsyntax.HtmlAttribute,
 	) {
@@ -822,11 +822,15 @@ func VariableAt(
 		nameNode,
 		twigsyntax.TwigAccessor,
 	); accessor != nil {
-		names := twigquery.Nodes(
+		var firstName *twigsyntax.Node
+		for candidate := range twigquery.IterateNodes(
 			accessor,
 			twigsyntax.TwigLiteralName,
-		)
-		if len(names) == 0 || names[0] != nameNode {
+		) {
+			firstName = candidate
+			break
+		}
+		if firstName != nameNode {
 			return "", cst.TextRange{}, false
 		}
 	}
@@ -855,8 +859,19 @@ func AccessorMemberAt(
 		) == nil {
 		return "", "", cst.TextRange{}, false
 	}
-	names := twigquery.Nodes(accessor, twigsyntax.TwigLiteralName)
-	if len(names) < 2 || names[1] != nameNode {
+	var names [2]*twigsyntax.Node
+	count := 0
+	for candidate := range twigquery.IterateNodes(
+		accessor,
+		twigsyntax.TwigLiteralName,
+	) {
+		names[count] = candidate
+		count++
+		if count == len(names) {
+			break
+		}
+	}
+	if count < len(names) || names[1] != nameNode {
 		return "", "", cst.TextRange{}, false
 	}
 	root := strings.TrimSpace(names[0].Text())
@@ -874,7 +889,7 @@ func propsInTwig(
 	}
 	documentation := propDocumentation(root.Text())
 	var result []Prop
-	for _, declaration := range twigquery.Nodes(
+	for declaration := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigPropDeclaration,
 	) {

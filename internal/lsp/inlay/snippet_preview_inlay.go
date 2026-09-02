@@ -115,7 +115,7 @@ func snippetHintCandidates(document *lsp.TextDocument) []snippetHintCandidate {
 				position: reference.Range.End + 1,
 			})
 		}
-		for _, literal := range twigquery.Nodes(root, twigsyntax.TwigLiteralString) {
+		for literal := range twigquery.IterateNodes(root, twigsyntax.TwigLiteralString) {
 			if !twigquery.StringInFilter(literal, "trans") {
 				continue
 			}

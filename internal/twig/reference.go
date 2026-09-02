@@ -181,7 +181,7 @@ func twigStringIsHashValueForKey(
 
 func TwigTemplateStrings(root *twigsyntax.Node) []*twigsyntax.Node {
 	var result []*twigsyntax.Node
-	for _, literal := range twigquery.Nodes(root, twigsyntax.TwigLiteralString) {
+	for literal := range twigquery.IterateNodes(root, twigsyntax.TwigLiteralString) {
 		if IsTwigTemplateString(literal) {
 			result = append(result, literal)
 		}
@@ -239,7 +239,7 @@ func TwigTemplateTargetGroups(
 		twigsyntax.TwigFunctionCall,
 	}
 	var result []TwigTemplateTargetGroup
-	for _, node := range twigquery.Nodes(root, kinds...) {
+	for node := range twigquery.IterateNodes(root, kinds...) {
 		if node.Kind() == twigsyntax.TwigFunctionCall {
 			if group, ok := twigFunctionTemplateTargetGroup(node); ok {
 				result = append(result, group)
@@ -519,7 +519,7 @@ func twigHashValueForKey(
 	node *twigsyntax.Node,
 	key string,
 ) *twigsyntax.Node {
-	for _, pair := range twigquery.Nodes(
+	for pair := range twigquery.IterateNodes(
 		node,
 		twigsyntax.TwigLiteralHashPair,
 	) {

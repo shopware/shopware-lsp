@@ -52,7 +52,7 @@ func (scanner *adminTwigUsageScanner) collectRegistryReferences() {
 }
 
 func (scanner *adminTwigUsageScanner) collectStartingTags() {
-	for _, node := range twigquery.Nodes(scanner.root, twigsyntax.HtmlStartingTag) {
+	for node := range twigquery.IterateNodes(scanner.root, twigsyntax.HtmlStartingTag) {
 		tag, ok := twigast.CastHtmlStartingTag(node)
 		if !ok || tag.Name() == nil {
 			continue
@@ -349,7 +349,7 @@ func (scanner *adminTwigUsageScanner) collectSlotAttribute(
 }
 
 func (scanner *adminTwigUsageScanner) collectEndingTags() {
-	for _, node := range twigquery.Nodes(scanner.root, twigsyntax.HtmlEndingTag) {
+	for node := range twigquery.IterateNodes(scanner.root, twigsyntax.HtmlEndingTag) {
 		tag, ok := twigast.CastHtmlEndingTag(node)
 		if !ok || tag.Name() == nil || !IsComponentTag(tag.Name().Text()) {
 			continue

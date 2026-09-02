@@ -132,7 +132,14 @@ type Reference struct {
 // function, and ambiguous references allocate this side record on demand.
 type referenceTargets struct {
 	qualified  []string
-	candidates []SymbolID
+	candidates *referenceCandidates
+}
+
+// referenceCandidates keeps the rare ambiguous-target slice out of every
+// qualified-name side record. The binder creates hundreds of thousands of
+// qualified records, while only a tiny minority are promoted past Resolved.
+type referenceCandidates struct {
+	values []SymbolID
 }
 
 // QualifiedNames returns ordered, resolver-normalized lookup candidates.
@@ -178,10 +185,10 @@ func (r *Reference) SetQualifiedNames(names []string) {
 
 // CandidateIDs returns every ambiguous target in resolution order.
 func (r Reference) CandidateIDs() []SymbolID {
-	if r.targets == nil {
+	if r.targets == nil || r.targets.candidates == nil {
 		return nil
 	}
-	return r.targets.candidates
+	return r.targets.candidates.values
 }
 
 // SetCandidateIDs replaces the ambiguous resolution targets. The caller
@@ -194,7 +201,11 @@ func (r *Reference) SetCandidateIDs(candidates []SymbolID) {
 		r.ClearCandidateIDs()
 		return
 	}
-	r.ensureTargets().candidates = candidates
+	targets := r.ensureTargets()
+	if targets.candidates == nil {
+		targets.candidates = &referenceCandidates{}
+	}
+	targets.candidates.values = candidates
 }
 
 // ClearCandidateIDs releases ambiguous targets and the side record when it no
@@ -217,7 +228,7 @@ func (r *Reference) ensureTargets() *referenceTargets {
 func (r *Reference) clearEmptyTargets() {
 	if r.targets != nil &&
 		len(r.targets.qualified) == 0 &&
-		len(r.targets.candidates) == 0 {
+		r.targets.candidates == nil {
 		r.targets = nil
 	}
 }
@@ -765,12 +776,8 @@ func detachWorkspaceReference(
 		)
 	}
 	reference.targets = nil
-	if len(qualified) != 0 || len(candidates) != 0 {
-		reference.targets = &referenceTargets{
-			qualified:  qualified,
-			candidates: candidates,
-		}
-	}
+	reference.SetQualifiedNames(qualified)
+	reference.SetCandidateIDs(candidates)
 	return reference
 }
 

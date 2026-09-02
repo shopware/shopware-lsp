@@ -88,7 +88,7 @@ func twigRouteReferences(
 	includeIncomplete bool,
 ) []AdminTwigRegistryReference {
 	var result []AdminTwigRegistryReference
-	for _, node := range twigquery.Nodes(root, twigsyntax.HtmlAttribute) {
+	for node := range twigquery.IterateNodes(root, twigsyntax.HtmlAttribute) {
 		attribute, ok := twigast.CastHtmlAttribute(node)
 		if !ok {
 			continue

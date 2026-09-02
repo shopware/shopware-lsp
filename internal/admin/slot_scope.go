@@ -212,7 +212,7 @@ func TwigScopedSlotStartingTag(
 		startTag.RangeTrimmedTrivia() == scope.StartingTagRange {
 		return startTag
 	}
-	for _, startTag := range twigquery.Nodes(
+	for startTag := range twigquery.IterateNodes(
 		root, twigsyntax.HtmlStartingTag,
 	) {
 		if startTag.RangeTrimmedTrivia() == scope.StartingTagRange {
@@ -405,7 +405,7 @@ func TwigScopedSlots(root *twigsyntax.Node) []TwigScopedSlot {
 		seen[key] = true
 		result = append(result, scope)
 	}
-	for _, node := range twigquery.Nodes(root, twigsyntax.HtmlTag) {
+	for node := range twigquery.IterateNodes(root, twigsyntax.HtmlTag) {
 		tag, ok := twigast.CastHtmlTag(node)
 		if !ok || tag.Name() == nil {
 			continue

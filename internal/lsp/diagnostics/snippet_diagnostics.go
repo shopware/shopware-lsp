@@ -82,7 +82,7 @@ func (s *SnippetAnalyzer) twigDiagnostics(ctx context.Context, document *lsp.Tex
 	} else {
 		var matches []*twigsyntax.Node
 		// Check for frontend snippet pattern: {{ 'key'|trans }}
-		for _, candidate := range twigquery.Nodes(root, twigsyntax.TwigLiteralString) {
+		for candidate := range twigquery.IterateNodes(root, twigsyntax.TwigLiteralString) {
 			if ctx.Err() != nil {
 				return nil, nil
 			}

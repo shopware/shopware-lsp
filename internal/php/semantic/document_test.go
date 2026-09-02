@@ -20,6 +20,7 @@ func referenceWithTargets(
 func TestReferenceUsesCompactCommonRecord(t *testing.T) {
 	t.Parallel()
 	require.LessOrEqual(t, unsafe.Sizeof(Reference{}), uintptr(64))
+	require.LessOrEqual(t, unsafe.Sizeof(referenceTargets{}), uintptr(32))
 }
 
 func TestReferenceReleasesEmptyLazyTargets(t *testing.T) {

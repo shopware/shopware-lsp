@@ -521,7 +521,7 @@ func TwigTypeDeclarations(
 	if root == nil {
 		return result
 	}
-	for _, comment := range twigquery.Nodes(root, twigsyntax.TwigComment) {
+	for comment := range twigquery.IterateNodes(root, twigsyntax.TwigComment) {
 		source := comment.Text()
 		for {
 			index := strings.Index(source, "@var")

@@ -428,7 +428,7 @@ func parseTwig(
 	root *twigsyntax.Node,
 ) []Occurrence {
 	var result []Occurrence
-	for _, literal := range twigquery.Nodes(
+	for literal := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigLiteralString,
 	) {

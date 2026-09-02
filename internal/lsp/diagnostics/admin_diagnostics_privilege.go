@@ -132,7 +132,7 @@ func (p *AdminAnalyzer) findBlockTags(
 		return
 	}
 
-	for _, blockNode := range twigquery.Nodes(node, twigsyntax.TwigBlock) {
+	for blockNode := range twigquery.IterateNodes(node, twigsyntax.TwigBlock) {
 		blockName := twigquery.BlockName(blockNode)
 		block, cast := twigast.CastTwigBlock(blockNode)
 		if blockName == "" || !cast || block.Name() == nil {
@@ -193,7 +193,7 @@ func (p *AdminAnalyzer) findHTMLStartTags(
 		return nil
 	}
 
-	for _, startTag := range twigquery.Nodes(root, twigsyntax.HtmlStartingTag) {
+	for startTag := range twigquery.IterateNodes(root, twigsyntax.HtmlStartingTag) {
 		if ctx.Err() != nil {
 			return nil
 		}

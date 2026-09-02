@@ -2,11 +2,74 @@ package query
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	twigparser "github.com/shopware/shopware-lsp/internal/parser/twig"
 	"github.com/shopware/shopware-lsp/internal/parser/twig/syntax"
 )
+
+var (
+	benchmarkQueryNode  *syntax.Node
+	benchmarkQueryNodes []*syntax.Node
+)
+
+func TestIterateNodesMatchesNodes(t *testing.T) {
+	root := twigparser.Parse(`
+{% block card %}
+    {{ path('frontend.home') }}
+    {% if visible %}<span>{{ title }}</span>{% endif %}
+{% endblock %}
+`).Tree.Root
+	kinds := []syntax.Kind{
+		syntax.TwigBlock,
+		syntax.TwigFunctionCall,
+		syntax.HtmlStartingTag,
+	}
+	if got, want := slices.Collect(IterateNodes(root, kinds...)), Nodes(root, kinds...); !slices.Equal(got, want) {
+		t.Fatalf("iterated nodes differ from materialized nodes")
+	}
+	if got := slices.Collect(IterateNodes(nil, kinds...)); got != nil {
+		t.Fatalf("nil root yielded %#v", got)
+	}
+
+	visited := 0
+	for range IterateNodes(root, syntax.TwigLiteralName) {
+		visited++
+		break
+	}
+	if visited != 1 {
+		t.Fatalf("early break visited %d nodes", visited)
+	}
+}
+
+func BenchmarkNodes(b *testing.B) {
+	root := twigparser.Parse(strings.Repeat(`
+{% block card %}
+    {{ path('frontend.home') }}
+    {% if visible %}<span>{{ title }}</span>{% endif %}
+{% endblock %}
+`, 64)).Tree.Root
+	kinds := []syntax.Kind{
+		syntax.TwigBlock,
+		syntax.TwigFunctionCall,
+		syntax.HtmlStartingTag,
+	}
+	b.Run("materialized", func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			benchmarkQueryNodes = Nodes(root, kinds...)
+		}
+	})
+	b.Run("iterated", func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			for node := range IterateNodes(root, kinds...) {
+				benchmarkQueryNode = node
+			}
+		}
+	})
+}
 
 func TestSemanticQueries(t *testing.T) {
 	source := `{{ 'checkout.cart'|trans }} {{ path('frontend.home', {'nested': 'not-a-route'}) }} {% sw_icon 'missing' {'pack': 'custom'} %}`

@@ -39,7 +39,7 @@ func (p *TwigDeprecationAnalyzer) Analyze(
 		return nil, nil
 	}
 	var result []lsp.Problem
-	for _, call := range twigquery.Nodes(
+	for call := range twigquery.IterateNodes(
 		document.SyntaxTree.Root,
 		twigsyntax.TwigFunctionCall,
 	) {
@@ -72,7 +72,7 @@ func (p *TwigDeprecationAnalyzer) Analyze(
 			message,
 		))
 	}
-	for _, filter := range twigquery.Nodes(
+	for filter := range twigquery.IterateNodes(
 		document.SyntaxTree.Root,
 		twigsyntax.TwigFilter,
 	) {
@@ -170,7 +170,7 @@ func twigCallableNameNode(
 	last bool,
 ) *twigsyntax.Node {
 	var result *twigsyntax.Node
-	for _, candidate := range twigquery.Nodes(
+	for candidate := range twigquery.IterateNodes(
 		container,
 		twigsyntax.TwigLiteralName,
 	) {

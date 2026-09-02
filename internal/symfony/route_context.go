@@ -181,7 +181,7 @@ func TwigRouteComparisonReferences(
 	root *twigsyntax.Node,
 ) []TwigRouteComparisonReference {
 	var result []TwigRouteComparisonReference
-	for _, literal := range twigquery.Nodes(
+	for literal := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigLiteralString,
 	) {
@@ -742,7 +742,7 @@ func TwigHTMLRouteReferenceAt(
 
 func TwigHTMLRouteReferences(root *twigsyntax.Node) []TwigHTMLRouteReference {
 	var result []TwigHTMLRouteReference
-	for _, htmlString := range twigquery.Nodes(root, twigsyntax.HtmlString) {
+	for htmlString := range twigquery.IterateNodes(root, twigsyntax.HtmlString) {
 		if reference, found := TwigHTMLRouteReferenceAt(htmlString); found &&
 			RouteURLPath(reference.Value) != "" {
 			result = append(result, reference)

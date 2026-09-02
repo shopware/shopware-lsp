@@ -19,7 +19,7 @@ func TwigSymbolAtOffset(
 		reference.Name != "" {
 		return AdminSymbolTarget{Kind: reference.Kind, Name: reference.Name}, true
 	}
-	for _, node := range twigquery.Nodes(root, twigsyntax.HtmlStartingTag) {
+	for node := range twigquery.IterateNodes(root, twigsyntax.HtmlStartingTag) {
 		if target, found := twigStartingTagSymbolAtOffset(node, offset); found {
 			return target, true
 		}
@@ -212,7 +212,7 @@ func twigEndingTagSymbolAtOffset(
 	root *twigsyntax.Node,
 	offset uint32,
 ) (AdminSymbolTarget, bool) {
-	for _, node := range twigquery.Nodes(root, twigsyntax.HtmlEndingTag) {
+	for node := range twigquery.IterateNodes(root, twigsyntax.HtmlEndingTag) {
 		tag, ok := twigast.CastHtmlEndingTag(node)
 		if !ok || tag.Name() == nil || !IsComponentTag(tag.Name().Text()) ||
 			!rangeContains(tag.Name().Range(), offset) {

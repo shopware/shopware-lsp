@@ -44,15 +44,16 @@ func (t *ThemeAnalyzer) twigDiagnostics(ctx context.Context, document *lsp.TextD
 	var diagnostics []lsp.Problem
 
 	// Find all sw_icon tags
-	swIconTags := twigquery.Nodes(document.SyntaxTree.Root, twigsyntax.ShopwareIcon)
-
-	for _, tagNode := range swIconTags {
+	for tagNode := range twigquery.IterateNodes(
+		document.SyntaxTree.Root,
+		twigsyntax.ShopwareIcon,
+	) {
 		if ctx.Err() != nil {
 			return nil, nil
 		}
 		// Find the first string that's not in a pair (the icon name)
 		var iconNameNode *twigsyntax.Node
-		for _, literal := range twigquery.Nodes(tagNode, twigsyntax.TwigLiteralString) {
+		for literal := range twigquery.IterateNodes(tagNode, twigsyntax.TwigLiteralString) {
 			if twigquery.ClosestNodeOfKind(literal, twigsyntax.TwigLiteralHashPair) == nil {
 				iconNameNode = literal
 				break

@@ -267,7 +267,7 @@ func mixedComponentSyntaxDiagnostics(
 	document *lsp.TextDocument,
 ) []lsp.Problem {
 	var result []lsp.Problem
-	for _, node := range twigquery.Nodes(
+	for node := range twigquery.IterateNodes(
 		document.SyntaxTree.Root,
 		twigsyntax.TwigBlock,
 	) {
@@ -301,7 +301,7 @@ func componentSelfImportDiagnostics(
 	document *lsp.TextDocument,
 ) []lsp.Problem {
 	var result []lsp.Problem
-	for _, from := range twigquery.Nodes(
+	for from := range twigquery.IterateNodes(
 		document.SyntaxTree.Root,
 		twigsyntax.TwigFrom,
 	) {
@@ -323,11 +323,10 @@ func componentSelfImportDiagnostics(
 }
 
 func firstTwigLiteralName(node *twigsyntax.Node) *twigsyntax.Node {
-	names := twigquery.Nodes(node, twigsyntax.TwigLiteralName)
-	if len(names) == 0 {
-		return nil
+	for name := range twigquery.IterateNodes(node, twigsyntax.TwigLiteralName) {
+		return name
 	}
-	return names[0]
+	return nil
 }
 
 func insideTwigComponent(node *twigsyntax.Node) bool {

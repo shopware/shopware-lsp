@@ -102,7 +102,7 @@ func TwigFieldReferences(
 		return nil
 	}
 	var result []TwigFieldReference
-	for _, accessor := range twigquery.Nodes(root, twigsyntax.TwigAccessor) {
+	for accessor := range twigquery.IterateNodes(root, twigsyntax.TwigAccessor) {
 		reference, ok := twigFieldReference(accessor, variables)
 		if !ok || reference.Node == nil || reference.Name == "" {
 			continue
@@ -143,7 +143,7 @@ func TwigViewVarReferences(
 		return nil
 	}
 	var result []TwigViewVarReference
-	for _, accessor := range twigquery.Nodes(root, twigsyntax.TwigAccessor) {
+	for accessor := range twigquery.IterateNodes(root, twigsyntax.TwigAccessor) {
 		reference, ok := twigViewVarReference(accessor, variables)
 		if !ok || reference.Node == nil || reference.Name == "" {
 			continue
@@ -174,7 +174,7 @@ func TwigFormFunctionReferences(
 		)
 	}
 	var result []TwigFormFunctionReference
-	for _, call := range twigquery.Nodes(
+	for call := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigFunctionCall,
 	) {

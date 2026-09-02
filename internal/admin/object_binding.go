@@ -173,7 +173,7 @@ func TwigComponentObjectBindingFieldAtOffset(
 	if root == nil {
 		return nil, VueObjectBindingField{}, false
 	}
-	for _, startTag := range twigquery.Nodes(root, twigsyntax.HtmlStartingTag) {
+	for startTag := range twigquery.IterateNodes(root, twigsyntax.HtmlStartingTag) {
 		if offset < startTag.Range().Start || offset > startTag.Range().End {
 			continue
 		}
@@ -218,7 +218,7 @@ func TwigComponentObjectBindingValueAtOffset(
 	if root == nil {
 		return nil, VueObjectBindingField{}, cst.TextRange{}, false
 	}
-	for _, startTag := range twigquery.Nodes(root, twigsyntax.HtmlStartingTag) {
+	for startTag := range twigquery.IterateNodes(root, twigsyntax.HtmlStartingTag) {
 		if offset < startTag.Range().Start || offset > startTag.Range().End {
 			continue
 		}
@@ -274,7 +274,7 @@ func TwigComponentObjectBindingKeyContextAtOffset(
 	if root == nil {
 		return nil, nil, false
 	}
-	for _, startTag := range twigquery.Nodes(root, twigsyntax.HtmlStartingTag) {
+	for startTag := range twigquery.IterateNodes(root, twigsyntax.HtmlStartingTag) {
 		if offset < startTag.Range().Start || offset > startTag.Range().End {
 			continue
 		}

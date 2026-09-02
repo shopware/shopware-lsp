@@ -121,14 +121,14 @@ func adminTwigFoldingRanges(
 	lineIndex *cst.LineIndex,
 ) []protocol.FoldingRange {
 	var result []protocol.FoldingRange
-	for _, node := range twigquery.Nodes(root, adminTwigCompoundFoldingKinds...) {
+	for node := range twigquery.IterateNodes(root, adminTwigCompoundFoldingKinds...) {
 		if rangeValue, found := adminNodeFoldingRange(
 			node.RangeTrimmedTrivia(), lineIndex, true, "",
 		); found {
 			result = append(result, rangeValue)
 		}
 	}
-	for _, node := range twigquery.Nodes(root, twigsyntax.HtmlTag) {
+	for node := range twigquery.IterateNodes(root, twigsyntax.HtmlTag) {
 		tag, ok := twigast.CastHtmlTag(node)
 		if !ok {
 			continue
@@ -140,7 +140,7 @@ func adminTwigFoldingRanges(
 			result = append(result, rangeValue)
 		}
 	}
-	for _, node := range twigquery.Nodes(
+	for node := range twigquery.IterateNodes(
 		root, twigsyntax.TwigComment, twigsyntax.HtmlComment,
 	) {
 		if rangeValue, found := adminNodeFoldingRange(

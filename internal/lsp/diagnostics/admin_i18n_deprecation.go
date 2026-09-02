@@ -52,7 +52,7 @@ func (*AdminI18nDeprecationAnalyzer) Analyze(
 		}
 	}
 	if ext == ".twig" || ext == ".vue" {
-		for _, call := range twigquery.Nodes(
+		for call := range twigquery.IterateNodes(
 			document.SyntaxTree.Root,
 			twigsyntax.TwigFunctionCall,
 		) {
@@ -67,7 +67,7 @@ func (*AdminI18nDeprecationAnalyzer) Analyze(
 			if !ok {
 				continue
 			}
-			for _, name := range twigquery.Nodes(
+			for name := range twigquery.IterateNodes(
 				nameOperand.Syntax(),
 				twigsyntax.TwigLiteralName,
 			) {

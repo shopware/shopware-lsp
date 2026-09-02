@@ -48,7 +48,7 @@ func (p *AdminLinkedEditingProvider) GetLinkedEditingRanges(
 	// At the half-open end of a name NodeAtOffset can select the following
 	// token. A narrow fallback over complete HtmlTag nodes preserves the editor
 	// experience at that valid word boundary without guessing tag pairing.
-	for _, node := range twigquery.Nodes(request.Root, twigsyntax.HtmlTag) {
+	for node := range twigquery.IterateNodes(request.Root, twigsyntax.HtmlTag) {
 		tag, ok := twigast.CastHtmlTag(node)
 		if !ok {
 			continue

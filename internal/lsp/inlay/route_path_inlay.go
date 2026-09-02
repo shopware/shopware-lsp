@@ -161,7 +161,7 @@ func routePathHintCandidates(
 		return result
 	case language.Twig:
 		var result []routePathHintCandidate
-		for _, literal := range twigquery.Nodes(
+		for literal := range twigquery.IterateNodes(
 			root,
 			twigsyntax.TwigLiteralString,
 		) {

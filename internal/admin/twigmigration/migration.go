@@ -705,9 +705,17 @@ func templateSlotValue(tag twigast.HtmlTag) (value string, expression, empty, ok
 	if text == "" {
 		return "", false, true, true
 	}
-	twigVars := twigquery.Nodes(body.Syntax(), twigsyntax.TwigVar)
-	if len(twigVars) == 1 && strings.TrimSpace(twigVars[0].Text()) == text {
-		variable, cast := twigast.CastTwigVar(twigVars[0])
+	var twigVar *twigsyntax.Node
+	multipleTwigVars := false
+	for candidate := range twigquery.IterateNodes(body.Syntax(), twigsyntax.TwigVar) {
+		if twigVar != nil {
+			multipleTwigVars = true
+			break
+		}
+		twigVar = candidate
+	}
+	if !multipleTwigVars && twigVar != nil && strings.TrimSpace(twigVar.Text()) == text {
+		variable, cast := twigast.CastTwigVar(twigVar)
 		if !cast {
 			return "", false, false, false
 		}

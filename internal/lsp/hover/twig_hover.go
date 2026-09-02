@@ -235,8 +235,15 @@ func (p *TwigHoverProvider) twigVariableHover(
 		nameNode,
 		twigsyntax.TwigAccessor,
 	); accessor != nil {
-		names := twigquery.Nodes(accessor, twigsyntax.TwigLiteralName)
-		if len(names) == 0 || names[0] != nameNode {
+		var firstName *twigsyntax.Node
+		for candidate := range twigquery.IterateNodes(
+			accessor,
+			twigsyntax.TwigLiteralName,
+		) {
+			firstName = candidate
+			break
+		}
+		if firstName != nameNode {
 			return nil, nil
 		}
 	}

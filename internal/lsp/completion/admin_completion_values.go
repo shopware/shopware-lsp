@@ -168,7 +168,7 @@ func componentPropValueContext(
 	if root == nil {
 		return nil, "", cst.TextRange{}, false
 	}
-	for _, startTag := range twigquery.Nodes(root, twigsyntax.HtmlStartingTag) {
+	for startTag := range twigquery.IterateNodes(root, twigsyntax.HtmlStartingTag) {
 		if offset < startTag.Range().Start || offset > startTag.Range().End {
 			continue
 		}

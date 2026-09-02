@@ -356,7 +356,7 @@ func (p *AdminAnalyzer) unknownScopedSlotBindingDiagnostics(
 	liveOwner := analysis.liveOwner
 	var diagnostics []lsp.Problem
 	seenScopes := make(map[cst.TextRange]bool)
-	for _, attributeNode := range twigquery.Nodes(
+	for attributeNode := range twigquery.IterateNodes(
 		root, twigsyntax.HtmlAttribute,
 	) {
 		if err := ctx.Err(); err != nil {

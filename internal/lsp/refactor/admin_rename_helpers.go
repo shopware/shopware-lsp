@@ -237,7 +237,7 @@ func (p *AdminRenameProvider) dynamicTwigSlotRenameRanges(
 	target admin.AdminSymbolTarget,
 ) ([]cst.TextRange, error) {
 	var result []cst.TextRange
-	for _, startTag := range twigquery.Nodes(
+	for startTag := range twigquery.IterateNodes(
 		root, twigsyntax.HtmlStartingTag,
 	) {
 		owner := admin.TwigSlotOwnerStartingTag(startTag)
@@ -415,7 +415,7 @@ func (p *AdminRenameProvider) renameAdminLocalComponentTag(
 	}
 
 	changes := map[string][]protocol.TextEdit{}
-	for _, node := range twigquery.Nodes(
+	for node := range twigquery.IterateNodes(
 		request.Root,
 		twigsyntax.HtmlStartingTag,
 		twigsyntax.HtmlEndingTag,

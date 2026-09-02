@@ -117,7 +117,7 @@ func PHPUsageReferencesInDocument(
 	resolver = resolver.forDocument(root)
 	var result []PHPUsageReference
 	snapshot := resolver.snapshot()
-	for _, accessor := range twigquery.Nodes(
+	for accessor := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigAccessor,
 	) {
@@ -200,7 +200,7 @@ func twigVarClassReferences(
 	root *twigsyntax.Node,
 ) []PHPUsageReference {
 	var result []PHPUsageReference
-	for _, comment := range twigquery.Nodes(
+	for comment := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigComment,
 	) {

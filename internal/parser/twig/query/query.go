@@ -4,6 +4,7 @@
 package query
 
 import (
+	"iter"
 	"slices"
 	"strings"
 
@@ -20,6 +21,38 @@ func Nodes(root *syntax.Node, kinds ...syntax.Kind) []*syntax.Node {
 	var nodes []*syntax.Node
 	appendNodes(&nodes, root, kinds)
 	return nodes
+}
+
+// IterateNodes yields every node in root's subtree whose kind is in kinds.
+// It preserves source order without materializing an intermediate slice and
+// stops walking as soon as the caller breaks iteration.
+func IterateNodes(
+	root *syntax.Node,
+	kinds ...syntax.Kind,
+) iter.Seq[*syntax.Node] {
+	return func(yield func(*syntax.Node) bool) {
+		iterateNodes(root, kinds, yield)
+	}
+}
+
+func iterateNodes(
+	node *syntax.Node,
+	kinds []syntax.Kind,
+	yield func(*syntax.Node) bool,
+) bool {
+	if node == nil {
+		return true
+	}
+	if slices.Contains(kinds, node.Kind()) && !yield(node) {
+		return false
+	}
+	cursor := node.ChildNodeCursor()
+	for cursor.Next() {
+		if !iterateNodes(cursor.Node(), kinds, yield) {
+			return false
+		}
+	}
+	return true
 }
 
 func appendNodes(
@@ -95,8 +128,13 @@ func StringValue(node *syntax.Node) string {
 
 func StringIsStatic(node *syntax.Node) bool {
 	literal := LiteralStringAt(node)
-	return literal != nil &&
-		len(Nodes(literal, syntax.TwigLiteralStringInterpolation)) == 0
+	if literal == nil {
+		return false
+	}
+	for range IterateNodes(literal, syntax.TwigLiteralStringInterpolation) {
+		return false
+	}
+	return true
 }
 
 // StringArgumentsInFunctions finds direct string arguments inside calls to any
@@ -104,7 +142,7 @@ func StringIsStatic(node *syntax.Node) bool {
 // treated as arguments of the outer call.
 func StringArgumentsInFunctions(root *syntax.Node, functionNames ...string) []*syntax.Node {
 	var stringsInCalls []*syntax.Node
-	for _, node := range Nodes(root, syntax.TwigFunctionCall) {
+	for node := range IterateNodes(root, syntax.TwigFunctionCall) {
 		if !slices.Contains(functionNames, FunctionName(node)) {
 			continue
 		}
@@ -114,7 +152,7 @@ func StringArgumentsInFunctions(root *syntax.Node, functionNames ...string) []*s
 		if !ok {
 			continue
 		}
-		for _, literal := range Nodes(arguments.Syntax(), syntax.TwigLiteralString) {
+		for literal := range IterateNodes(arguments.Syntax(), syntax.TwigLiteralString) {
 			if isDirectStringValue(literal, arguments.Syntax()) {
 				stringsInCalls = append(stringsInCalls, literal)
 			}
@@ -183,7 +221,7 @@ func StringArgument(call *syntax.Node, index int) *syntax.Node {
 	if call == nil || call.Kind() != syntax.TwigFunctionCall {
 		return nil
 	}
-	for _, literal := range Nodes(call, syntax.TwigLiteralString) {
+	for literal := range IterateNodes(call, syntax.TwigLiteralString) {
 		if FunctionCallAt(literal) == call && FunctionArgumentIndex(literal) == index &&
 			isDirectStringValue(literal, functionArguments(call)) {
 			return literal
@@ -425,16 +463,18 @@ func HashStringMap(node *syntax.Node) map[string]string {
 		if scope == nil {
 			scope = node
 		}
-		hashes := Nodes(scope, syntax.TwigLiteralHash)
-		if len(hashes) == 0 {
+		for candidate := range IterateNodes(scope, syntax.TwigLiteralHash) {
+			hash = candidate
+			break
+		}
+		if hash == nil {
 			return result
 		}
-		hash = hashes[0]
 	}
 
-	for _, pair := range Nodes(hash, syntax.TwigLiteralHashPair) {
+	for pair := range IterateNodes(hash, syntax.TwigLiteralHashPair) {
 		var values []string
-		for _, literal := range Nodes(pair, syntax.TwigLiteralString) {
+		for literal := range IterateNodes(pair, syntax.TwigLiteralString) {
 			values = append(values, StringValue(literal))
 		}
 		if len(values) >= 2 {
@@ -460,8 +500,16 @@ func StringIsHashValueForKey(node *syntax.Node, key string) bool {
 	if literal == nil || pair == nil {
 		return false
 	}
-	values := Nodes(pair, syntax.TwigLiteralString)
-	return len(values) >= 2 && values[1] == literal && StringValue(values[0]) == key
+	var values [2]*syntax.Node
+	count := 0
+	for candidate := range IterateNodes(pair, syntax.TwigLiteralString) {
+		values[count] = candidate
+		count++
+		if count == len(values) {
+			break
+		}
+	}
+	return count == len(values) && values[1] == literal && StringValue(values[0]) == key
 }
 
 // StartingHTMLTagAt returns the HTML start tag containing node.

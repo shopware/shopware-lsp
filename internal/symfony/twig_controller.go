@@ -45,7 +45,7 @@ func TwigControllerValues(root *twigsyntax.Node) []TwigControllerValue {
 		return nil
 	}
 	var result []TwigControllerValue
-	for _, call := range twigquery.Nodes(root, twigsyntax.TwigFunctionCall) {
+	for call := range twigquery.IterateNodes(root, twigsyntax.TwigFunctionCall) {
 		if !strings.EqualFold(twigquery.FunctionName(call), "controller") {
 			continue
 		}

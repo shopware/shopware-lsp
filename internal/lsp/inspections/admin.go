@@ -251,7 +251,7 @@ func (adminComponentTagFix) Build(
 	)
 	builder := rewrite.NewBuilder(fixContext.Document.Source)
 	replaced := false
-	for _, startTag := range twigquery.Nodes(
+	for startTag := range twigquery.IterateNodes(
 		fixContext.Document.SyntaxTree.Root,
 		twigsyntax.HtmlStartingTag,
 	) {
@@ -275,7 +275,7 @@ func (adminComponentTagFix) Build(
 			break
 		}
 	}
-	for _, node := range twigquery.Nodes(
+	for node := range twigquery.IterateNodes(
 		fixContext.Document.SyntaxTree.Root,
 		twigsyntax.HtmlTag,
 	) {

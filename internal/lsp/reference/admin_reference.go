@@ -422,7 +422,7 @@ func (p *AdminReferenceProvider) dynamicComponentAttributeLocations(
 		targetSet[target] = true
 	}
 	var ranges []cst.TextRange
-	for _, startTag := range twigquery.Nodes(
+	for startTag := range twigquery.IterateNodes(
 		params.Root, twigsyntax.HtmlStartingTag,
 	) {
 		selector, dynamic := admin.TwigDynamicComponentSelector(startTag)
@@ -493,7 +493,7 @@ func (p *AdminReferenceProvider) dynamicComponentSlotLocations(
 		targetSet[target] = true
 	}
 	var ranges []cst.TextRange
-	for _, startTag := range twigquery.Nodes(
+	for startTag := range twigquery.IterateNodes(
 		params.Root, twigsyntax.HtmlStartingTag,
 	) {
 		owner := admin.TwigSlotOwnerStartingTag(startTag)
@@ -902,7 +902,7 @@ func (p *AdminReferenceProvider) adminLocalComponentTagReferences(
 		return nil, false, nil
 	}
 	var ranges []cst.TextRange
-	for _, node := range twigquery.Nodes(
+	for node := range twigquery.IterateNodes(
 		params.Root,
 		twigsyntax.HtmlStartingTag,
 		twigsyntax.HtmlEndingTag,

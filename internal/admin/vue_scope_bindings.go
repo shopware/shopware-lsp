@@ -53,7 +53,7 @@ func twigVueBindings(
 		return nil
 	}
 	var result []TwigVueBinding
-	for _, node := range twigquery.Nodes(root, twigsyntax.HtmlTag) {
+	for node := range twigquery.IterateNodes(root, twigsyntax.HtmlTag) {
 		tag, ok := twigast.CastHtmlTag(node)
 		if !ok {
 			continue

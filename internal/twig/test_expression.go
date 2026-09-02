@@ -25,7 +25,7 @@ func TestExpressions(root *twigsyntax.Node) []TestExpression {
 		return nil
 	}
 	var result []TestExpression
-	for _, node := range twigquery.Nodes(
+	for node := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigBinaryExpression,
 	) {
@@ -119,7 +119,7 @@ func TestCompletionAt(
 	}
 
 	var closest *twigsyntax.Token
-	for _, node := range twigquery.Nodes(
+	for node := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigBinaryExpression,
 	) {
@@ -156,7 +156,7 @@ func twigIsOperator(token *twigsyntax.Token) bool {
 }
 
 func firstTwigTestName(root *twigsyntax.Node) *twigsyntax.Node {
-	for _, name := range twigquery.Nodes(
+	for name := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigLiteralName,
 	) {

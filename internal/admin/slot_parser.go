@@ -142,7 +142,7 @@ func parseTemplateTree(
 	}
 	slotPositions := make(map[string]int)
 	seenBlocks := make(map[string]bool)
-	for _, node := range twigquery.Nodes(root, twigsyntax.HtmlStartingTag) {
+	for node := range twigquery.IterateNodes(root, twigsyntax.HtmlStartingTag) {
 		tag, ok := twigast.CastHtmlStartingTag(node)
 		if !ok || tag.Name() == nil || tag.Name().Text() != "slot" {
 			continue
@@ -169,7 +169,7 @@ func parseTemplateTree(
 		slotPositions[key] = len(result.Slots)
 		result.Slots = append(result.Slots, slot)
 	}
-	for _, node := range twigquery.Nodes(root, twigsyntax.TwigBlock) {
+	for node := range twigquery.IterateNodes(root, twigsyntax.TwigBlock) {
 		blockName := twigquery.BlockName(node)
 		if blockName == "" || seenBlocks[blockName] {
 			continue

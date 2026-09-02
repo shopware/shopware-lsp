@@ -37,7 +37,7 @@ func References(
 			})
 		}
 	}
-	for _, htmlString := range twigquery.Nodes(
+	for htmlString := range twigquery.IterateNodes(
 		root,
 		twigsyntax.HtmlString,
 	) {

@@ -142,7 +142,7 @@ func ExtensionUsagesInDocument(
 		return nil
 	}
 	var result []ExtensionUsage
-	for _, call := range twigquery.Nodes(
+	for call := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigFunctionCall,
 	) {
@@ -151,11 +151,18 @@ func ExtensionUsagesInDocument(
 			continue
 		}
 		operand := functionNameOperand(call)
-		if operand == nil ||
-			len(twigquery.Nodes(
-				operand,
-				twigsyntax.TwigAccessor,
-			)) != 0 {
+		if operand == nil {
+			continue
+		}
+		hasAccessor := false
+		for range twigquery.IterateNodes(
+			operand,
+			twigsyntax.TwigAccessor,
+		) {
+			hasAccessor = true
+			break
+		}
+		if hasAccessor {
 			continue
 		}
 		names := literalNames(operand)
@@ -169,7 +176,7 @@ func ExtensionUsagesInDocument(
 			Range:    names[0].rng,
 		})
 	}
-	for _, filterNode := range twigquery.Nodes(
+	for filterNode := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigFilter,
 	) {
@@ -199,7 +206,7 @@ func ExtensionUsagesInDocument(
 			Range:    nameRange,
 		})
 	}
-	for _, apply := range twigquery.Nodes(
+	for apply := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigApplyStartingBlock,
 	) {

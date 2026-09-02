@@ -100,7 +100,7 @@ func MacrosInDocument(
 	}
 	templates := TemplateNames(path)
 	var result []Macro
-	for _, node := range twigquery.Nodes(root, twigsyntax.TwigMacro) {
+	for node := range twigquery.IterateNodes(root, twigsyntax.TwigMacro) {
 		start := directChild(node, twigsyntax.TwigMacroStartingBlock)
 		if start == nil {
 			continue
@@ -166,7 +166,7 @@ func MacroReferencesInDocument(
 	}
 	imports := collectMacroImports(path, root)
 	result = append(result, imports.references...)
-	for _, call := range twigquery.Nodes(root, twigsyntax.TwigFunctionCall) {
+	for call := range twigquery.IterateNodes(root, twigsyntax.TwigFunctionCall) {
 		nameOperand := functionNameOperand(call)
 		names := literalNames(nameOperand)
 		if len(names) == 0 {
@@ -251,11 +251,12 @@ func MacroCompletionAt(
 	)
 	if accessor == nil {
 		scope := twigquery.ClosestNodeOfKind(node, twigsyntax.TwigVar)
-		accessors := twigquery.Nodes(scope, twigsyntax.TwigAccessor)
-		for index := len(accessors) - 1; index >= 0; index-- {
-			if strings.Contains(accessors[index].Text(), ".") {
-				accessor = accessors[index]
-				break
+		for candidate := range twigquery.IterateNodes(
+			scope,
+			twigsyntax.TwigAccessor,
+		) {
+			if strings.Contains(candidate.Text(), ".") {
+				accessor = candidate
 			}
 		}
 	}
@@ -299,7 +300,7 @@ func collectMacroImports(
 		namespaces: make(map[string][]string),
 		direct:     make(map[string]MacroImport),
 	}
-	for _, node := range twigquery.Nodes(
+	for node := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigImport,
 	) {
@@ -311,12 +312,12 @@ func collectMacroImports(
 		result.namespaces[strings.ToLower(alias.name)] =
 			append([]string(nil), templates...)
 	}
-	for _, node := range twigquery.Nodes(root, twigsyntax.TwigFrom) {
+	for node := range twigquery.IterateNodes(root, twigsyntax.TwigFrom) {
 		templates, _ := macroImportTarget(path, node)
 		if len(templates) == 0 {
 			continue
 		}
-		for _, override := range twigquery.Nodes(
+		for override := range twigquery.IterateNodes(
 			node,
 			twigsyntax.TwigOverride,
 		) {
@@ -351,7 +352,7 @@ func macroImportTarget(
 	path string,
 	node *twigsyntax.Node,
 ) ([]string, []macroName) {
-	for _, literal := range twigquery.Nodes(
+	for literal := range twigquery.IterateNodes(
 		node,
 		twigsyntax.TwigLiteralString,
 	) {
@@ -379,7 +380,7 @@ func literalNames(node *twigsyntax.Node) []macroName {
 		return nil
 	}
 	var result []macroName
-	for _, literal := range twigquery.Nodes(
+	for literal := range twigquery.IterateNodes(
 		node,
 		twigsyntax.TwigLiteralName,
 	) {

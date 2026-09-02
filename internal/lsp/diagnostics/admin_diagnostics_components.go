@@ -785,7 +785,7 @@ func (p *AdminAnalyzer) checkModelBindings(
 	liveOwner *admin.VueComponent,
 	diagnostics *[]lsp.Problem,
 ) error {
-	for _, attributeNode := range twigquery.Nodes(
+	for attributeNode := range twigquery.IterateNodes(
 		startTag, twigsyntax.HtmlAttribute,
 	) {
 		attributeName := twigquery.HTMLAttributeName(attributeNode)
@@ -931,7 +931,7 @@ func (p *AdminAnalyzer) checkBoundPropTypes(
 	if p == nil || p.adminIndexer == nil || root == nil {
 		return nil
 	}
-	for _, attributeNode := range twigquery.Nodes(
+	for attributeNode := range twigquery.IterateNodes(
 		startTag, twigsyntax.HtmlAttribute,
 	) {
 		attributeName := twigquery.HTMLAttributeName(attributeNode)
@@ -1160,7 +1160,7 @@ func (p *AdminAnalyzer) checkStaticPropTypes(
 	props map[string]admin.VueComponentProp,
 	diagnostics *[]lsp.Problem,
 ) {
-	for _, attribute := range twigquery.Nodes(startTag, twigsyntax.HtmlAttribute) {
+	for attribute := range twigquery.IterateNodes(startTag, twigsyntax.HtmlAttribute) {
 		attributeName := twigquery.HTMLAttributeName(attribute)
 		if strings.HasPrefix(attributeName, ":") ||
 			strings.HasPrefix(attributeName, "v-bind:") {
@@ -1197,7 +1197,7 @@ func (p *AdminAnalyzer) checkStaticPropValues(
 	props map[string]admin.VueComponentProp,
 	diagnostics *[]lsp.Problem,
 ) {
-	for _, attributeNode := range twigquery.Nodes(
+	for attributeNode := range twigquery.IterateNodes(
 		startTag, twigsyntax.HtmlAttribute,
 	) {
 		attributeName := twigquery.HTMLAttributeName(attributeNode)
@@ -1341,7 +1341,7 @@ func (p *AdminAnalyzer) getTagAttributes(
 	attrs := make(map[string]bool)
 	hasUnknownObjectBinding := false
 
-	for _, attribute := range twigquery.Nodes(startTag, twigsyntax.HtmlAttribute) {
+	for attribute := range twigquery.IterateNodes(startTag, twigsyntax.HtmlAttribute) {
 		attrName := p.getAttributeName(attribute)
 		if attrName != "" {
 			attrs[attrName] = true

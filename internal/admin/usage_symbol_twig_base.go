@@ -29,7 +29,7 @@ func TwigDirectiveReferences(
 		return nil
 	}
 	var result []VueDirectiveReference
-	for _, attributeNode := range twigquery.Nodes(
+	for attributeNode := range twigquery.IterateNodes(
 		root, twigsyntax.HtmlAttribute,
 	) {
 		attribute, ok := twigast.CastHtmlAttribute(attributeNode)

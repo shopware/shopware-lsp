@@ -96,7 +96,7 @@ func ReferencesInDocument(
 			})
 		}
 	case ".twig":
-		for _, literal := range twigquery.Nodes(
+		for literal := range twigquery.IterateNodes(
 			root,
 			twigsyntax.TwigLiteralString,
 		) {

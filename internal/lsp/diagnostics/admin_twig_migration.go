@@ -44,7 +44,7 @@ func (p *AdminTwigMigrationAnalyzer) Analyze(
 	}
 
 	var problems []lsp.Problem
-	for _, node := range twigquery.Nodes(document.SyntaxTree.Root, twigsyntax.HtmlTag) {
+	for node := range twigquery.IterateNodes(document.SyntaxTree.Root, twigsyntax.HtmlTag) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}

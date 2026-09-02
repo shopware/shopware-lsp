@@ -71,7 +71,7 @@ func References(path string, root *cst.Node) []Reference {
 		return result
 	case ".twig":
 		var result []Reference
-		for _, literal := range twigquery.Nodes(
+		for literal := range twigquery.IterateNodes(
 			root,
 			twigsyntax.TwigLiteralString,
 		) {
@@ -79,7 +79,7 @@ func References(path string, root *cst.Node) []Reference {
 				result = append(result, reference)
 			}
 		}
-		for _, htmlString := range twigquery.Nodes(
+		for htmlString := range twigquery.IterateNodes(
 			root,
 			twigsyntax.HtmlString,
 		) {

@@ -572,13 +572,12 @@ func TwigReferenceAt(
 func TwigReferences(root *twigsyntax.Node, source []byte) []Reference {
 	var result []Reference
 	seen := make(map[string]struct{})
-	nodes := twigquery.Nodes(
+	for node := range twigquery.IterateNodes(
 		root,
 		twigsyntax.TwigLiteralString,
 		twigsyntax.TwigLiteralName,
 		twigsyntax.HtmlText,
-	)
-	for _, node := range nodes {
+	) {
 		reference, ok := TwigReferenceAt(node, source)
 		if !ok {
 			continue
@@ -618,7 +617,7 @@ func twigFilterKey(filter *twigsyntax.Node) string {
 	if filter == nil {
 		return ""
 	}
-	for _, literal := range twigquery.Nodes(filter, twigsyntax.TwigLiteralString) {
+	for literal := range twigquery.IterateNodes(filter, twigsyntax.TwigLiteralString) {
 		if twigquery.StringInFilter(literal, "trans", "transchoice") {
 			return twigquery.StringValue(literal)
 		}
@@ -627,7 +626,7 @@ func twigFilterKey(filter *twigsyntax.Node) string {
 }
 
 func keyNodeInFilter(filter *twigsyntax.Node) *twigsyntax.Node {
-	for _, literal := range twigquery.Nodes(filter, twigsyntax.TwigLiteralString) {
+	for literal := range twigquery.IterateNodes(filter, twigsyntax.TwigLiteralString) {
 		if twigquery.StringInFilter(literal, "trans", "transchoice") {
 			return literal
 		}
@@ -649,7 +648,7 @@ func twigFilterStringArgument(
 			continue
 		}
 		if currentIndex == index {
-			for _, literal := range twigquery.Nodes(
+			for literal := range twigquery.IterateNodes(
 				child,
 				twigsyntax.TwigLiteralString,
 			) {
@@ -688,7 +687,7 @@ func firstTwigNode(
 	root *twigsyntax.Node,
 	kind twigsyntax.Kind,
 ) *twigsyntax.Node {
-	for _, node := range twigquery.Nodes(root, kind) {
+	for node := range twigquery.IterateNodes(root, kind) {
 		return node
 	}
 	return nil
