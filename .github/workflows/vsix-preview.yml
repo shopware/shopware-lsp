@@ -10,8 +10,12 @@ permissions:
   contents: read
 
 jobs:
+  validate:
+    uses: ./.github/workflows/tests.yml
+
   build:
     name: Build preview packages
+    needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:

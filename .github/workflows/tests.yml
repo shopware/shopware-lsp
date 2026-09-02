@@ -1,6 +1,7 @@
 name: Go Tests
 
 on:
+  workflow_call:
   push:
     branches: [ main ]
     paths:
@@ -66,10 +67,39 @@ jobs:
         version: v2.13.0
         args: --timeout=5m
 
+  vscode:
+    name: VS Code extension
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version: '24.18.1'
+        cache: npm
+        cache-dependency-path: vscode-extension/package-lock.json
+
+    - name: Install dependencies
+      run: npm --prefix vscode-extension ci
+
+    - name: Check types
+      run: npm --prefix vscode-extension run check-types
+
+    - name: Run tests
+      run: |
+        npm --prefix vscode-extension run test:entity-designer
+        npm --prefix vscode-extension run test:configuration
+        npm --prefix vscode-extension run test:mcp
+        npm --prefix vscode-extension run test:project-detection
+        npm --prefix vscode-extension run test:workspace-roots
+        npm --prefix vscode-extension run test:workspace-clients
+
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [test, lint]
+    needs: [test, lint, vscode]
     steps:
     - name: Checkout code
       uses: actions/checkout@v5
