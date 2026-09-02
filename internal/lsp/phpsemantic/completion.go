@@ -512,7 +512,7 @@ func (p *Provider) scopeCompletions(
 
 	if scope, ok := phpContext.Document.ScopeAt(offset); ok {
 		for {
-			for id := range scope.AllSymbolIDs() {
+			for id := range scope.AllSymbolIDs(phpContext.Document.Symbols) {
 				symbol, exists := phpContext.Snapshot.Symbol(id)
 				if !exists || (symbol.Kind != semantic.LocalSymbol &&
 					symbol.Kind != semantic.ParameterSymbol) {

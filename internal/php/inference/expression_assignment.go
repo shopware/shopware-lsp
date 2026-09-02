@@ -414,7 +414,7 @@ func (s *functionState) updateLocalType(
 		return
 	}
 	for {
-		for id := range scope.SymbolIDs(name) {
+		for id := range scope.SymbolIDs(s.document.Symbols, name) {
 			for index := range s.document.Symbols {
 				symbol := &s.document.Symbols[index]
 				if symbol.ID != id || symbol.Kind != semantic.LocalSymbol {

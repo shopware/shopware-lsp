@@ -127,7 +127,7 @@ func TestShopwareTrunkBinderCapacityProfile(t *testing.T) {
 		document = inference.LinkMembersOwned(document, snapshot, root)
 		for _, scope := range document.Scopes {
 			symbols := int64(0)
-			for range scope.AllSymbolIDs() {
+			for range scope.AllSymbolIDs(document.Symbols) {
 				symbols++
 			}
 			scopeCount++

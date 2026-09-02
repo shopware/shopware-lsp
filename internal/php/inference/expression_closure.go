@@ -19,7 +19,7 @@ func (s *functionState) inferArrowFunctionWithParameters(
 	env environment,
 	parameterTypes []types.Type,
 ) types.Type {
-	closureEnv := cloneEnvironment(env)
+	closureEnv := s.cloneEnvironment(env)
 	parameters := s.callableParameters(node, closureEnv, parameterTypes)
 	result := s.infer(lastDirectNode(node), closureEnv)
 	if declared := phpquery.MethodReturnType(node); declared != "" {

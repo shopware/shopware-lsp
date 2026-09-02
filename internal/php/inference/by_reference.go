@@ -109,7 +109,7 @@ func (s *functionState) declareByReferenceOutput(
 		return
 	}
 	for current := scope; ; current = s.document.Scopes[current.Parent] {
-		if current.HasSymbol(name) {
+		if current.HasSymbol(s.document.Symbols, name) {
 			s.updateLocalType(name, node.Range().Start, value)
 			return
 		}
@@ -137,8 +137,9 @@ func (s *functionState) declareByReferenceOutput(
 		SelectionRange: node.RangeTrimmedTrivia(),
 		Type:           value,
 	}
+	symbolIndex := uint32(len(s.document.Symbols))
 	s.document.Symbols = append(s.document.Symbols, symbol)
-	s.document.Scopes[scope.ID].AddSymbol(name, symbol.ID)
+	s.document.Scopes[scope.ID].AddSymbol(symbolIndex)
 }
 
 func (s *analyzerState) relinkVariableReferences() {
@@ -152,7 +153,10 @@ func (s *analyzerState) relinkVariableReferences() {
 		}
 		for scope := reference.Scope; ; scope = s.document.Scopes[scope].Parent {
 			current := s.document.Scopes[scope]
-			for id := range current.SymbolIDs(reference.Name) {
+			for id := range current.SymbolIDs(
+				s.document.Symbols,
+				reference.Name,
+			) {
 				reference.Resolved = id
 				break
 			}

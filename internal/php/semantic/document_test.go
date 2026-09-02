@@ -24,6 +24,13 @@ func TestReferenceUsesCompactCommonRecord(t *testing.T) {
 	require.LessOrEqual(t, unsafe.Sizeof(referenceTargetExtras{}), uintptr(32))
 }
 
+func TestScopeUsesCompactSymbolIndexes(t *testing.T) {
+	t.Parallel()
+	var scope Scope
+	scope.AddSymbol(0)
+	require.Equal(t, uintptr(4), unsafe.Sizeof(scope.symbols[0]))
+}
+
 func TestReferenceReleasesEmptyLazyTargets(t *testing.T) {
 	t.Parallel()
 

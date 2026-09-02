@@ -765,55 +765,92 @@ func TestDocumentTypeFactsAndScopes(t *testing.T) {
 func TestScopeSymbolIDsPreserveDuplicatesAndInsertionOrder(t *testing.T) {
 	t.Parallel()
 
+	symbols := []Symbol{
+		{ID: "first", Kind: LocalSymbol, Name: "$value"},
+		{ID: "second", Kind: LocalSymbol, Name: "$value"},
+		{ID: "other", Kind: LocalSymbol, Name: "$other"},
+		{ID: "method", Kind: MethodSymbol, Name: "DoWork"},
+		{ID: "constant", Kind: GlobalConstantSymbol, Name: "EXACT"},
+		{ID: "unicode", Kind: MethodSymbol, Name: "Äction"},
+	}
 	var scope Scope
-	scope.AddSymbol("$value", "first")
-	scope.AddSymbol("$value", "second")
-	scope.AddSymbol("$other", "other")
+	for index := range symbols {
+		scope.AddSymbol(uint32(index))
+	}
 
-	require.True(t, scope.HasSymbol("$value"))
-	require.False(t, scope.HasSymbol("$missing"))
+	require.True(t, scope.HasSymbol(symbols, "$value"))
+	require.True(t, scope.HasSymbol(symbols, "dowork"))
+	require.True(t, scope.HasSymbol(symbols, "äction"))
+	require.True(t, scope.HasSymbol(symbols, "EXACT"))
+	require.False(t, scope.HasSymbol(symbols, "DoWork"))
+	require.False(t, scope.HasSymbol(symbols, "exact"))
+	require.False(t, scope.HasSymbol(symbols, "$missing"))
 	require.Equal(
 		t,
 		[]SymbolID{"prefix", "first", "second"},
-		scope.AppendSymbolIDs([]SymbolID{"prefix"}, "$value"),
+		scope.AppendSymbolIDs(symbols, []SymbolID{"prefix"}, "$value"),
 	)
 	var values []SymbolID
-	for id := range scope.SymbolIDs("$value") {
+	for id := range scope.SymbolIDs(symbols, "$value") {
 		values = append(values, id)
 	}
 	require.Equal(t, []SymbolID{"first", "second"}, values)
 
 	var all []SymbolID
-	for id := range scope.AllSymbolIDs() {
+	for id := range scope.AllSymbolIDs(symbols) {
 		all = append(all, id)
 	}
 	require.Equal(
 		t,
-		[]SymbolID{"first", "second", "other"},
+		[]SymbolID{"first", "second", "other", "method", "constant", "unicode"},
 		all,
 	)
+}
+
+func TestScopeASCIINameLookupDoesNotAllocate(t *testing.T) {
+	symbols := []Symbol{
+		{ID: "short", Kind: MethodSymbol, Name: "Run"},
+		{ID: "long", Kind: MethodSymbol, Name: "HandleMessage"},
+	}
+	scope := Scope{symbols: []uint32{0, 1}}
+	var found bool
+	allocations := testing.AllocsPerRun(1_000, func() {
+		found = scope.HasSymbol(symbols, "missing")
+	})
+	require.False(t, found)
+	require.Zero(t, allocations)
 }
 
 func TestDocumentCloneDetachesScopeSymbols(t *testing.T) {
 	t.Parallel()
 
-	var scope Scope
-	scope.AddSymbol("$value", "first")
-	scope.AddSymbol("$value", "second")
-	document := &Document{Scopes: []Scope{scope}}
+	document := &Document{
+		Symbols: []Symbol{
+			{ID: "first", Kind: LocalSymbol, Name: "$value"},
+			{ID: "second", Kind: LocalSymbol, Name: "$value"},
+		},
+		Scopes: []Scope{{symbols: []uint32{0, 1}}},
+	}
 
 	cloned := document.Clone()
-	cloned.Scopes[0].AddSymbol("$value", "third")
+	cloned.Symbols = append(cloned.Symbols, Symbol{
+		ID: "third", Kind: LocalSymbol, Name: "$value",
+	})
+	cloned.Scopes[0].AddSymbol(2)
 
 	require.Equal(
 		t,
 		[]SymbolID{"first", "second"},
-		document.Scopes[0].AppendSymbolIDs(nil, "$value"),
+		document.Scopes[0].AppendSymbolIDs(
+			document.Symbols,
+			nil,
+			"$value",
+		),
 	)
 	require.Equal(
 		t,
 		[]SymbolID{"first", "second", "third"},
-		cloned.Scopes[0].AppendSymbolIDs(nil, "$value"),
+		cloned.Scopes[0].AppendSymbolIDs(cloned.Symbols, nil, "$value"),
 	)
 }
 

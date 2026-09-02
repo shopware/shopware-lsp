@@ -17,7 +17,7 @@ func (s *functionState) conditionEnvironments(
 	env environment,
 ) (environment, environment) {
 	if node == nil {
-		return cloneEnvironment(env), cloneEnvironment(env)
+		return s.cloneEnvironment(env), s.cloneEnvironment(env)
 	}
 	if node.Kind() == phpsyntax.PhpParenthesized {
 		return s.conditionEnvironments(firstDirectNode(node), env)
@@ -56,7 +56,7 @@ func (s *functionState) conditionEnvironments(
 
 	if flowExpressionKey(node) != "" {
 		if node.Kind() == phpsyntax.PhpVariable {
-			if trueEnv, falseEnv, narrowed := booleanAliasEnvironments(node, env); narrowed {
+			if trueEnv, falseEnv, narrowed := s.booleanAliasEnvironments(node, env); narrowed {
 				return trueEnv, falseEnv
 			}
 		}
@@ -68,7 +68,7 @@ func (s *functionState) conditionEnvironments(
 			return s.truthinessEnvironments(left, env)
 		}
 	}
-	return cloneEnvironment(env), cloneEnvironment(env)
+	return s.cloneEnvironment(env), s.cloneEnvironment(env)
 }
 
 func (s *functionState) binaryConditionEnvironments(
@@ -89,12 +89,12 @@ func (s *functionState) binaryConditionEnvironments(
 		leftTrue, leftFalse := s.conditionEnvironments(left, env)
 		rightTrue, rightFalse := s.conditionEnvironments(right, leftTrue)
 		s.record(node, types.Bool(), semantic.FlowSource, "logical condition")
-		return rightTrue, joinEnvironments(s.relations, leftFalse, rightFalse), true
+		return rightTrue, s.joinEnvironments(leftFalse, rightFalse), true
 	case "||", "or":
 		leftTrue, leftFalse := s.conditionEnvironments(left, env)
 		rightTrue, rightFalse := s.conditionEnvironments(right, leftFalse)
 		s.record(node, types.Bool(), semantic.FlowSource, "logical condition")
-		return joinEnvironments(s.relations, leftTrue, rightTrue), rightFalse, true
+		return s.joinEnvironments(leftTrue, rightTrue), rightFalse, true
 	}
 
 	s.infer(node, env)
@@ -159,8 +159,8 @@ func (s *functionState) memberCallConditionEnvironments(
 	trueEnv, falseEnv, narrowed := s.narrowCallAssertions(node, env)
 	if conventionTrue, conventionFalse, convention := s.narrowHasAccessor(node, env); convention {
 		if narrowed {
-			trueEnv = mergeRefinedEnvironment(trueEnv, conventionTrue)
-			falseEnv = mergeRefinedEnvironment(falseEnv, conventionFalse)
+			trueEnv = s.mergeRefinedEnvironment(trueEnv, conventionTrue)
+			falseEnv = s.mergeRefinedEnvironment(falseEnv, conventionFalse)
 		} else {
 			trueEnv, falseEnv = conventionTrue, conventionFalse
 		}
@@ -222,8 +222,8 @@ func (s *functionState) numericPredicateEnvironments(
 		s.relations.Without(original, types.Int()),
 		types.Float(),
 	)
-	trueEnv := cloneEnvironment(env)
-	falseEnv := cloneEnvironment(env)
+	trueEnv := s.cloneEnvironment(env)
+	falseEnv := s.cloneEnvironment(env)
 	trueEnv.set(key, trueValue)
 	falseEnv.set(key, falseValue)
 	s.record(expression, trueValue, semantic.FlowSource, "is_numeric")
@@ -254,8 +254,8 @@ func (s *functionState) typedPredicateEnvironments(
 	}
 	trueValue := s.relations.Narrow(original, narrowed)
 	falseValue := s.relations.Without(original, narrowed)
-	trueEnv := cloneEnvironment(env)
-	falseEnv := cloneEnvironment(env)
+	trueEnv := s.cloneEnvironment(env)
+	falseEnv := s.cloneEnvironment(env)
 	trueEnv.set(key, trueValue)
 	falseEnv.set(key, falseValue)
 	s.record(expression, trueValue, semantic.FlowSource, name)

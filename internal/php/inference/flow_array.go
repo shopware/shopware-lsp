@@ -36,8 +36,8 @@ func (s *functionState) narrowEmptyArray(
 	if operator == "===" {
 		trueValue, falseValue = empty, nonEmpty
 	}
-	trueEnv := cloneEnvironment(env)
-	falseEnv := cloneEnvironment(env)
+	trueEnv := s.cloneEnvironment(env)
+	falseEnv := s.cloneEnvironment(env)
 	trueEnv.set(key, trueValue)
 	falseEnv.set(key, falseValue)
 	s.record(expression, trueValue, semantic.FlowSource, "empty array comparison")
@@ -204,7 +204,7 @@ func (s *functionState) narrowHasAccessor(
 	}
 	target.WriteByte(')')
 	key := normalizeFlowExpression(target.String())
-	trueEnv := cloneEnvironment(env)
+	trueEnv := s.cloneEnvironment(env)
 	trueEnv.set(key, nonNull)
-	return trueEnv, cloneEnvironment(env), true
+	return trueEnv, s.cloneEnvironment(env), true
 }

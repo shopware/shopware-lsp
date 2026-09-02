@@ -1330,10 +1330,10 @@ func isPHPTypeNameByte(value byte) bool {
 }
 
 func (b *documentBuilder) addSymbol(scope semantic.ScopeID, symbol semantic.Symbol) {
+	symbolIndex := uint32(len(b.document.Symbols))
 	b.document.Symbols = append(b.document.Symbols, symbol)
-	key := symbolLookupKey(symbol)
 	current := &b.document.Scopes[scope]
-	current.AddSymbol(key, symbol.ID)
+	current.AddSymbol(symbolIndex)
 }
 
 func (b *documentBuilder) symbol(id semantic.SymbolID) (semantic.Symbol, bool) {
@@ -1396,15 +1396,4 @@ func resolveNames(context resolver.NameContext, names []string) []string {
 		result = append(result, context.ResolveClass(name))
 	}
 	return result
-}
-
-func symbolLookupKey(symbol semantic.Symbol) string {
-	switch symbol.Kind {
-	case semantic.ParameterSymbol, semantic.LocalSymbol:
-		return symbol.Name
-	case semantic.GlobalConstantSymbol, semantic.ClassConstantSymbol, semantic.EnumCaseSymbol:
-		return symbol.Name
-	default:
-		return strings.ToLower(strings.TrimPrefix(symbol.Name, "$"))
-	}
 }

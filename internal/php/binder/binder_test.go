@@ -121,7 +121,7 @@ foreach ($items as $item) {
 }
 `).Tree.Root
 	document := New().Bind("/top-level.php", 1, root)
-	require.True(t, document.Scopes[0].HasSymbol("$item"))
+	require.True(t, document.Scopes[0].HasSymbol(document.Symbols, "$item"))
 	for _, reference := range document.References {
 		if reference.Kind == semantic.VariableName &&
 			reference.Name == "$item" {

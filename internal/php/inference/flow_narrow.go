@@ -74,8 +74,8 @@ func (s *functionState) narrowClassPredicate(
 		return environment{}, environment{}, false
 	}
 
-	trueEnv := cloneEnvironment(env)
-	falseEnv := cloneEnvironment(env)
+	trueEnv := s.cloneEnvironment(env)
+	falseEnv := s.cloneEnvironment(env)
 	trueValue := s.relations.Narrow(original, constraint)
 	trueEnv.set(key, trueValue)
 	falseEnv.set(key, s.relations.Without(original, constraint))
@@ -91,11 +91,11 @@ func (s *functionState) narrowLiteral(
 ) (environment, environment) {
 	key := conditionFlowExpressionKey(valueNode)
 	if key == "" {
-		return cloneEnvironment(env), cloneEnvironment(env)
+		return s.cloneEnvironment(env), s.cloneEnvironment(env)
 	}
 	equal := operator == "==="
-	trueEnv := cloneEnvironment(env)
-	falseEnv := cloneEnvironment(env)
+	trueEnv := s.cloneEnvironment(env)
+	falseEnv := s.cloneEnvironment(env)
 	original, exists := env.get(key)
 	if !exists {
 		original = s.infer(valueNode, env)
@@ -118,17 +118,17 @@ func (s *functionState) truthinessEnvironments(
 ) (environment, environment) {
 	key := flowExpressionKey(expression)
 	if key == "" {
-		return cloneEnvironment(env), cloneEnvironment(env)
+		return s.cloneEnvironment(env), s.cloneEnvironment(env)
 	}
 	original, exists := env.get(key)
 	if !exists {
 		original = s.infer(expression, env)
 	}
 	truthy := withoutFalsyLiterals(s.relations, original)
-	trueEnv := cloneEnvironment(env)
+	trueEnv := s.cloneEnvironment(env)
 	trueEnv.set(key, truthy)
 	s.record(expression, truthy, semantic.FlowSource, "truthiness")
-	return trueEnv, cloneEnvironment(env)
+	return trueEnv, s.cloneEnvironment(env)
 }
 
 func (s *functionState) narrowInstanceof(
@@ -138,15 +138,15 @@ func (s *functionState) narrowInstanceof(
 ) (environment, environment) {
 	key := conditionFlowExpressionKey(valueNode)
 	if key == "" {
-		return cloneEnvironment(env), cloneEnvironment(env)
+		return s.cloneEnvironment(env), s.cloneEnvironment(env)
 	}
 	className := compact(typeNode.Text())
 	if typeNode.Kind() == phpsyntax.PhpName {
 		className = s.nameContextAt(typeNode.Range().Start).ResolveClass(phpquery.NameValue(typeNode))
 	}
 	constraint := types.Named(className)
-	trueEnv := cloneEnvironment(env)
-	falseEnv := cloneEnvironment(env)
+	trueEnv := s.cloneEnvironment(env)
+	falseEnv := s.cloneEnvironment(env)
 	original, exists := env.get(key)
 	if !exists {
 		original = s.infer(valueNode, env)
@@ -196,11 +196,11 @@ func (s *functionState) narrowNull(
 ) (environment, environment) {
 	key := conditionFlowExpressionKey(valueNode)
 	if key == "" {
-		return cloneEnvironment(env), cloneEnvironment(env)
+		return s.cloneEnvironment(env), s.cloneEnvironment(env)
 	}
 	equal := operator == "===" || operator == "=="
-	trueEnv := cloneEnvironment(env)
-	falseEnv := cloneEnvironment(env)
+	trueEnv := s.cloneEnvironment(env)
+	falseEnv := s.cloneEnvironment(env)
 	original, exists := env.get(key)
 	if !exists {
 		original = s.infer(valueNode, env)

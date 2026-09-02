@@ -154,7 +154,7 @@ func declaredVariableType(
 		return types.Unknown()
 	}
 	for {
-		for id := range scope.SymbolIDs(name) {
+		for id := range scope.SymbolIDs(document.Symbols, name) {
 			symbol, found := snapshot.Symbol(id)
 			if !found || symbol.Type.IsUnknown() {
 				continue

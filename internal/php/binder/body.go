@@ -715,7 +715,7 @@ func (b *documentBuilder) nonFunctionParent(scope semantic.ScopeID) semantic.Sco
 func (b *documentBuilder) localType(scope semantic.ScopeID, name string) types.Type {
 	for int(scope) < len(b.document.Scopes) {
 		current := b.document.Scopes[scope]
-		for id := range current.SymbolIDs(name) {
+		for id := range current.SymbolIDs(b.document.Symbols, name) {
 			if symbol, ok := b.symbol(id); ok {
 				return symbol.Type
 			}
@@ -769,7 +769,7 @@ func (b *documentBuilder) addSingleReference(
 func (b *documentBuilder) scopeHas(scope semantic.ScopeID, name string) bool {
 	for int(scope) < len(b.document.Scopes) {
 		current := b.document.Scopes[scope]
-		if current.HasSymbol(name) {
+		if current.HasSymbol(b.document.Symbols, name) {
 			return true
 		}
 		if current.ID == current.Parent {

@@ -10,8 +10,11 @@ import (
 	"github.com/shopware/shopware-lsp/internal/php/types"
 )
 
-func mergeRefinedEnvironment(base, refinements environment) environment {
-	result := cloneEnvironment(base)
+func (s *analyzerState) mergeRefinedEnvironment(
+	base,
+	refinements environment,
+) environment {
+	result := s.cloneEnvironment(base)
 	refinements.visit(func(name string, value types.Type) {
 		if original, exists := base.get(name); !exists || !original.Equal(value) {
 			result.set(name, value)
@@ -60,7 +63,7 @@ func (s *functionState) captureBooleanAlias(
 	}
 }
 
-func booleanAliasEnvironments(
+func (s *analyzerState) booleanAliasEnvironments(
 	node *phpsyntax.Node,
 	env environment,
 ) (environment, environment, bool) {
@@ -91,8 +94,8 @@ func booleanAliasEnvironments(
 	if len(refinements) == 0 {
 		return environment{}, environment{}, false
 	}
-	trueEnv := cloneEnvironment(env)
-	falseEnv := cloneEnvironment(env)
+	trueEnv := s.cloneEnvironment(env)
+	falseEnv := s.cloneEnvironment(env)
 	for _, refinement := range refinements {
 		if refinement.truth {
 			trueEnv.set(refinement.key, refinement.value)
@@ -173,8 +176,8 @@ func (s *functionState) narrowIsset(
 	call *phpsyntax.Node,
 	env environment,
 ) (environment, environment, bool) {
-	trueEnv := cloneEnvironment(env)
-	falseEnv := cloneEnvironment(env)
+	trueEnv := s.cloneEnvironment(env)
+	falseEnv := s.cloneEnvironment(env)
 	arguments := phpquery.Arguments(call)
 	narrowed := false
 	for index := range arguments {

@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unsafe"
 
 	phpparser "github.com/shopware/shopware-lsp/internal/parser/php"
 	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
@@ -198,6 +199,41 @@ func TestEnvironmentForkCopiesOnWrite(t *testing.T) {
 	forkItem, found := largeFork.get("$item0")
 	require.True(t, found)
 	require.Equal(t, types.Int(), forkItem)
+}
+
+func TestEnvironmentHandleRemainsCompact(t *testing.T) {
+	t.Parallel()
+	require.LessOrEqual(t, unsafe.Sizeof(environmentHandle{}), uintptr(64))
+}
+
+func TestSmallEnvironmentKeepsFirstBindingInline(t *testing.T) {
+	env := newEnvironment(1)
+	require.Nil(t, env.handle.bindings)
+	env.set("$value", types.Int())
+	require.Nil(t, env.handle.bindings)
+	require.True(t, env.handle.hasOverride)
+
+	fork := cloneEnvironment(env)
+	fork.set("$value", types.String())
+	originalValue, found := env.get("$value")
+	require.True(t, found)
+	require.Equal(t, types.Int(), originalValue)
+	forkValue, found := fork.get("$value")
+	require.True(t, found)
+	require.Equal(t, types.String(), forkValue)
+
+	env.set("$other", types.Bool())
+	require.False(t, env.handle.hasOverride)
+	require.Len(t, env.handle.bindings, 2)
+	env.deletePrefix("$other")
+	require.Equal(t, 1, env.len())
+
+	allocations := testing.AllocsPerRun(1_000, func() {
+		handle := environmentHandle{}
+		inline := environment{handle: &handle}
+		inline.set("$inline", types.Int())
+	})
+	require.Zero(t, allocations)
 }
 
 func TestEnvironmentForkSkipsNoopCopies(t *testing.T) {
@@ -2558,7 +2594,7 @@ func TestEnvironmentArenaPreservesForkIsolationAcrossBlocks(t *testing.T) {
 	handles := make(map[*environmentHandle]struct{}, len(forks)+1)
 	handles[original.handle] = struct{}{}
 	for index := range forks {
-		forks[index] = cloneEnvironment(original)
+		forks[index] = cloneEnvironmentIn(&arena, original)
 		handles[forks[index].handle] = struct{}{}
 	}
 	require.Len(t, handles, len(forks)+1)

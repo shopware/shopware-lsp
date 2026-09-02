@@ -126,11 +126,18 @@ func isNullNode(node *phpsyntax.Node) bool {
 }
 
 func cloneEnvironment(source environment) environment {
+	return cloneEnvironmentIn(nil, source)
+}
+
+func cloneEnvironmentIn(
+	arena *environmentArena,
+	source environment,
+) environment {
 	if source.handle == nil {
-		return newEnvironment(0)
+		return newEnvironmentIn(arena, 0)
 	}
 	source.handle.shared = true
-	handle := newEnvironmentHandle(source.handle.arena)
+	handle := newEnvironmentHandle(arena)
 	handle.bindings = source.handle.bindings
 	handle.table = source.handle.table
 	handle.override = source.handle.override
@@ -149,27 +156,40 @@ func joinEnvironments(
 	left,
 	right environment,
 ) environment {
+	return joinEnvironmentsIn(nil, relations, left, right)
+}
+
+func joinEnvironmentsIn(
+	arena *environmentArena,
+	relations types.Relations,
+	left,
+	right environment,
+) environment {
 	if environmentIsImpossible(left) {
-		return cloneEnvironment(right)
+		return cloneEnvironmentIn(arena, right)
 	}
 	if environmentIsImpossible(right) {
-		return cloneEnvironment(left)
+		return cloneEnvironmentIn(arena, left)
 	}
 	// The branches normally contain the same variables, so their union is
 	// usually close to the larger frame rather than the sum of both sizes.
 	// Start with that tighter hint and let the hybrid frame grow if branches
 	// introduced disjoint bindings.
-	var arena *environmentArena
-	if left.handle != nil {
-		arena = left.handle.arena
-	}
-	if arena == nil && right.handle != nil {
-		arena = right.handle.arena
-	}
 	result := newEnvironmentIn(arena, max(left.len(), right.len()))
 	joinLeftEnvironmentValues(relations, result, left, right)
 	addMissingEnvironmentValues(result, right)
 	return result
+}
+
+func (s *analyzerState) cloneEnvironment(source environment) environment {
+	return cloneEnvironmentIn(&s.environments, source)
+}
+
+func (s *analyzerState) joinEnvironments(
+	left,
+	right environment,
+) environment {
+	return joinEnvironmentsIn(&s.environments, s.relations, left, right)
 }
 
 func joinLeftEnvironmentValues(

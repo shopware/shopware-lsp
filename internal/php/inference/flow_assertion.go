@@ -24,8 +24,8 @@ func (s *functionState) narrowCallAssertions(
 		return environment{}, environment{}, false
 	}
 
-	trueEnv := cloneEnvironment(env)
-	falseEnv := cloneEnvironment(env)
+	trueEnv := s.cloneEnvironment(env)
+	falseEnv := s.cloneEnvironment(env)
 	narrowed := false
 	arguments, _ := s.inferArguments(call, env)
 	(resolver.MemberResolver{
@@ -310,8 +310,8 @@ func (s *functionState) narrowClassIdentity(
 	if !exists {
 		original = s.infer(valueNode, env)
 	}
-	equalEnv := cloneEnvironment(env)
-	notEqualEnv := cloneEnvironment(env)
+	equalEnv := s.cloneEnvironment(env)
+	notEqualEnv := s.cloneEnvironment(env)
 	equalEnv.set(key, s.relations.Narrow(original, constraint))
 	notEqualEnv.set(key, s.relations.Without(original, constraint))
 	equalValue, _ := equalEnv.get(key)

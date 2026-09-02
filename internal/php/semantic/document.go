@@ -44,30 +44,26 @@ type Scope struct {
 	Namespace string
 	Imports   ImportTable
 
-	symbols []scopeSymbol
+	symbols []uint32
 }
 
-type scopeSymbol struct {
-	name string
-	id   SymbolID
-}
-
-// AddSymbol records a declaration in this scope. The compact entry list
-// preserves insertion order and represents duplicate normalized names without
-// a second map and per-name alternatives slice.
-func (s *Scope) AddSymbol(name string, id SymbolID) {
+// AddSymbol records a declaration's document-local symbol index in this scope.
+// The compact entry list preserves insertion order and represents duplicate
+// normalized names without duplicating the Symbol's name and ID strings.
+func (s *Scope) AddSymbol(symbolIndex uint32) {
 	if s == nil {
 		return
 	}
-	s.symbols = append(s.symbols, scopeSymbol{name: name, id: id})
+	s.symbols = append(s.symbols, symbolIndex)
 }
 
 // SymbolIDs iterates declarations matching one normalized name in insertion
 // order without materializing a one-element slice for the common case.
-func (s Scope) SymbolIDs(name string) iter.Seq[SymbolID] {
+func (s Scope) SymbolIDs(symbols []Symbol, name string) iter.Seq[SymbolID] {
 	return func(yield func(SymbolID) bool) {
-		for _, symbol := range s.symbols {
-			if symbol.name == name && !yield(symbol.id) {
+		for _, symbolIndex := range s.symbols {
+			symbol, ok := scopeSymbolAt(symbols, symbolIndex)
+			if ok && scopeSymbolMatches(symbol, name) && !yield(symbol.ID) {
 				return
 			}
 		}
@@ -75,19 +71,21 @@ func (s Scope) SymbolIDs(name string) iter.Seq[SymbolID] {
 }
 
 // AllSymbolIDs iterates every declaration in insertion order.
-func (s Scope) AllSymbolIDs() iter.Seq[SymbolID] {
+func (s Scope) AllSymbolIDs(symbols []Symbol) iter.Seq[SymbolID] {
 	return func(yield func(SymbolID) bool) {
-		for _, symbol := range s.symbols {
-			if !yield(symbol.id) {
+		for _, symbolIndex := range s.symbols {
+			symbol, ok := scopeSymbolAt(symbols, symbolIndex)
+			if ok && !yield(symbol.ID) {
 				return
 			}
 		}
 	}
 }
 
-func (s Scope) HasSymbol(name string) bool {
-	for _, symbol := range s.symbols {
-		if symbol.name == name {
+func (s Scope) HasSymbol(symbols []Symbol, name string) bool {
+	for _, symbolIndex := range s.symbols {
+		symbol, ok := scopeSymbolAt(symbols, symbolIndex)
+		if ok && scopeSymbolMatches(symbol, name) {
 			return true
 		}
 	}
@@ -96,15 +94,74 @@ func (s Scope) HasSymbol(name string) bool {
 
 // AppendSymbolIDs appends declarations matching name in insertion order.
 func (s Scope) AppendSymbolIDs(
+	symbols []Symbol,
 	target []SymbolID,
 	name string,
 ) []SymbolID {
-	for _, symbol := range s.symbols {
-		if symbol.name == name {
-			target = append(target, symbol.id)
+	for _, symbolIndex := range s.symbols {
+		symbol, ok := scopeSymbolAt(symbols, symbolIndex)
+		if ok && scopeSymbolMatches(symbol, name) {
+			target = append(target, symbol.ID)
 		}
 	}
 	return target
+}
+
+func scopeSymbolAt(symbols []Symbol, index uint32) (*Symbol, bool) {
+	if uint64(index) >= uint64(len(symbols)) {
+		return nil, false
+	}
+	return &symbols[index], true
+}
+
+func scopeSymbolMatches(symbol *Symbol, normalizedName string) bool {
+	if symbol == nil {
+		return false
+	}
+	switch symbol.Kind {
+	case ParameterSymbol,
+		LocalSymbol,
+		GlobalConstantSymbol,
+		ClassConstantSymbol,
+		EnumCaseSymbol:
+		return symbol.Name == normalizedName
+	default:
+		return lowerScopeSymbolNameMatches(
+			strings.TrimPrefix(symbol.Name, "$"),
+			normalizedName,
+		)
+	}
+}
+
+func lowerScopeSymbolNameMatches(name, normalizedName string) bool {
+	if len(name) != len(normalizedName) {
+		if scopeNameIsASCII(name) && scopeNameIsASCII(normalizedName) {
+			return false
+		}
+		return strings.ToLower(name) == normalizedName
+	}
+	for index := 0; index < len(name); index++ {
+		current := name[index]
+		if current >= 0x80 || normalizedName[index] >= 0x80 {
+			return strings.ToLower(name) == normalizedName
+		}
+		if current >= 'A' && current <= 'Z' {
+			current += 'a' - 'A'
+		}
+		if current != normalizedName[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func scopeNameIsASCII(name string) bool {
+	for index := 0; index < len(name); index++ {
+		if name[index] >= 0x80 {
+			return false
+		}
+	}
+	return true
 }
 
 type ImportTable struct {

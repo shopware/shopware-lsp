@@ -255,12 +255,12 @@ type analyzerState struct {
 	cachedParentsReady    bool
 }
 
-// environment is a small copy-on-write variable frame. Most PHP functions only
-// track a handful of values, so those bindings stay in a compact linear slice;
-// larger frames graduate to a map. Forks share immutable storage and keep their
-// first divergent binding inline; a second distinct mutation materializes the
-// frame. Ordinary value copies share a handle, preserving the reference
-// semantics used while evaluating an expression.
+// environment is a small copy-on-write variable frame. Empty and single-value
+// frames stay inline in the handle, small multi-value frames use a compact
+// linear slice, and larger frames graduate to a map. Forks share immutable
+// storage and keep their first divergent binding inline; a second distinct
+// mutation materializes the frame. Ordinary value copies share a handle,
+// preserving the reference semantics used while evaluating an expression.
 type environment struct {
 	handle *environmentHandle
 }
@@ -274,7 +274,6 @@ type environmentHandle struct {
 	bindings    []environmentBinding
 	table       map[string]types.Type
 	override    environmentBinding
-	arena       *environmentArena
 	shared      bool
 	hasOverride bool
 }
@@ -338,7 +337,7 @@ func newEnvironmentIn(
 	handle := newEnvironmentHandle(arena)
 	if capacity > smallEnvironmentLimit {
 		handle.table = make(map[string]types.Type, capacity)
-	} else if capacity > 0 {
+	} else if capacity > 1 {
 		handle.bindings = make([]environmentBinding, 0, capacity)
 	}
 	return environment{handle: handle}
@@ -348,9 +347,7 @@ func newEnvironmentHandle(arena *environmentArena) *environmentHandle {
 	if arena == nil {
 		return &environmentHandle{}
 	}
-	handle := arena.allocate()
-	handle.arena = arena
-	return handle
+	return arena.allocate()
 }
 
 func (a *environmentArena) allocate() *environmentHandle {
@@ -402,14 +399,14 @@ func (e environment) set(name string, value types.Type) {
 	if e.handle == nil {
 		panic("set value on an uninitialized inference environment")
 	}
-	if e.handle.shared {
-		if e.handle.hasOverride && e.handle.override.name == name {
-			if e.handle.override.value.Equal(value) {
-				return
-			}
-			e.handle.override.value = value
+	if e.handle.hasOverride && e.handle.override.name == name {
+		if e.handle.override.value.Equal(value) {
 			return
 		}
+		e.handle.override.value = value
+		return
+	}
+	if e.handle.shared {
 		if current, exists := e.get(name); exists && current.Equal(value) {
 			return
 		}
@@ -419,6 +416,18 @@ func (e environment) set(name string, value types.Type) {
 			return
 		}
 		e.handle.detach()
+	}
+	if e.handle.table == nil && e.handle.bindings == nil {
+		if !e.handle.hasOverride {
+			e.handle.override = environmentBinding{name: name, value: value}
+			e.handle.hasOverride = true
+			return
+		}
+		inline := e.handle.override
+		e.handle.bindings = make([]environmentBinding, 0, 2)
+		e.handle.bindings = append(e.handle.bindings, inline)
+		e.handle.override = environmentBinding{}
+		e.handle.hasOverride = false
 	}
 	if e.handle.table != nil {
 		e.handle.table[name] = value
@@ -487,6 +496,11 @@ func (e environment) deletePrefix(prefix string) {
 			return
 		}
 		e.handle.detach()
+	}
+	if e.handle.hasOverride &&
+		strings.HasPrefix(e.handle.override.name, prefix) {
+		e.handle.override = environmentBinding{}
+		e.handle.hasOverride = false
 	}
 	if e.handle.table != nil {
 		for name := range e.handle.table {
@@ -742,7 +756,7 @@ func (s *analyzerState) inheritedReceiverTypes(
 }
 
 func (s *functionState) analyzeBlock(node *phpsyntax.Node, env environment) flow {
-	return s.analyzeBlockOwned(node, cloneEnvironment(env))
+	return s.analyzeBlockOwned(node, s.cloneEnvironment(env))
 }
 
 func (s *functionState) analyzeBlockOwned(
@@ -1139,7 +1153,7 @@ func (s *functionState) analyzeForeach(
 	}
 	iterable := s.infer(nodes.At(0), env)
 	keyType, valueType := iterableTypes(iterable, s.relations)
-	loopEnv := cloneEnvironment(env)
+	loopEnv := s.cloneEnvironment(env)
 	keyVariable, valueVariable := directForeachVariables(node)
 	if keyVariable == nil && valueVariable != nil {
 		name := phpquery.VariableKey(valueVariable)
@@ -1170,9 +1184,9 @@ func (s *functionState) analyzeForeach(
 	} else {
 		bodyFlow = s.analyzeStatement(body, loopEnv)
 	}
-	result := joinEnvironments(s.relations, env, bodyFlow.env)
+	result := s.joinEnvironments(env, bodyFlow.env)
 	for _, continued := range bodyFlow.continues {
-		result = joinEnvironments(s.relations, result, continued)
+		result = s.joinEnvironments(result, continued)
 	}
 	if !bodyFlow.terminated && len(bodyFlow.continues) == 0 &&
 		len(phpquery.Nodes(body, phpsyntax.PhpBreakStatement)) == 0 &&
@@ -1247,26 +1261,26 @@ func (s *functionState) analyzeLoop(node *phpsyntax.Node, env environment) flow 
 			return flow{env: falseEnv}
 		}
 		body := s.analyzeStatement(nodes.At(nodes.Len()-1), trueEnv)
-		result := joinEnvironments(s.relations, falseEnv, body.env)
+		result := s.joinEnvironments(falseEnv, body.env)
 		for _, continued := range body.continues {
-			result = joinEnvironments(s.relations, result, continued)
+			result = s.joinEnvironments(result, continued)
 		}
 		return flow{env: result}
 	}
-	loopEnv := cloneEnvironment(env)
+	loopEnv := s.cloneEnvironment(env)
 	for cursor := nodes.Cursor(); cursor.Next(); {
 		child := cursor.Node()
 		if child.Kind() == phpsyntax.PhpBlock {
 			body := s.analyzeBlockOwned(child, loopEnv)
-			result := joinEnvironments(s.relations, env, body.env)
+			result := s.joinEnvironments(env, body.env)
 			for _, continued := range body.continues {
-				result = joinEnvironments(s.relations, result, continued)
+				result = s.joinEnvironments(result, continued)
 			}
 			return flow{env: result}
 		}
 		s.infer(child, loopEnv)
 	}
-	return flow{env: joinEnvironments(s.relations, env, loopEnv)}
+	return flow{env: s.joinEnvironments(env, loopEnv)}
 }
 
 func (s *functionState) analyzeTry(node *phpsyntax.Node, env environment) flow {
@@ -1278,7 +1292,7 @@ func (s *functionState) analyzeTry(node *phpsyntax.Node, env environment) flow {
 			outcomes = append(outcomes, s.analyzeBlock(child, env))
 		case phpsyntax.PhpCatchClause:
 			clauseNodes := directNodes(child)
-			catchEnv := cloneEnvironment(env)
+			catchEnv := s.cloneEnvironment(env)
 			catchType := types.Unknown()
 			for clauseCursor := clauseNodes.Cursor(); clauseCursor.Next(); {
 				clauseNode := clauseCursor.Node()
@@ -1323,7 +1337,7 @@ func (s *functionState) analyzeSwitch(node *phpsyntax.Node, env environment) flo
 	}
 
 	var outcomes []flow
-	remaining := cloneEnvironment(env)
+	remaining := s.cloneEnvironment(env)
 	var fallthroughEnv environment
 	hasFallthrough := false
 	hasDefault := false
@@ -1335,7 +1349,7 @@ func (s *functionState) analyzeSwitch(node *phpsyntax.Node, env environment) flo
 
 		clause := directNodes(child)
 		statementIndex := 0
-		clauseEnv := cloneEnvironment(env)
+		clauseEnv := s.cloneEnvironment(env)
 		if clause.Len() > 0 && isExpressionKind(clause.At(0).Kind()) {
 			condition := clause.At(0)
 			statementIndex = 1
@@ -1352,8 +1366,7 @@ func (s *functionState) analyzeSwitch(node *phpsyntax.Node, env environment) flo
 			clauseEnv = remaining
 		}
 		if hasFallthrough {
-			clauseEnv = joinEnvironments(
-				s.relations,
+			clauseEnv = s.joinEnvironments(
 				fallthroughEnv,
 				clauseEnv,
 			)
@@ -1411,7 +1424,7 @@ func (s *functionState) joinFlows(flows []flow) flow {
 			result = candidate.env
 			hasResult = true
 		} else {
-			result = joinEnvironments(s.relations, result, candidate.env)
+			result = s.joinEnvironments(result, candidate.env)
 		}
 	}
 	if !hasResult {

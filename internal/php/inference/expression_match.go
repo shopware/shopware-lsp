@@ -24,7 +24,7 @@ func (s *functionState) inferMatch(node *phpsyntax.Node, env environment) types.
 			selector = firstDirectNode(selector)
 		}
 	}
-	remaining := cloneEnvironment(env)
+	remaining := s.cloneEnvironment(env)
 	for cursor := children.Cursor(); cursor.Next(); {
 		arm := cursor.Node()
 		if arm.Kind() != phpsyntax.PhpMatchArm {
@@ -47,8 +47,7 @@ func (s *functionState) inferMatch(node *phpsyntax.Node, env environment) types.
 						remaining,
 					)
 					if hasCondition {
-						armEnv = joinEnvironments(
-							s.relations,
+						armEnv = s.joinEnvironments(
 							armEnv,
 							matched,
 						)
@@ -82,12 +81,12 @@ func (s *functionState) inferMatch(node *phpsyntax.Node, env environment) types.
 							)
 						} else {
 							s.infer(condition, remaining)
-							matched = cloneEnvironment(remaining)
-							unmatched = cloneEnvironment(remaining)
+							matched = s.cloneEnvironment(remaining)
+							unmatched = s.cloneEnvironment(remaining)
 						}
 					}
 					if hasCondition {
-						armEnv = joinEnvironments(s.relations, armEnv, matched)
+						armEnv = s.joinEnvironments(armEnv, matched)
 					} else {
 						armEnv = matched
 						hasCondition = true

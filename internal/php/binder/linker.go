@@ -116,8 +116,8 @@ func appendLocalCandidateIDs(
 	scope := reference.Scope
 	for {
 		current := document.Scopes[scope]
-		if current.HasSymbol(name) {
-			for id := range current.SymbolIDs(name) {
+		if current.HasSymbol(document.Symbols, name) {
+			for id := range current.SymbolIDs(document.Symbols, name) {
 				reference.AddCandidate(id)
 			}
 			return
