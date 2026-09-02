@@ -35,7 +35,7 @@ func (s *functionState) narrowCallAssertions(
 		if !resolved.Compatible {
 			return true
 		}
-		for _, assertion := range member.Symbol.Assertions {
+		for _, assertion := range member.Symbol.Assertions() {
 			if !assertion.Conditional {
 				continue
 			}
@@ -140,7 +140,7 @@ func (s *functionState) applyUnconditionalCallAssertions(
 
 	hasAssertions := false
 	for _, symbol := range symbols {
-		for _, assertion := range symbol.Assertions {
+		for _, assertion := range symbol.Assertions() {
 			if !assertion.Conditional {
 				hasAssertions = true
 				break
@@ -160,7 +160,7 @@ func (s *functionState) applyUnconditionalCallAssertions(
 		if !resolved.Compatible {
 			continue
 		}
-		for _, assertion := range symbol.Assertions {
+		for _, assertion := range symbol.Assertions() {
 			if assertion.Conditional {
 				continue
 			}

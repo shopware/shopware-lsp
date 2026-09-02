@@ -250,11 +250,11 @@ func (packer *workspaceDocumentPacker) addSymbol(source *Symbol) {
 				&packer.document.signatureExtras[packer.signatureExtraIndex]
 			packer.signatureExtraIndex++
 			*signature.Extras = newWorkspaceSignatureExtras(
-				source.Templates,
-				source.Throws,
-				source.LiteralReturns,
-				source.ConstantReturns,
-				source.Assertions,
+				source.Templates(),
+				source.Throws(),
+				source.LiteralReturns(),
+				source.ConstantReturns(),
+				source.Assertions(),
 			)
 		}
 	}
@@ -262,22 +262,22 @@ func (packer *workspaceDocumentPacker) addSymbol(source *Symbol) {
 		hierarchyIndex = packer.hierarchyIndex
 		packer.hierarchyIndex++
 		packer.document.hierarchies[hierarchyIndex] = newWorkspaceHierarchy(
-			source.Extends,
-			source.Implements,
-			source.Traits,
-			source.ExtendsTypes,
-			source.ImplementsTypes,
-			source.TraitTypes,
-			source.TraitAliases,
+			source.Extends(),
+			source.Implements(),
+			source.Traits(),
+			source.ExtendsTypes(),
+			source.ImplementsTypes(),
+			source.TraitTypes(),
+			source.TraitAliases(),
 		)
 	}
 	if hasWorkspaceMetadata(source) {
 		metadataIndex = packer.metadataIndex
 		packer.metadataIndex++
 		packer.document.metadata[metadataIndex] = newWorkspaceMetadata(
-			source.Attributes,
-			source.ConstantArray,
-			source.DocSummary,
+			source.Attributes(),
+			source.ConstantArray(),
+			source.DocSummary(),
 		)
 	}
 	target.setSideIndexes(signatureIndex, hierarchyIndex, metadataIndex)
@@ -921,27 +921,17 @@ func hasWorkspaceSignature(symbol *Symbol) bool {
 }
 
 func hasWorkspaceSignatureExtras(symbol *Symbol) bool {
-	return len(symbol.Templates) != 0 ||
-		len(symbol.Throws) != 0 ||
-		len(symbol.LiteralReturns) != 0 ||
-		len(symbol.ConstantReturns) != 0 ||
-		len(symbol.Assertions) != 0
+	return symbol != nil && symbol.signatureExtras.lengths != 0
 }
 
 func hasWorkspaceHierarchy(symbol *Symbol) bool {
-	return len(symbol.Extends) != 0 ||
-		len(symbol.Implements) != 0 ||
-		len(symbol.Traits) != 0 ||
-		len(symbol.ExtendsTypes) != 0 ||
-		len(symbol.ImplementsTypes) != 0 ||
-		len(symbol.TraitTypes) != 0 ||
-		len(symbol.TraitAliases) != 0
+	return symbol != nil && (symbol.hierarchy.lengths != 0 ||
+		symbol.hierarchy.types != nil || symbol.hierarchy.aliases != nil)
 }
 
 func hasWorkspaceMetadata(symbol *Symbol) bool {
-	return len(symbol.Attributes) != 0 ||
-		len(symbol.ConstantArray) != 0 ||
-		symbol.DocSummary != ""
+	return symbol != nil && (symbol.metadata.lengths != 0 ||
+		symbol.metadata.docSummary != "")
 }
 
 func (document *workspaceDocument) materialize() *Document {
@@ -993,27 +983,33 @@ func (symbol *workspaceSymbol) materialize() Symbol {
 			signature.Parameters,
 			symbol,
 		)
-		result.Templates = signature.templates()
-		result.Throws = signature.throws()
-		result.LiteralReturns = signature.literalReturns()
-		result.ConstantReturns = signature.constantReturns()
-		result.Assertions = signature.assertions()
+		result.SetSignatureExtras(
+			signature.templates(),
+			signature.throws(),
+			signature.assertions(),
+			signature.literalReturns(),
+			signature.constantReturns(),
+		)
 	}
 	hierarchy := symbol.hierarchy()
 	if hierarchy != nil {
-		result.Extends = hierarchy.extends()
-		result.Implements = hierarchy.implements()
-		result.Traits = hierarchy.traits()
-		result.ExtendsTypes = hierarchy.extendsTypes()
-		result.ImplementsTypes = hierarchy.implementsTypes()
-		result.TraitTypes = hierarchy.traitTypes()
-		result.TraitAliases = slices.Clone(hierarchy.aliases())
+		result.SetHierarchy(
+			hierarchy.extends(),
+			hierarchy.implements(),
+			hierarchy.traits(),
+			hierarchy.extendsTypes(),
+			hierarchy.implementsTypes(),
+			hierarchy.traitTypes(),
+			slices.Clone(hierarchy.aliases()),
+		)
 	}
 	metadata := symbol.metadata()
 	if metadata != nil {
-		result.Attributes = metadata.attributes()
-		result.ConstantArray = metadata.constantArray()
-		result.DocSummary = metadata.DocSummary
+		result.SetMetadata(
+			metadata.attributes(),
+			metadata.constantArray(),
+			metadata.DocSummary,
+		)
 	}
 	return result
 }

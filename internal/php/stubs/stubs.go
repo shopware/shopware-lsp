@@ -1277,9 +1277,9 @@ func (b *stubBuilder) classExtends(name string, kind semantic.SymbolKind, parent
 	for index := range b.symbols {
 		if b.symbols[index].ID == id {
 			if kind == semantic.InterfaceSymbol {
-				b.symbols[index].Implements = []string{parent}
+				b.symbols[index].SetImplements([]string{parent})
 			} else {
-				b.symbols[index].Extends = []string{parent}
+				b.symbols[index].SetExtends([]string{parent})
 			}
 		}
 	}
@@ -1289,11 +1289,13 @@ func (b *stubBuilder) classExtends(name string, kind semantic.SymbolKind, parent
 func (b *stubBuilder) addImplements(id semantic.SymbolID, names ...string) {
 	for index := range b.symbols {
 		if b.symbols[index].ID == id {
+			implemented := append([]string(nil), b.symbols[index].Implements()...)
 			for _, name := range names {
-				if !containsFold(b.symbols[index].Implements, name) {
-					b.symbols[index].Implements = append(b.symbols[index].Implements, name)
+				if !containsFold(implemented, name) {
+					implemented = append(implemented, name)
 				}
 			}
+			b.symbols[index].SetImplements(implemented)
 		}
 	}
 }
@@ -1304,7 +1306,9 @@ func (b *stubBuilder) setTemplates(
 ) {
 	for index := range b.symbols {
 		if b.symbols[index].ID == id {
-			b.symbols[index].Templates = append([]semantic.TemplateParameter(nil), templates...)
+			b.symbols[index].SetTemplates(
+				append([]semantic.TemplateParameter(nil), templates...),
+			)
 		}
 	}
 }
@@ -1342,7 +1346,9 @@ func (b *stubBuilder) methodWithTemplates(
 	b.method(container, name, result, parameters...)
 	key := stubSymbolKey(semantic.MethodSymbol, b.symbolName(container)+"::"+name)
 	if index, exists := b.index[key]; exists {
-		b.symbols[index].Templates = append([]semantic.TemplateParameter(nil), templates...)
+		b.symbols[index].SetTemplates(
+			append([]semantic.TemplateParameter(nil), templates...),
+		)
 	}
 }
 

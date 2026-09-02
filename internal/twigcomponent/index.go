@@ -1479,7 +1479,7 @@ func (idx *Index) phpProps(components []Component) []Prop {
 }
 
 func hasExposeInTemplate(symbol semantic.Symbol) bool {
-	for _, attribute := range symbol.Attributes {
+	for _, attribute := range symbol.Attributes() {
 		if strings.EqualFold(
 			normalizeClass(attribute.Name),
 			"Symfony\\UX\\TwigComponent\\Attribute\\ExposeInTemplate",
@@ -1491,7 +1491,7 @@ func hasExposeInTemplate(symbol semantic.Symbol) bool {
 }
 
 func hasLiveAction(symbol semantic.Symbol) bool {
-	for _, attribute := range symbol.Attributes {
+	for _, attribute := range symbol.Attributes() {
 		if strings.EqualFold(
 			normalizeClass(attribute.Name),
 			"Symfony\\UX\\LiveComponent\\Attribute\\LiveAction",
@@ -1503,7 +1503,7 @@ func hasLiveAction(symbol semantic.Symbol) bool {
 }
 
 func hasLiveListener(symbol semantic.Symbol) bool {
-	for _, attribute := range symbol.Attributes {
+	for _, attribute := range symbol.Attributes() {
 		if strings.EqualFold(
 			normalizeClass(attribute.Name),
 			"Symfony\\UX\\LiveComponent\\Attribute\\LiveListener",

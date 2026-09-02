@@ -60,11 +60,11 @@ func (p *ControllerHoverProvider) GetHover(
 			resolution.Method,
 		))
 		markdown.WriteString("\n```")
-		if resolution.Method.DocSummary != "" {
+		if resolution.Method.DocSummary() != "" {
 			fmt.Fprintf(
 				&markdown,
 				"\n\n%s",
-				resolution.Method.DocSummary,
+				resolution.Method.DocSummary(),
 			)
 		}
 		if !resolution.MethodFound {

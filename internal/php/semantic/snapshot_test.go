@@ -366,8 +366,8 @@ func TestStorePublishesImmutableSnapshots(t *testing.T) {
 		Name:           "Child",
 		FullyQualified: "App\\Child",
 		Path:           "/child.php",
-		Extends:        []string{"App\\Base"},
 	}
+	child.SetExtends([]string{"App\\Base"})
 	first := store.Replace(&Document{Path: base.Path, Symbols: []Symbol{base}})
 	second := store.Replace(&Document{Path: child.Path, Symbols: []Symbol{child}})
 
@@ -437,30 +437,31 @@ func TestStoreDefensivelyCopiesPublicReplacements(t *testing.T) {
 func TestStoreDocumentsDoNotExposeRetainedNestedSymbolData(t *testing.T) {
 	t.Parallel()
 	store := NewStore()
-	store.Replace(&Document{
-		Path: "/service.php",
-		Symbols: []Symbol{{
-			ID:             "service",
-			Kind:           ClassSymbol,
-			Name:           "Service",
-			FullyQualified: "App\\Service",
-			Path:           "/service.php",
-			Extends:        []string{"App\\Base"},
-			Parameters: []Parameter{{
-				Name:          "$value",
-				AssistantTags: []string{"Autowire"},
-			}},
+	service := Symbol{
+		ID:             "service",
+		Kind:           ClassSymbol,
+		Name:           "Service",
+		FullyQualified: "App\\Service",
+		Path:           "/service.php",
+		Parameters: []Parameter{{
+			Name:          "$value",
+			AssistantTags: []string{"Autowire"},
 		}},
+	}
+	service.SetExtends([]string{"App\\Base"})
+	store.Replace(&Document{
+		Path:    "/service.php",
+		Symbols: []Symbol{service},
 	})
 
 	first, ok := store.Document("/service.php")
 	require.True(t, ok)
-	first.Symbols[0].Extends[0] = "App\\Mutated"
+	first.Symbols[0].Extends()[0] = "App\\Mutated"
 	first.Symbols[0].Parameters[0].AssistantTags[0] = "Mutated"
 
 	second, ok := store.Document("/service.php")
 	require.True(t, ok)
-	require.Equal(t, []string{"App\\Base"}, second.Symbols[0].Extends)
+	require.Equal(t, []string{"App\\Base"}, second.Symbols[0].Extends())
 	require.Equal(
 		t,
 		[]string{"Autowire"},
@@ -1731,8 +1732,8 @@ func TestOverlayReferencesPrefilterUnrelatedInheritedMembers(t *testing.T) {
 		Name:           "ChildService",
 		FullyQualified: "App\\ChildService",
 		Path:           "/child.php",
-		Extends:        []string{parent.FullyQualified},
 	}
+	child.SetExtends([]string{parent.FullyQualified})
 	consumer := &Document{
 		Path: "/consumer.php",
 		References: []Reference{{
@@ -1985,11 +1986,8 @@ func TestSnapshotProjectsGenericSupertypes(t *testing.T) {
 		Kind:           ClassSymbol,
 		Name:           "Producer",
 		FullyQualified: "Producer",
-		Templates: []TemplateParameter{{
-			Name:      "T",
-			Covariant: true,
-		}},
 	}
+	base.SetTemplates([]TemplateParameter{{Name: "T", Covariant: true}})
 	entity := Symbol{
 		ID:             "entity",
 		Kind:           ClassSymbol,
@@ -2001,18 +1999,19 @@ func TestSnapshotProjectsGenericSupertypes(t *testing.T) {
 		Kind:           ClassSymbol,
 		Name:           "Product",
 		FullyQualified: "Product",
-		Extends:        []string{"Entity"},
 	}
+	product.SetExtends([]string{"Entity"})
 	child := Symbol{
 		ID:             "child",
 		Kind:           ClassSymbol,
 		Name:           "ProductProducer",
 		FullyQualified: "ProductProducer",
-		Extends:        []string{"Producer"},
-		ExtendsTypes: []types.Type{
-			types.Named("Producer", types.Named("Product")),
-		},
 	}
+	child.SetHierarchy(
+		[]string{"Producer"}, nil, nil,
+		[]types.Type{types.Named("Producer", types.Named("Product"))},
+		nil, nil, nil,
+	)
 	snapshot := NewSnapshot(1, []*Document{{
 		Path:    "/types.php",
 		Symbols: []Symbol{base, entity, product, child},
@@ -2036,41 +2035,42 @@ func TestSnapshotProjectsExplicitGenericThroughConcreteCollectionSubclasses(t *t
 		Kind:           InterfaceSymbol,
 		Name:           "IteratorAggregate",
 		FullyQualified: "IteratorAggregate",
-		Templates: []TemplateParameter{
-			{Name: "TKey"},
-			{Name: "TValue"},
-		},
 	}
+	iterator.SetTemplates([]TemplateParameter{{Name: "TKey"}, {Name: "TValue"}})
 	collection := Symbol{
 		ID:             "collection",
 		Kind:           ClassSymbol,
 		Name:           "Collection",
 		FullyQualified: "Collection",
-		Templates:      []TemplateParameter{{Name: "TElement"}},
-		Implements:     []string{"IteratorAggregate"},
-		ImplementsTypes: []types.Type{types.Named(
+	}
+	collection.SetTemplates([]TemplateParameter{{Name: "TElement"}})
+	collection.SetHierarchy(
+		nil, []string{"IteratorAggregate"}, nil, nil,
+		[]types.Type{types.Named(
 			"IteratorAggregate",
 			types.ArrayKey(),
 			types.Template("TElement"),
 		)},
-	}
+		nil, nil,
+	)
 	fieldCollection := Symbol{
 		ID:             "field-collection",
 		Kind:           ClassSymbol,
 		Name:           "FieldCollection",
 		FullyQualified: "FieldCollection",
-		Extends:        []string{"Collection"},
-		ExtendsTypes: []types.Type{
-			types.Named("Collection", types.Named("Field")),
-		},
 	}
+	fieldCollection.SetHierarchy(
+		[]string{"Collection"}, nil, nil,
+		[]types.Type{types.Named("Collection", types.Named("Field"))},
+		nil, nil, nil,
+	)
 	compiledFieldCollection := Symbol{
 		ID:             "compiled-field-collection",
 		Kind:           ClassSymbol,
 		Name:           "CompiledFieldCollection",
 		FullyQualified: "CompiledFieldCollection",
-		Extends:        []string{"FieldCollection"},
 	}
+	compiledFieldCollection.SetExtends([]string{"FieldCollection"})
 	snapshot := NewSnapshot(1, []*Document{{
 		Path: "/collections.php",
 		Symbols: []Symbol{

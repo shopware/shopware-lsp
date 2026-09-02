@@ -104,8 +104,8 @@ func staticReceiverType(
 			return types.Named(phpContext.InsideClass.FullyQualified)
 		}
 	case "parent":
-		if phpContext.InsideClass != nil && len(phpContext.InsideClass.Extends) > 0 {
-			return types.Named(phpContext.InsideClass.Extends[0])
+		if phpContext.InsideClass != nil && len(phpContext.InsideClass.Extends()) > 0 {
+			return types.Named(phpContext.InsideClass.Extends()[0])
 		}
 	default:
 		return types.Named(
@@ -216,11 +216,11 @@ func formatSymbol(symbol semantic.Symbol) string {
 			semantic.EnumSymbol:      "enum",
 		}[symbol.Kind]
 		modifiers = append(modifiers, kind, symbol.FullyQualified)
-		if len(symbol.Extends) > 0 {
-			modifiers = append(modifiers, "extends", strings.Join(symbol.Extends, ", "))
+		if len(symbol.Extends()) > 0 {
+			modifiers = append(modifiers, "extends", strings.Join(symbol.Extends(), ", "))
 		}
-		if len(symbol.Implements) > 0 {
-			modifiers = append(modifiers, "implements", strings.Join(symbol.Implements, ", "))
+		if len(symbol.Implements()) > 0 {
+			modifiers = append(modifiers, "implements", strings.Join(symbol.Implements(), ", "))
 		}
 		return strings.Join(modifiers, " ")
 	case semantic.MethodSymbol, semantic.FunctionSymbol:

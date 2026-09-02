@@ -42,26 +42,27 @@ func TestSemanticDecompressorPoolCanBeReusedAndCleared(t *testing.T) {
 }
 
 func TestPersistedWorkspaceGraphRoundTrip(t *testing.T) {
+	symbol := semantic.Symbol{
+		ID:             "product",
+		Kind:           semantic.ClassSymbol,
+		Name:           "Product",
+		FullyQualified: "App\\Product",
+		Path:           "/project/Product.php",
+		Type:           types.Unknown(),
+		NativeType:     types.Unknown(),
+		DocType:        types.Unknown(),
+		ReturnType:     types.Unknown(),
+	}
+	symbol.SetExtends([]string{"App\\Entity"})
+	symbol.SetTemplates([]semantic.TemplateParameter{{
+		Name:    "T",
+		Bound:   types.Named("App\\Entity"),
+		Default: types.Unknown(),
+	}})
 	document := (&semantic.Document{
 		Path:      "/project/Product.php",
 		Namespace: "App",
-		Symbols: []semantic.Symbol{{
-			ID:             "product",
-			Kind:           semantic.ClassSymbol,
-			Name:           "Product",
-			FullyQualified: "App\\Product",
-			Path:           "/project/Product.php",
-			Type:           types.Unknown(),
-			NativeType:     types.Unknown(),
-			DocType:        types.Unknown(),
-			ReturnType:     types.Unknown(),
-			Extends:        []string{"App\\Entity"},
-			Templates: []semantic.TemplateParameter{{
-				Name:    "T",
-				Bound:   types.Named("App\\Entity"),
-				Default: types.Unknown(),
-			}},
-		}},
+		Symbols:   []semantic.Symbol{symbol},
 	}).WorkspaceGraph()
 	graph := semantic.PackWorkspaceGraphOwned(document)
 
@@ -76,10 +77,10 @@ func TestPersistedWorkspaceGraphRoundTrip(t *testing.T) {
 	require.Equal(t, document.Namespace, decodedDocument.Namespace)
 	require.Len(t, decodedDocument.Symbols, 1)
 	require.Equal(t, document.Symbols[0].ID, decodedDocument.Symbols[0].ID)
-	require.Equal(t, document.Symbols[0].Extends, decodedDocument.Symbols[0].Extends)
-	require.Len(t, decodedDocument.Symbols[0].Templates, 1)
-	require.True(t, document.Symbols[0].Templates[0].Bound.Equal(
-		decodedDocument.Symbols[0].Templates[0].Bound,
+	require.Equal(t, document.Symbols[0].Extends(), decodedDocument.Symbols[0].Extends())
+	require.Len(t, decodedDocument.Symbols[0].Templates(), 1)
+	require.True(t, document.Symbols[0].Templates()[0].Bound.Equal(
+		decodedDocument.Symbols[0].Templates()[0].Bound,
 	))
 
 	// A later encoding may reuse the compressor itself while the first output

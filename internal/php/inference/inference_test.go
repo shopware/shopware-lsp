@@ -3485,8 +3485,8 @@ function invalid(): Box { return new Box('wrong'); }
 	)
 	require.Len(t, constructors, 1)
 	require.Equal(t, "T", constructors[0].Symbol.Parameters[0].Type.String())
-	require.Len(t, constructors[0].Symbol.Templates, 1)
-	require.Equal(t, "object", constructors[0].Symbol.Templates[0].Bound.String())
+	require.Len(t, constructors[0].Symbol.Templates(), 1)
+	require.Equal(t, "object", constructors[0].Symbol.Templates()[0].Bound.String())
 	require.False(t, resolver.ResolveSignature(
 		snapshot.Relations(),
 		constructors[0].Symbol,

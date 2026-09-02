@@ -320,7 +320,7 @@ func (c Catalog) MaterializeForExtensions(
 			}
 		}
 		attributes := cloneAttributes(source.Attributes)
-		result = append(result, semantic.Symbol{
+		symbol := semantic.Symbol{
 			ID:                 id,
 			Kind:               source.Kind,
 			Name:               source.Name,
@@ -336,17 +336,21 @@ func (c Catalog) MaterializeForExtensions(
 			DocType:            source.DocType,
 			ReturnType:         source.ReturnType,
 			Parameters:         parameters,
-			Templates:          templates,
-			Extends:            slices.Clone(source.Extends),
-			Implements:         slices.Clone(source.Implements),
-			Traits:             slices.Clone(source.Traits),
-			ExtendsTypes:       slices.Clone(source.ExtendsTypes),
-			ImplementsTypes:    slices.Clone(source.ImplementsTypes),
-			TraitTypes:         slices.Clone(source.TraitTypes),
-			Throws:             slices.Clone(source.Throws),
-			Attributes:         attributes,
-			DocSummary:         source.DocSummary,
-		})
+		}
+		symbol.SetSignatureExtras(
+			templates, slices.Clone(source.Throws), nil, nil, nil,
+		)
+		symbol.SetHierarchy(
+			slices.Clone(source.Extends),
+			slices.Clone(source.Implements),
+			slices.Clone(source.Traits),
+			slices.Clone(source.ExtendsTypes),
+			slices.Clone(source.ImplementsTypes),
+			slices.Clone(source.TraitTypes),
+			nil,
+		)
+		symbol.SetMetadata(attributes, nil, source.DocSummary)
+		result = append(result, symbol)
 		containerNames = append(containerNames, source.Container)
 	}
 

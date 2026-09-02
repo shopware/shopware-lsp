@@ -167,8 +167,8 @@ func (b *documentBuilder) bindClassAlias(
 		Range:          call.RangeTrimmedTrivia(),
 		SelectionRange: aliasRange,
 		Flags:          semantic.SyntheticFlag | semantic.ClassAliasFlag,
-		Extends:        []string{target},
 	}
+	symbol.SetExtends([]string{target})
 	b.addSymbol(scope, symbol)
 	if targetLiteral {
 		reference := semantic.Reference{
@@ -362,9 +362,12 @@ func (b *documentBuilder) bindAnonymousClass(
 		Range:          node.RangeTrimmedTrivia(),
 		SelectionRange: node.RangeTrimmedTrivia(),
 		Flags:          declarationFlags(node) | semantic.SyntheticFlag,
-		Extends:        resolveNames(context, phpquery.ClassExtends(node)),
-		Implements:     resolveNames(context, phpquery.ClassImplements(node)),
 	}
+	symbol.SetHierarchy(
+		resolveNames(context, phpquery.ClassExtends(node)),
+		resolveNames(context, phpquery.ClassImplements(node)),
+		nil, nil, nil, nil, nil,
+	)
 	body := phpquery.DirectChild(node, phpsyntax.PhpClassBody)
 	if body != nil {
 		symbol.BodyRange = body.RangeTrimmedTrivia()
@@ -403,6 +406,8 @@ func (b *documentBuilder) bindAnonymousClass(
 			b.bindConstants(member, classScope, context, symbol.ID, true)
 		case phpsyntax.PhpTraitUseDeclaration:
 			var usedTraits []string
+			storedSymbol := &b.document.Symbols[symbolIndex]
+			traits := append([]string(nil), storedSymbol.Traits()...)
 			for childIndex := 0; childIndex < member.ChildCount(); childIndex++ {
 				trait, ok := member.Child(childIndex).(*phpsyntax.Node)
 				if !ok || trait.Kind() != phpsyntax.PhpName {
@@ -410,10 +415,7 @@ func (b *documentBuilder) bindAnonymousClass(
 				}
 				resolvedTrait := context.ResolveClass(phpquery.NameValue(trait))
 				usedTraits = append(usedTraits, resolvedTrait)
-				b.document.Symbols[symbolIndex].Traits = append(
-					b.document.Symbols[symbolIndex].Traits,
-					resolvedTrait,
-				)
+				traits = append(traits, resolvedTrait)
 				b.addSingleReference(
 					trait,
 					semantic.ClassName,
@@ -421,9 +423,14 @@ func (b *documentBuilder) bindAnonymousClass(
 					context.ResolveClass(phpquery.NameValue(trait)),
 				)
 			}
-			b.document.Symbols[symbolIndex].TraitAliases = append(
-				b.document.Symbols[symbolIndex].TraitAliases,
+			aliases := append(
+				append([]semantic.TraitAlias(nil), storedSymbol.TraitAliases()...),
 				bindTraitAliases(member, context, usedTraits)...,
+			)
+			storedSymbol.SetHierarchy(
+				storedSymbol.Extends(), storedSymbol.Implements(), traits,
+				storedSymbol.ExtendsTypes(), storedSymbol.ImplementsTypes(),
+				storedSymbol.TraitTypes(), aliases,
 			)
 		}
 	}
@@ -565,19 +572,24 @@ func (b *documentBuilder) bindClosure(
 		NativeType: nativeReturn,
 		DocType:    docReturn,
 		ReturnType: effectiveType(nativeReturn, docReturn),
-		DocSummary: documentation.Summary,
-		Assertions: bindAssertions(documentation.Assertions, context, docTemplates),
 	}
+	symbol.SetDocSummary(documentation.Summary)
 	if parameterCount := parameters.Len(); parameterCount != 0 {
 		symbol.Parameters = make(
 			[]semantic.Parameter,
 			parameterCount,
 		)
 	}
-	symbol.Templates = bindTemplates(
-		documentation.Templates,
-		context,
-		inheritedTemplates...,
+	symbol.SetSignatureExtras(
+		bindTemplates(
+			documentation.Templates,
+			context,
+			inheritedTemplates...,
+		),
+		nil,
+		bindAssertions(documentation.Assertions, context, docTemplates),
+		nil,
+		nil,
 	)
 	b.addSymbol(parentScope, symbol)
 

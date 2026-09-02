@@ -200,8 +200,8 @@ func (p *TwigHoverProvider) twigPHPMemberHover(
 			signature = p.phpIndex.ConstantSymbolName(symbol)
 		}
 		value := "```php\n" + signature + "\n```"
-		if symbol.DocSummary != "" {
-			value += "\n\n" + symbol.DocSummary
+		if symbol.DocSummary() != "" {
+			value += "\n\n" + symbol.DocSummary()
 		}
 		if symbol.Flags.Has(semantic.DeprecatedFlag) {
 			value += "\n\n**Deprecated**"

@@ -97,7 +97,7 @@ func Options(index *php.PHPIndex) []Option {
 		ClientInterface,
 		"OPTIONS_DEFAULTS",
 	) {
-		for _, item := range constant.ConstantArray {
+		for _, item := range constant.ConstantArray() {
 			result = append(result, Option{
 				Name:    item.Key,
 				Type:    item.Type,

@@ -661,7 +661,7 @@ func (idx *Index) relatedRecordsWithOptions(
 		}
 		if idx.phpIndex != nil {
 			if symbol, found := idx.phpIndex.FindClass(current.Class); found {
-				for _, parent := range symbol.Extends {
+				for _, parent := range symbol.Extends() {
 					visit(parent)
 				}
 			}
@@ -768,7 +768,7 @@ func (idx *Index) isFormTypeRecord(
 		return true
 	}
 	if symbol, found := idx.phpIndex.FindClass(current.Class); found {
-		for _, parent := range symbol.Extends {
+		for _, parent := range symbol.Extends() {
 			if idx.isFormTypeRecord(
 				merged,
 				lookupMergedType(merged, parent),

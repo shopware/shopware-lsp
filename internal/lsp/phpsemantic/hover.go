@@ -26,8 +26,8 @@ func (p *Provider) GetHover(
 	)
 	if symbol, ok := php.SymbolAt(phpContext.Document, phpContext.Snapshot, offset); ok {
 		value := "```php\n" + formatSymbol(symbol) + "\n```"
-		if symbol.DocSummary != "" {
-			value += "\n\n" + symbol.DocSummary
+		if symbol.DocSummary() != "" {
+			value += "\n\n" + symbol.DocSummary()
 		}
 		if symbol.Flags.Has(semantic.DeprecatedFlag) {
 			value += formatDeprecationHover(symbol)

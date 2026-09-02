@@ -274,8 +274,8 @@ interface HttpClientInterface {
 		"OPTIONS_DEFAULTS",
 	)
 	require.Len(t, constants, 1)
-	require.Len(t, constants[0].ConstantArray, 2)
-	require.Equal(t, "timeout", constants[0].ConstantArray[0].Key)
+	require.Len(t, constants[0].ConstantArray(), 2)
+	require.Equal(t, "timeout", constants[0].ConstantArray()[0].Key)
 	require.NoError(t, idx.Close())
 
 	reopened, err := NewPHPIndex(configDir)
@@ -286,9 +286,9 @@ interface HttpClientInterface {
 		"OPTIONS_DEFAULTS",
 	)
 	require.Len(t, constants, 1)
-	require.Len(t, constants[0].ConstantArray, 2)
-	require.Equal(t, "array", constants[0].ConstantArray[1].Type.String())
-	require.Equal(t, "[]", constants[0].ConstantArray[1].Value)
+	require.Len(t, constants[0].ConstantArray(), 2)
+	require.Equal(t, "array", constants[0].ConstantArray()[1].Type.String())
+	require.Equal(t, "[]", constants[0].ConstantArray()[1].Value)
 }
 
 func TestPHPIndexPersistsLiteralMethodReturns(t *testing.T) {
@@ -308,8 +308,8 @@ class Helper {
 	)))
 	methods := idx.FindMethods("App\\Helper", "getName")
 	require.Len(t, methods, 1)
-	require.Len(t, methods[0].LiteralReturns, 1)
-	require.Equal(t, "question", methods[0].LiteralReturns[0].Value)
+	require.Len(t, methods[0].LiteralReturns(), 1)
+	require.Equal(t, "question", methods[0].LiteralReturns()[0].Value)
 	require.NoError(t, idx.Close())
 
 	reopened, err := NewPHPIndex(configDir)
@@ -317,8 +317,8 @@ class Helper {
 	t.Cleanup(func() { require.NoError(t, reopened.Close()) })
 	methods = reopened.FindMethods("App\\Helper", "getName")
 	require.Len(t, methods, 1)
-	require.Len(t, methods[0].LiteralReturns, 1)
-	require.Equal(t, `"question"`, methods[0].LiteralReturns[0].Type.String())
+	require.Len(t, methods[0].LiteralReturns(), 1)
+	require.Equal(t, `"question"`, methods[0].LiteralReturns()[0].Type.String())
 }
 
 func TestPHPIndexPersistsClassConstantMethodReturns(t *testing.T) {
@@ -339,9 +339,9 @@ class Helper {
 	)))
 	methods := idx.FindMethods("App\\Helper", "getName")
 	require.Len(t, methods, 1)
-	require.Len(t, methods[0].ConstantReturns, 1)
-	require.Equal(t, "self", methods[0].ConstantReturns[0].Receiver)
-	require.Equal(t, "NAME", methods[0].ConstantReturns[0].Name)
+	require.Len(t, methods[0].ConstantReturns(), 1)
+	require.Equal(t, "self", methods[0].ConstantReturns()[0].Receiver)
+	require.Equal(t, "NAME", methods[0].ConstantReturns()[0].Name)
 	require.NoError(t, idx.Close())
 
 	reopened, err := NewPHPIndex(configDir)
@@ -349,9 +349,9 @@ class Helper {
 	t.Cleanup(func() { require.NoError(t, reopened.Close()) })
 	methods = reopened.FindMethods("App\\Helper", "getName")
 	require.Len(t, methods, 1)
-	require.Len(t, methods[0].ConstantReturns, 1)
-	require.Equal(t, "self", methods[0].ConstantReturns[0].Receiver)
-	require.Equal(t, "NAME", methods[0].ConstantReturns[0].Name)
+	require.Len(t, methods[0].ConstantReturns(), 1)
+	require.Equal(t, "self", methods[0].ConstantReturns()[0].Receiver)
+	require.Equal(t, "NAME", methods[0].ConstantReturns()[0].Name)
 }
 
 func TestSemanticContextResolvesCallReceiver(t *testing.T) {

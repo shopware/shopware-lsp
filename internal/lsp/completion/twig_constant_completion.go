@@ -192,9 +192,9 @@ func twigConstantCompletionItem(
 			NewText: insert,
 		},
 	}
-	if symbol.DocSummary != "" {
+	if symbol.DocSummary() != "" {
 		item.Documentation.Kind = string(protocol.Markdown)
-		item.Documentation.Value = symbol.DocSummary
+		item.Documentation.Value = symbol.DocSummary()
 	}
 	if symbol.Flags.Has(semantic.DeprecatedFlag) {
 		item.Deprecated = true

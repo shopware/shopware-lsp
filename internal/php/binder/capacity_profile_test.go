@@ -44,6 +44,7 @@ func TestShopwareTrunkBinderCapacityProfile(t *testing.T) {
 	var emptyScopes, oneSymbolScopes, twoSymbolScopes int64
 	var threeToFourSymbolScopes, fiveToEightSymbolScopes, largeScopes int64
 	var typeFactProfile semantic.TypeFactProfileStats
+	var sideProfile symbolSideProfile
 	symbolCandidates := []symbolCapacityCandidate{
 		{label: "90%", numerator: 9, denominator: 10},
 		{
@@ -125,6 +126,7 @@ func TestShopwareTrunkBinderCapacityProfile(t *testing.T) {
 		snapshot := semantic.NewSnapshot(1, []*semantic.Document{document})
 		document = inference.New(snapshot).AnalyzeOwned(document, root)
 		document = inference.LinkMembersOwned(document, snapshot, root)
+		sideProfile.add(document.Symbols)
 		for _, scope := range document.Scopes {
 			symbols := int64(0)
 			for range scope.AllSymbolIDs(document.Symbols) {
@@ -332,6 +334,152 @@ func TestShopwareTrunkBinderCapacityProfile(t *testing.T) {
 		fiveToEightSymbolScopes,
 		largeScopes,
 	)
+	t.Logf(
+		"symbol side profile: signatures=%d parameters=%d extras=%d "+
+			"extras_multi=%d extras_over_4095=%d max_templates=%d "+
+			"max_throws=%d max_assertions=%d max_literal_returns=%d "+
+			"max_constant_returns=%d hierarchies=%d hierarchy_multi=%d "+
+			"hierarchy_types=%d hierarchy_aliases=%d max_extends=%d "+
+			"max_implements=%d max_traits=%d max_extends_types=%d "+
+			"max_implements_types=%d max_trait_types=%d max_aliases=%d",
+		sideProfile.signatures,
+		sideProfile.parameters,
+		sideProfile.signatureExtras,
+		sideProfile.signatureExtrasMulti,
+		sideProfile.signatureExtrasOver4095,
+		sideProfile.maxTemplates,
+		sideProfile.maxThrows,
+		sideProfile.maxAssertions,
+		sideProfile.maxLiteralReturns,
+		sideProfile.maxConstantReturns,
+		sideProfile.hierarchies,
+		sideProfile.hierarchyMulti,
+		sideProfile.hierarchyTypes,
+		sideProfile.hierarchyAliases,
+		sideProfile.maxExtends,
+		sideProfile.maxImplements,
+		sideProfile.maxTraits,
+		sideProfile.maxExtendsTypes,
+		sideProfile.maxImplementsTypes,
+		sideProfile.maxTraitTypes,
+		sideProfile.maxAliases,
+	)
+}
+
+type symbolSideProfile struct {
+	signatures              int64
+	parameters              int64
+	signatureExtras         int64
+	signatureExtrasMulti    int64
+	signatureExtrasOver4095 int64
+	maxTemplates            int
+	maxThrows               int
+	maxAssertions           int
+	maxLiteralReturns       int
+	maxConstantReturns      int
+	hierarchies             int64
+	hierarchyMulti          int64
+	hierarchyTypes          int64
+	hierarchyAliases        int64
+	maxExtends              int
+	maxImplements           int
+	maxTraits               int
+	maxExtendsTypes         int
+	maxImplementsTypes      int
+	maxTraitTypes           int
+	maxAliases              int
+}
+
+func (profile *symbolSideProfile) add(symbols []semantic.Symbol) {
+	for index := range symbols {
+		symbol := &symbols[index]
+		if len(symbol.Parameters) != 0 {
+			profile.signatures++
+			profile.parameters += int64(len(symbol.Parameters))
+		}
+		signatureLengths := [...]int{
+			len(symbol.Templates()),
+			len(symbol.Throws()),
+			len(symbol.Assertions()),
+			len(symbol.LiteralReturns()),
+			len(symbol.ConstantReturns()),
+		}
+		signatureGroups := nonEmptyLengthCount(signatureLengths[:])
+		if signatureGroups != 0 {
+			profile.signatureExtras++
+		}
+		if signatureGroups > 1 {
+			profile.signatureExtrasMulti++
+		}
+		for _, length := range signatureLengths {
+			if length > 4095 {
+				profile.signatureExtrasOver4095++
+				break
+			}
+		}
+		profile.maxTemplates = max(profile.maxTemplates, signatureLengths[0])
+		profile.maxThrows = max(profile.maxThrows, signatureLengths[1])
+		profile.maxAssertions = max(profile.maxAssertions, signatureLengths[2])
+		profile.maxLiteralReturns = max(
+			profile.maxLiteralReturns,
+			signatureLengths[3],
+		)
+		profile.maxConstantReturns = max(
+			profile.maxConstantReturns,
+			signatureLengths[4],
+		)
+
+		hierarchyLengths := [...]int{
+			len(symbol.Extends()),
+			len(symbol.Implements()),
+			len(symbol.Traits()),
+			len(symbol.ExtendsTypes()),
+			len(symbol.ImplementsTypes()),
+			len(symbol.TraitTypes()),
+			len(symbol.TraitAliases()),
+		}
+		hierarchyGroups := nonEmptyLengthCount(hierarchyLengths[:])
+		if hierarchyGroups != 0 {
+			profile.hierarchies++
+		}
+		if hierarchyGroups > 1 {
+			profile.hierarchyMulti++
+		}
+		if hierarchyLengths[3] != 0 ||
+			hierarchyLengths[4] != 0 ||
+			hierarchyLengths[5] != 0 {
+			profile.hierarchyTypes++
+		}
+		if hierarchyLengths[6] != 0 {
+			profile.hierarchyAliases++
+		}
+		profile.maxExtends = max(profile.maxExtends, hierarchyLengths[0])
+		profile.maxImplements = max(profile.maxImplements, hierarchyLengths[1])
+		profile.maxTraits = max(profile.maxTraits, hierarchyLengths[2])
+		profile.maxExtendsTypes = max(
+			profile.maxExtendsTypes,
+			hierarchyLengths[3],
+		)
+		profile.maxImplementsTypes = max(
+			profile.maxImplementsTypes,
+			hierarchyLengths[4],
+		)
+		profile.maxTraitTypes = max(
+			profile.maxTraitTypes,
+			hierarchyLengths[5],
+		)
+		profile.maxAliases = max(profile.maxAliases, hierarchyLengths[6])
+	}
+}
+
+func nonEmptyLengthCount(lengths []int) int {
+	count := 0
+	for _, length := range lengths {
+		if length != 0 {
+			count++
+		}
+	}
+	return count
 }
 
 type symbolCapacityCandidate struct {

@@ -217,14 +217,15 @@ func (r *signatureResolver) hasRequiredParameters() bool {
 }
 
 func (r *signatureResolver) validateTemplateBounds() {
-	for _, template := range r.result.Symbol.Templates {
+	symbolTemplates := r.result.Symbol.Templates()
+	for _, template := range symbolTemplates {
 		value, inferred := r.result.Templates[template.Name]
 		if !inferred && !template.Default.IsUnknown() {
 			value = types.Substitute(template.Default, r.result.Templates)
 			if r.result.Templates == nil {
 				r.result.Templates = make(
 					map[string]types.Type,
-					len(r.result.Symbol.Templates),
+					len(symbolTemplates),
 				)
 			}
 			r.result.Templates[template.Name] = value

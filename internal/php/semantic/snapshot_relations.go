@@ -56,14 +56,14 @@ func (s *Snapshot) isSubtypeOf(
 	found := false
 	s.VisitClassViews(candidate, func(classView SymbolView) bool {
 		class := classView.Materialize()
-		for _, parent := range class.Extends {
+		for _, parent := range class.Extends() {
 			if s.lowerName(parent, false) == normalizedTarget ||
 				s.isSubtypeOf(parent, normalizedTarget, visited) {
 				found = true
 				return false
 			}
 		}
-		for _, parent := range class.Implements {
+		for _, parent := range class.Implements() {
 			if s.lowerName(parent, false) == normalizedTarget ||
 				s.isSubtypeOf(parent, normalizedTarget, visited) {
 				found = true
@@ -134,7 +134,7 @@ func (s *Snapshot) callableSignature(
 		if found {
 			return false
 		}
-		for _, trait := range class.Traits {
+		for _, trait := range class.Traits() {
 			if signature, ok := s.callableSignature(
 				types.Named(trait),
 				visited,
@@ -186,10 +186,11 @@ func (s *Snapshot) TemplateVariance(name string, index int) types.Variance {
 	result := types.Invariant
 	s.VisitClassViews(name, func(classView SymbolView) bool {
 		class := classView.Materialize()
-		if index < 0 || index >= len(class.Templates) {
+		templates := class.Templates()
+		if index < 0 || index >= len(templates) {
 			return true
 		}
-		template := class.Templates[index]
+		template := templates[index]
 		switch {
 		case template.Covariant:
 			result = types.Covariant
@@ -252,11 +253,12 @@ func classTemplateBindings(
 	class Symbol,
 	candidate types.Type,
 ) map[string]types.Type {
-	if len(class.Templates) == 0 {
+	classTemplates := class.Templates()
+	if len(classTemplates) == 0 {
 		return nil
 	}
-	templates := make(map[string]types.Type, len(class.Templates))
-	for index, template := range class.Templates {
+	templates := make(map[string]types.Type, len(classTemplates))
+	for index, template := range classTemplates {
 		switch {
 		case index < candidate.ArgumentCount():
 			templates[template.Name] = candidate.Argument(index)
@@ -276,7 +278,7 @@ func inheritExplicitArguments(
 	candidate types.Type,
 	parent types.Type,
 ) types.Type {
-	if len(class.Templates) != 0 || candidate.ArgumentCount() == 0 ||
+	if len(class.Templates()) != 0 || candidate.ArgumentCount() == 0 ||
 		parent.Kind() != types.ObjectKind || parent.Name() == "" {
 		return parent
 	}
@@ -296,10 +298,13 @@ func inheritExplicitArguments(
 
 func classParentTypes(class Symbol) []types.Type {
 	declared := append(
-		append([]types.Type(nil), class.ExtendsTypes...),
-		class.ImplementsTypes...,
+		append([]types.Type(nil), class.ExtendsTypes()...),
+		class.ImplementsTypes()...,
 	)
-	names := append(append([]string(nil), class.Extends...), class.Implements...)
+	names := append(
+		append([]string(nil), class.Extends()...),
+		class.Implements()...,
+	)
 	result := append([]types.Type(nil), declared...)
 	for _, name := range names {
 		found := false

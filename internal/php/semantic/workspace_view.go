@@ -100,7 +100,7 @@ func (view SymbolView) Visibility() Visibility {
 // materializing the full symbol and its signature.
 func (view SymbolView) Attributes() []Attribute {
 	if view.expanded != nil {
-		return view.expanded.Attributes
+		return view.expanded.Attributes()
 	}
 	if view.workspace == nil {
 		return nil
@@ -151,7 +151,7 @@ func (view SymbolView) HierarchyNames() (
 // TraitAliases returns method adaptations declared by the viewed class.
 func (view SymbolView) TraitAliases() []TraitAlias {
 	if view.expanded != nil {
-		return view.expanded.TraitAliases
+		return view.expanded.TraitAliases()
 	}
 	if view.workspace == nil || view.workspace.hierarchy() == nil {
 		return nil
@@ -165,9 +165,9 @@ func (view SymbolView) hierarchyNames() (
 	implements []string,
 ) {
 	if view.expanded != nil {
-		return view.expanded.Traits,
-			view.expanded.Extends,
-			view.expanded.Implements
+		return view.expanded.Traits(),
+			view.expanded.Extends(),
+			view.expanded.Implements()
 	}
 	if view.workspace == nil || view.workspace.hierarchy() == nil {
 		return nil, nil, nil

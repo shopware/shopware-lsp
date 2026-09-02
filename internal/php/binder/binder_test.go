@@ -309,9 +309,9 @@ function helper(Product $product): Product
 	require.Equal(t, "App\\Domain", document.Namespace)
 	require.NotEmpty(t, document.Scopes)
 	class := findSymbol(t, document, semantic.ClassSymbol, "Product")
-	require.Equal(t, []string{"Vendor\\Contracts\\BaseEntity"}, class.Extends)
-	require.Equal(t, []string{"JsonSerializable"}, class.Implements)
-	require.Equal(t, []string{"App\\Domain\\TracksChanges"}, class.Traits)
+	require.Equal(t, []string{"Vendor\\Contracts\\BaseEntity"}, class.Extends())
+	require.Equal(t, []string{"JsonSerializable"}, class.Implements())
+	require.Equal(t, []string{"App\\Domain\\TracksChanges"}, class.Traits())
 	require.True(t, class.Flags.Has(semantic.FinalFlag))
 
 	constructor := findSymbol(t, document, semantic.MethodSymbol, "__construct")
@@ -685,8 +685,8 @@ enum Status: string {
 `).Tree.Root,
 	)
 	status := findSymbol(t, document, semantic.EnumSymbol, "Status")
-	require.Contains(t, status.Implements, "UnitEnum")
-	require.Contains(t, status.Implements, "BackedEnum")
+	require.Contains(t, status.Implements(), "UnitEnum")
+	require.Contains(t, status.Implements(), "BackedEnum")
 	cases := findSymbol(t, document, semantic.MethodSymbol, "cases")
 	require.True(t, cases.Flags.Has(semantic.StaticFlag))
 	require.True(t, cases.Flags.Has(semantic.SyntheticFlag))
@@ -733,9 +733,9 @@ class ProductRepository extends Repository {
 `).Tree.Root
 	document := New().Bind("/repository.php", 1, root)
 	class := findSymbol(t, document, semantic.ClassSymbol, "ProductRepository")
-	require.Len(t, class.Templates, 1)
-	require.Equal(t, "App\\Entity", class.Templates[0].Bound.String())
-	require.Equal(t, "App\\Repository<TEntity>", class.ExtendsTypes[0].String())
+	require.Len(t, class.Templates(), 1)
+	require.Equal(t, "App\\Entity", class.Templates()[0].Bound.String())
+	require.Equal(t, "App\\Repository<TEntity>", class.ExtendsTypes()[0].String())
 	entities := findSymbol(t, document, semantic.PropertySymbol, "entities")
 	require.Equal(t, "list<TEntity>", entities.Type.String())
 	require.True(t, entities.Flags.Has(semantic.SyntheticFlag))
@@ -744,9 +744,9 @@ class ProductRepository extends Repository {
 	require.True(t, find.Flags.Has(semantic.SyntheticFlag))
 	require.Equal(t, "list<TEntity>", findSymbol(t, document, semantic.MethodSymbol, "all").ReturnType.String())
 	identity := findSymbol(t, document, semantic.MethodSymbol, "identity")
-	require.Len(t, identity.Templates, 1)
-	require.Equal(t, "Item", identity.Templates[0].Name)
-	require.Equal(t, "App\\Entity", identity.Templates[0].Bound.String())
+	require.Len(t, identity.Templates(), 1)
+	require.Equal(t, "Item", identity.Templates()[0].Name)
+	require.Equal(t, "App\\Entity", identity.Templates()[0].Bound.String())
 	require.Equal(t, "Item", identity.Parameters[0].Type.String())
 	require.Equal(t, "Item", identity.ReturnType.String())
 }
@@ -835,20 +835,20 @@ interface HttpClientInterface {
 		semantic.ClassConstantSymbol,
 		"OPTIONS_DEFAULTS",
 	)
-	require.Len(t, constant.ConstantArray, 5)
-	require.Equal(t, "timeout", constant.ConstantArray[0].Key)
-	require.Equal(t, "null", constant.ConstantArray[0].Type.String())
-	require.Equal(t, "null", constant.ConstantArray[0].Value)
-	keyRange := constant.ConstantArray[0].KeyRange
+	require.Len(t, constant.ConstantArray(), 5)
+	require.Equal(t, "timeout", constant.ConstantArray()[0].Key)
+	require.Equal(t, "null", constant.ConstantArray()[0].Type.String())
+	require.Equal(t, "null", constant.ConstantArray()[0].Value)
+	keyRange := constant.ConstantArray()[0].KeyRange
 	require.Equal(
 		t,
 		"'timeout'",
 		source[keyRange.Start:keyRange.End],
 	)
-	require.Equal(t, "array", constant.ConstantArray[1].Type.String())
-	require.Equal(t, "bool", constant.ConstantArray[2].Type.String())
-	require.Equal(t, "int", constant.ConstantArray[3].Type.String())
-	require.Equal(t, "string", constant.ConstantArray[4].Type.String())
+	require.Equal(t, "array", constant.ConstantArray()[1].Type.String())
+	require.Equal(t, "bool", constant.ConstantArray()[2].Type.String())
+	require.Equal(t, "int", constant.ConstantArray()[3].Type.String())
+	require.Equal(t, "string", constant.ConstantArray()[4].Type.String())
 }
 
 func TestBindPreservesDirectLiteralMethodReturns(t *testing.T) {
@@ -872,11 +872,11 @@ class Helper {
 		phpparser.Parse(source).Tree.Root,
 	)
 	method := findSymbol(t, document, semantic.MethodSymbol, "getName")
-	require.Len(t, method.LiteralReturns, 2)
-	require.Equal(t, "debug_formatter", method.LiteralReturns[0].Value)
-	require.Equal(t, `"debug_formatter"`, method.LiteralReturns[0].Type.String())
-	require.Equal(t, "formatter", method.LiteralReturns[1].Value)
-	for _, literal := range method.LiteralReturns {
+	require.Len(t, method.LiteralReturns(), 2)
+	require.Equal(t, "debug_formatter", method.LiteralReturns()[0].Value)
+	require.Equal(t, `"debug_formatter"`, method.LiteralReturns()[0].Type.String())
+	require.Equal(t, "formatter", method.LiteralReturns()[1].Value)
+	for _, literal := range method.LiteralReturns() {
 		require.NotEqual(t, "nested", literal.Value)
 		require.Equal(
 			t,
@@ -908,20 +908,20 @@ class Helper {
 		phpparser.Parse(source).Tree.Root,
 	)
 	method := findSymbol(t, document, semantic.MethodSymbol, "getName")
-	require.Len(t, method.ConstantReturns, 2)
+	require.Len(t, method.ConstantReturns(), 2)
 	require.Equal(t, []semantic.ConstantReturn{
 		{
 			Receiver: "self",
 			Name:     "LOCAL",
-			Range:    method.ConstantReturns[0].Range,
+			Range:    method.ConstantReturns()[0].Range,
 		},
 		{
 			Receiver: "Shared\\TypeNames",
 			Name:     "SHARED",
-			Range:    method.ConstantReturns[1].Range,
+			Range:    method.ConstantReturns()[1].Range,
 		},
-	}, method.ConstantReturns)
-	for _, returned := range method.ConstantReturns {
+	}, method.ConstantReturns())
+	for _, returned := range method.ConstantReturns() {
 		require.NotContains(t, source[returned.Range.Start:returned.Range.End], "NESTED")
 	}
 }
@@ -1026,12 +1026,12 @@ final class Demo {
 `).Tree.Root
 	document := New().Bind("/attributes.php", 1, root)
 	method := findSymbol(t, document, semantic.MethodSymbol, "read")
-	require.Len(t, method.Attributes, 2)
+	require.Len(t, method.Attributes(), 2)
 	require.Equal(t, types.ArrayShapeKind, method.ReturnType.Kind())
 	require.Equal(t, "int", method.ReturnType.Field(0).Type.String())
 	require.Equal(t, "string", method.ReturnType.Field(1).Type.String())
 
-	shape := method.Attributes[0]
+	shape := method.Attributes()[0]
 	require.Equal(t, "JetBrains\\PhpStorm\\ArrayShape", shape.Name)
 	require.Len(t, shape.Arguments, 1)
 	require.Equal(t, semantic.AttributeValueArray, shape.Arguments[0].Value.Kind)
@@ -1044,7 +1044,7 @@ final class Demo {
 		shape.Arguments[0].Value.Items[0].Value.Value,
 	)
 
-	deprecated := method.Attributes[1]
+	deprecated := method.Attributes()[1]
 	require.Equal(t, "JetBrains\\PhpStorm\\Deprecated", deprecated.Name)
 	require.Equal(t, []string{"reason", "replacement", "since"}, []string{
 		deprecated.Arguments[0].Name,
@@ -1082,7 +1082,7 @@ final class Demo {
 		semantic.ParameterSymbol,
 		"$mode",
 	)
-	require.Equal(t, expected, parameterSymbol.Attributes[0])
+	require.Equal(t, expected, parameterSymbol.Attributes()[0])
 }
 
 func TestBindShapeAndNoReturnAttributeTypes(t *testing.T) {
@@ -1273,7 +1273,7 @@ class Consumer {
 			Visibility:    semantic.Public,
 			HasVisibility: true,
 		},
-	}, class.TraitAliases)
+	}, class.TraitAliases())
 }
 
 func TestArrayElementAssignmentDeclaresLocal(t *testing.T) {
@@ -1319,8 +1319,8 @@ class_alias($dynamic, 'Legacy\DynamicAlias');
 		}
 	}
 	require.Len(t, aliases, 2)
-	require.Equal(t, []string{"Vendor\\Original"}, aliases["Legacy\\AliasName"].Extends)
-	require.Equal(t, []string{"Vendor\\Other"}, aliases["Legacy\\OtherAlias"].Extends)
+	require.Equal(t, []string{"Vendor\\Original"}, aliases["Legacy\\AliasName"].Extends())
+	require.Equal(t, []string{"Vendor\\Other"}, aliases["Legacy\\OtherAlias"].Extends())
 	require.True(t, aliases["Legacy\\AliasName"].Flags.Has(semantic.SyntheticFlag))
 	require.Equal(
 		t,

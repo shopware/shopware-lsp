@@ -75,17 +75,17 @@ func TestCatalogRoundTripAndMaterialization(t *testing.T) {
 	require.Equal(
 		t,
 		"Use valueNew()",
-		two[1].Attributes[0].Arguments[0].Value.Value,
+		two[1].Attributes()[0].Arguments[0].Value.Value,
 	)
 
-	two[0].Implements[0] = "Changed"
-	two[1].Attributes[0].Arguments[0].Value.Value = "Changed"
+	two[0].Implements()[0] = "Changed"
+	two[1].Attributes()[0].Arguments[0].Value.Value = "Changed"
 	again := decoded.Materialize(project.Version{Major: 8, Minor: 2}, "phpstub://8.2/core")
-	require.Equal(t, "Stringable", again[0].Implements[0])
+	require.Equal(t, "Stringable", again[0].Implements()[0])
 	require.Equal(
 		t,
 		"Use valueNew()",
-		again[1].Attributes[0].Arguments[0].Value.Value,
+		again[1].Attributes()[0].Arguments[0].Value.Value,
 	)
 }
 

@@ -40,7 +40,7 @@ func TestSnapshotReverseHierarchyIndexesDirectEdgesAndMethodOverrides(t *testing
 	// remains readable.
 	child, found := snapshot.Symbol("child")
 	require.True(t, found)
-	child.Traits = []string{"App\\Reusable"}
+	child.SetTraits([]string{"App\\Reusable"})
 	snapshot = snapshot.WithUpdatedSymbols(&Document{Symbols: []Symbol{child}})
 	// Updated symbol overlays intentionally share hierarchy keys. Publish a
 	// declaration overlay to exercise hierarchy-name changes.
@@ -144,17 +144,17 @@ func classSymbol(
 	extends,
 	implements []string,
 ) Symbol {
-	return Symbol{
+	symbol := Symbol{
 		ID:             id,
 		Kind:           kind,
 		Name:           shortSemanticName(name),
 		FullyQualified: name,
 		Path:           "/project/Hierarchy.php",
-		Extends:        extends,
-		Implements:     implements,
 		Range:          cst.TextRange{Start: 1, End: 10},
 		SelectionRange: cst.TextRange{Start: 2, End: 9},
 	}
+	symbol.SetHierarchy(extends, implements, nil, nil, nil, nil, nil)
+	return symbol
 }
 
 func methodSymbol(

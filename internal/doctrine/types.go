@@ -149,7 +149,7 @@ func doctrineTypeDeclaredName(
 		if !strings.EqualFold(method.Name, "getName") {
 			continue
 		}
-		for _, literal := range method.LiteralReturns {
+		for _, literal := range method.LiteralReturns() {
 			if literal.Type.Kind() != types.LiteralStringKind {
 				continue
 			}
@@ -157,7 +157,7 @@ func doctrineTypeDeclaredName(
 				return name
 			}
 		}
-		for _, returned := range method.ConstantReturns {
+		for _, returned := range method.ConstantReturns() {
 			receiver := doctrineConstantReturnReceiver(
 				index,
 				method,
@@ -199,8 +199,8 @@ func doctrineConstantReturnReceiver(
 		if !strings.EqualFold(receiver, "parent") {
 			return owner.FullyQualified
 		}
-		if len(owner.Extends) != 0 {
-			return owner.Extends[0]
+		if len(owner.Extends()) != 0 {
+			return owner.Extends()[0]
 		}
 		return ""
 	default:

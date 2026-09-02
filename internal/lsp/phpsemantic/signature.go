@@ -111,10 +111,10 @@ func (p *Provider) GetSignatureHelp(
 			Label:           formatSymbol(candidate),
 			ActiveParameter: activeParameter,
 		}
-		if candidate.DocSummary != "" {
+		if candidate.DocSummary() != "" {
 			signature.Documentation = &protocol.MarkupContent{
 				Kind:  protocol.Markdown,
-				Value: candidate.DocSummary,
+				Value: candidate.DocSummary(),
 			}
 		}
 		for _, parameter := range candidate.Parameters {

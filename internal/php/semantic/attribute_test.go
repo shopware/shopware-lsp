@@ -1,10 +1,48 @@
 package semantic
 
 import (
+	"runtime"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestSymbolMetadataIsCompactAndCopyOnWrite(t *testing.T) {
+	var symbol Symbol
+	require.LessOrEqual(t, unsafe.Sizeof(symbol), uintptr(272))
+	require.Zero(t, symbol.metadata)
+	require.Nil(t, symbol.Attributes())
+	require.Nil(t, symbol.ConstantArray())
+	require.Empty(t, symbol.DocSummary())
+
+	symbol.SetMetadata(
+		[]Attribute{{Name: "Route"}},
+		[]ConstantArrayItem{{Key: "one", Value: "1"}},
+		"Original summary.",
+	)
+	require.NotZero(t, symbol.metadata)
+
+	copied := symbol
+	copied.SetDocSummary("Changed summary.")
+	copied.SetAttributes(nil)
+	require.Equal(t, "Original summary.", symbol.DocSummary())
+	require.Equal(t, "Route", symbol.Attributes()[0].Name)
+	require.Equal(t, "Changed summary.", copied.DocSummary())
+	require.Nil(t, copied.Attributes())
+	require.Equal(t, "one", copied.ConstantArray()[0].Key)
+
+	copied.SetMetadata(nil, nil, "")
+	require.Zero(t, copied.metadata)
+
+	attributes := []Attribute{{Name: "NoAllocation"}}
+	allocations := testing.AllocsPerRun(1000, func() {
+		var candidate Symbol
+		candidate.SetMetadata(attributes, nil, "Summary")
+		runtime.KeepAlive(candidate)
+	})
+	require.Zero(t, allocations)
+}
 
 func TestAttributeNamedMatchesQualifiedAndShortNames(t *testing.T) {
 	t.Parallel()
@@ -26,29 +64,26 @@ func TestAttributeNamedMatchesQualifiedAndShortNames(t *testing.T) {
 func TestSymbolViewAttributesPreserveSnapshotLayers(t *testing.T) {
 	t.Parallel()
 	const symbolID SymbolID = "target"
+	baseSymbol := Symbol{
+		ID: symbolID, Kind: FunctionSymbol, Name: "target", Path: "/base.php",
+	}
+	baseSymbol.SetAttributes([]Attribute{{Name: "BaseAttribute"}})
 	base := NewSnapshot(1, []*Document{{
-		Path: "/base.php",
-		Symbols: []Symbol{{
-			ID:         symbolID,
-			Kind:       FunctionSymbol,
-			Name:       "target",
-			Attributes: []Attribute{{Name: "BaseAttribute"}},
-			Path:       "/base.php",
-		}},
+		Path:    "/base.php",
+		Symbols: []Symbol{baseSymbol},
 	}})
 	view, found := base.SymbolView(symbolID)
 	require.True(t, found)
 	require.Equal(t, "BaseAttribute", view.Attributes()[0].Name)
 
+	openSymbol := Symbol{
+		ID: "open-target", Kind: FunctionSymbol,
+		Name: "openTarget", Path: "/open.php",
+	}
+	openSymbol.SetAttributes([]Attribute{{Name: "OpenAttribute"}})
 	overlay := base.WithDocument(&Document{
-		Path: "/open.php",
-		Symbols: []Symbol{{
-			ID:         "open-target",
-			Kind:       FunctionSymbol,
-			Name:       "openTarget",
-			Attributes: []Attribute{{Name: "OpenAttribute"}},
-			Path:       "/open.php",
-		}},
+		Path:    "/open.php",
+		Symbols: []Symbol{openSymbol},
 	})
 	view, found = overlay.SymbolView("open-target")
 	require.True(t, found)

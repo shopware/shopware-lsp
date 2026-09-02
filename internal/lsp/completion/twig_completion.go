@@ -775,8 +775,8 @@ func applyTwigPHPMemberDocumentation(
 	if symbol.Flags.Has(semantic.DeprecatedFlag) {
 		sections = append(sections, "**Deprecated PHP member**")
 	}
-	if symbol.DocSummary != "" {
-		sections = append(sections, symbol.DocSummary)
+	if symbol.DocSummary() != "" {
+		sections = append(sections, symbol.DocSummary())
 	}
 	if len(sections) == 0 {
 		return

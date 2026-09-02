@@ -10,6 +10,14 @@ import (
 
 func attributeContractMethodSnapshot() *semantic.Snapshot {
 	classID := semantic.SymbolID("service")
+	terminate := semantic.Symbol{
+		ID: "terminate", Kind: semantic.MethodSymbol, Name: "terminate",
+		FullyQualified: "Service::terminate", Container: classID,
+		Path: "/service.php",
+	}
+	terminate.SetAttributes([]semantic.Attribute{{
+		Name: "JetBrains\\PhpStorm\\NoReturn",
+	}})
 	return semantic.NewSnapshot(1, []*semantic.Document{{
 		Path: "/service.php",
 		Symbols: []semantic.Symbol{
@@ -20,17 +28,7 @@ func attributeContractMethodSnapshot() *semantic.Snapshot {
 				FullyQualified: "Service",
 				Path:           "/service.php",
 			},
-			{
-				ID:             "terminate",
-				Kind:           semantic.MethodSymbol,
-				Name:           "terminate",
-				FullyQualified: "Service::terminate",
-				Container:      classID,
-				Attributes: []semantic.Attribute{{
-					Name: "JetBrains\\PhpStorm\\NoReturn",
-				}},
-				Path: "/service.php",
-			},
+			terminate,
 		},
 	}})
 }

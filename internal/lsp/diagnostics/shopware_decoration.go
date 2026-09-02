@@ -52,7 +52,7 @@ func (a *ShopwareDecorationAnalyzer) Analyze(
 			if !found || concrete.Flags.Has(semantic.AbstractFlag) {
 				continue
 			}
-			for _, parentName := range concrete.Extends {
+			for _, parentName := range concrete.Extends() {
 				parent, parentFound := a.php.FindClass(parentName)
 				if !parentFound || !parent.Flags.Has(semantic.AbstractFlag) ||
 					len(a.php.FindMethods(parent.FullyQualified, "getDecorated")) == 0 {

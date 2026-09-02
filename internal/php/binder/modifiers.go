@@ -318,7 +318,7 @@ func applyAttributeTypeSemantics(
 	if symbol == nil {
 		return
 	}
-	if shape, ok := attributeShapeType(symbol.Attributes, context); ok {
+	if shape, ok := attributeShapeType(symbol.Attributes(), context); ok {
 		switch symbol.Kind {
 		case semantic.FunctionSymbol, semantic.MethodSymbol:
 			symbol.ReturnType = refineTypeWithShape(symbol.ReturnType, shape)
@@ -326,7 +326,7 @@ func applyAttributeTypeSemantics(
 			symbol.Type = refineTypeWithShape(symbol.Type, shape)
 		}
 	}
-	if noReturn, ok := semantic.AttributeNamed(symbol.Attributes, "NoReturn"); ok &&
+	if noReturn, ok := semantic.AttributeNamed(symbol.Attributes(), "NoReturn"); ok &&
 		len(noReturn.Arguments) == 0 &&
 		(symbol.Kind == semantic.FunctionSymbol ||
 			symbol.Kind == semantic.MethodSymbol) {

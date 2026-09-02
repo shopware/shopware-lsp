@@ -418,9 +418,9 @@ func (p *Provider) assistantClassCompletions(
 				NewText: label,
 			},
 		}
-		if symbol.DocSummary != "" {
+		if symbol.DocSummary() != "" {
 			item.Documentation.Kind = string(protocol.Markdown)
-			item.Documentation.Value = symbol.DocSummary
+			item.Documentation.Value = symbol.DocSummary()
 		}
 		items = append(items, item)
 	}
@@ -486,9 +486,9 @@ func (p *Provider) memberCompletions(
 		} else {
 			item.InsertText = symbol.Name
 		}
-		if symbol.DocSummary != "" {
+		if symbol.DocSummary() != "" {
 			item.Documentation.Kind = string(protocol.Markdown)
-			item.Documentation.Value = symbol.DocSummary
+			item.Documentation.Value = symbol.DocSummary()
 		}
 		items = append(items, item)
 	}

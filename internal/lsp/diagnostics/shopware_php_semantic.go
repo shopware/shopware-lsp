@@ -129,7 +129,7 @@ func (r *shopwarePHPSemanticRun) checkClass(classNode *phpsyntax.Node) {
 	if !found || class.Kind != semantic.ClassSymbol {
 		return
 	}
-	for _, parentName := range class.Extends {
+	for _, parentName := range class.Extends() {
 		parent, parentFound := preferredSemanticClass(r.snapshot, parentName)
 		if !parentFound {
 			continue
@@ -172,7 +172,7 @@ func (r *shopwarePHPSemanticRun) checkScheduledTask(class semantic.Symbol) {
 			!strings.EqualFold(method.Name, "getDefaultInterval") {
 			continue
 		}
-		for _, returned := range method.LiteralReturns {
+		for _, returned := range method.LiteralReturns() {
 			if returned.Type.Kind() != types.LiteralIntKind {
 				continue
 			}
@@ -413,7 +413,7 @@ func (r *shopwarePHPSemanticRun) decoratorAbstraction(
 	if len(members) == 0 {
 		return semantic.Symbol{}, false
 	}
-	queue := append([]string(nil), concrete.Extends...)
+	queue := append([]string(nil), concrete.Extends()...)
 	seen := make(map[string]struct{})
 	for len(queue) != 0 {
 		name := queue[0]
@@ -430,7 +430,7 @@ func (r *shopwarePHPSemanticRun) decoratorAbstraction(
 		if parent.Flags.Has(semantic.AbstractFlag) {
 			return parent, true
 		}
-		queue = append(queue, parent.Extends...)
+		queue = append(queue, parent.Extends()...)
 	}
 	return semantic.Symbol{}, false
 }
@@ -444,7 +444,7 @@ func (r *shopwarePHPSemanticRun) isStoreAPIClass(
 	}
 	result := false
 	for _, attributeNode := range phpquery.Attributes(classNode) {
-		if !r.isRouteAttribute(attributeNode, class.Attributes) {
+		if !r.isRouteAttribute(attributeNode, class.Attributes()) {
 			continue
 		}
 		defaults := localCallArgument(attributeNode, "defaults", 4)

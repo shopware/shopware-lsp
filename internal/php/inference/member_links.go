@@ -209,8 +209,8 @@ func staticReceiverType(
 		}
 	case "parent":
 		if class, ok := enclosingClassAt(document, snapshot, offset); ok &&
-			len(class.Extends) > 0 {
-			return namedTypes.typeFor(class.Extends[0])
+			len(class.Extends()) > 0 {
+			return namedTypes.typeFor(class.Extends()[0])
 		}
 	default:
 		return namedTypes.typeFor(

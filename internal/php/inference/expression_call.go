@@ -511,8 +511,8 @@ func (s *functionState) inferReceiver(
 					s.currentClass.Name(),
 					func(classView semantic.SymbolView) bool {
 						class := classView.Materialize()
-						if len(class.Extends) > 0 {
-							parent = s.namedType(class.Extends[0])
+						if len(class.Extends()) > 0 {
+							parent = s.namedType(class.Extends()[0])
 						}
 						return false
 					},

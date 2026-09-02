@@ -77,9 +77,9 @@ func (p *ResponseConstantCompletionProvider) GetCompletions(
 				symfonyResponseClass,
 			),
 		}
-		if symbol.DocSummary != "" {
+		if symbol.DocSummary() != "" {
 			item.Documentation.Kind = string(protocol.Markdown)
-			item.Documentation.Value = symbol.DocSummary
+			item.Documentation.Value = symbol.DocSummary()
 		}
 		items = append(items, item)
 	}

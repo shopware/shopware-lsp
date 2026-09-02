@@ -24,7 +24,7 @@ func (s *analyzerState) validateFinalParents(class semantic.Symbol) {
 	if class.Kind != semantic.ClassSymbol {
 		return
 	}
-	for _, parentName := range class.Extends {
+	for _, parentName := range class.Extends() {
 		s.analyzer.Snapshot.VisitClassViews(
 			parentName,
 			func(parentView semantic.SymbolView) bool {
@@ -382,10 +382,10 @@ func (s *analyzerState) methodIsAbstract(method semantic.SymbolView) bool {
 }
 
 func (s *analyzerState) parentReceiverTypes(class semantic.Symbol) []types.Type {
-	names := append(append([]string(nil), class.Extends...), class.Implements...)
+	names := append(append([]string(nil), class.Extends()...), class.Implements()...)
 	declared := append(
-		append([]types.Type(nil), class.ExtendsTypes...),
-		class.ImplementsTypes...,
+		append([]types.Type(nil), class.ExtendsTypes()...),
+		class.ImplementsTypes()...,
 	)
 	result := make([]types.Type, 0, len(names))
 	seen := make(map[string]struct{}, len(names))
@@ -410,8 +410,9 @@ func (s *analyzerState) parentReceiverTypes(class semantic.Symbol) []types.Type 
 }
 
 func classReceiverType(class semantic.Symbol) types.Type {
-	arguments := make([]types.Type, 0, len(class.Templates))
-	for _, template := range class.Templates {
+	classTemplates := class.Templates()
+	arguments := make([]types.Type, 0, len(classTemplates))
+	for _, template := range classTemplates {
 		arguments = append(arguments, types.Template(template.Name))
 	}
 	return types.Named(class.FullyQualified, arguments...)
@@ -425,8 +426,8 @@ func (s *analyzerState) declarationType(
 	case types.SelfKind, types.StaticKind:
 		return types.Named(class.FullyQualified, value.Arguments()...)
 	case types.ParentKind:
-		if len(class.Extends) > 0 {
-			return types.Named(class.Extends[0], value.Arguments()...)
+		if len(class.Extends()) > 0 {
+			return types.Named(class.Extends()[0], value.Arguments()...)
 		}
 		return types.Unknown()
 	case types.UnionKind:
@@ -452,7 +453,7 @@ func hasOverrideAttribute(symbol semantic.Symbol) bool {
 
 func hasAttributeNamed(symbol semantic.Symbol, expected string) bool {
 	expected = strings.ToLower(strings.TrimPrefix(expected, "\\"))
-	for _, attribute := range symbol.Attributes {
+	for _, attribute := range symbol.Attributes() {
 		name := strings.ToLower(strings.TrimPrefix(attribute.Name, "\\"))
 		if name == expected || strings.HasSuffix(name, "\\"+expected) {
 			return true

@@ -58,9 +58,9 @@ func (p *DoctrineHoverProvider) GetHover(
 		if p.phpIndex != nil {
 			if symbol, classFound := p.phpIndex.FindClass(
 				registration.Class,
-			); classFound && symbol.DocSummary != "" {
+			); classFound && symbol.DocSummary() != "" {
 				markdown += "\n\n" +
-					escapeDoctrineMarkdown(symbol.DocSummary)
+					escapeDoctrineMarkdown(symbol.DocSummary())
 			}
 		}
 		return doctrineHover(

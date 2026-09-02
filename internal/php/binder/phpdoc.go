@@ -253,7 +253,7 @@ func applyAttributeFlags(symbol *semantic.Symbol) {
 	if symbol == nil {
 		return
 	}
-	for _, attribute := range symbol.Attributes {
+	for _, attribute := range symbol.Attributes() {
 		name := strings.TrimPrefix(attribute.Name, "\\")
 		if strings.EqualFold(name, "Deprecated") ||
 			strings.HasSuffix(strings.ToLower(name), "\\deprecated") {
@@ -356,7 +356,7 @@ func (b *documentBuilder) containerTemplateNames(
 		if !ok {
 			break
 		}
-		for _, template := range symbol.Templates {
+		for _, template := range symbol.Templates() {
 			if _, exists := seen[template.Name]; exists {
 				continue
 			}

@@ -227,16 +227,15 @@ func TestResolveSignatureAppliesReturnTypeContract(t *testing.T) {
 func TestResolveSignatureDefersBoundsForCallerTemplate(t *testing.T) {
 	t.Parallel()
 	symbol := semantic.Symbol{
-		Templates: []semantic.TemplateParameter{{
-			Name:  "Expected",
-			Bound: types.Object(),
-		}},
 		Parameters: []semantic.Parameter{{
 			Name: "$class",
 			Type: types.ClassString(types.Template("Expected")),
 		}},
 		ReturnType: types.Void(),
 	}
+	symbol.SetTemplates([]semantic.TemplateParameter{{
+		Name: "Expected", Bound: types.Object(),
+	}})
 
 	require.True(t, ResolveSignature(
 		types.Relations{},
@@ -261,16 +260,13 @@ func TestResolveSignatureAcceptsNominalSubtypeForGenericBound(t *testing.T) {
 	t.Parallel()
 	collection := types.Named("Collection", types.Named("Contract"))
 	symbol := semantic.Symbol{
-		Templates: []semantic.TemplateParameter{{
-			Name:  "T",
-			Bound: collection,
-		}},
 		Parameters: []semantic.Parameter{{
 			Name: "$values",
 			Type: types.Template("T"),
 		}},
 		ReturnType: types.Template("T"),
 	}
+	symbol.SetTemplates([]semantic.TemplateParameter{{Name: "T", Bound: collection}})
 	actual := types.Named("ConcreteCollection")
 	resolved := ResolveSignature(
 		types.Relations{Hierarchy: testHierarchy{
@@ -286,11 +282,6 @@ func TestResolveSignatureAcceptsNominalSubtypeForGenericBound(t *testing.T) {
 func TestResolveSignaturePrefersStructuredTemplateUnionArm(t *testing.T) {
 	t.Parallel()
 	symbol := semantic.Symbol{
-		Templates: []semantic.TemplateParameter{{
-			Name:    "T",
-			Bound:   types.Object(),
-			Default: types.Object(),
-		}},
 		Parameters: []semantic.Parameter{{
 			Name: "$objectOrClass",
 			Type: types.Union(
@@ -301,6 +292,9 @@ func TestResolveSignaturePrefersStructuredTemplateUnionArm(t *testing.T) {
 		}},
 		ReturnType: types.Template("T"),
 	}
+	symbol.SetTemplates([]semantic.TemplateParameter{{
+		Name: "T", Bound: types.Object(), Default: types.Object(),
+	}})
 	product := types.Named("Product")
 	resolved := ResolveSignature(
 		types.Relations{},

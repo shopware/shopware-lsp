@@ -48,56 +48,62 @@ func TestWorkspaceDocumentRoundTripPreservesEveryRetainedSymbolField(t *testing.
 			Flags:          ByReferenceFlag,
 			Optional:       true,
 		}},
-		Templates: []TemplateParameter{{
+	}
+	symbol.SetSignatureExtras(
+		[]TemplateParameter{{
 			Name:      "T",
 			Bound:     types.Named("Entity"),
 			Default:   types.Named("Product"),
 			Covariant: true,
 		}},
-		Extends:         []string{"App\\BaseRepository"},
-		Implements:      []string{"App\\RepositoryInterface"},
-		Traits:          []string{"App\\RepositoryTrait"},
-		ExtendsTypes:    []types.Type{types.MustParse("App\\BaseRepository<Product>")},
-		ImplementsTypes: []types.Type{types.MustParse("App\\RepositoryInterface<Product>")},
-		TraitTypes:      []types.Type{types.Named("App\\RepositoryTrait")},
-		TraitAliases: []TraitAlias{{
-			Trait:         "App\\RepositoryTrait",
-			Method:        "find",
-			Alias:         "aliasedFind",
-			Visibility:    Private,
-			HasVisibility: true,
-		}},
-		Throws: []types.Type{types.Named("RuntimeException")},
-		Assertions: []TypeAssertion{{
+		[]types.Type{types.Named("RuntimeException")},
+		[]TypeAssertion{{
 			Target:      "$this",
 			Type:        types.Named("App\\ProductRepository"),
 			WhenTrue:    true,
 			Conditional: true,
 			Negated:     true,
 		}},
-		Attributes: []Attribute{{
+		[]LiteralReturn{{
+			Value: "null",
+			Range: cst.TextRange{Start: 60, End: 64},
+			Type:  types.Null(),
+		}},
+		[]ConstantReturn{{
+			Receiver: "Product",
+			Name:     "DEFAULT",
+			Range:    cst.TextRange{Start: 65, End: 75},
+		}},
+	)
+	symbol.SetHierarchy(
+		[]string{"App\\BaseRepository"},
+		[]string{"App\\RepositoryInterface"},
+		[]string{"App\\RepositoryTrait"},
+		[]types.Type{types.MustParse("App\\BaseRepository<Product>")},
+		[]types.Type{types.MustParse("App\\RepositoryInterface<Product>")},
+		[]types.Type{types.Named("App\\RepositoryTrait")},
+		[]TraitAlias{{
+			Trait:         "App\\RepositoryTrait",
+			Method:        "find",
+			Alias:         "aliasedFind",
+			Visibility:    Private,
+			HasVisibility: true,
+		}},
+	)
+	symbol.SetMetadata(
+		[]Attribute{{
 			Name:  "Deprecated",
 			Range: cst.TextRange{Start: 1, End: 9},
 		}},
-		ConstantArray: []ConstantArrayItem{{
+		[]ConstantArrayItem{{
 			Key:        "key",
 			KeyRange:   cst.TextRange{Start: 31, End: 34},
 			Value:      "value",
 			ValueRange: cst.TextRange{Start: 36, End: 41},
 			Type:       types.String(),
 		}},
-		LiteralReturns: []LiteralReturn{{
-			Value: "null",
-			Range: cst.TextRange{Start: 60, End: 64},
-			Type:  types.Null(),
-		}},
-		ConstantReturns: []ConstantReturn{{
-			Receiver: "Product",
-			Name:     "DEFAULT",
-			Range:    cst.TextRange{Start: 65, End: 75},
-		}},
-		DocSummary: "Finds a product.",
-	}
+		"Finds a product.",
+	)
 	document := &Document{
 		Path:              symbol.Path,
 		Version:           7,
@@ -346,11 +352,15 @@ func TestWorkspaceGraphDecoderSharesTypesAcrossDocuments(t *testing.T) {
 func TestWorkspaceSymbolsAllocateOnlyUsedSideTables(t *testing.T) {
 	t.Parallel()
 
+	metadataSymbol := Symbol{ID: "metadata", Kind: ClassConstantSymbol}
+	metadataSymbol.SetDocSummary("A constant.")
+	hierarchySymbol := Symbol{ID: "hierarchy", Kind: ClassSymbol}
+	hierarchySymbol.SetExtends([]string{"Base"})
 	document := &Document{Symbols: []Symbol{
 		{ID: "plain", Kind: PropertySymbol},
 		{ID: "signature", Kind: MethodSymbol, Parameters: []Parameter{{Name: "$id"}}},
-		{ID: "hierarchy", Kind: ClassSymbol, Extends: []string{"Base"}},
-		{ID: "metadata", Kind: ClassConstantSymbol, DocSummary: "A constant."},
+		hierarchySymbol,
+		metadataSymbol,
 	}}
 
 	packed := packWorkspaceDocument(document)
@@ -1183,20 +1193,21 @@ func TestProjectWorkspaceGraphMatchesTwoStageProjection(t *testing.T) {
 
 	backing := strings.Repeat("x", 4096) + "App\\Product"
 	className := backing[len(backing)-len("App\\Product"):]
+	product := Symbol{
+		ID:             "product",
+		Kind:           ClassSymbol,
+		Name:           className,
+		FullyQualified: className,
+		Path:           "/project/Product.php",
+		Type:           types.Named(className),
+	}
+	product.SetExtends([]string{"App\\BaseProduct"})
+	product.SetDocSummary("A product.")
 	document := &Document{
 		Path:      "/project/Product.php",
 		Namespace: "App",
 		Symbols: []Symbol{
-			{
-				ID:             "product",
-				Kind:           ClassSymbol,
-				Name:           className,
-				FullyQualified: className,
-				Path:           "/project/Product.php",
-				Extends:        []string{"App\\BaseProduct"},
-				DocSummary:     "A product.",
-				Type:           types.Named(className),
-			},
+			product,
 			{
 				ID:        "local",
 				Kind:      LocalSymbol,
@@ -1243,21 +1254,22 @@ func TestBorrowedWorkspaceProjectionOwnsSlicesAndBatchDetachesValues(
 	secondBacking := strings.Repeat("b", 4096) + "App\\Shared"
 	firstName := firstBacking[len(firstBacking)-len("App\\Shared"):]
 	secondName := secondBacking[len(secondBacking)-len("App\\Shared"):]
-	first := &Document{
-		Path: "/project/First.php",
-		Symbols: []Symbol{{
-			ID:             "first",
-			Kind:           ClassSymbol,
-			Name:           firstName,
-			FullyQualified: firstName,
-			Path:           "/project/First.php",
-			Type:           types.Named(firstName),
-			Extends:        []string{firstName},
-			Parameters: []Parameter{{
-				Name:          "$value",
-				AssistantTags: []string{firstName},
-			}},
+	firstSymbol := Symbol{
+		ID:             "first",
+		Kind:           ClassSymbol,
+		Name:           firstName,
+		FullyQualified: firstName,
+		Path:           "/project/First.php",
+		Type:           types.Named(firstName),
+		Parameters: []Parameter{{
+			Name:          "$value",
+			AssistantTags: []string{firstName},
 		}},
+	}
+	firstSymbol.SetExtends([]string{firstName})
+	first := &Document{
+		Path:    "/project/First.php",
+		Symbols: []Symbol{firstSymbol},
 	}
 	second := &Document{
 		Path: "/project/Second.php",
@@ -1273,11 +1285,11 @@ func TestBorrowedWorkspaceProjectionOwnsSlicesAndBatchDetachesValues(
 
 	firstGraph := ProjectWorkspaceGraphBorrowed(first)
 	secondGraph := ProjectWorkspaceGraphBorrowed(second)
-	first.Symbols[0].Extends[0] = "App\\Mutated"
+	first.Symbols[0].Extends()[0] = "App\\Mutated"
 	first.Symbols[0].Parameters[0].AssistantTags[0] = "Mutated"
 
 	borrowed := firstGraph.Document()
-	require.Equal(t, []string{"App\\Shared"}, borrowed.Symbols[0].Extends)
+	require.Equal(t, []string{"App\\Shared"}, borrowed.Symbols[0].Extends())
 	require.Equal(
 		t,
 		[]string{"App\\Shared"},

@@ -578,8 +578,9 @@ func convertSymbol(
 			}
 		}
 	}
-	templates := make([]catalog.TemplateParameter, len(source.Templates))
-	for index, template := range source.Templates {
+	sourceTemplates := source.Templates()
+	templates := make([]catalog.TemplateParameter, len(sourceTemplates))
+	for index, template := range sourceTemplates {
 		templates[index] = catalog.TemplateParameter{
 			Name:          template.Name,
 			Bound:         template.Bound,
@@ -588,7 +589,7 @@ func convertSymbol(
 			Contravariant: template.Contravariant,
 		}
 	}
-	attributes := catalogAttributes(source.Attributes)
+	attributes := catalogAttributes(source.Attributes())
 	return catalog.Symbol{
 		Kind:               source.Kind,
 		Name:               source.Name,
@@ -612,15 +613,15 @@ func convertSymbol(
 		ReturnType:      returnType,
 		Parameters:      parameters,
 		Templates:       templates,
-		Extends:         slices.Clone(source.Extends),
-		Implements:      slices.Clone(source.Implements),
-		Traits:          slices.Clone(source.Traits),
-		ExtendsTypes:    slices.Clone(source.ExtendsTypes),
-		ImplementsTypes: slices.Clone(source.ImplementsTypes),
-		TraitTypes:      slices.Clone(source.TraitTypes),
-		Throws:          slices.Clone(source.Throws),
+		Extends:         slices.Clone(source.Extends()),
+		Implements:      slices.Clone(source.Implements()),
+		Traits:          slices.Clone(source.Traits()),
+		ExtendsTypes:    slices.Clone(source.ExtendsTypes()),
+		ImplementsTypes: slices.Clone(source.ImplementsTypes()),
+		TraitTypes:      slices.Clone(source.TraitTypes()),
+		Throws:          slices.Clone(source.Throws()),
 		Attributes:      attributes,
-		DocSummary:      source.DocSummary,
+		DocSummary:      source.DocSummary(),
 	}, true, nil
 }
 

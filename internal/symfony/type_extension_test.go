@@ -11,6 +11,16 @@ import (
 
 func TestPHPTypeExtensionInfersHeaderBagDefault(t *testing.T) {
 	t.Parallel()
+	customHeaderBag := semantic.Symbol{
+		ID:             "custom-header-bag",
+		Kind:           semantic.ClassSymbol,
+		Name:           "CustomHeaderBag",
+		FullyQualified: "App\\CustomHeaderBag",
+		Path:           "/header-bag.php",
+	}
+	customHeaderBag.SetExtends([]string{
+		"Symfony\\Component\\HttpFoundation\\HeaderBag",
+	})
 	document := &semantic.Document{
 		Path: "/header-bag.php",
 		Symbols: []semantic.Symbol{
@@ -21,16 +31,7 @@ func TestPHPTypeExtensionInfersHeaderBagDefault(t *testing.T) {
 				FullyQualified: "Symfony\\Component\\HttpFoundation\\HeaderBag",
 				Path:           "/header-bag.php",
 			},
-			{
-				ID:             "custom-header-bag",
-				Kind:           semantic.ClassSymbol,
-				Name:           "CustomHeaderBag",
-				FullyQualified: "App\\CustomHeaderBag",
-				Path:           "/header-bag.php",
-				Extends: []string{
-					"Symfony\\Component\\HttpFoundation\\HeaderBag",
-				},
-			},
+			customHeaderBag,
 		},
 	}
 	snapshot := semantic.NewSnapshot(1, []*semantic.Document{document})

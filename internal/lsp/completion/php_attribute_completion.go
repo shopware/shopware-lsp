@@ -725,7 +725,7 @@ func (p *PHPAttributeCompletionProvider) twigComponentCandidate(
 		if !strings.EqualFold(namespace, otherNamespace) {
 			continue
 		}
-		for _, attribute := range symbol.Attributes {
+		for _, attribute := range symbol.Attributes() {
 			if strings.EqualFold(
 				strings.Trim(attribute.Name, "\\"),
 				phpAsTwigComponentAttribute,

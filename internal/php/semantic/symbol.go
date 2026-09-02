@@ -4,9 +4,11 @@ package semantic
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	"github.com/shopware/shopware-lsp/internal/php/types"
@@ -214,22 +216,124 @@ type Symbol struct {
 	DocType    types.Type
 	ReturnType types.Type
 
-	Parameters      []Parameter
-	Templates       []TemplateParameter
-	Extends         []string
-	Implements      []string
-	Traits          []string
-	ExtendsTypes    []types.Type
-	ImplementsTypes []types.Type
-	TraitTypes      []types.Type
-	TraitAliases    []TraitAlias
-	Throws          []types.Type
-	Assertions      []TypeAssertion
-	Attributes      []Attribute
-	ConstantArray   []ConstantArrayItem
-	LiteralReturns  []LiteralReturn
-	ConstantReturns []ConstantReturn
-	DocSummary      string
+	Parameters []Parameter
+
+	signatureExtras symbolSignatureExtras
+	hierarchy       symbolHierarchy
+	metadata        symbolMetadata
+}
+
+// symbolMetadata keeps infrequent collections compact without adding a heap
+// object for the common zero-value, documentation-only, or one-collection
+// cases. Large PHP files can contain thousands of local and parameter symbols,
+// almost none of which carry attributes or constant arrays.
+type symbolMetadata struct {
+	docSummary string
+	data       unsafe.Pointer
+	lengths    uint64
+}
+
+// symbolMetadataCollections is allocated only when both collection kinds are
+// present. In that case metadata.data points here instead of directly to the
+// first element of the single retained collection.
+type symbolMetadataCollections struct {
+	attributesData    *Attribute
+	constantArrayData *ConstantArrayItem
+}
+
+const symbolMetadataLengthBits = 32
+
+// Attributes returns the immutable attributes attached to the declaration.
+func (s Symbol) Attributes() []Attribute {
+	length := uint32(s.metadata.lengths)
+	if length == 0 {
+		return nil
+	}
+	data := s.metadata.data
+	if uint32(s.metadata.lengths>>symbolMetadataLengthBits) != 0 {
+		data = unsafe.Pointer(
+			(*symbolMetadataCollections)(data).attributesData,
+		)
+	}
+	return unsafe.Slice((*Attribute)(data), length)
+}
+
+// SetAttributes replaces the declaration attributes.
+func (s *Symbol) SetAttributes(attributes []Attribute) {
+	if s == nil {
+		return
+	}
+	s.SetMetadata(attributes, s.ConstantArray(), s.DocSummary())
+}
+
+// ConstantArray returns top-level items retained from an array constant.
+func (s Symbol) ConstantArray() []ConstantArrayItem {
+	length := uint32(s.metadata.lengths >> symbolMetadataLengthBits)
+	if length == 0 {
+		return nil
+	}
+	data := s.metadata.data
+	if uint32(s.metadata.lengths) != 0 {
+		data = unsafe.Pointer(
+			(*symbolMetadataCollections)(data).constantArrayData,
+		)
+	}
+	return unsafe.Slice((*ConstantArrayItem)(data), length)
+}
+
+// SetConstantArray replaces the retained top-level constant array items.
+func (s *Symbol) SetConstantArray(items []ConstantArrayItem) {
+	if s == nil {
+		return
+	}
+	s.SetMetadata(s.Attributes(), items, s.DocSummary())
+}
+
+// DocSummary returns the declaration's PHPDoc summary.
+func (s Symbol) DocSummary() string {
+	return s.metadata.docSummary
+}
+
+// SetDocSummary replaces the declaration's PHPDoc summary.
+func (s *Symbol) SetDocSummary(summary string) {
+	if s == nil {
+		return
+	}
+	s.SetMetadata(s.Attributes(), s.ConstantArray(), summary)
+}
+
+// SetMetadata replaces all infrequent declaration metadata in one operation.
+// Replacing rather than mutating the compact handle preserves Symbol value-copy
+// semantics when callers derive a new symbol from an existing snapshot value.
+func (s *Symbol) SetMetadata(
+	attributes []Attribute,
+	constantArray []ConstantArrayItem,
+	docSummary string,
+) {
+	if s == nil {
+		return
+	}
+	if uint64(len(attributes)) > math.MaxUint32 ||
+		uint64(len(constantArray)) > math.MaxUint32 {
+		panic("semantic: symbol metadata collection exceeds packed range")
+	}
+	metadata := symbolMetadata{
+		docSummary: docSummary,
+		lengths: uint64(len(attributes)) |
+			uint64(len(constantArray))<<symbolMetadataLengthBits,
+	}
+	switch {
+	case len(attributes) != 0 && len(constantArray) != 0:
+		metadata.data = unsafe.Pointer(&symbolMetadataCollections{
+			attributesData:    &attributes[0],
+			constantArrayData: &constantArray[0],
+		})
+	case len(attributes) != 0:
+		metadata.data = unsafe.Pointer(&attributes[0])
+	case len(constantArray) != 0:
+		metadata.data = unsafe.Pointer(&constantArray[0])
+	}
+	s.metadata = metadata
 }
 
 func (s Symbol) IsClassLike() bool {

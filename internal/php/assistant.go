@@ -301,9 +301,9 @@ func assistantParameterHasTag(
 	if !found {
 		return false
 	}
-	parentNames := append([]string(nil), owner.Extends...)
-	parentNames = append(parentNames, owner.Implements...)
-	parentNames = append(parentNames, owner.Traits...)
+	parentNames := append([]string(nil), owner.Extends()...)
+	parentNames = append(parentNames, owner.Implements()...)
+	parentNames = append(parentNames, owner.Traits()...)
 	for _, parentName := range parentNames {
 		for _, parent := range snapshot.Classes(parentName) {
 			for _, inherited := range snapshot.Members(parent.ID, method.Name) {

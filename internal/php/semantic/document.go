@@ -827,57 +827,68 @@ func detachWorkspaceSymbol(
 			parameter.DefaultValue = &value
 		}
 	}
-	symbol.Templates = slices.Clone(symbol.Templates)
-	for index := range symbol.Templates {
-		template := &symbol.Templates[index]
+	templates := slices.Clone(symbol.Templates())
+	for index := range templates {
+		template := &templates[index]
 		template.Name = intern(template.Name)
 		template.Bound = typeDetacher.Type(template.Bound)
 		template.Default = typeDetacher.Type(template.Default)
 	}
-	symbol.Extends = internStrings(symbol.Extends, intern)
-	symbol.Implements = internStrings(symbol.Implements, intern)
-	symbol.Traits = internStrings(symbol.Traits, intern)
-	symbol.ExtendsTypes = detachTypes(symbol.ExtendsTypes, typeDetacher)
-	symbol.ImplementsTypes = detachTypes(symbol.ImplementsTypes, typeDetacher)
-	symbol.TraitTypes = detachTypes(symbol.TraitTypes, typeDetacher)
-	symbol.TraitAliases = slices.Clone(symbol.TraitAliases)
-	for index := range symbol.TraitAliases {
-		alias := &symbol.TraitAliases[index]
+	extends := internStrings(symbol.Extends(), intern)
+	implements := internStrings(symbol.Implements(), intern)
+	traits := internStrings(symbol.Traits(), intern)
+	extendsTypes := detachTypes(symbol.ExtendsTypes(), typeDetacher)
+	implementsTypes := detachTypes(symbol.ImplementsTypes(), typeDetacher)
+	traitTypes := detachTypes(symbol.TraitTypes(), typeDetacher)
+	traitAliases := slices.Clone(symbol.TraitAliases())
+	for index := range traitAliases {
+		alias := &traitAliases[index]
 		alias.Trait = intern(alias.Trait)
 		alias.Method = intern(alias.Method)
 		alias.Alias = intern(alias.Alias)
 	}
-	symbol.Throws = detachTypes(symbol.Throws, typeDetacher)
-	symbol.Assertions = slices.Clone(symbol.Assertions)
-	for index := range symbol.Assertions {
-		assertion := &symbol.Assertions[index]
+	throws := detachTypes(symbol.Throws(), typeDetacher)
+	assertions := slices.Clone(symbol.Assertions())
+	for index := range assertions {
+		assertion := &assertions[index]
 		assertion.Target = intern(assertion.Target)
 		assertion.Type = typeDetacher.Type(assertion.Type)
 	}
-	symbol.Attributes = detachAttributes(symbol.Attributes, intern)
-	symbol.ConstantArray = slices.Clone(symbol.ConstantArray)
-	for index := range symbol.ConstantArray {
-		item := &symbol.ConstantArray[index]
+	attributes := detachAttributes(symbol.Attributes(), intern)
+	constantArray := slices.Clone(symbol.ConstantArray())
+	for index := range constantArray {
+		item := &constantArray[index]
 		item.Key = intern(item.Key)
 		item.Value = intern(item.Value)
 		item.Type = typeDetacher.Type(item.Type)
 	}
-	symbol.LiteralReturns = slices.Clone(symbol.LiteralReturns)
-	for index := range symbol.LiteralReturns {
-		symbol.LiteralReturns[index].Value = intern(
-			symbol.LiteralReturns[index].Value,
+	literalReturns := slices.Clone(symbol.LiteralReturns())
+	for index := range literalReturns {
+		literalReturns[index].Value = intern(
+			literalReturns[index].Value,
 		)
-		symbol.LiteralReturns[index].Type = typeDetacher.Type(
-			symbol.LiteralReturns[index].Type,
+		literalReturns[index].Type = typeDetacher.Type(
+			literalReturns[index].Type,
 		)
 	}
-	symbol.ConstantReturns = slices.Clone(symbol.ConstantReturns)
-	for index := range symbol.ConstantReturns {
-		item := &symbol.ConstantReturns[index]
+	constantReturns := slices.Clone(symbol.ConstantReturns())
+	for index := range constantReturns {
+		item := &constantReturns[index]
 		item.Receiver = intern(item.Receiver)
 		item.Name = intern(item.Name)
 	}
-	symbol.DocSummary = intern(symbol.DocSummary)
+	symbol.SetSignatureExtras(
+		templates, throws, assertions, literalReturns, constantReturns,
+	)
+	symbol.SetHierarchy(
+		extends, implements, traits,
+		extendsTypes, implementsTypes, traitTypes, traitAliases,
+	)
+	symbol.SetMetadata(
+		attributes,
+		constantArray,
+		intern(symbol.DocSummary()),
+	)
 	return symbol
 }
 
@@ -1118,20 +1129,27 @@ func cloneSymbol(symbol Symbol) Symbol {
 			result.Parameters[parameterIndex].DefaultValue = &value
 		}
 	}
-	result.Templates = slices.Clone(symbol.Templates)
-	result.Extends = slices.Clone(symbol.Extends)
-	result.Implements = slices.Clone(symbol.Implements)
-	result.Traits = slices.Clone(symbol.Traits)
-	result.ExtendsTypes = slices.Clone(symbol.ExtendsTypes)
-	result.ImplementsTypes = slices.Clone(symbol.ImplementsTypes)
-	result.TraitTypes = slices.Clone(symbol.TraitTypes)
-	result.TraitAliases = slices.Clone(symbol.TraitAliases)
-	result.Throws = slices.Clone(symbol.Throws)
-	result.Assertions = slices.Clone(symbol.Assertions)
-	result.Attributes = cloneAttributes(symbol.Attributes)
-	result.ConstantArray = slices.Clone(symbol.ConstantArray)
-	result.LiteralReturns = slices.Clone(symbol.LiteralReturns)
-	result.ConstantReturns = slices.Clone(symbol.ConstantReturns)
+	result.SetSignatureExtras(
+		slices.Clone(symbol.Templates()),
+		slices.Clone(symbol.Throws()),
+		slices.Clone(symbol.Assertions()),
+		slices.Clone(symbol.LiteralReturns()),
+		slices.Clone(symbol.ConstantReturns()),
+	)
+	result.SetHierarchy(
+		slices.Clone(symbol.Extends()),
+		slices.Clone(symbol.Implements()),
+		slices.Clone(symbol.Traits()),
+		slices.Clone(symbol.ExtendsTypes()),
+		slices.Clone(symbol.ImplementsTypes()),
+		slices.Clone(symbol.TraitTypes()),
+		slices.Clone(symbol.TraitAliases()),
+	)
+	result.SetMetadata(
+		cloneAttributes(symbol.Attributes()),
+		slices.Clone(symbol.ConstantArray()),
+		symbol.DocSummary(),
+	)
 	return result
 }
 

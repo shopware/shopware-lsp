@@ -438,7 +438,7 @@ func TestGeneratedPhpStormStubVersionedDeprecations(t *testing.T) {
 	require.False(t, php82.Functions("curl_close")[0].Flags.Has(semantic.DeprecatedFlag))
 	require.True(t, php85.Functions("curl_close")[0].Flags.Has(semantic.DeprecatedFlag))
 	curlDeprecation, found := semantic.DeprecationOf(
-		php85.Functions("curl_close")[0].Attributes,
+		php85.Functions("curl_close")[0].Attributes(),
 	)
 	require.True(t, found)
 	require.Equal(t, "Deprecated: it has no effect", curlDeprecation.Reason)

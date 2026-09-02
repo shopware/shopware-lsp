@@ -50,8 +50,8 @@ func (s *functionState) inferObjectCreation(
 				s.currentClass.Name(),
 				func(classView semantic.SymbolView) bool {
 					class := classView.Materialize()
-					if len(class.Extends) > 0 {
-						className = class.Extends[0]
+					if len(class.Extends()) > 0 {
+						className = class.Extends()[0]
 					}
 					return false
 				},
@@ -76,12 +76,13 @@ func (s *functionState) inferObjectCreation(
 				preserveCurrentTemplates,
 			)
 			constructorReceiver := s.namedType(class.FullyQualified)
-			if len(class.Templates) > 0 {
+			classTemplates := class.Templates()
+			if len(classTemplates) > 0 {
 				templateArguments := make(
 					[]types.Type,
-					len(class.Templates),
+					len(classTemplates),
 				)
-				for index, template := range class.Templates {
+				for index, template := range classTemplates {
 					templateArguments[index] = types.Template(template.Name)
 				}
 				constructorReceiver = types.Named(
@@ -169,13 +170,14 @@ func mapCurrentClassTemplates(
 		!strings.EqualFold(class.FullyQualified, current.Name()) {
 		return nil
 	}
-	count := min(len(class.Templates), current.ArgumentCount())
+	classTemplates := class.Templates()
+	count := min(len(classTemplates), current.ArgumentCount())
 	if count == 0 {
 		return nil
 	}
 	result := make(map[string]types.Type, count)
 	for index := 0; index < count; index++ {
-		result[class.Templates[index].Name] = current.Argument(index)
+		result[classTemplates[index].Name] = current.Argument(index)
 	}
 	return result
 }
@@ -229,11 +231,12 @@ func (s *functionState) genericObjectType(
 	class semantic.Symbol,
 	inferred map[string]types.Type,
 ) types.Type {
-	if len(class.Templates) == 0 {
+	classTemplates := class.Templates()
+	if len(classTemplates) == 0 {
 		return s.namedType(class.FullyQualified)
 	}
-	arguments := make([]types.Type, 0, len(class.Templates))
-	for _, template := range class.Templates {
+	arguments := make([]types.Type, 0, len(classTemplates))
+	for _, template := range classTemplates {
 		value, exists := inferred[template.Name]
 		if !exists {
 			value = template.Default

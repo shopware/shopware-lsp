@@ -14,32 +14,34 @@ func TestShopwareTypeExtension(t *testing.T) {
 	extension := NewPHPTypeExtension()
 	entityCollectionID := semantic.SymbolID("entity-collection")
 	paymentCollectionID := semantic.SymbolID("payment-collection")
+	entityCollection := semantic.Symbol{
+		ID:             entityCollectionID,
+		Kind:           semantic.ClassSymbol,
+		Name:           "EntityCollection",
+		FullyQualified: entityCollectionType.Name(),
+		Path:           "/collections.php",
+	}
+	entityCollection.SetTemplates([]semantic.TemplateParameter{{
+		Name: "TElement",
+	}})
+	paymentCollection := semantic.Symbol{
+		ID:             paymentCollectionID,
+		Kind:           semantic.ClassSymbol,
+		Name:           "PaymentMethodCollection",
+		FullyQualified: "PaymentMethodCollection",
+		Path:           "/collections.php",
+	}
+	paymentCollection.SetHierarchy(
+		[]string{entityCollectionType.Name()}, nil, nil,
+		[]types.Type{types.Named(
+			entityCollectionType.Name(),
+			types.Named("PaymentMethodEntity"),
+		)},
+		nil, nil, nil,
+	)
 	snapshot := semantic.NewSnapshot(1, []*semantic.Document{{
-		Path: "/collections.php",
-		Symbols: []semantic.Symbol{
-			{
-				ID:             entityCollectionID,
-				Kind:           semantic.ClassSymbol,
-				Name:           "EntityCollection",
-				FullyQualified: entityCollectionType.Name(),
-				Templates: []semantic.TemplateParameter{{
-					Name: "TElement",
-				}},
-				Path: "/collections.php",
-			},
-			{
-				ID:             paymentCollectionID,
-				Kind:           semantic.ClassSymbol,
-				Name:           "PaymentMethodCollection",
-				FullyQualified: "PaymentMethodCollection",
-				Extends:        []string{entityCollectionType.Name()},
-				ExtendsTypes: []types.Type{types.Named(
-					entityCollectionType.Name(),
-					types.Named("PaymentMethodEntity"),
-				)},
-				Path: "/collections.php",
-			},
-		},
+		Path:    "/collections.php",
+		Symbols: []semantic.Symbol{entityCollection, paymentCollection},
 	}})
 
 	fact, ok := extension.InferCall(inference.CallContext{

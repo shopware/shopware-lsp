@@ -111,11 +111,11 @@ func (p *TwigConstantHoverProvider) GetHover(
 				escapeSecurityMarkdown(symbol.Type.String()),
 			)
 		}
-		if symbol.DocSummary != "" {
+		if symbol.DocSummary() != "" {
 			fmt.Fprintf(
 				&markdown,
 				"\n\n%s",
-				escapeSecurityMarkdown(symbol.DocSummary),
+				escapeSecurityMarkdown(symbol.DocSummary()),
 			)
 		}
 		if symbol.Flags.Has(semantic.DeprecatedFlag) {

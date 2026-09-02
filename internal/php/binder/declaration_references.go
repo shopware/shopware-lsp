@@ -117,8 +117,8 @@ func (b *documentBuilder) addResolvedClassReference(
 			resolved = class.FullyQualified
 		}
 	case strings.EqualFold(trimmed, "parent"):
-		if class, ok := b.enclosingClass(owner); ok && len(class.Extends) > 0 {
-			resolved = class.Extends[0]
+		if class, ok := b.enclosingClass(owner); ok && len(class.Extends()) > 0 {
+			resolved = class.Extends()[0]
 		}
 	default:
 		resolved = context.ResolveClass(name)

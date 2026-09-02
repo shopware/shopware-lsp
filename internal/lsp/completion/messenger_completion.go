@@ -72,7 +72,7 @@ func (p *MessengerCompletionProvider) GetCompletions(
 	)
 	result := make([]protocol.CompletionItem, 0, len(methods))
 	for _, method := range methods {
-		detail := method.DocSummary
+		detail := method.DocSummary()
 		if detail == "" {
 			detail = reference.Class
 		}

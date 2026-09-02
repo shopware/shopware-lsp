@@ -77,8 +77,8 @@ func (p *MessengerHoverProvider) GetHover(
 			escapeMessengerMarkdown(reference.Name),
 		)
 		methods := p.phpIndex.FindMethods(reference.Class, reference.Name)
-		if len(methods) != 0 && methods[0].DocSummary != "" {
-			fmt.Fprintf(&markdown, "\n\n%s", methods[0].DocSummary)
+		if len(methods) != 0 && methods[0].DocSummary() != "" {
+			fmt.Fprintf(&markdown, "\n\n%s", methods[0].DocSummary())
 		}
 	default:
 		return nil, nil

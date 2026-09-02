@@ -328,7 +328,7 @@ func (r MemberResolver) collectClassMemberTypeValues(
 			seenIDs[candidate.ID] = struct{}{}
 		}
 		effective := maps.Clone(templates)
-		for _, template := range candidate.Templates {
+		for _, template := range candidate.Templates() {
 			delete(effective, template.Name)
 		}
 		value := candidate.Type
@@ -348,7 +348,7 @@ func (r MemberResolver) collectClassMemberTypeValues(
 		r.Snapshot.VisitMemberViews(class.ID, name, visitCandidate)
 	}
 
-	for _, traitName := range class.Traits {
+	for _, traitName := range class.Traits() {
 		r.Snapshot.VisitClassViews(traitName, func(traitView semantic.SymbolView) bool {
 			r.collectClassMemberTypeValues(
 				traitView.Materialize(),
@@ -364,12 +364,12 @@ func (r MemberResolver) collectClassMemberTypeValues(
 		})
 	}
 	parentTypes := append(
-		append([]types.Type(nil), class.ExtendsTypes...),
-		class.ImplementsTypes...,
+		append([]types.Type(nil), class.ExtendsTypes()...),
+		class.ImplementsTypes()...,
 	)
 	parentNames := append(
-		append([]string(nil), class.Extends...),
-		class.Implements...,
+		append([]string(nil), class.Extends()...),
+		class.Implements()...,
 	)
 	for _, parentName := range parentNames {
 		r.Snapshot.VisitClassViews(parentName, func(parentView semantic.SymbolView) bool {
@@ -742,7 +742,7 @@ func (r MemberResolver) visitClassMembers(
 		}
 	}
 
-	for _, traitName := range class.Traits {
+	for _, traitName := range class.Traits() {
 		if !r.Snapshot.VisitClassViews(traitName, func(traitView semantic.SymbolView) bool {
 			trait := traitView.Materialize()
 			return r.visitClassMembers(
@@ -759,8 +759,8 @@ func (r MemberResolver) visitClassMembers(
 		}
 	}
 	if !r.visitRelatedClassMembers(
-		class.Extends,
-		class.ExtendsTypes,
+		class.Extends(),
+		class.ExtendsTypes(),
 		name,
 		kind,
 		templates,
@@ -771,8 +771,8 @@ func (r MemberResolver) visitClassMembers(
 		return false
 	}
 	return r.visitRelatedClassMembers(
-		class.Implements,
-		class.ImplementsTypes,
+		class.Implements(),
+		class.ImplementsTypes(),
 		name,
 		kind,
 		templates,
@@ -796,7 +796,7 @@ func (r MemberResolver) visitRelatedClassMembers(
 		if !r.Snapshot.VisitClassViews(parentName, func(parentView semantic.SymbolView) bool {
 			parent := parentView.Materialize()
 			var arguments []types.Type
-			if len(parent.Templates) > 0 {
+			if len(parent.Templates()) > 0 {
 				for _, parentType := range parentTypes {
 					if strings.EqualFold(parentType.Name(), parentName) {
 						arguments = make(
@@ -838,7 +838,7 @@ func (r MemberResolver) visitTraitAliasMembers(
 	visited *memberClassTracker,
 	visit func(ResolvedMember) bool,
 ) bool {
-	for _, alias := range class.TraitAliases {
+	for _, alias := range class.TraitAliases() {
 		if name != "" && !strings.EqualFold(alias.Alias, name) {
 			continue
 		}
@@ -889,11 +889,12 @@ func (r MemberResolver) visitTraitAliasMembers(
 }
 
 func bindClassTemplates(class semantic.Symbol, arguments []types.Type) map[string]types.Type {
-	if len(class.Templates) == 0 {
+	classTemplates := class.Templates()
+	if len(classTemplates) == 0 {
 		return nil
 	}
-	result := make(map[string]types.Type, len(class.Templates))
-	for index, template := range class.Templates {
+	result := make(map[string]types.Type, len(classTemplates))
+	for index, template := range classTemplates {
 		if index < len(arguments) {
 			result[template.Name] = arguments[index]
 		} else if !template.Default.IsUnknown() {
@@ -907,11 +908,12 @@ func bindClassTemplatesFromType(
 	class semantic.Symbol,
 	receiver types.Type,
 ) map[string]types.Type {
-	if len(class.Templates) == 0 {
+	classTemplates := class.Templates()
+	if len(classTemplates) == 0 {
 		return nil
 	}
-	result := make(map[string]types.Type, len(class.Templates))
-	for index, template := range class.Templates {
+	result := make(map[string]types.Type, len(classTemplates))
+	for index, template := range classTemplates {
 		if index < receiver.ArgumentCount() {
 			result[template.Name] = receiver.Argument(index)
 		} else if !template.Default.IsUnknown() {
@@ -926,25 +928,29 @@ func specializeMember(
 	class semantic.Symbol,
 	templates map[string]types.Type,
 ) semantic.Symbol {
-	if len(templates) == 0 && len(class.Templates) == 0 {
+	if len(templates) == 0 && len(class.Templates()) == 0 {
 		// Materialized snapshot slices are immutable. When neither the receiver
 		// nor its declaring class contributes templates, specialization is an
 		// identity operation and the nested signature data can remain shared.
 		return member
 	}
 	member.Parameters = append([]semantic.Parameter(nil), member.Parameters...)
-	member.Templates = append(
-		[]semantic.TemplateParameter(nil),
-		member.Templates...,
+	member.SetSignatureExtras(
+		append(
+			[]semantic.TemplateParameter(nil),
+			member.Templates()...,
+		),
+		append([]types.Type(nil), member.Throws()...),
+		append([]semantic.TypeAssertion(nil), member.Assertions()...),
+		member.LiteralReturns(),
+		member.ConstantReturns(),
 	)
-	member.Throws = append([]types.Type(nil), member.Throws...)
-	member.Assertions = append([]semantic.TypeAssertion(nil), member.Assertions...)
 	member = renameCollidingMethodTemplates(member, templates)
 	effective := make(map[string]types.Type, len(templates))
 	for name, value := range templates {
 		effective[name] = value
 	}
-	for _, template := range member.Templates {
+	for _, template := range member.Templates() {
 		delete(effective, template.Name)
 	}
 	member.Type = types.Substitute(member.Type, effective)
@@ -965,39 +971,42 @@ func specializeMember(
 			effective,
 		)
 	}
-	for index := range member.Throws {
-		member.Throws[index] = types.Substitute(member.Throws[index], effective)
+	throws := member.Throws()
+	for index := range throws {
+		throws[index] = types.Substitute(throws[index], effective)
 	}
-	for index := range member.Assertions {
-		member.Assertions[index].Type = types.Substitute(
-			member.Assertions[index].Type,
+	assertions := member.Assertions()
+	for index := range assertions {
+		assertions[index].Type = types.Substitute(
+			assertions[index].Type,
 			effective,
 		)
 	}
-	methodTemplates := member.Templates
-	member.Templates = mergeTemplates(class.Templates, methodTemplates)
-	for index := range member.Templates {
-		member.Templates[index].Bound = types.Substitute(
-			member.Templates[index].Bound,
+	methodTemplates := member.Templates()
+	member.SetTemplates(mergeTemplates(class.Templates(), methodTemplates))
+	memberTemplates := member.Templates()
+	for index := range memberTemplates {
+		memberTemplates[index].Bound = types.Substitute(
+			memberTemplates[index].Bound,
 			effective,
 		)
-		member.Templates[index].Default = types.Substitute(
-			member.Templates[index].Default,
+		memberTemplates[index].Default = types.Substitute(
+			memberTemplates[index].Default,
 			effective,
 		)
 		if !templateDeclaredByMethod(
 			methodTemplates,
-			member.Templates[index].Name,
+			memberTemplates[index].Name,
 		) {
-			if bound, exists := templates[member.Templates[index].Name]; exists &&
+			if bound, exists := templates[memberTemplates[index].Name]; exists &&
 				bound.Kind() == types.TemplateKind &&
-				bound.Name() == member.Templates[index].Name {
+				bound.Name() == memberTemplates[index].Name {
 				// A method called on Generic<T> inside Generic already has T
 				// bound by its receiver. Retain the declaration for bound
 				// validation, but do not replace that symbolic T with its
 				// class-level default merely because no method argument
 				// re-infers it.
-				member.Templates[index].Default = types.Unknown()
+				memberTemplates[index].Default = types.Unknown()
 			}
 		}
 	}
@@ -1008,18 +1017,19 @@ func renameCollidingMethodTemplates(
 	member semantic.Symbol,
 	classTemplates map[string]types.Type,
 ) semantic.Symbol {
-	if len(member.Templates) == 0 || len(classTemplates) == 0 {
+	memberTemplates := member.Templates()
+	if len(memberTemplates) == 0 || len(classTemplates) == 0 {
 		return member
 	}
-	occupied := make(map[string]struct{}, len(classTemplates)+len(member.Templates))
+	occupied := make(map[string]struct{}, len(classTemplates)+len(memberTemplates))
 	for name := range classTemplates {
 		occupied[name] = struct{}{}
 	}
-	for _, template := range member.Templates {
+	for _, template := range memberTemplates {
 		occupied[template.Name] = struct{}{}
 	}
 	renames := make(map[string]types.Type)
-	for _, template := range member.Templates {
+	for _, template := range memberTemplates {
 		collision := false
 		for _, value := range classTemplates {
 			if typeContainsTemplateNamed(value, template.Name) {
@@ -1062,26 +1072,28 @@ func renameCollidingMethodTemplates(
 			renames,
 		)
 	}
-	for index := range member.Throws {
-		member.Throws[index] = types.Substitute(member.Throws[index], renames)
+	throws := member.Throws()
+	for index := range throws {
+		throws[index] = types.Substitute(throws[index], renames)
 	}
-	for index := range member.Assertions {
-		member.Assertions[index].Type = types.Substitute(
-			member.Assertions[index].Type,
+	assertions := member.Assertions()
+	for index := range assertions {
+		assertions[index].Type = types.Substitute(
+			assertions[index].Type,
 			renames,
 		)
 	}
-	for index := range member.Templates {
-		member.Templates[index].Bound = types.Substitute(
-			member.Templates[index].Bound,
+	for index := range memberTemplates {
+		memberTemplates[index].Bound = types.Substitute(
+			memberTemplates[index].Bound,
 			renames,
 		)
-		member.Templates[index].Default = types.Substitute(
-			member.Templates[index].Default,
+		memberTemplates[index].Default = types.Substitute(
+			memberTemplates[index].Default,
 			renames,
 		)
-		if renamed, exists := renames[member.Templates[index].Name]; exists {
-			member.Templates[index].Name = renamed.Name()
+		if renamed, exists := renames[memberTemplates[index].Name]; exists {
+			memberTemplates[index].Name = renamed.Name()
 		}
 	}
 	return member

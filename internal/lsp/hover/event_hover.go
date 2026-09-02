@@ -143,11 +143,11 @@ func (p *EventHoverProvider) GetHover(
 		)
 		if p.phpIndex != nil {
 			methods := p.phpIndex.FindMethods(className, reference.Name)
-			if len(methods) != 0 && methods[0].DocSummary != "" {
+			if len(methods) != 0 && methods[0].DocSummary() != "" {
 				fmt.Fprintf(
 					&markdown,
 					"\n\n%s",
-					methods[0].DocSummary,
+					methods[0].DocSummary(),
 				)
 			}
 		}

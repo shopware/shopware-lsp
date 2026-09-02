@@ -59,8 +59,8 @@ func (p *SerializerHoverProvider) GetHover(
 	)
 	if p.phpIndex != nil {
 		if symbol, exists := p.phpIndex.FindClass(usage.Class); exists &&
-			symbol.DocSummary != "" {
-			fmt.Fprintf(&markdown, "\n\n%s", symbol.DocSummary)
+			symbol.DocSummary() != "" {
+			fmt.Fprintf(&markdown, "\n\n%s", symbol.DocSummary())
 		}
 	}
 	fmt.Fprintf(&markdown, "\n\n%d indexed deserialize use(s)", len(usages))

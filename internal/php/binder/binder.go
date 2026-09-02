@@ -531,54 +531,63 @@ func (b *documentBuilder) bindClass(
 		Range:          node.RangeTrimmedTrivia(),
 		SelectionRange: selectionRange(nameNode, node),
 		Flags:          declarationFlags(node),
-		Extends:        resolveNames(context, phpquery.ClassExtends(node)),
-		Implements:     resolveNames(context, phpquery.ClassImplements(node)),
-		Attributes:     bindAttributes(node, context),
-		DocSummary:     documentation.Summary,
 	}
+	symbol.SetMetadata(
+		bindAttributes(node, context),
+		nil,
+		documentation.Summary,
+	)
 	applyDocumentFlags(&symbol, documentation)
 	applyAttributeTypeSemantics(&symbol, context)
 	applyAttributeFlags(&symbol)
-	symbol.Templates = bindTemplates(documentation.Templates, context)
-	symbol.ExtendsTypes = resolveDocTypes(
+	templates := bindTemplates(documentation.Templates, context)
+	extends := resolveNames(context, phpquery.ClassExtends(node))
+	implements := resolveNames(context, phpquery.ClassImplements(node))
+	extendsTypes := resolveDocTypes(
 		documentation.Extends,
 		context,
 		classTemplates,
 	)
-	symbol.ImplementsTypes = resolveDocTypes(
+	implementsTypes := resolveDocTypes(
 		documentation.Implements,
 		context,
 		classTemplates,
 	)
-	symbol.TraitTypes = resolveDocTypes(
+	traitTypes := resolveDocTypes(
 		documentation.Uses,
 		context,
 		classTemplates,
 	)
-	for _, extended := range symbol.ExtendsTypes {
-		symbol.Extends = appendUnique(symbol.Extends, extended.Name())
+	for _, extended := range extendsTypes {
+		extends = appendUnique(extends, extended.Name())
 	}
-	for _, implemented := range symbol.ImplementsTypes {
-		symbol.Implements = appendUnique(symbol.Implements, implemented.Name())
+	for _, implemented := range implementsTypes {
+		implements = appendUnique(implements, implemented.Name())
 	}
-	for _, used := range symbol.TraitTypes {
-		symbol.Traits = appendUnique(symbol.Traits, used.Name())
+	var traits []string
+	for _, used := range traitTypes {
+		traits = appendUnique(traits, used.Name())
 	}
 	if body := phpquery.DirectChild(node, phpsyntax.PhpClassBody); body != nil {
 		symbol.BodyRange = body.RangeTrimmedTrivia()
 	}
 	if kind == semantic.InterfaceSymbol {
-		symbol.Implements = append(symbol.Implements, symbol.Extends...)
-		symbol.Extends = nil
+		implements = append(implements, extends...)
+		extends = nil
 	}
 	enumBacking := types.Unknown()
 	if kind == semantic.EnumSymbol {
-		symbol.Implements = appendUnique(symbol.Implements, "UnitEnum")
+		implements = appendUnique(implements, "UnitEnum")
 		enumBacking = b.enumBackingType(node, context)
 		if !enumBacking.IsUnknown() {
-			symbol.Implements = appendUnique(symbol.Implements, "BackedEnum")
+			implements = appendUnique(implements, "BackedEnum")
 		}
 	}
+	symbol.SetTemplates(templates)
+	symbol.SetHierarchy(
+		extends, implements, traits,
+		extendsTypes, implementsTypes, traitTypes, nil,
+	)
 	b.addSymbol(parentScope, symbol)
 	b.markDeclaration(nameNode)
 	b.bindClassClauses(node, parentScope, context)
@@ -626,6 +635,8 @@ func (b *documentBuilder) bindClass(
 			b.bindEnumCase(member, classScope, context, symbol.ID)
 		case phpsyntax.PhpTraitUseDeclaration:
 			var usedTraits []string
+			storedSymbol := &b.document.Symbols[symbolIndex]
+			traits := append([]string(nil), storedSymbol.Traits()...)
 			for childIndex := 0; childIndex < member.ChildCount(); childIndex++ {
 				trait, ok := member.Child(childIndex).(*phpsyntax.Node)
 				if !ok || trait.Kind() != phpsyntax.PhpName {
@@ -633,10 +644,7 @@ func (b *documentBuilder) bindClass(
 				}
 				resolvedTrait := context.ResolveClass(phpquery.NameValue(trait))
 				usedTraits = append(usedTraits, resolvedTrait)
-				b.document.Symbols[symbolIndex].Traits = append(
-					b.document.Symbols[symbolIndex].Traits,
-					resolvedTrait,
-				)
+				traits = append(traits, resolvedTrait)
 				b.addSingleReference(
 					trait,
 					semantic.ClassName,
@@ -644,9 +652,14 @@ func (b *documentBuilder) bindClass(
 					context.ResolveClass(phpquery.NameValue(trait)),
 				)
 			}
-			b.document.Symbols[symbolIndex].TraitAliases = append(
-				b.document.Symbols[symbolIndex].TraitAliases,
+			aliases := append(
+				append([]semantic.TraitAlias(nil), storedSymbol.TraitAliases()...),
 				bindTraitAliases(member, context, usedTraits)...,
+			)
+			storedSymbol.SetHierarchy(
+				storedSymbol.Extends(), storedSymbol.Implements(), traits,
+				storedSymbol.ExtendsTypes(), storedSymbol.ImplementsTypes(),
+				storedSymbol.TraitTypes(), aliases,
 			)
 		}
 	}
@@ -699,18 +712,19 @@ func (b *documentBuilder) bindFunction(
 		NativeType:     nativeReturn,
 		DocType:        docReturn,
 		ReturnType:     effectiveType(nativeReturn, docReturn),
-		Attributes:     bindAttributes(node, context),
-		DocSummary:     documentation.Summary,
-		Throws:         resolveDocTypes(documentation.Throws, context, docTemplates),
-		Assertions:     bindAssertions(documentation.Assertions, context, docTemplates),
 	}
+	symbol.SetMetadata(
+		bindAttributes(node, context),
+		nil,
+		documentation.Summary,
+	)
 	if parameterCount := parameters.Len() + len(plannedParameters); parameterCount != 0 {
 		symbol.Parameters = make(
 			[]semantic.Parameter,
 			parameterCount,
 		)
 	}
-	symbol.Templates = bindTemplates(
+	templates := bindTemplates(
 		documentation.Templates,
 		context,
 		inheritedTemplates...,
@@ -719,11 +733,19 @@ func (b *documentBuilder) bindFunction(
 	applyAttributeTypeSemantics(&symbol, context)
 	applyAttributeFlags(&symbol)
 	body := phpquery.DirectChild(node, phpsyntax.PhpBlock)
+	var literalReturns []semantic.LiteralReturn
+	var constantReturns []semantic.ConstantReturn
 	if body != nil {
 		symbol.BodyRange = body.RangeTrimmedTrivia()
-		symbol.LiteralReturns, symbol.ConstantReturns =
-			returnMetadata(body, context)
+		literalReturns, constantReturns = returnMetadata(body, context)
 	}
+	symbol.SetSignatureExtras(
+		templates,
+		resolveDocTypes(documentation.Throws, context, docTemplates),
+		bindAssertions(documentation.Assertions, context, docTemplates),
+		literalReturns,
+		constantReturns,
+	)
 	b.addSymbol(parentScope, symbol)
 	b.markDeclaration(nameNode)
 
@@ -805,8 +827,8 @@ func (b *documentBuilder) bindPromotedProperty(
 		Type:               parameter.Type,
 		NativeType:         parameter.NativeType,
 		DocType:            parameter.DocType,
-		Attributes:         bindAttributes(node, context),
 	}
+	symbol.SetAttributes(bindAttributes(node, context))
 	applyAttributeTypeSemantics(&symbol, context)
 	applyAttributeFlags(&symbol)
 	b.addSymbol(classScope, symbol)
@@ -880,8 +902,8 @@ func (b *documentBuilder) bindParameter(
 		Type:           effective,
 		NativeType:     nativeType,
 		DocType:        docType,
-		Attributes:     attributes,
 	}
+	symbol.SetAttributes(attributes)
 	applyAttributeFlags(&symbol)
 	flags = symbol.Flags
 	b.addSymbol(scope, symbol)
@@ -952,8 +974,8 @@ func (b *documentBuilder) bindProperties(
 			Type:               effective,
 			NativeType:         nativeType,
 			DocType:            docType,
-			Attributes:         bindAttributes(node, context),
 		}
+		symbol.SetAttributes(bindAttributes(node, context))
 		applyDocumentFlags(&symbol, documentation)
 		applyAttributeTypeSemantics(&symbol, context)
 		applyAttributeFlags(&symbol)
@@ -1000,8 +1022,9 @@ func (b *documentBuilder) bindConstants(
 			}
 		case *phpsyntax.Node:
 			if expectValue && currentSymbol >= 0 {
-				b.document.Symbols[currentSymbol].ConstantArray =
-					constantArrayItems(value)
+				b.document.Symbols[currentSymbol].SetConstantArray(
+					constantArrayItems(value),
+				)
 				if nativeType.IsUnknown() {
 					inferred := constantLiteralType(value)
 					if !inferred.IsUnknown() {
@@ -1034,9 +1057,8 @@ func (b *documentBuilder) bindConstants(
 				Flags:          declarationFlags(node),
 				Type:           nativeType,
 				NativeType:     nativeType,
-				Attributes:     attributes,
-				DocSummary:     documentation.Summary,
 			}
+			symbol.SetMetadata(attributes, nil, documentation.Summary)
 			applyDocumentFlags(&symbol, documentation)
 			applyAttributeTypeSemantics(&symbol, context)
 			applyAttributeFlags(&symbol)
@@ -1249,8 +1271,8 @@ func (b *documentBuilder) bindEnumCase(
 		Path:           b.document.Path,
 		Range:          node.RangeTrimmedTrivia(),
 		SelectionRange: selectionRange(nameNode, node),
-		Attributes:     bindAttributes(node, context),
 	}
+	symbol.SetAttributes(bindAttributes(node, context))
 	applyDocumentFlags(&symbol, phpdoc.Parse(leadingDocComment(node)))
 	applyAttributeTypeSemantics(&symbol, context)
 	applyAttributeFlags(&symbol)

@@ -84,7 +84,7 @@ func (p *Provider) unavailableExtensionDiagnostic(
 
 func formatDeprecationHover(symbol semantic.Symbol) string {
 	result := "\n\n**Deprecated**"
-	details, found := semantic.DeprecationOf(symbol.Attributes)
+	details, found := semantic.DeprecationOf(symbol.Attributes())
 	if !found {
 		return result
 	}
@@ -103,7 +103,7 @@ func formatDeprecationHover(symbol semantic.Symbol) string {
 
 func formatDeprecationDiagnostic(symbol semantic.Symbol) string {
 	message := symbol.Name + " is deprecated"
-	details, found := semantic.DeprecationOf(symbol.Attributes)
+	details, found := semantic.DeprecationOf(symbol.Attributes())
 	if !found {
 		return message
 	}
@@ -817,7 +817,7 @@ func classAllowsDynamicProperties(
 		return false
 	}
 	visited[class.ID] = struct{}{}
-	for _, parent := range class.Extends {
+	for _, parent := range class.Extends() {
 		allowed := false
 		snapshot.VisitClassViews(
 			parent,
@@ -838,7 +838,7 @@ func classAllowsDynamicProperties(
 }
 
 func hasAllowDynamicProperties(class semantic.Symbol) bool {
-	for _, attribute := range class.Attributes {
+	for _, attribute := range class.Attributes() {
 		name := strings.TrimPrefix(attribute.Name, "\\")
 		if strings.EqualFold(name, "AllowDynamicProperties") ||
 			strings.HasSuffix(
@@ -1130,7 +1130,7 @@ func classUsesTrait(
 	found := false
 	snapshot.VisitClassViews(className, func(view semantic.SymbolView) bool {
 		class := view.Materialize()
-		for _, used := range class.Traits {
+		for _, used := range class.Traits() {
 			if strings.EqualFold(
 				strings.TrimPrefix(used, "\\"),
 				strings.TrimPrefix(traitName, "\\"),
@@ -1139,7 +1139,7 @@ func classUsesTrait(
 				return false
 			}
 		}
-		for _, parent := range class.Extends {
+		for _, parent := range class.Extends() {
 			if classUsesTrait(snapshot, parent, traitName, visited) {
 				found = true
 				return false
@@ -1167,7 +1167,7 @@ func classDirectlyUsesTrait(
 	found := false
 	snapshot.VisitClassViews(className, func(view semantic.SymbolView) bool {
 		class := view.Materialize()
-		for _, used := range class.Traits {
+		for _, used := range class.Traits() {
 			if strings.EqualFold(
 				strings.TrimPrefix(used, "\\"),
 				strings.TrimPrefix(traitName, "\\"),

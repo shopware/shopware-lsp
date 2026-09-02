@@ -727,10 +727,10 @@ func (s *analyzerState) inheritedReceiverTypes(
 		s.cachedParentClassID == class.ID {
 		return s.cachedParentReceivers
 	}
-	names := append(append([]string(nil), class.Extends...), class.Implements...)
+	names := append(append([]string(nil), class.Extends()...), class.Implements()...)
 	typed := append(
-		append([]types.Type(nil), class.ExtendsTypes...),
-		class.ImplementsTypes...,
+		append([]types.Type(nil), class.ExtendsTypes()...),
+		class.ImplementsTypes()...,
 	)
 	result := make([]types.Type, 0, len(names))
 	for _, name := range names {
@@ -1466,7 +1466,7 @@ func (s *analyzerState) classType(id semantic.SymbolID) types.Type {
 		return types.Unknown()
 	}
 	var args []types.Type
-	for _, template := range symbol.Templates {
+	for _, template := range symbol.Templates() {
 		args = append(args, types.Template(template.Name))
 	}
 	result := types.Named(symbol.FullyQualified, args...)

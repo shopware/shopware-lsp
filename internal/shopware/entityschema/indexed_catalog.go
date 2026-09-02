@@ -73,7 +73,7 @@ func (catalog *IndexedCatalog) ScanContext(
 		declaration := IndexedClassDeclaration{
 			Path:     symbol.Path,
 			Class:    symbol.FullyQualified,
-			Parents:  append([]string(nil), symbol.Extends...),
+			Parents:  append([]string(nil), symbol.Extends()...),
 			Abstract: symbol.Flags.Has(semantic.AbstractFlag),
 		}
 		if catalog.sources != nil && !declaration.Abstract {

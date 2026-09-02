@@ -10,6 +10,39 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func resolverSymbolWithTemplates(
+	symbol semantic.Symbol,
+	templates []semantic.TemplateParameter,
+) semantic.Symbol {
+	symbol.SetTemplates(templates)
+	return symbol
+}
+
+func resolverSymbolWithAssertions(
+	symbol semantic.Symbol,
+	assertions []semantic.TypeAssertion,
+) semantic.Symbol {
+	symbol.SetAssertions(assertions)
+	return symbol
+}
+
+func resolverSymbolWithHierarchy(
+	symbol semantic.Symbol,
+	extends []string,
+	implements []string,
+	traits []string,
+	extendsTypes []types.Type,
+	implementsTypes []types.Type,
+	traitTypes []types.Type,
+	aliases []semantic.TraitAlias,
+) semantic.Symbol {
+	symbol.SetHierarchy(
+		extends, implements, traits,
+		extendsTypes, implementsTypes, traitTypes, aliases,
+	)
+	return symbol
+}
+
 func TestMemberResolutionAcrossInheritanceAndTemplates(t *testing.T) {
 	t.Parallel()
 	baseID := semantic.SymbolID("base")
@@ -17,28 +50,26 @@ func TestMemberResolutionAcrossInheritanceAndTemplates(t *testing.T) {
 	documents := []*semantic.Document{{
 		Path: "/types.php",
 		Symbols: []semantic.Symbol{
-			{
+			resolverSymbolWithTemplates(semantic.Symbol{
 				ID:             baseID,
 				Kind:           semantic.ClassSymbol,
 				Name:           "Collection",
 				FullyQualified: "Collection",
 				Path:           "/types.php",
-				Templates:      []semantic.TemplateParameter{{Name: "T"}},
-			},
-			{
+			}, []semantic.TemplateParameter{{Name: "T"}}),
+			resolverSymbolWithAssertions(semantic.Symbol{
 				ID:             "first",
 				Kind:           semantic.MethodSymbol,
 				Name:           "first",
 				FullyQualified: "Collection::first",
 				Container:      baseID,
 				ReturnType:     types.Template("T"),
-				Assertions: []semantic.TypeAssertion{{
-					Target:   "$value",
-					Type:     types.Template("T"),
-					WhenTrue: true,
-				}},
-				Path: "/types.php",
-			},
+				Path:           "/types.php",
+			}, []semantic.TypeAssertion{{
+				Target:   "$value",
+				Type:     types.Template("T"),
+				WhenTrue: true,
+			}}),
 			{
 				ID:             "current",
 				Kind:           semantic.PropertySymbol,
@@ -48,14 +79,13 @@ func TestMemberResolutionAcrossInheritanceAndTemplates(t *testing.T) {
 				Type:           types.Template("T"),
 				Path:           "/types.php",
 			},
-			{
+			resolverSymbolWithHierarchy(semantic.Symbol{
 				ID:             childID,
 				Kind:           semantic.ClassSymbol,
 				Name:           "Products",
 				FullyQualified: "Products",
-				Extends:        []string{"Collection"},
 				Path:           "/types.php",
-			},
+			}, []string{"Collection"}, nil, nil, nil, nil, nil, nil),
 		},
 	}}
 	snapshot := semantic.NewSnapshot(1, documents)
@@ -65,11 +95,11 @@ func TestMemberResolutionAcrossInheritanceAndTemplates(t *testing.T) {
 	)
 	require.Len(t, resolved, 1)
 	require.Equal(t, "Product", resolved[0].Type.String())
-	require.Len(t, resolved[0].Symbol.Assertions, 1)
+	require.Len(t, resolved[0].Symbol.Assertions(), 1)
 	require.Equal(
 		t,
 		"Product",
-		resolved[0].Symbol.Assertions[0].Type.String(),
+		resolved[0].Symbol.Assertions()[0].Type.String(),
 	)
 
 	ids := (MemberResolver{Snapshot: snapshot}).MethodIDs(
@@ -128,21 +158,19 @@ func TestMemberResolutionSupportsTraitAliases(t *testing.T) {
 		},
 		{
 			Path: "/consumer.php",
-			Symbols: []semantic.Symbol{{
+			Symbols: []semantic.Symbol{resolverSymbolWithHierarchy(semantic.Symbol{
 				ID:             classID,
 				Kind:           semantic.ClassSymbol,
 				Name:           "Consumer",
 				FullyQualified: "Consumer",
-				Traits:         []string{"Reusable"},
-				TraitAliases: []semantic.TraitAlias{{
-					Trait:         "Reusable",
-					Method:        "value",
-					Alias:         "aliasedValue",
-					Visibility:    semantic.Private,
-					HasVisibility: true,
-				}},
-				Path: "/consumer.php",
-			}},
+				Path:           "/consumer.php",
+			}, nil, nil, []string{"Reusable"}, nil, nil, nil, []semantic.TraitAlias{{
+				Trait:         "Reusable",
+				Method:        "value",
+				Alias:         "aliasedValue",
+				Visibility:    semantic.Private,
+				HasVisibility: true,
+			}})},
 		},
 	})
 	resolver := MemberResolver{Snapshot: snapshot}
@@ -325,14 +353,13 @@ func BenchmarkMemberResolverPropertyTypes(b *testing.B) {
 	snapshot := semantic.NewSnapshot(1, []*semantic.Document{{
 		Path: "/collection.php",
 		Symbols: []semantic.Symbol{
-			{
+			resolverSymbolWithTemplates(semantic.Symbol{
 				ID:             classID,
 				Kind:           semantic.ClassSymbol,
 				Name:           "Collection",
 				FullyQualified: "Collection",
-				Templates:      []semantic.TemplateParameter{{Name: "T"}},
 				Path:           "/collection.php",
-			},
+			}, []semantic.TemplateParameter{{Name: "T"}}),
 			{
 				ID:             "current",
 				Kind:           semantic.PropertySymbol,
@@ -511,22 +538,20 @@ func TestAllMethodIDsReturnsOnlyEffectiveDeclarations(t *testing.T) {
 				Container:      interfaceID,
 				Path:           "/methods.php",
 			},
-			{
+			resolverSymbolWithHierarchy(semantic.Symbol{
 				ID:             "missing",
 				Kind:           semantic.ClassSymbol,
 				Name:           "Missing",
 				FullyQualified: "Missing",
-				Implements:     []string{"Contract"},
 				Path:           "/methods.php",
-			},
-			{
+			}, nil, []string{"Contract"}, nil, nil, nil, nil, nil),
+			resolverSymbolWithHierarchy(semantic.Symbol{
 				ID:             concreteID,
 				Kind:           semantic.ClassSymbol,
 				Name:           "Concrete",
 				FullyQualified: "Concrete",
-				Implements:     []string{"Contract"},
 				Path:           "/methods.php",
-			},
+			}, nil, []string{"Contract"}, nil, nil, nil, nil, nil),
 			{
 				ID:             "implemented",
 				Kind:           semantic.MethodSymbol,
@@ -593,37 +618,34 @@ func TestResolveGenericSignatureProjectsSubclassToGenericParameter(t *testing.T)
 	snapshot := semantic.NewSnapshot(1, []*semantic.Document{{
 		Path: "/extensions.php",
 		Symbols: []semantic.Symbol{
-			{
+			resolverSymbolWithTemplates(semantic.Symbol{
 				ID:             extensionID,
 				Kind:           semantic.ClassSymbol,
 				Name:           "Extension",
 				FullyQualified: "Extension",
-				Templates:      []semantic.TemplateParameter{{Name: "T"}},
 				Path:           "/extensions.php",
-			},
-			{
+			}, []semantic.TemplateParameter{{Name: "T"}}),
+			resolverSymbolWithHierarchy(semantic.Symbol{
 				ID:             childID,
 				Kind:           semantic.ClassSymbol,
 				Name:           "ProductExtension",
 				FullyQualified: "ProductExtension",
-				Extends:        []string{"Extension"},
-				ExtendsTypes: []types.Type{
-					types.Named("Extension", types.Named("Product")),
-				},
-				Path: "/extensions.php",
-			},
+				Path:           "/extensions.php",
+			}, []string{"Extension"}, nil, nil, []types.Type{
+				types.Named("Extension", types.Named("Product")),
+			}, nil, nil, nil),
 		},
 	}})
 	symbol := semantic.Symbol{
 		Kind:       semantic.MethodSymbol,
 		Name:       "publish",
 		ReturnType: types.Template("T"),
-		Templates:  []semantic.TemplateParameter{{Name: "T"}},
 		Parameters: []semantic.Parameter{{
 			Name: "$extension",
 			Type: types.Named("Extension", types.Template("T")),
 		}},
 	}
+	symbol.SetTemplates([]semantic.TemplateParameter{{Name: "T"}})
 	resolved := ResolveSignature(
 		snapshot.Relations(),
 		symbol,
@@ -639,14 +661,13 @@ func TestMemberResolutionSpecializesCompleteSignature(t *testing.T) {
 	snapshot := semantic.NewSnapshot(1, []*semantic.Document{{
 		Path: "/box.php",
 		Symbols: []semantic.Symbol{
-			{
+			resolverSymbolWithTemplates(semantic.Symbol{
 				ID:             classID,
 				Kind:           semantic.ClassSymbol,
 				Name:           "Box",
 				FullyQualified: "Box",
-				Templates:      []semantic.TemplateParameter{{Name: "T"}},
 				Path:           "/box.php",
-			},
+			}, []semantic.TemplateParameter{{Name: "T"}}),
 			{
 				ID:             "replace",
 				Kind:           semantic.MethodSymbol,
@@ -691,16 +712,15 @@ func TestBoundClassTemplateDoesNotFallBackToDefault(t *testing.T) {
 	snapshot := semantic.NewSnapshot(1, []*semantic.Document{{
 		Path: "/generic-box.php",
 		Symbols: []semantic.Symbol{
-			{
+			resolverSymbolWithTemplates(semantic.Symbol{
 				ID:             classID,
 				Kind:           semantic.ClassSymbol,
 				Name:           "GenericBox",
 				FullyQualified: "GenericBox",
-				Templates: []semantic.TemplateParameter{{
-					Name:    "T",
-					Default: types.String(),
-				}},
-			},
+			}, []semantic.TemplateParameter{{
+				Name:    "T",
+				Default: types.String(),
+			}}),
 			{
 				ID:             "generic-box-value",
 				Kind:           semantic.MethodSymbol,
@@ -716,8 +736,8 @@ func TestBoundClassTemplateDoesNotFallBackToDefault(t *testing.T) {
 		"value",
 	)
 	require.Len(t, methods, 1)
-	require.Len(t, methods[0].Symbol.Templates, 1)
-	require.True(t, methods[0].Symbol.Templates[0].Default.IsUnknown())
+	require.Len(t, methods[0].Symbol.Templates(), 1)
+	require.True(t, methods[0].Symbol.Templates()[0].Default.IsUnknown())
 	require.Equal(
 		t,
 		"T",
@@ -735,17 +755,17 @@ func TestResolveSignatureHonorsBoundsDefaultsAndVariadics(t *testing.T) {
 		Kind:       semantic.FunctionSymbol,
 		Name:       "collect",
 		ReturnType: types.Template("T"),
-		Templates: []semantic.TemplateParameter{{
-			Name:    "T",
-			Bound:   types.Named("Entity"),
-			Default: types.Named("DefaultEntity"),
-		}},
 		Parameters: []semantic.Parameter{{
 			Name:  "$values",
 			Type:  types.Template("T"),
 			Flags: semantic.VariadicFlag,
 		}},
 	}
+	symbol.SetTemplates([]semantic.TemplateParameter{{
+		Name:    "T",
+		Bound:   types.Named("Entity"),
+		Default: types.Named("DefaultEntity"),
+	}})
 	relations := types.Relations{Hierarchy: testHierarchy{
 		"Product":       "Entity",
 		"DefaultEntity": "Entity",
@@ -793,19 +813,18 @@ func TestResolveSignatureAcceptsAlreadyBoundClassTemplate(t *testing.T) {
 	template := types.Template("TElement")
 	resolved := ResolveSignature(
 		types.Relations{},
-		semantic.Symbol{
-			Kind: semantic.MethodSymbol,
-			Name: "add",
-			Templates: []semantic.TemplateParameter{{
-				Name:  "TElement",
-				Bound: types.Named("Entity"),
-			}},
+		resolverSymbolWithTemplates(semantic.Symbol{
+			Kind:       semantic.MethodSymbol,
+			Name:       "add",
 			ReturnType: types.Void(),
 			Parameters: []semantic.Parameter{{
 				Name: "$entity",
 				Type: template,
 			}},
-		},
+		}, []semantic.TemplateParameter{{
+			Name:  "TElement",
+			Bound: types.Named("Entity"),
+		}}),
 		[]Argument{{Type: template}},
 	)
 	require.True(t, resolved.Compatible)
@@ -815,10 +834,6 @@ func TestResolveSignatureAcceptsAlreadyBoundClassTemplate(t *testing.T) {
 func TestResolveSignatureInfersTemplatesFromCallableAndList(t *testing.T) {
 	t.Parallel()
 	callable := semantic.Symbol{
-		Templates: []semantic.TemplateParameter{{
-			Name:  "T",
-			Bound: types.Mixed(),
-		}},
 		Parameters: []semantic.Parameter{{
 			Name: "$callback",
 			Type: types.Callable(
@@ -828,6 +843,9 @@ func TestResolveSignatureInfersTemplatesFromCallableAndList(t *testing.T) {
 		}},
 		ReturnType: types.Array(types.String(), types.Template("T")),
 	}
+	callable.SetTemplates([]semantic.TemplateParameter{{
+		Name: "T", Bound: types.Mixed(),
+	}})
 	resolved := ResolveSignature(
 		types.Relations{},
 		callable,
@@ -840,10 +858,6 @@ func TestResolveSignatureInfersTemplatesFromCallableAndList(t *testing.T) {
 	require.Equal(t, "array<string,string>", resolved.ReturnType.String())
 
 	arrayFilter := semantic.Symbol{
-		Templates: []semantic.TemplateParameter{
-			{Name: "TKey", Bound: types.ArrayKey()},
-			{Name: "TValue", Bound: types.Mixed()},
-		},
 		Parameters: []semantic.Parameter{{
 			Name: "$array",
 			Type: types.Array(
@@ -856,6 +870,10 @@ func TestResolveSignatureInfersTemplatesFromCallableAndList(t *testing.T) {
 			types.Template("TValue"),
 		),
 	}
+	arrayFilter.SetTemplates([]semantic.TemplateParameter{
+		{Name: "TKey", Bound: types.ArrayKey()},
+		{Name: "TValue", Bound: types.Mixed()},
+	})
 	resolved = ResolveSignature(
 		types.Relations{},
 		arrayFilter,
@@ -865,10 +883,6 @@ func TestResolveSignatureInfersTemplatesFromCallableAndList(t *testing.T) {
 	require.Equal(t, "array<int,string>", resolved.ReturnType.String())
 
 	fmap := semantic.Symbol{
-		Templates: []semantic.TemplateParameter{{
-			Name:  "T",
-			Bound: types.Mixed(),
-		}},
 		Parameters: []semantic.Parameter{{
 			Name: "$callback",
 			Type: types.Callable(
@@ -882,6 +896,9 @@ func TestResolveSignatureInfersTemplatesFromCallableAndList(t *testing.T) {
 		}},
 		ReturnType: types.Array(types.String(), types.Template("T")),
 	}
+	fmap.SetTemplates([]semantic.TemplateParameter{{
+		Name: "T", Bound: types.Mixed(),
+	}})
 	resolved = ResolveSignature(
 		types.Relations{},
 		fmap,
@@ -894,16 +911,15 @@ func TestResolveSignatureInfersTemplatesFromCallableAndList(t *testing.T) {
 	require.Equal(t, "array<string,string>", resolved.ReturnType.String())
 
 	uncertainArray := semantic.Symbol{
-		Templates: []semantic.TemplateParameter{{
-			Name:  "T",
-			Bound: types.String(),
-		}},
 		Parameters: []semantic.Parameter{{
 			Name: "$values",
 			Type: types.Array(types.ArrayKey(), types.Template("T")),
 		}},
 		ReturnType: types.Void(),
 	}
+	uncertainArray.SetTemplates([]semantic.TemplateParameter{{
+		Name: "T", Bound: types.String(),
+	}})
 	resolved = ResolveSignature(
 		types.Relations{},
 		uncertainArray,
@@ -978,16 +994,15 @@ func TestPartiallyDefaultedClassTemplatesRemainInferable(t *testing.T) {
 	snapshot := semantic.NewSnapshot(1, []*semantic.Document{{
 		Path: "/pair.php",
 		Symbols: []semantic.Symbol{
-			{
+			resolverSymbolWithTemplates(semantic.Symbol{
 				ID:             classID,
 				Kind:           semantic.ClassSymbol,
 				Name:           "Pair",
 				FullyQualified: "Pair",
-				Templates: []semantic.TemplateParameter{
-					{Name: "T", Bound: types.Object()},
-					{Name: "TLabel", Default: types.String()},
-				},
-			},
+			}, []semantic.TemplateParameter{
+				{Name: "T", Bound: types.Object()},
+				{Name: "TLabel", Default: types.String()},
+			}),
 			{
 				ID:             "construct",
 				Kind:           semantic.MethodSymbol,
@@ -1006,7 +1021,7 @@ func TestPartiallyDefaultedClassTemplatesRemainInferable(t *testing.T) {
 		"__construct",
 	)
 	require.Len(t, constructor, 1)
-	require.Len(t, constructor[0].Symbol.Templates, 2)
+	require.Len(t, constructor[0].Symbol.Templates(), 2)
 	resolved := ResolveSignature(
 		snapshot.Relations(),
 		constructor[0].Symbol,
@@ -1023,26 +1038,24 @@ func TestMethodTemplateShadowsClassTemplate(t *testing.T) {
 	snapshot := semantic.NewSnapshot(1, []*semantic.Document{{
 		Path: "/container.php",
 		Symbols: []semantic.Symbol{
-			{
+			resolverSymbolWithTemplates(semantic.Symbol{
 				ID:             classID,
 				Kind:           semantic.ClassSymbol,
 				Name:           "Container",
 				FullyQualified: "Container",
-				Templates:      []semantic.TemplateParameter{{Name: "T"}},
-			},
-			{
+			}, []semantic.TemplateParameter{{Name: "T"}}),
+			resolverSymbolWithTemplates(semantic.Symbol{
 				ID:             "convert",
 				Kind:           semantic.MethodSymbol,
 				Name:           "convert",
 				FullyQualified: "Container::convert",
 				Container:      classID,
-				Templates:      []semantic.TemplateParameter{{Name: "T"}},
 				ReturnType:     types.Template("T"),
 				Parameters: []semantic.Parameter{{
 					Name: "$value",
 					Type: types.Template("T"),
 				}},
-			},
+			}, []semantic.TemplateParameter{{Name: "T"}}),
 		},
 	}})
 	method := MemberResolver{Snapshot: snapshot}.Methods(
@@ -1065,24 +1078,19 @@ func TestMemberResolutionSpecializesMethodTemplateBound(t *testing.T) {
 	snapshot := semantic.NewSnapshot(1, []*semantic.Document{{
 		Path: "/collection.php",
 		Symbols: []semantic.Symbol{
-			{
+			resolverSymbolWithTemplates(semantic.Symbol{
 				ID:             classID,
 				Kind:           semantic.ClassSymbol,
 				Name:           "Collection",
 				FullyQualified: "Collection",
-				Templates:      []semantic.TemplateParameter{{Name: "TElement"}},
-			},
-			{
+			}, []semantic.TemplateParameter{{Name: "TElement"}}),
+			resolverSymbolWithTemplates(semantic.Symbol{
 				ID:             "first-where",
 				Kind:           semantic.MethodSymbol,
 				Name:           "firstWhere",
 				FullyQualified: "Collection::firstWhere",
 				Container:      classID,
-				Templates: []semantic.TemplateParameter{{
-					Name:  "T",
-					Bound: types.Template("TElement"),
-				}},
-				ReturnType: types.Nullable(types.Template("T")),
+				ReturnType:     types.Nullable(types.Template("T")),
 				Parameters: []semantic.Parameter{{
 					Name: "$predicate",
 					Type: types.Callable(
@@ -1092,7 +1100,10 @@ func TestMemberResolutionSpecializesMethodTemplateBound(t *testing.T) {
 						types.Bool(),
 					),
 				}},
-			},
+			}, []semantic.TemplateParameter{{
+				Name:  "T",
+				Bound: types.Template("TElement"),
+			}}),
 		},
 	}})
 	methods := MemberResolver{Snapshot: snapshot}.Methods(
@@ -1100,11 +1111,11 @@ func TestMemberResolutionSpecializesMethodTemplateBound(t *testing.T) {
 		"firstWhere",
 	)
 	require.Len(t, methods, 1)
-	require.Len(t, methods[0].Symbol.Templates, 2)
+	require.Len(t, methods[0].Symbol.Templates(), 2)
 	require.Equal(
 		t,
 		"Delivery",
-		methods[0].Symbol.Templates[1].Bound.String(),
+		methods[0].Symbol.Templates()[1].Bound.String(),
 	)
 	resolved := ResolveSignature(
 		snapshot.Relations(),

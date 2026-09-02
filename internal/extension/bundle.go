@@ -10,11 +10,11 @@ import (
 
 // isShopwareBundle checks if a class extends Shopware\Core\Framework\Bundle or Shopware\Core\Framework\Plugin
 func isShopwareBundle(class semantic.Symbol) bool {
-	if class.Kind != semantic.ClassSymbol || len(class.Extends) == 0 {
+	if class.Kind != semantic.ClassSymbol || len(class.Extends()) == 0 {
 		return false
 	}
 
-	parent := strings.TrimPrefix(class.Extends[0], "\\")
+	parent := strings.TrimPrefix(class.Extends()[0], "\\")
 	return parent == "Shopware\\Core\\Framework\\Bundle" ||
 		parent == "Shopware\\Core\\Framework\\Plugin"
 }

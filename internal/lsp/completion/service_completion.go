@@ -599,9 +599,9 @@ func (p *SymfonyCompletionProvider) configuredServiceMethodCompletions(
 				NewText: method.Name,
 			},
 		}
-		if method.DocSummary != "" {
+		if method.DocSummary() != "" {
 			item.Documentation.Kind = string(protocol.Markdown)
-			item.Documentation.Value = method.DocSummary
+			item.Documentation.Value = method.DocSummary()
 		}
 		items = append(items, item)
 	}
@@ -858,8 +858,8 @@ func (p *SymfonyCompletionProvider) classCompletionItems() []protocol.Completion
 			item.Detail = "Deprecated PHP type"
 			item.Documentation.Kind = "markdown"
 			item.Documentation.Value = "**Deprecated PHP type**"
-			if symbol.DocSummary != "" {
-				item.Documentation.Value += "\n\n" + symbol.DocSummary
+			if symbol.DocSummary() != "" {
+				item.Documentation.Value += "\n\n" + symbol.DocSummary()
 			}
 		}
 		items = append(items, item)

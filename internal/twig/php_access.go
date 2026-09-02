@@ -459,10 +459,10 @@ func resolveRelativeTwigMemberType(
 			return types.Unknown()
 		}
 		container, ok := snapshot.Symbol(symbol.Container)
-		if !ok || len(container.Extends) == 0 {
+		if !ok || len(container.Extends()) == 0 {
 			return types.Unknown()
 		}
-		return types.Named(container.Extends[0])
+		return types.Named(container.Extends()[0])
 	case types.UnionKind:
 		values := value.Arguments()
 		for index := range values {
@@ -691,8 +691,8 @@ func isSemanticTwigExtensionClass(
 	class semantic.Symbol,
 ) bool {
 	for _, parent := range append(
-		append([]string(nil), class.Extends...),
-		class.Implements...,
+		append([]string(nil), class.Extends()...),
+		class.Implements()...,
 	) {
 		switch lastNamePart(parent) {
 		case "AbstractExtension", "ExtensionInterface",

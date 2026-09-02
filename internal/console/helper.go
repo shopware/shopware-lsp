@@ -90,7 +90,7 @@ func Helpers(index *php.PHPIndex) []Helper {
 			if method.Container != class.ID {
 				continue
 			}
-			for _, literal := range method.LiteralReturns {
+			for _, literal := range method.LiteralReturns() {
 				if literal.Type.Kind() != types.LiteralStringKind ||
 					strings.TrimSpace(literal.Value) == "" {
 					continue
@@ -105,9 +105,9 @@ func Helpers(index *php.PHPIndex) []Helper {
 				if rng.Len() == 0 {
 					rng = class.Range
 				}
-				summary := class.DocSummary
+				summary := class.DocSummary()
 				if summary == "" {
-					summary = method.DocSummary
+					summary = method.DocSummary()
 				}
 				result = append(result, Helper{
 					Name:    literal.Value,

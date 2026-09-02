@@ -354,7 +354,7 @@ func TestShopwareTrunkPHPDiagnosticsAudit(t *testing.T) {
 								member.Symbol.ReturnType,
 								member.Type,
 								resolved.ReturnType,
-								member.Symbol.Templates,
+								member.Symbol.Templates(),
 								resolved.Templates,
 								resolved.Compatible,
 							)
@@ -464,7 +464,7 @@ func TestShopwareTrunkPHPDiagnosticsAudit(t *testing.T) {
 							constructor.Symbol.Parameters,
 							auditTypeShape(parameterType),
 							firstAssignable,
-							constructor.Symbol.Templates,
+							constructor.Symbol.Templates(),
 							resolved.Compatible,
 						)
 					}
