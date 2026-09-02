@@ -426,8 +426,18 @@ func (s *Snapshot) ReferencesTo(id SymbolID) []ReferenceLocation {
 	if index == nil {
 		return nil
 	}
-	var result []ReferenceLocation
-	for _, location := range index.references[id] {
+	spanID := index.references[id]
+	if spanID == 0 || uint64(spanID) > uint64(len(index.spans)) {
+		return nil
+	}
+	span := index.spans[spanID-1]
+	end := uint64(span.start) + uint64(span.count)
+	if end > uint64(len(index.locations)) {
+		return nil
+	}
+	locations := index.locations[span.start:uint32(end)]
+	result := make([]ReferenceLocation, 0, len(locations))
+	for _, location := range locations {
 		result = append(result, ReferenceLocation{
 			Path:       index.paths[location.pathID],
 			RangeStart: location.rangeStart,
@@ -445,6 +455,7 @@ func (s *Snapshot) cachedOverlayReferencesTo(id SymbolID) []ReferenceLocation {
 		}
 		documentFilter := newPackedReferenceTargetFilter(target)
 		var result []ReferenceLocation
+		resolver := packedReferenceTargetResolver{snapshot: s}
 		s.visitPathReferences(func(path string, document *workspaceDocument) {
 			if !documentFilter.matchesDocument(document) {
 				return
@@ -455,7 +466,7 @@ func (s *Snapshot) cachedOverlayReferencesTo(id SymbolID) []ReferenceLocation {
 					continue
 				}
 				rng := reference.rangeValue(document)
-				for _, candidate := range s.referenceTargetsPacked(
+				for _, candidate := range resolver.resolve(
 					document,
 					reference,
 				) {

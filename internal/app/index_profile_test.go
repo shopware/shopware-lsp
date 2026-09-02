@@ -104,6 +104,10 @@ func TestShopwareTrunkIndexingProfile(t *testing.T) {
 		runtime.GC()
 		var referencesAfter runtime.MemStats
 		runtime.ReadMemStats(&referencesAfter)
+		writeHeapProfile(
+			t,
+			"SHOPWARE_LSP_REVERSE_HEAP_PROFILE",
+		)
 		t.Logf(
 			"reverse-reference profile: first_lookup=%s retained_growth=%s "+
 				"allocation=%s mallocs=%d",
@@ -183,7 +187,12 @@ func TestShopwareTrunkIndexingProfile(t *testing.T) {
 
 func writeLiveHeapProfile(t *testing.T) {
 	t.Helper()
-	profilePath := os.Getenv("SHOPWARE_LSP_HEAP_PROFILE")
+	writeHeapProfile(t, "SHOPWARE_LSP_HEAP_PROFILE")
+}
+
+func writeHeapProfile(t *testing.T, environmentVariable string) {
+	t.Helper()
+	profilePath := os.Getenv(environmentVariable)
 	if profilePath == "" {
 		return
 	}

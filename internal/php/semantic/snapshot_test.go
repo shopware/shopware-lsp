@@ -142,6 +142,7 @@ var benchmarkNormalizedName string
 var benchmarkMemberID SymbolID
 var benchmarkSymbolRange cst.TextRange
 var benchmarkReferenceLocations []ReferenceLocation
+var benchmarkReferenceTargets []SymbolID
 
 func BenchmarkSnapshotNormalizedNameLookup(b *testing.B) {
 	const name = "App\\Service"
@@ -1664,6 +1665,100 @@ func TestSnapshotBuildsReverseReferencesOnceConcurrently(t *testing.T) {
 			RangeEnd:   17,
 		}}, references)
 	}
+}
+
+func TestSnapshotCompactsReverseReferenceLocationsByTarget(t *testing.T) {
+	t.Parallel()
+
+	first := Symbol{ID: "first", Kind: ClassSymbol, Path: "/first.php"}
+	second := Symbol{ID: "second", Kind: ClassSymbol, Path: "/second.php"}
+	snapshot := NewSnapshot(1, []*Document{
+		{Path: first.Path, Symbols: []Symbol{first}},
+		{Path: second.Path, Symbols: []Symbol{second}},
+		{
+			Path: "/b.php",
+			References: []Reference{
+				{Resolved: first.ID, Range: cst.TextRange{Start: 30, End: 35}},
+				{Resolved: second.ID, Range: cst.TextRange{Start: 40, End: 46}},
+				{Resolved: first.ID, Range: cst.TextRange{Start: 50, End: 55}},
+			},
+		},
+		{
+			Path: "/a.php",
+			References: []Reference{
+				{Resolved: second.ID, Range: cst.TextRange{Start: 10, End: 16}},
+				{Resolved: first.ID, Range: cst.TextRange{Start: 20, End: 25}},
+			},
+		},
+	})
+
+	require.Equal(t, []ReferenceLocation{
+		{Path: "/a.php", RangeStart: 20, RangeEnd: 25},
+		{Path: "/b.php", RangeStart: 30, RangeEnd: 35},
+		{Path: "/b.php", RangeStart: 50, RangeEnd: 55},
+	}, snapshot.ReferencesTo(first.ID))
+	require.Equal(t, []ReferenceLocation{
+		{Path: "/a.php", RangeStart: 10, RangeEnd: 16},
+		{Path: "/b.php", RangeStart: 40, RangeEnd: 46},
+	}, snapshot.ReferencesTo(second.ID))
+
+	index := snapshot.reverseReferences
+	require.Len(t, index.references, 2)
+	require.Len(t, index.spans, 2)
+	require.Len(t, index.locations, 5)
+	require.Equal(t, len(index.locations), cap(index.locations))
+}
+
+func TestPackedReferenceTargetResolverReusesMemberTraversalStorage(
+	t *testing.T,
+) {
+	parent := Symbol{
+		ID:             "parent",
+		Kind:           ClassSymbol,
+		Name:           "Parent",
+		FullyQualified: "App\\Parent",
+		Path:           "/parent.php",
+	}
+	method := Symbol{
+		ID:        "method",
+		Kind:      MethodSymbol,
+		Name:      "run",
+		Container: parent.ID,
+		Path:      parent.Path,
+	}
+	child := Symbol{
+		ID:             "child",
+		Kind:           ClassSymbol,
+		Name:           "Child",
+		FullyQualified: "App\\Child",
+		Path:           "/child.php",
+	}
+	child.SetExtends([]string{parent.FullyQualified})
+	consumer := &Document{
+		Path: "/consumer.php",
+		References: []Reference{{
+			Name:       "run",
+			Kind:       MemberName,
+			Receiver:   types.Named(child.FullyQualified),
+			TargetKind: MethodSymbol,
+			Range:      cst.TextRange{Start: 10, End: 13},
+		}},
+	}
+	snapshot := NewSnapshot(1, []*Document{
+		{Path: parent.Path, Symbols: []Symbol{parent, method}},
+		{Path: child.Path, Symbols: []Symbol{child}},
+		consumer,
+	})
+	packed := snapshot.pathRefs[consumer.Path]
+	require.NotNil(t, packed)
+	resolver := packedReferenceTargetResolver{snapshot: snapshot}
+	reference := &packed.References[0]
+	require.Equal(t, []SymbolID{method.ID}, resolver.resolve(packed, reference))
+
+	allocations := testing.AllocsPerRun(100, func() {
+		benchmarkReferenceTargets = resolver.resolve(packed, reference)
+	})
+	require.LessOrEqual(t, allocations, 0.0)
 }
 
 func TestOverlayReferenceQueryCacheSharesConcurrentComputation(t *testing.T) {

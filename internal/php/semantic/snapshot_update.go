@@ -164,38 +164,167 @@ func (s *Snapshot) ensureReverseReferences() {
 	}
 	index := s.reverseReferences
 	index.once.Do(func() {
-		index.references = make(map[SymbolID][]compactReferenceLocation)
 		paths := make([]string, 0, len(s.pathRefs))
+		referenceCount := 0
 		for path := range s.pathRefs {
 			paths = append(paths, path)
+			referenceCount += len(s.pathRefs[path].References)
 		}
 		slices.Sort(paths)
 		index.paths = paths
+		builder := newReverseReferenceBuilder(
+			s,
+			index,
+			referenceCount,
+		)
 		for pathID, path := range paths {
-			s.addReferences(s.pathRefs[path], uint32(pathID))
+			builder.addReferences(
+				s.pathRefs[path],
+				uint32(pathID),
+			)
+			if builder.failed {
+				break
+			}
 		}
+		builder.finish()
 	})
 }
 
-func (s *Snapshot) addReferences(
+type reverseReferenceBuildBucket struct {
+	head  uint32
+	tail  uint32
+	count uint32
+}
+
+type reverseReferenceBuilder struct {
+	index     *reverseReferenceIndex
+	resolver  packedReferenceTargetResolver
+	buckets   []reverseReferenceBuildBucket
+	locations []compactReferenceLocation
+	next      []uint32
+	failed    bool
+}
+
+func newReverseReferenceBuilder(
+	snapshot *Snapshot,
+	index *reverseReferenceIndex,
+	referenceCount int,
+) *reverseReferenceBuilder {
+	return &reverseReferenceBuilder{
+		index: index,
+		resolver: packedReferenceTargetResolver{
+			snapshot: snapshot,
+		},
+		locations: make(
+			[]compactReferenceLocation,
+			0,
+			referenceCount,
+		),
+		next: make([]uint32, 0, referenceCount),
+	}
+}
+
+func (b *reverseReferenceBuilder) addReferences(
 	document *workspaceDocument,
 	pathID uint32,
 ) {
-	if document == nil {
+	if document == nil || b == nil || b.failed {
 		return
 	}
 	for index := range document.References {
 		reference := &document.References[index]
 		rng := reference.rangeValue(document)
-		for _, target := range s.referenceTargetsPacked(document, reference) {
-			s.reverseReferences.references[target] = append(
-				s.reverseReferences.references[target],
+		for _, target := range b.resolver.resolve(document, reference) {
+			b.addLocation(
+				target,
 				compactReferenceLocation{
 					pathID:     pathID,
 					rangeStart: rng.Start,
 					rangeEnd:   rng.End,
 				},
 			)
+		}
+	}
+}
+
+func (b *reverseReferenceBuilder) addLocation(
+	target SymbolID,
+	location compactReferenceLocation,
+) {
+	if target == "" || b == nil || b.index == nil {
+		return
+	}
+	if uint64(len(b.locations)) >= uint64(^uint32(0)) {
+		b.failed = true
+		return
+	}
+	if b.index.references == nil {
+		b.index.references = make(map[SymbolID]uint32)
+	}
+	bucketID := b.index.references[target]
+	if bucketID == 0 {
+		if uint64(len(b.buckets)) >= uint64(^uint32(0)) {
+			b.failed = true
+			return
+		}
+		b.buckets = append(b.buckets, reverseReferenceBuildBucket{})
+		bucketID = uint32(len(b.buckets))
+		b.index.references[target] = bucketID
+	}
+	bucket := &b.buckets[bucketID-1]
+	locationID := uint32(len(b.locations)) + 1
+	b.locations = append(b.locations, location)
+	b.next = append(b.next, 0)
+	if bucket.tail == 0 {
+		bucket.head = locationID
+	} else {
+		b.next[bucket.tail-1] = locationID
+	}
+	bucket.tail = locationID
+	if bucket.count == ^uint32(0) {
+		b.failed = true
+		return
+	}
+	bucket.count++
+}
+
+func (b *reverseReferenceBuilder) finish() {
+	if b == nil || b.index == nil {
+		return
+	}
+	if b.failed {
+		b.index.references = nil
+		b.index.spans = nil
+		b.index.locations = nil
+		return
+	}
+	if len(b.buckets) == 0 {
+		return
+	}
+	b.index.spans = make([]compactReferenceSpan, len(b.buckets))
+	b.index.locations = make(
+		[]compactReferenceLocation,
+		len(b.locations),
+	)
+	var destination uint32
+	for bucketIndex, bucket := range b.buckets {
+		b.index.spans[bucketIndex] = compactReferenceSpan{
+			start: destination,
+			count: bucket.count,
+		}
+		locationID := bucket.head
+		for range bucket.count {
+			if locationID == 0 ||
+				uint64(locationID) > uint64(len(b.locations)) {
+				b.index.references = nil
+				b.index.spans = nil
+				b.index.locations = nil
+				return
+			}
+			source := locationID - 1
+			b.index.locations[destination] = b.locations[source]
+			destination++
+			locationID = b.next[source]
 		}
 	}
 }

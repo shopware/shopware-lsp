@@ -53,10 +53,17 @@ type compactReferenceLocation struct {
 	rangeEnd   uint32
 }
 
+type compactReferenceSpan struct {
+	start uint32
+	count uint32
+}
+
 type reverseReferenceIndex struct {
 	once       sync.Once
 	paths      []string
-	references map[SymbolID][]compactReferenceLocation
+	references map[SymbolID]uint32
+	spans      []compactReferenceSpan
+	locations  []compactReferenceLocation
 }
 
 // referenceQueryCache keeps only reference targets requested from a document

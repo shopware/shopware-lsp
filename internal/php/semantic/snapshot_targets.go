@@ -208,11 +208,26 @@ func packedReferenceRecordsTarget(
 	return false
 }
 
-func (s *Snapshot) referenceTargetsPacked(
+// packedReferenceTargetResolver reuses traversal state while resolving a
+// sequence of packed references. Reverse-index construction and an open
+// document reference query both visit many references against one immutable
+// snapshot. Inline sets cover ordinary one-target and shallow-hierarchy cases;
+// reusable overflow maps retain only the largest individual traversal instead
+// of every symbol encountered across the workspace.
+type packedReferenceTargetResolver struct {
+	snapshot *Snapshot
+	seen     inlineSymbolIDSet
+	visited  inlineSymbolIDSet
+	targets  []SymbolID
+}
+
+func (r *packedReferenceTargetResolver) resolve(
 	document *workspaceDocument,
 	reference *workspaceReference,
 ) []SymbolID {
-	if s == nil || document == nil || reference == nil {
+	r.reset()
+	snapshot := r.snapshot
+	if snapshot == nil || document == nil || reference == nil {
 		return nil
 	}
 	name := document.referenceString(reference.nameIndex())
@@ -221,24 +236,24 @@ func (s *Snapshot) referenceTargetsPacked(
 	)
 	valueStart := int(reference.valueStart(document))
 	qualifiedEnd := valueStart + int(reference.qualifiedCount())
-	var candidates []SymbolID
 	switch reference.kind() {
 	case ClassName:
 		for valueIndex := valueStart; valueIndex < qualifiedEnd; valueIndex++ {
-			candidates = append(
-				candidates,
-				s.classIDs(document.referenceValue(valueIndex))...,
+			r.appendNamedTargets(
+				snapshot.lowerName(
+					document.referenceValue(valueIndex),
+					false,
+				),
+				classNameIndex,
 			)
 		}
 	case FunctionName:
 		for valueIndex := valueStart; valueIndex < qualifiedEnd; valueIndex++ {
-			normalized := s.lowerName(
+			normalized := snapshot.lowerName(
 				document.referenceValue(valueIndex),
 				false,
 			)
-			resolved := s.namedIDs(normalized, functionNameIndex)
-			candidates = append(candidates, resolved...)
-			if len(resolved) > 0 {
+			if r.appendNamedTargets(normalized, functionNameIndex) {
 				break
 			}
 		}
@@ -248,134 +263,140 @@ func (s *Snapshot) referenceTargetsPacked(
 				document.referenceValue(valueIndex),
 				"\\",
 			)
-			resolved := s.namedIDs(normalized, constantNameIndex)
-			candidates = append(candidates, resolved...)
-			if len(resolved) > 0 {
+			if r.appendNamedTargets(normalized, constantNameIndex) {
 				break
 			}
 		}
 	case MemberName:
-		return s.memberReferenceTargets(
+		r.appendMemberReferenceTargets(
 			document.referenceType(reference.receiverIndex()),
 			name,
 			reference.targetKind(),
 		)
+		return r.targets
 	default:
-		if resolvedID != "" {
-			if _, exists := s.Symbol(resolvedID); exists {
-				return []SymbolID{resolvedID}
-			}
+		if r.appendExistingTarget(resolvedID) {
+			return r.targets
 		}
 	}
-	if len(candidates) == 0 && resolvedID != "" {
-		if _, exists := s.Symbol(resolvedID); exists {
-			candidates = append(candidates, resolvedID)
-		}
+	if len(r.targets) == 0 {
+		r.appendExistingTarget(resolvedID)
 	}
-	if len(candidates) == 0 {
+	if len(r.targets) == 0 {
 		candidateEnd := qualifiedEnd + int(reference.candidateCount())
 		for valueIndex := qualifiedEnd; valueIndex < candidateEnd; valueIndex++ {
 			candidate := SymbolID(document.referenceValue(valueIndex))
-			if _, exists := s.Symbol(candidate); exists {
-				candidates = append(candidates, candidate)
-			}
+			r.appendExistingTarget(candidate)
 		}
 	}
-	return uniqueReferenceTargets(candidates)
+	return r.targets
 }
 
-func uniqueReferenceTargets(candidates []SymbolID) []SymbolID {
-	if len(candidates) < 2 {
-		return candidates
-	}
-	result := make([]SymbolID, 0, len(candidates))
-	seen := make(map[SymbolID]struct{}, len(candidates))
-	for _, candidate := range candidates {
-		if _, exists := seen[candidate]; exists {
-			continue
-		}
-		seen[candidate] = struct{}{}
-		result = append(result, candidate)
-	}
-	return result
+func (r *packedReferenceTargetResolver) reset() {
+	r.targets = r.targets[:0]
+	r.seen.reset()
+	r.visited.reset()
 }
 
-func (s *Snapshot) memberReferenceTargets(
+func (r *packedReferenceTargetResolver) appendTarget(id SymbolID) bool {
+	if id == "" {
+		return false
+	}
+	if !r.seen.add(id) {
+		return false
+	}
+	r.targets = append(r.targets, id)
+	return true
+}
+
+func (r *packedReferenceTargetResolver) appendExistingTarget(
+	id SymbolID,
+) bool {
+	if id == "" || r.snapshot == nil {
+		return false
+	}
+	if _, exists := r.snapshot.SymbolView(id); !exists {
+		return false
+	}
+	return r.appendTarget(id)
+}
+
+func (r *packedReferenceTargetResolver) appendNamedTargets(
+	name string,
+	kind symbolNameIndexKind,
+) bool {
+	found := false
+	r.snapshot.visitNamedViews(name, kind, func(view SymbolView) bool {
+		found = true
+		r.appendTarget(view.ID())
+		return true
+	})
+	return found
+}
+
+func (r *packedReferenceTargetResolver) appendMemberReferenceTargets(
 	receiver types.Type,
 	name string,
 	targetKind SymbolKind,
-) []SymbolID {
-	var result []SymbolID
-	seen := make(map[SymbolID]struct{})
-	visited := make(map[SymbolID]struct{})
-	var resolveType func(types.Type)
-	resolveType = func(value types.Type) {
-		switch value.Kind() {
-		case types.UnionKind, types.IntersectionKind:
-			for index := range value.ArgumentCount() {
-				resolveType(value.Argument(index))
-			}
-		case types.ObjectKind:
-			for _, classID := range s.classIDs(value.Name()) {
-				class, exists := s.SymbolView(classID)
-				if !exists {
-					continue
-				}
-				s.collectMemberTargets(
-					class,
-					name,
-					targetKind,
-					seen,
-					visited,
-					&result,
-				)
-			}
+) {
+	switch receiver.Kind() {
+	case types.UnionKind, types.IntersectionKind:
+		for index := range receiver.ArgumentCount() {
+			r.appendMemberReferenceTargets(
+				receiver.Argument(index),
+				name,
+				targetKind,
+			)
 		}
+	case types.ObjectKind:
+		r.collectMemberTargetsForClassName(
+			receiver.Name(),
+			name,
+			targetKind,
+		)
 	}
-	resolveType(receiver)
-	return result
 }
 
-func (s *Snapshot) collectMemberTargets(
+func (r *packedReferenceTargetResolver) collectMemberTargetsForClassName(
+	className,
+	memberName string,
+	targetKind SymbolKind,
+) {
+	if className == "" {
+		return
+	}
+	r.snapshot.VisitClassViews(className, func(class SymbolView) bool {
+		r.collectMemberTargets(class, memberName, targetKind)
+		return true
+	})
+}
+
+func (r *packedReferenceTargetResolver) collectMemberTargets(
 	class SymbolView,
 	name string,
 	targetKind SymbolKind,
-	seen,
-	visited map[SymbolID]struct{},
-	result *[]SymbolID,
 ) {
 	classID := class.ID()
-	if _, exists := visited[classID]; exists {
+	if !r.visited.add(classID) {
 		return
 	}
-	visited[classID] = struct{}{}
-	for _, memberID := range s.memberIDs(classID, name) {
-		member, exists := s.SymbolView(memberID)
-		if !exists {
-			continue
-		}
+	r.snapshot.VisitMemberViews(classID, name, func(member SymbolView) bool {
 		matches := member.Kind() == targetKind
 		if targetKind == ClassConstantSymbol && member.Kind() == EnumCaseSymbol {
 			matches = true
 		}
-		if !matches {
-			continue
+		if matches {
+			r.appendTarget(member.ID())
 		}
-		if _, exists := seen[member.ID()]; exists {
-			continue
-		}
-		seen[member.ID()] = struct{}{}
-		*result = append(*result, member.ID())
-	}
+		return true
+	})
 	collectRelated := func(related []string) {
 		for _, relatedName := range related {
-			for _, parentID := range s.classIDs(relatedName) {
-				parent, exists := s.SymbolView(parentID)
-				if !exists {
-					continue
-				}
-				s.collectMemberTargets(parent, name, targetKind, seen, visited, result)
-			}
+			r.collectMemberTargetsForClassName(
+				relatedName,
+				name,
+				targetKind,
+			)
 		}
 	}
 	traits, extends, implements := class.hierarchyNames()

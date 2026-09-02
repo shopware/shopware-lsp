@@ -130,6 +130,15 @@ func (s *inlineSymbolIDSet) add(id SymbolID) bool {
 	return true
 }
 
+func (s *inlineSymbolIDSet) reset() {
+	if s == nil {
+		return
+	}
+	clear(s.values[:])
+	s.length = 0
+	clear(s.overflow)
+}
+
 func (s *Snapshot) symbolNameIndex(
 	kind symbolNameIndexKind,
 ) *symbolNameIndex {
