@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"math"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"unsafe"
@@ -164,12 +165,18 @@ func TestWorkspaceSymbolRangesUseSparseExactFallbacks(t *testing.T) {
 	document := &Document{
 		Path: "/ranges.php",
 		Symbols: []Symbol{{
-			ID:        "compact",
-			Kind:      ClassSymbol,
-			Path:      "/ranges.php",
-			Range:     cst.TextRange{Start: 10, End: 100},
-			BodyRange: cst.TextRange{Start: 20, End: 99},
-			Flags:     InternalFlag,
+			ID:   "compact",
+			Kind: ClassSymbol,
+			Path: "/ranges.php",
+			Range: cst.TextRange{
+				Start: 1<<20 + 10,
+				End:   1<<20 + 100,
+			},
+			BodyRange: cst.TextRange{
+				Start: 1<<20 + 20,
+				End:   1<<20 + 99,
+			},
+			Flags: InternalFlag,
 		}, {
 			ID:             "large-declaration",
 			Kind:           ClassSymbol,
@@ -1460,7 +1467,7 @@ func TestBorrowedWorkspaceProjectionOwnsSlicesAndBatchDetachesValues(
 func TestWorkspaceSymbolCoreIsLessThanHalfPublicSymbolSize(t *testing.T) {
 	t.Parallel()
 
-	require.Equal(t, uintptr(80), unsafe.Sizeof(workspaceSymbol{}))
+	require.Equal(t, uintptr(72), unsafe.Sizeof(workspaceSymbol{}))
 	require.Equal(t, uintptr(24), unsafe.Sizeof(workspaceSymbolTypeExtras{}))
 	require.Less(
 		t,
@@ -1474,8 +1481,9 @@ func TestWorkspaceSymbolCoreIsLessThanHalfPublicSymbolSize(t *testing.T) {
 	)
 	require.Equal(t, uintptr(16), unsafe.Sizeof(workspaceReference{}))
 	require.Equal(t, uintptr(28), unsafe.Sizeof(workspaceReferenceFull{}))
-	require.Equal(t, uintptr(16), unsafe.Sizeof(workspaceSymbolRanges{}))
+	require.Equal(t, uintptr(14), unsafe.Sizeof(workspaceSymbolRanges{}))
 	require.Equal(t, uintptr(24), unsafe.Sizeof(workspaceSymbolFullRanges{}))
+	require.Equal(t, uintptr(12), unsafe.Sizeof(workspaceSymbolSideIndexes{}))
 	require.Equal(t, uintptr(32), unsafe.Sizeof(workspaceSignature{}))
 	require.Equal(t, uintptr(56), unsafe.Sizeof(workspaceSignatureExtras{}))
 	require.Equal(t, uintptr(56), unsafe.Sizeof(workspaceParameter{}))
@@ -1497,34 +1505,99 @@ func TestWorkspaceSymbolCoreIsLessThanHalfPublicSymbolSize(t *testing.T) {
 func TestWorkspaceSymbolPacksSideTableIndexesLosslessly(t *testing.T) {
 	t.Parallel()
 
-	var symbol workspaceSymbol
+	document := &workspaceDocument{}
+	symbol := workspaceSymbol{Document: document}
 	symbol.setSideIndexes(10, 20, 30)
 
 	require.Equal(
 		t,
-		uint64(11),
+		uint32(11),
 		symbol.sideIndex(workspaceSymbolSignatureShift),
 	)
 	require.Equal(
 		t,
-		uint64(21),
+		uint32(21),
 		symbol.sideIndex(workspaceSymbolHierarchyShift),
 	)
 	require.Equal(
 		t,
-		uint64(31),
+		uint32(31),
+		symbol.sideIndex(workspaceSymbolMetadataShift),
+	)
+
+	symbol.setSideIndexes(
+		int(workspaceSymbolSignatureMask),
+		int(workspaceSymbolHierarchyMask),
+		int(workspaceSymbolMetadataMask),
+	)
+	require.True(t, symbol.hasSideFallback())
+	require.Len(t, document.symbolRangeExtras.Sides, 1)
+	require.Equal(
+		t,
+		uint32(workspaceSymbolSignatureMask+1),
+		symbol.sideIndex(workspaceSymbolSignatureShift),
+	)
+	require.Equal(
+		t,
+		uint32(workspaceSymbolHierarchyMask+1),
+		symbol.sideIndex(workspaceSymbolHierarchyShift),
+	)
+	require.Equal(
+		t,
+		uint32(workspaceSymbolMetadataMask+1),
 		symbol.sideIndex(workspaceSymbolMetadataShift),
 	)
 
 	symbol.setSideIndexes(-1, -1, -1)
 	require.Zero(t, symbol.sideIndexes)
-	require.Panics(t, func() {
-		symbol.setSideIndexes(
-			int(workspaceSymbolSideIndexMask),
-			-1,
-			-1,
-		)
-	})
+
+	symbol.setProperties(TypeAliasSymbol, Private, Protected, true)
+	require.Equal(t, TypeAliasSymbol, symbol.kind())
+	require.Equal(t, Private, symbol.visibility())
+	require.Equal(t, Protected, symbol.writeVisibility())
+	require.True(t, symbol.hasWriteVisibility())
+}
+
+func TestWorkspaceSymbolSideTableFallbackSurvivesWireRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	count := int(workspaceSymbolMetadataMask) + 1
+	symbols := make([]Symbol, count)
+	for index := range symbols {
+		symbols[index] = Symbol{
+			ID:         SymbolID("symbol-" + strconv.Itoa(index)),
+			Kind:       MethodSymbol,
+			Name:       "run",
+			Parameters: []Parameter{{Name: "$value"}},
+		}
+		symbols[index].SetDocSummary("summary")
+	}
+	document := &Document{Path: "/large.php", Symbols: symbols}
+	graph := PackWorkspaceGraphOwned(document)
+	require.Len(t, graph.document.symbolRangeExtras.Sides, 2)
+	require.True(t, graph.document.Symbols[count-2].hasSideFallback())
+	require.True(t, graph.document.Symbols[count-1].hasSideFallback())
+	require.Equal(
+		t,
+		"summary",
+		graph.document.Symbols[count-1].metadata().DocSummary,
+	)
+	require.Len(t, graph.document.Symbols[count-1].signature().Parameters, 1)
+
+	encoded, err := msgpack.Marshal(graph)
+	require.NoError(t, err)
+	var decoded WorkspaceGraph
+	require.NoError(t, msgpack.Unmarshal(encoded, &decoded))
+	require.Len(t, decoded.document.symbolRangeExtras.Sides, 2)
+	require.True(t, decoded.document.Symbols[count-1].hasSideFallback())
+	expected := graph.document.Symbols[count-1].materialize()
+	actual := decoded.document.Symbols[count-1].materialize()
+	require.Equal(t, expected.ID, actual.ID)
+	require.Equal(t, expected.Kind, actual.Kind)
+	require.Equal(t, expected.Name, actual.Name)
+	require.Equal(t, expected.DocSummary(), actual.DocSummary())
+	require.Equal(t, expected.Parameters[0].ID, actual.Parameters[0].ID)
+	require.Equal(t, expected.Parameters[0].Name, actual.Parameters[0].Name)
 }
 
 func TestWorkspaceParameterRangesPackAndFallBackLosslessly(t *testing.T) {

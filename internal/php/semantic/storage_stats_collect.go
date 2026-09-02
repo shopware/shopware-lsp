@@ -156,6 +156,18 @@ func (c *workspaceStatsCollector) collectDocument(
 	addInternedStorageString(c.internedStrings, document.Path, &c.stats)
 	addInternedStorageString(c.internedStrings, document.Namespace, &c.stats)
 	c.stats.Symbols += len(document.Symbols)
+	c.stats.MaxSignaturesPerDocument = max(
+		c.stats.MaxSignaturesPerDocument,
+		len(document.signatures),
+	)
+	c.stats.MaxHierarchiesPerDocument = max(
+		c.stats.MaxHierarchiesPerDocument,
+		len(document.hierarchies),
+	)
+	c.stats.MaxMetadataPerDocument = max(
+		c.stats.MaxMetadataPerDocument,
+		len(document.metadata),
+	)
 	c.stats.References += len(document.References)
 	if document.symbolTypeExtras != nil {
 		c.stats.SymbolTypeExtras += len(document.symbolTypeExtras.Values)
@@ -303,6 +315,9 @@ func (c *workspaceStatsCollector) collectDocumentStringTables(document *workspac
 func (c *workspaceStatsCollector) collectSymbols(path string, document *workspaceDocument) {
 	documentCoreStrings := make(map[string]struct{})
 	for index := range document.Symbols {
+		if document.Symbols[index].hasSideFallback() {
+			c.stats.SymbolSideFallbacks++
+		}
 		c.collectSymbol(path, &document.Symbols[index], documentCoreStrings)
 	}
 	c.stats.CoreSymbolUniquePerDocument += len(documentCoreStrings)

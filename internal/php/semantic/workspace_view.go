@@ -43,7 +43,7 @@ func (view SymbolView) Kind() SymbolKind {
 	if view.workspace == nil {
 		return NamespaceSymbol
 	}
-	return view.workspace.Kind
+	return view.workspace.kind()
 }
 
 func (view SymbolView) Name() string {
@@ -93,7 +93,7 @@ func (view SymbolView) Visibility() Visibility {
 	if view.workspace == nil {
 		return Public
 	}
-	return view.workspace.Visibility
+	return view.workspace.visibility()
 }
 
 // Attributes returns immutable snapshot-owned symbol attributes without

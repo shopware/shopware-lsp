@@ -218,12 +218,12 @@ func newSnapshotWithPathRefs(
 				continue
 			}
 			container := symbol.container()
-			if container != "" && isMemberSymbol(symbol.Kind) {
+			if container != "" && isMemberSymbol(symbol.kind()) {
 				continue
 			}
 			snapshot.indexSymbol(
 				symbol.ID,
-				symbol.Kind,
+				symbol.kind(),
 				symbol.name(),
 				symbol.fullyQualified(),
 				container,
@@ -248,13 +248,13 @@ func (s *Snapshot) reserveSymbolIndexes() {
 	constantCount := 0
 	s.symbols.Range(func(_ SymbolID, symbol *workspaceSymbol) bool {
 		container := symbol.container()
-		if container != "" && isMemberSymbol(symbol.Kind) {
+		if container != "" && isMemberSymbol(symbol.kind()) {
 			return true
 		}
 		if container != "" {
 			return true
 		}
-		switch symbol.Kind {
+		switch symbol.kind() {
 		case ClassSymbol, InterfaceSymbol, TraitSymbol, EnumSymbol:
 			classCount++
 		case FunctionSymbol:
@@ -430,7 +430,7 @@ func (s *Snapshot) buildWorkspaceMemberIndex(
 	}
 	memberCount := 0
 	s.symbols.Range(func(_ SymbolID, symbol *workspaceSymbol) bool {
-		if symbol.container() != "" && isMemberSymbol(symbol.Kind) {
+		if symbol.container() != "" && isMemberSymbol(symbol.kind()) {
 			memberCount++
 		}
 		return true
@@ -459,7 +459,7 @@ func (s *Snapshot) buildWorkspaceMemberIndex(
 			if !found ||
 				indexed != symbol ||
 				symbol.container() == "" ||
-				!isMemberSymbol(symbol.Kind) {
+				!isMemberSymbol(symbol.kind()) {
 				continue
 			}
 			entries = append(entries, workspaceMemberBuildEntry{

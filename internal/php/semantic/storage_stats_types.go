@@ -55,6 +55,11 @@ type WorkspaceStorageStats struct {
 	SymbolTypeExtras         int
 	SymbolTypeExtraCapacity  int
 
+	SymbolSideFallbacks       int
+	MaxSignaturesPerDocument  int
+	MaxHierarchiesPerDocument int
+	MaxMetadataPerDocument    int
+
 	Signatures                  int
 	Parameters                  int
 	ParameterNativeTypes        int

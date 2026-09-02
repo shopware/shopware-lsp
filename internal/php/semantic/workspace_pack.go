@@ -201,17 +201,19 @@ func (packer *workspaceDocumentPacker) addSymbol(source *Symbol) {
 	packer.symbolIndex++
 	*target = workspaceSymbol{
 		ID:                  source.ID,
-		Kind:                source.Kind,
 		Document:            packer.document,
 		nameIndex:           packer.symbolStrings.indexFor(source.Name),
 		fullyQualifiedIndex: packer.symbolStrings.indexFor(source.FullyQualified),
 		containerIndex: packer.symbolStrings.indexFor(
 			string(source.Container),
 		),
-		Visibility:         source.Visibility,
-		WriteVisibility:    source.WriteVisibility,
-		HasWriteVisibility: source.HasWriteVisibility,
 	}
+	target.setProperties(
+		source.Kind,
+		source.Visibility,
+		source.WriteVisibility,
+		source.HasWriteVisibility,
+	)
 	target.setTypes(
 		packer.document,
 		source.Type,
@@ -968,7 +970,7 @@ func (symbol *workspaceSymbol) materialize() Symbol {
 	ranges := symbol.ranges()
 	result := Symbol{
 		ID:                 symbol.ID,
-		Kind:               symbol.Kind,
+		Kind:               symbol.kind(),
 		Name:               symbol.name(),
 		FullyQualified:     symbol.fullyQualified(),
 		Container:          symbol.container(),
@@ -976,9 +978,9 @@ func (symbol *workspaceSymbol) materialize() Symbol {
 		Range:              ranges.Range,
 		SelectionRange:     ranges.SelectionRange,
 		BodyRange:          ranges.BodyRange,
-		Visibility:         symbol.Visibility,
-		WriteVisibility:    symbol.WriteVisibility,
-		HasWriteVisibility: symbol.HasWriteVisibility,
+		Visibility:         symbol.visibility(),
+		WriteVisibility:    symbol.writeVisibility(),
+		HasWriteVisibility: symbol.hasWriteVisibility(),
 		Flags:              symbol.flags(),
 		Type:               symbol.valueType(),
 		NativeType:         symbol.nativeType(),

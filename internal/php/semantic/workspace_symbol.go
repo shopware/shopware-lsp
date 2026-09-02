@@ -17,20 +17,16 @@ type workspaceSymbol struct {
 	Document *workspaceDocument
 
 	primaryType types.Type
-	sideIndexes uint64
 
-	Ranges workspaceSymbolRanges
+	Ranges     workspaceSymbolRanges
+	properties uint16
 
+	sideIndexes         uint32
 	nameIndex           uint32
 	fullyQualifiedIndex uint32
 	containerIndex      uint32
 	flagsAndRangeIndex  uint32
 	typeSelectors       uint32
-
-	Kind               SymbolKind
-	Visibility         Visibility
-	WriteVisibility    Visibility
-	HasWriteVisibility bool
 }
 
 const (
@@ -262,17 +258,43 @@ const (
 	workspaceSymbolFlagsMask       = 1<<workspaceSymbolRangeIndexShift - 1
 	workspaceSymbolRangeIndexMask  = 1<<(32-workspaceSymbolRangeIndexShift) - 1
 
-	workspaceSymbolSideIndexBits = 21
-	workspaceSymbolSideIndexMask = 1<<workspaceSymbolSideIndexBits - 1
+	workspaceSymbolSignatureBits = 12
+	workspaceSymbolHierarchyBits = 8
+	workspaceSymbolMetadataBits  = 12
 
 	workspaceSymbolSignatureShift = 0
-	workspaceSymbolHierarchyShift = workspaceSymbolSideIndexBits
-	workspaceSymbolMetadataShift  = workspaceSymbolSideIndexBits * 2
+	workspaceSymbolHierarchyShift = workspaceSymbolSignatureBits
+	workspaceSymbolMetadataShift  = workspaceSymbolHierarchyShift +
+		workspaceSymbolHierarchyBits
+
+	workspaceSymbolSignatureMask = 1<<workspaceSymbolSignatureBits - 1
+	workspaceSymbolHierarchyMask = 1<<workspaceSymbolHierarchyBits - 1
+	workspaceSymbolMetadataMask  = 1<<workspaceSymbolMetadataBits - 1
+	// All-one signature bits mark an exact side-table fallback. The remaining
+	// 20 bits then hold its zero-based index, which covers the maximum decoded
+	// symbol collection while preserving the full uint32 side indexes there.
+	workspaceSymbolSideFallbackIndexMask = 1<<(32-workspaceSymbolSignatureBits) - 1
+
+	workspaceSymbolKindBits = 4
+	workspaceSymbolKindMask = 1<<workspaceSymbolKindBits - 1
+
+	workspaceSymbolVisibilityBits  = 2
+	workspaceSymbolVisibilityShift = workspaceSymbolKindBits
+	workspaceSymbolVisibilityMask  = 1<<workspaceSymbolVisibilityBits - 1
+
+	workspaceSymbolWriteVisibilityShift = workspaceSymbolVisibilityShift +
+		workspaceSymbolVisibilityBits
+	workspaceSymbolHasWriteVisibility = uint16(1 << 8)
 )
 
 type workspaceSymbolRanges struct {
-	Start  uint32
-	Deltas [5]uint16
+	StartLow  uint16
+	StartHigh uint16
+	Deltas    [5]uint16
+}
+
+func (ranges workspaceSymbolRanges) start() uint32 {
+	return uint32(ranges.StartLow) | uint32(ranges.StartHigh)<<16
 }
 
 type workspaceSymbolFullRanges struct {
@@ -283,6 +305,13 @@ type workspaceSymbolFullRanges struct {
 
 type workspaceSymbolRangeExtras struct {
 	Values []workspaceSymbolFullRanges
+	Sides  []workspaceSymbolSideIndexes
+}
+
+type workspaceSymbolSideIndexes struct {
+	Signature uint32
+	Hierarchy uint32
+	Metadata  uint32
 }
 
 func compactWorkspaceSymbolRanges(
@@ -309,7 +338,8 @@ func compactWorkspaceSymbolRanges(
 		return workspaceSymbolRanges{}, false
 	}
 	return workspaceSymbolRanges{
-		Start: rng.Start,
+		StartLow:  uint16(rng.Start),
+		StartHigh: uint16(rng.Start >> 16),
 		Deltas: [5]uint16{
 			rangeLength,
 			selectionStart,
@@ -346,18 +376,19 @@ func compactWorkspaceSymbolSubrange(
 }
 
 func (ranges workspaceSymbolRanges) materialize() workspaceSymbolFullRanges {
+	start := ranges.start()
 	return workspaceSymbolFullRanges{
 		Range: cst.TextRange{
-			Start: ranges.Start,
-			End:   ranges.Start + uint32(ranges.Deltas[0]),
+			Start: start,
+			End:   start + uint32(ranges.Deltas[0]),
 		},
 		SelectionRange: materializeWorkspaceSymbolSubrange(
-			ranges.Start,
+			start,
 			ranges.Deltas[1],
 			ranges.Deltas[2],
 		),
 		BodyRange: materializeWorkspaceSymbolSubrange(
-			ranges.Start,
+			start,
 			ranges.Deltas[3],
 			ranges.Deltas[4],
 		),
@@ -401,9 +432,10 @@ func (symbol *workspaceSymbol) rangeValue() cst.TextRange {
 	}
 	index := symbol.rangeIndex()
 	if index == 0 {
+		start := symbol.Ranges.start()
 		return cst.TextRange{
-			Start: symbol.Ranges.Start,
-			End: symbol.Ranges.Start +
+			Start: start,
+			End: start +
 				uint32(symbol.Ranges.Deltas[0]),
 		}
 	}
@@ -450,6 +482,62 @@ func (symbol *workspaceSymbol) path() string {
 	return symbol.Document.Path
 }
 
+func (symbol *workspaceSymbol) kind() SymbolKind {
+	if symbol == nil {
+		return NamespaceSymbol
+	}
+	return SymbolKind(symbol.properties & workspaceSymbolKindMask)
+}
+
+func (symbol *workspaceSymbol) visibility() Visibility {
+	if symbol == nil {
+		return Public
+	}
+	return Visibility(
+		symbol.properties >> workspaceSymbolVisibilityShift &
+			workspaceSymbolVisibilityMask,
+	)
+}
+
+func (symbol *workspaceSymbol) writeVisibility() Visibility {
+	if symbol == nil {
+		return Public
+	}
+	return Visibility(
+		symbol.properties >> workspaceSymbolWriteVisibilityShift &
+			workspaceSymbolVisibilityMask,
+	)
+}
+
+func (symbol *workspaceSymbol) hasWriteVisibility() bool {
+	return symbol != nil &&
+		symbol.properties&workspaceSymbolHasWriteVisibility != 0
+}
+
+func (symbol *workspaceSymbol) setProperties(
+	kind SymbolKind,
+	visibility,
+	writeVisibility Visibility,
+	hasWriteVisibility bool,
+) {
+	if symbol == nil {
+		return
+	}
+	if uint8(kind) > workspaceSymbolKindMask {
+		panic("semantic: workspace symbol kind exceeds packed range")
+	}
+	if uint8(visibility) > workspaceSymbolVisibilityMask ||
+		uint8(writeVisibility) > workspaceSymbolVisibilityMask {
+		panic("semantic: workspace symbol visibility exceeds packed range")
+	}
+	symbol.properties = uint16(kind) |
+		uint16(visibility)<<workspaceSymbolVisibilityShift |
+		uint16(writeVisibility)<<workspaceSymbolWriteVisibilityShift
+	if hasWriteVisibility {
+		symbol.properties |= workspaceSymbolHasWriteVisibility
+	}
+}
+
 func (symbol *workspaceSymbol) signature() *workspaceSignature {
 	if symbol == nil || symbol.Document == nil {
 		return nil
@@ -483,11 +571,45 @@ func (symbol *workspaceSymbol) metadata() *workspaceMetadata {
 	return &symbol.Document.metadata[index-1]
 }
 
-func (symbol *workspaceSymbol) sideIndex(shift int) uint64 {
+func (symbol *workspaceSymbol) sideIndex(shift int) uint32 {
 	if symbol == nil {
 		return 0
 	}
-	return symbol.sideIndexes >> shift & workspaceSymbolSideIndexMask
+	if symbol.hasSideFallback() {
+		index := symbol.sideIndexes >> workspaceSymbolSignatureBits
+		if symbol.Document == nil ||
+			symbol.Document.symbolRangeExtras == nil ||
+			int(index) >= len(symbol.Document.symbolRangeExtras.Sides) {
+			return 0
+		}
+		sides := symbol.Document.symbolRangeExtras.Sides[index]
+		switch shift {
+		case workspaceSymbolSignatureShift:
+			return sides.Signature
+		case workspaceSymbolHierarchyShift:
+			return sides.Hierarchy
+		case workspaceSymbolMetadataShift:
+			return sides.Metadata
+		default:
+			return 0
+		}
+	}
+	switch shift {
+	case workspaceSymbolSignatureShift:
+		return symbol.sideIndexes >> shift & workspaceSymbolSignatureMask
+	case workspaceSymbolHierarchyShift:
+		return symbol.sideIndexes >> shift & workspaceSymbolHierarchyMask
+	case workspaceSymbolMetadataShift:
+		return symbol.sideIndexes >> shift & workspaceSymbolMetadataMask
+	default:
+		return 0
+	}
+}
+
+func (symbol *workspaceSymbol) hasSideFallback() bool {
+	return symbol != nil &&
+		symbol.sideIndexes&workspaceSymbolSignatureMask ==
+			workspaceSymbolSignatureMask
 }
 
 func (symbol *workspaceSymbol) setSideIndexes(
@@ -498,27 +620,64 @@ func (symbol *workspaceSymbol) setSideIndexes(
 	if symbol == nil {
 		return
 	}
-	symbol.sideIndexes =
-		packWorkspaceSymbolSideIndex(
-			signature,
-		)<<workspaceSymbolSignatureShift |
-			packWorkspaceSymbolSideIndex(
-				hierarchy,
-			)<<workspaceSymbolHierarchyShift |
-			packWorkspaceSymbolSideIndex(
-				metadata,
-			)<<workspaceSymbolMetadataShift
+	packedSignature, signatureOK := packWorkspaceSymbolSideIndex(
+		signature,
+		workspaceSymbolSignatureMask-1,
+	)
+	packedHierarchy, hierarchyOK := packWorkspaceSymbolSideIndex(
+		hierarchy,
+		workspaceSymbolHierarchyMask,
+	)
+	packedMetadata, metadataOK := packWorkspaceSymbolSideIndex(
+		metadata,
+		workspaceSymbolMetadataMask,
+	)
+	if signatureOK && hierarchyOK && metadataOK {
+		symbol.sideIndexes = packedSignature<<workspaceSymbolSignatureShift |
+			packedHierarchy<<workspaceSymbolHierarchyShift |
+			packedMetadata<<workspaceSymbolMetadataShift
+		return
+	}
+	if symbol.Document == nil {
+		panic("semantic: workspace symbol side-table fallback requires document")
+	}
+	if symbol.Document.symbolRangeExtras == nil {
+		symbol.Document.symbolRangeExtras = &workspaceSymbolRangeExtras{}
+	}
+	extras := symbol.Document.symbolRangeExtras
+	index := len(extras.Sides)
+	if uint64(index) > uint64(workspaceSymbolSideFallbackIndexMask) {
+		panic("semantic: workspace symbol side-table fallback index exceeds packed range")
+	}
+	extras.Sides = append(extras.Sides, workspaceSymbolSideIndexes{
+		Signature: fullWorkspaceSymbolSideIndex(signature),
+		Hierarchy: fullWorkspaceSymbolSideIndex(hierarchy),
+		Metadata:  fullWorkspaceSymbolSideIndex(metadata),
+	})
+	symbol.sideIndexes = workspaceSymbolSignatureMask |
+		uint32(index)<<workspaceSymbolSignatureBits
 }
 
-func packWorkspaceSymbolSideIndex(index int) uint64 {
+func packWorkspaceSymbolSideIndex(index int, mask uint32) (uint32, bool) {
+	if index < 0 {
+		return 0, true
+	}
+	value := uint64(index) + 1
+	if value > uint64(mask) {
+		return 0, false
+	}
+	return uint32(value), true
+}
+
+func fullWorkspaceSymbolSideIndex(index int) uint32 {
 	if index < 0 {
 		return 0
 	}
 	value := uint64(index) + 1
-	if value > workspaceSymbolSideIndexMask {
-		panic("semantic: workspace symbol side-table index exceeds packed range")
+	if value > math.MaxUint32 {
+		panic("semantic: workspace symbol side-table index exceeds uint32")
 	}
-	return value
+	return uint32(value)
 }
 
 // DecodeMsgpack restores the fixed workspace-symbol wire layout without first
@@ -673,20 +832,42 @@ func (symbol *workspaceSymbol) decodeFields(
 	if err != nil {
 		return err
 	}
-	symbol.Kind = SymbolKind(kind)
+	if kind > workspaceSymbolKindMask {
+		return fmt.Errorf(
+			"decode workspace symbol: kind %d exceeds packed range",
+			kind,
+		)
+	}
 	visibility, err := decoder.DecodeUint8()
 	if err != nil {
 		return err
 	}
-	symbol.Visibility = Visibility(visibility)
+	if visibility > workspaceSymbolVisibilityMask {
+		return fmt.Errorf(
+			"decode workspace symbol: visibility %d exceeds packed range",
+			visibility,
+		)
+	}
 	writeVisibility, err := decoder.DecodeUint8()
 	if err != nil {
 		return err
 	}
-	symbol.WriteVisibility = Visibility(writeVisibility)
-	if symbol.HasWriteVisibility, err = decoder.DecodeBool(); err != nil {
+	if writeVisibility > workspaceSymbolVisibilityMask {
+		return fmt.Errorf(
+			"decode workspace symbol: write visibility %d exceeds packed range",
+			writeVisibility,
+		)
+	}
+	hasWriteVisibility, err := decoder.DecodeBool()
+	if err != nil {
 		return err
 	}
+	symbol.setProperties(
+		SymbolKind(kind),
+		Visibility(visibility),
+		Visibility(writeVisibility),
+		hasWriteVisibility,
+	)
 	parameterIDStart := len(*parameterIDs)
 	if sides.signature, err =
 		decodeOptionalWorkspaceSignature(

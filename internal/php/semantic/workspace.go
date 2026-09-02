@@ -594,16 +594,16 @@ func encodeWorkspaceSymbol(
 	if err := encoder.EncodeUint32(uint32(symbol.flags())); err != nil {
 		return err
 	}
-	if err := encoder.EncodeUint8(uint8(symbol.Kind)); err != nil {
+	if err := encoder.EncodeUint8(uint8(symbol.kind())); err != nil {
 		return err
 	}
-	if err := encoder.EncodeUint8(uint8(symbol.Visibility)); err != nil {
+	if err := encoder.EncodeUint8(uint8(symbol.visibility())); err != nil {
 		return err
 	}
-	if err := encoder.EncodeUint8(uint8(symbol.WriteVisibility)); err != nil {
+	if err := encoder.EncodeUint8(uint8(symbol.writeVisibility())); err != nil {
 		return err
 	}
-	if err := encoder.EncodeBool(symbol.HasWriteVisibility); err != nil {
+	if err := encoder.EncodeBool(symbol.hasWriteVisibility()); err != nil {
 		return err
 	}
 	if err := encodeWorkspaceSignature(
