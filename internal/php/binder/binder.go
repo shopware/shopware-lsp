@@ -47,7 +47,7 @@ func (b *Binder) Bind(path string, version int, root *phpsyntax.Node) *semantic.
 	builder := documentBuilder{
 		document:     document,
 		root:         root,
-		declarations: make(map[semantic.NodeID]struct{}),
+		declarations: newDeclarationSet(symbolCapacity),
 	}
 	context := resolver.NewNameContext("")
 	fileScope := builder.newScope(
@@ -375,7 +375,7 @@ func estimatedTypeFactCapacityForBytes(
 type documentBuilder struct {
 	document     *semantic.Document
 	root         *phpsyntax.Node
-	declarations map[semantic.NodeID]struct{}
+	declarations declarationSet
 }
 
 func (b *documentBuilder) bindTopLevel(
@@ -1388,9 +1388,7 @@ func (b *documentBuilder) newScope(
 }
 
 func (b *documentBuilder) markDeclaration(node *phpsyntax.Node) {
-	if node != nil {
-		b.declarations[semantic.NodeIdentity(node)] = struct{}{}
-	}
+	b.declarations.Add(node)
 }
 
 func selectionRange(node, fallback *phpsyntax.Node) phpsyntax.TextRange {

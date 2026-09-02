@@ -438,6 +438,15 @@ func (s *Snapshot) buildWorkspaceMemberIndex(
 	if memberCount == 0 {
 		return
 	}
+	// Normalized member names repeat heavily across unrelated containers.
+	// Canonicalize them while building the immutable index so the retained
+	// contiguous name slice does not own one lowercase allocation per member.
+	// The hash table itself is construction-only and is released after this
+	// method; cap the initial hint so unusually large workspaces grow in
+	// proportion to their actual unique-name count.
+	normalizedNames := newWorkspaceStringInterner(
+		min(memberCount, 64<<10),
+	)
 	entries := make([]workspaceMemberBuildEntry, 0, memberCount)
 	order := 0
 	for _, document := range documents {
@@ -454,7 +463,9 @@ func (s *Snapshot) buildWorkspaceMemberIndex(
 				continue
 			}
 			entries = append(entries, workspaceMemberBuildEntry{
-				name:   normalizeSymbolName(symbol.name(), true),
+				name: normalizedNames.Intern(
+					normalizeSymbolName(symbol.name(), true),
+				),
 				symbol: symbol,
 				order:  compactMemberUint32(order, "build order"),
 			})

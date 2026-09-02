@@ -1,5 +1,7 @@
 package semantic
 
+import "github.com/shopware/shopware-lsp/internal/php/types"
+
 // WorkspaceStorageStats returns cardinalities for this snapshot's retained
 // base documents. Overlay generations report their locally replaced documents;
 // callers profiling a complete workspace should invoke it on the base
@@ -19,6 +21,7 @@ func (s *Snapshot) WorkspaceStorageStats() WorkspaceStorageStats {
 type workspaceStatsCollector struct {
 	stats WorkspaceStorageStats
 
+	memberNames           map[string]struct{}
 	symbolStrings         map[string]struct{}
 	coreSymbolStrings     map[string]struct{}
 	referenceStrings      map[string]struct{}
@@ -30,6 +33,7 @@ type workspaceStatsCollector struct {
 
 func newWorkspaceStatsCollector() *workspaceStatsCollector {
 	return &workspaceStatsCollector{
+		memberNames:           make(map[string]struct{}),
 		symbolStrings:         make(map[string]struct{}),
 		coreSymbolStrings:     make(map[string]struct{}),
 		referenceStrings:      make(map[string]struct{}),
@@ -42,6 +46,7 @@ func newWorkspaceStatsCollector() *workspaceStatsCollector {
 
 func (c *workspaceStatsCollector) result() WorkspaceStorageStats {
 	c.stats.UniqueSymbolStrings = len(c.symbolStrings)
+	c.stats.UniqueMemberNames = len(c.memberNames)
 	c.stats.UniqueCoreSymbolStrings = len(c.coreSymbolStrings)
 	c.stats.UniqueReferenceStrings = len(c.referenceStrings)
 	c.stats.UniqueInternedStrings = len(c.internedStrings)
@@ -102,6 +107,14 @@ func (c *workspaceStatsCollector) collectMemberIndexes(snapshot *Snapshot) {
 			memberIDs[symbol.ID] = struct{}{}
 		}
 	}
+	for _, name := range snapshot.compactMembers.names {
+		c.stats.MemberNameBytes += len(name)
+		if _, exists := c.memberNames[name]; exists {
+			continue
+		}
+		c.memberNames[name] = struct{}{}
+		c.stats.UniqueMemberNameBytes += len(name)
+	}
 	for _, names := range snapshot.members {
 		c.stats.MemberNames += len(names)
 		c.stats.MemberIDs += len(names)
@@ -144,6 +157,10 @@ func (c *workspaceStatsCollector) collectDocument(
 	addInternedStorageString(c.internedStrings, document.Namespace, &c.stats)
 	c.stats.Symbols += len(document.Symbols)
 	c.stats.References += len(document.References)
+	if document.symbolTypeExtras != nil {
+		c.stats.SymbolTypeExtras += len(document.symbolTypeExtras.Values)
+		c.stats.SymbolTypeExtraCapacity += cap(document.symbolTypeExtras.Values)
+	}
 	c.stats.MaxReferenceStringsPerDocument = max(
 		c.stats.MaxReferenceStringsPerDocument,
 		document.referenceStringCount(),
@@ -302,10 +319,11 @@ func (c *workspaceStatsCollector) collectSymbol(
 		}
 	}
 	c.collectSymbolSideTables(symbol)
-	addStorageType(c.typeKeys, symbol.Type, &c.stats)
-	addStorageType(c.typeKeys, symbol.NativeType, &c.stats)
-	addStorageType(c.typeKeys, symbol.DocType, &c.stats)
-	addStorageType(c.typeKeys, symbol.ReturnType, &c.stats)
+	addStorageType(c.typeKeys, symbol.valueType(), &c.stats)
+	addStorageType(c.typeKeys, symbol.nativeType(), &c.stats)
+	addStorageType(c.typeKeys, symbol.docType(), &c.stats)
+	addStorageType(c.typeKeys, symbol.returnType(), &c.stats)
+	c.collectSymbolTypePattern(symbol)
 
 	name := symbol.name()
 	fullyQualified := symbol.fullyQualified()
@@ -340,6 +358,49 @@ func (c *workspaceStatsCollector) collectSymbol(
 	addStorageString(c.symbolStrings, fullyQualified, &c.stats)
 	addStorageString(c.symbolStrings, string(container), &c.stats)
 	addStorageString(c.symbolStrings, symbol.path(), &c.stats)
+}
+
+func (c *workspaceStatsCollector) collectSymbolTypePattern(
+	symbol *workspaceSymbol,
+) {
+	if symbol == nil {
+		return
+	}
+	values := [...]types.Type{
+		symbol.valueType(),
+		symbol.nativeType(),
+		symbol.docType(),
+		symbol.returnType(),
+	}
+	mask := 0
+	distinct := make([]types.Type, 0, len(values))
+	for index, value := range values {
+		if value.IsUnknown() {
+			continue
+		}
+		mask |= 1 << index
+		seen := false
+		for _, existing := range distinct {
+			if value.Equal(existing) {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			distinct = append(distinct, value)
+		}
+	}
+	c.stats.SymbolTypeMasks[mask]++
+	c.stats.SymbolDistinctTypeCounts[len(distinct)]++
+	if !values[0].IsUnknown() && values[0].Equal(values[1]) {
+		c.stats.SymbolTypeEqualsNative++
+	}
+	if !values[0].IsUnknown() && values[0].Equal(values[2]) {
+		c.stats.SymbolTypeEqualsDoc++
+	}
+	if !values[3].IsUnknown() && values[3].Equal(values[0]) {
+		c.stats.SymbolReturnEqualsType++
+	}
 }
 
 func (c *workspaceStatsCollector) collectSymbolSideTables(symbol *workspaceSymbol) {

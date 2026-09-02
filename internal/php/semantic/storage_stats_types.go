@@ -42,8 +42,18 @@ type WorkspaceStorageStats struct {
 	MemberContainers17To32   int
 	MemberContainersOver32   int
 	MaxMembersPerContainer   int
+	UniqueMemberNames        int
+	MemberNameBytes          int
+	UniqueMemberNameBytes    int
 	GlobalIDs                int
 	UniqueGlobalIDs          int
+	SymbolTypeMasks          [16]int
+	SymbolDistinctTypeCounts [5]int
+	SymbolTypeEqualsNative   int
+	SymbolTypeEqualsDoc      int
+	SymbolReturnEqualsType   int
+	SymbolTypeExtras         int
+	SymbolTypeExtraCapacity  int
 
 	Signatures                  int
 	Parameters                  int

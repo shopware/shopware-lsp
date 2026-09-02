@@ -233,7 +233,7 @@ func (b *documentBuilder) bindBodyReference(
 	context resolver.NameContext,
 	owner semantic.SymbolID,
 ) {
-	if _, declared := b.declarations[semantic.NodeIdentity(node)]; declared {
+	if b.declarations.Contains(node) {
 		return
 	}
 	switch node.Kind() {

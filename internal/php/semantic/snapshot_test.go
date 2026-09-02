@@ -23,6 +23,50 @@ func TestNormalizeSymbolName(t *testing.T) {
 	require.Equal(t, "app\\service", normalizeSymbolName("\\App\\Service", false))
 }
 
+func TestWorkspaceMemberIndexSharesNormalizedNamesAcrossContainers(
+	t *testing.T,
+) {
+	t.Parallel()
+	firstClass := Symbol{
+		ID:             "first-class",
+		Kind:           ClassSymbol,
+		Name:           "FirstClass",
+		FullyQualified: "App\\FirstClass",
+	}
+	secondClass := Symbol{
+		ID:             "second-class",
+		Kind:           ClassSymbol,
+		Name:           "SecondClass",
+		FullyQualified: "App\\SecondClass",
+	}
+	firstMethod := Symbol{
+		ID:             "first-method",
+		Kind:           MethodSymbol,
+		Name:           "FindProduct",
+		FullyQualified: "App\\FirstClass::FindProduct",
+		Container:      firstClass.ID,
+	}
+	secondMethod := Symbol{
+		ID:             "second-method",
+		Kind:           MethodSymbol,
+		Name:           "findProduct",
+		FullyQualified: "App\\SecondClass::findProduct",
+		Container:      secondClass.ID,
+	}
+	snapshot := NewSnapshot(1, []*Document{
+		{Path: "/first.php", Symbols: []Symbol{firstClass, firstMethod}},
+		{Path: "/second.php", Symbols: []Symbol{secondClass, secondMethod}},
+	})
+	require.Len(t, snapshot.compactMembers.names, 2)
+	require.Equal(t, "findproduct", snapshot.compactMembers.names[0])
+	require.Equal(t, "findproduct", snapshot.compactMembers.names[1])
+	require.Equal(
+		t,
+		unsafe.StringData(snapshot.compactMembers.names[0]),
+		unsafe.StringData(snapshot.compactMembers.names[1]),
+	)
+}
+
 func TestPublishedSnapshotUsesLazyLowercaseCache(t *testing.T) {
 	t.Parallel()
 

@@ -35,6 +35,7 @@ type workspaceDocument struct {
 	hierarchies        []workspaceHierarchy
 	metadata           []workspaceMetadata
 	symbolRangeExtras  *workspaceSymbolRangeExtras
+	symbolTypeExtras   *workspaceSymbolTypeExtraTable
 	referenceExtras    *workspaceReferenceExtras
 	symbolStrings      *workspaceSymbolStringTable
 	referenceStrings   *workspaceReferenceStringTable
@@ -568,16 +569,16 @@ func encodeWorkspaceSymbol(
 	if err := encoder.EncodeString(symbol.path()); err != nil {
 		return err
 	}
-	if err := symbol.Type.EncodeMsgpack(encoder); err != nil {
+	if err := symbol.valueType().EncodeMsgpack(encoder); err != nil {
 		return err
 	}
-	if err := symbol.NativeType.EncodeMsgpack(encoder); err != nil {
+	if err := symbol.nativeType().EncodeMsgpack(encoder); err != nil {
 		return err
 	}
-	if err := symbol.DocType.EncodeMsgpack(encoder); err != nil {
+	if err := symbol.docType().EncodeMsgpack(encoder); err != nil {
 		return err
 	}
-	if err := symbol.ReturnType.EncodeMsgpack(encoder); err != nil {
+	if err := symbol.returnType().EncodeMsgpack(encoder); err != nil {
 		return err
 	}
 	ranges := symbol.ranges()

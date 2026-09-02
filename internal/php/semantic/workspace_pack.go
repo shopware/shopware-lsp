@@ -211,11 +211,14 @@ func (packer *workspaceDocumentPacker) addSymbol(source *Symbol) {
 		Visibility:         source.Visibility,
 		WriteVisibility:    source.WriteVisibility,
 		HasWriteVisibility: source.HasWriteVisibility,
-		Type:               source.Type,
-		NativeType:         source.NativeType,
-		DocType:            source.DocType,
-		ReturnType:         source.ReturnType,
 	}
+	target.setTypes(
+		packer.document,
+		source.Type,
+		source.NativeType,
+		source.DocType,
+		source.ReturnType,
+	)
 	rangeIndex := -1
 	if compact, ok := compactWorkspaceSymbolRanges(
 		source.Range,
@@ -785,10 +788,7 @@ func internPackedWorkspaceGraphOwned(
 		symbol := &document.Symbols[index]
 		symbol.ID = SymbolID(internString(string(symbol.ID)))
 		symbol.Document = document
-		symbol.Type = internType(symbol.Type)
-		symbol.NativeType = internType(symbol.NativeType)
-		symbol.DocType = internType(symbol.DocType)
-		symbol.ReturnType = internType(symbol.ReturnType)
+		symbol.primaryType = internType(symbol.primaryType)
 
 		signature := symbol.signature()
 		if signature != nil {
@@ -876,6 +876,14 @@ func internPackedWorkspaceGraphOwned(
 				item.Type = internType(item.Type)
 			}
 			metadata.DocSummary = internString(metadata.DocSummary)
+		}
+	}
+	if document.symbolTypeExtras != nil {
+		for index := range document.symbolTypeExtras.Values {
+			extra := &document.symbolTypeExtras.Values[index]
+			for valueIndex := range extra.Values {
+				extra.Values[valueIndex] = internType(extra.Values[valueIndex])
+			}
 		}
 	}
 	if document.referenceStrings != nil &&
@@ -972,10 +980,10 @@ func (symbol *workspaceSymbol) materialize() Symbol {
 		WriteVisibility:    symbol.WriteVisibility,
 		HasWriteVisibility: symbol.HasWriteVisibility,
 		Flags:              symbol.flags(),
-		Type:               symbol.Type,
-		NativeType:         symbol.NativeType,
-		DocType:            symbol.DocType,
-		ReturnType:         symbol.ReturnType,
+		Type:               symbol.valueType(),
+		NativeType:         symbol.nativeType(),
+		DocType:            symbol.docType(),
+		ReturnType:         symbol.returnType(),
 	}
 	signature := symbol.signature()
 	if signature != nil {

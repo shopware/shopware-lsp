@@ -13,26 +13,142 @@ import (
 type workspaceSymbol struct {
 	_msgpack struct{} `msgpack:",as_array"` //nolint:unused // Encoding layout marker.
 
-	ID                  SymbolID
-	Document            *workspaceDocument
+	ID       SymbolID
+	Document *workspaceDocument
+
+	primaryType types.Type
+	sideIndexes uint64
+
+	Ranges workspaceSymbolRanges
+
 	nameIndex           uint32
 	fullyQualifiedIndex uint32
 	containerIndex      uint32
-
-	Type       types.Type
-	NativeType types.Type
-	DocType    types.Type
-	ReturnType types.Type
-
-	Ranges             workspaceSymbolRanges
-	flagsAndRangeIndex uint32
+	flagsAndRangeIndex  uint32
+	typeSelectors       uint32
 
 	Kind               SymbolKind
 	Visibility         Visibility
 	WriteVisibility    Visibility
 	HasWriteVisibility bool
+}
 
-	sideIndexes uint64
+const (
+	workspaceSymbolTypeSelectorBits = 3
+	workspaceSymbolTypeSelectorMask = 1<<workspaceSymbolTypeSelectorBits - 1
+	workspaceSymbolTypeFieldCount   = 4
+
+	workspaceSymbolTypeExtraIndexShift = workspaceSymbolTypeSelectorBits * workspaceSymbolTypeFieldCount
+	workspaceSymbolTypeExtraIndexMask  = 1<<(32-workspaceSymbolTypeExtraIndexShift) - 1
+)
+
+type workspaceSymbolTypeExtras struct {
+	Values [3]types.Type
+}
+
+type workspaceSymbolTypeExtraTable struct {
+	Values []workspaceSymbolTypeExtras
+}
+
+func (symbol *workspaceSymbol) setTypes(
+	document *workspaceDocument,
+	value,
+	native,
+	doc,
+	result types.Type,
+) {
+	if symbol == nil {
+		return
+	}
+	values := [...]types.Type{value, native, doc, result}
+	var distinct [workspaceSymbolTypeFieldCount]types.Type
+	distinctCount := 0
+	selectors := uint32(0)
+	for fieldIndex, current := range values {
+		if current.IsUnknown() {
+			continue
+		}
+		selector := 0
+		for distinctIndex := 0; distinctIndex < distinctCount; distinctIndex++ {
+			if current.Equal(distinct[distinctIndex]) {
+				selector = distinctIndex + 1
+				break
+			}
+		}
+		if selector == 0 {
+			distinct[distinctCount] = current
+			distinctCount++
+			selector = distinctCount
+		}
+		selectors |= uint32(selector) <<
+			(fieldIndex * workspaceSymbolTypeSelectorBits)
+	}
+	symbol.primaryType = distinct[0]
+	symbol.typeSelectors = selectors
+	if distinctCount <= 1 || document == nil {
+		return
+	}
+	if document.symbolTypeExtras == nil {
+		document.symbolTypeExtras = &workspaceSymbolTypeExtraTable{}
+	}
+	extraIndex := len(document.symbolTypeExtras.Values)
+	if uint64(extraIndex)+1 > uint64(workspaceSymbolTypeExtraIndexMask) {
+		panic("semantic: workspace symbol type extra index exceeds packed range")
+	}
+	extra := workspaceSymbolTypeExtras{}
+	copy(extra.Values[:], distinct[1:distinctCount])
+	document.symbolTypeExtras.Values = append(
+		document.symbolTypeExtras.Values,
+		extra,
+	)
+	symbol.typeSelectors |= uint32(extraIndex+1) <<
+		workspaceSymbolTypeExtraIndexShift
+}
+
+func (symbol *workspaceSymbol) typeAt(fieldIndex int) types.Type {
+	if symbol == nil || fieldIndex < 0 ||
+		fieldIndex >= workspaceSymbolTypeFieldCount {
+		return types.Type{}
+	}
+	selector := symbol.typeSelectors >>
+		(fieldIndex * workspaceSymbolTypeSelectorBits) &
+		workspaceSymbolTypeSelectorMask
+	if selector == 0 {
+		return types.Type{}
+	}
+	if selector == 1 {
+		return symbol.primaryType
+	}
+	if symbol.Document == nil || symbol.Document.symbolTypeExtras == nil {
+		return types.Type{}
+	}
+	extraIndex := symbol.typeSelectors >>
+		workspaceSymbolTypeExtraIndexShift
+	if extraIndex == 0 ||
+		int(extraIndex) > len(symbol.Document.symbolTypeExtras.Values) {
+		return types.Type{}
+	}
+	valueIndex := int(selector - 2)
+	if valueIndex >= len(workspaceSymbolTypeExtras{}.Values) {
+		return types.Type{}
+	}
+	return symbol.Document.symbolTypeExtras.Values[extraIndex-1].Values[valueIndex]
+}
+
+func (symbol *workspaceSymbol) valueType() types.Type {
+	return symbol.typeAt(0)
+}
+
+func (symbol *workspaceSymbol) nativeType() types.Type {
+	return symbol.typeAt(1)
+}
+
+func (symbol *workspaceSymbol) docType() types.Type {
+	return symbol.typeAt(2)
+}
+
+func (symbol *workspaceSymbol) returnType() types.Type {
+	return symbol.typeAt(3)
 }
 
 type workspaceSharedStringTable struct {
@@ -426,6 +542,7 @@ func (symbol *workspaceSymbol) decodeMsgpack(
 	if err := symbol.decodeFields(
 		decoder,
 		context,
+		document,
 		&sides,
 		&parameterIDs,
 		&symbolStrings,
@@ -462,6 +579,7 @@ type decodedWorkspaceParameterID struct {
 func (symbol *workspaceSymbol) decodeFields(
 	decoder *msgpack.Decoder,
 	context *WorkspaceGraphDecoder,
+	document *workspaceDocument,
 	sides *decodedWorkspaceSymbolSides,
 	parameterIDs *[]decodedWorkspaceParameterID,
 	symbolStrings *workspaceSymbolStringBuilder,
@@ -501,18 +619,23 @@ func (symbol *workspaceSymbol) decodeFields(
 	if _, err = context.decodeString(decoder); err != nil {
 		return err
 	}
-	if symbol.Type, err = context.decodeType(decoder); err != nil {
+	valueType, err := context.decodeType(decoder)
+	if err != nil {
 		return err
 	}
-	if symbol.NativeType, err = context.decodeType(decoder); err != nil {
+	nativeType, err := context.decodeType(decoder)
+	if err != nil {
 		return err
 	}
-	if symbol.DocType, err = context.decodeType(decoder); err != nil {
+	docType, err := context.decodeType(decoder)
+	if err != nil {
 		return err
 	}
-	if symbol.ReturnType, err = context.decodeType(decoder); err != nil {
+	returnType, err := context.decodeType(decoder)
+	if err != nil {
 		return err
 	}
+	symbol.setTypes(document, valueType, nativeType, docType, returnType)
 	var ranges workspaceSymbolFullRanges
 	if ranges.Range, err =
 		decodeWorkspaceTextRange(decoder, context); err != nil {
@@ -609,6 +732,7 @@ func decodeWorkspaceSymbols(
 		if err := document.Symbols[index].decodeFields(
 			decoder,
 			context,
+			document,
 			&sides[index],
 			&parameterIDs,
 			&symbolStrings,

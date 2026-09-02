@@ -50,8 +50,13 @@ func TestWorkspaceStorageStatsCountsRetainedTables(t *testing.T) {
 	require.Equal(t, 0, stats.MemberIDs)
 	require.Equal(t, 0, stats.UniqueMemberIDs)
 	require.Equal(t, 0, stats.MemberDuplicateIDs)
+	require.Zero(t, stats.UniqueMemberNames)
+	require.Zero(t, stats.MemberNameBytes)
+	require.Zero(t, stats.UniqueMemberNameBytes)
 	require.Equal(t, 1, stats.GlobalIDs)
 	require.Equal(t, 1, stats.UniqueGlobalIDs)
+	require.Equal(t, 1, stats.SymbolTypeMasks[0])
+	require.Equal(t, 1, stats.SymbolDistinctTypeCounts[0])
 	require.Equal(t, 1, stats.NoSideTables)
 	require.Equal(t, 3, stats.ReferenceStrings)
 	require.Equal(t, 3, stats.ReferenceStringCapacity)
@@ -68,4 +73,27 @@ func TestWorkspaceStorageStatsCountsRetainedTables(t *testing.T) {
 	require.Equal(t, 6, stats.UniqueInternedStrings)
 	require.Equal(t, 5, stats.TypeSlots)
 	require.Equal(t, 2, stats.UniqueTypeKeys)
+}
+
+func TestWorkspaceStorageStatsCountsSparseSymbolTypes(t *testing.T) {
+	t.Parallel()
+
+	snapshot := NewSnapshot(1, []*Document{{
+		Path: "/types.php",
+		Symbols: []Symbol{{
+			ID:         "method",
+			Kind:       MethodSymbol,
+			Path:       "/types.php",
+			Type:       types.Int(),
+			NativeType: types.String(),
+			DocType:    types.Bool(),
+			ReturnType: types.Float(),
+		}},
+	}})
+
+	stats := snapshot.WorkspaceStorageStats()
+
+	require.Equal(t, 1, stats.SymbolTypeExtras)
+	require.GreaterOrEqual(t, stats.SymbolTypeExtraCapacity, 1)
+	require.Equal(t, 1, stats.SymbolDistinctTypeCounts[4])
 }

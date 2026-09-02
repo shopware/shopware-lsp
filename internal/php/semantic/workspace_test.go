@@ -205,6 +205,42 @@ func TestWorkspaceSymbolRangesUseSparseExactFallbacks(t *testing.T) {
 	require.Len(t, decoded.document.symbolRangeExtras.Values, 2)
 }
 
+func TestWorkspaceSymbolTypesUseSparseExactFallbacks(t *testing.T) {
+	t.Parallel()
+
+	document := &Document{
+		Path: "/types.php",
+		Symbols: []Symbol{{
+			ID:         "shared",
+			Kind:       PropertySymbol,
+			Path:       "/types.php",
+			Type:       types.Int(),
+			NativeType: types.Int(),
+		}, {
+			ID:         "distinct",
+			Kind:       MethodSymbol,
+			Path:       "/types.php",
+			Type:       types.Int(),
+			NativeType: types.String(),
+			DocType:    types.Bool(),
+			ReturnType: types.Float(),
+		}},
+	}
+
+	packed := packWorkspaceDocument(document)
+	require.NotNil(t, packed.symbolTypeExtras)
+	require.Len(t, packed.symbolTypeExtras.Values, 1)
+	require.Equal(t, packed.Symbols[0].valueType(), packed.Symbols[0].nativeType())
+	requireMsgpackEquivalent(t, document, packed.materialize())
+
+	encoded, err := msgpack.Marshal(PackWorkspaceGraphOwned(document))
+	require.NoError(t, err)
+	var decoded WorkspaceGraph
+	require.NoError(t, msgpack.Unmarshal(encoded, &decoded))
+	requireMsgpackEquivalent(t, document, decoded.Document())
+	require.Len(t, decoded.document.symbolTypeExtras.Values, 1)
+}
+
 func TestWorkspaceSymbolsShareTheirDocumentPath(t *testing.T) {
 	t.Parallel()
 
@@ -331,8 +367,8 @@ func TestWorkspaceGraphDecoderSharesTypesAcrossDocuments(t *testing.T) {
 	))
 	require.True(
 		t,
-		first.document.Symbols[0].Type ==
-			second.document.Symbols[0].Type,
+		first.document.Symbols[0].valueType() ==
+			second.document.Symbols[0].valueType(),
 	)
 
 	context.Clear()
@@ -344,8 +380,8 @@ func TestWorkspaceGraphDecoderSharesTypesAcrossDocuments(t *testing.T) {
 	))
 	require.False(
 		t,
-		first.document.Symbols[0].Type ==
-			afterClear.document.Symbols[0].Type,
+		first.document.Symbols[0].valueType() ==
+			afterClear.document.Symbols[0].valueType(),
 	)
 }
 
@@ -1337,7 +1373,8 @@ func TestBorrowedWorkspaceProjectionOwnsSlicesAndBatchDetachesValues(
 func TestWorkspaceSymbolCoreIsLessThanHalfPublicSymbolSize(t *testing.T) {
 	t.Parallel()
 
-	require.Equal(t, uintptr(104), unsafe.Sizeof(workspaceSymbol{}))
+	require.Equal(t, uintptr(80), unsafe.Sizeof(workspaceSymbol{}))
+	require.Equal(t, uintptr(24), unsafe.Sizeof(workspaceSymbolTypeExtras{}))
 	require.Less(
 		t,
 		unsafe.Sizeof(workspaceSymbol{}),
