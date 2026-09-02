@@ -6,14 +6,25 @@ import (
 	"unicode/utf8"
 )
 
-// normalizedNameCache owns query names cached by a published snapshot. A
-// typed map avoids the interface and hash-trie allocations sync.Map incurs for
-// the large one-time miss set produced by cold inference, while the RW lock
-// keeps repeated LSP lookups allocation-free.
+// normalizedNameCache owns a bounded working set of query names for a
+// published snapshot. A typed map avoids the interface and hash-trie
+// allocations sync.Map incurs during cold inference, while FIFO replacement
+// and the RW lock keep long-running LSP use bounded and repeated lookups
+// allocation-free.
 type normalizedNameCache struct {
 	mu     sync.RWMutex
 	values map[string]string
+	order  []string
+	next   int
 }
+
+const (
+	// The entry bound retains a broad interactive working set without allowing
+	// distinct workspace or client-provided names to grow for the process
+	// lifetime. Very long malformed identifiers are normalized but not cached.
+	normalizedNameCacheEntries      = 32 << 10
+	normalizedNameCacheMaxNameBytes = 512
+)
 
 func (c *normalizedNameCache) load(name string) (string, bool) {
 	if c == nil {
@@ -29,9 +40,12 @@ func (c *normalizedNameCache) normalize(name string) string {
 	if normalized, found := c.load(name); found {
 		return normalized
 	}
+	if len(name) > normalizedNameCacheMaxNameBytes {
+		return strings.ToLower(name)
+	}
 	// Query names commonly arrive as zero-copy slices of a complete source
 	// document. Map keys own their backing strings, so clone only cache misses
-	// before publishing them for the lifetime of the snapshot.
+	// before retaining them in the bounded cache.
 	ownedName := strings.Clone(name)
 	normalized := strings.ToLower(ownedName)
 
@@ -42,6 +56,16 @@ func (c *normalizedNameCache) normalize(name string) string {
 	}
 	if c.values == nil {
 		c.values = make(map[string]string)
+	}
+	if len(c.values) == normalizedNameCacheEntries {
+		delete(c.values, c.order[c.next])
+		c.order[c.next] = ownedName
+		c.next++
+		if c.next == normalizedNameCacheEntries {
+			c.next = 0
+		}
+	} else {
+		c.order = append(c.order, ownedName)
 	}
 	c.values[ownedName] = normalized
 	c.mu.Unlock()
@@ -61,6 +85,22 @@ func (c *normalizedNameCache) rangeValues(
 			return
 		}
 	}
+}
+
+// clear releases names accumulated while this cache's snapshot was the
+// workspace generation used for linking and inference. Superseded snapshots
+// can remain reachable briefly through in-flight overlays, but cache contents
+// are an optimization rather than immutable semantic state: a later lookup
+// can safely repopulate them.
+func (c *normalizedNameCache) clear() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.values = nil
+	c.order = nil
+	c.next = 0
+	c.mu.Unlock()
 }
 
 type inlineSymbolIDSet struct {

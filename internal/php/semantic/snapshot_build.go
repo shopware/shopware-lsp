@@ -22,7 +22,7 @@ type Snapshot struct {
 	symbols workspaceSymbolIndex
 	// Overlay symbols already live in expandedData. Store compact indexes
 	// instead of another pointer per map entry.
-	expanded          map[SymbolID]uint32
+	expanded          expandedSymbolIndex
 	expandedData      []Symbol
 	overrides         map[SymbolID]*Symbol
 	overrideData      []Symbol
@@ -331,13 +331,7 @@ func (s *Snapshot) addExpandedSymbol(symbol *Symbol, index int) {
 	if symbol == nil {
 		return
 	}
-	if index < 0 || uint64(index) > uint64(^uint32(0)) {
-		panic("semantic: expanded symbol index exceeds uint32")
-	}
-	if s.expanded == nil {
-		s.expanded = make(map[SymbolID]uint32)
-	}
-	s.expanded[symbol.ID] = uint32(index)
+	s.expanded.Set(symbol.ID, index, s.expandedData)
 	delete(s.overrides, symbol.ID)
 	s.indexSymbol(
 		symbol.ID,

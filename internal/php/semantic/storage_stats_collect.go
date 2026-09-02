@@ -51,7 +51,7 @@ func (c *workspaceStatsCollector) result() WorkspaceStorageStats {
 
 func (c *workspaceStatsCollector) collectSnapshotIndexes(snapshot *Snapshot) {
 	c.stats.SymbolIndexEntries = snapshot.symbols.Len() +
-		len(snapshot.expanded) +
+		snapshot.expanded.Len() +
 		len(snapshot.overrides)
 	c.stats.SymbolIndexCapacity = len(snapshot.symbols.slots)
 	c.stats.PathIndexEntries = len(snapshot.pathRefs)

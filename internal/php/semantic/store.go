@@ -427,8 +427,12 @@ func (s *Store) publishLocked() *Snapshot {
 	for _, path := range paths {
 		documents = append(documents, s.documents[path])
 	}
+	previous := s.current.Load()
 	snapshot := newSnapshotWithPathRefs(revision, documents, s.documents)
 	s.current.Store(snapshot)
+	if previous != nil && previous.dynamicNames != snapshot.dynamicNames {
+		previous.dynamicNames.clear()
+	}
 	// The immutable documents now own every canonical value. Retaining the
 	// build-time lookup tables would duplicate tens of MiB of map metadata for
 	// the lifetime of the workspace. A later batch creates its own short-lived

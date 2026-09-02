@@ -93,6 +93,51 @@ func TestPublishedSnapshotNormalizesNamesConcurrently(t *testing.T) {
 	}
 }
 
+func TestStorePublicationClearsSupersededLowercaseCache(t *testing.T) {
+	t.Parallel()
+
+	store := NewStore()
+	previous := store.Snapshot()
+	require.Equal(t, "app\\service", previous.lowerName("App\\Service", false))
+	_, found := previous.dynamicNames.load("App\\Service")
+	require.True(t, found)
+
+	current := store.Replace(&Document{Path: "/service.php"})
+	_, found = previous.dynamicNames.load("App\\Service")
+	require.False(t, found)
+	require.Equal(t, "app\\service", previous.lowerName("App\\Service", false))
+	require.Equal(t, "app\\service", current.lowerName("App\\Service", false))
+}
+
+func TestPublishedSnapshotBoundsLowercaseCache(t *testing.T) {
+	t.Parallel()
+
+	snapshot := NewSnapshot(1, nil)
+	for index := range normalizedNameCacheEntries + 1 {
+		name := "App\\Service" + strconv.Itoa(index)
+		require.Equal(t, strings.ToLower(name), snapshot.lowerName(name, false))
+	}
+
+	_, found := snapshot.dynamicNames.load("App\\Service0")
+	require.False(t, found)
+	_, found = snapshot.dynamicNames.load(
+		"App\\Service" + strconv.Itoa(normalizedNameCacheEntries),
+	)
+	require.True(t, found)
+	require.Len(t, snapshot.dynamicNames.values, normalizedNameCacheEntries)
+	require.Len(t, snapshot.dynamicNames.order, normalizedNameCacheEntries)
+}
+
+func TestPublishedSnapshotDoesNotCacheOversizedName(t *testing.T) {
+	t.Parallel()
+
+	snapshot := NewSnapshot(1, nil)
+	name := "A" + strings.Repeat("b", normalizedNameCacheMaxNameBytes)
+	require.Equal(t, strings.ToLower(name), snapshot.lowerName(name, false))
+	_, found := snapshot.dynamicNames.load(name)
+	require.False(t, found)
+}
+
 var benchmarkNormalizedName string
 var benchmarkMemberID SymbolID
 var benchmarkSymbolRange cst.TextRange

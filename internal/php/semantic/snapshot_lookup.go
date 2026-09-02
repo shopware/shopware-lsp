@@ -23,7 +23,7 @@ func (s *Snapshot) SymbolView(id SymbolID) (SymbolView, bool) {
 	if symbol, ok := s.overrides[id]; ok {
 		return expandedView(symbol), true
 	}
-	if index, ok := s.expanded[id]; ok &&
+	if index, ok := s.expanded.Get(id, s.expandedData); ok &&
 		uint64(index) < uint64(len(s.expandedData)) {
 		return expandedView(&s.expandedData[index]), true
 	}
@@ -384,7 +384,7 @@ func (s *Snapshot) sortMemberViews(result []SymbolView) {
 func (s *Snapshot) hasDirectWorkspaceMembers() bool {
 	return s != nil &&
 		s.base == nil &&
-		len(s.expanded) == 0 &&
+		s.expanded.Len() == 0 &&
 		len(s.overrides) == 0
 }
 
@@ -513,15 +513,19 @@ func (s *Snapshot) AllSymbols() []Symbol {
 			}
 			return true
 		})
-		for id := range current.expanded {
+		current.expanded.Range(current.expandedData, func(
+			id SymbolID,
+			_ uint32,
+		) bool {
 			if _, exists := seen[id]; exists {
-				continue
+				return true
 			}
 			seen[id] = struct{}{}
 			if symbol, ok := s.Symbol(id); ok {
 				result = append(result, symbol)
 			}
-		}
+			return true
+		})
 	}
 	return result
 }

@@ -23,11 +23,12 @@ func (s *Snapshot) CloneSymbols() map[SymbolID]Symbol {
 		}
 		return true
 	})
-	for id, index := range s.expanded {
+	s.expanded.Range(s.expandedData, func(id SymbolID, index uint32) bool {
 		if uint64(index) < uint64(len(s.expandedData)) {
 			result[id] = s.expandedData[index]
 		}
-	}
+		return true
+	})
 	for id, symbol := range s.overrides {
 		if symbol != nil {
 			result[id] = *symbol
@@ -116,7 +117,7 @@ func (s *Snapshot) withDocument(
 		Revision:         s.Revision,
 		base:             s,
 		overlayPath:      document.Path,
-		expanded:         make(map[SymbolID]uint32, len(document.Symbols)),
+		expanded:         newExpandedSymbolIndex(len(document.Symbols)),
 		expandedData:     document.Symbols,
 		dynamicNames:     s.dynamicNames,
 		reverseHierarchy: &reverseHierarchyIndex{},
