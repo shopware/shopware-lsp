@@ -13,34 +13,40 @@ import (
 
 type workspaceReference struct {
 	RangeStart       uint32
-	nameAndMetadata  uint32
-	resolvedAndCount uint32
-	valueAndRange    uint32
-	receiverAndFlags uint32
+	nameAndResolved  uint32
+	valueAndReceiver uint32
+	rangeAndMetadata uint32
 }
 
 const (
-	workspaceReferenceValueBits         = 16
-	workspaceReferenceValueMask         = 1<<workspaceReferenceValueBits - 1
-	workspaceReferenceRangeShift        = workspaceReferenceValueBits
-	workspaceReferenceFullRangeSentinel = math.MaxUint16
-
-	workspaceReferenceIndexBits = 21
+	workspaceReferenceIndexBits = 16
 	workspaceReferenceIndexMask = 1<<workspaceReferenceIndexBits - 1
 
-	workspaceReferenceCountShift = workspaceReferenceIndexBits
-	workspaceReferenceKindShift  = workspaceReferenceCountShift + 8
-	workspaceReferenceKindMask   = 0x07
+	workspaceReferenceValueMask = math.MaxUint16
 
-	workspaceReferenceTargetShift = workspaceReferenceIndexBits
-	workspaceReferenceFlagsShift  = workspaceReferenceTargetShift + 4
-	workspaceReferenceTargetMask  = 0x0f
-	workspaceReferenceFlagsMask   = 0x0f
+	workspaceReferenceRangeBits         = 12
+	workspaceReferenceRangeMask         = 1<<workspaceReferenceRangeBits - 1
+	workspaceReferenceFullRangeSentinel = workspaceReferenceRangeMask
+
+	workspaceReferenceQualifiedShift = workspaceReferenceRangeBits
+	workspaceReferenceCandidateShift = workspaceReferenceQualifiedShift + 4
+	workspaceReferenceCountMask      = 0x0f
+	workspaceReferenceKindShift      = workspaceReferenceCandidateShift + 4
+	workspaceReferenceKindMask       = 0x07
+	workspaceReferenceTargetShift    = workspaceReferenceKindShift + 3
+	workspaceReferenceTargetMask     = 0x0f
+	workspaceReferenceFlagsShift     = workspaceReferenceTargetShift + 4
+	workspaceReferenceFlagsMask      = 0x0f
 )
 
 type workspaceReferenceFull struct {
-	Range      cst.TextRange
-	ValueStart uint32
+	Range          cst.TextRange
+	ValueStart     uint32
+	NameIndex      uint32
+	ResolvedIndex  uint32
+	ReceiverIndex  uint32
+	QualifiedCount uint8
+	CandidateCount uint8
 }
 
 type workspaceReferenceExtras struct {
@@ -135,11 +141,29 @@ func compactWorkspaceReferenceLocation(
 	if valueStart > workspaceReferenceValueMask {
 		return 0, false
 	}
-	length, ok := compactWorkspaceSymbolDelta(rng.Start, rng.End)
-	if !ok {
+	if rng.End < rng.Start || rng.End-rng.Start >= workspaceReferenceFullRangeSentinel {
 		return 0, false
 	}
-	return length, true
+	return uint16(rng.End - rng.Start), true
+}
+
+func compactWorkspaceReference(
+	rng cst.TextRange,
+	nameIndex,
+	resolvedIndex,
+	valueStart,
+	receiverIndex uint32,
+	qualifiedCount,
+	candidateCount uint8,
+) (uint16, bool) {
+	if nameIndex > workspaceReferenceIndexMask ||
+		resolvedIndex > workspaceReferenceIndexMask ||
+		receiverIndex > workspaceReferenceIndexMask ||
+		qualifiedCount > workspaceReferenceCountMask ||
+		candidateCount > workspaceReferenceCountMask {
+		return 0, false
+	}
+	return compactWorkspaceReferenceLocation(rng, valueStart)
 }
 
 func newWorkspaceReference(
@@ -155,45 +179,45 @@ func newWorkspaceReference(
 	flags uint8,
 	fullIndex int,
 ) workspaceReference {
-	if nameIndex > workspaceReferenceIndexMask ||
-		resolvedIndex > workspaceReferenceIndexMask ||
-		receiverIndex > workspaceReferenceIndexMask {
-		panic("semantic: workspace reference index exceeds packed range")
-	}
 	if uint8(kind) > workspaceReferenceKindMask ||
 		uint8(targetKind) > workspaceReferenceTargetMask ||
 		flags > workspaceReferenceFlagsMask {
 		panic("semantic: workspace reference metadata exceeds packed range")
 	}
-	var valueAndRange uint32
+	metadata := uint32(kind)<<workspaceReferenceKindShift |
+		uint32(targetKind)<<workspaceReferenceTargetShift |
+		uint32(flags)<<workspaceReferenceFlagsShift
+	result := workspaceReference{RangeStart: rng.Start}
 	if fullIndex < 0 {
-		rangeLength, ok := compactWorkspaceReferenceLocation(rng, valueStart)
+		rangeLength, ok := compactWorkspaceReference(
+			rng,
+			nameIndex,
+			resolvedIndex,
+			valueStart,
+			receiverIndex,
+			qualifiedCount,
+			candidateCount,
+		)
 		if !ok {
-			panic("semantic: workspace reference location requires full fallback")
+			panic("semantic: workspace reference requires full fallback")
 		}
-		valueAndRange = valueStart |
-			uint32(rangeLength)<<workspaceReferenceRangeShift
+		result.nameAndResolved = nameIndex |
+			resolvedIndex<<workspaceReferenceIndexBits
+		result.valueAndReceiver = valueStart |
+			receiverIndex<<workspaceReferenceIndexBits
+		result.rangeAndMetadata = uint32(rangeLength) |
+			uint32(qualifiedCount)<<workspaceReferenceQualifiedShift |
+			uint32(candidateCount)<<workspaceReferenceCandidateShift |
+			metadata
 	} else {
 		index := uint32(fullIndex) + 1
 		if index > workspaceReferenceValueMask {
 			panic("semantic: workspace reference fallback index exceeds packed range")
 		}
-		valueAndRange = index |
-			uint32(workspaceReferenceFullRangeSentinel)<<
-				workspaceReferenceRangeShift
+		result.valueAndReceiver = index
+		result.rangeAndMetadata = workspaceReferenceFullRangeSentinel | metadata
 	}
-	return workspaceReference{
-		RangeStart: rng.Start,
-		nameAndMetadata: nameIndex |
-			uint32(qualifiedCount)<<workspaceReferenceCountShift |
-			uint32(kind)<<workspaceReferenceKindShift,
-		resolvedAndCount: resolvedIndex |
-			uint32(candidateCount)<<workspaceReferenceCountShift,
-		valueAndRange: valueAndRange,
-		receiverAndFlags: receiverIndex |
-			uint32(targetKind)<<workspaceReferenceTargetShift |
-			uint32(flags)<<workspaceReferenceFlagsShift,
-	}
+	return result
 }
 
 func (document *workspaceDocument) newReference(
@@ -209,7 +233,15 @@ func (document *workspaceDocument) newReference(
 	flags uint8,
 ) workspaceReference {
 	fullIndex := -1
-	if _, ok := compactWorkspaceReferenceLocation(rng, valueStart); !ok {
+	if _, ok := compactWorkspaceReference(
+		rng,
+		nameIndex,
+		resolvedIndex,
+		valueStart,
+		receiverIndex,
+		qualifiedCount,
+		candidateCount,
+	); !ok {
 		if document.referenceExtras == nil {
 			document.referenceExtras = &workspaceReferenceExtras{}
 		}
@@ -217,8 +249,13 @@ func (document *workspaceDocument) newReference(
 		document.referenceExtras.Values = append(
 			document.referenceExtras.Values,
 			workspaceReferenceFull{
-				Range:      rng,
-				ValueStart: valueStart,
+				Range:          rng,
+				ValueStart:     valueStart,
+				NameIndex:      nameIndex,
+				ResolvedIndex:  resolvedIndex,
+				ReceiverIndex:  receiverIndex,
+				QualifiedCount: qualifiedCount,
+				CandidateCount: candidateCount,
 			},
 		)
 	}
@@ -241,7 +278,7 @@ func (reference *workspaceReference) hasFullLocation() bool {
 	if reference == nil {
 		return false
 	}
-	return uint16(reference.valueAndRange>>workspaceReferenceRangeShift) ==
+	return reference.rangeAndMetadata&workspaceReferenceRangeMask ==
 		workspaceReferenceFullRangeSentinel
 }
 
@@ -249,7 +286,7 @@ func (reference *workspaceReference) fullIndex() uint32 {
 	if reference == nil || !reference.hasFullLocation() {
 		return 0
 	}
-	return reference.valueAndRange & workspaceReferenceValueMask
+	return reference.valueAndReceiver & workspaceReferenceValueMask
 }
 
 func (reference *workspaceReference) fullLocation(
@@ -271,9 +308,7 @@ func (reference *workspaceReference) rangeValue(
 	if reference == nil {
 		return cst.TextRange{}
 	}
-	length := uint16(
-		reference.valueAndRange >> workspaceReferenceRangeShift,
-	)
+	length := uint16(reference.rangeAndMetadata & workspaceReferenceRangeMask)
 	if length != workspaceReferenceFullRangeSentinel {
 		return cst.TextRange{
 			Start: reference.RangeStart,
@@ -293,7 +328,7 @@ func (reference *workspaceReference) valueStart(
 		return 0
 	}
 	if !reference.hasFullLocation() {
-		return reference.valueAndRange & workspaceReferenceValueMask
+		return reference.valueAndReceiver & workspaceReferenceValueMask
 	}
 	if full, ok := reference.fullLocation(document); ok {
 		return full.ValueStart
@@ -307,15 +342,13 @@ func (reference *workspaceReference) location(
 	if reference == nil {
 		return cst.TextRange{}, 0
 	}
-	length := uint16(
-		reference.valueAndRange >> workspaceReferenceRangeShift,
-	)
+	length := uint16(reference.rangeAndMetadata & workspaceReferenceRangeMask)
 	if length != workspaceReferenceFullRangeSentinel {
 		return cst.TextRange{
 				Start: reference.RangeStart,
 				End:   reference.RangeStart + uint32(length),
 			},
-			reference.valueAndRange & workspaceReferenceValueMask
+			reference.valueAndReceiver & workspaceReferenceValueMask
 	}
 	if full, ok := reference.fullLocation(document); ok {
 		return full.Range, full.ValueStart
@@ -323,35 +356,72 @@ func (reference *workspaceReference) location(
 	return cst.TextRange{}, 0
 }
 
-func (reference *workspaceReference) nameIndex() uint32 {
-	return reference.nameAndMetadata & workspaceReferenceIndexMask
+func (reference *workspaceReference) nameIndex(document *workspaceDocument) uint32 {
+	if reference == nil {
+		return 0
+	}
+	if full, ok := reference.fullLocation(document); ok {
+		return full.NameIndex
+	}
+	return reference.nameAndResolved & workspaceReferenceIndexMask
 }
 
-func (reference *workspaceReference) resolvedIndex() uint32 {
-	return reference.resolvedAndCount & workspaceReferenceIndexMask
+func (reference *workspaceReference) resolvedIndex(document *workspaceDocument) uint32 {
+	if reference == nil {
+		return 0
+	}
+	if full, ok := reference.fullLocation(document); ok {
+		return full.ResolvedIndex
+	}
+	return reference.nameAndResolved >> workspaceReferenceIndexBits
 }
 
-func (reference *workspaceReference) receiverIndex() uint32 {
-	return reference.receiverAndFlags & workspaceReferenceIndexMask
+func (reference *workspaceReference) receiverIndex(document *workspaceDocument) uint32 {
+	if reference == nil {
+		return 0
+	}
+	if full, ok := reference.fullLocation(document); ok {
+		return full.ReceiverIndex
+	}
+	return reference.valueAndReceiver >> workspaceReferenceIndexBits
 }
 
-func (reference *workspaceReference) qualifiedCount() uint8 {
-	return uint8(reference.nameAndMetadata >> workspaceReferenceCountShift)
+func (reference *workspaceReference) qualifiedCount(document *workspaceDocument) uint8 {
+	if reference == nil {
+		return 0
+	}
+	if full, ok := reference.fullLocation(document); ok {
+		return full.QualifiedCount
+	}
+	return uint8(
+		reference.rangeAndMetadata >> workspaceReferenceQualifiedShift &
+			workspaceReferenceCountMask,
+	)
 }
 
-func (reference *workspaceReference) candidateCount() uint8 {
-	return uint8(reference.resolvedAndCount >> workspaceReferenceCountShift)
+func (reference *workspaceReference) candidateCount(document *workspaceDocument) uint8 {
+	if reference == nil {
+		return 0
+	}
+	if full, ok := reference.fullLocation(document); ok {
+		return full.CandidateCount
+	}
+	return uint8(
+		reference.rangeAndMetadata >> workspaceReferenceCandidateShift &
+			workspaceReferenceCountMask,
+	)
 }
 
 func (reference *workspaceReference) kind() NameKind {
 	return NameKind(
-		reference.nameAndMetadata >> workspaceReferenceKindShift,
+		reference.rangeAndMetadata >> workspaceReferenceKindShift &
+			workspaceReferenceKindMask,
 	)
 }
 
 func (reference *workspaceReference) targetKind() SymbolKind {
 	return SymbolKind(
-		reference.receiverAndFlags >>
+		reference.rangeAndMetadata >>
 			workspaceReferenceTargetShift &
 			workspaceReferenceTargetMask,
 	)
@@ -359,7 +429,7 @@ func (reference *workspaceReference) targetKind() SymbolKind {
 
 func (reference *workspaceReference) flags() uint8 {
 	return uint8(
-		reference.receiverAndFlags >>
+		reference.rangeAndMetadata >>
 			workspaceReferenceFlagsShift &
 			workspaceReferenceFlagsMask,
 	)
@@ -399,22 +469,22 @@ func encodeWorkspaceReference(
 	if err := encoder.EncodeUint32(rng.End); err != nil {
 		return err
 	}
-	if err := encoder.EncodeUint32(reference.nameIndex()); err != nil {
+	if err := encoder.EncodeUint32(reference.nameIndex(document)); err != nil {
 		return err
 	}
-	if err := encoder.EncodeUint32(reference.resolvedIndex()); err != nil {
+	if err := encoder.EncodeUint32(reference.resolvedIndex(document)); err != nil {
 		return err
 	}
 	if err := encoder.EncodeUint32(valueStart); err != nil {
 		return err
 	}
-	if err := encoder.EncodeUint32(reference.receiverIndex()); err != nil {
+	if err := encoder.EncodeUint32(reference.receiverIndex(document)); err != nil {
 		return err
 	}
-	if err := encoder.EncodeUint16(uint16(reference.qualifiedCount())); err != nil {
+	if err := encoder.EncodeUint16(uint16(reference.qualifiedCount(document))); err != nil {
 		return err
 	}
-	if err := encoder.EncodeUint16(uint16(reference.candidateCount())); err != nil {
+	if err := encoder.EncodeUint16(uint16(reference.candidateCount(document))); err != nil {
 		return err
 	}
 	if err := encoder.EncodeUint8(uint8(reference.kind())); err != nil {
@@ -433,12 +503,17 @@ func (reference *workspaceReference) DecodeMsgpack(
 	if err != nil {
 		return err
 	}
-	if _, ok := compactWorkspaceReferenceLocation(
+	if _, ok := compactWorkspaceReference(
 		decoded.Range,
+		decoded.NameIndex,
+		decoded.ResolvedIndex,
 		decoded.ValueStart,
+		decoded.ReceiverIndex,
+		decoded.QualifiedCount,
+		decoded.CandidateCount,
 	); !ok {
 		return fmt.Errorf(
-			"decode compact workspace reference: full location requires document context",
+			"decode compact workspace reference: full data requires document context",
 		)
 	}
 	*reference = newWorkspaceReference(
@@ -558,14 +633,6 @@ func decodeWorkspaceReferenceFields(
 			"decode compact workspace reference: flags %d exceeds %d",
 			flags,
 			workspaceReferenceFlagsMask,
-		)
-	}
-	if reference.NameIndex > workspaceReferenceIndexMask ||
-		reference.ResolvedIndex > workspaceReferenceIndexMask ||
-		reference.ReceiverIndex > workspaceReferenceIndexMask {
-		return reference, fmt.Errorf(
-			"decode compact workspace reference: index exceeds %d",
-			workspaceReferenceIndexMask,
 		)
 	}
 	if kind > workspaceReferenceKindMask {
@@ -812,23 +879,31 @@ func (document *workspaceDocument) packPersistedReferences(
 		for _, value := range candidates[candidateStart:candidateEnd] {
 			packer.appendStringValue(string(value))
 		}
-		if _, compact := compactWorkspaceReferenceLocation(
+		nameIndex := packer.stringIndexFor(source.Name)
+		resolvedIndex := packer.stringIndexFor(string(source.Resolved))
+		receiverIndex := packer.typeIndexFor(source.Receiver)
+		if _, compact := compactWorkspaceReference(
 			source.Range,
+			nameIndex,
+			resolvedIndex,
 			uint32(valueStart),
+			receiverIndex,
+			uint8(source.QualifiedCount),
+			uint8(source.CandidateCount),
 		); !compact &&
 			document.referenceExtras != nil &&
 			len(document.referenceExtras.Values) >= workspaceReferenceValueMask {
 			return fmt.Errorf(
-				"decode workspace graph: full reference location count exceeds %d",
+				"decode workspace graph: reference fallback count exceeds %d",
 				workspaceReferenceValueMask,
 			)
 		}
 		document.References[index] = document.newReference(
 			source.Range,
-			packer.stringIndexFor(source.Name),
-			packer.stringIndexFor(string(source.Resolved)),
+			nameIndex,
+			resolvedIndex,
 			uint32(valueStart),
-			packer.typeIndexFor(source.Receiver),
+			receiverIndex,
 			uint8(source.QualifiedCount),
 			uint8(source.CandidateCount),
 			source.Kind,

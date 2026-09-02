@@ -445,9 +445,9 @@ func TestWorkspaceParameterAcceptsLegacyAndCompactWireLayouts(t *testing.T) {
 			Value:      "false",
 			Expression: "false",
 		},
-		Range:          cst.TextRange{Start: 10, End: 30},
-		SelectionRange: cst.TextRange{Start: 20, End: 28},
-		DefaultRange:   cst.TextRange{Start: 29, End: 30},
+		Range:          cst.TextRange{Start: 1<<20 + 10, End: 1<<20 + 30},
+		SelectionRange: cst.TextRange{Start: 1<<20 + 20, End: 1<<20 + 28},
+		DefaultRange:   cst.TextRange{Start: 1<<20 + 29, End: 1<<20 + 30},
 		Flags:          VariadicFlag,
 		Optional:       true,
 	}, {
@@ -510,6 +510,33 @@ func TestWorkspaceParameterRejectsInvalidCompactWireLayout(t *testing.T) {
 		t,
 		msgpack.Unmarshal(encoded, &parameter),
 		"unsupported layout 5",
+	)
+
+	invalidFlags := []any{
+		uint8(4),
+		"",
+		"$value",
+		types.Int(),
+		types.Int(),
+		types.Type{},
+		nil,
+		nil,
+		nil,
+		uint32(0),
+		uint32(0),
+		uint32(0),
+		uint32(0),
+		uint32(0),
+		uint32(0),
+		uint32(1 << 31),
+		false,
+	}
+	encoded, err = msgpack.Marshal(invalidFlags)
+	require.NoError(t, err)
+	require.ErrorContains(
+		t,
+		msgpack.Unmarshal(encoded, &parameter),
+		"flags 2147483648 exceed packed range",
 	)
 }
 
@@ -719,18 +746,18 @@ func TestWorkspaceReferencesDeduplicateRetainedTables(t *testing.T) {
 	require.Len(t, packed.referenceValues, 4)
 	require.Equal(
 		t,
-		packed.References[0].nameIndex(),
-		packed.References[1].nameIndex(),
+		packed.References[0].nameIndex(packed),
+		packed.References[1].nameIndex(packed),
 	)
 	require.Equal(
 		t,
-		packed.References[0].resolvedIndex(),
-		packed.References[1].resolvedIndex(),
+		packed.References[0].resolvedIndex(packed),
+		packed.References[1].resolvedIndex(packed),
 	)
 	require.Equal(
 		t,
-		packed.References[0].receiverIndex(),
-		packed.References[1].receiverIndex(),
+		packed.References[0].receiverIndex(packed),
+		packed.References[1].receiverIndex(packed),
 	)
 	require.Equal(t, document.References, packed.materializeReferences())
 }
@@ -779,14 +806,14 @@ func TestWorkspaceReferenceStringsShareBatchTableWithLocalIDs(t *testing.T) {
 		t,
 		"find",
 		first.document.referenceString(
-			first.document.References[0].nameIndex(),
+			first.document.References[0].nameIndex(first.document),
 		),
 	)
 	require.Equal(
 		t,
 		"repository::legacyFind",
 		second.document.referenceString(
-			second.document.References[0].resolvedIndex(),
+			second.document.References[0].resolvedIndex(second.document),
 		),
 	)
 	require.Equal(
@@ -885,7 +912,7 @@ func TestWorkspaceSymbolStringsShareBatchTableWithRemappedIndexes(
 		t,
 		"Shared",
 		second.document.referenceString(
-			second.document.References[0].nameIndex(),
+			second.document.References[0].nameIndex(second.document),
 		),
 	)
 	require.Equal(
@@ -996,8 +1023,8 @@ func TestWorkspaceReferencePacksIndexesAndMetadataLosslessly(t *testing.T) {
 		workspaceReferenceIndexMask-1,
 		workspaceReferenceValueMask,
 		workspaceReferenceIndexMask-2,
-		255,
-		254,
+		workspaceReferenceCountMask,
+		workspaceReferenceCountMask-1,
 		VariableName,
 		TemplateSymbol,
 		workspaceReferenceFlagsMask,
@@ -1010,12 +1037,12 @@ func TestWorkspaceReferencePacksIndexesAndMetadataLosslessly(t *testing.T) {
 	require.NoError(t, msgpack.Unmarshal(encoded, &decoded))
 
 	require.Equal(t, source.rangeValue(nil), decoded.rangeValue(nil))
-	require.Equal(t, source.nameIndex(), decoded.nameIndex())
-	require.Equal(t, source.resolvedIndex(), decoded.resolvedIndex())
+	require.Equal(t, source.nameIndex(nil), decoded.nameIndex(nil))
+	require.Equal(t, source.resolvedIndex(nil), decoded.resolvedIndex(nil))
 	require.Equal(t, source.valueStart(nil), decoded.valueStart(nil))
-	require.Equal(t, source.receiverIndex(), decoded.receiverIndex())
-	require.Equal(t, source.qualifiedCount(), decoded.qualifiedCount())
-	require.Equal(t, source.candidateCount(), decoded.candidateCount())
+	require.Equal(t, source.receiverIndex(nil), decoded.receiverIndex(nil))
+	require.Equal(t, source.qualifiedCount(nil), decoded.qualifiedCount(nil))
+	require.Equal(t, source.candidateCount(nil), decoded.candidateCount(nil))
 	require.Equal(t, source.kind(), decoded.kind())
 	require.Equal(t, source.targetKind(), decoded.targetKind())
 	require.Equal(t, source.flags(), decoded.flags())
@@ -1082,6 +1109,66 @@ func TestWorkspaceReferenceLocationUsesSparseExactFallback(t *testing.T) {
 	require.Equal(t, cst.TextRange{Start: 10, End: 20}, rng)
 	require.Equal(t, uint32(1<<16), valueStart)
 	require.True(t, valueReference.hasFullLocation())
+
+	metadataDocument := &workspaceDocument{}
+	metadataReference := metadataDocument.newReference(
+		cst.TextRange{Start: 30, End: 40},
+		workspaceReferenceIndexMask+1,
+		workspaceReferenceIndexMask+2,
+		50,
+		workspaceReferenceIndexMask+3,
+		math.MaxUint8,
+		math.MaxUint8-1,
+		VariableName,
+		TemplateSymbol,
+		workspaceReferenceFlagsMask,
+	)
+	require.True(t, metadataReference.hasFullLocation())
+	require.Equal(
+		t,
+		uint32(workspaceReferenceIndexMask+1),
+		metadataReference.nameIndex(metadataDocument),
+	)
+	require.Equal(
+		t,
+		uint32(workspaceReferenceIndexMask+2),
+		metadataReference.resolvedIndex(metadataDocument),
+	)
+	require.Equal(
+		t,
+		uint32(workspaceReferenceIndexMask+3),
+		metadataReference.receiverIndex(metadataDocument),
+	)
+	require.Equal(t, uint8(math.MaxUint8), metadataReference.qualifiedCount(metadataDocument))
+	require.Equal(t, uint8(math.MaxUint8-1), metadataReference.candidateCount(metadataDocument))
+	require.Equal(t, VariableName, metadataReference.kind())
+	require.Equal(t, TemplateSymbol, metadataReference.targetKind())
+	require.Equal(t, uint8(workspaceReferenceFlagsMask), metadataReference.flags())
+
+	var wire bytes.Buffer
+	encoder := msgpack.NewEncoder(&wire)
+	require.NoError(t, encoder.EncodeArrayLen(1))
+	require.NoError(t, encodeWorkspaceReference(
+		encoder,
+		&metadataReference,
+		metadataDocument,
+	))
+	decodedDocument := &workspaceDocument{}
+	require.NoError(t, decodeWorkspaceReferences(
+		msgpack.NewDecoder(&wire),
+		decodedDocument,
+	))
+	decodedReference := &decodedDocument.References[0]
+	require.Equal(
+		t,
+		metadataReference.nameIndex(metadataDocument),
+		decodedReference.nameIndex(decodedDocument),
+	)
+	require.Equal(
+		t,
+		metadataReference.qualifiedCount(metadataDocument),
+		decodedReference.qualifiedCount(decodedDocument),
+	)
 }
 
 var (
@@ -1148,7 +1235,7 @@ func BenchmarkWorkspaceReferenceStringAccess(b *testing.B) {
 		"shared": shared.document,
 	} {
 		b.Run(name, func(b *testing.B) {
-			index := document.References[0].nameIndex()
+			index := document.References[0].nameIndex(document)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
@@ -1385,16 +1472,16 @@ func TestWorkspaceSymbolCoreIsLessThanHalfPublicSymbolSize(t *testing.T) {
 		unsafe.Sizeof(compactReferenceLocation{}),
 		unsafe.Sizeof(ReferenceLocation{}),
 	)
-	require.Equal(t, uintptr(20), unsafe.Sizeof(workspaceReference{}))
-	require.Equal(t, uintptr(12), unsafe.Sizeof(workspaceReferenceFull{}))
+	require.Equal(t, uintptr(16), unsafe.Sizeof(workspaceReference{}))
+	require.Equal(t, uintptr(28), unsafe.Sizeof(workspaceReferenceFull{}))
 	require.Equal(t, uintptr(16), unsafe.Sizeof(workspaceSymbolRanges{}))
 	require.Equal(t, uintptr(24), unsafe.Sizeof(workspaceSymbolFullRanges{}))
 	require.Equal(t, uintptr(32), unsafe.Sizeof(workspaceSignature{}))
 	require.Equal(t, uintptr(56), unsafe.Sizeof(workspaceSignatureExtras{}))
-	require.Equal(t, uintptr(64), unsafe.Sizeof(workspaceParameter{}))
+	require.Equal(t, uintptr(56), unsafe.Sizeof(workspaceParameter{}))
 	require.Equal(t, uintptr(40), unsafe.Sizeof(workspaceParameterExtras{}))
 	require.Equal(t, uintptr(56), unsafe.Sizeof(workspaceParameterMetadata{}))
-	require.Equal(t, uintptr(16), unsafe.Sizeof(workspaceParameterRanges{}))
+	require.Equal(t, uintptr(14), unsafe.Sizeof(workspaceParameterRanges{}))
 	require.Equal(t, uintptr(24), unsafe.Sizeof(workspaceParameterFullRanges{}))
 	require.Equal(t, uintptr(48), unsafe.Sizeof(workspaceHierarchy{}))
 	require.Equal(t, uintptr(32), unsafe.Sizeof(workspaceHierarchyTypes{}))
@@ -1721,12 +1808,12 @@ func TestWorkspaceGraphRejectsInvalidReferenceSpan(t *testing.T) {
 	reference := &graph.document.References[0]
 	*reference = newWorkspaceReference(
 		reference.rangeValue(graph.document),
-		reference.nameIndex(),
-		reference.resolvedIndex(),
+		reference.nameIndex(graph.document),
+		reference.resolvedIndex(graph.document),
 		reference.valueStart(graph.document),
-		reference.receiverIndex(),
+		reference.receiverIndex(graph.document),
 		2,
-		reference.candidateCount(),
+		reference.candidateCount(graph.document),
 		reference.kind(),
 		reference.targetKind(),
 		reference.flags(),
@@ -1761,7 +1848,18 @@ func TestWorkspaceReferenceBoundsRetainedValueCounts(t *testing.T) {
 	require.Equal(
 		t,
 		uint8(255),
-		graph.document.References[0].qualifiedCount(),
+		graph.document.References[0].qualifiedCount(graph.document),
 	)
 	require.Len(t, graph.document.reference(0).QualifiedNames(), 255)
+
+	encoded, err := msgpack.Marshal(graph)
+	require.NoError(t, err)
+	var decoded WorkspaceGraph
+	require.NoError(t, msgpack.Unmarshal(encoded, &decoded))
+	require.Equal(
+		t,
+		uint8(255),
+		decoded.document.References[0].qualifiedCount(decoded.document),
+	)
+	require.Len(t, decoded.document.reference(0).QualifiedNames(), 255)
 }

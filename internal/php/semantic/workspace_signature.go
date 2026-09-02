@@ -18,20 +18,25 @@ type workspaceSignature struct {
 }
 
 type workspaceParameter struct {
-	Name            string
-	NativeType      types.Type
-	DocType         types.Type
-	Extras          *workspaceParameterExtras
-	Ranges          workspaceParameterRanges
-	Flags           Flags
-	EffectiveSource uint8
-	Optional        bool
+	Name       string
+	NativeType types.Type
+	DocType    types.Type
+	Extras     *workspaceParameterExtras
+	Ranges     workspaceParameterRanges
+	properties uint16
 }
 
 const (
 	workspaceParameterNativeType uint8 = iota
 	workspaceParameterDocType
 	workspaceParameterExplicitType
+)
+
+const (
+	workspaceParameterFlagsMask   = uint16(1<<13 - 1)
+	workspaceParameterSourceShift = 13
+	workspaceParameterSourceMask  = 0x03
+	workspaceParameterOptional    = uint16(1 << 15)
 )
 
 type workspaceParameterExtras struct {
@@ -48,8 +53,13 @@ type workspaceParameterMetadata struct {
 }
 
 type workspaceParameterRanges struct {
-	Start  uint32
-	Deltas [5]uint16
+	StartLow  uint16
+	StartHigh uint16
+	Deltas    [5]uint16
+}
+
+func (ranges workspaceParameterRanges) start() uint32 {
+	return uint32(ranges.StartLow) | uint32(ranges.StartHigh)<<16
 }
 
 type workspaceParameterFullRanges struct {
@@ -102,7 +112,8 @@ func compactWorkspaceParameterRanges(
 		}
 	}
 	return workspaceParameterRanges{
-		Start: rng.Start,
+		StartLow:  uint16(rng.Start),
+		StartHigh: uint16(rng.Start >> 16),
 		Deltas: [5]uint16{
 			rangeLength,
 			selectionStart,
@@ -162,23 +173,80 @@ func (parameter *workspaceParameter) ranges() (
 		full := parameter.Extras.Ranges
 		return full.Range, full.SelectionRange, full.DefaultRange
 	}
+	start := parameter.Ranges.start()
 	rng = cst.TextRange{
-		Start: parameter.Ranges.Start,
-		End:   parameter.Ranges.Start + uint32(parameter.Ranges.Deltas[0]),
+		Start: start,
+		End:   start + uint32(parameter.Ranges.Deltas[0]),
 	}
 	selectionRange = cst.TextRange{
-		Start: parameter.Ranges.Start + uint32(parameter.Ranges.Deltas[1]),
+		Start: start + uint32(parameter.Ranges.Deltas[1]),
 	}
 	selectionRange.End =
 		selectionRange.Start + uint32(parameter.Ranges.Deltas[2])
 	if parameter.Ranges.Deltas[3] !=
 		workspaceParameterMissingDefaultRange {
 		defaultRange.Start =
-			parameter.Ranges.Start + uint32(parameter.Ranges.Deltas[3])
+			start + uint32(parameter.Ranges.Deltas[3])
 		defaultRange.End =
 			defaultRange.Start + uint32(parameter.Ranges.Deltas[4])
 	}
 	return
+}
+
+func (parameter *workspaceParameter) setFlags(value Flags) {
+	if parameter == nil {
+		return
+	}
+	if uint32(value)&^uint32(workspaceParameterFlagsMask) != 0 {
+		panic("semantic: workspace parameter flags exceed packed range")
+	}
+	parameter.properties = parameter.properties&^workspaceParameterFlagsMask |
+		uint16(value)
+}
+
+func (parameter *workspaceParameter) flags() Flags {
+	if parameter == nil {
+		return 0
+	}
+	return Flags(parameter.properties & workspaceParameterFlagsMask)
+}
+
+func (parameter *workspaceParameter) setEffectiveSource(value uint8) {
+	if parameter == nil {
+		return
+	}
+	if value > workspaceParameterExplicitType {
+		panic("semantic: workspace parameter type source exceeds packed range")
+	}
+	mask := uint16(workspaceParameterSourceMask << workspaceParameterSourceShift)
+	parameter.properties = parameter.properties&^mask |
+		uint16(value)<<workspaceParameterSourceShift
+}
+
+func (parameter *workspaceParameter) effectiveSource() uint8 {
+	if parameter == nil {
+		return workspaceParameterNativeType
+	}
+	return uint8(
+		parameter.properties >> workspaceParameterSourceShift &
+			workspaceParameterSourceMask,
+	)
+}
+
+func (parameter *workspaceParameter) setOptional(value bool) {
+	if parameter == nil {
+		return
+	}
+	if value {
+		parameter.properties |= workspaceParameterOptional
+	} else {
+		parameter.properties &^= workspaceParameterOptional
+	}
+}
+
+func (parameter *workspaceParameter) optional() bool {
+	return parameter != nil &&
+		parameter.properties&workspaceParameterOptional != 0
 }
 
 func packWorkspaceParameters(parameters []Parameter) []workspaceParameter {
@@ -213,15 +281,15 @@ func packWorkspaceParameter(
 		Name:       source.Name,
 		NativeType: source.NativeType,
 		DocType:    source.DocType,
-		Flags:      source.Flags,
-		Optional:   source.Optional,
 	}
+	result.setFlags(source.Flags)
+	result.setOptional(source.Optional)
 	switch {
 	case source.Type.Equal(source.NativeType):
 	case source.Type.Equal(source.DocType):
-		result.EffectiveSource = workspaceParameterDocType
+		result.setEffectiveSource(workspaceParameterDocType)
 	default:
-		result.EffectiveSource = workspaceParameterExplicitType
+		result.setEffectiveSource(workspaceParameterExplicitType)
 		result.Extras = &workspaceParameterExtras{
 			Type: source.Type,
 		}
@@ -391,7 +459,7 @@ func (parameter *workspaceParameter) effectiveType() types.Type {
 	if parameter == nil {
 		return types.Type{}
 	}
-	switch parameter.EffectiveSource {
+	switch parameter.effectiveSource() {
 	case workspaceParameterDocType:
 		return parameter.DocType
 	case workspaceParameterExplicitType:
@@ -473,10 +541,10 @@ func encodeWorkspaceParameter(
 	if err := encoder.EncodeUint32(defaultRange.End); err != nil {
 		return err
 	}
-	if err := encoder.EncodeUint32(uint32(parameter.Flags)); err != nil {
+	if err := encoder.EncodeUint32(uint32(parameter.flags())); err != nil {
 		return err
 	}
-	return encoder.EncodeBool(parameter.Optional)
+	return encoder.EncodeBool(parameter.optional())
 }
 
 // DecodeMsgpack accepts both the compact array and the public Parameter map
@@ -578,10 +646,18 @@ func (parameter *workspaceParameter) decodeMsgpackID(
 	if err != nil {
 		return err
 	}
-	parameter.Flags = Flags(flags)
-	if parameter.Optional, err = decoder.DecodeBool(); err != nil {
+	if flags&^uint32(workspaceParameterFlagsMask) != 0 {
+		return fmt.Errorf(
+			"decode workspace parameter: flags %d exceed packed range",
+			flags,
+		)
+	}
+	parameter.setFlags(Flags(flags))
+	optional, err := decoder.DecodeBool()
+	if err != nil {
 		return err
 	}
+	parameter.setOptional(optional)
 	parameter.setEffectiveType(effectiveType)
 	parameter.setMetadata(assistantTags, attributes, defaultValue)
 	parameter.setRanges(rng, selectionRange, defaultRange)
@@ -720,13 +796,13 @@ func (parameter *workspaceParameter) setMetadata(
 }
 
 func (parameter *workspaceParameter) setEffectiveType(value types.Type) {
-	parameter.EffectiveSource = workspaceParameterNativeType
+	parameter.setEffectiveSource(workspaceParameterNativeType)
 	switch {
 	case value.Equal(parameter.NativeType):
 	case value.Equal(parameter.DocType):
-		parameter.EffectiveSource = workspaceParameterDocType
+		parameter.setEffectiveSource(workspaceParameterDocType)
 	default:
-		parameter.EffectiveSource = workspaceParameterExplicitType
+		parameter.setEffectiveSource(workspaceParameterExplicitType)
 		if parameter.Extras == nil {
 			parameter.Extras = &workspaceParameterExtras{}
 		}
@@ -905,8 +981,8 @@ func (parameter *workspaceParameter) materialize(
 		Range:          rng,
 		SelectionRange: selectionRange,
 		DefaultRange:   defaultRange,
-		Flags:          parameter.Flags,
-		Optional:       parameter.Optional,
+		Flags:          parameter.flags(),
+		Optional:       parameter.optional(),
 	}
 }
 

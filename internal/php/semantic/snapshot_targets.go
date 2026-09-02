@@ -142,7 +142,7 @@ func (s *Snapshot) referenceMayTargetPacked(
 			return false
 		}
 		return s.lowerName(
-			document.referenceString(reference.nameIndex()),
+			document.referenceString(reference.nameIndex(document)),
 			true,
 		) == s.lowerName(target.Name(), true)
 	case VariableName:
@@ -166,7 +166,7 @@ func packedReferenceMayResolveGlobal(
 		return false
 	}
 	valueStart := int(reference.valueStart(document))
-	qualifiedEnd := valueStart + int(reference.qualifiedCount())
+	qualifiedEnd := valueStart + int(reference.qualifiedCount(document))
 	for valueIndex := valueStart; valueIndex < qualifiedEnd; valueIndex++ {
 		candidate := strings.TrimPrefix(
 			document.referenceValue(valueIndex), "\\",
@@ -194,12 +194,12 @@ func packedReferenceRecordsTarget(
 	if target == "" {
 		return false
 	}
-	if SymbolID(document.referenceString(reference.resolvedIndex())) == target {
+	if SymbolID(document.referenceString(reference.resolvedIndex(document))) == target {
 		return true
 	}
 	valueStart := int(reference.valueStart(document))
-	candidateStart := valueStart + int(reference.qualifiedCount())
-	candidateEnd := candidateStart + int(reference.candidateCount())
+	candidateStart := valueStart + int(reference.qualifiedCount(document))
+	candidateEnd := candidateStart + int(reference.candidateCount(document))
 	for valueIndex := candidateStart; valueIndex < candidateEnd; valueIndex++ {
 		if SymbolID(document.referenceValue(valueIndex)) == target {
 			return true
@@ -230,12 +230,12 @@ func (r *packedReferenceTargetResolver) resolve(
 	if snapshot == nil || document == nil || reference == nil {
 		return nil
 	}
-	name := document.referenceString(reference.nameIndex())
+	name := document.referenceString(reference.nameIndex(document))
 	resolvedID := SymbolID(
-		document.referenceString(reference.resolvedIndex()),
+		document.referenceString(reference.resolvedIndex(document)),
 	)
 	valueStart := int(reference.valueStart(document))
-	qualifiedEnd := valueStart + int(reference.qualifiedCount())
+	qualifiedEnd := valueStart + int(reference.qualifiedCount(document))
 	switch reference.kind() {
 	case ClassName:
 		for valueIndex := valueStart; valueIndex < qualifiedEnd; valueIndex++ {
@@ -269,7 +269,7 @@ func (r *packedReferenceTargetResolver) resolve(
 		}
 	case MemberName:
 		r.appendMemberReferenceTargets(
-			document.referenceType(reference.receiverIndex()),
+			document.referenceType(reference.receiverIndex(document)),
 			name,
 			reference.targetKind(),
 		)
@@ -283,7 +283,7 @@ func (r *packedReferenceTargetResolver) resolve(
 		r.appendExistingTarget(resolvedID)
 	}
 	if len(r.targets) == 0 {
-		candidateEnd := qualifiedEnd + int(reference.candidateCount())
+		candidateEnd := qualifiedEnd + int(reference.candidateCount(document))
 		for valueIndex := qualifiedEnd; valueIndex < candidateEnd; valueIndex++ {
 			candidate := SymbolID(document.referenceValue(valueIndex))
 			r.appendExistingTarget(candidate)

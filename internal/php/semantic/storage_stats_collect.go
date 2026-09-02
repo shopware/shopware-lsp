@@ -185,8 +185,14 @@ func (c *workspaceStatsCollector) collectDocument(
 func (c *workspaceStatsCollector) collectReferences(document *workspaceDocument) {
 	for index := range document.References {
 		reference := &document.References[index]
-		c.stats.MaxQualified = max(c.stats.MaxQualified, int(reference.qualifiedCount()))
-		c.stats.MaxCandidates = max(c.stats.MaxCandidates, int(reference.candidateCount()))
+		c.stats.MaxQualified = max(
+			c.stats.MaxQualified,
+			int(reference.qualifiedCount(document)),
+		)
+		c.stats.MaxCandidates = max(
+			c.stats.MaxCandidates,
+			int(reference.candidateCount(document)),
+		)
 		rng := reference.rangeValue(document)
 		rangeLength, _ := workspaceSymbolRangeLength(rng)
 		c.stats.MaxReferenceRangeLength = max(c.stats.MaxReferenceRangeLength, rangeLength)

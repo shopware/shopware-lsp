@@ -788,14 +788,19 @@ func decodeWorkspaceReferences(
 		if err != nil {
 			return err
 		}
-		if _, compact := compactWorkspaceReferenceLocation(
+		if _, compact := compactWorkspaceReference(
 			reference.Range,
+			reference.NameIndex,
+			reference.ResolvedIndex,
 			reference.ValueStart,
+			reference.ReceiverIndex,
+			reference.QualifiedCount,
+			reference.CandidateCount,
 		); !compact &&
 			document.referenceExtras != nil &&
 			len(document.referenceExtras.Values) >= workspaceReferenceValueMask {
 			return fmt.Errorf(
-				"decode compact workspace reference: full location count exceeds %d",
+				"decode compact workspace reference: fallback count exceeds %d",
 				workspaceReferenceValueMask,
 			)
 		}

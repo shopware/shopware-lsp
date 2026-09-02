@@ -465,19 +465,19 @@ func (document *workspaceDocument) validateReferenceSpans() error {
 				)
 			}
 		}
-		if !document.validReferenceStringIndex(reference.nameIndex()) {
+		if !document.validReferenceStringIndex(reference.nameIndex(document)) {
 			return fmt.Errorf(
 				"decode workspace graph: reference %d has invalid name index",
 				index,
 			)
 		}
-		if !document.validReferenceStringIndex(reference.resolvedIndex()) {
+		if !document.validReferenceStringIndex(reference.resolvedIndex(document)) {
 			return fmt.Errorf(
 				"decode workspace graph: reference %d has invalid resolved index",
 				index,
 			)
 		}
-		if !document.validReferenceTypeIndex(reference.receiverIndex()) {
+		if !document.validReferenceTypeIndex(reference.receiverIndex(document)) {
 			return fmt.Errorf(
 				"decode workspace graph: reference %d has invalid receiver index",
 				index,
@@ -486,8 +486,8 @@ func (document *workspaceDocument) validateReferenceSpans() error {
 		valueStart := reference.valueStart(document)
 		if !validWorkspaceSpan(
 			valueStart,
-			uint32(reference.qualifiedCount())+
-				uint32(reference.candidateCount()),
+			uint32(reference.qualifiedCount(document))+
+				uint32(reference.candidateCount(document)),
 			len(document.referenceValues),
 		) {
 			return fmt.Errorf(
@@ -496,8 +496,8 @@ func (document *workspaceDocument) validateReferenceSpans() error {
 			)
 		}
 		valueEnd := int(valueStart) +
-			int(reference.qualifiedCount()) +
-			int(reference.candidateCount())
+			int(reference.qualifiedCount(document)) +
+			int(reference.candidateCount(document))
 		for _, stringIndex := range document.referenceValues[int(valueStart):valueEnd] {
 			if !document.validReferenceStringIndex(stringIndex) {
 				return fmt.Errorf(
@@ -569,10 +569,10 @@ func (document *workspaceDocument) reference(index int) Reference {
 	source := &document.References[index]
 	rng, valueStart := source.location(document)
 	qualifiedStart := int(valueStart)
-	qualifiedCount := source.qualifiedCount()
+	qualifiedCount := source.qualifiedCount(document)
 	qualifiedEnd := qualifiedStart + int(qualifiedCount)
 	candidateStart := qualifiedEnd
-	candidateCount := source.candidateCount()
+	candidateCount := source.candidateCount(document)
 	candidateEnd := candidateStart + int(candidateCount)
 	var qualified []string
 	if qualifiedCount > 0 {
@@ -591,15 +591,15 @@ func (document *workspaceDocument) reference(index int) Reference {
 		}
 	}
 	reference := Reference{
-		Name:       document.referenceString(source.nameIndex()),
+		Name:       document.referenceString(source.nameIndex(document)),
 		Kind:       source.kind(),
-		Receiver:   document.referenceType(source.receiverIndex()),
+		Receiver:   document.referenceType(source.receiverIndex(document)),
 		TargetKind: source.targetKind(),
 		Static:     source.flags()&workspaceReferenceStatic != 0,
 		Write:      source.flags()&workspaceReferenceWrite != 0,
 		Range:      rng,
 		Resolved: SymbolID(
-			document.referenceString(source.resolvedIndex()),
+			document.referenceString(source.resolvedIndex(document)),
 		),
 	}
 	reference.SetQualifiedNames(qualified)
@@ -802,7 +802,7 @@ func internPackedWorkspaceGraphOwned(
 				}
 				parameter.NativeType = internType(parameter.NativeType)
 				parameter.DocType = internType(parameter.DocType)
-				if parameter.EffectiveSource ==
+				if parameter.effectiveSource() ==
 					workspaceParameterExplicitType &&
 					parameter.Extras != nil {
 					parameter.Extras.Type = internType(
