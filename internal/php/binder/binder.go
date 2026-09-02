@@ -637,9 +637,12 @@ func (b *documentBuilder) bindClass(
 					b.document.Symbols[symbolIndex].Traits,
 					resolvedTrait,
 				)
-				b.addReference(trait, semantic.ClassName, classScope, []string{
+				b.addSingleReference(
+					trait,
+					semantic.ClassName,
+					classScope,
 					context.ResolveClass(phpquery.NameValue(trait)),
-				})
+				)
 			}
 			b.document.Symbols[symbolIndex].TraitAliases = append(
 				b.document.Symbols[symbolIndex].TraitAliases,

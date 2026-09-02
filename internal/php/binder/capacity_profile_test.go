@@ -40,6 +40,9 @@ func TestShopwareTrunkBinderCapacityProfile(t *testing.T) {
 	var typeFactCount int64
 	var initialTypeFactCapacity, typeFactGrowths int64
 	var literalNodeCount int64
+	var scopeCount, scopeSymbolCount int64
+	var emptyScopes, oneSymbolScopes, twoSymbolScopes int64
+	var threeToFourSymbolScopes, fiveToEightSymbolScopes, largeScopes int64
 	var typeFactProfile semantic.TypeFactProfileStats
 	symbolCandidates := []symbolCapacityCandidate{
 		{label: "90%", numerator: 9, denominator: 10},
@@ -122,6 +125,28 @@ func TestShopwareTrunkBinderCapacityProfile(t *testing.T) {
 		snapshot := semantic.NewSnapshot(1, []*semantic.Document{document})
 		document = inference.New(snapshot).AnalyzeOwned(document, root)
 		document = inference.LinkMembersOwned(document, snapshot, root)
+		for _, scope := range document.Scopes {
+			symbols := int64(0)
+			for range scope.AllSymbolIDs() {
+				symbols++
+			}
+			scopeCount++
+			scopeSymbolCount += symbols
+			switch {
+			case symbols == 0:
+				emptyScopes++
+			case symbols == 1:
+				oneSymbolScopes++
+			case symbols == 2:
+				twoSymbolScopes++
+			case symbols <= 4:
+				threeToFourSymbolScopes++
+			case symbols <= 8:
+				fiveToEightSymbolScopes++
+			default:
+				largeScopes++
+			}
+		}
 		typeFacts := document.TypeFactCount()
 		currentTypeFactProfile := semantic.ProfileTypeFacts(document)
 		typeFactProfile.Total += currentTypeFactProfile.Total
@@ -294,6 +319,18 @@ func TestShopwareTrunkBinderCapacityProfile(t *testing.T) {
 		typeFactProfile.InferredSignature,
 		typeFactProfile.InferredFlow,
 		typeFactProfile.Other,
+	)
+	t.Logf(
+		"scope symbol profile: scopes=%d symbols=%d empty=%d one=%d two=%d "+
+			"three_to_four=%d five_to_eight=%d over_eight=%d",
+		scopeCount,
+		scopeSymbolCount,
+		emptyScopes,
+		oneSymbolScopes,
+		twoSymbolScopes,
+		threeToFourSymbolScopes,
+		fiveToEightSymbolScopes,
+		largeScopes,
 	)
 }
 

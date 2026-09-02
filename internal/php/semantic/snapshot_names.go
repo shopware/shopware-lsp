@@ -2,8 +2,66 @@ package semantic
 
 import (
 	"strings"
+	"sync"
 	"unicode/utf8"
 )
+
+// normalizedNameCache owns query names cached by a published snapshot. A
+// typed map avoids the interface and hash-trie allocations sync.Map incurs for
+// the large one-time miss set produced by cold inference, while the RW lock
+// keeps repeated LSP lookups allocation-free.
+type normalizedNameCache struct {
+	mu     sync.RWMutex
+	values map[string]string
+}
+
+func (c *normalizedNameCache) load(name string) (string, bool) {
+	if c == nil {
+		return "", false
+	}
+	c.mu.RLock()
+	normalized, found := c.values[name]
+	c.mu.RUnlock()
+	return normalized, found
+}
+
+func (c *normalizedNameCache) normalize(name string) string {
+	if normalized, found := c.load(name); found {
+		return normalized
+	}
+	// Query names commonly arrive as zero-copy slices of a complete source
+	// document. Map keys own their backing strings, so clone only cache misses
+	// before publishing them for the lifetime of the snapshot.
+	ownedName := strings.Clone(name)
+	normalized := strings.ToLower(ownedName)
+
+	c.mu.Lock()
+	if existing, found := c.values[name]; found {
+		c.mu.Unlock()
+		return existing
+	}
+	if c.values == nil {
+		c.values = make(map[string]string)
+	}
+	c.values[ownedName] = normalized
+	c.mu.Unlock()
+	return normalized
+}
+
+func (c *normalizedNameCache) rangeValues(
+	visit func(string, string) bool,
+) {
+	if c == nil || visit == nil {
+		return
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for name, normalized := range c.values {
+		if !visit(name, normalized) {
+			return
+		}
+	}
+}
 
 type inlineSymbolIDSet struct {
 	values   [4]SymbolID
@@ -130,18 +188,7 @@ func (s *Snapshot) lowerName(name string, member bool) string {
 	if s.dynamicNames == nil {
 		return strings.ToLower(name)
 	}
-	if normalized, ok := s.dynamicNames.Load(name); ok {
-		return normalized.(string)
-	}
-	// Query names commonly arrive as zero-copy slices of a complete source
-	// document. A sync.Map key owns its backing string, so caching that slice
-	// directly would keep the complete source buffer alive for the lifetime of
-	// the published snapshot. Clone only on a cache miss; repeated lookups stay
-	// allocation-free.
-	ownedName := strings.Clone(name)
-	normalized := strings.ToLower(ownedName)
-	actual, _ := s.dynamicNames.LoadOrStore(ownedName, normalized)
-	return actual.(string)
+	return s.dynamicNames.normalize(name)
 }
 
 func isLowerASCII(value string) bool {

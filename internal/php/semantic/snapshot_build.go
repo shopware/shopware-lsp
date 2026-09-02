@@ -33,7 +33,7 @@ type Snapshot struct {
 	memberAlternates  map[SymbolID]map[string][]SymbolID
 	compactMembers    compactMemberIndex
 	globals           []SymbolID
-	dynamicNames      *sync.Map
+	dynamicNames      *normalizedNameCache
 	pathRefs          map[string]*workspaceDocument
 	reverseReferences *reverseReferenceIndex
 	reverseHierarchy  *reverseHierarchyIndex
@@ -183,7 +183,7 @@ func newSnapshotWithPathRefs(
 	snapshot := &Snapshot{
 		Revision:          revision,
 		symbols:           newWorkspaceSymbolIndex(symbolCount),
-		dynamicNames:      &sync.Map{},
+		dynamicNames:      &normalizedNameCache{},
 		pathRefs:          pathRefs,
 		reverseReferences: &reverseReferenceIndex{},
 		reverseHierarchy:  &reverseHierarchyIndex{},

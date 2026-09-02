@@ -34,7 +34,7 @@ func cloneReferences(references []Reference) []Reference {
 		if result[index].targets == nil {
 			continue
 		}
-		qualified := slices.Clone(result[index].targets.qualified)
+		qualified := slices.Clone(result[index].QualifiedNames())
 		candidates := slices.Clone(result[index].CandidateIDs())
 		result[index].targets = nil
 		result[index].SetQualifiedNames(qualified)

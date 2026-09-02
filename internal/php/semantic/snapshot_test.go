@@ -38,7 +38,7 @@ func TestPublishedSnapshotUsesLazyLowercaseCache(t *testing.T) {
 	}})
 
 	require.Len(t, snapshot.ClassViews("\\APP\\SERVICE"), 1)
-	normalized, found := snapshot.dynamicNames.Load("APP\\SERVICE")
+	normalized, found := snapshot.dynamicNames.load("APP\\SERVICE")
 	require.True(t, found)
 	require.Equal(t, "app\\service", normalized)
 }
@@ -53,9 +53,9 @@ func TestPublishedSnapshotOwnsLazyLowercaseCacheKeys(t *testing.T) {
 
 	require.Equal(t, "app\\service", snapshot.lowerName(query, false))
 	var cachedKey, cachedValue string
-	snapshot.dynamicNames.Range(func(key, value any) bool {
-		cachedKey = key.(string)
-		cachedValue = value.(string)
+	snapshot.dynamicNames.rangeValues(func(key, value string) bool {
+		cachedKey = key
+		cachedValue = value
 		return false
 	})
 	require.Equal(t, name, cachedKey)

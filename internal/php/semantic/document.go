@@ -131,6 +131,15 @@ type Reference struct {
 // record. Most references resolve through Scope and Resolved alone; class,
 // function, and ambiguous references allocate this side record on demand.
 type referenceTargets struct {
+	singleQualified    [1]string
+	extras             *referenceTargetExtras
+	hasSingleQualified bool
+}
+
+// referenceTargetExtras keeps uncommon collections out of the single-name
+// record. Class references overwhelmingly have one qualified target, while
+// namespaced function fallbacks and ambiguous resolution need extra values.
+type referenceTargetExtras struct {
 	qualified  []string
 	candidates *referenceCandidates
 }
@@ -147,7 +156,13 @@ func (r Reference) QualifiedNames() []string {
 	if r.targets == nil {
 		return nil
 	}
-	return r.targets.qualified
+	if r.targets.hasSingleQualified {
+		return r.targets.singleQualified[:]
+	}
+	if r.targets.extras == nil {
+		return nil
+	}
+	return r.targets.extras.qualified
 }
 
 // QualifiedNameCount reports the number of resolver-normalized lookup
@@ -156,13 +171,37 @@ func (r Reference) QualifiedNameCount() int {
 	if r.targets == nil {
 		return 0
 	}
-	return len(r.targets.qualified)
+	if r.targets.hasSingleQualified {
+		return 1
+	}
+	if r.targets.extras == nil {
+		return 0
+	}
+	return len(r.targets.extras.qualified)
 }
 
 // QualifiedNameAt returns one resolver-normalized lookup candidate. Callers
 // must pass an index smaller than QualifiedNameCount.
 func (r Reference) QualifiedNameAt(index int) string {
-	return r.targets.qualified[index]
+	if r.targets.hasSingleQualified {
+		return r.targets.singleQualified[index]
+	}
+	return r.targets.extras.qualified[index]
+}
+
+// SetQualifiedName replaces the qualified-name candidates with one value
+// without allocating a one-element slice.
+func (r *Reference) SetQualifiedName(name string) {
+	if r == nil {
+		return
+	}
+	targets := r.ensureTargets()
+	targets.singleQualified[0] = name
+	targets.hasSingleQualified = true
+	if targets.extras != nil {
+		targets.extras.qualified = nil
+		targets.clearEmptyExtras()
+	}
 }
 
 // SetQualifiedNames replaces the ordered qualified-name candidates. The
@@ -176,19 +215,33 @@ func (r *Reference) SetQualifiedNames(names []string) {
 		if r.targets == nil {
 			return
 		}
-		r.targets.qualified = nil
+		r.targets.singleQualified[0] = ""
+		r.targets.hasSingleQualified = false
+		if r.targets.extras != nil {
+			r.targets.extras.qualified = nil
+			r.targets.clearEmptyExtras()
+		}
 		r.clearEmptyTargets()
 		return
 	}
-	r.ensureTargets().qualified = names
+	if len(names) == 1 {
+		r.SetQualifiedName(names[0])
+		return
+	}
+	targets := r.ensureTargets()
+	targets.singleQualified[0] = ""
+	targets.hasSingleQualified = false
+	targets.ensureExtras().qualified = names
 }
 
 // CandidateIDs returns every ambiguous target in resolution order.
 func (r Reference) CandidateIDs() []SymbolID {
-	if r.targets == nil || r.targets.candidates == nil {
+	if r.targets == nil ||
+		r.targets.extras == nil ||
+		r.targets.extras.candidates == nil {
 		return nil
 	}
-	return r.targets.candidates.values
+	return r.targets.extras.candidates.values
 }
 
 // SetCandidateIDs replaces the ambiguous resolution targets. The caller
@@ -202,19 +255,21 @@ func (r *Reference) SetCandidateIDs(candidates []SymbolID) {
 		return
 	}
 	targets := r.ensureTargets()
-	if targets.candidates == nil {
-		targets.candidates = &referenceCandidates{}
+	extras := targets.ensureExtras()
+	if extras.candidates == nil {
+		extras.candidates = &referenceCandidates{}
 	}
-	targets.candidates.values = candidates
+	extras.candidates.values = candidates
 }
 
 // ClearCandidateIDs releases ambiguous targets and the side record when it no
 // longer contains qualified names.
 func (r *Reference) ClearCandidateIDs() {
-	if r == nil || r.targets == nil {
+	if r == nil || r.targets == nil || r.targets.extras == nil {
 		return
 	}
-	r.targets.candidates = nil
+	r.targets.extras.candidates = nil
+	r.targets.clearEmptyExtras()
 	r.clearEmptyTargets()
 }
 
@@ -225,10 +280,25 @@ func (r *Reference) ensureTargets() *referenceTargets {
 	return r.targets
 }
 
+func (targets *referenceTargets) ensureExtras() *referenceTargetExtras {
+	if targets.extras == nil {
+		targets.extras = &referenceTargetExtras{}
+	}
+	return targets.extras
+}
+
+func (targets *referenceTargets) clearEmptyExtras() {
+	if targets.extras != nil &&
+		len(targets.extras.qualified) == 0 &&
+		targets.extras.candidates == nil {
+		targets.extras = nil
+	}
+}
+
 func (r *Reference) clearEmptyTargets() {
 	if r.targets != nil &&
-		len(r.targets.qualified) == 0 &&
-		r.targets.candidates == nil {
+		!r.targets.hasSingleQualified &&
+		r.targets.extras == nil {
 		r.targets = nil
 	}
 }

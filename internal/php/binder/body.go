@@ -177,7 +177,7 @@ func (b *documentBuilder) bindClassAlias(
 			Range: targetRange,
 			Scope: scope,
 		}
-		reference.SetQualifiedNames([]string{target})
+		reference.SetQualifiedName(target)
 		b.document.References = append(b.document.References, reference)
 	}
 }
@@ -414,9 +414,12 @@ func (b *documentBuilder) bindAnonymousClass(
 					b.document.Symbols[symbolIndex].Traits,
 					resolvedTrait,
 				)
-				b.addReference(trait, semantic.ClassName, classScope, []string{
+				b.addSingleReference(
+					trait,
+					semantic.ClassName,
+					classScope,
 					context.ResolveClass(phpquery.NameValue(trait)),
-				})
+				)
 			}
 			b.document.Symbols[symbolIndex].TraitAliases = append(
 				b.document.Symbols[symbolIndex].TraitAliases,
@@ -741,6 +744,25 @@ func (b *documentBuilder) addReference(
 		Scope: scope,
 	}
 	reference.SetQualifiedNames(qualified)
+	b.document.References = append(b.document.References, reference)
+}
+
+func (b *documentBuilder) addSingleReference(
+	node *phpsyntax.Node,
+	kind semantic.NameKind,
+	scope semantic.ScopeID,
+	qualified string,
+) {
+	if node == nil {
+		return
+	}
+	reference := semantic.Reference{
+		Name:  compactName(node.Text()),
+		Kind:  kind,
+		Range: node.RangeTrimmedTrivia(),
+		Scope: scope,
+	}
+	reference.SetQualifiedName(qualified)
 	b.document.References = append(b.document.References, reference)
 }
 

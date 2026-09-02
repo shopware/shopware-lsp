@@ -126,7 +126,7 @@ func (b *documentBuilder) addResolvedClassReference(
 	if resolved == "" {
 		return
 	}
-	b.addReference(nameNode, semantic.ClassName, scope, []string{resolved})
+	b.addSingleReference(nameNode, semantic.ClassName, scope, resolved)
 }
 
 // nonClassNativeTypeName mirrors the scalar/composite names accepted by the
