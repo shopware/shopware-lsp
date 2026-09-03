@@ -9,6 +9,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/indexer"
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/twig"
+	"github.com/shopware/shopware-lsp/internal/uriutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -194,6 +195,107 @@ func TestTwigVersioningAnalyzerTreatsMalformedCommentAsMissing(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.True(t, containsTwigVersioningProblem(problems, TwigVersioningCommentMissingCode))
+}
+
+func TestTwigVersioningAnalyzerReportsExactResolvedParentCopy(t *testing.T) {
+	root := t.TempDir()
+	index, err := twig.NewTwigIndexer(filepath.Join(root, "cache"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, index.Close()) })
+	upstreamPath := filepath.Join(
+		root, "src", "Storefront", "Resources", "views",
+		"storefront", "page", "example.html.twig",
+	)
+	block := "{% block content %}\n    <div>same</div>\n{% endblock %}"
+	require.NoError(t, index.Index(indexer.NewParsedFile(upstreamPath, []byte(block))))
+	pluginPath := filepath.Join(
+		root, "custom", "plugins", "Example", "src", "Resources", "views",
+		"storefront", "page", "example.html.twig",
+	)
+	source := "{% sw_extends '@Storefront/storefront/page/example.html.twig' %}\n" + block
+	problems, err := NewTwigVersioningAnalyzer(
+		twig.NewVersioningService(root, index, ""),
+	).Analyze(
+		context.Background(),
+		lsp.NewTextDocument(uriutil.FileURI(pluginPath), source, 1),
+	)
+	require.NoError(t, err)
+	require.Len(t, problems, 1)
+	assert.Equal(t, TwigBlockRedundantOverrideCode, problems[0].ID)
+	assert.Contains(t, problems[0].Message, "parent()")
+	require.Len(t, problems[0].RelatedInformation, 1)
+	assert.Equal(
+		t,
+		uriutil.FileURI(upstreamPath),
+		problems[0].RelatedInformation[0].Location.URI,
+	)
+}
+
+func TestTwigVersioningAnalyzerDoesNotReportDifferentOrFallbackBlock(t *testing.T) {
+	root := t.TempDir()
+	index, err := twig.NewTwigIndexer(filepath.Join(root, "cache"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, index.Close()) })
+	upstreamPath := filepath.Join(
+		root, "src", "Storefront", "Resources", "views",
+		"storefront", "page", "example.html.twig",
+	)
+	require.NoError(t, index.Index(indexer.NewParsedFile(
+		upstreamPath,
+		[]byte(`{% block other %}parent{% endblock %}`),
+	)))
+	fallbackPath := filepath.Join(
+		root, "custom", "plugins", "Other", "src", "Resources", "views",
+		"storefront", "page", "example.html.twig",
+	)
+	block := `{% block content %}same{% endblock %}`
+	require.NoError(t, index.Index(indexer.NewParsedFile(fallbackPath, []byte(block))))
+	pluginPath := filepath.Join(
+		root, "custom", "plugins", "Example", "src", "Resources", "views",
+		"storefront", "page", "example.html.twig",
+	)
+	analyzer := NewTwigVersioningAnalyzer(twig.NewVersioningService(root, index, ""))
+	for _, source := range []string{
+		"{% sw_extends '@Storefront/storefront/page/example.html.twig' %}\n" + block,
+		"{% sw_extends '@Storefront/storefront/page/example.html.twig' %}\n" +
+			`{% block other %}different{% endblock %}`,
+	} {
+		problems, analyzeErr := analyzer.Analyze(
+			context.Background(),
+			lsp.NewTextDocument(uriutil.FileURI(pluginPath), source, 1),
+		)
+		require.NoError(t, analyzeErr)
+		assert.False(t, containsTwigVersioningProblem(problems, TwigBlockRedundantOverrideCode))
+	}
+}
+
+func TestTwigVersioningAnalyzerIgnoresParentDelegation(t *testing.T) {
+	root := t.TempDir()
+	index, err := twig.NewTwigIndexer(filepath.Join(root, "cache"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, index.Close()) })
+	upstreamPath := filepath.Join(
+		root, "src", "Storefront", "Resources", "views",
+		"storefront", "page", "example.html.twig",
+	)
+	require.NoError(t, index.Index(indexer.NewParsedFile(
+		upstreamPath,
+		[]byte(`{% block content %}parent{% endblock %}`),
+	)))
+	pluginPath := filepath.Join(root, "custom", "plugin.html.twig")
+	source := `{% sw_extends '@Storefront/storefront/page/example.html.twig' %}
+{% block content %}
+    {{ parent() }}
+{% endblock %}`
+	problems, err := NewTwigVersioningAnalyzer(
+		twig.NewVersioningService(root, index, ""),
+	).Analyze(
+		context.Background(),
+		lsp.NewTextDocument(uriutil.FileURI(pluginPath), source, 1),
+	)
+	require.NoError(t, err)
+	assert.False(t, containsTwigVersioningProblem(problems, TwigVersioningCommentMissingCode))
+	assert.False(t, containsTwigVersioningProblem(problems, TwigBlockRedundantOverrideCode))
 }
 
 func containsTwigVersioningProblem(

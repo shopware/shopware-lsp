@@ -650,6 +650,9 @@ exact public names shown by MCP `tools/list`; unknown names are rejected.
   chain, including Storefront, vendor packages, themes, and custom extensions
 - Detects outdated, deprecated, and safely resolvable removed upstream blocks;
   unresolved or missing dependencies do not produce false removal warnings
+- Detects exact non-empty copies of the nearest resolved parent block and
+  offers a lazy quick fix that delegates through `{{ parent() }}` while
+  removing an obsolete version comment
 - Adds or updates portable `{# shopware-block: hash@version #}` comments through
   typed, lazily resolved quick fixes that also work through MCP
 - Offers the same add/update action contextually even when the optional missing
@@ -1349,6 +1352,7 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
 | Non-existent parent component | Error | JS/TS (admin) |
 | Outdated block version hash | Warning | Twig |
 | Missing block version comment | Warning | Twig |
+| Redundant Twig block override | Hint | Twig |
 | Undefined PHP classes, variables, and members | Warning | PHP |
 | PHP argument, constructor, and return mismatch | Error | PHP |
 | Invalid PHP visibility or override | Error | PHP |

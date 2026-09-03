@@ -3,19 +3,22 @@ package inspections
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/language"
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/diagnostics"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	"github.com/shopware/shopware-lsp/internal/rewrite"
 	"github.com/shopware/shopware-lsp/internal/twig"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
 const (
-	twigVersionCommentFixID lsp.FixID = "twig-version-comment"
-	twigBlockDiffFixID      lsp.FixID = "twig-block-diff"
+	twigVersionCommentFixID   lsp.FixID = "twig-version-comment"
+	twigBlockDiffFixID        lsp.FixID = "twig-block-diff"
+	twigParentDelegationFixID lsp.FixID = "twig-parent-delegation"
 )
 
 func NewTwigVersioning(versioning *twig.VersioningService) lsp.Inspection {
@@ -33,6 +36,10 @@ func NewTwigVersioning(versioning *twig.VersioningService) lsp.Inspection {
 					DefaultSeverity: protocol.DiagnosticSeverityWarning,
 				},
 				{
+					ID: diagnostics.TwigBlockRedundantOverrideCode, Source: "shopware-lsp",
+					DefaultSeverity: protocol.DiagnosticSeverityHint,
+				},
+				{
 					ID: diagnostics.TwigVersioningOriginalMissingCode, Source: "shopware-lsp",
 					DefaultSeverity: protocol.DiagnosticSeverityWarning,
 				},
@@ -46,6 +53,7 @@ func NewTwigVersioning(versioning *twig.VersioningService) lsp.Inspection {
 		fixes: []lsp.QuickFix{
 			twigVersionCommentFix{versioning: versioning},
 			twigBlockDiffFix{},
+			twigParentDelegationFix{versioning: versioning},
 		},
 		bind: func(code lsp.DiagnosticID, payload map[string]any) []lsp.BoundFix {
 			switch code {
@@ -57,6 +65,8 @@ func NewTwigVersioning(versioning *twig.VersioningService) lsp.Inspection {
 					fixes = append(fixes, lsp.BindFix(twigBlockDiffFixID, payload))
 				}
 				return fixes
+			case diagnostics.TwigBlockRedundantOverrideCode:
+				return []lsp.BoundFix{lsp.BindFix(twigParentDelegationFixID, payload)}
 			default:
 				return nil
 			}
@@ -130,6 +140,131 @@ func (fix twigVersionCommentFix) Build(
 			edits,
 		),
 	}}, nil
+}
+
+type twigParentDelegationFix struct {
+	versioning *twig.VersioningService
+}
+
+func (twigParentDelegationFix) ID() lsp.FixID { return twigParentDelegationFixID }
+
+func (twigParentDelegationFix) Present(
+	_ context.Context,
+	fixContext lsp.FixContext,
+) (lsp.FixPresentation, bool, error) {
+	payload, err := lsp.DecodeBoundFixPayload[diagnostics.TwigVersioningPayload](fixContext)
+	if err != nil || payload.BlockName == "" {
+		return lsp.FixPresentation{}, false, err
+	}
+	return lsp.FixPresentation{
+		Title:      "Shopware: Delegate Twig block to parent",
+		Kind:       protocol.CodeActionQuickFix,
+		Preferred:  true,
+		Resolution: lsp.FixLazy,
+	}, true, nil
+}
+
+func (fix twigParentDelegationFix) Build(
+	ctx context.Context,
+	fixContext lsp.FixContext,
+) (rewrite.WorkspacePlan, error) {
+	if fix.versioning == nil {
+		return rewrite.WorkspacePlan{}, fmt.Errorf("twig versioning is unavailable")
+	}
+	if err := ctx.Err(); err != nil {
+		return rewrite.WorkspacePlan{}, err
+	}
+	payload, err := lsp.DecodeBoundFixPayload[diagnostics.TwigVersioningPayload](fixContext)
+	if err != nil {
+		return rewrite.WorkspacePlan{}, err
+	}
+	path, err := uriutil.Path(fixContext.Document.URI)
+	if err != nil {
+		return rewrite.WorkspacePlan{}, err
+	}
+	_, block, resolution, err := fix.versioning.ResolveDocument(
+		path,
+		fixContext.Document.Source,
+		payload.BlockName,
+	)
+	if err != nil {
+		return rewrite.WorkspacePlan{}, err
+	}
+	if _, redundant := twig.RedundantBlockOverride(block, resolution); !redundant {
+		return rewrite.WorkspacePlan{}, fmt.Errorf(
+			"twig block %q no longer duplicates its resolved parent",
+			payload.BlockName,
+		)
+	}
+	body, relativeBodyRange, ok := twig.ParseBlockBody(block.Text)
+	if !ok || strings.TrimSpace(body) == "" || twig.IsParentDelegation(body) {
+		return rewrite.WorkspacePlan{}, fmt.Errorf(
+			"twig block %q no longer has replaceable duplicate content",
+			payload.BlockName,
+		)
+	}
+	bodyRange := cst.TextRange{
+		Start: block.Range.Start + relativeBodyRange.Start,
+		End:   block.Range.Start + relativeBodyRange.End,
+	}
+	if bodyRange.Start > bodyRange.End || bodyRange.End > uint32(len(fixContext.Document.Source)) {
+		return rewrite.WorkspacePlan{}, fmt.Errorf(
+			"twig block %q body is outside the document",
+			payload.BlockName,
+		)
+	}
+	trimmed := strings.TrimSpace(body)
+	contentStart := strings.Index(body, trimmed)
+	contentEnd := contentStart + len(trimmed)
+	replacement := body[:contentStart] + "{{ parent() }}" + body[contentEnd:]
+
+	builder := rewrite.NewBuilder(fixContext.Document.Source)
+	if err := builder.ReplaceRange(bodyRange, replacement); err != nil {
+		return rewrite.WorkspacePlan{}, err
+	}
+	if block.VersionCommentRange != nil {
+		commentRange := twigCommentRemovalRange(
+			fixContext.Document.Source,
+			*block.VersionCommentRange,
+		)
+		if err := builder.ReplaceRange(commentRange, ""); err != nil {
+			return rewrite.WorkspacePlan{}, err
+		}
+	}
+	edits, err := builder.Finish()
+	if err != nil {
+		return rewrite.WorkspacePlan{}, err
+	}
+	version := fixContext.Document.Version
+	return rewrite.WorkspacePlan{Documents: []rewrite.DocumentPlan{
+		rewrite.NewDocumentPlan(
+			fixContext.Document.URI,
+			&version,
+			fixContext.Document.Source,
+			edits,
+		),
+	}}, nil
+}
+
+func twigCommentRemovalRange(source string, rng cst.TextRange) cst.TextRange {
+	start, end := int(rng.Start), int(rng.End)
+	if start < 0 || end < start || end > len(source) {
+		return rng
+	}
+	lineStart := strings.LastIndex(source[:start], "\n") + 1
+	lineEnd := len(source)
+	if offset := strings.Index(source[end:], "\n"); offset >= 0 {
+		lineEnd = end + offset + 1
+	}
+	withoutNewlineEnd := lineEnd
+	if withoutNewlineEnd > end && source[withoutNewlineEnd-1] == '\n' {
+		withoutNewlineEnd--
+	}
+	if strings.TrimSpace(source[lineStart:start]) == "" &&
+		strings.TrimSpace(source[end:withoutNewlineEnd]) == "" {
+		return cst.TextRange{Start: uint32(lineStart), End: uint32(lineEnd)}
+	}
+	return rng
 }
 
 type twigBlockDiffFix struct{}

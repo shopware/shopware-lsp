@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
@@ -16,6 +17,7 @@ const (
 	TwigVersioningOutdatedCode        lsp.DiagnosticID = "twig.versioning.outdated"
 	TwigVersioningCommentMissingCode  lsp.DiagnosticID = "twig.versioning.comment_missing"
 	TwigBlockDeprecatedCode           lsp.DiagnosticID = "twig.block.deprecated"
+	TwigBlockRedundantOverrideCode    lsp.DiagnosticID = "twig.block.redundant_override"
 )
 
 type TwigVersioningPayload struct {
@@ -66,6 +68,7 @@ func (p *TwigVersioningAnalyzer) Analyze(
 	if err != nil {
 		return nil, err
 	}
+	blockBodies := twig.BlockBodies(document.SyntaxTree.Root, document.SourceString())
 
 	problems := make([]lsp.Problem, 0, len(currentFile.Blocks))
 	for _, block := range currentFile.Blocks {
@@ -93,6 +96,27 @@ func (p *TwigVersioningAnalyzer) Analyze(
 				},
 			})
 			break
+		}
+
+		body, hasBody := blockBodies[block.Range]
+		if hasBody && twig.IsParentDelegation(body.Text) {
+			continue
+		}
+		parent, redundant := twig.RedundantBlockOverride(block, resolution)
+		if redundant && hasBody && strings.TrimSpace(body.Text) != "" {
+			payload.UpstreamPath = parent.AbsolutePath
+			problems = append(problems, lsp.Problem{
+				Range: block.NameRange, ID: TwigBlockRedundantOverrideCode,
+				Message: fmt.Sprintf(
+					"The block %q duplicates its resolved parent; delegate to parent() instead",
+					block.Name,
+				),
+				Payload: payload,
+				RelatedInformation: []protocol.DiagnosticRelatedInformation{
+					blockRelatedInformation(parent, "Identical parent block"),
+				},
+			})
+			continue
 		}
 
 		if len(resolution.Candidates) == 0 {
