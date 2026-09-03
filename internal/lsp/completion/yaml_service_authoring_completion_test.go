@@ -158,6 +158,7 @@ func TestYAMLValueTagAndKeywordCompletion(t *testing.T) {
 	assert.Contains(t, completionLabels(items), "!tagged_locator")
 	assert.Contains(t, completionLabels(items), "!service_locator")
 	assert.Contains(t, completionLabels(items), "!php/const")
+	assert.Contains(t, completionLabels(items), "!php/enum")
 	assert.NotContains(t, completionLabels(items), "!tagged")
 
 	source, offset = completionCaret(t, "root:\n  enabled: tr<caret>\n")
@@ -173,6 +174,37 @@ func TestYAMLValueTagAndKeywordCompletion(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "tr", completionRangeText(document, edit.Range))
 	assert.NotContains(t, completionLabels(items), "!php/const")
+}
+
+func TestYAMLEnumTagRespectsInstalledSymfonyVersion(t *testing.T) {
+	for _, fixture := range []struct {
+		version string
+		present bool
+	}{
+		{version: "v6.1.12", present: false},
+		{version: "v6.2.0", present: true},
+		{version: "v7.4.0", present: true},
+	} {
+		model := &project.Model{Dependencies: []project.Package{{
+			Name: "symfony/yaml", Version: fixture.version,
+		}}}
+		provider := NewYAMLServiceAuthoringCompletionProvider(model)
+		source, offset := completionCaret(t, "root:\n  value: !php/<caret>\n")
+		_, request := bundleResourceCompletionRequest(
+			t,
+			filepath.Join(t.TempDir(), "config", "packages.yaml"),
+			source,
+			offset,
+		)
+		labels := completionLabels(
+			provider.GetCompletions(context.Background(), request),
+		)
+		if fixture.present {
+			assert.Contains(t, labels, "!php/enum", fixture.version)
+		} else {
+			assert.NotContains(t, labels, "!php/enum", fixture.version)
+		}
+	}
 }
 
 func TestYAMLServiceTagsRespectInstalledSymfonyVersion(t *testing.T) {

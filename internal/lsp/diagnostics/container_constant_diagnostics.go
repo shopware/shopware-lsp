@@ -37,15 +37,19 @@ func (p *ContainerConstantAnalyzer) Analyze(
 		if ctx.Err() != nil {
 			return nil, nil
 		}
-		if len(symfony.ResolveContainerConstant(
+		if len(symfony.ResolveContainerValue(
 			p.phpIndex,
-			reference.Name,
+			reference,
 		)) != 0 {
 			continue
 		}
+		message := "Symfony: constant not found"
+		if reference.Kind == symfony.ContainerValueEnum {
+			message = "Symfony: enum or case not found"
+		}
 		result = append(result, lsp.Problem{
 			Range:    reference.Range,
-			Message:  "Symfony: constant not found",
+			Message:  message,
 			Source:   "symfony",
 			Severity: protocol.DiagnosticSeverityError,
 			ID:       missingContainerConstantCode,

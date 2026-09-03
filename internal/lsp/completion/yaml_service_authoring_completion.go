@@ -10,6 +10,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	"github.com/shopware/shopware-lsp/internal/php/project"
+	"github.com/shopware/shopware-lsp/internal/symfony"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
@@ -516,6 +517,9 @@ func (provider *YAMLServiceAuthoringCompletionProvider) yamlTags(
 	tags := []string{"!!binary", "!!float", "!!str"}
 	if configurationFile {
 		tags = append(tags, "!php/const")
+		if provider == nil || symfony.SupportsYAMLContainerEnum(provider.project) {
+			tags = append(tags, "!php/enum")
+		}
 	}
 	if !serviceArguments {
 		return tags

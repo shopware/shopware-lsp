@@ -143,8 +143,9 @@ exact public names shown by MCP `tools/list`; unknown names are rejected.
   `_instanceof` rules, excluding already configured keys and marking legacy
   factory/scope/autowiring settings deprecated
 - YAML scalar keyword and standard-tag completion, config-aware
-  `!php/const`, and Composer-version-aware service argument tags such as
-  `!tagged_iterator`, `!tagged_locator`, and `!service_locator`
+  `!php/const`, Symfony 6.2+ `!php/enum`, and Composer-version-aware service
+  argument tags such as `!tagged_iterator`, `!tagged_locator`, and
+  `!service_locator`
 - Native PHP configurator indexing for `set`, `alias`, `remove`, `load` /
   `exclude` prototypes, parameters, defaults, and inheritance-aware
   `instanceof` tags
@@ -177,9 +178,10 @@ exact public names shown by MCP `tools/list`; unknown names are rejected.
 - XML/YAML service-tag contract diagnostics for conventional tags such as
   `twig.extension`, `form.type`, `security.voter`, and
   `kernel.event_subscriber`, including modern/legacy interface alternatives
-- Symfony XML/YAML container-constant completion, PHP go-to-definition, and
-  missing-reference diagnostics for global, inherited class, and enum
-  constants, including modern and legacy `!php/const` YAML syntax
+- Symfony XML/YAML container-constant and enum completion, PHP
+  go-to-definition, and missing-reference diagnostics for global, inherited
+  class, and enum constants/cases, including modern and legacy `!php/const`,
+  `!php/enum`, and backed-enum `->value` YAML syntax
 - Typed PHP `ParameterBagInterface` and `ContainerBagInterface` `get()` /
   `has()` calls use container-parameter completion, navigation, and missing
   diagnostics without being misclassified as service-container access
@@ -1361,7 +1363,7 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
 | Deprecated colon in an unquoted YAML mapping value | Hint | YAML |
 | Deprecated Symfony service or service class | Hint | PHP, XML, YAML |
 | Service class violates a conventional tag contract | Warning | XML, YAML |
-| Missing Symfony container constant | Error | XML, YAML |
+| Missing Symfony container constant or enum | Error | XML, YAML |
 | Unknown YAML service named argument | Warning | YAML |
 | Missing configured service or event-listener method | Warning | PHP, XML, YAML |
 | Incompatible service supplied to a constructor/method argument | Warning | XML, YAML, PHP |

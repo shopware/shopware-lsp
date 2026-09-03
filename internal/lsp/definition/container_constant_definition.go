@@ -37,9 +37,9 @@ func (p *ContainerConstantDefinitionProvider) GetDefinition(
 		if !reference.Range.Contains(offset) {
 			continue
 		}
-		symbols := symfony.ResolveContainerConstant(
+		symbols := symfony.ResolveContainerValue(
 			p.phpIndex,
-			reference.Name,
+			reference,
 		)
 		locations := make([]protocol.Location, 0, len(symbols))
 		seen := make(map[string]struct{}, len(symbols))

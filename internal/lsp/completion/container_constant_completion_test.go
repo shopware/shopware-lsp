@@ -66,6 +66,31 @@ func TestContainerConstantCompletionSupportsEmptyAndLegacyValues(
 	}
 }
 
+func TestContainerEnumCompletion(t *testing.T) {
+	phpIndex := containerConstantCompletionPHPIndex(t)
+	provider := NewContainerConstantCompletionProvider(phpIndex)
+
+	document, request := containerConstantCompletionRequest(
+		`value: !php/enum App\State::A`,
+	)
+	items := provider.GetCompletions(context.Background(), request)
+	active := requireCompletion(t, items, "ACTIVE")
+	assert.Equal(t, int(protocol.EnumMemberCompletion), active.Kind)
+	edit, ok := active.TextEdit.(protocol.TextEdit)
+	require.True(t, ok)
+	assert.Equal(t, "A", completionRangeText(document, edit.Range))
+	assert.NotContains(t, completionLabels(items), "ALIAS")
+
+	_, fullRequest := containerConstantCompletionRequest(
+		`value: !php/enum App\S`,
+	)
+	items = provider.GetCompletions(context.Background(), fullRequest)
+	requireCompletion(t, items, "App\\State")
+	requireCompletion(t, items, "App\\State::ACTIVE")
+	assert.NotContains(t, completionLabels(items), "App\\Mode::ACTIVE")
+	assert.NotContains(t, completionLabels(items), "APP_LIMIT")
+}
+
 func containerConstantCompletionPHPIndex(t *testing.T) *php.PHPIndex {
 	t.Helper()
 	phpIndex, err := php.NewPHPIndex(t.TempDir())
@@ -81,6 +106,10 @@ namespace App {
     class Mode {
         public const ACTIVE = 'active';
         private const SECRET = 'secret';
+    }
+    enum State {
+        public const ALIAS = self::ACTIVE;
+        case ACTIVE;
     }
 }
 `),

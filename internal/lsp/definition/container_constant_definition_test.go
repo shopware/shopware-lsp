@@ -25,6 +25,9 @@ namespace App;
 class Mode {
     public const ACTIVE = 'active';
 }
+enum State {
+    case ACTIVE;
+}
 `)
 	require.NoError(t, os.WriteFile(phpPath, phpSource, 0o644))
 	phpIndex, err := php.NewPHPIndex(t.TempDir())
@@ -45,6 +48,14 @@ class Mode {
 			source: `value: !php/const App\Mode::ACTIVE`,
 		},
 		{
+			uri:    uriutil.FileURI(filepath.Join(root, "config", "services.yaml")),
+			source: `value: !php/enum App\State::ACTIVE->value`,
+		},
+		{
+			uri:    uriutil.FileURI(filepath.Join(root, "config", "services.yaml")),
+			source: `value: !php/enum App\State`,
+		},
+		{
 			uri: uriutil.FileURI(
 				filepath.Join(root, "config", "services.xml"),
 			),
@@ -55,7 +66,11 @@ class Mode {
 	}
 	for _, test := range tests {
 		document := lsp.NewTextDocument(test.uri, test.source, 1)
-		offset := uint32(strings.Index(test.source, "ACTIVE") + 2)
+		target := "ACTIVE"
+		if !strings.Contains(test.source, target) {
+			target = "State"
+		}
+		offset := uint32(strings.Index(test.source, target) + 2)
 		line, character := document.LineIndex.PositionUTF16(offset)
 		params := &protocol.DefinitionParams{}
 		params.TextDocument.URI = document.URI
@@ -88,6 +103,6 @@ class Mode {
 			phpSource,
 			locations[0].Range.End,
 		)
-		assert.Equal(t, "ACTIVE", string(phpSource[start:end]))
+		assert.Equal(t, target, string(phpSource[start:end]))
 	}
 }

@@ -27,6 +27,10 @@ func TestContainerConstantDiagnosticsForYAMLAndXML(t *testing.T) {
   global: !php/const APP_LIMIT
   legacy_missing: !php/const:App\Mode::MISSING
   modern_missing: !php/const App\Missing::VALUE
+  active_enum: !php/enum App\State::ACTIVE
+  all_enum_cases: !php/enum App\State
+  missing_enum_case: !php/enum App\State::MISSING
+  missing_enum: !php/enum App\MissingState
 `,
 		},
 		{
@@ -48,7 +52,7 @@ func TestContainerConstantDiagnosticsForYAMLAndXML(t *testing.T) {
 			)
 			require.NoError(t, err)
 			if test.name == "yaml" {
-				require.Len(t, result, 2)
+				require.Len(t, result, 4)
 				assert.Equal(
 					t,
 					"App\\Mode::MISSING",
@@ -59,6 +63,16 @@ func TestContainerConstantDiagnosticsForYAMLAndXML(t *testing.T) {
 					"App\\Missing::VALUE",
 					problemRangeText(document, result[1].Range),
 				)
+				assert.Equal(
+					t,
+					"App\\State::MISSING",
+					problemRangeText(document, result[2].Range),
+				)
+				assert.Equal(
+					t,
+					"App\\MissingState",
+					problemRangeText(document, result[3].Range),
+				)
 			} else {
 				require.Len(t, result, 1)
 				assert.Equal(
@@ -67,7 +81,7 @@ func TestContainerConstantDiagnosticsForYAMLAndXML(t *testing.T) {
 					problemRangeText(document, result[0].Range),
 				)
 			}
-			for _, diagnostic := range result {
+			for index, diagnostic := range result {
 				assert.Equal(
 					t,
 					missingContainerConstantCode,
@@ -78,11 +92,11 @@ func TestContainerConstantDiagnosticsForYAMLAndXML(t *testing.T) {
 					protocol.DiagnosticSeverityError,
 					diagnostic.Severity,
 				)
-				assert.Equal(
-					t,
-					"Symfony: constant not found",
-					diagnostic.Message,
-				)
+				expectedMessage := "Symfony: constant not found"
+				if test.name == "yaml" && index >= 2 {
+					expectedMessage = "Symfony: enum or case not found"
+				}
+				assert.Equal(t, expectedMessage, diagnostic.Message)
 			}
 		})
 	}
@@ -102,6 +116,9 @@ namespace {
 namespace App {
     class Mode {
         public const ACTIVE = 'active';
+    }
+    enum State {
+        case ACTIVE;
     }
 }
 `),

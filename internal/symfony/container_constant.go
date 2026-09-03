@@ -8,12 +8,42 @@ import (
 	xmlquery "github.com/shopware/shopware-lsp/internal/parser/xml/query"
 	xmlsyntax "github.com/shopware/shopware-lsp/internal/parser/xml/syntax"
 	"github.com/shopware/shopware-lsp/internal/php"
+	"github.com/shopware/shopware-lsp/internal/php/project"
 	"github.com/shopware/shopware-lsp/internal/php/semantic"
 )
 
 type ContainerConstantReference struct {
 	Name  string
 	Range cst.TextRange
+	Kind  ContainerValueKind
+}
+
+type ContainerValueKind uint8
+
+const (
+	ContainerValueConstant ContainerValueKind = iota
+	ContainerValueEnum
+)
+
+func SupportsYAMLContainerEnum(model *project.Model) bool {
+	return symfonyYAMLVersion(model).AtLeast(6, 2)
+}
+
+func SupportsYAMLContainerEnumClass(model *project.Model) bool {
+	return symfonyYAMLVersion(model).AtLeast(7, 1)
+}
+
+func symfonyYAMLVersion(model *project.Model) project.Version {
+	if model != nil {
+		if version, found := model.DependencyVersion(
+			"symfony/yaml",
+			"symfony/framework-bundle",
+			"symfony/symfony",
+		); found {
+			return version
+		}
+	}
+	return project.Version{Major: 7, Minor: 1}
 }
 
 func YAMLContainerConstantReferences(
@@ -110,11 +140,39 @@ func ResolveContainerConstant(
 	return index.FindGlobalConstants(name)
 }
 
+// ResolveContainerValue resolves a parsed Symfony YAML/XML value reference.
+// Enum tags accept either one enum case or, since Symfony 7.1, an enum class.
+func ResolveContainerValue(
+	index *php.PHPIndex,
+	reference ContainerConstantReference,
+) []semantic.Symbol {
+	if reference.Kind != ContainerValueEnum {
+		return ResolveContainerConstant(index, reference.Name)
+	}
+	if index == nil {
+		return nil
+	}
+	if !strings.Contains(reference.Name, "::") {
+		symbol, found := index.FindClass(strings.TrimPrefix(reference.Name, `\`))
+		if !found || symbol.Kind != semantic.EnumSymbol {
+			return nil
+		}
+		return []semantic.Symbol{symbol}
+	}
+	candidates := ResolveContainerConstant(index, reference.Name)
+	result := make([]semantic.Symbol, 0, len(candidates))
+	for _, symbol := range candidates {
+		if symbol.Kind == semantic.EnumCaseSymbol {
+			result = append(result, symbol)
+		}
+	}
+	return result
+}
+
 func yamlConstantReferencesInLine(
 	line []byte,
 	lineStart int,
 ) []ContainerConstantReference {
-	const marker = "!php/const"
 	var result []ContainerConstantReference
 	var quote byte
 	escaped := false
@@ -143,7 +201,8 @@ func yamlConstantReferencesInLine(
 		case '#':
 			return result
 		}
-		if !bytes.HasPrefix(line[cursor:], []byte(marker)) {
+		marker, kind, found := yamlContainerValueMarker(line[cursor:])
+		if !found {
 			continue
 		}
 		after := cursor + len(marker)
@@ -174,6 +233,10 @@ func yamlConstantReferencesInLine(
 				end++
 			}
 		}
+		if kind == ContainerValueEnum &&
+			strings.HasSuffix(string(line[start:end]), "->value") {
+			end -= len("->value")
+		}
 		if end > start {
 			result = append(result, ContainerConstantReference{
 				Name: string(line[start:end]),
@@ -181,11 +244,29 @@ func yamlConstantReferencesInLine(
 					Start: uint32(lineStart + start),
 					End:   uint32(lineStart + end),
 				},
+				Kind: kind,
 			})
 		}
 		cursor = end
 	}
 	return result
+}
+
+func yamlContainerValueMarker(
+	content []byte,
+) (marker string, kind ContainerValueKind, found bool) {
+	for _, candidate := range []struct {
+		marker string
+		kind   ContainerValueKind
+	}{
+		{marker: "!php/const", kind: ContainerValueConstant},
+		{marker: "!php/enum", kind: ContainerValueEnum},
+	} {
+		if bytes.HasPrefix(content, []byte(candidate.marker)) {
+			return candidate.marker, candidate.kind, true
+		}
+	}
+	return "", ContainerValueConstant, false
 }
 
 func trimmedConstantText(

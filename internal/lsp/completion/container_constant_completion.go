@@ -44,6 +44,10 @@ func (p *ContainerConstantCompletionProvider) GetCompletions(
 	if !found {
 		return nil
 	}
+	if reference.Kind == symfony.ContainerValueEnum &&
+		!symfony.SupportsYAMLContainerEnum(p.phpIndex.Project()) {
+		return nil
+	}
 	if scope := strings.Index(reference.Name, "::"); scope >= 0 {
 		className := reference.Name[:scope]
 		partial := reference.Name[scope+2:]
@@ -53,6 +57,14 @@ func (p *ContainerConstantCompletionProvider) GetCompletions(
 			className,
 			partial,
 			replace,
+			request.LineIndex,
+			reference.Kind,
+		)
+	}
+	if reference.Kind == symfony.ContainerValueEnum {
+		return p.allEnumItems(
+			reference.Name,
+			reference.Range,
 			request.LineIndex,
 		)
 	}
@@ -68,10 +80,15 @@ func (p *ContainerConstantCompletionProvider) classConstantItems(
 	partial string,
 	replace cst.TextRange,
 	lineIndex *cst.LineIndex,
+	kind symfony.ContainerValueKind,
 ) []protocol.CompletionItem {
 	var items []protocol.CompletionItem
 	seen := make(map[string]struct{})
 	for _, symbol := range p.phpIndex.Constants(className) {
+		if kind == symfony.ContainerValueEnum &&
+			symbol.Kind != semantic.EnumCaseSymbol {
+			continue
+		}
 		if symbol.Visibility != semantic.Public ||
 			!strings.HasPrefix(
 				strings.ToLower(symbol.Name),
@@ -90,6 +107,57 @@ func (p *ContainerConstantCompletionProvider) classConstantItems(
 			replace,
 			lineIndex,
 		))
+	}
+	sortConstantCompletionItems(items)
+	return items
+}
+
+func (p *ContainerConstantCompletionProvider) allEnumItems(
+	prefix string,
+	replace cst.TextRange,
+	lineIndex *cst.LineIndex,
+) []protocol.CompletionItem {
+	var items []protocol.CompletionItem
+	seen := make(map[string]struct{})
+	add := func(label string, symbol semantic.Symbol, kind protocol.CompletionItemKind) {
+		if !strings.HasPrefix(strings.ToLower(label), strings.ToLower(prefix)) {
+			return
+		}
+		if _, duplicate := seen[label]; duplicate {
+			return
+		}
+		seen[label] = struct{}{}
+		item := containerConstantCompletionItem(
+			label,
+			label,
+			symbol,
+			replace,
+			lineIndex,
+		)
+		item.Kind = int(kind)
+		items = append(items, item)
+	}
+	if symfony.SupportsYAMLContainerEnumClass(p.phpIndex.Project()) {
+		for _, symbol := range p.phpIndex.ClassSymbols() {
+			if symbol.Kind != semantic.EnumSymbol {
+				continue
+			}
+			add(
+				strings.TrimPrefix(symbol.FullyQualified, `\`),
+				symbol,
+				protocol.EnumCompletion,
+			)
+		}
+	}
+	for _, symbol := range p.phpIndex.ConstantSymbols() {
+		if symbol.Kind != semantic.EnumCaseSymbol {
+			continue
+		}
+		add(
+			p.phpIndex.ConstantSymbolName(symbol),
+			symbol,
+			protocol.EnumMemberCompletion,
+		)
 	}
 	sortConstantCompletionItems(items)
 	return items
@@ -149,6 +217,9 @@ func containerConstantCompletionItem(
 			Range:   containerConstantCompletionRange(replace, lineIndex),
 			NewText: label,
 		},
+	}
+	if symbol.Kind == semantic.EnumCaseSymbol {
+		item.Kind = int(protocol.EnumMemberCompletion)
 	}
 	if symbol.DocSummary() != "" {
 		item.Documentation.Kind = string(protocol.Markdown)
