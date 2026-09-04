@@ -18,6 +18,39 @@ type testStruct struct {
 	Value int
 }
 
+func TestDataIndexerVisitsEncodedValuesByPathWithoutCaching(t *testing.T) {
+	t.Parallel()
+
+	index, err := NewDataIndexer[testStruct](filepath.Join(t.TempDir(), "index.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, index.Close()) })
+	require.NoError(t, index.SaveItem(
+		"/first.php",
+		"first",
+		testStruct{Name: "first", Value: 1},
+	))
+	require.NoError(t, index.SaveItem(
+		"/second.php",
+		"second",
+		testStruct{Name: "second", Value: 2},
+	))
+
+	var values []testStruct
+	require.NoError(t, index.VisitEncodedValuesByPath(
+		"/first.php",
+		func(encoded []byte) error {
+			var value testStruct
+			if err := msgpack.Unmarshal(encoded, &value); err != nil {
+				return err
+			}
+			values = append(values, value)
+			return nil
+		},
+	))
+	require.Equal(t, []testStruct{{Name: "first", Value: 1}}, values)
+	require.Nil(t, index.pathValuesCache)
+}
+
 func TestMessagePackEncoderReusesBoundedBuffers(t *testing.T) {
 	clearMessagePackBuffers()
 	t.Cleanup(clearMessagePackBuffers)

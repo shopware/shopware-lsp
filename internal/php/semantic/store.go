@@ -408,12 +408,28 @@ func (s *Store) Document(path string) (*Document, bool) {
 		return nil, false
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	document, ok := s.documents[path]
+	s.mu.Unlock()
 	if !ok {
 		return nil, false
 	}
 	return document.materialize().Clone(), true
+}
+
+// EnsureDocumentDetails pins the complete persisted payload for path before a
+// repository mutation can replace or remove it. Existing immutable snapshots
+// can then continue serving their original generation after publication.
+func (s *Store) EnsureDocumentDetails(path string) error {
+	if s == nil || path == "" {
+		return nil
+	}
+	s.mu.Lock()
+	document := s.documents[path]
+	s.mu.Unlock()
+	if document == nil || document.lazyDetails == nil {
+		return nil
+	}
+	return document.pinFullDocument()
 }
 
 func (s *Store) publishLocked() *Snapshot {

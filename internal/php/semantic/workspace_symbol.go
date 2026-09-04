@@ -8,6 +8,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	"github.com/shopware/shopware-lsp/internal/php/types"
 	"github.com/vmihailenco/msgpack/v5"
+	"github.com/vmihailenco/msgpack/v5/msgpcode"
 )
 
 type workspaceSymbol struct {
@@ -285,6 +286,10 @@ const (
 	workspaceSymbolWriteVisibilityShift = workspaceSymbolVisibilityShift +
 		workspaceSymbolVisibilityBits
 	workspaceSymbolHasWriteVisibility = uint16(1 << 8)
+	workspaceSymbolLazySignature      = uint16(1 << 9)
+	workspaceSymbolLazyMetadata       = uint16(1 << 10)
+	workspaceSymbolLazySideMask       = workspaceSymbolLazySignature |
+		workspaceSymbolLazyMetadata
 )
 
 type workspaceSymbolRanges struct {
@@ -539,6 +544,20 @@ func (symbol *workspaceSymbol) setProperties(
 }
 
 func (symbol *workspaceSymbol) signature() *workspaceSignature {
+	if signature := symbol.residentSignature(); signature != nil {
+		return signature
+	}
+	if symbol == nil || symbol.properties&workspaceSymbolLazySignature == 0 {
+		return nil
+	}
+	source := symbol.detailSymbol()
+	if source == nil {
+		return nil
+	}
+	return source.residentSignature()
+}
+
+func (symbol *workspaceSymbol) residentSignature() *workspaceSignature {
 	if symbol == nil || symbol.Document == nil {
 		return nil
 	}
@@ -550,6 +569,10 @@ func (symbol *workspaceSymbol) signature() *workspaceSignature {
 }
 
 func (symbol *workspaceSymbol) hierarchy() *workspaceHierarchy {
+	return symbol.residentHierarchy()
+}
+
+func (symbol *workspaceSymbol) residentHierarchy() *workspaceHierarchy {
 	if symbol == nil || symbol.Document == nil {
 		return nil
 	}
@@ -561,6 +584,20 @@ func (symbol *workspaceSymbol) hierarchy() *workspaceHierarchy {
 }
 
 func (symbol *workspaceSymbol) metadata() *workspaceMetadata {
+	if metadata := symbol.residentMetadata(); metadata != nil {
+		return metadata
+	}
+	if symbol == nil || symbol.properties&workspaceSymbolLazyMetadata == 0 {
+		return nil
+	}
+	source := symbol.detailSymbol()
+	if source == nil {
+		return nil
+	}
+	return source.residentMetadata()
+}
+
+func (symbol *workspaceSymbol) residentMetadata() *workspaceMetadata {
 	if symbol == nil || symbol.Document == nil {
 		return nil
 	}
@@ -569,6 +606,23 @@ func (symbol *workspaceSymbol) metadata() *workspaceMetadata {
 		return nil
 	}
 	return &symbol.Document.metadata[index-1]
+}
+
+func (symbol *workspaceSymbol) detailSymbol() *workspaceSymbol {
+	if symbol == nil || symbol.Document == nil ||
+		symbol.Document.lazyDetails == nil {
+		return symbol
+	}
+	document, err := symbol.Document.fullDocument()
+	if err != nil || document == nil {
+		return nil
+	}
+	for index := range document.Symbols {
+		if document.Symbols[index].ID == symbol.ID {
+			return &document.Symbols[index]
+		}
+	}
+	return nil
 }
 
 func (symbol *workspaceSymbol) sideIndex(shift int) uint32 {
@@ -705,6 +759,7 @@ func (symbol *workspaceSymbol) decodeMsgpack(
 		&sides,
 		&parameterIDs,
 		&symbolStrings,
+		true,
 	); err != nil {
 		return err
 	}
@@ -742,6 +797,7 @@ func (symbol *workspaceSymbol) decodeFields(
 	sides *decodedWorkspaceSymbolSides,
 	parameterIDs *[]decodedWorkspaceParameterID,
 	symbolStrings *workspaceSymbolStringBuilder,
+	decodeDetails bool,
 ) error {
 	length, err := decoder.DecodeArrayLen()
 	if err != nil {
@@ -868,6 +924,27 @@ func (symbol *workspaceSymbol) decodeFields(
 		Visibility(writeVisibility),
 		hasWriteVisibility,
 	)
+	if !decodeDetails {
+		deferred, skipErr := skipOptionalWorkspaceSymbolSide(decoder)
+		if skipErr != nil {
+			return skipErr
+		}
+		if deferred {
+			symbol.properties |= workspaceSymbolLazySignature
+		}
+		if sides.hierarchy, err =
+			decodeOptionalWorkspaceHierarchy(decoder, context); err != nil {
+			return err
+		}
+		deferred, skipErr = skipOptionalWorkspaceSymbolSide(decoder)
+		if skipErr != nil {
+			return skipErr
+		}
+		if deferred {
+			symbol.properties |= workspaceSymbolLazyMetadata
+		}
+		return nil
+	}
 	parameterIDStart := len(*parameterIDs)
 	if sides.signature, err =
 		decodeOptionalWorkspaceSignature(
@@ -887,10 +964,50 @@ func (symbol *workspaceSymbol) decodeFields(
 	return err
 }
 
+func skipOptionalWorkspaceSymbolSide(
+	decoder *msgpack.Decoder,
+) (bool, error) {
+	code, err := decoder.PeekCode()
+	if err != nil {
+		return false, err
+	}
+	if code == msgpcode.Nil {
+		return false, decoder.DecodeNil()
+	}
+	return true, decoder.Skip()
+}
+
+func decodeWorkspaceSymbolSummaries(
+	decoder *msgpack.Decoder,
+	context *WorkspaceGraphDecoder,
+	document *workspaceDocument,
+) error {
+	return decodeWorkspaceSymbolCollection(
+		decoder,
+		context,
+		document,
+		false,
+	)
+}
+
 func decodeWorkspaceSymbols(
 	decoder *msgpack.Decoder,
 	context *WorkspaceGraphDecoder,
 	document *workspaceDocument,
+) error {
+	return decodeWorkspaceSymbolCollection(
+		decoder,
+		context,
+		document,
+		true,
+	)
+}
+
+func decodeWorkspaceSymbolCollection(
+	decoder *msgpack.Decoder,
+	context *WorkspaceGraphDecoder,
+	document *workspaceDocument,
+	decodeDetails bool,
 ) error {
 	if context != nil && context.stringCache != nil {
 		defer context.resetTransientStrings()
@@ -917,12 +1034,13 @@ func decodeWorkspaceSymbols(
 			&sides[index],
 			&parameterIDs,
 			&symbolStrings,
+			decodeDetails,
 		); err != nil {
 			return err
 		}
 	}
 	document.attachDecodedSymbolSides(sides, parameterIDs)
-	if context != nil && context.stringCache != nil {
+	if decodeDetails && context != nil && context.stringCache != nil {
 		for symbolIndex := range document.Symbols {
 			signature := document.Symbols[symbolIndex].signature()
 			if signature == nil {

@@ -2,6 +2,7 @@ package php
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -253,6 +254,85 @@ class Product {
 		}
 	}
 	require.True(t, hasLocal)
+}
+
+func TestPHPIndexPinsLazyDetailsBeforeReplacingPersistedGraph(t *testing.T) {
+	configDir := t.TempDir()
+	path := "/project/Service.php"
+	firstSource := []byte(`<?php
+namespace App;
+class Service {
+    public function run(string $before): void {}
+}`)
+	secondSource := []byte(`<?php
+namespace App;
+class Service {
+    public function run(int $after): void {}
+}`)
+
+	index, err := NewPHPIndex(configDir)
+	require.NoError(t, err)
+	require.NoError(t, index.Index(indexer.NewParsedFile(path, firstSource)))
+	require.NoError(t, index.Close())
+
+	reopened, err := NewPHPIndex(configDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+	previous := reopened.SemanticSnapshot()
+	classes := previous.ClassViews("App\\Service")
+	require.Len(t, classes, 1)
+
+	require.NoError(t, reopened.Index(
+		indexer.NewParsedFile(path, secondSource),
+	))
+	current := reopened.SemanticSnapshot()
+
+	previousMethods := previous.Members(classes[0].ID(), "run")
+	require.Len(t, previousMethods, 1)
+	require.Len(t, previousMethods[0].Parameters, 1)
+	require.Equal(t, "$before", previousMethods[0].Parameters[0].Name)
+
+	currentClasses := current.ClassViews("App\\Service")
+	require.Len(t, currentClasses, 1)
+	currentMethods := current.Members(currentClasses[0].ID(), "run")
+	require.Len(t, currentMethods, 1)
+	require.Len(t, currentMethods[0].Parameters, 1)
+	require.Equal(t, "$after", currentMethods[0].Parameters[0].Name)
+}
+
+func TestPHPIndexBoundsLoadedWorkspaceGraphDetails(t *testing.T) {
+	configDir := t.TempDir()
+	index, err := NewPHPIndex(configDir)
+	require.NoError(t, err)
+	paths := make([]string, workspaceGraphDetailCacheSize+2)
+	for number := range paths {
+		paths[number] = fmt.Sprintf("/project/C%03d.php", number)
+		source := []byte(fmt.Sprintf(
+			"<?php class C%03d { public function run(string $value): void {} }",
+			number,
+		))
+		require.NoError(t, index.Index(
+			indexer.NewParsedFile(paths[number], source),
+		))
+	}
+	require.NoError(t, index.Close())
+
+	reopened, err := NewPHPIndex(configDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+	for _, path := range paths {
+		_, err = reopened.workspaceGraphLoader.LoadWorkspaceGraph(path)
+		require.NoError(t, err)
+	}
+
+	reopened.workspaceGraphLoader.mu.Lock()
+	entryCount := len(reopened.workspaceGraphLoader.entries)
+	oldest := reopened.workspaceGraphLoader.entries[paths[0]]
+	newest := reopened.workspaceGraphLoader.entries[paths[len(paths)-1]]
+	reopened.workspaceGraphLoader.mu.Unlock()
+	require.Equal(t, workspaceGraphDetailCacheSize, entryCount)
+	require.Nil(t, oldest)
+	require.NotNil(t, newest)
 }
 
 func TestPHPIndexPersistsConstantArrayMetadata(t *testing.T) {

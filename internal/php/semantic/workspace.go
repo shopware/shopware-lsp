@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"unsafe"
 
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
@@ -43,12 +44,93 @@ type workspaceDocument struct {
 	referenceTypes     []types.Type
 	referenceValues    []uint32
 	referenceBloom     [2]uint64
+	lazyDetails        *workspaceLazyDocument
 }
 
 // WorkspaceGraph is an opaque, compact declaration/reference graph ready for
 // workspace publication. Its contents are immutable after construction.
 type WorkspaceGraph struct {
 	document *workspaceDocument
+}
+
+// WorkspaceGraphLoader resolves one persisted graph by source path. Warm
+// cache restoration uses it to keep declaration cores and hierarchy edges
+// resident while loading signatures and metadata only when requested.
+type WorkspaceGraphLoader interface {
+	LoadWorkspaceGraph(path string) (*WorkspaceGraph, error)
+}
+
+type workspaceLazyDocument struct {
+	mu       sync.RWMutex
+	loader   WorkspaceGraphLoader
+	document *workspaceDocument
+}
+
+func (document *workspaceDocument) fullDocument() (
+	*workspaceDocument,
+	error,
+) {
+	if document == nil || document.lazyDetails == nil {
+		return document, nil
+	}
+	lazy := document.lazyDetails
+	lazy.mu.RLock()
+	loaded := lazy.document
+	loader := lazy.loader
+	lazy.mu.RUnlock()
+	if loaded != nil {
+		return loaded, nil
+	}
+	if loader == nil {
+		return nil, fmt.Errorf(
+			"load workspace graph %s: loader is unavailable",
+			document.Path,
+		)
+	}
+	graph, err := loader.LoadWorkspaceGraph(document.Path)
+	if err != nil {
+		return nil, err
+	}
+	if graph == nil || graph.document == nil {
+		return nil, fmt.Errorf(
+			"load workspace graph %s: graph is unavailable",
+			document.Path,
+		)
+	}
+	if graph.document.Path != document.Path {
+		return nil, fmt.Errorf(
+			"load workspace graph %s: got path %s",
+			document.Path,
+			graph.document.Path,
+		)
+	}
+	// A repository mutation may have pinned the old generation while this
+	// lookup was in flight. Prefer that immutable payload over a row that may
+	// already represent the replacement.
+	lazy.mu.RLock()
+	loaded = lazy.document
+	lazy.mu.RUnlock()
+	if loaded != nil {
+		return loaded, nil
+	}
+	return graph.document, nil
+}
+
+func (document *workspaceDocument) pinFullDocument() error {
+	if document == nil || document.lazyDetails == nil {
+		return nil
+	}
+	loaded, err := document.fullDocument()
+	if err != nil {
+		return err
+	}
+	lazy := document.lazyDetails
+	lazy.mu.Lock()
+	if lazy.document == nil {
+		lazy.document = loaded
+	}
+	lazy.mu.Unlock()
+	return nil
 }
 
 // WorkspaceGraphDecoder reuses parsed immutable PHP types across a stream of
@@ -267,7 +349,28 @@ func (decoder *WorkspaceGraphDecoder) Decode(
 	if decoder == nil {
 		decoder = NewWorkspaceGraphDecoder()
 	}
-	return graph.decodeMsgpack(source, decoder)
+	return graph.decodeMsgpack(source, decoder, nil)
+}
+
+// DecodeSummary restores the resident declaration core, hierarchy edges, and
+// reference graph while deferring signatures and metadata to loader. The wire
+// format is unchanged; skipped details remain available through the original
+// persisted graph.
+func (decoder *WorkspaceGraphDecoder) DecodeSummary(
+	source *msgpack.Decoder,
+	graph *WorkspaceGraph,
+	loader WorkspaceGraphLoader,
+) error {
+	if graph == nil {
+		return fmt.Errorf("decode workspace graph summary: nil target")
+	}
+	if loader == nil {
+		return fmt.Errorf("decode workspace graph summary: nil loader")
+	}
+	if decoder == nil {
+		decoder = NewWorkspaceGraphDecoder()
+	}
+	return graph.decodeMsgpack(source, decoder, loader)
 }
 
 // PackWorkspaceGraphOwned compacts a workspace-projected Document without
@@ -887,6 +990,7 @@ func (graph *WorkspaceGraph) DecodeMsgpack(decoder *msgpack.Decoder) error {
 func (graph *WorkspaceGraph) decodeMsgpack(
 	decoder *msgpack.Decoder,
 	context *WorkspaceGraphDecoder,
+	lazyLoader WorkspaceGraphLoader,
 ) error {
 	length, err := decoder.DecodeArrayLen()
 	if err != nil {
@@ -913,11 +1017,12 @@ func (graph *WorkspaceGraph) decodeMsgpack(
 	if document.Namespace, err = context.decodeString(decoder); err != nil {
 		return err
 	}
-	if err = decodeWorkspaceSymbols(
-		decoder,
-		context,
-		document,
-	); err != nil {
+	if lazyLoader == nil {
+		err = decodeWorkspaceSymbols(decoder, context, document)
+	} else {
+		err = decodeWorkspaceSymbolSummaries(decoder, context, document)
+	}
+	if err != nil {
 		return err
 	}
 	if length >= 9 {
@@ -985,6 +1090,18 @@ func (graph *WorkspaceGraph) decodeMsgpack(
 			&context.sharedStrings,
 			&context.sharedStringIndex,
 		)
+	}
+	if lazyLoader != nil {
+		for index := range document.Symbols {
+			if document.Symbols[index].properties&
+				workspaceSymbolLazySideMask == 0 {
+				continue
+			}
+			document.lazyDetails = &workspaceLazyDocument{
+				loader: lazyLoader,
+			}
+			break
+		}
 	}
 	graph.document = document
 	return nil

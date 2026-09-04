@@ -469,6 +469,37 @@ func (graph persistedWorkspaceGraph) decodeWith(
 		"workspace graph",
 		compression,
 		workspaceDecoder,
+		nil,
+	); err != nil {
+		return nil, err
+	}
+	return &decoded, nil
+}
+
+func (graph persistedWorkspaceGraph) decodeSummaryWith(
+	workspaceDecoder *semantic.WorkspaceGraphDecoder,
+	loader semantic.WorkspaceGraphLoader,
+) (*semantic.WorkspaceGraph, error) {
+	var compression semanticCompression
+	switch graph.Format {
+	case legacyWorkspaceGraphFormat:
+		compression = semanticCompressionZlib
+	case legacyRawWorkspaceGraphFormat, persistedWorkspaceGraphFormat:
+		compression = semanticCompressionRawDeflate
+	default:
+		return nil, fmt.Errorf(
+			"unsupported workspace graph format %d",
+			graph.Format,
+		)
+	}
+	var decoded semantic.WorkspaceGraph
+	if err := decodeCompressedSemanticValueWithWorkspaceDecoder(
+		graph.Payload,
+		&decoded,
+		"workspace graph summary",
+		compression,
+		workspaceDecoder,
+		loader,
 	); err != nil {
 		return nil, err
 	}
@@ -524,6 +555,7 @@ func decodeCompressedSemanticValueWithWorkspaceDecoder(
 	label string,
 	compression semanticCompression,
 	workspaceDecoder *semantic.WorkspaceGraphDecoder,
+	lazyLoader semantic.WorkspaceGraphLoader,
 ) error {
 	var reader io.ReadCloser
 	switch compression {
@@ -545,10 +577,15 @@ func decodeCompressedSemanticValueWithWorkspaceDecoder(
 			if graphDecoder == nil {
 				graphDecoder = decompressor.workspaceDecoder
 			}
-			decodeErr = graphDecoder.Decode(
-				decompressor.decoder,
-				graph,
-			)
+			if lazyLoader == nil {
+				decodeErr = graphDecoder.Decode(decompressor.decoder, graph)
+			} else {
+				decodeErr = graphDecoder.DecodeSummary(
+					decompressor.decoder,
+					graph,
+					lazyLoader,
+				)
+			}
 		} else {
 			decodeErr = decompressor.decoder.Decode(target)
 		}
@@ -579,10 +616,15 @@ func decodeCompressedSemanticValueWithWorkspaceDecoder(
 		if graphDecoder == nil {
 			graphDecoder = semantic.NewWorkspaceGraphDecoder()
 		}
-		decodeErr = graphDecoder.Decode(
-			msgpackDecoder,
-			graph,
-		)
+		if lazyLoader == nil {
+			decodeErr = graphDecoder.Decode(msgpackDecoder, graph)
+		} else {
+			decodeErr = graphDecoder.DecodeSummary(
+				msgpackDecoder,
+				graph,
+				lazyLoader,
+			)
+		}
 	} else {
 		decodeErr = msgpackDecoder.Decode(target)
 	}

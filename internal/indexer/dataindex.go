@@ -495,6 +495,49 @@ func (idx *DataIndexer[T]) VisitAllEncodedValues(
 	return rows.Err()
 }
 
+// VisitEncodedValuesByPath visits the encoded repository values for one source
+// path without populating the typed path cache. The supplied slice is borrowed
+// from sql.Rows and is valid only until visitor returns.
+func (idx *DataIndexer[T]) VisitEncodedValuesByPath(
+	filePath string,
+	visitor func([]byte) error,
+) error {
+	if visitor == nil {
+		return nil
+	}
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	rows, err := idx.db.Query(`
+		SELECT key, value FROM data
+		WHERE namespace = ? AND file_path = ?
+	`, idx.namespace, filePath)
+	if err != nil {
+		return fmt.Errorf("failed to query encoded values by path: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var key string
+		var data sql.RawBytes
+		if err := rows.Scan(&key, &data); err != nil {
+			return fmt.Errorf("failed to scan encoded value by path: %w", err)
+		}
+		if len(data) == 0 {
+			continue
+		}
+		if err := visitor(data); err != nil {
+			return fmt.Errorf(
+				"visit encoded value %s (%s): %w",
+				filePath,
+				key,
+				err,
+			)
+		}
+	}
+	return rows.Err()
+}
+
 // CountAllValues reports the number of values in this repository namespace.
 // Startup loaders can use it to reserve their final in-memory representation
 // before streaming values without materializing repository data.

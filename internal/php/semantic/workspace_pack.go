@@ -792,7 +792,7 @@ func internPackedWorkspaceGraphOwned(
 		symbol.Document = document
 		symbol.primaryType = internType(symbol.primaryType)
 
-		signature := symbol.signature()
+		signature := symbol.residentSignature()
 		if signature != nil {
 			for parameterIndex := range signature.Parameters {
 				parameter := &signature.Parameters[parameterIndex]
@@ -849,7 +849,7 @@ func internPackedWorkspaceGraphOwned(
 			}
 		}
 
-		hierarchy := symbol.hierarchy()
+		hierarchy := symbol.residentHierarchy()
 		if hierarchy != nil {
 			internStringsOwned(hierarchy.extends(), internString)
 			internStringsOwned(hierarchy.implements(), internString)
@@ -866,7 +866,7 @@ func internPackedWorkspaceGraphOwned(
 			}
 		}
 
-		metadata := symbol.metadata()
+		metadata := symbol.residentMetadata()
 		if metadata != nil {
 			attributes := metadata.attributes()
 			internWorkspaceAttributes(attributes, internString)

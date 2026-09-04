@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"unsafe"
 
@@ -14,6 +16,19 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vmihailenco/msgpack/v5"
 )
+
+type countingWorkspaceGraphLoader struct {
+	graph *WorkspaceGraph
+	calls atomic.Int32
+	once  sync.Once
+}
+
+func (loader *countingWorkspaceGraphLoader) LoadWorkspaceGraph(
+	string,
+) (*WorkspaceGraph, error) {
+	loader.once.Do(func() { loader.calls.Add(1) })
+	return loader.graph, nil
+}
 
 func TestWorkspaceDocumentRoundTripPreservesEveryRetainedSymbolField(t *testing.T) {
 	t.Parallel()
@@ -157,6 +172,126 @@ func TestWorkspaceDocumentRoundTripPreservesEveryRetainedSymbolField(t *testing.
 	var decoded WorkspaceGraph
 	require.NoError(t, msgpack.Unmarshal(encoded, &decoded))
 	requireMsgpackEquivalent(t, expected, decoded.Document())
+}
+
+func TestWorkspaceGraphSummaryLoadsSymbolDetailsOnceOnDemand(t *testing.T) {
+	t.Parallel()
+
+	symbol := Symbol{
+		ID:             "App\\Service::run",
+		Kind:           MethodSymbol,
+		Name:           "run",
+		FullyQualified: "App\\Service::run",
+		Container:      "App\\Service",
+		Path:           "/service.php",
+		Parameters: []Parameter{{
+			Name: "$value",
+		}},
+	}
+	symbol.SetHierarchy(
+		[]string{"App\\Base"},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	symbol.SetDocSummary("Runs the service.")
+	document := &Document{
+		Path:       "/service.php",
+		Symbols:    []Symbol{symbol},
+		References: []Reference{{Name: "Service", Resolved: symbol.ID}},
+	}
+	full := PackWorkspaceGraphOwned(document)
+	encoded, err := msgpack.Marshal(full)
+	require.NoError(t, err)
+
+	loader := &countingWorkspaceGraphLoader{graph: full}
+	decoder := NewWorkspaceGraphDecoder()
+	t.Cleanup(decoder.Clear)
+	var summary WorkspaceGraph
+	require.NoError(t, decoder.DecodeSummary(
+		msgpack.NewDecoder(bytes.NewReader(encoded)),
+		&summary,
+		loader,
+	))
+	require.Empty(t, summary.document.signatures)
+	require.Len(t, summary.document.hierarchies, 1)
+	require.Empty(t, summary.document.metadata)
+	require.Len(t, summary.document.References, 1)
+	require.Zero(t, loader.calls.Load())
+
+	require.True(t, summary.VisitSymbolViews(func(view SymbolView) bool {
+		require.Equal(t, symbol.ID, view.ID())
+		require.Equal(t, symbol.Name, view.Name())
+		require.Equal(t, symbol.Kind, view.Kind())
+		_, extends, _ := view.HierarchyNames()
+		require.Equal(t, []string{"App\\Base"}, extends)
+		return true
+	}))
+	require.Zero(t, loader.calls.Load())
+	_ = newSnapshot(1, []*workspaceDocument{summary.document}).
+		WorkspaceStorageStats()
+	require.Zero(t, loader.calls.Load())
+
+	const readers = 32
+	var wait sync.WaitGroup
+	wait.Add(readers)
+	for range readers {
+		go func() {
+			defer wait.Done()
+			materialized := summary.document.Symbols[0].materialize()
+			require.Len(t, materialized.Parameters, 1)
+			require.Equal(t, "$value", materialized.Parameters[0].Name)
+			require.Equal(t, "Runs the service.", materialized.DocSummary())
+			require.Equal(t, []string{"App\\Base"}, materialized.Extends())
+		}()
+	}
+	wait.Wait()
+	require.EqualValues(t, 1, loader.calls.Load())
+}
+
+func TestWorkspaceGraphSummaryKeepsHierarchyWithoutLazyPayload(t *testing.T) {
+	t.Parallel()
+
+	symbol := Symbol{
+		ID:             "App\\Service",
+		Kind:           ClassSymbol,
+		Name:           "Service",
+		FullyQualified: "App\\Service",
+		Path:           "/service.php",
+	}
+	symbol.SetHierarchy(
+		nil,
+		[]string{"App\\Contract"},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	full := PackWorkspaceGraphOwned(&Document{
+		Path:    "/service.php",
+		Symbols: []Symbol{symbol},
+	})
+	encoded, err := msgpack.Marshal(full)
+	require.NoError(t, err)
+
+	loader := &countingWorkspaceGraphLoader{graph: full}
+	decoder := NewWorkspaceGraphDecoder()
+	t.Cleanup(decoder.Clear)
+	var summary WorkspaceGraph
+	require.NoError(t, decoder.DecodeSummary(
+		msgpack.NewDecoder(bytes.NewReader(encoded)),
+		&summary,
+		loader,
+	))
+	require.Nil(t, summary.document.lazyDetails)
+	require.Len(t, summary.document.hierarchies, 1)
+	materialized := summary.document.Symbols[0].materialize()
+	require.Equal(t, []string{"App\\Contract"}, materialized.Implements())
+	require.Zero(t, loader.calls.Load())
 }
 
 func TestWorkspaceSymbolRangesUseSparseExactFallbacks(t *testing.T) {

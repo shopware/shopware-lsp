@@ -329,7 +329,7 @@ func (c *workspaceStatsCollector) collectSymbol(
 	documentCoreStrings map[string]struct{},
 ) {
 	addWorkspaceSymbolRangeStats(symbol, &c.stats)
-	if signature := symbol.signature(); signature != nil {
+	if signature := symbol.residentSignature(); signature != nil {
 		for parameterIndex := range signature.Parameters {
 			parameter := &signature.Parameters[parameterIndex]
 			if parameter.Extras == nil || parameter.Extras.ID == "" {
@@ -425,9 +425,9 @@ func (c *workspaceStatsCollector) collectSymbolTypePattern(
 }
 
 func (c *workspaceStatsCollector) collectSymbolSideTables(symbol *workspaceSymbol) {
-	signature := symbol.signature() != nil
-	hierarchy := symbol.hierarchy() != nil
-	metadata := symbol.metadata() != nil
+	signature := symbol.residentSignature() != nil
+	hierarchy := symbol.residentHierarchy() != nil
+	metadata := symbol.residentMetadata() != nil
 	switch {
 	case signature && hierarchy && metadata:
 		c.stats.AllSideTables++

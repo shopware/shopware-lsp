@@ -1,6 +1,7 @@
 package php
 
 import (
+	"container/list"
 	"errors"
 	"fmt"
 	"os"
@@ -50,12 +51,142 @@ type PHPIndex struct {
 	classCatalogSnapshot *semantic.Snapshot
 	classCatalogSymbols  []semantic.Symbol
 	classCatalogNames    []string
+	workspaceGraphLoader *workspaceGraphRepositoryLoader
 }
 
 type preparedPHPDocument struct {
 	graph        *semantic.WorkspaceGraph
 	graphStorage persistedWorkspaceGraph
 	twigContexts map[string]map[string]TwigTemplateContext
+}
+
+type workspaceGraphRepositoryLoader struct {
+	repository *indexer.DataIndexer[persistedWorkspaceGraph]
+	mu         sync.Mutex
+	entries    map[string]*list.Element
+	recent     list.List
+	loading    map[string]*workspaceGraphLoad
+	generation uint64
+}
+
+// Keep recently requested detail graphs hot without allowing a broad catalog
+// query to recreate the complete eager warm-start graph in memory.
+const workspaceGraphDetailCacheSize = 128
+
+type workspaceGraphCacheEntry struct {
+	path  string
+	graph *semantic.WorkspaceGraph
+}
+
+type workspaceGraphLoad struct {
+	done       chan struct{}
+	graph      *semantic.WorkspaceGraph
+	err        error
+	generation uint64
+}
+
+func (loader *workspaceGraphRepositoryLoader) LoadWorkspaceGraph(
+	path string,
+) (*semantic.WorkspaceGraph, error) {
+	if loader == nil || loader.repository == nil {
+		return nil, fmt.Errorf("load PHP workspace graph %s: repository is unavailable", path)
+	}
+	loader.mu.Lock()
+	if element := loader.entries[path]; element != nil {
+		loader.recent.MoveToFront(element)
+		graph := element.Value.(*workspaceGraphCacheEntry).graph
+		loader.mu.Unlock()
+		return graph, nil
+	}
+	if pending := loader.loading[path]; pending != nil {
+		loader.mu.Unlock()
+		<-pending.done
+		return pending.graph, pending.err
+	}
+	if loader.loading == nil {
+		loader.loading = make(map[string]*workspaceGraphLoad)
+	}
+	pending := &workspaceGraphLoad{
+		done:       make(chan struct{}),
+		generation: loader.generation,
+	}
+	loader.loading[path] = pending
+	loader.mu.Unlock()
+
+	result, err := loader.loadWorkspaceGraph(path)
+	loader.mu.Lock()
+	pending.graph = result
+	pending.err = err
+	if loader.loading[path] == pending {
+		delete(loader.loading, path)
+	}
+	if err == nil && pending.generation == loader.generation {
+		if loader.entries == nil {
+			loader.entries = make(map[string]*list.Element)
+		}
+		entry := &workspaceGraphCacheEntry{path: path, graph: result}
+		loader.entries[path] = loader.recent.PushFront(entry)
+		if loader.recent.Len() > workspaceGraphDetailCacheSize {
+			oldest := loader.recent.Back()
+			delete(
+				loader.entries,
+				oldest.Value.(*workspaceGraphCacheEntry).path,
+			)
+			loader.recent.Remove(oldest)
+		}
+	}
+	close(pending.done)
+	loader.mu.Unlock()
+	return result, err
+}
+
+func (loader *workspaceGraphRepositoryLoader) loadWorkspaceGraph(
+	path string,
+) (*semantic.WorkspaceGraph, error) {
+	var result *semantic.WorkspaceGraph
+	err := loader.repository.VisitEncodedValuesByPath(path, func(encoded []byte) error {
+		if result != nil {
+			return fmt.Errorf("multiple persisted workspace graphs")
+		}
+		persisted, err := decodePersistedWorkspaceGraphBorrowed(encoded)
+		if err != nil {
+			return err
+		}
+		decoder := semantic.NewWorkspaceGraphDecoder()
+		defer decoder.Clear()
+		result, err = persisted.decodeWith(decoder)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("load PHP workspace graph %s: %w", path, err)
+	}
+	if result == nil {
+		return nil, fmt.Errorf("load PHP workspace graph %s: not found", path)
+	}
+	return result, nil
+}
+
+func (loader *workspaceGraphRepositoryLoader) forget(path string) {
+	if loader == nil {
+		return
+	}
+	loader.mu.Lock()
+	if element := loader.entries[path]; element != nil {
+		delete(loader.entries, path)
+		loader.recent.Remove(element)
+	}
+	loader.mu.Unlock()
+}
+
+func (loader *workspaceGraphRepositoryLoader) clear() {
+	if loader == nil {
+		return
+	}
+	loader.mu.Lock()
+	loader.generation++
+	loader.entries = nil
+	loader.recent.Init()
+	loader.mu.Unlock()
 }
 
 func NewPHPIndex(configDir string, stores ...*indexer.Store) (*PHPIndex, error) {
@@ -102,6 +233,9 @@ func NewPHPIndex(configDir string, stores ...*indexer.Store) (*PHPIndex, error) 
 		ownedStore:         ownedStore,
 		extensions:         []inference.Extension{inference.Builtins},
 	}
+	idx.workspaceGraphLoader = &workspaceGraphRepositoryLoader{
+		repository: workspaceGraphs,
+	}
 	workspaceGraphCount, err := workspaceGraphs.CountAllValues()
 	if err != nil {
 		_ = workspaceGraphs.Close()
@@ -136,7 +270,10 @@ func NewPHPIndex(configDir string, stores ...*indexer.Store) (*PHPIndex, error) 
 				if err != nil {
 					return err
 				}
-				graph, err := persisted.decodeWith(decoder)
+				graph, err := persisted.decodeSummaryWith(
+					decoder,
+					idx.workspaceGraphLoader,
+				)
 				if err != nil {
 					return err
 				}
@@ -311,6 +448,13 @@ func (idx *PHPIndex) Prepare(file *indexer.ParsedFile) (any, error) {
 	}
 
 	path := file.Path
+	if err := idx.semanticStore.EnsureDocumentDetails(path); err != nil {
+		return nil, fmt.Errorf(
+			"pin previous PHP workspace graph for %s: %w",
+			path,
+			err,
+		)
+	}
 	root := file.SyntaxTree().Root
 	document := idx.AnalyzeParsedFile(file)
 
@@ -361,6 +505,7 @@ func (idx *PHPIndex) IndexPrepared(
 		return err
 	}
 	publish := func() {
+		idx.workspaceGraphLoader.forget(path)
 		idx.publishWorkspaceGraph(prepared.graph)
 		idx.revision.Add(1)
 	}
@@ -580,11 +725,17 @@ func (idx *PHPIndex) publishWorkspaceGraph(graph *semantic.WorkspaceGraph) {
 }
 
 func (idx *PHPIndex) RemovedFiles(paths []string) error {
+	if err := idx.ensureDocumentDetails(paths); err != nil {
+		return err
+	}
 	if err := errors.Join(
 		idx.workspaceGraphs.BatchDeleteByFilePaths(paths),
 		idx.twigContextIndexer.BatchDeleteByFilePaths(paths),
 	); err != nil {
 		return err
+	}
+	for _, path := range paths {
+		idx.workspaceGraphLoader.forget(path)
 	}
 	idx.semanticStore.Remove(paths...)
 	idx.revision.Add(1)
@@ -592,6 +743,9 @@ func (idx *PHPIndex) RemovedFiles(paths []string) error {
 }
 
 func (idx *PHPIndex) RemovedFilesIn(paths []string, mutation *indexer.Mutation) error {
+	if err := idx.ensureDocumentDetails(paths); err != nil {
+		return err
+	}
 	if err := errors.Join(
 		idx.workspaceGraphs.BatchDeleteByFilePathsIn(mutation, paths),
 		idx.twigContextIndexer.BatchDeleteByFilePathsIn(mutation, paths),
@@ -599,6 +753,9 @@ func (idx *PHPIndex) RemovedFilesIn(paths []string, mutation *indexer.Mutation) 
 		return err
 	}
 	publish := func() {
+		for _, path := range paths {
+			idx.workspaceGraphLoader.forget(path)
+		}
 		idx.semanticStore.Remove(paths...)
 		idx.revision.Add(1)
 	}
@@ -616,6 +773,7 @@ func (idx *PHPIndex) Close() error {
 	idx.graphDetacher = nil
 	idx.batchMu.Unlock()
 	idx.semanticStore.Clear()
+	idx.workspaceGraphLoader.clear()
 	var storeErr error
 	if idx.ownedStore != nil {
 		storeErr = idx.ownedStore.Close()
@@ -634,6 +792,7 @@ func (idx *PHPIndex) Clear() error {
 	); err != nil {
 		return err
 	}
+	idx.workspaceGraphLoader.clear()
 	idx.resetSemanticStore()
 	return nil
 }
@@ -645,10 +804,30 @@ func (idx *PHPIndex) ClearIn(mutation *indexer.Mutation) error {
 	); err != nil {
 		return err
 	}
-	if mutation != nil {
-		return mutation.AfterCommit(idx.resetSemanticStore)
+	reset := func() {
+		idx.workspaceGraphLoader.clear()
+		idx.resetSemanticStore()
 	}
-	idx.resetSemanticStore()
+	if mutation != nil {
+		return mutation.AfterCommit(reset)
+	}
+	reset()
+	return nil
+}
+
+func (idx *PHPIndex) ensureDocumentDetails(paths []string) error {
+	if idx == nil || idx.semanticStore == nil {
+		return nil
+	}
+	for _, path := range paths {
+		if err := idx.semanticStore.EnsureDocumentDetails(path); err != nil {
+			return fmt.Errorf(
+				"pin previous PHP workspace graph for %s: %w",
+				path,
+				err,
+			)
+		}
+	}
 	return nil
 }
 
