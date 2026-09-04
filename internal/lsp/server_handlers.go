@@ -178,7 +178,14 @@ func (s *Server) handleInitialized(
 		s.notifyDisabledCLIIndexing(ctx)
 		return nil, nil
 	}
-	s.startBackground(func(ctx context.Context) {
+	suspendDiagnostics := !s.initializationOptions.CLIMode
+	if suspendDiagnostics {
+		s.suspendDiagnostics()
+	}
+	if !s.startBackground(func(ctx context.Context) {
+		if suspendDiagnostics {
+			defer s.resumeDiagnostics()
+		}
 		forceReindex := s.workspace != nil && s.workspace.InitialForceReindex()
 		if err := s.indexAll(ctx, forceReindex); err != nil {
 			log.Printf("Error indexing: %v", err)
@@ -195,7 +202,9 @@ func (s *Server) handleInitialized(
 		} else {
 			log.Println("File watcher started successfully")
 		}
-	})
+	}) && suspendDiagnostics {
+		s.resumeDiagnostics()
+	}
 	return nil, nil
 }
 
@@ -388,12 +397,21 @@ func (s *Server) handleForceReindex(
 	if !s.EffectiveConfiguration().Indexing.Enabled {
 		return nil, fmt.Errorf("indexing is disabled by configuration")
 	}
-	s.startBackground(func(ctx context.Context) {
+	suspendDiagnostics := !s.initializationOptions.CLIMode
+	if suspendDiagnostics {
+		s.suspendDiagnostics()
+	}
+	if !s.startBackground(func(ctx context.Context) {
+		if suspendDiagnostics {
+			defer s.resumeDiagnostics()
+		}
 		if err := s.indexAll(ctx, true); err != nil {
 			log.Printf("Error force reindexing: %v", err)
 			s.notifyIndexingFailed(ctx, err)
 		}
-	})
+	}) && suspendDiagnostics {
+		s.resumeDiagnostics()
+	}
 	return map[string]interface{}{"message": "Force reindexing started"}, nil
 }
 

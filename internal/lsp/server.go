@@ -79,6 +79,7 @@ type Server struct {
 	diagnosticsJobs                 map[string]*diagnosticsJob
 	diagnosticsGenerations          map[string]uint64
 	diagnosticsCache                map[string]diagnosticsCacheEntry
+	diagnosticsSuspensions          uint32
 	configurationMu                 sync.RWMutex
 	projectConfiguration            projectconfig.Partial
 	scopedConfigurations            []projectconfig.Scope

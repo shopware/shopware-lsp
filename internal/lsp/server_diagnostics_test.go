@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"os"
+	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/shopware/shopware-lsp/internal/indexer"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 	"github.com/sourcegraph/jsonrpc2"
@@ -18,6 +22,52 @@ type lifecycleInspection struct {
 	testInspection
 	versionTwoStarted chan struct{}
 	startedOnce       sync.Once
+}
+
+type diagnosticsBatchIndexer struct {
+	ready         atomic.Bool
+	indexStarted  chan struct{}
+	releaseIndex  chan struct{}
+	finishStarted chan struct{}
+	releaseFinish chan struct{}
+	indexOnce     sync.Once
+	finishOnce    sync.Once
+}
+
+func (index *diagnosticsBatchIndexer) ID() string { return "diagnostics-batch" }
+
+func (index *diagnosticsBatchIndexer) Index(*indexer.ParsedFile) error {
+	index.indexOnce.Do(func() { close(index.indexStarted) })
+	<-index.releaseIndex
+	return nil
+}
+
+func (*diagnosticsBatchIndexer) RemovedFiles([]string) error { return nil }
+func (*diagnosticsBatchIndexer) Close() error                { return nil }
+func (*diagnosticsBatchIndexer) Clear() error                { return nil }
+func (*diagnosticsBatchIndexer) BeginIndexingBatch([]string) {}
+
+func (index *diagnosticsBatchIndexer) EndIndexingBatch() error {
+	index.finishOnce.Do(func() { close(index.finishStarted) })
+	<-index.releaseFinish
+	index.ready.Store(true)
+	return nil
+}
+
+type indexedStateInspection struct {
+	testInspection
+	index *diagnosticsBatchIndexer
+}
+
+func (inspection indexedStateInspection) Inspect(
+	ctx context.Context,
+	document *TextDocument,
+	reporter ProblemReporter,
+) error {
+	if inspection.index.ready.Load() {
+		return nil
+	}
+	return inspection.testInspection.Inspect(ctx, document, reporter)
 }
 
 func (inspection *lifecycleInspection) Inspect(
@@ -88,6 +138,82 @@ func TestDocumentDiagnosticLifecycleOverJSONRPC(t *testing.T) {
 	case late := <-published:
 		t.Fatalf("received diagnostics after close: %+v", late)
 	case <-time.After(2 * diagnosticsDebounce):
+	}
+}
+
+func TestInitialIndexRefreshWaitsForBatchPublication(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "test.yaml")
+	const source = "value: bad\n"
+	require.NoError(t, os.WriteFile(path, []byte(source), 0o644))
+
+	batch := &diagnosticsBatchIndexer{
+		indexStarted:  make(chan struct{}),
+		releaseIndex:  make(chan struct{}),
+		finishStarted: make(chan struct{}),
+		releaseFinish: make(chan struct{}),
+	}
+	scanner, err := indexer.NewFileScanner(
+		root,
+		filepath.Join(t.TempDir(), "scanner.db"),
+	)
+	require.NoError(t, err)
+	scanner.AddIndexer(batch)
+	server := NewServer(scanner, root, "test")
+	server.RegisterInspection(indexedStateInspection{index: batch})
+	client, published := startDiagnosticLifecycleClient(t, server)
+
+	var releaseIndexOnce, releaseFinishOnce sync.Once
+	releaseIndex := func() {
+		releaseIndexOnce.Do(func() { close(batch.releaseIndex) })
+	}
+	releaseFinish := func() {
+		releaseFinishOnce.Do(func() { close(batch.releaseFinish) })
+	}
+	t.Cleanup(func() {
+		releaseIndex()
+		releaseFinish()
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var initializeResult interface{}
+	require.NoError(t, client.Call(ctx, "initialize", map[string]interface{}{
+		"rootUri": uriutil.FileURI(root),
+	}, &initializeResult))
+	require.NoError(t, client.Notify(ctx, "initialized", struct{}{}))
+	requireChannelClosed(t, batch.indexStarted, "initial indexing did not start")
+
+	uri := uriutil.FileURI(path)
+	require.NoError(t, client.Notify(ctx, "textDocument/didOpen", map[string]interface{}{
+		"textDocument": map[string]interface{}{
+			"uri": uri, "version": 1, "text": source,
+		},
+	}))
+	releaseIndex()
+	requireChannelClosed(t, batch.finishStarted, "batch publication did not start")
+	pullParams := &protocol.DiagnosticParams{}
+	pullParams.TextDocument.URI = uri
+	pulled := server.diagnostic(ctx, pullParams).(protocol.DiagnosticResult)
+	require.Empty(t, pulled.Items)
+	select {
+	case premature := <-published:
+		t.Fatalf("diagnostics refreshed before batch publication: %+v", premature)
+	case <-time.After(2 * diagnosticsDebounce):
+	}
+
+	releaseFinish()
+	afterPublication := waitForPublishedDiagnostics(t, published)
+	require.Equal(t, uri, afterPublication.URI)
+	require.Empty(t, afterPublication.Diagnostics)
+}
+
+func requireChannelClosed(t *testing.T, channel <-chan struct{}, message string) {
+	t.Helper()
+	select {
+	case <-channel:
+	case <-time.After(5 * time.Second):
+		t.Fatal(message)
 	}
 }
 

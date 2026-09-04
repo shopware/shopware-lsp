@@ -103,6 +103,12 @@ func (s *Server) scheduleDiagnostics(uri string, version int, delay time.Duratio
 	if previous := s.diagnosticsJobs[uri]; previous != nil {
 		previous.cancel()
 	}
+	if s.diagnosticsSuspensions > 0 {
+		delete(s.diagnosticsJobs, uri)
+		s.diagnosticsMu.Unlock()
+		cancel()
+		return
+	}
 	s.diagnosticsJobs[uri] = job
 	s.diagnosticsMu.Unlock()
 
@@ -128,6 +134,39 @@ func (s *Server) scheduleDiagnostics(uri string, version int, delay time.Duratio
 			delete(s.diagnosticsJobs, uri)
 		}
 		s.diagnosticsMu.Unlock()
+	}
+}
+
+// suspendDiagnostics prevents diagnostics from observing a workspace while a
+// full index rebuild is publishing its repositories. Nested rebuild requests
+// share the suspension and the final one resumes against the newest documents.
+func (s *Server) suspendDiagnostics() {
+	s.diagnosticsPublishMu.Lock()
+	defer s.diagnosticsPublishMu.Unlock()
+	s.diagnosticsMu.Lock()
+	s.diagnosticsSuspensions++
+	if s.diagnosticsSuspensions == 1 {
+		for uri, job := range s.diagnosticsJobs {
+			job.cancel()
+			delete(s.diagnosticsJobs, uri)
+		}
+		s.diagnosticsCache = make(map[string]diagnosticsCacheEntry)
+		s.diagnosticsGenerations = make(map[string]uint64)
+	}
+	s.diagnosticsMu.Unlock()
+}
+
+func (s *Server) resumeDiagnostics() {
+	s.diagnosticsMu.Lock()
+	if s.diagnosticsSuspensions == 0 {
+		s.diagnosticsMu.Unlock()
+		return
+	}
+	s.diagnosticsSuspensions--
+	resumed := s.diagnosticsSuspensions == 0
+	s.diagnosticsMu.Unlock()
+	if resumed && !s.initializationOptions.CLIMode {
+		s.PublishDiagnostics(s.lifecycleCtx, nil)
 	}
 }
 
@@ -216,6 +255,10 @@ func (s *Server) diagnosticsForDocument(
 		return []protocol.Diagnostic{}
 	}
 	s.diagnosticsMu.Lock()
+	if s.diagnosticsSuspensions > 0 {
+		s.diagnosticsMu.Unlock()
+		return []protocol.Diagnostic{}
+	}
 	generation := s.diagnosticsGenerations[document.URI]
 	cached, found := s.diagnosticsCache[document.URI]
 	s.diagnosticsMu.Unlock()
@@ -234,6 +277,10 @@ func (s *Server) diagnosticsForDocument(
 	}
 	if s.diagnosticsCache == nil {
 		s.diagnosticsCache = make(map[string]diagnosticsCacheEntry)
+	}
+	if s.diagnosticsSuspensions > 0 {
+		s.diagnosticsMu.Unlock()
+		return []protocol.Diagnostic{}
 	}
 	if s.diagnosticsGenerations[document.URI] == generation {
 		s.diagnosticsCache[document.URI] = diagnosticsCacheEntry{

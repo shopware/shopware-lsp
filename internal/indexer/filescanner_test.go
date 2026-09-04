@@ -1021,6 +1021,25 @@ func TestFileScanner_NotifiesBatchIndexersOnFailure(t *testing.T) {
 	require.EqualValues(t, 1, idx.ends.Load())
 }
 
+func TestFileScanner_NotifiesUpdateAfterBatchIndexersPublish(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "published.php")
+	require.NoError(t, os.WriteFile(filePath, []byte("<?php"), 0o644))
+
+	idx := &batchControlledIndexer{}
+	scanner, err := NewFileScanner(tempDir, filepath.Join(tempDir, "scanner.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, scanner.Close()) })
+	scanner.AddIndexer(idx)
+	publishedBatchEnds := make(chan int64, 1)
+	scanner.SetOnUpdate(func() {
+		publishedBatchEnds <- idx.ends.Load()
+	})
+
+	require.NoError(t, scanner.IndexFiles(context.Background(), []string{filePath}))
+	require.EqualValues(t, 1, <-publishedBatchEnds)
+}
+
 func TestFileScanner_PreparesBeforeWorkspaceMutation(t *testing.T) {
 	tempDir := t.TempDir()
 	filePath := filepath.Join(tempDir, "prepared.php")

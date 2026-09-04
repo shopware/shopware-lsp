@@ -70,8 +70,15 @@ func (fs *FileScanner) indexFiles(
 		),
 	}
 	run.beginIndexerBatches()
+	notifyUpdate := false
 	defer func() {
 		returnErr = errors.Join(returnErr, run.finishIndexerBatches())
+		// Batch indexers publish their immutable workspace generations while
+		// finishing. Consumers must never refresh against the committed file
+		// hashes while those generations still describe the previous batch.
+		if notifyUpdate && run.scanner.onUpdate != nil {
+			run.scanner.onUpdate()
+		}
 	}()
 	if err := run.loadStoredStates(); err != nil {
 		return err
@@ -80,7 +87,7 @@ func (fs *FileScanner) indexFiles(
 		return errors.Join(run.resultErrors...)
 	}
 	run.commitSkippedFiles()
-	run.commitFileStates()
+	notifyUpdate = run.commitFileStates()
 	return errors.Join(run.resultErrors...)
 }
 
@@ -504,15 +511,13 @@ func preparedFileState(item preparedFileWork) fileState {
 	return fileState{path: item.file.Path, info: item.info}
 }
 
-func (run *fileIndexRun) commitFileStates() {
+func (run *fileIndexRun) commitFileStates() bool {
 	if len(run.updatedStates) == 0 {
-		return
+		return false
 	}
 	if err := run.scanner.updateFileStates(run.ctx, run.updatedStates); err != nil {
 		run.recordError(fmt.Errorf("commit file state: %w", err))
-		return
+		return false
 	}
-	if run.scanner.onUpdate != nil {
-		run.scanner.onUpdate()
-	}
+	return true
 }
