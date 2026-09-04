@@ -1020,6 +1020,9 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
   Lexical inputs captured at the parent block declaration, such as data-grid
   `item` and `column` variables, remain typed and navigable inside overriding
   templates and survive persistent-cache restoration
+- Administration `<sw-block extends="…">` declarations are diagnosed when
+  nested or placed under conditional/repeated Vue or Twig control flow;
+  conditional and repeated `<sw-block-parent>` rendering is rejected as well
 - Vue `<component is>`, `:is`, and `v-bind:is` selectors are component-aware:
   static literal candidates participate in completion, hover, navigation,
   semantic highlighting, references, rename, and missing-component fixes.
@@ -1349,6 +1352,7 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
 | Non-writable component model binding | Warning | Twig (admin) |
 | Incompatible typed component model binding | Warning | Twig (admin) |
 | Invalid block references in component overrides | Error | Twig (admin) |
+| Nested or runtime-controlled Administration block override | Error | Twig, Vue (admin) |
 | Non-existent parent component | Error | JS/TS (admin) |
 | Outdated block version hash | Warning | Twig |
 | Missing block version comment | Warning | Twig |

@@ -66,6 +66,11 @@ func NewAdmin(
 			},
 			Problems: []lsp.ProblemDefinition{
 				{ID: "admin.application-container.unknown-member", Source: "shopware-lsp", DefaultSeverity: protocol.DiagnosticSeverityWarning},
+				{ID: diagnostics.AdminBlockOverrideNestedCode, Source: "shopware-lsp", DefaultSeverity: protocol.DiagnosticSeverityError},
+				{ID: diagnostics.AdminBlockOverrideConditionalCode, Source: "shopware-lsp", DefaultSeverity: protocol.DiagnosticSeverityError},
+				{ID: diagnostics.AdminBlockOverrideRepeatedCode, Source: "shopware-lsp", DefaultSeverity: protocol.DiagnosticSeverityError},
+				{ID: diagnostics.AdminBlockParentConditionalCode, Source: "shopware-lsp", DefaultSeverity: protocol.DiagnosticSeverityError},
+				{ID: diagnostics.AdminBlockParentRepeatedCode, Source: "shopware-lsp", DefaultSeverity: protocol.DiagnosticSeverityError},
 				{ID: "admin.shopware-context.unknown-member", Source: "shopware-lsp", DefaultSeverity: protocol.DiagnosticSeverityWarning},
 				{ID: "admin.shopware-utils.unknown-member", Source: "shopware-lsp", DefaultSeverity: protocol.DiagnosticSeverityWarning},
 				{ID: "admin.component.deprecated", Source: "shopware-lsp", DefaultSeverity: protocol.DiagnosticSeverityHint},
@@ -103,6 +108,7 @@ func NewAdmin(
 		},
 		analyzer: adminAnalyzer,
 		analyzers: []ProblemAnalyzer{
+			diagnostics.NewAdminBlockOverrideAnalyzer(),
 			diagnostics.NewAdminTwigMigrationAnalyzer(version),
 			diagnostics.NewAdminSlotMigrationAnalyzer(),
 			diagnostics.NewAdminI18nDeprecationAnalyzer(),
