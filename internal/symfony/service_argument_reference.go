@@ -92,19 +92,28 @@ func yamlServiceMethodReferences(
 		if yamlquery.IsSequence(calls) {
 			for _, callItem := range yamlquery.Items(calls) {
 				call := yamlquery.ItemValue(callItem)
-				if !yamlquery.IsSequence(call) {
-					continue
+				switch {
+				case yamlquery.IsSequence(call):
+					parts := yamlquery.Items(call)
+					if len(parts) == 0 {
+						continue
+					}
+					result = appendYAMLServiceMethodItemReference(
+						result,
+						base,
+						parts[0],
+						includeEmpty,
+					)
+				case yamlquery.IsMapping(call):
+					for _, pair := range yamlquery.Pairs(call) {
+						result = appendYAMLServiceMethodReference(
+							result,
+							base,
+							yamlquery.PairKey(pair),
+							includeEmpty,
+						)
+					}
 				}
-				parts := yamlquery.Items(call)
-				if len(parts) == 0 {
-					continue
-				}
-				result = appendYAMLServiceMethodItemReference(
-					result,
-					base,
-					parts[0],
-					includeEmpty,
-				)
 			}
 		}
 		result = appendYAMLTagMethodReferences(
@@ -536,30 +545,52 @@ func yamlServiceCallReferences(
 	var result []ServiceArgumentReference
 	for _, callItem := range yamlquery.Items(calls) {
 		call := yamlquery.ItemValue(callItem)
-		if !yamlquery.IsSequence(call) {
-			continue
-		}
-		parts := yamlquery.Items(call)
-		if len(parts) < 2 {
-			continue
-		}
-		methodName := yamlquery.ScalarValue(yamlquery.ItemValue(parts[0]))
-		arguments := yamlquery.ItemValue(parts[1])
-		if methodName == "" || !yamlquery.IsSequence(arguments) {
-			continue
-		}
-		for index, argument := range yamlquery.Items(arguments) {
-			reference, found := yamlServiceArgumentReference(
-				yamlquery.ItemValue(argument),
-				base,
-			)
-			if !found {
+		switch {
+		case yamlquery.IsSequence(call):
+			parts := yamlquery.Items(call)
+			if len(parts) < 2 {
 				continue
 			}
-			reference.MethodName = methodName
-			reference.ParameterIndex = index
-			result = append(result, reference)
+			result = appendYAMLServiceCallArgumentReferences(
+				result,
+				base,
+				yamlquery.ScalarValue(yamlquery.ItemValue(parts[0])),
+				yamlquery.ItemValue(parts[1]),
+			)
+		case yamlquery.IsMapping(call):
+			for _, pair := range yamlquery.Pairs(call) {
+				result = appendYAMLServiceCallArgumentReferences(
+					result,
+					base,
+					yamlquery.ScalarValue(yamlquery.PairKey(pair)),
+					yamlquery.PairValue(pair),
+				)
+			}
 		}
+	}
+	return result
+}
+
+func appendYAMLServiceCallArgumentReferences(
+	result []ServiceArgumentReference,
+	base ServiceArgumentReference,
+	methodName string,
+	arguments *cst.Node,
+) []ServiceArgumentReference {
+	if methodName == "" || !yamlquery.IsSequence(arguments) {
+		return result
+	}
+	for index, argument := range yamlquery.Items(arguments) {
+		reference, found := yamlServiceArgumentReference(
+			yamlquery.ItemValue(argument),
+			base,
+		)
+		if !found {
+			continue
+		}
+		reference.MethodName = methodName
+		reference.ParameterIndex = index
+		result = append(result, reference)
 	}
 	return result
 }

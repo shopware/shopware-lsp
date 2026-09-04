@@ -421,6 +421,95 @@ $container->services()
 	assert.Equal(t, 0, references[0].ParameterIndex)
 }
 
+func TestPHPServiceMethodReferences(t *testing.T) {
+	for _, fixture := range []struct {
+		name          string
+		source        string
+		wantOwners    []string
+		wantClasses   []string
+		wantMethods   []string
+		wantFragments []string
+	}{
+		{
+			name: "configurator callback",
+			source: `<?php
+use App\Service\Consumer;
+use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+
+return static function (ContainerConfigurator $container): void {
+    $services = $container->services();
+    $definition = $services->set('app.consumer', Consumer::class);
+    $definition->call('setLogger', []);
+    $services->set(Consumer::class)->call('initialize');
+};
+`,
+			wantOwners:    []string{"app.consumer", `App\Service\Consumer`},
+			wantClasses:   []string{`App\Service\Consumer`, `App\Service\Consumer`},
+			wantMethods:   []string{"setLogger", "initialize"},
+			wantFragments: []string{"setLogger", "initialize"},
+		},
+		{
+			name: "direct configurator chain",
+			source: `<?php
+namespace Symfony\Component\DependencyInjection\Loader\Configurator;
+
+$container->services()
+    ->set('app.consumer', \App\Service\Consumer::class)
+    ->call('setLogger', []);
+`,
+			wantOwners:    []string{"app.consumer"},
+			wantClasses:   []string{`App\Service\Consumer`},
+			wantMethods:   []string{"setLogger"},
+			wantFragments: []string{"setLogger"},
+		},
+		{
+			name: "native array mapping and tuple",
+			source: `<?php
+use App\Service\Consumer;
+use Symfony\Config\FrameworkConfig;
+
+return FrameworkConfig::config([
+    'services' => [
+        Consumer::class => [
+            'calls' => [
+                'setLogger' => [],
+                ['initialize', [], true],
+            ],
+        ],
+    ],
+]);
+`,
+			wantOwners:    []string{`App\Service\Consumer`, `App\Service\Consumer`},
+			wantClasses:   []string{`App\Service\Consumer`, `App\Service\Consumer`},
+			wantMethods:   []string{"setLogger", "initialize"},
+			wantFragments: []string{"setLogger", "initialize"},
+		},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			source := []byte(fixture.source)
+			result := phpparser.ParseBytes(source)
+			references, err := PHPServiceMethodReferences(
+				"/project/config/services.php",
+				result.Tree.Root,
+				phpsyntax.NewLineIndex(fixture.source),
+			)
+			require.NoError(t, err)
+			require.Len(t, references, len(fixture.wantMethods))
+			for index, reference := range references {
+				assert.Equal(t, fixture.wantOwners[index], reference.OwnerServiceID)
+				assert.Equal(t, fixture.wantClasses[index], reference.OwnerClass)
+				assert.Equal(t, fixture.wantMethods[index], reference.MethodName)
+				assert.Equal(t, "php", reference.Format)
+				assert.Equal(
+					t,
+					fixture.wantFragments[index],
+					string(source[reference.Range.Start:reference.Range.End]),
+				)
+			}
+		})
+	}
+}
+
 func BenchmarkParsePHPServices(b *testing.B) {
 	source := benchmarkPHPServicesSource()
 	b.ReportAllocs()

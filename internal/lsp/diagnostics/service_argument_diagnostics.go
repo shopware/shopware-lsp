@@ -187,6 +187,16 @@ func (p *ServiceArgumentAnalyzer) configuredServiceMethodDiagnostics(
 		references = symfony.XMLServiceMethodReferences(
 			document.SyntaxTree.Root,
 		)
+	case ".php":
+		var err error
+		references, err = symfony.PHPServiceMethodReferences(
+			document.URI,
+			document.SyntaxTree.Root,
+			document.LineIndex,
+		)
+		if err != nil {
+			return nil, err
+		}
 	default:
 		return nil, nil
 	}

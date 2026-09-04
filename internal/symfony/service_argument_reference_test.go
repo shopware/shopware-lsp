@@ -32,7 +32,7 @@ func TestYAMLServiceArgumentReferences(t *testing.T) {
   app.called:
     class: App\Called
     calls:
-      - [setLogger, [scalar, '@app.logger']]
+      - setLogger: [scalar, '@app.logger']
 `
 	references := YAMLServiceArgumentReferences(
 		yamlparser.Parse(source).Tree.Root,
@@ -63,7 +63,7 @@ func TestYAMLServiceMethodReferences(t *testing.T) {
     class: App\Called
     calls:
       - [setLogger, ['@app.logger']]
-      - [initialize]
+      - initialize: []
     tags:
       - { name: kernel.event_listener, method: onKernelRequest }
   app.factory:

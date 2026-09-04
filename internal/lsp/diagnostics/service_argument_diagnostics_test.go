@@ -321,7 +321,7 @@ func TestYAMLConfiguredServiceMethodDiagnostics(t *testing.T) {
     factory: ['@factory', create]
     calls:
       - [setLogger, ['@app.logger']]
-      - [setLoggr, []]
+      - setLoggr: []
 `,
 		1,
 	)
@@ -357,6 +357,124 @@ func TestXMLConfiguredServiceMethodDiagnostics(t *testing.T) {
 	require.Len(t, missing, 1)
 	assert.Equal(t, "Missing Method", missing[0].Message)
 	assert.Equal(t, "setLoggr", problemRangeText(document, missing[0].Range))
+}
+
+func TestPHPConfiguredServiceMethodDiagnostics(t *testing.T) {
+	provider := serviceArgumentDiagnosticsFixture(t)
+	for _, fixture := range []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "configurator",
+			source: `<?php
+use App\NeedsArguments;
+use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+
+return static function (ContainerConfigurator $container): void {
+    $services = $container->services();
+    $services->set('app.consumer', NeedsArguments::class)
+        ->call('setLogger', [])
+        ->call('setLoggr', []);
+};
+`,
+		},
+		{
+			name: "native array mapping",
+			source: `<?php
+use App\NeedsArguments;
+use Symfony\Config\ServicesConfig;
+
+return ServicesConfig::config([
+    'services' => [
+        NeedsArguments::class => [
+            'calls' => [
+                'setLogger' => [],
+                'setLoggr' => [],
+            ],
+        ],
+    ],
+]);
+`,
+		},
+		{
+			name: "native array tuple",
+			source: `<?php
+return [
+    'services' => [
+        'App\\NeedsArguments' => [
+            'calls' => [
+                ['setLogger', []],
+                ['setLoggr', [], true],
+            ],
+        ],
+    ],
+];
+`,
+		},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			document := lsp.NewTextDocument(
+				"file:///project/services.php",
+				fixture.source,
+				1,
+			)
+			result, err := provider.Analyze(context.Background(), document)
+			require.NoError(t, err)
+			missing := problemsWithCode(
+				result,
+				missingConfiguredServiceMethodCode,
+			)
+			require.Len(t, missing, 1)
+			assert.Equal(
+				t,
+				"setLoggr",
+				problemRangeText(document, missing[0].Range),
+			)
+			assert.Contains(
+				t,
+				missing[0].Payload.(map[string]any)["suggestions"],
+				"setLogger",
+			)
+		})
+	}
+}
+
+func TestConfiguredServiceMethodDiagnosticsUseInheritedMethods(t *testing.T) {
+	provider := serviceArgumentDiagnosticsFixture(t)
+	document := lsp.NewTextDocument(
+		"file:///project/services.php",
+		`<?php
+return [
+    'services' => [
+        'App\\ChildArguments' => [
+            'calls' => ['setLogger' => []],
+        ],
+    ],
+];
+`,
+		1,
+	)
+	result, err := provider.Analyze(context.Background(), document)
+	require.NoError(t, err)
+	assert.Empty(t, problemsWithCode(result, missingConfiguredServiceMethodCode))
+}
+
+func TestConfiguredServiceMethodDiagnosticsSkipUnknownClasses(t *testing.T) {
+	provider := serviceArgumentDiagnosticsFixture(t)
+	document := lsp.NewTextDocument(
+		"file:///project/services.yaml",
+		`services:
+  app.unknown:
+    class: App\Unknown
+    calls:
+      - missing: []
+`,
+		1,
+	)
+	result, err := provider.Analyze(context.Background(), document)
+	require.NoError(t, err)
+	assert.Empty(t, problemsWithCode(result, missingConfiguredServiceMethodCode))
 }
 
 func TestConfiguredFactoryMethodDiagnosticsUseFactoryReceiver(t *testing.T) {

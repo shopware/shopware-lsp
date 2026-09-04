@@ -605,6 +605,10 @@ func mergePHPServiceConfigs(
 		base.Parameters = append(base.Parameters, parameter)
 	}
 	base.Prototypes = append(base.Prototypes, additional.Prototypes...)
+	base.MethodReferences = append(
+		base.MethodReferences,
+		additional.MethodReferences...,
+	)
 	sort.Slice(base.Services, func(left, right int) bool {
 		if base.Services[left].Line == base.Services[right].Line {
 			return base.Services[left].ID < base.Services[right].ID

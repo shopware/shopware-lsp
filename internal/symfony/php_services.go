@@ -102,11 +102,56 @@ func PHPServiceArgumentReferences(
 	return uniqueServiceArgumentReferences(references), nil
 }
 
+// PHPServiceMethodReferences returns statically knowable method names from
+// Symfony's PHP configurator API and native array service definitions.
+func PHPServiceMethodReferences(
+	path string,
+	root *phpsyntax.Node,
+	lineIndex *phpsyntax.LineIndex,
+) ([]ServiceMethodReference, error) {
+	if root == nil {
+		return nil, nil
+	}
+	source := root.Text()
+	hasFluentCalls := strings.Contains(source, "->call")
+	hasArrayCalls := strings.Contains(source, "'calls'") ||
+		strings.Contains(source, `"calls"`)
+	if !hasFluentCalls && !hasArrayCalls {
+		return nil, nil
+	}
+
+	var references []ServiceMethodReference
+	if hasFluentCalls {
+		config, err := parsePHPServiceConfigTreeWithReferences(
+			path,
+			root,
+			lineIndex,
+			true,
+		)
+		if err != nil {
+			return nil, err
+		}
+		references = append(references, config.MethodReferences...)
+		references = append(
+			references,
+			directPHPServiceMethodReferences(path, root)...,
+		)
+	}
+	if hasArrayCalls {
+		references = append(
+			references,
+			phpArrayServiceMethodReferences(path, root)...,
+		)
+	}
+	return uniqueServiceMethodReferences(references), nil
+}
+
 type phpServiceConfig struct {
-	Services   []Service
-	Parameters []Parameter
-	Prototypes []ServicePrototype
-	References []ServiceArgumentReference
+	Services         []Service
+	Parameters       []Parameter
+	Prototypes       []ServicePrototype
+	References       []ServiceArgumentReference
+	MethodReferences []ServiceMethodReference
 }
 
 func parsePHPServiceConfigTree(
@@ -200,10 +245,11 @@ func parsePHPServiceConfigTreeWithReferences(
 		return parameters[left].Line < parameters[right].Line
 	})
 	return phpServiceConfig{
-		Services:   services,
-		Parameters: parameters,
-		Prototypes: evaluator.prototypes,
-		References: evaluator.references,
+		Services:         services,
+		Parameters:       parameters,
+		Prototypes:       evaluator.prototypes,
+		References:       evaluator.references,
+		MethodReferences: evaluator.methodReferences,
 	}, nil
 }
 
@@ -276,6 +322,7 @@ type phpServiceEvaluator struct {
 	prototypes         []ServicePrototype
 	collectReferences  bool
 	references         []ServiceArgumentReference
+	methodReferences   []ServiceMethodReference
 }
 
 func (e *phpServiceEvaluator) evaluate(body *phpsyntax.Node) {

@@ -185,6 +185,10 @@ func (e *phpServiceEvaluator) configureDefinition(
 			e.references,
 			e.serviceArgumentReferences(service, calls)...,
 		)
+		e.methodReferences = append(
+			e.methodReferences,
+			e.serviceMethodReferences(service, calls)...,
+		)
 	}
 	e.services[definitionID] = service
 }
