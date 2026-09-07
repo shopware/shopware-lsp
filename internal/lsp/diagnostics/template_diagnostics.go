@@ -341,6 +341,14 @@ func emptyTemplateAnnotationRanges(
 			(text[cursor] == ' ' || text[cursor] == '\t') {
 			cursor++
 		}
+		// `@template T` is PHPStan's generics tag, not an empty Sensio
+		// `@Template`. Both spell the same word, and the identifier check
+		// above only rejects `@templateFoo`, so the space in front of the
+		// type parameter has to be handled here or every generic class is
+		// reported as rendering a template named after its methods.
+		if cursor < len(text) && isTemplateTypeParameterByte(text[cursor]) {
+			continue
+		}
 		if cursor < len(text) && text[cursor] == '(' {
 			closeOffset := strings.IndexByte(text[cursor+1:], ')')
 			if closeOffset < 0 ||
@@ -362,6 +370,14 @@ func isTemplateAnnotationIdentifierByte(value byte) bool {
 	return value == '_' ||
 		value >= 'a' && value <= 'z' ||
 		value >= '0' && value <= '9'
+}
+
+// isTemplateTypeParameterByte reports whether value could start the type
+// parameter of a PHPStan `@template` tag, such as the `T` in `@template T`.
+func isTemplateTypeParameterByte(value byte) bool {
+	return value == '_' ||
+		value >= 'a' && value <= 'z' ||
+		value >= 'A' && value <= 'Z'
 }
 
 func (p *TemplateAnalyzer) isSupportedPHPCall(

@@ -215,6 +215,40 @@ class ProductController {
 	)
 }
 
+func TestTemplateDiagnosticsIgnoresGenericsTemplateTag(t *testing.T) {
+	provider := templateDiagnosticsFixture(t)
+	document := lsp.NewTextDocument(
+		"file:///project/src/Struct/Collection.php",
+		`<?php
+namespace App\Struct;
+class Collection {
+    /**
+     * @template T
+     *
+     * @param \Closure(TElement): T $closure
+     */
+    public function map(\Closure $closure): array { return []; }
+
+    /**
+     * @template TMapped of TElement
+     */
+    public function firstWhere(\Closure $closure): mixed { return null; }
+
+    /**
+     * @template	TTabbed
+     */
+    public function reduce(\Closure $closure): mixed { return null; }
+}`,
+		1,
+	)
+	result, err := provider.Analyze(context.Background(), document)
+	require.NoError(t, err)
+	// PHPStan's `@template T` declares a generic type parameter. Reading it as
+	// an empty Sensio `@Template` guesses a template from the class and method
+	// name, so every generic class reports templates it never renders.
+	assert.Empty(t, result)
+}
+
 func templateDiagnosticsFixture(t *testing.T) *TemplateAnalyzer {
 	t.Helper()
 	twigIndex, err := twig.NewTwigIndexer(t.TempDir())
