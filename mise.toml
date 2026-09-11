@@ -63,6 +63,7 @@ run = [
   "npm run test:project-detection",
   "npm run test:workspace-roots",
   "npm run test:workspace-clients",
+  "npm run test:document-selector",
 ]
 
 [tasks.release]

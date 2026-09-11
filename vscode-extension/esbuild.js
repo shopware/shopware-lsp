@@ -59,6 +59,7 @@ async function main() {
       serverExecutable: 'src/serverExecutable.ts',
       projectDetection: 'src/projectDetection.ts',
       languageConfigurationModel: 'src/languageConfigurationModel.ts',
+      documentSelectorModel: 'src/documentSelectorModel.ts',
       workspaceRoots: 'src/workspaceRoots.ts',
       workspaceClientManager: 'src/workspaceClientManager.ts'
     },

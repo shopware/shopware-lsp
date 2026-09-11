@@ -25,6 +25,10 @@ import {registerProjectMarkerWatchers} from './projectMarkers';
 import {resolveServerExecutable} from './serverExecutable';
 import {registerDiagnosticConfigurationSupport} from './diagnosticConfiguration';
 import {
+  documentSelectorFilePatterns,
+  documentSelectorLanguages,
+} from './documentSelectorModel';
+import {
   attachConfigurationClient,
   projectConfigurationPath,
   readEditorConfiguration,
@@ -136,16 +140,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       } : {}),
     };
     const workspacePattern = new vscode.RelativePattern(folder, '**/*');
-    const languageFilters = [
-      'php', 'xml', 'yml', 'yaml', 'twig', 'vue', 'json', 'scss',
-      'javascript', 'typescript', 'dotenv', 'dockerfile',
-    ].map(language => ({scheme: 'file', language, pattern: workspacePattern}));
+    const languageFilters = documentSelectorLanguages.map(language => ({
+      scheme: 'file',
+      language,
+      pattern: workspacePattern,
+    }));
     const documentSelector = [
       ...languageFilters,
-      {scheme: 'file', pattern: new vscode.RelativePattern(folder, '**/*.vue')},
-      {scheme: 'file', pattern: new vscode.RelativePattern(folder, '**/.env*')},
-      {scheme: 'file', pattern: new vscode.RelativePattern(folder, '**/*.env')},
-      {scheme: 'file', pattern: new vscode.RelativePattern(folder, '**/Dockerfile*')},
+      ...documentSelectorFilePatterns.map(pattern => ({
+        scheme: 'file',
+        pattern: new vscode.RelativePattern(folder, pattern),
+      })),
       // vscode-languageclient's protocol type still declares pattern as a
       // string, while VS Code's runtime accepts RelativePattern for precise
       // workspace-folder scoping.

@@ -49,6 +49,11 @@ Autocomplete service IDs, tags, parameters, and class names in XML and YAML serv
 
 Complete template paths in `extends`, `include`, `sw_extends`, and `sw_include` tags. Autocomplete Twig filters and functions. Navigate to any template file from Twig or PHP (`renderStorefront`). See block usage at a glance with code lens indicators.
 
+The extension registers the `twig` language for `*.twig` files, so no separate
+Twig extension is required for language-server features. Files reassociated to
+another language through `files.associations` stay attached to the server
+through a `**/*.twig` document-selector fallback.
+
 ### Twig Block Versioning
 
 Keep template overrides in sync across Storefront, themes, vendor packages, and
