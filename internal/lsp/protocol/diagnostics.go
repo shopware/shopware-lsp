@@ -8,8 +8,9 @@ type DiagnosticParams struct {
 	PreviousResultId string `json:"previousResultId,omitempty"`
 }
 
-// DiagnosticResult represents the result of a textDocument/diagnostic request
+// DiagnosticResult represents a full report returned by textDocument/diagnostic.
 type DiagnosticResult struct {
+	Kind     string       `json:"kind"`
 	Items    []Diagnostic `json:"items"`
 	ResultId string       `json:"resultId,omitempty"`
 }

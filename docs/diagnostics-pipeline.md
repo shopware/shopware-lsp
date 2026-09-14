@@ -565,6 +565,10 @@ path (`textDocument/diagnostic`), so a pull request right after a push costs
 nothing. Results are copied in and out of the cache so a caller cannot mutate
 the shared slice. A canceled run is never cached.
 
+Pull responses always return a full report with `"kind": "full"` and an `items`
+array, including `"items": []` for empty or unavailable documents and cached
+empty results. The server does not currently return unchanged reports.
+
 `RefreshOpenDocumentDiagnostics(match)` re-analyzes open documents affected by a
 change elsewhere — the "open dependency changed" case — using the debounce so a
 workspace overlay does not schedule one job per keystroke. It is skipped in CLI

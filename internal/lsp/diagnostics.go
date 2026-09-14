@@ -240,11 +240,15 @@ func (s *Server) clearPublishedDiagnostics(ctx context.Context, uri string) {
 }
 
 func (s *Server) diagnostic(ctx context.Context, params *protocol.DiagnosticParams) interface{} {
+	result := protocol.DiagnosticResult{Kind: "full", Items: []protocol.Diagnostic{}}
 	document, ok := s.documentManager.GetDocument(params.TextDocument.URI)
 	if !ok {
-		return protocol.DiagnosticResult{Items: []protocol.Diagnostic{}}
+		return result
 	}
-	return protocol.DiagnosticResult{Items: s.diagnosticsForDocument(ctx, document)}
+	if diagnostics := s.diagnosticsForDocument(ctx, document); len(diagnostics) > 0 {
+		result.Items = diagnostics
+	}
+	return result
 }
 
 func (s *Server) diagnosticsForDocument(
