@@ -1,0 +1,67 @@
+// Optional Zed settings for a Shopware project. Merge what you want into your
+// own settings.json, or the project's .zed/settings.json.
+{
+  "lsp": {
+    "shopware-lsp": {
+      "settings": {
+        "shopwareLSP": {
+          "activationMode": "auto",
+          // 0 uses the server's balanced GC policy. 512 trades indexing CPU
+          // for lower peak memory on large workspaces.
+          "memoryLimitMiB": 0
+        }
+      }
+    },
+    // Validate .config/shopware/lsp.yaml against the server's own schema.
+    // This is what the VS Code extension contributes as yamlValidation.
+    "yaml-language-server": {
+      "settings": {
+        "yaml": {
+          "schemas": {
+            "https://raw.githubusercontent.com/shopware/shopware-lsp/main/internal/projectconfig/schema.json": [
+              ".config/shopware/lsp.yaml"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "context_servers": {
+    "shopware-lsp": {
+      // Only needed for multi-root workspaces, or if the Agent Panel starts
+      // before you open a PHP or Twig file. Read only while "command" below
+      // is absent.
+      "settings": { "root": "/path/to/shopware" }
+
+      // To force a specific binary for the Agent Panel -- a local build, say,
+      // since the extension sandbox has no PATH and sees only its own work
+      // directory -- uncomment this. "args" is mandatory: Zed treats a present
+      // "command" as a complete custom-server definition and never calls the
+      // extension, so the binary is spawned bare, which is a language server
+      // being asked to speak MCP. It fails with a 30 second timeout and no
+      // useful error. "mcp" must come last. Doing this also makes the "root"
+      // setting above dead config, hence -root here.
+      //
+      // "command": {
+      //   "path": "/Users/you/.local/bin/shopware-lsp",
+      //   "args": ["-root", "/path/to/shopware", "mcp"]
+      // }
+    }
+  },
+  "languages": {
+    "PHP": {
+      // Pick one PHP server. Zed's "..." wildcard automatically enables any
+      // newly registered server for a language, so installing this extension
+      // alongside phpactor or intelephense gives you two, and every code
+      // action and completion appears twice.
+      //
+      // Your list replaces Zed's default entirely, so name with "!" anything
+      // you want off, including servers Zed disables by default.
+      "language_servers": ["shopware-lsp", "!phpactor", "!intelephense", "..."],
+      // Organize imports is one of the few code actions that works in a
+      // generic client. Add your own formatter as a second entry.
+      "formatter": [{ "code_action": "source.organizeImports" }],
+      "format_on_save": "on"
+    }
+  }
+}

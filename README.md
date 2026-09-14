@@ -154,6 +154,14 @@ After approval through the gated `preview` deployment environment, pre-release
 packages are also published to the pre-release channel of the Marketplace and
 Open VSX. Use the stable channel for production installations.
 
+### Zed
+
+The [Zed extension](editors/zed/README.md) provides language-server support,
+MCP tools for the Agent Panel, snippets, and optional generator tasks. Install
+it as a development extension by selecting `editors/zed` in Zed's **Install
+Dev Extension** action. Rust via rustup is required to compile the extension;
+the server binary is downloaded automatically.
+
 ### Other editors and standalone use
 
 Download a server archive from

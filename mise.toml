@@ -74,9 +74,28 @@ description = "Build platform-specific VSIX packages into out/"
 depends = ["vscode:install"]
 run = "node scripts/build-vsix-release.mjs"
 
+[tasks."zed:check"]
+description = "Check Zed extension formatting and Rust lint"
+dir = "editors/zed"
+run = ["cargo fmt --check", "cargo clippy --locked --all-targets -- -D warnings"]
+
+[tasks."zed:test"]
+description = "Run Zed extension and task adapter tests"
+dir = "editors/zed"
+run = ["cargo test --locked", "python3 scripts/test-sw-action.py"]
+
+[tasks."zed:build"]
+description = "Build the Zed WASM extension"
+dir = "editors/zed"
+run = "cargo build --locked --release --target wasm32-wasip2"
+
+[tasks."zed:contracts"]
+description = "Check Zed contracts against the local server and VS Code manifest"
+run = "bash editors/zed/scripts/check-local.sh"
+
 [tasks.check]
-description = "Run backend and VSCode validation"
-depends = ["test", "test:integration-compile", "lint", "vscode:check", "vscode:test"]
+description = "Run backend and editor validation"
+depends = ["test", "test:integration-compile", "lint", "vscode:check", "vscode:test", "zed:check", "zed:test", "zed:build", "zed:contracts"]
 
 [tasks.default]
 description = "Build the backend and VSCode extension"

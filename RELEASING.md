@@ -204,10 +204,23 @@ Notes:
 | `.github/workflows/release.yml` | stable pipeline (even minors) |
 | `.github/workflows/pre-release.yml` | pre-release pipeline (odd minors, runs `tests.yml` first) |
 | `.github/workflows/build-vsix.yml` | reusable VSIX build (`version` + `pre-release` inputs) |
-| `.github/workflows/tests.yml` | Go/race/lint/VS Code/build gates |
+| `.github/workflows/tests.yml` | Go/race/lint/VS Code/Zed/build gates |
 | `scripts/build-vsix-release.mjs` | GoReleaser → stage binary → `vsce package` × 8 → `SHA256SUMS` |
 | `.goreleaser.yaml` | binary matrix, ldflags version injection, archives, changelog, Homebrew cask |
 | `Makefile` (`release`, `release-dry-run`) | Dockerized GoReleaser invocations |
 | `mise.toml` (`release` task) | local entry point: `node scripts/build-vsix-release.mjs` into `out/` |
 | `editors/vscode/package.json` | extension manifest; `version` is overridden by the tag at release time |
 | `main.go` (`var version = "dev"`) | server version; release builds overwrite it via `-X main.version=` |
+
+## Zed extension
+
+The Zed client lives in `editors/zed` and has its own version in
+`extension.toml`. `mise run zed:build` produces
+`editors/zed/target/wasm32-wasip2/release/zed_shopware_lsp.wasm`; the normal test
+workflow checks this build plus Rust/Python tests and local server contracts.
+The Zed extension downloads the platform server from the existing Open VSX
+VSIX packages, so server packaging and artifact paths stay shared.
+
+The release workflows do not publish the Zed extension to its registry. For
+local installation, select `editors/zed` as a development extension in Zed.
+Registry publication is a separate step from the server/VSIX release pipeline.

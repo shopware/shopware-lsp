@@ -7,6 +7,7 @@ on:
     paths:
       - '**.go'
       - 'editors/vscode/**'
+      - 'editors/zed/**'
       - 'go.mod'
       - 'go.sum'
       - 'mise.toml'
@@ -17,6 +18,7 @@ on:
     paths:
       - '**.go'
       - 'editors/vscode/**'
+      - 'editors/zed/**'
       - 'go.mod'
       - 'go.sum'
       - 'mise.toml'
@@ -98,10 +100,51 @@ jobs:
         npm --prefix editors/vscode run test:workspace-roots
         npm --prefix editors/vscode run test:workspace-clients
 
+  zed:
+    name: Zed extension
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: editors/zed
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: '1.27.0'
+        cache: true
+
+    - name: Install pinned Rust toolchain and WASM target
+      run: rustup show
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: editors/zed
+
+    - name: Check formatting and lint
+      run: |
+        cargo fmt --check
+        cargo clippy --locked --all-targets -- -D warnings
+
+    - name: Run tests
+      run: |
+        cargo test --locked
+        python3 scripts/test-sw-action.py
+
+    - name: Build WASM extension
+      run: |
+        cargo build --locked --release --target wasm32-wasip2
+        test -s target/wasm32-wasip2/release/zed_shopware_lsp.wasm
+
+    - name: Check local server contracts and editor parity
+      run: bash scripts/check-local.sh
+
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [test, lint, vscode]
+    needs: [test, lint, vscode, zed]
     steps:
     - name: Checkout code
       uses: actions/checkout@v5

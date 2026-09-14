@@ -1,0 +1,146 @@
+{
+  "_comment": "Which upstream commands have an equivalent here, and which actions stand on their own. Every command carries exactly one of 'gap' or 'action', and an 'action' may add 'partial' when it covers only some of what the upstream command does. Actions with no upstream counterpart belong in 'standalone' rather than being mapped to a loose match. scripts/inventory.py fails when upstream adds a command missing here; scripts/test-sw-action.py fails when an action named here does not exist, when an action is neither mapped nor standalone, or when the README counts disagree.",
+  "palette": {
+    "shopware.createFile": {
+      "action": "scaffold"
+    },
+    "shopware.createSnippetFromSelection": {
+      "gap": "worth adding; needs the selection plus a snippet-file picker"
+    },
+    "shopware.insertSnippet": {
+      "gap": "worth adding; needs a picker over existing snippets"
+    },
+    "shopware.insertUuid": {
+      "action": "uuid"
+    },
+    "shopware.symfony.analyzeTwigTemplateUsages": {
+      "action": "template-usages"
+    },
+    "shopware.symfony.analyzeTwigTemplateVariables": {
+      "gap": "analytics browser, no equivalent yet"
+    },
+    "shopware.symfony.browseDoctrineEntities": {
+      "gap": "no browser yet; useful for Symfony projects using Doctrine"
+    },
+    "shopware.symfony.browseFormTypes": {
+      "gap": "analytics browser, no equivalent yet"
+    },
+    "shopware.symfony.browseProfilerRequests": {
+      "gap": "no profiler browser yet"
+    },
+    "shopware.symfony.browseRoutes": {
+      "action": "routes"
+    },
+    "shopware.symfony.browseTwigComponents": {
+      "gap": "analytics browser, no equivalent yet"
+    },
+    "shopware.symfony.browseTwigExtensions": {
+      "gap": "analytics browser, no equivalent yet"
+    },
+    "shopware.symfony.generateServiceDefinitions": {
+      "action": "service-definition"
+    },
+    "shopware.symfony.locateService": {
+      "action": "locate-service"
+    },
+    "shopware.symfony.runConsoleCommandPicker": {
+      "gap": "a task runs bin/console directly; only the picker is missing"
+    },
+    "shopware.symfony.twigVariables": {
+      "gap": "analytics browser, no equivalent yet"
+    },
+    "shopware.twig.extendBlock": {
+      "action": "twig-extend-block"
+    },
+    "shopware.twig.showBlockDiff": {
+      "action": "twig-block-diff"
+    },
+    "shopwareLSP.configure": {
+      "action": "config",
+      "partial": "configure is an interactive editor that writes feature toggles and picks a scope; config only prints the effective configuration"
+    },
+    "shopwareLSP.forceReindex": {
+      "action": "reindex"
+    },
+    "shopwareLSP.openConfiguration": {
+      "action": "config-open"
+    },
+    "shopwareLSP.restart": {
+      "gap": "Zed's own `language server: restart` covers it"
+    }
+  },
+  "clientCommands": {
+    "shopware.admin.extendComponent": {
+      "gap": "picker-then-insert over Vue components, no equivalent yet"
+    },
+    "shopware.admin.overrideMethod": {
+      "gap": "picker-then-insert over Vue components, no equivalent yet"
+    },
+    "shopware.admin.overrideTwigBlock": {
+      "action": "admin-twig-override"
+    },
+    "shopware.copySnippetUsage": {
+      "gap": "clipboard convenience not implemented; would need platform-specific integration"
+    },
+    "shopware.createAdminSnippet": {
+      "action": "snippet-admin"
+    },
+    "shopware.createAdminSnippetFromSelection": {
+      "gap": "worth adding; needs the selection plus a snippet-file picker"
+    },
+    "shopware.createEventListener": {
+      "gap": "worth adding; the server command exists"
+    },
+    "shopware.createSnippet": {
+      "action": "snippet"
+    },
+    "shopware.createSnippetFromSelection": {
+      "gap": "worth adding; needs the selection plus a snippet-file picker"
+    },
+    "shopware.editor.insertSnippetAtPosition": {
+      "gap": "worth adding; needs a picker over existing snippets"
+    },
+    "shopware.insertSnippet": {
+      "gap": "worth adding; needs a picker over existing snippets"
+    },
+    "shopware.openReferences": {
+      "gap": "declared in supportedCommands so the lenses render; Zed cannot execute it"
+    },
+    "shopware.symfony.createCompilerPass": {
+      "action": "compiler-pass"
+    },
+    "shopware.symfony.extractTwigTranslation": {
+      "action": "translation-extract"
+    },
+    "shopware.symfony.generateFormFields": {
+      "action": "form-fields"
+    },
+    "shopware.symfony.generateService": {
+      "action": "service-definition"
+    },
+    "shopware.symfony.generateTwigBlocks": {
+      "action": "twig-blocks"
+    },
+    "shopware.symfony.generateTwigExtends": {
+      "action": "twig-extends"
+    },
+    "shopware.symfony.generateTwigFormFields": {
+      "action": "twig-form-fields"
+    },
+    "shopware.symfony.runConsoleCommand": {
+      "gap": "a task runs bin/console directly; only the picker is missing"
+    },
+    "shopware.symfony.twigVariables": {
+      "gap": "analytics browser, no equivalent yet"
+    },
+    "shopware.twig.extendBlock": {
+      "action": "twig-extend-block"
+    },
+    "shopware.twig.showBlockDiff": {
+      "action": "twig-block-diff"
+    }
+  },
+  "standalone": {
+    "run": "passthrough to the resolved server binary; no upstream counterpart"
+  }
+}
