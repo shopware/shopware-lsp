@@ -46,7 +46,7 @@ themselves. That is a deliberate invariant: a bug reproducible in the editor is
 reproducible from the CLI, and a feature works everywhere as soon as it is
 registered once.
 
-A thin TypeScript VS Code client lives in `vscode-extension/`. It discovers the
+A thin TypeScript VS Code client lives in `editors/vscode/`. It discovers the
 binary, launches one server per workspace folder, and provides configuration and
 generator UI. All analysis lives in Go.
 
@@ -114,7 +114,7 @@ Dependencies point **downward** only. A lower layer never imports a higher one.
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│  Frontends            internal/cli  ·  vscode-extension/       │
+│  Frontends            internal/cli  ·  editors/vscode/           │
 ├────────────────────────────────────────────────────────────────┤
 │  Composition          internal/app                             │
 │                       workspace.go   → constructs indexes      │
@@ -497,7 +497,7 @@ every layer it needs already exists.
 | Change PHP type or inference behavior | `internal/php/{types,resolver,inference}` | [php engine](php-semantic-engine.md) |
 | Add a setting, domain, or rule | `internal/projectconfig` (+ schema, + gating, + VS Code model) | [reference](reference.md#project-configuration) |
 | Add a CLI command | `internal/cli` | — |
-| Change the editor client | `vscode-extension/src` | [phpstorm integration](phpstorm-integration.md) |
+| Change the editor client | `editors/vscode/src` | [phpstorm integration](phpstorm-integration.md) |
 
 Two anti-patterns worth naming, because they are the ones newcomers reach for:
 
@@ -519,7 +519,7 @@ higher-level test for the boundary a unit test cannot cover.
 | Query | `internal/parser/<lang>/query` | Structural questions, including negative cases |
 | Provider / analyzer | `internal/lsp/<feature>` | Domain behavior from a source string |
 | Server | `internal/lsp`, `internal/app` | Routing, UTF-16 positions, document lifecycle, lazy fixes |
-| Adapter | `internal/cli`, `vscode-extension` | One-based positions, diff previews, MCP shapes |
+| Adapter | `internal/cli`, `editors/vscode` | One-based positions, diff previews, MCP shapes |
 
 Conventions:
 

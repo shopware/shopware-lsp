@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="vscode-extension/icon.png" alt="Shopware Language Server" width="112" height="112">
+  <img src="editors/vscode/icon.png" alt="Shopware Language Server" width="112" height="112">
 </p>
 
 # Shopware Language Server

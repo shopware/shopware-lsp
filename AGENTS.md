@@ -56,12 +56,12 @@ go test -bench=. -run '^$' ./internal/parser/...
 golangci-lint run
 
 # VS Code extension
-npm --prefix vscode-extension ci
-npm --prefix vscode-extension run check-types
-npm --prefix vscode-extension run compile
-npm --prefix vscode-extension run test:configuration
-npm --prefix vscode-extension run test:entity-designer
-npm --prefix vscode-extension run test:mcp
+npm --prefix editors/vscode ci
+npm --prefix editors/vscode run check-types
+npm --prefix editors/vscode run compile
+npm --prefix editors/vscode run test:configuration
+npm --prefix editors/vscode run test:entity-designer
+npm --prefix editors/vscode run test:mcp
 
 # Full local validation
 mise run check
@@ -107,7 +107,7 @@ the lockfile.
 | `internal/symfony`, `internal/doctrine`, etc. | Domain indexes and framework intelligence |
 | `internal/shopware` | Shopware versioning and Shopware-specific domains such as DAL and entity schemas |
 | `internal/projectconfig` | Root/extension configuration, validation, domains, diagnostics policy, and JSON schema |
-| `vscode-extension/src` | Thin VS Code client, command UI, configuration UI, generators, and MCP registration |
+| `editors/vscode/src` | Thin VS Code client, command UI, configuration UI, generators, and MCP registration |
 | `scripts` | Release and packaging helpers |
 | `third_party/phpstorm-stubs` | Pinned source metadata for generated PHP runtime stubs |
 
@@ -291,7 +291,7 @@ extension can connect to a custom older server binary.
 
 ## VS Code extension
 
-Keep `vscode-extension/src/extension.ts` as the composition entry point. Put
+Keep `editors/vscode/src/extension.ts` as the composition entry point. Put
 commands, configuration models, executable discovery, MCP wiring, and complex
 webviews in their existing focused modules.
 

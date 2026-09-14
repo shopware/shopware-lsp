@@ -87,3 +87,22 @@ test('uses a configured executable without probing and finds packaged binaries',
   assert.equal(serverExecutableName('win32'), 'shopware-lsp.exe');
   assert.equal(serverExecutableName('darwin'), 'shopware-lsp');
 });
+
+test('finds repository builds from editors/vscode and prefers packaged binaries', () => {
+  const extensionPath = path.join('/repository', 'editors', 'vscode');
+  for (const platform of ['darwin', 'linux', 'win32']) {
+    const binaryName = serverExecutableName(platform);
+    const developmentBinary = path.join('/repository', binaryName);
+    const packagedBinary = path.join(extensionPath, binaryName);
+    assert.equal(resolveServerExecutable({
+      extensionPath,
+      platform,
+      exists: candidate => candidate === developmentBinary,
+    }), developmentBinary);
+    assert.equal(resolveServerExecutable({
+      extensionPath,
+      platform,
+      exists: candidate => candidate === developmentBinary || candidate === packagedBinary,
+    }), packagedBinary);
+  }
+});

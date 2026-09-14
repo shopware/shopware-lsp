@@ -11,7 +11,7 @@ CGO_ENABLED = "1"
 description = "Install Go and VSCode extension dependencies"
 run = [
   "go mod download",
-  "npm --prefix vscode-extension ci",
+  "npm --prefix editors/vscode ci",
 ]
 
 [tasks.build]
@@ -44,22 +44,22 @@ run = "golangci-lint run"
 
 [tasks."vscode:install"]
 description = "Install VSCode extension dependencies"
-dir = "vscode-extension"
+dir = "editors/vscode"
 run = "npm ci"
 
 [tasks."vscode:check"]
 description = "Type-check the VSCode extension"
-dir = "vscode-extension"
+dir = "editors/vscode"
 run = "npm run check-types"
 
 [tasks."vscode:build"]
 description = "Build the VSCode extension"
-dir = "vscode-extension"
+dir = "editors/vscode"
 run = "npm run compile"
 
 [tasks."vscode:test"]
 description = "Run VSCode extension tests"
-dir = "vscode-extension"
+dir = "editors/vscode"
 run = [
   "npm run test:entity-designer",
   "npm run test:configuration",

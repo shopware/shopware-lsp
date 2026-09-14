@@ -29,11 +29,11 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: vscode-extension/package-lock.json
+          cache-dependency-path: editors/vscode/package-lock.json
 
       - name: Install extension tooling
         run: |
-          npm ci --prefix vscode-extension
+          npm ci --prefix editors/vscode
           npm install --global @vscode/vsce@3.9.1
 
       - name: Build VSIX packages

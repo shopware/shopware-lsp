@@ -8,7 +8,7 @@ const watch = process.argv.includes('--watch');
 async function main() {
   fs.mkdirSync('dist', {recursive: true});
   fs.copyFileSync(
-    path.join('..', 'internal', 'projectconfig', 'schema.json'),
+    path.join('..', '..', 'internal', 'projectconfig', 'schema.json'),
     path.join('dist', 'shopware-lsp.schema.json')
   );
   const extensionContext = await esbuild.context({

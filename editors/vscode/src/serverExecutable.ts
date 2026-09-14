@@ -23,6 +23,8 @@ export function resolveServerExecutable(options: ServerExecutableOptions): strin
   const candidates = [
     path.join(options.extensionPath, binaryName),
     path.join(options.extensionPath, '..', binaryName),
+    // Development builds live at the repository root, above editors/vscode.
+    path.join(options.extensionPath, '..', '..', binaryName),
   ];
   if (options.workspaceRoot) {
     candidates.push(
