@@ -15,6 +15,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 	"github.com/sourcegraph/jsonrpc2"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -83,6 +84,50 @@ func (inspection *lifecycleInspection) Inspect(
 		return nil
 	}
 	return inspection.testInspection.Inspect(ctx, document, reporter)
+}
+
+func TestPullDiagnosticsFullReportOverJSONRPC(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		open       bool
+		inspection bool
+		wantItems  int
+	}{
+		{name: "unopened document"},
+		{name: "empty document report", open: true},
+		{name: "document with diagnostics", open: true, inspection: true, wantItems: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := NewServer(nil, t.TempDir(), "test")
+			if test.inspection {
+				server.RegisterInspection(testInspection{})
+			}
+			client, _ := startDiagnosticLifecycleClient(t, server)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			uri := uriutil.FileURI(filepath.Join(t.TempDir(), "test.yaml"))
+			if test.open {
+				require.NoError(t, client.Notify(ctx, "textDocument/didOpen", map[string]any{
+					"textDocument": map[string]any{
+						"uri": uri, "version": 1, "text": "value: bad\n",
+					},
+				}))
+			}
+
+			// Repeat the request to cover cached reports, including empty ones.
+			for range 2 {
+				var report map[string]json.RawMessage
+				require.NoError(t, client.Call(ctx, "textDocument/diagnostic", map[string]any{
+					"textDocument": map[string]any{"uri": uri},
+				}, &report))
+				assert.JSONEq(t, `"full"`, string(report["kind"]))
+				var items []protocol.Diagnostic
+				require.NoError(t, json.Unmarshal(report["items"], &items))
+				assert.NotNil(t, items, "full reports must serialize items as an array")
+				assert.Len(t, items, test.wantItems)
+			}
+		})
+	}
 }
 
 func TestDocumentDiagnosticLifecycleOverJSONRPC(t *testing.T) {
