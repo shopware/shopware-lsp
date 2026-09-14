@@ -18,7 +18,7 @@ const repositoryRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '..',
 );
-const extensionDirectory = path.join(repositoryRoot, 'vscode-extension');
+const extensionDirectory = path.join(repositoryRoot, 'editors/vscode');
 const outputDirectory = path.join(repositoryRoot, 'out');
 const goreleaserDirectory = path.join(repositoryRoot, 'dist');
 const crossImage = process.env.GORELEASER_CROSS_IMAGE ||

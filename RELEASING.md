@@ -108,7 +108,7 @@ where publishing credentials live):
    ```
    This covers `go test ./...`, the integration-suite compile, lint, and all
    VS Code checks. See `AGENTS.md` for the full validation policy.
-3. **Update `vscode-extension/package.json` if needed.** The release script
+3. **Update `editors/vscode/package.json` if needed.** The release script
    applies the tag as a version override (`npm version <tag>
    --no-git-tag-version`) *after* building the Go binaries, so a manual bump
    is not strictly required. Keeping the manifest version in sync with the
@@ -167,7 +167,7 @@ Notes:
 - The script asserts the Linux binaries are statically linked (`file`
   must report `statically linked`) and fails otherwise.
 - Staged `shopware-lsp` / `shopware-lsp.exe` files inside
-  `vscode-extension/` are build scratch space and are always removed in a
+  `editors/vscode/` are build scratch space and are always removed in a
   `finally` block; do not commit them.
 - `make release` runs the real `goreleaser release --clean` (publishing
   enabled). Only CI should run it — it needs `GITHUB_TOKEN` and
@@ -182,7 +182,7 @@ Notes:
   re-tag. In CI this cannot happen (fresh checkout), so it only affects
   local `make release` / script runs on exact tags.
 - **"Invalid VSCode extension version".** The version passed to
-  `build-vsix-release.mjs` (or read from `vscode-extension/package.json`
+  `build-vsix-release.mjs` (or read from `editors/vscode/package.json`
   when no override is given) was not numeric `X.Y.Z`.
 - **Checksum step fails.** Do not re-package by hand and upload; re-run the
   failed job so binaries, VSIX files, and `SHA256SUMS` stay consistent.
@@ -209,5 +209,5 @@ Notes:
 | `.goreleaser.yaml` | binary matrix, ldflags version injection, archives, changelog, Homebrew cask |
 | `Makefile` (`release`, `release-dry-run`) | Dockerized GoReleaser invocations |
 | `mise.toml` (`release` task) | local entry point: `node scripts/build-vsix-release.mjs` into `out/` |
-| `vscode-extension/package.json` | extension manifest; `version` is overridden by the tag at release time |
+| `editors/vscode/package.json` | extension manifest; `version` is overridden by the tag at release time |
 | `main.go` (`var version = "dev"`) | server version; release builds overwrite it via `-X main.version=` |

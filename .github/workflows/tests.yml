@@ -6,6 +6,7 @@ on:
     branches: [ main ]
     paths:
       - '**.go'
+      - 'editors/vscode/**'
       - 'go.mod'
       - 'go.sum'
       - 'mise.toml'
@@ -15,6 +16,7 @@ on:
     branches: [ main, feat/next-gen ]
     paths:
       - '**.go'
+      - 'editors/vscode/**'
       - 'go.mod'
       - 'go.sum'
       - 'mise.toml'
@@ -79,22 +81,22 @@ jobs:
       with:
         node-version: '24.18.1'
         cache: npm
-        cache-dependency-path: vscode-extension/package-lock.json
+        cache-dependency-path: editors/vscode/package-lock.json
 
     - name: Install dependencies
-      run: npm --prefix vscode-extension ci
+      run: npm --prefix editors/vscode ci
 
     - name: Check types
-      run: npm --prefix vscode-extension run check-types
+      run: npm --prefix editors/vscode run check-types
 
     - name: Run tests
       run: |
-        npm --prefix vscode-extension run test:entity-designer
-        npm --prefix vscode-extension run test:configuration
-        npm --prefix vscode-extension run test:mcp
-        npm --prefix vscode-extension run test:project-detection
-        npm --prefix vscode-extension run test:workspace-roots
-        npm --prefix vscode-extension run test:workspace-clients
+        npm --prefix editors/vscode run test:entity-designer
+        npm --prefix editors/vscode run test:configuration
+        npm --prefix editors/vscode run test:mcp
+        npm --prefix editors/vscode run test:project-detection
+        npm --prefix editors/vscode run test:workspace-roots
+        npm --prefix editors/vscode run test:workspace-clients
 
   build:
     name: Build
