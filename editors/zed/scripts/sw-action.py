@@ -562,7 +562,7 @@ def run_snippet_create(args, binary, domain):
     value = args.value if args.value is not None else input(f"value for {key}: ")
 
     # `create` writes nothing itself: it answers with a WorkspaceEdit for the
-    # client to apply. LSP.md still documents this as returning null.
+    # client to apply. docs/custom-commands.md still documents this as returning null.
     result = execute(
         binary,
         args.root,
@@ -593,7 +593,7 @@ def run_twig_extend_block(args, binary):
     block = pick_block(args, path)
     extension = pick_extension(args, binary, args.root)
 
-    # Returns {uri, line, edit}. LSP.md documents only {uri, line}, but the
+    # Returns {uri, line, edit}. docs/custom-commands.md documents only {uri, line}, but the
     # edit is the part that actually changes anything, so it must be applied.
     result = execute(
         binary,

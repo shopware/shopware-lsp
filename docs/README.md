@@ -30,7 +30,7 @@ After that, read the subsystem you are changing.
 | --- | --- |
 | [`reference.md`](reference.md) | The exhaustive catalog: every CLI command, feature, configuration key, supported file type, and performance note |
 | [`../AGENTS.md`](../AGENTS.md) | The contributor rulebook: invariants, conventions, per-area checklists, definition of done |
-| [`../LSP.md`](../LSP.md) | Custom LSP methods and a Neovim configuration example |
+| [`custom-commands.md`](custom-commands.md) | Custom LSP methods and a Neovim configuration example |
 | [`maintainability.md`](maintainability.md) | The maintainability review: measured hotspots, complexity ceilings, and why the large grammar files are intentionally centralized |
 | [`performance-review.md`](performance-review.md) | Portable task profiles, measured optimizations, reproduction commands, and measurement limits |
 

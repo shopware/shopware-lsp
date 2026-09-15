@@ -586,7 +586,7 @@ type CommandProvider interface {
 configuration methods, which stay available so a client can always inspect and
 fix its configuration).
 
-See [`LSP.md`](../LSP.md) for the custom-method contract and a Neovim example.
+See [`custom-commands.md`](custom-commands.md) for the custom-method contract and a Neovim example.
 
 ## Shutdown
 
@@ -687,6 +687,6 @@ go test -race ./internal/...
   which replaces the provider pattern for diagnostics
 - [`refactoring-engine.md`](refactoring-engine.md) — how providers return edits
 - [`indexing.md`](indexing.md) — where provider data comes from
-- [`LSP.md`](../LSP.md) — custom methods and a Neovim configuration example
+- [`custom-commands.md`](custom-commands.md) — custom methods and a Neovim configuration example
 - [`phpstorm-integration.md`](phpstorm-integration.md) — the versioned client
   contract and the framework presentation profile

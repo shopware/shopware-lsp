@@ -4,7 +4,7 @@ This document lists the custom LSP commands and notifications provided by the Sh
 
 For the versioned editor contract, framework-only presentation profile,
 client-side command catalog, scaffolding workflows, and a complete PhpStorm
-adoption guide, see [`docs/phpstorm-integration.md`](docs/phpstorm-integration.md).
+adoption guide, see [`phpstorm-integration.md`](phpstorm-integration.md).
 
 ## Client integration
 
