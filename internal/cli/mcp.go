@@ -222,15 +222,13 @@ func withMCPSession[T any](
 	runtime.operationMu.Lock()
 	defer runtime.operationMu.Unlock()
 	if runtime.session == nil {
-		configuration := []projectconfig.Partial(nil)
-		if runtime.editorConfiguration != nil {
-			configuration = append(configuration, *runtime.editorConfiguration)
-		}
-		session, err := newCLISession(
-			ctx, runtime.root, runtime.runner.options.Version,
-			runtime.runner.errOut, true,
-			runtime.runner.allowUnsupportedProject, configuration...,
-		)
+		session, err := newCLISession(ctx, cliSessionOptions{
+			Root: runtime.root, Version: runtime.runner.options.Version,
+			ErrOut: runtime.runner.errOut, StartIndex: true,
+			AllowUnsupportedProject: runtime.runner.allowUnsupportedProject,
+			WatchFiles:              true,
+			EditorConfiguration:     runtime.editorConfiguration,
+		})
 		if err != nil {
 			return zero, err
 		}

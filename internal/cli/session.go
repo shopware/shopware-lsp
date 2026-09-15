@@ -88,9 +88,10 @@ func (r *Runner) connect(ctx context.Context) (*cliSession, error) {
 			return nil, err
 		}
 	}
-	session, err := newCLISession(
-		ctx, root, r.options.Version, r.errOut, true, r.allowUnsupportedProject,
-	)
+	session, err := newCLISession(ctx, cliSessionOptions{
+		Root: root, Version: r.options.Version, ErrOut: r.errOut,
+		StartIndex: true, AllowUnsupportedProject: r.allowUnsupportedProject,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -122,24 +123,30 @@ func (r *Runner) connectWithoutIndex(ctx context.Context) (*cliSession, error) {
 	if err := r.requireSupportedProject(root); err != nil {
 		return nil, err
 	}
-	return newCLISession(
-		ctx, root, r.options.Version, r.errOut, false, r.allowUnsupportedProject,
-	)
+	return newCLISession(ctx, cliSessionOptions{
+		Root: root, Version: r.options.Version, ErrOut: r.errOut,
+		AllowUnsupportedProject: r.allowUnsupportedProject,
+	})
+}
+
+type cliSessionOptions struct {
+	Root                    string
+	Version                 string
+	ErrOut                  io.Writer
+	StartIndex              bool
+	AllowUnsupportedProject bool
+	WatchFiles              bool
+	EditorConfiguration     *projectconfig.Partial
 }
 
 func newCLISession(
 	ctx context.Context,
-	root,
-	version string,
-	errOut io.Writer,
-	startIndex bool,
-	allowUnsupportedProject bool,
-	editorConfigurations ...projectconfig.Partial,
+	options cliSessionOptions,
 ) (*cliSession, error) {
 	serverSide, clientSide := net.Pipe()
 	session := &cliSession{
-		application: app.NewWithOptions(version, app.Options{
-			AllowUnsupportedProject: allowUnsupportedProject,
+		application: app.NewWithOptions(options.Version, app.Options{
+			AllowUnsupportedProject: options.AllowUnsupportedProject,
 		}),
 		clientSide:   clientSide,
 		serverSide:   serverSide,
@@ -147,7 +154,7 @@ func newCLISession(
 		indexStarted: make(chan struct{}, 4),
 		indexDone:    make(chan indexingResult, 4),
 		indexFailed:  make(chan error, 4),
-		root:         root,
+		root:         options.Root,
 	}
 	go func() {
 		err := session.application.Run(serverSide, serverSide)
@@ -189,12 +196,12 @@ func newCLISession(
 				}
 				session.indexFailed <- errors.New(result.Message)
 			case "window/logMessage", "window/showMessage":
-				if errOut != nil && request.Params != nil {
+				if options.ErrOut != nil && request.Params != nil {
 					var message struct {
 						Message string `json:"message"`
 					}
 					if json.Unmarshal(*request.Params, &message) == nil && message.Message != "" {
-						if err := writeFormatted(errOut, "%s\n", message.Message); err != nil {
+						if err := writeFormatted(options.ErrOut, "%s\n", message.Message); err != nil {
 							return nil, err
 						}
 					}
@@ -209,17 +216,18 @@ func newCLISession(
 		}).SuppressErrClosed(),
 	)
 	initializationOptions := map[string]interface{}{
-		"cliMode": true, "allowUnsupportedProject": allowUnsupportedProject,
+		"cliMode": true, "allowUnsupportedProject": options.AllowUnsupportedProject,
+		"watchFiles": options.WatchFiles,
 	}
-	if len(editorConfigurations) > 0 {
-		initializationOptions["configuration"] = editorConfigurations[0]
+	if options.EditorConfiguration != nil {
+		initializationOptions["configuration"] = *options.EditorConfiguration
 	}
 	initialize := map[string]interface{}{
 		"processId":             os.Getpid(),
-		"rootUri":               uriutil.FileURI(root),
+		"rootUri":               uriutil.FileURI(options.Root),
 		"initializationOptions": initializationOptions,
 		"workspaceFolders": []map[string]string{{
-			"uri": uriutil.FileURI(root), "name": filepath.Base(root),
+			"uri": uriutil.FileURI(options.Root), "name": filepath.Base(options.Root),
 		}},
 		"capabilities": map[string]interface{}{
 			"textDocument": map[string]interface{}{
@@ -247,7 +255,7 @@ func newCLISession(
 		_ = session.Close()
 		return nil, fmt.Errorf("read effective configuration: %w", err)
 	}
-	if !startIndex {
+	if !options.StartIndex {
 		return session, nil
 	}
 	if err := session.client.Notify(ctx, "initialized", struct{}{}); err != nil {

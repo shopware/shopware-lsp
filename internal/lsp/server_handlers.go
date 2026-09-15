@@ -200,7 +200,7 @@ func (s *Server) handleInitialized(
 				return
 			}
 		}
-		if ctx.Err() != nil || s.initializationOptions.CLIMode {
+		if ctx.Err() != nil || !s.fileWatchingEnabled() {
 			return
 		}
 		if err := s.fileScanner.StartWatcher(); err != nil {
@@ -212,6 +212,11 @@ func (s *Server) handleInitialized(
 		s.resumeDiagnostics()
 	}
 	return nil, nil
+}
+
+// A one-shot command exits before the watcher registration pays for itself.
+func (s *Server) fileWatchingEnabled() bool {
+	return !s.initializationOptions.CLIMode || s.initializationOptions.WatchFiles
 }
 
 func (s *Server) notifyConfigurationError(ctx context.Context) {

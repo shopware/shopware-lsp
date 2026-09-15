@@ -624,8 +624,10 @@ Consequences that are easy to get wrong:
 - **`workspace-symbol` keeps its fast direct FTS path** unless `--fresh` is
   requested; do not make it restore semantic graphs by default.
 - **CLI mode changes behavior in a few places** (`initializationOptions.CLIMode`):
-  no watcher, no debounced diagnostics on open/change, no Administration
-  overlay per checked file, and concurrent pull diagnostics.
+  no watcher unless `initializationOptions.watchFiles` opts back in, no debounced
+  diagnostics on open/change, no Administration overlay per checked file, and
+  concurrent pull diagnostics. The MCP server sets `watchFiles`, since it outlives
+  every tool call.
 
 Roughly 30 feature commands exist; `shopware-lsp help` and
 `shopware-lsp api-json` enumerate them authoritatively. See
