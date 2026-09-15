@@ -170,7 +170,7 @@ Download a server archive from
 over stdin/stdout. Running the binary without a subcommand starts the language
 server.
 
-See [LSP.md](LSP.md) for custom protocol commands and a Neovim example. Editor
+See [custom commands](docs/custom-commands.md) for custom protocol commands and a Neovim example. Editor
 integrators can use the versioned
 [PhpStorm integration guide](docs/phpstorm-integration.md).
 
@@ -306,7 +306,7 @@ Architecture, for contributors:
 - [Refactoring engine](docs/refactoring-engine.md)
 - [PHP semantic engine](docs/php-semantic-engine.md)
 - [PhpStorm and editor integration](docs/phpstorm-integration.md)
-- [Custom LSP commands and Neovim example](LSP.md)
+- [Custom LSP commands and Neovim example](docs/custom-commands.md)
 - [Maintainability guide](docs/maintainability.md)
 
 ## Contributing
