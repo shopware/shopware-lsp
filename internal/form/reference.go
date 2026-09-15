@@ -134,7 +134,7 @@ func ReferenceAt(
 	}
 	if reference.Class == "" {
 		reference.Class = normalizePHPName(
-			php.NewNameResolver(root).Resolve(
+			php.NameResolverFor(ctx, root).Resolve(
 				phpquery.ClassName(phpquery.ClassAt(literal)),
 			),
 		)
@@ -186,18 +186,18 @@ func ReferenceAt(
 			case argumentIndex == 2 &&
 				isTopLevelArrayEntry(literal, phpquery.ArgumentExpression(call, 2)):
 				reference.Role = ReferenceOption
-				reference.FormType = callFormType(call, 1, root)
+				reference.FormType = callFormType(ctx, call, 1, root)
 				return reference, true
 			}
 		}
 		// FormFactoryInterface::create() shares the method name with builder
 		// create(). It is intentionally checked after the typed builder branch.
 		if callName == "create" && isFactoryCall(ctx, call) {
-			return factoryReference(reference, call, argumentIndex, root)
+			return factoryReference(ctx, reference, call, argumentIndex, root)
 		}
 	case "createform", "createbuilder":
 		if isFactoryCall(ctx, call) {
-			return factoryReference(reference, call, argumentIndex, root)
+			return factoryReference(ctx, reference, call, argumentIndex, root)
 		}
 	case "createnamed", "createnamedbuilder":
 		if !isNamedFactoryCall(ctx, call) {
@@ -214,7 +214,7 @@ func ReferenceAt(
 		case argumentIndex == 3 &&
 			isTopLevelArrayEntry(literal, phpquery.ArgumentExpression(call, 3)):
 			reference.Role = ReferenceOption
-			reference.FormType = callFormType(call, 1, root)
+			reference.FormType = callFormType(ctx, call, 1, root)
 			return reference, true
 		}
 	case "get", "has":
@@ -222,7 +222,7 @@ func ReferenceAt(
 			isFormCall(ctx, call) {
 			reference.Role = ReferenceField
 			reference.Origin = OriginFieldAccess
-			reference.FormType = assignedFormType(call, root)
+			reference.FormType = assignedFormType(ctx, call, root)
 			return reference, true
 		}
 	case "setdefault", "hasdefault", "isrequired", "ismissing",
@@ -271,6 +271,7 @@ func IsLegacyBuilderTypeAlias(
 }
 
 func factoryReference(
+	ctx context.Context,
 	reference Reference,
 	call *phpsyntax.Node,
 	argumentIndex int,
@@ -288,7 +289,7 @@ func factoryReference(
 			phpquery.ArgumentExpression(call, 2),
 		):
 		reference.Role = ReferenceOption
-		reference.FormType = callFormType(call, 0, root)
+		reference.FormType = callFormType(ctx, call, 0, root)
 		return reference, true
 	default:
 		return Reference{}, false
@@ -296,18 +297,20 @@ func factoryReference(
 }
 
 func callFormType(
+	ctx context.Context,
 	call *phpsyntax.Node,
 	index int,
 	root *phpsyntax.Node,
 ) string {
 	return formTypeExpression(
 		phpquery.ArgumentExpression(call, index),
-		php.NewNameResolver(root),
+		php.NameResolverFor(ctx, root),
 		true,
 	)
 }
 
 func assignedFormType(
+	ctx context.Context,
 	call,
 	root *phpsyntax.Node,
 ) string {
@@ -330,7 +333,7 @@ func assignedFormType(
 			method != "createbuilder" {
 			continue
 		}
-		if value := callFormType(candidate, 0, root); value != "" {
+		if value := callFormType(ctx, candidate, 0, root); value != "" {
 			return value
 		}
 	}

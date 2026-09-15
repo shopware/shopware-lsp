@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/lsp/phpanalysis"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/messenger"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
@@ -47,13 +48,11 @@ func (p *MessengerAnalyzer) Analyze(
 	path, _ := uriutil.Path(document.URI)
 	validationContext := ctx
 	if strings.EqualFold(filepath.Ext(path), ".php") {
-		validationContext = p.phpIndex.AddDocumentContext(
-			ctx,
-			path,
-			document.Version,
-			document.SyntaxTree.Root,
-			document.SyntaxTree.Root,
-		)
+		phpContext, err := phpanalysis.ContextForDocument(ctx, p.phpIndex, document)
+		if err != nil {
+			return nil, err
+		}
+		validationContext = phpContext
 	}
 	var result []lsp.Problem
 	for _, node := range messengerDiagnosticNodes(

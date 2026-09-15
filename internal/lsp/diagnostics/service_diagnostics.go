@@ -21,7 +21,6 @@ import (
 	"github.com/shopware/shopware-lsp/internal/php/types"
 	"github.com/shopware/shopware-lsp/internal/suggestion"
 	"github.com/shopware/shopware-lsp/internal/symfony"
-	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
 const (
@@ -114,14 +113,14 @@ type referenceDiagnosticCollector struct {
 func (c *referenceDiagnosticCollector) collectPHP() error {
 	root := c.document.SyntaxTree.Root
 	configFile := strings.Contains(c.document.Source, "ContainerConfigurator")
-	path, _ := uriutil.Path(c.document.URI)
-	assistantContext := c.provider.phpIndex.AddDocumentContext(
+	assistantContext, err := phpanalysis.ContextForDocument(
 		c.ctx,
-		path,
-		c.document.Version,
-		root,
-		root,
+		c.provider.phpIndex,
+		c.document,
 	)
+	if err != nil {
+		return err
+	}
 	for _, literal := range phpquery.Nodes(root, phpsyntax.PhpString) {
 		if c.ctx.Err() != nil {
 			return nil

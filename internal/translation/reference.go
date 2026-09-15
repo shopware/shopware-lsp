@@ -80,13 +80,20 @@ func References(
 }
 
 func PHPReferenceAt(node *phpsyntax.Node) (Reference, bool) {
+	return phpReferenceAt(node, nil)
+}
+
+func phpReferenceAt(
+	node *phpsyntax.Node,
+	nameResolver *php.NameResolver,
+) (Reference, bool) {
 	literal := phpquery.StringAt(node)
 	if literal == nil {
 		return Reference{}, false
 	}
 	container, kind, keyIndex, domainIndex := phpTranslationContainer(literal)
 	if container == nil {
-		return phpValidatorReferenceAt(literal)
+		return phpValidatorReferenceAt(literal, nameResolver)
 	}
 	argument := phpArgumentContaining(container, literal)
 	if argument == nil || phpquery.ArgumentExpression(
@@ -169,9 +176,12 @@ func PHPPlaceholderReferenceAt(node *phpsyntax.Node) (Reference, bool) {
 }
 
 func PHPReferences(root *phpsyntax.Node) []Reference {
+	// One resolver serves every literal of the tree; building it per literal
+	// re-walks the whole tree for each inspected string.
+	nameResolver := php.NewNameResolver(root)
 	var result []Reference
 	for _, literal := range phpquery.Nodes(root, phpsyntax.PhpString) {
-		reference, ok := PHPReferenceAt(literal)
+		reference, ok := phpReferenceAt(literal, nameResolver)
 		if ok {
 			result = append(result, reference)
 		}
@@ -267,6 +277,7 @@ func ValidatePHPReference(
 
 func phpValidatorReferenceAt(
 	literal *phpsyntax.Node,
+	nameResolver *php.NameResolver,
 ) (Reference, bool) {
 	if call := phpquery.CallAt(literal); call != nil {
 		index := phpquery.ArgumentIndex(call, literal)
@@ -294,8 +305,9 @@ func phpValidatorReferenceAt(
 		}
 	}
 
-	root := phpRoot(literal)
-	nameResolver := php.NewNameResolver(root)
+	if nameResolver == nil {
+		nameResolver = php.NewNameResolver(phpRoot(literal))
+	}
 	if object := phpAncestor(
 		literal,
 		phpsyntax.PhpObjectCreation,

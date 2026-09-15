@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/lsp/phpanalysis"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/suggestion"
 	"github.com/shopware/shopware-lsp/internal/twig"
-	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
 const missingTwigRenderBlockCode lsp.DiagnosticID = "twig.template.block.missing"
@@ -45,14 +45,10 @@ func (p *TwigRenderBlockAnalyzer) Analyze(
 	if len(references) == 0 {
 		return nil, nil
 	}
-	path, _ := uriutil.Path(document.URI)
-	ctx = p.phpIndex.AddDocumentContext(
-		ctx,
-		path,
-		document.Version,
-		document.SyntaxTree.Root,
-		document.SyntaxTree.Root,
-	)
+	ctx, err := phpanalysis.ContextForDocument(ctx, p.phpIndex, document)
+	if err != nil {
+		return nil, err
+	}
 	var result []lsp.Problem
 	for _, reference := range references {
 		if ctx.Err() != nil {

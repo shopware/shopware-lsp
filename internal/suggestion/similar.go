@@ -4,10 +4,12 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 type scoredCandidate struct {
 	value string
+	lower string
 	score int
 }
 
@@ -22,15 +24,16 @@ func Similar(input string, candidates []string) []string {
 		if candidate == "" {
 			continue
 		}
-		key := strings.ToLower(candidate)
-		if _, exists := seen[key]; exists {
+		lower := strings.ToLower(candidate)
+		if _, exists := seen[lower]; exists {
 			continue
 		}
-		seen[key] = struct{}{}
-		score := fuzzyDistance(strings.ToLower(candidate), input)
+		seen[lower] = struct{}{}
+		score := fuzzyDistance(lower, input)
 		if score > 0 {
 			scored = append(scored, scoredCandidate{
 				value: candidate,
+				lower: lower,
 				score: score,
 			})
 		}
@@ -61,8 +64,7 @@ func Similar(input string, candidates []string) []string {
 		if selected[left].score != selected[right].score {
 			return selected[left].score > selected[right].score
 		}
-		return strings.ToLower(selected[left].value) <
-			strings.ToLower(selected[right].value)
+		return selected[left].lower < selected[right].lower
 	})
 	if len(selected) > 5 {
 		selected = selected[:5]
@@ -100,6 +102,9 @@ func SimilarTemplates(input string, candidates []string) []string {
 }
 
 func fuzzyDistance(term, query string) int {
+	if isASCII(term) && isASCII(query) {
+		return fuzzyDistanceBytes(term, query)
+	}
 	termRunes := []rune(term)
 	score := 0
 	termIndex := 0
@@ -119,6 +124,38 @@ func fuzzyDistance(term, query string) int {
 		}
 	}
 	return score
+}
+
+// fuzzyDistanceBytes is the allocation-free ASCII path of fuzzyDistance; for
+// pure ASCII input every byte is exactly one rune.
+func fuzzyDistanceBytes(term, query string) int {
+	score := 0
+	termIndex := 0
+	lastMatch := -2
+	for i := 0; i < len(query); i++ {
+		found := false
+		for termIndex < len(term) && !found {
+			if query[i] == term[termIndex] {
+				score++
+				if lastMatch+1 == termIndex {
+					score += 2
+				}
+				lastMatch = termIndex
+				found = true
+			}
+			termIndex++
+		}
+	}
+	return score
+}
+
+func isASCII(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if value[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
 }
 
 func stripTemplateExtensions(value string) string {

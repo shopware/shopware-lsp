@@ -9,6 +9,7 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/event"
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/lsp/phpanalysis"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
@@ -58,13 +59,11 @@ func (p *EventAnalyzer) Analyze(
 	path, _ := uriutil.Path(document.URI)
 	validationContext := ctx
 	if strings.EqualFold(filepath.Ext(document.URI), ".php") {
-		validationContext = p.phpIndex.AddDocumentContext(
-			ctx,
-			path,
-			document.Version,
-			document.SyntaxTree.Root,
-			document.SyntaxTree.Root,
-		)
+		phpContext, err := phpanalysis.ContextForDocument(ctx, p.phpIndex, document)
+		if err != nil {
+			return nil, err
+		}
+		validationContext = phpContext
 	}
 	references := eventDocumentReferences(validationContext, document)
 	if len(references) == 0 {
