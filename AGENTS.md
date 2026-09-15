@@ -76,8 +76,8 @@ mise run check
 ```
 
 Benchmarks written with the `testing` package run in CI through CodSpeed
-(`.github/workflows/codspeed.yml`, walltime instrument, sharded per package
-group). `mise run bench` reproduces that locally once the `codspeed` CLI is
+(`.github/workflows/codspeed.yml`, walltime instrument, one job on a two-vCPU
+RunsOn `m8g.large` Spot runner). `mise run bench` reproduces that locally once the `codspeed` CLI is
 installed.
 
 `mise run check` also compiles the opt-in real-world integration suite without
