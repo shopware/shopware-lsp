@@ -307,6 +307,31 @@ func TestInitializeCanOmitExecuteCommandProvider(t *testing.T) {
 	require.Equal(t, "ok", response)
 }
 
+func TestFileWatchingFollowsClientKindAndCLIOptIn(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		options string
+		watches bool
+	}{
+		"editor":                 {`{}`, true},
+		"editor without the key": {`{"omitExecuteCommandProvider":true}`, true},
+		"one-shot CLI command":   {`{"cliMode":true}`, false},
+		"CLI command opting out": {`{"cliMode":true,"watchFiles":false}`, false},
+		"long-lived MCP session": {`{"cliMode":true,"watchFiles":true}`, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var params protocol.InitializeParams
+			require.NoError(t, json.Unmarshal(
+				[]byte(`{"initializationOptions":`+testCase.options+`}`), &params,
+			))
+			server := NewServer(nil, "", "test")
+			t.Cleanup(func() { require.NoError(t, server.CloseAll()) })
+			server.initializationOptions = params.InitializationOptions
+
+			require.Equal(t, testCase.watches, server.fileWatchingEnabled())
+		})
+	}
+}
+
 func TestInitializeRejectsUnsupportedClientContract(t *testing.T) {
 	for name, options := range map[string]*protocol.ShopwareClientOptions{
 		"version": {

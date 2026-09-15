@@ -47,6 +47,7 @@ type InitializationOptions struct {
 	AllowUnsupportedProject    bool                   `json:"allowUnsupportedProject,omitempty"`
 	OmitExecuteCommandProvider bool                   `json:"omitExecuteCommandProvider,omitempty"`
 	CLIMode                    bool                   `json:"cliMode,omitempty"`
+	WatchFiles                 bool                   `json:"watchFiles,omitempty"`
 	ShopwareClient             *ShopwareClientOptions `json:"shopwareClient,omitempty"`
 }
 

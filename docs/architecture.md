@@ -299,9 +299,10 @@ back-to-front, then the store.
 ### 4. `initialized` — indexing starts
 
 `handleInitialized` schedules a background job that runs `indexAll` and then
-starts the filesystem watcher. Indexing failure is reported to the client via a
-`shopware/indexingFailed` notification but does not kill the server; features
-degrade to whatever is indexed.
+starts the filesystem watcher. A CLI-mode client only reaches the watcher when it
+sets `initializationOptions.watchFiles`, as the MCP server does. Indexing failure
+is reported to the client via a `shopware/indexingFailed` notification but does
+not kill the server; features degrade to whatever is indexed.
 
 ### 5. Steady state
 

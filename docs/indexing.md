@@ -573,8 +573,9 @@ After a successful run the scanner's `onUpdate` callback fires, which the server
 uses to republish diagnostics for all open documents — cross-file diagnostics can
 change when an unrelated file is indexed.
 
-The watcher starts only after the initial `IndexAll` completes, and never in CLI
-mode.
+The watcher starts only after the initial `IndexAll` completes. CLI mode leaves it
+off unless the client sets `initializationOptions.watchFiles`, which the
+long-lived `shopware-lsp mcp` server does and one-shot commands do not.
 
 ## PHAR archives
 
