@@ -1,0 +1,69 @@
+// Copy the bindings into your Zed keymap.json. The task_name must match the
+// label in tasks.json exactly; Zed silently does nothing when it does not.
+[
+  {
+    "context": "Editor && extension == twig",
+    "bindings": {
+      "alt-shift-e": ["task::Spawn", { "task_name": "Shopware: insert Twig extends" }],
+      "alt-shift-b": ["task::Spawn", { "task_name": "Shopware: insert Twig blocks" }],
+      "alt-shift-f": [
+        "task::Spawn",
+        { "task_name": "Shopware: insert Twig form rows" }
+      ],
+      "alt-shift-t": [
+        "task::Spawn",
+        { "task_name": "Shopware: insert translation (extract selection)" }
+      ],
+      "alt-shift-s": [
+        "task::Spawn",
+        { "task_name": "Shopware: create storefront snippet" }
+      ],
+      "alt-shift-o": [
+        "task::Spawn",
+        { "task_name": "Shopware: create storefront block override" }
+      ],
+      "alt-shift-i": [
+        "task::Spawn",
+        { "task_name": "Shopware: show Twig block diff" }
+      ]
+    }
+  },
+  {
+    "context": "Editor && extension == php",
+    "bindings": {
+      "alt-shift-f": ["task::Spawn", { "task_name": "Shopware: insert form fields" }],
+      "alt-shift-g": [
+        "task::Spawn",
+        { "task_name": "Shopware: show service definition" }
+      ]
+    }
+  },
+  {
+    "context": "Editor",
+    "bindings": {
+      "alt-shift-u": ["task::Spawn", { "task_name": "Shopware: insert UUID" }]
+    }
+  },
+  {
+    "context": "Workspace",
+    "bindings": {
+      "alt-shift-n": [
+        "task::Spawn",
+        { "task_name": "Shopware: create from scaffold (preview)" }
+      ],
+      "alt-shift-d": [
+        "task::Spawn",
+        { "task_name": "Shopware: show diagnostics for this file" }
+      ],
+      "alt-shift-r": ["task::Spawn", { "task_name": "Shopware: go to route" }],
+      "alt-shift-l": [
+        "task::Spawn",
+        { "task_name": "Shopware: go to service (selection)" }
+      ],
+      "alt-shift-x": [
+        "task::Spawn",
+        { "task_name": "Shopware: go to templates extending this" }
+      ]
+    }
+  }
+]

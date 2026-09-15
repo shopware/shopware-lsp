@@ -1,0 +1,31 @@
+name: Zed published server contracts
+
+# Registry checks are separate from the offline contracts against this checkout.
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Fetch the published server
+        working-directory: ${{ runner.temp }}
+        run: |
+          url="$(curl -fsSL https://open-vsx.org/api/shopware/shopware-lsp/linux-x64/latest \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["files"]["download"])')"
+          curl -fsSL -o server.vsix "$url"
+          unzip -q server.vsix -d server
+          chmod +x server/extension/shopware-lsp
+
+      - name: Check published binary and registry contracts
+        env:
+          SHOPWARE_LSP_BIN: ${{ runner.temp }}/server/extension/shopware-lsp
+        run: python3 editors/zed/scripts/contract-check.py

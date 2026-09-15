@@ -40,6 +40,8 @@ Keep these invariants intact:
 
 `mise.toml` is the local toolchain source of truth. It currently pins Go,
 Node.js, golangci-lint, and VSIX tooling and sets `CGO_ENABLED=1`.
+The Zed client's Rust toolchain and WASM target are pinned separately in
+`editors/zed/rust-toolchain.toml` for compatibility with Zed's rustup build.
 
 ```bash
 # Initial setup
@@ -62,6 +64,12 @@ npm --prefix editors/vscode run compile
 npm --prefix editors/vscode run test:configuration
 npm --prefix editors/vscode run test:entity-designer
 npm --prefix editors/vscode run test:mcp
+
+# Zed extension (requires rustup and Python 3)
+mise run zed:check
+mise run zed:test
+mise run zed:build
+mise run zed:contracts
 
 # Full local validation
 mise run check
@@ -108,6 +116,7 @@ the lockfile.
 | `internal/shopware` | Shopware versioning and Shopware-specific domains such as DAL and entity schemas |
 | `internal/projectconfig` | Root/extension configuration, validation, domains, diagnostics policy, and JSON schema |
 | `editors/vscode/src` | Thin VS Code client, command UI, configuration UI, generators, and MCP registration |
+| `editors/zed` | Rust/WASM Zed client, MCP configuration, terminal task adapters, and contract tests |
 | `scripts` | Release and packaging helpers |
 | `third_party/phpstorm-stubs` | Pinned source metadata for generated PHP runtime stubs |
 

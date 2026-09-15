@@ -50,6 +50,11 @@ A thin TypeScript VS Code client lives in `editors/vscode/`. It discovers the
 binary, launches one server per workspace folder, and provides configuration and
 generator UI. All analysis lives in Go.
 
+The Rust/WASM Zed client lives alongside it in `editors/zed/`. It starts the
+same language server and MCP transport, normalizes editor configuration, and
+provides terminal task adapters for generators that need interactive input.
+Its contract tests exercise the local Go binary and sibling VS Code manifest.
+
 ## Non-negotiable invariants
 
 These are architectural constraints, not preferences. Breaking one is a design

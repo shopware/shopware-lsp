@@ -1,0 +1,11 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "root": {
+      "type": "string",
+      "description": "Absolute path to the Shopware or Symfony project root. Defaults to the root reported by the language server, then to the working directory."
+    }
+  },
+  "additionalProperties": false
+}

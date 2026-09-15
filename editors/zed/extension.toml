@@ -1,0 +1,45 @@
+id = "shopware-lsp"
+name = "Shopware LSP"
+version = "0.1.0"
+schema_version = 1
+authors = ["b.meyer <b.meyer@shopware.com>"]
+description = "Shopware Language Server support for Zed (wraps the shopware-lsp binary)"
+repository = "https://github.com/shopware/shopware-lsp"
+
+# Ported from shopware/shopware-lsp (MIT), editors/vscode/snippets. Zed
+# matches these by lowercase language name, so config-xml.json becomes xml.json.
+snippets = ["./snippets/php.json", "./snippets/xml.json"]
+
+[language_servers.shopware-lsp]
+name = "Shopware LSP"
+languages = [
+  "PHP",
+  "Twig",
+  "XML",
+  "YAML",
+  "JSON",
+  "JavaScript",
+  "TypeScript",
+  "TSX",
+  "SCSS",
+  "Vue.js",
+  # Env-var hover works in Dockerfiles: the server indexes ENV declarations
+  # alongside .env files. Needs Zed's separate `dockerfile` extension, the same
+  # way Twig does.
+  "Dockerfile",
+]
+
+[language_servers.shopware-lsp.language_ids]
+"PHP" = "php"
+"Twig" = "twig"
+"XML" = "xml"
+"YAML" = "yaml"
+"JSON" = "json"
+"JavaScript" = "javascript"
+"TypeScript" = "typescript"
+"TSX" = "typescriptreact"
+"SCSS" = "scss"
+"Vue.js" = "vue"
+"Dockerfile" = "dockerfile"
+
+[context_servers.shopware-lsp]
