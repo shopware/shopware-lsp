@@ -34,6 +34,12 @@ type ServiceIndex struct {
 	prototypeCacheOwn uint64
 	prototypeCacheSet bool
 
+	servicesByTypeMu        sync.Mutex
+	servicesByTypeCache     map[string][]Service
+	servicesByTypePHP       uint64
+	servicesByTypeOwn       uint64
+	servicesByTypeContainer uint64
+
 	indexedPathsMu sync.RWMutex
 	indexedPaths   map[string]servicePathKind
 }
@@ -662,6 +668,11 @@ func (idx *ServiceIndex) GetServicesByTag(tagName string) ([]string, error) {
 // GetServicesByType returns concrete services whose configured class can be
 // assigned to targetName. It includes explicit, prototype-expanded, and
 // compiled-container definitions.
+//
+// The subtype scan walks the full service catalog, so results are memoized
+// per target until the PHP workspace, the service index, or the compiled
+// container change. Diagnostics repeat the same target for every incompatible
+// constructor argument.
 func (idx *ServiceIndex) GetServicesByType(
 	targetName string,
 ) ([]Service, error) {
@@ -669,6 +680,54 @@ func (idx *ServiceIndex) GetServicesByType(
 	if targetName == "" {
 		return nil, nil
 	}
+	phpRevision := uint64(0)
+	if idx.phpIndex != nil {
+		phpRevision = idx.phpIndex.Revision()
+	}
+	ownRevision := idx.prototypeRevision.Load()
+	containerRevision := idx.containerWatcher.Revision()
+
+	cacheKey := strings.ToLower(targetName)
+	idx.servicesByTypeMu.Lock()
+	if idx.servicesByTypeCache != nil &&
+		(idx.servicesByTypePHP != phpRevision ||
+			idx.servicesByTypeOwn != ownRevision ||
+			idx.servicesByTypeContainer != containerRevision) {
+		idx.servicesByTypeCache = nil
+	}
+	if idx.servicesByTypeCache == nil {
+		idx.servicesByTypeCache = make(map[string][]Service)
+		idx.servicesByTypePHP = phpRevision
+		idx.servicesByTypeOwn = ownRevision
+		idx.servicesByTypeContainer = containerRevision
+	}
+	if cached, found := idx.servicesByTypeCache[cacheKey]; found {
+		idx.servicesByTypeMu.Unlock()
+		return cloneServices(cached), nil
+	}
+	idx.servicesByTypeMu.Unlock()
+
+	result, err := idx.findServicesByType(targetName)
+	if err != nil {
+		return nil, err
+	}
+
+	idx.servicesByTypeMu.Lock()
+	// Store only when no mutation landed during the scan; a concurrent
+	// invalidation already reset the revision markers.
+	if idx.servicesByTypeCache != nil &&
+		idx.servicesByTypePHP == phpRevision &&
+		idx.servicesByTypeOwn == ownRevision &&
+		idx.servicesByTypeContainer == containerRevision {
+		idx.servicesByTypeCache[cacheKey] = cloneServices(result)
+	}
+	idx.servicesByTypeMu.Unlock()
+	return result, nil
+}
+
+func (idx *ServiceIndex) findServicesByType(
+	targetName string,
+) ([]Service, error) {
 	explicit, err := idx.serviceIndex.GetAllValues()
 	if err != nil {
 		return nil, err
