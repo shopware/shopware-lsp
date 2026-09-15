@@ -75,6 +75,7 @@ type FileScanner struct {
 	onUpdate    func()
 	workerCount int
 	exclusions  PathExclusions
+	vendors     *VendorPackages
 	maxFileSize atomic.Int64
 	statsMu     sync.RWMutex
 	skipped     map[string]SkippedFileStats
@@ -161,6 +162,7 @@ func NewFileScanner(projectRoot string, dbPath string, stores ...*Store) (*FileS
 
 	scanner := &FileScanner{
 		projectRoot: projectRoot,
+		vendors:     NewVendorPackages(projectRoot),
 		pharCache:   filepath.Join(filepath.Dir(dbPath), "phar-sources"),
 		db:          db,
 		indexer:     []Indexer{},
@@ -960,6 +962,9 @@ func (fs *FileScanner) shouldEnterDirectory(path string) bool {
 	if within && fs.exclusions.ExcludesDirectory(relative) {
 		return false
 	}
+	if within && fs.vendors.DuplicatesRootPackage(relative) {
+		return false
+	}
 	if !within || !shouldSkipRelPath(relative) {
 		return true
 	}
@@ -978,6 +983,9 @@ func (fs *FileScanner) shouldIndexPath(path string) bool {
 	}
 	relative, within := relativePathWithin(fs.projectRoot, path)
 	if within && fs.exclusions.Excludes(relative) {
+		return false
+	}
+	if within && fs.vendors.DuplicatesRootPackage(relative) {
 		return false
 	}
 	if within &&
@@ -1000,6 +1008,9 @@ func (fs *FileScanner) shouldPreparsePath(path string) bool {
 	}
 	relative, within := relativePathWithin(fs.projectRoot, path)
 	if within && fs.exclusions.Excludes(relative) {
+		return false
+	}
+	if within && fs.vendors.DuplicatesRootPackage(relative) {
 		return false
 	}
 	if within &&

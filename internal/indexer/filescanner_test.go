@@ -1461,3 +1461,73 @@ func (m *mockIndexer) Close() error {
 func (m *mockIndexer) Clear() error {
 	return nil
 }
+
+// An extension checked out with its own composer install carries a second copy
+// of packages the workspace already provides. Indexing it would resolve core
+// symbols twice, once from the workspace and once from the vendored copy.
+func TestFileScannerSkipsNestedVendorCopyOfWorkspacePackage(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "composer.json"),
+		[]byte(`{"name":"shopware/platform","replace":{"shopware/core":"self.version"}}`),
+		0o644,
+	))
+
+	workspaceFile := filepath.Join(root, "src", "Core", "Product.php")
+	vendoredFile := filepath.Join(
+		root, "custom", "plugins", "Swag", "vendor", "shopware", "core", "Product.php",
+	)
+	extensionOnlyFile := filepath.Join(
+		root, "custom", "plugins", "Swag", "vendor", "acme", "pdf", "Writer.php",
+	)
+	for _, path := range []string{workspaceFile, vendoredFile, extensionOnlyFile} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte("<?php"), 0o644))
+	}
+
+	idx := &mockIndexer{indexedFiles: make(map[string]bool)}
+	scanner, err := NewFileScanner(root, filepath.Join(t.TempDir(), "scanner.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, scanner.Close()) })
+	scanner.AddIndexer(idx)
+
+	require.NoError(t, scanner.IndexAll(context.Background()))
+
+	require.True(t, idx.indexedFiles[workspaceFile],
+		"the workspace copy of the package must stay indexed")
+	require.False(t, idx.indexedFiles[vendoredFile],
+		"the vendored duplicate of a workspace package must be skipped")
+	require.True(t, idx.indexedFiles[extensionOnlyFile],
+		"a dependency only the extension provides must stay indexed")
+}
+
+// A Flex project keeps shopware/core in the root vendor directory, which must
+// remain indexable even though it sits under a vendor path.
+func TestFileScannerKeepsRootVendorPackage(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "composer.json"), []byte(`{"name":"acme/shop"}`), 0o644,
+	))
+
+	rootVendorFile := filepath.Join(root, "vendor", "shopware", "core", "Product.php")
+	vendoredFile := filepath.Join(
+		root, "custom", "plugins", "Swag", "vendor", "shopware", "core", "Product.php",
+	)
+	for _, path := range []string{rootVendorFile, vendoredFile} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte("<?php"), 0o644))
+	}
+
+	idx := &mockIndexer{indexedFiles: make(map[string]bool)}
+	scanner, err := NewFileScanner(root, filepath.Join(t.TempDir(), "scanner.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, scanner.Close()) })
+	scanner.AddIndexer(idx)
+
+	require.NoError(t, scanner.IndexAll(context.Background()))
+
+	require.True(t, idx.indexedFiles[rootVendorFile],
+		"the root vendor directory must stay indexable")
+	require.False(t, idx.indexedFiles[vendoredFile],
+		"the vendored duplicate must be skipped")
+}

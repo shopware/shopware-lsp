@@ -397,6 +397,7 @@ func resolveCheckFilesWithExclusions(
 	targets,
 	excludedPatterns []string,
 ) ([]string, error) {
+	vendors := indexer.NewVendorPackages(workspaceRoot)
 	exclusions, err := indexer.NewPathExclusions(excludedPatterns)
 	if err != nil {
 		return nil, fmt.Errorf("configure excluded check paths: %w", err)
@@ -455,13 +456,15 @@ func resolveCheckFilesWithExclusions(
 			workspaceRelative, withinWorkspace := relativeCheckPath(workspaceRoot, path)
 			if entry.IsDir() {
 				if path != absolute && (indexer.ShouldSkipRelativePath(relative) ||
-					(withinWorkspace && exclusions.ExcludesDirectory(workspaceRelative))) {
+					(withinWorkspace && exclusions.ExcludesDirectory(workspaceRelative)) ||
+					(withinWorkspace && vendors.DuplicatesRootPackage(workspaceRelative))) {
 					return fs.SkipDir
 				}
 				return nil
 			}
 			if indexer.ShouldSkipRelativePath(relative) ||
 				(withinWorkspace && exclusions.Excludes(workspaceRelative)) ||
+				(withinWorkspace && vendors.DuplicatesRootPackage(workspaceRelative)) ||
 				!indexer.IsScannedPath(path) {
 				return nil
 			}
