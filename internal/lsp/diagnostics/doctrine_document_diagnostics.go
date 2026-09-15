@@ -8,6 +8,7 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/doctrine"
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/lsp/phpanalysis"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
 	phpsyntax "github.com/shopware/shopware-lsp/internal/parser/php/syntax"
@@ -55,22 +56,20 @@ func (p *DoctrineAnalyzer) Analyze(
 	if err != nil {
 		return nil, err
 	}
+	validationContext, err := phpanalysis.ContextForDocument(ctx, p.phpIndex, document)
+	if err != nil {
+		return nil, err
+	}
 	analyzer := &doctrineDocumentAnalyzer{
-		provider: p,
-		ctx:      ctx,
-		document: document,
-		path:     path,
-		validationContext: p.phpIndex.AddDocumentContext(
-			ctx,
-			path,
-			document.Version,
-			document.SyntaxTree.Root,
-			document.SyntaxTree.Root,
-		),
-		entityNames: entityNames,
-		dbal:        newDBALSchemaCatalog(p.index, p.dalIndex, models),
-		seen:        make(map[string]struct{}),
-		result:      result,
+		provider:          p,
+		ctx:               ctx,
+		document:          document,
+		path:              path,
+		validationContext: validationContext,
+		entityNames:       entityNames,
+		dbal:              newDBALSchemaCatalog(p.index, p.dalIndex, models),
+		seen:              make(map[string]struct{}),
+		result:            result,
 	}
 	if err := analyzer.scanStringLiterals(); err != nil {
 		return nil, err

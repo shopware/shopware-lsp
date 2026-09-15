@@ -6,12 +6,12 @@ import (
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/lsp/phpanalysis"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
 	phpsyntax "github.com/shopware/shopware-lsp/internal/parser/php/syntax"
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/suggestion"
-	"github.com/shopware/shopware-lsp/internal/uriutil"
 	"github.com/shopware/shopware-lsp/internal/validation"
 )
 
@@ -36,14 +36,10 @@ func (p *ValidationAnalyzer) Analyze(
 		!strings.HasSuffix(strings.ToLower(document.URI), ".php") {
 		return nil, nil
 	}
-	path, _ := uriutil.Path(document.URI)
-	validationContext := p.phpIndex.AddDocumentContext(
-		ctx,
-		path,
-		document.Version,
-		document.SyntaxTree.Root,
-		document.SyntaxTree.Root,
-	)
+	validationContext, err := phpanalysis.ContextForDocument(ctx, p.phpIndex, document)
+	if err != nil {
+		return nil, err
+	}
 	var result []lsp.Problem
 	for _, literal := range phpquery.Nodes(
 		document.SyntaxTree.Root,

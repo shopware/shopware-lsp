@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/lsp/phpanalysis"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
@@ -15,7 +16,6 @@ import (
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/suggestion"
 	"github.com/shopware/shopware-lsp/internal/symfony"
-	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
 type RouteAnalyzer struct {
@@ -50,14 +50,11 @@ func (p *RouteAnalyzer) Analyze(
 		seen := make(map[cst.TextRange]struct{})
 		validationContext := ctx
 		if p.phpIndex != nil {
-			path, _ := uriutil.Path(document.URI)
-			validationContext = p.phpIndex.AddDocumentContext(
-				ctx,
-				path,
-				document.Version,
-				document.SyntaxTree.Root,
-				document.SyntaxTree.Root,
-			)
+			phpContext, err := phpanalysis.ContextForDocument(ctx, p.phpIndex, document)
+			if err != nil {
+				return nil, err
+			}
+			validationContext = phpContext
 		}
 		for _, call := range phpquery.Calls(document.SyntaxTree.Root) {
 			literal := phpquery.StringArgument(call, 0)
