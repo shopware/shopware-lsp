@@ -78,7 +78,9 @@ mise run check
 Benchmarks written with the `testing` package run in CI through CodSpeed
 (`.github/workflows/codspeed.yml`, walltime instrument, sharded per package
 group). `mise run bench` reproduces that locally once the `codspeed` CLI is
-installed.
+installed. When adding or changing benchmarks, follow the conventions in
+[`docs/benchmarks.md`](docs/benchmarks.md); a benchmark in a package no shard
+covers never runs in CI.
 
 `mise run check` also compiles the opt-in real-world integration suite without
 running it. Production Go files are capped at 2,500 lines by

@@ -32,6 +32,7 @@ After that, read the subsystem you are changing.
 | [`../AGENTS.md`](../AGENTS.md) | The contributor rulebook: invariants, conventions, per-area checklists, definition of done |
 | [`custom-commands.md`](custom-commands.md) | Custom LSP methods and a Neovim configuration example |
 | [`maintainability.md`](maintainability.md) | The maintainability review: measured hotspots, complexity ceilings, and why the large grammar files are intentionally centralized |
+| [`benchmarks.md`](benchmarks.md) | The CodSpeed benchmark suite: where benchmarks run, what to measure, and the conventions that keep them useful |
 | [`performance-review.md`](performance-review.md) | Portable task profiles, measured optimizations, reproduction commands, and measurement limits |
 
 ## Integration and coverage
