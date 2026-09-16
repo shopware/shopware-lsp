@@ -28,7 +28,7 @@ run = "GOEXPERIMENT=simd go test ./internal/parser/..."
 
 [tasks.bench]
 description = "Run the Go benchmarks through the CodSpeed walltime runner"
-run = "codspeed run --mode walltime -- go test -bench=. ./internal/..."
+run = "codspeed run --mode walltime -- go test -run '^$' -bench=. ./internal/..."
 
 [tasks."test:race"]
 description = "Run internal Go tests with the race detector"

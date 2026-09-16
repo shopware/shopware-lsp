@@ -35,6 +35,8 @@ jobs:
             packages: ./internal/php ./internal/php/imports/... ./internal/php/inference/... ./internal/php/refactoring/... ./internal/php/resolver/... ./internal/php/types/...
           - name: workspace
             packages: ./internal/admin/... ./internal/doctrine/... ./internal/indexer/... ./internal/lsp/... ./internal/projectconfig/... ./internal/shopware/... ./internal/symfony/... ./internal/translation/...
+          - name: app
+            packages: ./internal/app/...
 
     steps:
       - name: Checkout code
@@ -53,7 +55,9 @@ jobs:
         uses: CodSpeedHQ/action@v5
         with:
           mode: walltime
-          run: go test -bench=. ${{ matrix.shard.packages }}
+          # Unit tests already run in the test workflow; -run '^$' keeps the
+          # benchmark shards focused and short.
+          run: go test -run '^$' -bench=. ${{ matrix.shard.packages }}
         env:
           # Go on arm64 needs frame-pointer unwinding for complete flamegraphs.
           CODSPEED_PERF_UNWINDING_MODE: fp
