@@ -8,9 +8,9 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/asset"
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/lsp/phpanalysis"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/suggestion"
-	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
 type assetDiagnosticsCatalog struct {
@@ -79,14 +79,15 @@ func newAssetDiagnosticsRun(
 		return nil, nil
 	}
 	if extension == ".php" && provider.phpIndex != nil {
-		path, _ := uriutil.Path(document.URI)
-		run.validationContext = provider.phpIndex.AddDocumentContext(
+		validationContext, err := phpanalysis.ContextForDocument(
 			ctx,
-			path,
-			document.Version,
-			document.SyntaxTree.Root,
-			document.SyntaxTree.Root,
+			provider.phpIndex,
+			document,
 		)
+		if err != nil {
+			return nil, err
+		}
+		run.validationContext = validationContext
 	}
 	return run, nil
 }

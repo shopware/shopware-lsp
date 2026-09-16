@@ -72,7 +72,7 @@ func PHPReferenceAt(
 		return Reference{}, false
 	}
 	name := phpquery.StringValue(literal)
-	resolver := php.NewNameResolver(root)
+	resolver := php.NameResolverFor(ctx, root)
 	className := resolvedClassName(phpquery.ClassAt(literal), resolver)
 
 	if attribute := phpquery.AttributeAt(literal); attribute != nil &&

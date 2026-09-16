@@ -2,6 +2,7 @@ package php
 
 import (
 	"context"
+	"sync"
 
 	"github.com/shopware/shopware-lsp/internal/indexer"
 	phpsyntax "github.com/shopware/shopware-lsp/internal/parser/php/syntax"
@@ -19,11 +20,36 @@ type PHPContext struct {
 	Node        *phpsyntax.Node
 	Document    *semantic.Document
 	Snapshot    *semantic.Snapshot
+
+	resolverMu   sync.Mutex
+	resolver     *NameResolver
+	resolverRoot *phpsyntax.Node
 }
 
 func GetPHPContext(ctx context.Context) *PHPContext {
 	value, _ := ctx.Value(PHPContextKey).(*PHPContext)
 	return value
+}
+
+// NameResolverFor returns the import resolver for root, sharing one resolver
+// through the request's PHP context when the same tree is queried repeatedly.
+// Reference lookups inspect many literals of one document; building a fresh
+// resolver per literal re-walks the whole syntax tree each time.
+func NameResolverFor(ctx context.Context, root *phpsyntax.Node) *NameResolver {
+	if phpContext := GetPHPContext(ctx); phpContext != nil {
+		return phpContext.nameResolver(root)
+	}
+	return NewNameResolver(root)
+}
+
+func (p *PHPContext) nameResolver(root *phpsyntax.Node) *NameResolver {
+	p.resolverMu.Lock()
+	defer p.resolverMu.Unlock()
+	if p.resolver == nil || p.resolverRoot != root {
+		p.resolver = NewNameResolver(root)
+		p.resolverRoot = root
+	}
+	return p.resolver
 }
 
 func (p *PHPIndex) AddContext(ctx context.Context, node *phpsyntax.Node, documentContent []byte) context.Context {

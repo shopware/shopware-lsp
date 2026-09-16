@@ -2,6 +2,7 @@ package semantic
 
 import (
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
+	"github.com/shopware/shopware-lsp/internal/php/types"
 )
 
 type SymbolView struct {
@@ -146,6 +147,20 @@ func (view SymbolView) HierarchyNames() (
 	implements []string,
 ) {
 	return view.hierarchyNames()
+}
+
+// HierarchyTypes returns the immutable typed parent-class and implemented
+// interface edges retained by the snapshot. Like HierarchyNames, the data is
+// resident summary state and never triggers a full document graph load.
+func (view SymbolView) HierarchyTypes() (extends, implements []types.Type) {
+	if view.expanded != nil {
+		return view.expanded.ExtendsTypes(), view.expanded.ImplementsTypes()
+	}
+	if view.workspace == nil || view.workspace.hierarchy() == nil {
+		return nil, nil
+	}
+	hierarchy := view.workspace.hierarchy()
+	return hierarchy.extendsTypes(), hierarchy.implementsTypes()
 }
 
 // TraitAliases returns method adaptations declared by the viewed class.

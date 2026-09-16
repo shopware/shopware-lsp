@@ -183,6 +183,16 @@ func (cw *ContainerCatalog) GetAllServiceDefinitions() []Service {
 	return result
 }
 
+// Revision returns the catalog's mutation counter for cache invalidation.
+func (cw *ContainerCatalog) Revision() uint64 {
+	if cw == nil {
+		return 0
+	}
+	cw.mu.RLock()
+	defer cw.mu.RUnlock()
+	return cw.revision
+}
+
 func (cw *ContainerCatalog) GetAllParameters() []Parameter {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()

@@ -79,7 +79,7 @@ func PHPReferenceAt(
 			Method: legacy.Name,
 		}, true
 	}
-	nameResolver := php.NewNameResolver(root)
+	nameResolver := php.NameResolverFor(ctx, root)
 	if attribute := phpquery.AttributeAt(node); attribute != nil &&
 		isAsMessageHandler(attribute, nameResolver) {
 		className := resolvedClassName(

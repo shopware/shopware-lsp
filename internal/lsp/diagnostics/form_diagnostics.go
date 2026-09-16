@@ -8,6 +8,7 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/form"
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/lsp/phpanalysis"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
 	phpsyntax "github.com/shopware/shopware-lsp/internal/parser/php/syntax"
@@ -59,14 +60,11 @@ func (p *FormAnalyzer) phpFormDiagnostics(
 	ctx context.Context,
 	document *lsp.TextDocument,
 ) ([]lsp.Problem, error) {
+	validationContext, err := phpanalysis.ContextForDocument(ctx, p.phpIndex, document)
+	if err != nil {
+		return nil, err
+	}
 	path, _ := uriutil.Path(document.URI)
-	validationContext := p.phpIndex.AddDocumentContext(
-		ctx,
-		path,
-		document.Version,
-		document.SyntaxTree.Root,
-		document.SyntaxTree.Root,
-	)
 	references := formDocumentReferences(
 		validationContext,
 		document.SyntaxTree.Root,

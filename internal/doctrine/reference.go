@@ -75,7 +75,13 @@ func (idx *Index) ReferenceAt(
 	if idx == nil || root == nil || node == nil {
 		return Reference{}, false
 	}
-	resolver := php.NewNameResolver(root)
+	var resolver *php.NameResolver
+	nameResolver := func() *php.NameResolver {
+		if resolver == nil {
+			resolver = php.NameResolverFor(ctx, root)
+		}
+		return resolver
+	}
 	if literal := phpquery.StringAt(node); literal != nil {
 		call := phpquery.CallAt(literal)
 		if call == nil {
@@ -88,7 +94,7 @@ func (idx *Index) ReferenceAt(
 			} else if strings.Contains(value, `\`) {
 				value = normalizeClass(value)
 			} else if value != "" {
-				value = normalizeClass(resolver.Resolve(value))
+				value = normalizeClass(nameResolver().Resolve(value))
 			}
 			return Reference{
 				Role: EntityReference,
@@ -99,7 +105,7 @@ func (idx *Index) ReferenceAt(
 			}, true
 		}
 		if isCriteriaField(call, literal) {
-			entity := idx.repositoryEntityAt(ctx, call, resolver)
+			entity := idx.repositoryEntityAt(ctx, call, nameResolver())
 			if entity == "" {
 				return Reference{}, false
 			}
@@ -128,7 +134,7 @@ func (idx *Index) ReferenceAt(
 		className = phpquery.NameValue(expression)
 	}
 	if className != "" {
-		className = normalizeClass(resolver.Resolve(className))
+		className = normalizeClass(nameResolver().Resolve(className))
 	}
 	return Reference{
 		Role: EntityReference,

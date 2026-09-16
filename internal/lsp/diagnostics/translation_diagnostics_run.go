@@ -7,13 +7,13 @@ import (
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/lsp/phpanalysis"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
 	phpsyntax "github.com/shopware/shopware-lsp/internal/parser/php/syntax"
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/suggestion"
 	"github.com/shopware/shopware-lsp/internal/translation"
-	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
 type translationDiagnosticsRun struct {
@@ -62,14 +62,15 @@ func newTranslationDiagnosticsRun(
 		run.domainSet[strings.ToLower(domain)] = struct{}{}
 	}
 	if extension == ".php" && provider.phpIndex != nil {
-		path, _ := uriutil.Path(document.URI)
-		run.validationContext = provider.phpIndex.AddDocumentContext(
+		validationContext, err := phpanalysis.ContextForDocument(
 			ctx,
-			path,
-			document.Version,
-			document.SyntaxTree.Root,
-			document.SyntaxTree.Root,
+			provider.phpIndex,
+			document,
 		)
+		if err != nil {
+			return nil, err
+		}
+		run.validationContext = validationContext
 	}
 	return run, nil
 }

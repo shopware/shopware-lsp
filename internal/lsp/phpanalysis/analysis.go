@@ -3,6 +3,7 @@
 package phpanalysis
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
@@ -50,4 +51,24 @@ func ForDocument(
 		return nil, fmt.Errorf("memoized PHP analysis has unexpected type %T", value)
 	}
 	return state, nil
+}
+
+// ContextForDocument enriches ctx with the memoized semantic analysis of
+// document. Diagnostic inspections analyzing the same document share one
+// binder and inference pass instead of rebuilding it per inspection.
+func ContextForDocument(
+	ctx context.Context,
+	index *php.PHPIndex,
+	document *lsp.TextDocument,
+) (context.Context, error) {
+	state, err := ForDocument(index, document)
+	if err != nil || state == nil {
+		return ctx, err
+	}
+	return index.AddAnalyzedSnapshotContext(
+		ctx,
+		document.SyntaxTree.Root,
+		state.Document,
+		state.Snapshot,
+	), nil
 }

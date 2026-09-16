@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/lsp/phpanalysis"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/security"
@@ -63,13 +64,11 @@ func (p *SecurityAnalyzer) Analyze(
 	path, _ := uriutil.Path(document.URI)
 	validationContext := ctx
 	if extension == ".php" && p.phpIndex != nil {
-		validationContext = p.phpIndex.AddDocumentContext(
-			ctx,
-			path,
-			document.Version,
-			document.SyntaxTree.Root,
-			document.SyntaxTree.Root,
-		)
+		phpContext, err := phpanalysis.ContextForDocument(ctx, p.phpIndex, document)
+		if err != nil {
+			return nil, err
+		}
+		validationContext = phpContext
 	}
 	references := security.ReferencesInDocument(
 		validationContext,

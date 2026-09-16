@@ -12,58 +12,101 @@ func (s *Snapshot) IsSubtypeOf(candidate, target string) bool {
 	if s.lowerName(candidate, false) == normalizedTarget {
 		return true
 	}
-	return s.isSubtypeOf(candidate, normalizedTarget, make(map[string]struct{}))
+	visited := inlineStringSet{}
+	return s.isSubtypeOf(candidate, normalizedTarget, &visited)
 }
 
 func (s *Snapshot) classAliasCanonicalName(name string) string {
-	visited := make(map[string]struct{})
-	for name != "" {
-		key := s.lowerName(name, false)
+	// Fast path: most names are no class alias, so avoid the cycle-guard map.
+	aliasTarget := s.classAliasTarget(name)
+	if aliasTarget == "" {
+		return name
+	}
+	visited := make(map[string]struct{}, 4)
+	visited[s.lowerName(name, false)] = struct{}{}
+	for aliasTarget != "" {
+		key := s.lowerName(aliasTarget, false)
 		if _, exists := visited[key]; exists {
-			return name
+			return aliasTarget
 		}
 		visited[key] = struct{}{}
-		aliasTarget := ""
-		s.VisitClassViews(name, func(view SymbolView) bool {
-			if !view.Flags().Has(ClassAliasFlag) {
-				return true
-			}
-			_, extends, _ := view.HierarchyNames()
-			if len(extends) == 1 {
-				aliasTarget = extends[0]
-				return false
-			}
-			return true
-		})
-		if aliasTarget == "" {
-			return name
+		next := s.classAliasTarget(aliasTarget)
+		if next == "" {
+			return aliasTarget
 		}
-		name = aliasTarget
+		aliasTarget = next
 	}
 	return name
+}
+
+func (s *Snapshot) classAliasTarget(name string) string {
+	aliasTarget := ""
+	s.VisitClassViews(name, func(view SymbolView) bool {
+		if !view.Flags().Has(ClassAliasFlag) {
+			return true
+		}
+		_, extends, _ := view.HierarchyNames()
+		if len(extends) == 1 {
+			aliasTarget = extends[0]
+			return false
+		}
+		return true
+	})
+	return aliasTarget
+}
+
+// inlineStringSet tracks a handful of visited names without allocating; deep
+// hierarchy walks overflow into a map.
+type inlineStringSet struct {
+	values   [8]string
+	length   uint8
+	overflow map[string]struct{}
+}
+
+func (s *inlineStringSet) add(value string) bool {
+	for index := uint8(0); index < s.length; index++ {
+		if s.values[index] == value {
+			return false
+		}
+	}
+	if s.length < uint8(len(s.values)) {
+		s.values[s.length] = value
+		s.length++
+		return true
+	}
+	if s.overflow == nil {
+		s.overflow = make(map[string]struct{})
+	}
+	if _, exists := s.overflow[value]; exists {
+		return false
+	}
+	s.overflow[value] = struct{}{}
+	return true
 }
 
 func (s *Snapshot) isSubtypeOf(
 	candidate,
 	normalizedTarget string,
-	visited map[string]struct{},
+	visited *inlineStringSet,
 ) bool {
 	normalized := s.lowerName(candidate, false)
-	if _, exists := visited[normalized]; exists {
+	if !visited.add(normalized) {
 		return false
 	}
-	visited[normalized] = struct{}{}
 	found := false
 	s.VisitClassViews(candidate, func(classView SymbolView) bool {
-		class := classView.Materialize()
-		for _, parent := range class.Extends() {
+		// Hierarchy edges are resident summary data. Materializing the symbol
+		// would load the persisted full document graph for every walked
+		// ancestor, which dominates request-time subtype scans.
+		_, extends, implements := classView.HierarchyNames()
+		for _, parent := range extends {
 			if s.lowerName(parent, false) == normalizedTarget ||
 				s.isSubtypeOf(parent, normalizedTarget, visited) {
 				found = true
 				return false
 			}
 		}
-		for _, parent := range class.Implements() {
+		for _, parent := range implements {
 			if s.lowerName(parent, false) == normalizedTarget ||
 				s.isSubtypeOf(parent, normalizedTarget, visited) {
 				found = true
@@ -228,6 +271,40 @@ func (s *Snapshot) asSupertype(
 	result := types.Unknown()
 	found := false
 	s.VisitClassViews(candidate.Name(), func(classView SymbolView) bool {
+		extendsTypes, implementsTypes := classView.HierarchyTypes()
+		_, extends, implements := classView.HierarchyNames()
+		parents := classParentTypesFromEdges(
+			extendsTypes,
+			implementsTypes,
+			extends,
+			implements,
+		)
+		// Template bindings live in the lazy signature side. Without generic
+		// arguments on the candidate or any parent edge there is nothing a
+		// template could substitute into, so the resident hierarchy is enough
+		// and the persisted full document graph stays unloaded.
+		needsTemplates := candidate.ArgumentCount() > 0
+		for _, parent := range parents {
+			if needsTemplates {
+				break
+			}
+			needsTemplates = parent.ArgumentCount() > 0
+		}
+		if !needsTemplates {
+			for _, parent := range parents {
+				if s.lowerName(parent.Name(), false) == normalizedTarget {
+					result = parent
+					found = true
+					return false
+				}
+				if projected, ok := s.asSupertype(parent, target, visited); ok {
+					result = projected
+					found = true
+					return false
+				}
+			}
+			return true
+		}
 		class := classView.Materialize()
 		templates := classTemplateBindings(class, candidate)
 		for _, parent := range classParentTypes(class) {
@@ -297,13 +374,27 @@ func inheritExplicitArguments(
 }
 
 func classParentTypes(class Symbol) []types.Type {
+	return classParentTypesFromEdges(
+		class.ExtendsTypes(),
+		class.ImplementsTypes(),
+		class.Extends(),
+		class.Implements(),
+	)
+}
+
+func classParentTypesFromEdges(
+	extendsTypes []types.Type,
+	implementsTypes []types.Type,
+	extends []string,
+	implements []string,
+) []types.Type {
 	declared := append(
-		append([]types.Type(nil), class.ExtendsTypes()...),
-		class.ImplementsTypes()...,
+		append([]types.Type(nil), extendsTypes...),
+		implementsTypes...,
 	)
 	names := append(
-		append([]string(nil), class.Extends()...),
-		class.Implements()...,
+		append([]string(nil), extends...),
+		implements...,
 	)
 	result := append([]types.Type(nil), declared...)
 	for _, name := range names {
