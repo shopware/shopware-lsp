@@ -1,6 +1,7 @@
 package php
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
@@ -10,6 +11,12 @@ import (
 	"github.com/shopware/shopware-lsp/internal/php/inference"
 	"github.com/shopware/shopware-lsp/internal/php/semantic"
 )
+
+// Package-level sinks keep the compiler from optimizing away benchmarked
+// calls whose results would otherwise be discarded.
+var benchmarkParseResult phpparser.Result
+var benchmarkDocument *semantic.Document
+var benchmarkClass semantic.Symbol
 
 func benchmarkSource(b *testing.B, path string) []byte {
 	b.Helper()
@@ -23,9 +30,9 @@ func benchmarkSource(b *testing.B, path string) []byte {
 func BenchmarkPureGoParsing(b *testing.B) {
 	content := benchmarkSource(b, "testdata/01.php")
 	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		_ = phpparser.ParseBytes(content)
+	b.SetBytes(int64(len(content)))
+	for b.Loop() {
+		benchmarkParseResult = phpparser.ParseBytes(content)
 	}
 }
 
@@ -35,9 +42,8 @@ func BenchmarkSemanticBinding(b *testing.B) {
 	semanticBinder := binder.New()
 	sample := semanticBinder.Bind("testdata/01.php", 1, root)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		_ = semanticBinder.Bind("testdata/01.php", 1, root)
+	for b.Loop() {
+		benchmarkDocument = semanticBinder.Bind("testdata/01.php", 1, root)
 	}
 	b.ReportMetric(float64(len(sample.Symbols)), "symbols/doc")
 	b.ReportMetric(float64(sample.TypeFactCount()), "type-facts/doc")
@@ -51,28 +57,39 @@ func BenchmarkSemanticAnalysis(b *testing.B) {
 	analyzer := inference.New(snapshot)
 	sample := analyzer.Analyze(document, root)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		_ = analyzer.Analyze(document, root)
+	for b.Loop() {
+		benchmarkDocument = analyzer.Analyze(document, root)
 	}
 	b.ReportMetric(float64(sample.TypeFactCount()), "type-facts/doc")
 }
 
+// BenchmarkPHPIndexClassLookup measures request-time class resolution against
+// a populated index rather than a single-document one, so SQLite lookup costs
+// stay visible as the workspace graph grows.
 func BenchmarkPHPIndexClassLookup(b *testing.B) {
 	idx, err := NewPHPIndex(b.TempDir())
 	if err != nil {
 		b.Fatal(err)
 	}
 	b.Cleanup(func() { _ = idx.Close() })
-	content := benchmarkSource(b, "testdata/01.php")
-	if err := idx.Index(indexer.NewParsedFile("testdata/01.php", content)); err != nil {
-		b.Fatal(err)
+	const documentCount = 128
+	for i := range documentCount {
+		source := fmt.Sprintf(
+			"<?php\nnamespace Bench\\Domain%03d;\n\nclass Service%03d\n{\n    public function handle(string $id): string\n    {\n        return $id;\n    }\n}\n",
+			i,
+			i,
+		)
+		path := fmt.Sprintf("src/Domain%03d/Service%03d.php", i, i)
+		if err := idx.Index(indexer.NewParsedFile(path, []byte(source))); err != nil {
+			b.Fatal(err)
+		}
 	}
 	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		_, _ = idx.FindClass(
-			"Shopware\\Core\\Content\\Category\\Service\\NavigationLoader",
-		)
+	for b.Loop() {
+		symbol, found := idx.FindClass("Bench\\Domain042\\Service042")
+		if !found {
+			b.Fatal("indexed class not found")
+		}
+		benchmarkClass = symbol
 	}
 }
