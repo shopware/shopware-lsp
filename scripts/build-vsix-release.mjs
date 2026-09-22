@@ -158,7 +158,7 @@ await mkdir(outputDirectory, {recursive: true});
 // release mode, so the version override is applied only after this step.
 // Untagged checkouts (local development) fall back to a snapshot build.
 const goreleaserArguments = isExactTag()
-  ? ['release', '--clean', '--skip=validate', '--skip=publish']
+  ? ['release', '--clean', '--skip=validate', '--skip=publish', '--skip=nfpm']
   : ['build', '--clean', '--snapshot', '--skip=validate'];
 run('docker', [
   'run',

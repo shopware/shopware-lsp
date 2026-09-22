@@ -40,6 +40,8 @@ pre-release marking, and (for stable) the Homebrew cask:
 - `linux-amd64`, `linux-arm64`, `linux-armv7` (statically linked)
 - `windows-amd64`
 - published as `<project>_<version>_<os>_<arch>.zip` plus `checksums.txt`
+- Linux `deb`, `rpm`, and `apk` packages (nfpm) for `amd64`, `arm64`, and
+  `armv7`, installing the static binary to `/usr/bin/shopware-lsp`
 - the tagged version is embedded via `-X main.version={{.Version}}`
   (`main.go` defaults to `"dev"` for local builds)
 
@@ -60,12 +62,16 @@ Plus a `SHA256SUMS` file covering all eight `.vsix` files.
 
 **Distribution:**
 
-- GitHub release on `shopware/shopware-lsp` with the zips, `checksums.txt`,
-  all VSIX files, and `SHA256SUMS` attached.
+- GitHub release on `shopware/shopware-lsp` with the zips, Linux packages,
+  `checksums.txt`, all VSIX files, and `SHA256SUMS` attached. GoReleaser
+  creates it as a draft; the workflow publishes it (stable, or
+  `--prerelease --latest=false`) only after the VSIX files are attached.
+  GoReleaser cannot detect the channel itself because both channels use plain
+  `X.Y.Z` tags.
+- Release notes come from the GoReleaser changelog (conventional commits,
+  excluding `docs:` and `test:` prefixes) on both channels.
 - Stable releases only: a Homebrew cask update in `shopware/homebrew-tap`.
-- Stable releases only: `release.yml` generates notes from conventional
-  commits (GoReleaser changelog, excluding `docs:` and `test:` prefixes).
-  Pre-releases use `gh release create --generate-notes` instead.
+  The pre-release pipeline runs GoReleaser with `--skip=homebrew`.
 - Marketplace publication to the
   [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=shopware.shopware-lsp)
   and [Open VSX](https://open-vsx.org/extension/shopware/shopware-lsp).
@@ -123,17 +129,18 @@ where publishing credentials live):
    `Pre-release` (odd minor) under *Actions*. The stage order is:
    - Stable: `route` → GoReleaser (`make release`, includes the Homebrew
      cask) → `build-vsix.yml` (`version: <tag>`, `pre-release: false`) →
-     attach VSIX + `SHA256SUMS` to the release → publish to both
-     marketplaces (`environment: release`).
-   - Pre-release: `route` → `tests.yml` → `build-vsix.yml`
-     (`version: <tag>`, `pre-release: true`) → `gh release create
-     --prerelease` → publish with `--pre-release` flags
-     (`environment: preview`) + summary links.
+     attach VSIX + `SHA256SUMS` to the draft release and publish it →
+     publish to both marketplaces (`environment: release`).
+   - Pre-release: `route` → `tests.yml` → GoReleaser (`make release
+     GORELEASER_ARGS=--skip=homebrew`, draft release) in parallel with
+     `build-vsix.yml` (`version: <tag>`, `pre-release: true`) → attach VSIX
+     + `SHA256SUMS` and publish as pre-release → publish with
+     `--pre-release` flags (`environment: preview`) + summary links.
    - Both pipelines verify `SHA256SUMS` (`sha256sum --check`) before every
      upload/publish step; a checksum failure fails the job before anything
      is published.
 6. **Verify the GitHub release.** Confirm the tag page lists the six
-   binary zips, `checksums.txt`, all eight `.vsix` files, and `SHA256SUMS`,
+   binary zips, the nine `deb`/`rpm`/`apk` packages, `checksums.txt`, all eight `.vsix` files, and `SHA256SUMS`,
    and that the pre-release flag is set only for odd minors.
 7. **Verify the marketplaces.** Check the Marketplace and Open VSX pages for
    the new version (stable channel) or the pre-release version
@@ -206,7 +213,7 @@ Notes:
 | `.github/workflows/build-vsix.yml` | reusable VSIX build (`version` + `pre-release` inputs) |
 | `.github/workflows/tests.yml` | Go/race/lint/VS Code/Zed/build gates |
 | `scripts/build-vsix-release.mjs` | GoReleaser → stage binary → `vsce package` × 8 → `SHA256SUMS` |
-| `.goreleaser.yaml` | binary matrix, ldflags version injection, archives, changelog, Homebrew cask |
+| `.goreleaser.yaml` | binary matrix, ldflags version injection, archives, Linux packages, draft release, changelog, Homebrew cask |
 | `Makefile` (`release`, `release-dry-run`) | Dockerized GoReleaser invocations |
 | `mise.toml` (`release` task) | local entry point: `node scripts/build-vsix-release.mjs` into `out/` |
 | `editors/vscode/package.json` | extension manifest; `version` is overridden by the tag at release time |

@@ -113,6 +113,24 @@ archives:
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [ 'zip' ]
     wrap_in_directory: false
+nfpms:
+  - id: linux-packages
+    ids:
+      - linux-amd64
+      - linux-arm64
+      - linux-armv7
+    package_name: shopware-lsp
+    file_name_template: "{{ .ConventionalFileName }}"
+    vendor: shopware AG
+    homepage: https://github.com/shopware/shopware-lsp
+    maintainer: Soner Sayakci <s.sayakci@shopware.com>
+    description: Shopware Language Server
+    license: MIT
+    formats:
+      - apk
+      - deb
+      - rpm
+    bindir: /usr/bin
 checksum:
   name_template: 'checksums.txt'
 changelog:
@@ -125,6 +143,12 @@ release:
   github:
     owner: shopware
     name: shopware-lsp
+  # The release stays a draft until the workflow has attached the VSIX
+  # packages; the workflow then publishes it as stable or pre-release.
+  # GoReleaser cannot detect the channel itself because both channels use
+  # plain X.Y.Z tags (minor parity decides).
+  draft: true
+  replace_existing_artifacts: true
 
 homebrew_casks:
   - repository:

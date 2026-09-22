@@ -58,7 +58,7 @@ jobs:
       pre-release: false
 
   github-release:
-    name: Attach VSIX packages to release
+    name: Attach VSIX packages and publish release
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -79,7 +79,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
-        run: gh release upload "$TAG" out/*.vsix out/SHA256SUMS
+        run: gh release upload "$TAG" out/*.vsix out/SHA256SUMS --clobber
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: gh release edit "$TAG" --draft=false --latest
 
   publish:
     name: Publish to marketplaces
