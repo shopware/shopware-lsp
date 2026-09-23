@@ -28,7 +28,10 @@ run = "GOEXPERIMENT=simd go test ./internal/parser/..."
 
 [tasks.bench]
 description = "Run the Go benchmarks through the CodSpeed walltime runner"
-run = "codspeed run --mode walltime -- go test -bench=. ./internal/..."
+run = """
+codspeed run --mode walltime -- go test -bench=. -benchtime=1s \
+  $(grep -rl --include='*_test.go' '^func Benchmark' internal | xargs -n1 dirname | sort -u | sed 's|^|./|')
+"""
 
 [tasks."test:race"]
 description = "Run internal Go tests with the race detector"

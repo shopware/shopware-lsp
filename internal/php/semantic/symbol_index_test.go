@@ -85,13 +85,11 @@ func BenchmarkWorkspaceSymbolIndexLookup(b *testing.B) {
 	const count = 16_384
 	symbols := make([]workspaceSymbol, count)
 	index := newWorkspaceSymbolIndex(count)
-	mapIndex := make(map[SymbolID]*workspaceSymbol, count)
 	for symbolIndex := range symbols {
 		symbol := &symbols[symbolIndex]
 		symbol.ID = SymbolID("9:app\\service::method:$parameter-" +
 			strconv.Itoa(symbolIndex))
 		index.Set(symbol)
-		mapIndex[symbol.ID] = symbol
 	}
 	miss := SymbolID("9:app\\service::method:$missing")
 
@@ -103,26 +101,11 @@ func BenchmarkWorkspaceSymbolIndexLookup(b *testing.B) {
 				benchmarkWorkspaceSymbolFound = index.Get(hit)
 		}
 	})
-	b.Run("map_hit", func(b *testing.B) {
-		b.ReportAllocs()
-		for operation := range b.N {
-			hit := symbols[operation&(count-1)].ID
-			benchmarkWorkspaceSymbol,
-				benchmarkWorkspaceSymbolFound = mapIndex[hit]
-		}
-	})
 	b.Run("compact_miss", func(b *testing.B) {
 		b.ReportAllocs()
 		for range b.N {
 			benchmarkWorkspaceSymbol,
 				benchmarkWorkspaceSymbolFound = index.Get(miss)
-		}
-	})
-	b.Run("map_miss", func(b *testing.B) {
-		b.ReportAllocs()
-		for range b.N {
-			benchmarkWorkspaceSymbol,
-				benchmarkWorkspaceSymbolFound = mapIndex[miss]
 		}
 	})
 }

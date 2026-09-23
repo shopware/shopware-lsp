@@ -998,58 +998,6 @@ func BenchmarkFileScannerScanFileStates(b *testing.B) {
 			}
 		}
 	})
-	b.Run("separate_queries", func(b *testing.B) {
-		b.ReportAllocs()
-		for b.Loop() {
-			stale, scanErr := benchmarkStaleFiles(scanner, ctx, files)
-			if scanErr != nil {
-				b.Fatal(scanErr)
-			}
-			states, scanErr := scanner.loadFileStates(ctx, files)
-			if scanErr != nil {
-				b.Fatal(scanErr)
-			}
-			if len(states) != fileCount || len(stale) != 0 {
-				b.Fatalf(
-					"unexpected snapshot sizes: states=%d stale=%d",
-					len(states),
-					len(stale),
-				)
-			}
-		}
-	})
-}
-
-func benchmarkStaleFiles(
-	scanner *FileScanner,
-	ctx context.Context,
-	current []string,
-) ([]string, error) {
-	rows, err := scanner.db.QueryContext(
-		ctx,
-		"SELECT path FROM file_hashes ORDER BY path",
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-
-	var stale []string
-	currentIndex := 0
-	for rows.Next() {
-		var path string
-		if err := rows.Scan(&path); err != nil {
-			return nil, err
-		}
-		for currentIndex < len(current) &&
-			current[currentIndex] < path {
-			currentIndex++
-		}
-		if currentIndex >= len(current) || current[currentIndex] != path {
-			stale = append(stale, path)
-		}
-	}
-	return stale, rows.Err()
 }
 
 func TestFileScanner_NotifiesBatchIndexersOnFailure(t *testing.T) {

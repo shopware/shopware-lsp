@@ -46,7 +46,7 @@ func TestIndexScannersMatchScalarReference(t *testing.T) {
 var benchmarkPosition int
 
 func BenchmarkIndexAny2(b *testing.B) {
-	for _, size := range []int{16, 32, 64, 256, 4096} {
+	for _, size := range []int{16, 64, 4096} {
 		b.Run(fmt.Sprint(size), func(b *testing.B) {
 			source := strings.Repeat("x", size)
 			b.SetBytes(int64(len(source)))
@@ -58,7 +58,7 @@ func BenchmarkIndexAny2(b *testing.B) {
 }
 
 func BenchmarkIndexAny4(b *testing.B) {
-	for _, size := range []int{16, 32, 64, 256, 4096} {
+	for _, size := range []int{16, 64, 4096} {
 		b.Run(fmt.Sprint(size), func(b *testing.B) {
 			source := strings.Repeat("x", size)
 			b.SetBytes(int64(len(source)))
@@ -70,7 +70,7 @@ func BenchmarkIndexAny4(b *testing.B) {
 }
 
 func BenchmarkIndexByteOrLessThan(b *testing.B) {
-	for _, size := range []int{16, 32, 64, 256, 4096} {
+	for _, size := range []int{16, 64, 4096} {
 		b.Run(fmt.Sprint(size), func(b *testing.B) {
 			source := strings.Repeat("x", size)
 			b.SetBytes(int64(len(source)))
@@ -82,7 +82,7 @@ func BenchmarkIndexByteOrLessThan(b *testing.B) {
 }
 
 func BenchmarkIndexNonASCII(b *testing.B) {
-	for _, size := range []int{16, 32, 64, 256, 4096} {
+	for _, size := range []int{16, 64, 4096} {
 		b.Run(fmt.Sprint(size), func(b *testing.B) {
 			source := strings.Repeat("x", size)
 			b.SetBytes(int64(len(source)))
@@ -94,7 +94,7 @@ func BenchmarkIndexNonASCII(b *testing.B) {
 }
 
 func BenchmarkIndexAny2MatchPosition(b *testing.B) {
-	for _, position := range []int{0, 4, 8, 16, 24, 31, 32, 64, 128} {
+	for _, position := range []int{0, 16, 32, 128} {
 		b.Run(fmt.Sprint(position), func(b *testing.B) {
 			source := strings.Repeat("x", position) + "\n" + strings.Repeat("x", 256-position)
 			b.SetBytes(int64(position + 1))

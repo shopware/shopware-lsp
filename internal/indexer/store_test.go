@@ -246,28 +246,6 @@ func BenchmarkStoreMutationBatchDeleteByFilePaths(b *testing.B) {
 	}
 }
 
-func BenchmarkStoreMutationUnbatchedDeleteByFilePaths(b *testing.B) {
-	store, repositories, paths := setupBatchDeleteBenchmark(b)
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		mutation, mutationErr := store.BeginMutation(context.Background())
-		require.NoError(b, mutationErr)
-		for _, repository := range repositories {
-			for _, filePath := range paths {
-				_, mutationErr = mutation.tx.Exec(
-					"DELETE FROM data WHERE namespace = ? AND file_path = ?",
-					repository.namespace,
-					filePath,
-				)
-				require.NoError(b, mutationErr)
-			}
-		}
-		require.NoError(b, mutation.Rollback())
-	}
-}
-
 func setupBatchDeleteBenchmark(
 	b *testing.B,
 ) (*Store, []*DataIndexer[int], []string) {

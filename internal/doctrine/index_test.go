@@ -154,15 +154,6 @@ func BenchmarkDoctrineCandidateMatcherPair(b *testing.B) {
 			}
 		}
 	})
-	b.Run("separate", func(b *testing.B) {
-		b.ReportAllocs()
-		for range b.N {
-			if doctrinePHPExactCandidates.match(content)|
-				doctrinePHPFoldCandidates.match(content) == 0 {
-				b.Fatal("candidate markers were not found")
-			}
-		}
-	})
 }
 
 func TestDoctrineCandidateMatcherMatchesReferenceScreening(t *testing.T) {
