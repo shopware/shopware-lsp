@@ -241,20 +241,6 @@ func BenchmarkTwigVueRootIdentifierLocalityEventHeavy(b *testing.B) {
 	contentBytes := []byte(content)
 	root := twigparser.Parse(content).Tree.Root
 	identifiers := TwigVueExpressionRootIdentifiers(root, contentBytes)
-	b.Run("individual", func(b *testing.B) {
-		b.ReportAllocs()
-		for range b.N {
-			locals := make(map[cst.TextRange]bool)
-			for _, identifier := range identifiers {
-				if TwigVueRootIdentifierIsLocal(
-					root, contentBytes, identifier,
-				) {
-					locals[identifier.Range] = true
-				}
-			}
-			benchmarkTwigVueLocals = locals
-		}
-	})
 	b.Run("batch", func(b *testing.B) {
 		b.ReportAllocs()
 		for range b.N {

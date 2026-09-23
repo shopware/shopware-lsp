@@ -77,8 +77,15 @@ mise run check
 
 Benchmarks written with the `testing` package run in CI through CodSpeed
 (`.github/workflows/codspeed.yml`, walltime instrument, one job on a two-vCPU
-RunsOn `m8g.large` Spot runner). `mise run bench` reproduces that locally once the `codspeed` CLI is
-installed.
+RunsOn `m8g.large` Spot runner, `-benchtime=1s`). Only packages that define
+benchmarks are built. `mise run bench` reproduces that locally once the
+`codspeed` CLI is installed.
+
+Every benchmark case costs about a second of CI time on every run, so
+benchmarks are for tracking production code paths. Keep A/B comparisons
+against rejected or test-only alternatives, and wide size sweeps, out of the
+committed suite: use them locally while tuning, then keep one representative
+case (or a short and a long input).
 
 `mise run check` also compiles the opt-in real-world integration suite without
 running it. Production Go files are capped at 2,500 lines by

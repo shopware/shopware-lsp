@@ -21,7 +21,6 @@ import (
 
 var (
 	benchmarkShapeFields  []types.ShapeField
-	benchmarkShapeIndices map[string]int
 	benchmarkResolvedType types.Type
 )
 
@@ -112,30 +111,6 @@ func BenchmarkSmallShapeFieldCollection(b *testing.B) {
 				)
 			}
 			benchmarkShapeFields = fields
-		}
-	})
-	b.Run("eager-map", func(b *testing.B) {
-		b.ReportAllocs()
-		for b.Loop() {
-			var fields []types.ShapeField
-			indices := make(map[string]int)
-			for index := 0; index < fieldCount; index++ {
-				name := strconv.Itoa(index)
-				if existing, found := indices[name]; found {
-					fields[existing] = types.ShapeField{
-						Name: name,
-						Type: types.Int(),
-					}
-					continue
-				}
-				indices[name] = len(fields)
-				fields = append(fields, types.ShapeField{
-					Name: name,
-					Type: types.Int(),
-				})
-			}
-			benchmarkShapeFields = fields
-			benchmarkShapeIndices = indices
 		}
 	})
 }

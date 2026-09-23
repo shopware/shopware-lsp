@@ -36,16 +36,6 @@ func BenchmarkTwigContextCandidateMatcher(b *testing.B) {
 			}
 		}
 	})
-	b.Run("separate", func(b *testing.B) {
-		b.ReportAllocs()
-		for range b.N {
-			if containsFoldASCIIString(source, "render") ||
-				containsFoldASCIIString(source, "template") ||
-				containsFoldASCIIString(source, "stream") {
-				b.Fatal("unexpected Twig context marker")
-			}
-		}
-	})
 }
 
 func TestPHPIndexCollectsTypedTwigTemplateContexts(t *testing.T) {
