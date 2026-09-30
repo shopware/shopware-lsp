@@ -231,6 +231,10 @@ func registerDiagnosticInspections(
 		services.appScripts,
 		services.extensions,
 	))
+	server.RegisterInspection(inspections.NewAppDataset(
+		services.extensions,
+		services.dal,
+	))
 }
 
 func registerProblemInspection(

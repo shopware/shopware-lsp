@@ -1463,6 +1463,8 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
 | Deprecated Twig function, filter, custom tag, or typed PHP member | Hint | Twig |
 | Missing or non-enum class in `enum()` / `enum_cases()` | Warning | Twig |
 | Invalid `_self` macro import inside a Twig component | Error | Twig |
+| Missing app `read` permission for Admin SDK dataset selectors | Error | JS/TS, Vue (app administration) |
+| Admin SDK subscription without selectors | Warning | JS/TS, Vue (app administration) |
 
 ### Commands
 - `shopware/forceReindex` - Trigger a full re-index of the workspace

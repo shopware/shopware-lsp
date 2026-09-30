@@ -747,6 +747,8 @@ func inspectionDomain(id string) string {
 		return "shopware.snippets"
 	case id == "shopware.app_script":
 		return "shopware.appScripts"
+	case id == "shopware.app_dataset":
+		return "administration"
 	case id == "shopware.entity_snapshot":
 		return "shopware.entitySchema"
 	case id == "shopware.store_composer":
