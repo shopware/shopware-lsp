@@ -202,6 +202,11 @@ func registerDiagnosticInspections(
 		services.admin,
 		services.shopwareVersion,
 	))
+	server.RegisterInspection(inspections.NewAdminDataset(
+		services.datasets,
+		services.dal,
+		services.extensions,
+	))
 	server.RegisterInspection(inspections.NewDALEntity(services.dal))
 	server.RegisterInspection(inspections.NewShopwareCriteria())
 	registerProblemInspection(server, "shopware.decoration", phpOnly, "shopware-lsp", []string{

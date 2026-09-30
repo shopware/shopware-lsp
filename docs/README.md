@@ -21,6 +21,7 @@ After that, read the subsystem you are changing.
 | [`indexing.md`](indexing.md) | File discovery, change detection, the indexing run, transactions and the single-writer gate, `DataIndexer` repositories, cache versioning, the filesystem watcher, writing an indexer |
 | [`lsp-server.md`](lsp-server.md) | JSON-RPC transport and dispatch, the document manager, `SyntaxContext`, the provider pattern, registration, capabilities, gating, custom commands, the CLI and MCP frontends |
 | [`diagnostics-pipeline.md`](diagnostics-pipeline.md) | Inspections and problems, the reporter, the diagnostic envelope and element anchors, quick fixes, configuration gating, scheduling and caching, parse-error diagnostics |
+| [`admin-dataset-permissions.md`](admin-dataset-permissions.md) | How app Admin SDK dataset selectors are checked against `manifest.xml` privileges, and how dataset ids stay mapped to the indexed entity schema |
 | [`refactoring-engine.md`](refactoring-engine.md) | Edits and conflict rules, document and workspace plans, element handles, plan validation, the PHP editor, rename, file rename, scaffolding |
 | [`php-semantic-engine.md`](php-semantic-engine.md) | The PHP pipeline: binder, semantic generations, resolver, inference, the type algebra, generated runtime stubs |
 

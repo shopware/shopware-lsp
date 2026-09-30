@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/admin"
+	admindataset "github.com/shopware/shopware-lsp/internal/admin/dataset"
 	"github.com/shopware/shopware-lsp/internal/appscript"
 	"github.com/shopware/shopware-lsp/internal/asset"
 	"github.com/shopware/shopware-lsp/internal/console"
@@ -70,6 +71,7 @@ type workspaceServices struct {
 	theme               *theme.ThemeConfigIndexer
 	extensions          *extension.ExtensionIndexer
 	admin               *admin.AdminComponentIndexer
+	datasets            *admindataset.Index
 	dal                 *shopwaredal.Index
 	entitySchemaSources *entityschema.SourceIndex
 	appScripts          *appscript.Index

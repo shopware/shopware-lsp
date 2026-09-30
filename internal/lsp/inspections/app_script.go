@@ -13,6 +13,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/lsp/diagnostics"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	xmlquery "github.com/shopware/shopware-lsp/internal/parser/xml/query"
+	xmlsyntax "github.com/shopware/shopware-lsp/internal/parser/xml/syntax"
 	"github.com/shopware/shopware-lsp/internal/rewrite"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
@@ -80,6 +81,18 @@ func (appReadPermissionFix) Build(
 	if err != nil {
 		return rewrite.WorkspacePlan{}, err
 	}
+	if payload.Entity == "" || payload.Manifest == "" {
+		return rewrite.WorkspacePlan{}, fmt.Errorf("app read permission is incomplete")
+	}
+	return planAppReadPermissions(ctx, fixContext, payload.Manifest, []string{payload.Entity})
+}
+
+func planAppReadPermissions(
+	ctx context.Context,
+	fixContext lsp.FixContext,
+	manifestPath string,
+	entities []string,
+) (rewrite.WorkspacePlan, error) {
 	if _, err := fixContext.Anchor.Resolve(
 		fixContext.Document.URI,
 		fixContext.Document.Version,
@@ -88,7 +101,11 @@ func (appReadPermissionFix) Build(
 	); err != nil {
 		return rewrite.WorkspacePlan{}, err
 	}
-	manifestURI := uriutil.FileURI(payload.Manifest)
+	entities = uniqueEntities(entities)
+	if len(entities) == 0 || manifestPath == "" {
+		return rewrite.WorkspacePlan{}, fmt.Errorf("app read permission is incomplete")
+	}
+	manifestURI := uriutil.FileURI(manifestPath)
 	target, err := fixContext.Documents.ResolveDocument(ctx, manifestURI)
 	if err != nil {
 		return rewrite.WorkspacePlan{}, err
@@ -103,27 +120,35 @@ func (appReadPermissionFix) Build(
 	}
 	manifest := manifests[0]
 	permissions := xmlquery.ChildElement(manifest, "permissions")
+	missing := entities
 	if permissions != nil {
-		for _, read := range xmlquery.ChildElements(permissions, "read") {
-			if strings.TrimSpace(xmlquery.TextContent(read)) == payload.Entity {
-				return rewrite.WorkspacePlan{}, fmt.Errorf(
-					"read permission for %q already exists",
-					payload.Entity,
-				)
+		missing = nil
+		for _, entity := range entities {
+			if !manifestGrantsRead(permissions, entity) {
+				missing = append(missing, entity)
 			}
 		}
+	}
+	if len(missing) == 0 {
+		return rewrite.WorkspacePlan{}, fmt.Errorf(
+			"read permission for %q already exists",
+			entities[0],
+		)
 	}
 
 	var offset uint32
 	var insertion string
-	entity := html.EscapeString(payload.Entity)
 	if permissions != nil {
+		children := make([]string, len(missing))
+		for index, entity := range missing {
+			children[index] = "<read>" + html.EscapeString(entity) + "</read>"
+		}
 		offset, insertion, err = xmlChildInsertion(
 			target.Document.Source,
 			permissions.RangeTrimmedTrivia().Start,
 			permissions.RangeTrimmedTrivia().End,
 			"permissions",
-			"<read>"+entity+"</read>",
+			children...,
 		)
 	} else {
 		offset, insertion, err = xmlChildInsertion(
@@ -131,7 +156,7 @@ func (appReadPermissionFix) Build(
 			manifest.RangeTrimmedTrivia().Start,
 			manifest.RangeTrimmedTrivia().End,
 			"manifest",
-			"<permissions>\n        <read>"+entity+"</read>\n    </permissions>",
+			"<permissions>\n        "+readPermissionLines(missing)+"\n    </permissions>",
 		)
 	}
 	if err != nil {
@@ -150,14 +175,52 @@ func (appReadPermissionFix) Build(
 	}}, nil
 }
 
+func manifestGrantsRead(permissions *xmlsyntax.Node, entity string) bool {
+	for _, child := range xmlquery.ChildElements(permissions) {
+		switch xmlquery.ElementName(child) {
+		case "read", "crud":
+			value := strings.TrimSpace(xmlquery.TextContent(child))
+			if value == entity || value == "*" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func readPermissionLines(entities []string) string {
+	lines := make([]string, len(entities))
+	for index, entity := range entities {
+		lines[index] = "<read>" + html.EscapeString(entity) + "</read>"
+	}
+	return strings.Join(lines, "\n        ")
+}
+
+func uniqueEntities(entities []string) []string {
+	seen := make(map[string]struct{}, len(entities))
+	result := make([]string, 0, len(entities))
+	for _, entity := range entities {
+		entity = strings.TrimSpace(entity)
+		if entity == "" {
+			continue
+		}
+		if _, exists := seen[entity]; exists {
+			continue
+		}
+		seen[entity] = struct{}{}
+		result = append(result, entity)
+	}
+	return result
+}
+
 func xmlChildInsertion(
 	source string,
 	start,
 	end uint32,
-	parent,
-	child string,
+	parent string,
+	children ...string,
 ) (uint32, string, error) {
-	if start > end || end > uint32(len(source)) {
+	if start > end || end > uint32(len(source)) || len(children) == 0 {
 		return 0, "", fmt.Errorf("%s element range changed", parent)
 	}
 	fragment := source[start:end]
@@ -171,8 +234,21 @@ func xmlChildInsertion(
 		lineStart--
 	}
 	indent := source[lineStart:closing]
+	var builder strings.Builder
 	if strings.TrimSpace(indent) == "" {
-		return lineStart, indent + "    " + child + "\n", nil
+		for _, child := range children {
+			builder.WriteString(indent)
+			builder.WriteString("    ")
+			builder.WriteString(child)
+			builder.WriteByte('\n')
+		}
+		return lineStart, builder.String(), nil
 	}
-	return closing, "\n    " + child + "\n" + indent, nil
+	for _, child := range children {
+		builder.WriteString("\n    ")
+		builder.WriteString(child)
+	}
+	builder.WriteByte('\n')
+	builder.WriteString(indent)
+	return closing, builder.String(), nil
 }

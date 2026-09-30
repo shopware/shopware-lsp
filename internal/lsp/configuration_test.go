@@ -44,6 +44,11 @@ func TestSCSSInspectionUsesSCSSDomain(t *testing.T) {
 	require.Equal(t, "scss", inspectionDomain("scss.variable"))
 }
 
+func TestAdminDatasetInspectionUsesAdministrationDomain(t *testing.T) {
+	require.Equal(t, "administration", inspectionDomain("shopware.admin"))
+	require.Equal(t, "administration", inspectionDomain("shopware.admin.dataset"))
+}
+
 func TestDiagnosticConfigurationDisablesAndOverridesRules(t *testing.T) {
 	for _, test := range []struct {
 		name        string

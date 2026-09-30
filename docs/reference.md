@@ -1433,6 +1433,8 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
 | Misspelled Application container member | Warning | JS/TS/Vue (admin) |
 | Misspelled Shopware DAL entity name | Warning | JS/TS/Vue (admin) |
 | Missing Shopware CMS element or block registration | Warning | JS/TS (admin) |
+| Missing app read privilege for an Admin SDK dataset selector | Error | JS/TS/Vue (app administration) |
+| Admin SDK dataset subscription without selectors | Warning | JS/TS/Vue (app administration) |
 | Non-writable component model binding | Warning | Twig (admin) |
 | Incompatible typed component model binding | Warning | Twig (admin) |
 | Invalid block references in component overrides | Error | Twig (admin) |

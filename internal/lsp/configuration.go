@@ -739,7 +739,7 @@ func inspectionDomain(id string) string {
 	switch {
 	case id == "php.semantic" || id == "php.imports":
 		return "php"
-	case id == "shopware.admin":
+	case id == "shopware.admin" || strings.HasPrefix(id, "shopware.admin."):
 		return "administration"
 	case id == "shopware.migration":
 		return "shopware.migrations"

@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/shopware/shopware-lsp/internal/admin"
+	admindataset "github.com/shopware/shopware-lsp/internal/admin/dataset"
 	"github.com/shopware/shopware-lsp/internal/appscript"
 	"github.com/shopware/shopware-lsp/internal/asset"
 	"github.com/shopware/shopware-lsp/internal/console"
@@ -273,12 +274,18 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 	extensionIndex.SetPHPIndex(phpIndex)
 	workspace.indexers = append(workspace.indexers, extensionIndex)
 	var adminIndex *admin.AdminComponentIndexer
+	var datasetIndex *admindataset.Index
 	if configuration.DomainEnabled("administration") {
 		adminIndex, err = admin.NewAdminComponentIndexer(cacheDir, workspace.store)
 		if err != nil {
 			return nil, fmt.Errorf("create administration index: %w", err)
 		}
 		workspace.indexers = append(workspace.indexers, adminIndex)
+		datasetIndex, err = admindataset.NewIndex(cacheDir, workspace.store)
+		if err != nil {
+			return nil, fmt.Errorf("create admin dataset index: %w", err)
+		}
+		workspace.indexers = append(workspace.indexers, datasetIndex)
 	}
 	dalIndex, err := shopwaredal.NewIndex(cacheDir, workspace.store)
 	if err != nil {
@@ -353,6 +360,7 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 		theme:               themeIndex,
 		extensions:          extensionIndex,
 		admin:               adminIndex,
+		datasets:            datasetIndex,
 		dal:                 dalIndex,
 		entitySchemaSources: entitySchemaSources,
 		appScripts:          appScriptIndex,
@@ -410,7 +418,7 @@ func domainForIndexer(id string) string {
 		return "shopware.theme"
 	case "extension.indexer":
 		return "shopware.extensions"
-	case "admin.component.indexer":
+	case "admin.component.indexer", "admin.dataset":
 		return "administration"
 	case "shopware.dal", "shopware.entity_schema.sources":
 		return "shopware.dal"

@@ -66,6 +66,8 @@ editing.
 - Shopware DAL completion, navigation, type inference, diagnostics, migrations,
   and a visual entity designer for definitions, mappings, and extensions.
 - App Script, migration, Store metadata, and extension-aware project support.
+- Admin SDK dataset checks for app `data.subscribe` and `data.get` selectors
+  whose entities are missing a `read` privilege in `manifest.xml`.
 
 ### Symfony intelligence
 
