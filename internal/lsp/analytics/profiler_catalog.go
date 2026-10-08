@@ -46,9 +46,6 @@ var (
 	legacyTemplatePattern = regexp.MustCompile(
 		`"template\.twig \(([^"]*\.html\.\w{2,4})\)"`,
 	)
-	formTypePattern = regexp.MustCompile(
-		`type_class"[\w;:\\"{]+"value"[\w;:]+"([^"]+)"`,
-	)
 	frontControllerPattern = regexp.MustCompile(
 		`/(?:app_[A-Za-z0-9_]{2,12}|index)\.php(?:/|$)`,
 	)
@@ -96,7 +93,6 @@ type ProfilerRequestCatalogEntry struct {
 	EntryView         string                         `json:"entryView,omitempty"`
 	StaticTemplates   []string                       `json:"staticTemplates,omitempty"`
 	RenderedTemplates []string                       `json:"renderedTemplates,omitempty"`
-	FormTypes         []string                       `json:"formTypes,omitempty"`
 	MailMessages      []ProfilerMailMessage          `json:"mailMessages,omitempty"`
 	TwigComponents    []ProfilerRuntimeTwigComponent `json:"twigComponents,omitempty"`
 	IndexFileURI      string                         `json:"indexFileUri"`
@@ -234,7 +230,6 @@ func (p *ProfilerCatalogProvider) Catalog(
 			if len(entry.RenderedTemplates) > 3 {
 				entry.RenderedTemplates = entry.RenderedTemplates[:3]
 			}
-			entry.FormTypes = profilerFormTypes(content)
 			entry.MailMessages = profilerMailMessages(content)
 			entry.TwigComponents = profilerTwigComponents(content)
 		}
@@ -682,34 +677,6 @@ func profilerEntryView(content []byte, templates []string) string {
 		return string(match[1])
 	}
 	return ""
-}
-
-func profilerFormTypes(content []byte) []string {
-	collectorOffset := bytes.Index(content, []byte(`\FormDataCollector"`))
-	if collectorOffset < 0 {
-		return nil
-	}
-	forms := content[collectorOffset:]
-	formsOffset := bytes.Index(forms, []byte(`"forms"`))
-	if formsOffset < 0 {
-		return nil
-	}
-	forms = forms[formsOffset:]
-	if end := bytes.IndexByte(forms, 0); end >= 0 {
-		forms = forms[:end]
-	}
-	match := formTypePattern.FindSubmatch(forms)
-	if len(match) != 2 {
-		return nil
-	}
-	formType := strings.TrimSpace(string(match[1]))
-	if formType == "" || strings.EqualFold(
-		formType,
-		`Symfony\Component\Form\Extension\Core\Type\FormType`,
-	) {
-		return nil
-	}
-	return []string{formType}
 }
 
 func profilerMailMessages(content []byte) []ProfilerMailMessage {

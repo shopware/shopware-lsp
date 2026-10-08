@@ -59,36 +59,12 @@ interface SymfonyProfilerRequestCatalogEntry {
   entryView?: string;
   staticTemplates?: string[];
   renderedTemplates?: string[];
-  formTypes?: string[];
   mailMessages?: {
     title: string;
     panel: string;
   }[];
   twigComponents?: SymfonyProfilerRuntimeTwigComponent[];
   indexFileUri: string;
-}
-
-interface SymfonyFormTypeCatalogEntry {
-  name: string;
-  className: string;
-  aliases?: string[];
-  parent?: string;
-  dataClass?: string;
-  fileUri?: string;
-  sourceLine?: number;
-  optionCount: number;
-  fieldCount: number;
-  viewVarCount: number;
-}
-
-interface SymfonyFormOptionCatalogEntry {
-  name: string;
-  kinds: string[];
-  allowedTypes?: string[];
-  default?: string;
-  sourceClass?: string;
-  fileUri?: string;
-  sourceLine?: number;
 }
 
 interface SymfonyServiceDefinitionSource {
@@ -380,9 +356,6 @@ export function registerSymfonyCatalogCommands(
             request.entryView
               ? `view ${request.entryView}`
               : '',
-            request.formTypes?.length
-              ? `form ${request.formTypes.join('|')}`
-              : '',
             request.mailMessages?.length
               ? `${request.mailMessages.length} mail`
               : '',
@@ -501,121 +474,6 @@ export function registerSymfonyCatalogCommands(
       } catch (error) {
         vscode.window.showErrorMessage(
           `Failed to load local Symfony profiler requests: ${error}`,
-        );
-      }
-    },
-  ));
-
-  context.subscriptions.push(vscode.commands.registerCommand(
-    'shopware.symfony.browseFormTypes',
-    async () => {
-      const languageClient = await clientState.resolveClient(
-        undefined,
-        'Browse Symfony Form Types',
-      );
-      if (!languageClient) {
-        vscode.window.showErrorMessage('Shopware LSP is not running');
-        return;
-      }
-      try {
-        const formTypes = await languageClient.sendRequest<
-          SymfonyFormTypeCatalogEntry[]
-        >(
-          'shopware/symfony/analytics/forms/types',
-          {},
-        );
-        if (formTypes.length === 0) {
-          vscode.window.showInformationMessage(
-            'No indexed Symfony form types were found.',
-          );
-          return;
-        }
-        const typeItems = formTypes.map(formType => ({
-          label: `$(symbol-class) ${formType.name}`,
-          description: formType.name === formType.className
-            ? ''
-            : formType.className,
-          detail: [
-            formType.parent ? `parent ${formType.parent}` : '',
-            formType.dataClass ? `data ${formType.dataClass}` : '',
-            `${formType.optionCount} options`,
-            `${formType.fieldCount} fields`,
-            `${formType.viewVarCount} view vars`,
-          ].filter(Boolean).join(' · '),
-          formType,
-        }));
-        const selectedType = await vscode.window.showQuickPick(typeItems, {
-          title: 'Browse Symfony Form Types',
-          placeHolder: 'Search by alias, class, parent, or data class',
-          matchOnDescription: true,
-          matchOnDetail: true,
-        });
-        if (!selectedType) {
-          return;
-        }
-
-        let targetUri = selectedType.formType.fileUri;
-        let targetLine = selectedType.formType.sourceLine;
-        if (selectedType.formType.optionCount > 0) {
-          const options = await languageClient.sendRequest<
-            SymfonyFormOptionCatalogEntry[]
-          >(
-            'shopware/symfony/analytics/forms/typeOptions',
-            {formType: selectedType.formType.name},
-          );
-          const optionItems = options.map(option => ({
-            label: `$(symbol-property) ${option.name}`,
-            description: option.kinds.join('|'),
-            detail: [
-              option.allowedTypes?.length
-                ? `types ${option.allowedTypes.join('|')}`
-                : '',
-              option.default !== undefined
-                ? `default ${option.default}`
-                : '',
-              option.sourceClass,
-            ].filter(Boolean).join(' · '),
-            option,
-          }));
-          const selectedOption = await vscode.window.showQuickPick(
-            optionItems,
-            {
-              title: selectedType.formType.name,
-              placeHolder: 'Select an effective form option',
-              matchOnDescription: true,
-              matchOnDetail: true,
-            },
-          );
-          if (!selectedOption) {
-            return;
-          }
-          targetUri = selectedOption.option.fileUri ?? targetUri;
-          targetLine = selectedOption.option.sourceLine ?? targetLine;
-        }
-        if (!targetUri) {
-          vscode.window.showInformationMessage(
-            `No source location is available for ${selectedType.formType.name}.`,
-          );
-          return;
-        }
-        const document = await vscode.workspace.openTextDocument(
-          vscode.Uri.parse(targetUri),
-        );
-        const editor = await vscode.window.showTextDocument(document, {
-          preview: false,
-        });
-        const position = new vscode.Position(
-          Math.max(0, (targetLine ?? 1) - 1),
-          0,
-        );
-        editor.selection = new vscode.Selection(position, position);
-        editor.revealRange(
-          new vscode.Range(position, position),
-          vscode.TextEditorRevealType.InCenterIfOutsideViewport,
-        );
-      } catch (error) {
-        vscode.window.showErrorMessage(
-          `Failed to load Symfony form types: ${error}`,
         );
       }
     },

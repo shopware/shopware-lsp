@@ -19,9 +19,6 @@
     "shopware.symfony.analyzeTwigTemplateVariables": {
       "gap": "analytics browser, no equivalent yet"
     },
-    "shopware.symfony.browseFormTypes": {
-      "gap": "analytics browser, no equivalent yet"
-    },
     "shopware.symfony.browseProfilerRequests": {
       "gap": "no profiler browser yet"
     },
@@ -109,9 +106,6 @@
     "shopware.symfony.extractTwigTranslation": {
       "action": "translation-extract"
     },
-    "shopware.symfony.generateFormFields": {
-      "action": "form-fields"
-    },
     "shopware.symfony.generateService": {
       "action": "service-definition"
     },
@@ -120,9 +114,6 @@
     },
     "shopware.symfony.generateTwigExtends": {
       "action": "twig-extends"
-    },
-    "shopware.symfony.generateTwigFormFields": {
-      "action": "twig-form-fields"
     },
     "shopware.symfony.runConsoleCommand": {
       "gap": "a task runs bin/console directly; only the picker is missing"

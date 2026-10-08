@@ -271,7 +271,6 @@ func TestSymfonyScaffoldGeneratesParseablePHPKinds(t *testing.T) {
 	}{
 		{"command", "src/Command", "CacheClear", "CacheClearCommand"},
 		{"controller", "src/Controller", "Storefront", "StorefrontController"},
-		{"form", "src/Form", "ProductType", "ProductType"},
 		{"twig-extension", "src/Twig", "PriceExtension", "PriceExtension"},
 		{"compiler-pass", "src/DependencyInjection", "CollectServicesPass", "CollectServicesPass"},
 		{"kernel-test", "tests/Integration", "Container", "ContainerTest"},
@@ -416,7 +415,7 @@ func TestSymfonyScaffoldSupportsGlobalComposerMapping(t *testing.T) {
 	provider := NewProvider(root, phpIndex, nil)
 
 	classResult, err := createSymfonyScaffold(t, provider, Request{
-		Kind:         "form",
+		Kind:         "compiler-pass",
 		DirectoryURI: uriutil.FileURI(filepath.Join(root, "src")),
 		Name:         "GlobalType",
 	})
@@ -465,6 +464,13 @@ func TestSymfonyScaffoldRejectsUnsafeOrConflictingTargets(t *testing.T) {
 	})
 	assert.ErrorContains(t, err, "unsupported Symfony scaffold kind")
 
+	_, err = createSymfonyScaffold(t, provider, Request{
+		Kind:         "form",
+		DirectoryURI: uriutil.FileURI(commandDirectory),
+		Name:         "ProductType",
+	})
+	assert.ErrorContains(t, err, "unsupported Symfony scaffold kind")
+
 	outside := t.TempDir()
 	_, err = createSymfonyScaffold(t, provider, Request{
 		Kind:         "command",
@@ -494,7 +500,6 @@ func newSymfonyScaffoldFixture(
 		"src/Controller",
 		"src/DependencyInjection",
 		"src/Feature/Command",
-		"src/Form",
 		"src/Twig",
 		"tests/Functional",
 		"tests/Integration",

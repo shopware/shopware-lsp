@@ -14,8 +14,6 @@ Usage:
     sw-action.py list                          every action with a one-liner
     sw-action.py twig-extends        <file> [row]
     sw-action.py twig-blocks         <file> [row]
-    sw-action.py twig-form-fields    <file> [row]
-    sw-action.py form-fields         <file>
     sw-action.py snippet             <file>        storefront translation
     sw-action.py snippet-admin       <file>        administration translation
     sw-action.py twig-extend-block   <file> [row]
@@ -63,28 +61,6 @@ SNIPPET_ACTIONS = {
         "pick": lambda data: data.get("blocks") or [],
         "payload": lambda picked, data: {"selectedBlocks": picked},
     },
-    "form-fields": {
-        "label": "Generate form fields from a data class",
-        "candidates": "shopware/symfony/form/fields/candidates",
-        "generate": "shopware/symfony/form/fields/generate",
-        "prompt": "fields",
-        "multi": True,
-        # The server needs the FormType class in this document, and it will
-        # not infer it. Resolved from the document outline.
-        "needs_class": True,
-        # `generate` answers with the whole rewritten FormType, not a snippet.
-        "mode": "replace",
-        # Candidates are objects; show the inferred type next to the name.
-        "pick": lambda data: [
-            "{}  ({})".format(
-                field["name"], field.get("suggestedType") or field.get("phpType", "?")
-            )
-            for field in (data.get("fields") or [])
-        ],
-        "payload": lambda picked, data: {
-            "selectedFields": [line.split("  (")[0] for line in picked],
-        },
-    },
 }
 
 
@@ -126,7 +102,6 @@ def resolve_class(binary, root, path):
 
 # Actions with a bespoke flow rather than the candidates/generate shape.
 OTHER_ACTIONS = {
-    "twig-form-fields": "Generate Twig form rows",
     "scaffold": "Create any of the server's scaffolds",
     "snippet": "Create a storefront snippet",
     "snippet-admin": "Create an Administration snippet",
@@ -344,16 +319,6 @@ def insert_snippet(path, row, snippet, dry_run, root):
     print(snippet, end="")
 
 
-def replace_file(path, content, dry_run, root):
-    verb = "would rewrite" if dry_run else "rewrote"
-    if not dry_run:
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write(content)
-    print(f"{verb} {relative(path, root)} ({len(content)} bytes)")
-    if dry_run:
-        print(content[:400] + ("..." if len(content) > 400 else ""))
-
-
 def run_snippet_action(spec, args, binary):
     path = os.path.abspath(args.target)
     if not os.path.isfile(path):
@@ -362,11 +327,6 @@ def run_snippet_action(spec, args, binary):
         source = handle.read()
 
     request = {"fileUri": path_to_uri(path), "source": source, "version": 1}
-    if spec.get("needs_class"):
-        class_name = args.class_name or resolve_class(binary, args.root, path)
-        if not class_name:
-            sys.exit(f"could not find a class in {relative(path, args.root)}")
-        request["className"] = class_name
 
     data = execute(binary, args.root, spec["candidates"], request)
     picked = choose(spec["pick"](data), spec["prompt"], spec["multi"])
@@ -377,46 +337,7 @@ def run_snippet_action(spec, args, binary):
     if not content:
         sys.exit("the server returned nothing")
 
-    if spec.get("mode") == "replace":
-        replace_file(path, content, args.print_only, args.root)
-    else:
-        insert_snippet(path, args.row, content, args.print_only, args.root)
-
-
-def run_twig_form_fields(args, binary):
-    """Two-level picker: choose a form in the template, then its fields."""
-    path = os.path.abspath(args.target)
-    if not os.path.isfile(path):
-        sys.exit(f"not a file: {path}")
-
-    request = {"fileUri": path_to_uri(path)}
-    data = execute(
-        binary, args.root, "shopware/symfony/twig/form/fields/candidates", request
-    )
-    forms = data.get("forms") or []
-    if not forms:
-        sys.exit("no form variables found in this template")
-
-    labels = [
-        "{}  ({})".format(form["variable"], form.get("formType", "?")) for form in forms
-    ]
-    form = forms[choose_indexes(labels, "form variable")[0]]
-
-    generate = dict(request)
-    generate.update(
-        {
-            "variable": form["variable"],
-            "formType": form.get("formType", ""),
-            "selectedFields": choose(form.get("fields") or [], "fields", True),
-        }
-    )
-    snippet = execute(
-        binary, args.root, "shopware/symfony/twig/form/fields/generate", generate
-    ).get("content", "")
-    if not snippet:
-        sys.exit("the server returned an empty snippet")
-
-    insert_snippet(path, args.row, snippet, args.print_only, args.root)
+    insert_snippet(path, args.row, content, args.print_only, args.root)
 
 
 def utf16_to_index(text, units):
@@ -1408,7 +1329,6 @@ def main():
         sys.exit(f"{args.action} needs a file")
 
     handlers = {
-        "twig-form-fields": run_twig_form_fields,
         "twig-extend-block": run_twig_extend_block,
         "admin-twig-override": run_admin_twig_override,
         "twig-block-diff": run_twig_block_diff,

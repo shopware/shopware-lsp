@@ -271,8 +271,6 @@ func (p *Provider) phpScaffold(
 		return p.commandTemplate(namespace, className), nil
 	case "controller":
 		return p.controllerTemplate(namespace, className), nil
-	case "form":
-		return formTemplate(namespace, className), nil
 	case "twig-extension":
 		return p.twigExtensionTemplate(namespace, className), nil
 	case "compiler-pass":
@@ -684,7 +682,7 @@ func isServiceScaffold(kind string) bool {
 
 func isPHPScaffold(kind string) bool {
 	switch kind {
-	case "command", "controller", "form", "twig-extension",
+	case "command", "controller", "twig-extension",
 		"compiler-pass", "kernel-test", "web-test":
 		return true
 	default:
@@ -744,25 +742,6 @@ declare(strict_types=1);
 	}
 	return header + `namespace ` + namespace + `;
 
-`
-}
-
-func formTemplate(namespace, className string) string {
-	return phpHeader(namespace) +
-		`use Symfony\Component\Form\AbstractType;
-use Symfony\Component\Form\FormBuilderInterface;
-use Symfony\Component\OptionsResolver\OptionsResolver;
-
-final class ` + className + ` extends AbstractType
-{
-    public function buildForm(FormBuilderInterface $builder, array $options): void
-    {
-    }
-
-    public function configureOptions(OptionsResolver $resolver): void
-    {
-    }
-}
 `
 }
 

@@ -429,8 +429,8 @@ class PickLocation(unittest.TestCase):
     """Note what these do not cover: since the label now ends in `path:line`,
     it is unique whenever the entry is, so resolving by text would pass here
     too. The position-based resolution is pinned by `Picker` above, and it is
-    what protects the three call sites whose labels are not self-identifying:
-    form variables, snippet files and scaffolds."""
+    what protects call sites whose labels are not self-identifying, such as
+    snippet files and scaffolds."""
 
     ENTRIES = [("Service", "/root/a/One.php", 10), ("Service", "/root/b/Two.php", 20)]
 

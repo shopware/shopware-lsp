@@ -86,29 +86,6 @@
     "hide": "on_success"
   },
   {
-    "label": "Shopware: insert Twig form rows",
-    "command": "python3",
-    "args": [
-      "$ZED_WORKTREE_ROOT/.zed/sw-action.py",
-      "twig-form-fields",
-      "$ZED_FILE",
-      "$ZED_ROW"
-    ],
-    "save": "current",
-    "reveal": "always"
-  },
-  {
-    "label": "Shopware: insert form fields",
-    "command": "python3",
-    "args": [
-      "$ZED_WORKTREE_ROOT/.zed/sw-action.py",
-      "form-fields",
-      "$ZED_FILE"
-    ],
-    "save": "current",
-    "reveal": "always"
-  },
-  {
     "label": "Shopware: insert translation (extract selection)",
     "command": "python3",
     "args": [

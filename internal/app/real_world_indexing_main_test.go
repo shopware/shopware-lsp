@@ -53,11 +53,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type realWorldFormCandidate struct {
-	Name          string `json:"name"`
-	SuggestedType string `json:"suggestedType"`
-}
-
 type realWorldTranslationExtractionPreparation struct {
 	Text          string         `json:"text"`
 	DefaultDomain string         `json:"defaultDomain"`
@@ -5395,165 +5390,6 @@ function inspect(ParameterBagInterface $bag): void {
 		serviceDefinitionCollection.Definitions[0].Content,
 		deprecatedNotification.Class+":",
 	)
-	entityForm, found, err := workspaceFormIndex(t, workspace).GetType("entity")
-	require.NoError(t, err)
-	require.True(t, found)
-	require.Equal(
-		t,
-		"Symfony\\Bridge\\Doctrine\\Form\\Type\\EntityType",
-		entityForm.Class,
-	)
-	entityOptions, err := workspaceFormIndex(t, workspace).EffectiveOptions(
-		entityForm.Class,
-	)
-	require.NoError(t, err)
-	requireFormOption(t, entityOptions, "class")
-	requireFormOption(t, entityOptions, "em")
-	requireFormOption(t, entityOptions, "query_builder")
-	entityFormCatalogRequest := analytics.FormTypeCatalogRequest{
-		Query: "entity",
-	}
-	entityFormCatalogProvider := analytics.NewFormCatalogProvider(
-		root,
-		workspaceFormIndex(t, workspace),
-		phpIndex,
-	)
-	entityFormCatalog, err := entityFormCatalogProvider.Types(
-		ctx,
-		entityFormCatalogRequest,
-	)
-	require.NoError(t, err)
-	entityFormCatalogEntry := requireAnalyticsFormType(
-		t,
-		entityFormCatalog,
-		"entity",
-	)
-	require.Equal(t, entityForm.Class, entityFormCatalogEntry.ClassName)
-	require.NotEmpty(t, entityFormCatalogEntry.FileURI)
-	entityFormOptionRequest := analytics.FormOptionCatalogRequest{
-		FormType: "entity",
-	}
-	entityFormOptionCatalog, err := entityFormCatalogProvider.Options(
-		ctx,
-		entityFormOptionRequest,
-	)
-	require.NoError(t, err)
-	entityClassOption := requireAnalyticsFormOption(
-		t,
-		entityFormOptionCatalog,
-		"class",
-	)
-	require.NotEmpty(t, entityClassOption.Kinds)
-	require.NotEmpty(t, entityClassOption.SourceClass)
-	realFormGeneratorSource := `<?php
-namespace App\Form;
-
-use Shopware\Core\Content\Product\ProductEntity;
-use Symfony\Component\Form\AbstractType;
-use Symfony\Component\Form\FormBuilderInterface;
-use Symfony\Component\OptionsResolver\OptionsResolver;
-
-class ProductType extends AbstractType
-{
-    public function configureOptions(OptionsResolver $resolver): void
-    {
-        $resolver->setDefaults(['data_class' => ProductEntity::class]);
-    }
-
-    public function buildForm(FormBuilderInterface $builder, array $options): void
-    {
-    }
-}
-`
-	realFormGeneratorDocument := lsp.NewTextDocument(
-		"file:///real-world-product-form.php",
-		realFormGeneratorSource,
-		1,
-	)
-	realFormGenerator := codeaction.NewFormFieldGeneratorProvider(
-		workspaceFormIndex(t, workspace),
-		phpIndex,
-	)
-	realFormGeneratorActions := realFormGenerator.GetCodeActions(
-		ctx,
-		realWorldCodeActionRequest(
-			t,
-			realFormGeneratorDocument,
-			"function buildForm",
-		),
-	)
-	require.Len(t, realFormGeneratorActions, 1)
-	require.Equal(
-		t,
-		"shopware.symfony.generateFormFields",
-		realFormGeneratorActions[0].Command.Command,
-	)
-	formCandidatePayload, err := json.Marshal(map[string]any{
-		"fileUri":   realFormGeneratorDocument.URI,
-		"className": "App\\Form\\ProductType",
-		"source":    realFormGeneratorSource,
-		"version":   1,
-	})
-	require.NoError(t, err)
-	formCandidateRaw := json.RawMessage(formCandidatePayload)
-	formCandidateCommand := realFormGenerator.GetCommands(ctx)["shopware/symfony/form/fields/candidates"]
-	formCandidateValue, err := formCandidateCommand(ctx, &formCandidateRaw)
-	require.NoError(t, err)
-	formCandidateJSON, err := json.Marshal(formCandidateValue)
-	require.NoError(t, err)
-	var formCandidateResponse struct {
-		DataClass string                   `json:"dataClass"`
-		Fields    []realWorldFormCandidate `json:"fields"`
-	}
-	require.NoError(t, json.Unmarshal(
-		formCandidateJSON,
-		&formCandidateResponse,
-	))
-	require.Equal(
-		t,
-		"Shopware\\Core\\Content\\Product\\ProductEntity",
-		formCandidateResponse.DataClass,
-	)
-	requireFormGeneratorCandidate(
-		t,
-		formCandidateResponse.Fields,
-		"active",
-		"CheckboxType",
-	)
-	legacyFormAliasDocument := lsp.NewTextDocument(
-		"file:///real-world-legacy-form-alias.php",
-		`<?php
-use Symfony\Component\Form\FormBuilderInterface;
-
-function build(FormBuilderInterface $builder): void
-{
-    $builder->add('product', 'entity');
-}
-`,
-		1,
-	)
-	legacyFormAliasDiagnostics, err := lspdiagnostics.
-		NewFormAnalyzer(
-			workspaceFormIndex(t, workspace),
-			phpIndex,
-		).
-		Analyze(ctx, legacyFormAliasDocument)
-	require.NoError(t, err)
-	var deprecatedFormAliases []lsp.Problem
-	for _, diagnostic := range legacyFormAliasDiagnostics {
-		if fmt.Sprint(diagnostic.ID) == "symfony.form.type.legacy_alias" {
-			deprecatedFormAliases = append(
-				deprecatedFormAliases,
-				diagnostic,
-			)
-		}
-	}
-	require.Len(t, deprecatedFormAliases, 1)
-	require.Equal(
-		t,
-		"Symfony\\Bridge\\Doctrine\\Form\\Type\\EntityType",
-		deprecatedFormAliases[0].Payload.(map[string]any)["className"],
-	)
 	configurationRoots, err := workspaceSymfonyConfigIndex(
 		t,
 		workspace,
@@ -7632,9 +7468,6 @@ function real_world_class_assistant(string $name): void {}
 /** @param string $entity #Entity */
 function real_world_entity_assistant(string $entity): void {}
 
-/** @param string $type #FormType */
-function real_world_form_assistant(string $type): void {}
-
 /** @param string $template #Template */
 function real_world_template_assistant(string $template): void {}
 
@@ -7879,58 +7712,6 @@ function real_world_translation_assistant(string $key, string $domain): void {}
 		uriutil.FileURI(filepath.Join(root, "src", "Core", "Kernel.php")),
 		classAssistantDefinition[0].URI,
 	)
-	formAssistantName := "entity"
-	formAssistantSource := "<?php real_world_form_assistant('" +
-		formAssistantName + "');"
-	formAssistantDocument := lsp.NewTextDocument(
-		uriutil.FileURI(filepath.Join(
-			root,
-			"src",
-			"FormAssistantUsage.php",
-		)),
-		formAssistantSource,
-		1,
-	)
-	formAssistantOffset := uint32(
-		strings.Index(formAssistantSource, formAssistantName) +
-			len(formAssistantName),
-	)
-	formAssistantRequest := realWorldCompletionRequest(
-		formAssistantDocument,
-		formAssistantOffset,
-	)
-	formAssistantContext := phpIndex.AddDocumentContext(
-		ctx,
-		filepath.Join(root, "src", "FormAssistantUsage.php"),
-		formAssistantDocument.Version,
-		formAssistantRequest.Node,
-		formAssistantRequest.Root,
-	)
-	formAssistantCompletions := lspcompletion.NewFormCompletionProvider(
-		workspaceFormIndex(t, workspace),
-		phpIndex,
-	).GetCompletions(formAssistantContext, formAssistantRequest)
-	formAssistantCompletion := realWorldCompletionByLabel(
-		t,
-		formAssistantCompletions,
-		formAssistantName,
-	)
-	formAssistantEdit, ok := formAssistantCompletion.TextEdit.(protocol.TextEdit)
-	require.True(t, ok)
-	require.Equal(t, formAssistantName, formAssistantEdit.NewText)
-	formAssistantDefinition := lspdefinition.NewFormDefinitionProvider(
-		workspaceFormIndex(t, workspace),
-		phpIndex,
-	).GetDefinition(
-		formAssistantContext,
-		realWorldDefinitionRequest(
-			formAssistantDocument,
-			formAssistantRequest.Node,
-			formAssistantOffset,
-		),
-	)
-	require.NotEmpty(t, formAssistantDefinition)
-
 	templateAssistantName := "@Storefront/storefront/base.html.twig"
 	templateAssistantSource := "<?php real_world_template_assistant('" +
 		templateAssistantName + "');"
@@ -8630,36 +8411,6 @@ function real_world_translation_assistant(string $key, string $domain): void {}
 		serviceDefinitionCollection,
 		restoredServiceDefinitionCollection,
 	)
-	restoredForm, found, err := workspaceFormIndex(t, reopened).GetType(
-		"entity",
-	)
-	require.NoError(t, err)
-	require.True(t, found)
-	require.Equal(t, entityForm.Class, restoredForm.Class)
-	restoredFormOptions, err := workspaceFormIndex(
-		t,
-		reopened,
-	).EffectiveOptions(restoredForm.Class)
-	require.NoError(t, err)
-	requireFormOption(t, restoredFormOptions, "class")
-	requireFormOption(t, restoredFormOptions, "query_builder")
-	restoredFormCatalogProvider := analytics.NewFormCatalogProvider(
-		root,
-		workspaceFormIndex(t, reopened),
-		restoredPHP,
-	)
-	restoredEntityFormCatalog, err := restoredFormCatalogProvider.Types(
-		ctx,
-		entityFormCatalogRequest,
-	)
-	require.NoError(t, err)
-	require.Equal(t, entityFormCatalog, restoredEntityFormCatalog)
-	restoredEntityFormOptions, err := restoredFormCatalogProvider.Options(
-		ctx,
-		entityFormOptionRequest,
-	)
-	require.NoError(t, err)
-	require.Equal(t, entityFormOptionCatalog, restoredEntityFormOptions)
 	restoredConfigurationRoots, err := workspaceSymfonyConfigIndex(
 		t,
 		reopened,
@@ -8897,43 +8648,6 @@ function real_world_translation_assistant(string $key, string $domain): void {}
 				classAssistantDocument,
 				restoredClassAssistantRequest.Node,
 				classAssistantOffset,
-			),
-		),
-	)
-	restoredFormAssistantRequest := realWorldCompletionRequest(
-		formAssistantDocument,
-		formAssistantOffset,
-	)
-	restoredFormAssistantContext := restoredPHP.AddDocumentContext(
-		ctx,
-		filepath.Join(root, "src", "FormAssistantUsage.php"),
-		formAssistantDocument.Version,
-		restoredFormAssistantRequest.Node,
-		restoredFormAssistantRequest.Root,
-	)
-	require.Equal(
-		t,
-		formAssistantCompletions,
-		lspcompletion.NewFormCompletionProvider(
-			workspaceFormIndex(t, reopened),
-			restoredPHP,
-		).GetCompletions(
-			restoredFormAssistantContext,
-			restoredFormAssistantRequest,
-		),
-	)
-	require.Equal(
-		t,
-		formAssistantDefinition,
-		lspdefinition.NewFormDefinitionProvider(
-			workspaceFormIndex(t, reopened),
-			restoredPHP,
-		).GetDefinition(
-			restoredFormAssistantContext,
-			realWorldDefinitionRequest(
-				formAssistantDocument,
-				restoredFormAssistantRequest.Node,
-				formAssistantOffset,
 			),
 		),
 	)

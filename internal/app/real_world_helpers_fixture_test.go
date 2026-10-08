@@ -193,22 +193,6 @@ func requireTwigVariable(
 	t.Fatalf("Twig variable %q not found in %#v", name, variables)
 }
 
-func requireFormGeneratorCandidate(
-	t *testing.T,
-	candidates []realWorldFormCandidate,
-	name,
-	suggestedType string,
-) {
-	t.Helper()
-	for _, candidate := range candidates {
-		if candidate.Name == name {
-			require.Equal(t, suggestedType, candidate.SuggestedType)
-			return
-		}
-	}
-	t.Fatalf("form generator candidate %q not found in %#v", name, candidates)
-}
-
 func requireTwigTemplateInput(
 	t *testing.T,
 	variables []twig.TemplateVariable,

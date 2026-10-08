@@ -54,10 +54,6 @@ func registerCompletionProviders(server *lsp.Server, root string, phpFeatures *p
 			services.environment,
 		),
 	)
-	server.RegisterCompletionProvider(completion.NewFormCompletionProvider(
-		services.forms,
-		services.php,
-	))
 	server.RegisterCompletionProvider(
 		completion.NewSymfonyConfigCompletionProvider(
 			services.configuration,

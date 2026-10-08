@@ -154,7 +154,6 @@
         "symfony.console": { "type": "boolean" }, "symfony.doctrine": { "type": "boolean" },
         "symfony.assets": { "type": "boolean" }, "symfony.events": { "type": "boolean" },
         "symfony.messenger": { "type": "boolean" }, "symfony.environment": { "type": "boolean" },
-        "symfony.forms": { "type": "boolean" },
         "symfony.configuration": { "type": "boolean" }, "symfony.serializer": { "type": "boolean" },
         "symfony.validation": { "type": "boolean" },
         "symfony.twigComponents": { "type": "boolean" }, "shopware": { "type": "boolean" },

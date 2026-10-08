@@ -97,6 +97,8 @@ func TestDecodeRejectsUnknownAndInvalidValues(t *testing.T) {
 	t.Parallel()
 	_, err := Decode([]byte(`{"version":1,"domains":{"symfony.stimulus":false}}`))
 	require.ErrorContains(t, err, "unknown domain")
+	_, err = Decode([]byte(`{"version":1,"domains":{"symfony.forms":false}}`))
+	require.ErrorContains(t, err, `unknown domain "symfony.forms"`)
 	_, err = Decode([]byte(`{"version":1,"features":{"future":false}}`))
 	require.ErrorContains(t, err, "unknown feature")
 	_, err = Decode([]byte(`{"version":1,"diagnostics":{"rules":{"php.arguments":"loud"}}}`))

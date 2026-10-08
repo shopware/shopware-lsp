@@ -10,7 +10,6 @@ import (
 	"github.com/shopware/shopware-lsp/internal/doctrine"
 	"github.com/shopware/shopware-lsp/internal/environment"
 	"github.com/shopware/shopware-lsp/internal/event"
-	"github.com/shopware/shopware-lsp/internal/form"
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/messenger"
 	"github.com/shopware/shopware-lsp/internal/php"
@@ -199,77 +198,6 @@ class Subscriber implements \Symfony\Component\EventDispatcher\EventSubscriberIn
 	restored, found, err := workspaceEventIndex(t, reopened).GetEvent(
 		"App\\DomainEvent",
 	)
-	require.NoError(t, err)
-	require.True(t, found)
-	assert.Equal(t, indexed, restored)
-}
-
-func TestWorkspaceIndexesAndRestoresSymfonyForms(t *testing.T) {
-	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
-	projectRoot := t.TempDir()
-	vendorDir := filepath.Join(projectRoot, "vendor")
-	sourceDir := filepath.Join(projectRoot, "src")
-	require.NoError(t, os.MkdirAll(vendorDir, 0o755))
-	require.NoError(t, os.MkdirAll(sourceDir, 0o755))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(vendorDir, "Form.php"),
-		[]byte(`<?php
-namespace Symfony\Component\Form;
-interface FormTypeInterface {}
-interface FormBuilderInterface {}
-abstract class AbstractType implements FormTypeInterface {}`),
-		0o644,
-	))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(sourceDir, "ProfileType.php"),
-		[]byte(`<?php
-namespace App\Form;
-class ProfileType extends \Symfony\Component\Form\AbstractType {
-    public function getBlockPrefix(): string { return 'profile'; }
-    public function configureOptions($resolver): void {
-        $resolver->setDefaults([
-            'data_class' => \App\Model\Profile::class,
-            'translation_domain' => 'profile',
-        ]);
-    }
-    public function buildForm(
-        \Symfony\Component\Form\FormBuilderInterface $builder,
-        array $options,
-    ): void {
-        $builder->add('displayName');
-    }
-}`),
-		0o644,
-	))
-
-	workspace, err := NewWorkspace(
-		context.Background(),
-		projectRoot,
-		lsp.NewServer(nil, projectRoot, "test"),
-	)
-	require.NoError(t, err)
-	require.NoError(t, workspace.Scanner().IndexAll(context.Background()))
-	indexed, found, err := workspaceFormIndex(t, workspace).GetType("profile")
-	require.NoError(t, err)
-	require.True(t, found)
-	assert.Equal(t, "App\\Form\\ProfileType", indexed.Class)
-	assert.Equal(t, "App\\Model\\Profile", indexed.DataClass)
-	fields, err := workspaceFormIndex(t, workspace).EffectiveFields(
-		indexed.Class,
-	)
-	require.NoError(t, err)
-	require.Len(t, fields, 1)
-	assert.Equal(t, "displayName", fields[0].Name)
-	require.NoError(t, workspace.Close())
-
-	reopened, err := NewWorkspace(
-		context.Background(),
-		projectRoot,
-		lsp.NewServer(nil, projectRoot, "test"),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, reopened.Close()) })
-	restored, found, err := workspaceFormIndex(t, reopened).GetType("profile")
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, indexed, restored)
@@ -1121,17 +1049,6 @@ func workspaceEnvironmentIndex(
 		}
 	}
 	t.Fatal("environment index is not registered")
-	return nil
-}
-
-func workspaceFormIndex(t *testing.T, workspace *Workspace) *form.Index {
-	t.Helper()
-	for _, idx := range workspace.indexers {
-		if candidate, ok := idx.(*form.Index); ok {
-			return candidate
-		}
-	}
-	t.Fatal("form index is not registered")
 	return nil
 }
 

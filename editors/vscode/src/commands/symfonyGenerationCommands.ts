@@ -33,29 +33,8 @@ interface CompilerPassCreation {
   bundleContent: string;
 }
 
-interface FormFieldCandidate {
-  name: string;
-  phpType: string;
-  suggestedType: string;
-}
-
-interface FormFieldCandidates {
-  dataClass: string;
-  fields: FormFieldCandidate[];
-}
-
-interface FormFieldGeneration {
+interface GeneratedContent {
   content: string;
-}
-
-interface TwigFormCandidate {
-  variable: string;
-  formType: string;
-  fields: string[];
-}
-
-interface TwigFormFieldCandidates {
-  forms: TwigFormCandidate[];
 }
 
 interface TwigTemplateCandidates {
@@ -384,174 +363,6 @@ export function registerSymfonyGenerationCommands(
   ));
 
   context.subscriptions.push(vscode.commands.registerCommand(
-    'shopware.symfony.generateFormFields',
-    async (fileUri: string, className: string) => {
-      const languageClient = clientState.clientForUri(vscode.Uri.parse(fileUri));
-      if (!languageClient) {
-        vscode.window.showErrorMessage('Shopware LSP is not running');
-        return;
-      }
-
-      try {
-        const uri = vscode.Uri.parse(fileUri);
-        let document = await vscode.workspace.openTextDocument(uri);
-        const candidates = await languageClient.sendRequest<FormFieldCandidates>(
-          'shopware/symfony/form/fields/candidates',
-          {
-            fileUri,
-            className,
-            source: document.getText(),
-            version: document.version,
-          },
-        );
-        if (candidates.fields.length === 0) {
-          vscode.window.showInformationMessage(
-            `No missing writable fields found on ${candidates.dataClass}`,
-          );
-          return;
-        }
-
-        const selected = await vscode.window.showQuickPick(
-          candidates.fields.map(field => ({
-            label: field.name,
-            description: field.phpType,
-            detail: field.suggestedType
-              ? `Generate ${field.suggestedType}`
-              : 'Generate using Symfony type inference',
-            field,
-          })),
-          {
-            title: `Symfony: Select fields for ${candidates.dataClass}`,
-            placeHolder: 'Select one or more form fields',
-            canPickMany: true,
-            matchOnDescription: true,
-            matchOnDetail: true,
-          },
-        );
-        if (!selected || selected.length === 0) {
-          return;
-        }
-
-        document = await vscode.workspace.openTextDocument(uri);
-        const generated = await languageClient.sendRequest<FormFieldGeneration>(
-          'shopware/symfony/form/fields/generate',
-          {
-            fileUri,
-            className,
-            source: document.getText(),
-            version: document.version,
-            selectedFields: selected.map(item => item.field.name),
-          },
-        );
-        const edit = new vscode.WorkspaceEdit();
-        edit.replace(
-          uri,
-          new vscode.Range(
-            new vscode.Position(0, 0),
-            document.positionAt(document.getText().length),
-          ),
-          generated.content,
-        );
-        if (!await vscode.workspace.applyEdit(edit)) {
-          vscode.window.showErrorMessage(
-            'Could not apply the generated form fields',
-          );
-          return;
-        }
-        vscode.window.showInformationMessage(
-          `Generated ${selected.length} Symfony form field${selected.length === 1 ? '' : 's'}`,
-        );
-      } catch (error) {
-        vscode.window.showErrorMessage(
-          `Failed to generate Symfony form fields: ${error}`,
-        );
-      }
-    },
-  ));
-
-  context.subscriptions.push(vscode.commands.registerCommand(
-    'shopware.symfony.generateTwigFormFields',
-    async (fileUri: string) => {
-      const languageClient = clientState.clientForUri(vscode.Uri.parse(fileUri));
-      if (!languageClient) {
-        vscode.window.showErrorMessage('Shopware LSP is not running');
-        return;
-      }
-
-      try {
-        const candidates = await languageClient.sendRequest<TwigFormFieldCandidates>(
-          'shopware/symfony/twig/form/fields/candidates',
-          {fileUri},
-        );
-        if (candidates.forms.length === 0) {
-          vscode.window.showInformationMessage(
-            'No controller-backed Twig form variables were found',
-          );
-          return;
-        }
-
-        let selectedForm = candidates.forms[0];
-        if (candidates.forms.length > 1) {
-          const selection = await vscode.window.showQuickPick(
-            candidates.forms.map(form => ({
-              label: form.variable,
-              description: form.formType,
-              detail: `${form.fields.length} form fields`,
-              form,
-            })),
-            {
-              title: 'Symfony: Select Twig form',
-              placeHolder: 'Select a template variable and FormType',
-              matchOnDescription: true,
-              matchOnDetail: true,
-            },
-          );
-          if (!selection) {
-            return;
-          }
-          selectedForm = selection.form;
-        }
-
-        const fields = await vscode.window.showQuickPick(
-          selectedForm.fields.map(field => ({label: field})),
-          {
-            title: `Symfony: Select fields for ${selectedForm.variable}`,
-            placeHolder: 'Select one or more form rows',
-            canPickMany: true,
-          },
-        );
-        if (!fields || fields.length === 0) {
-          return;
-        }
-        const generated = await languageClient.sendRequest<FormFieldGeneration>(
-          'shopware/symfony/twig/form/fields/generate',
-          {
-            fileUri,
-            variable: selectedForm.variable,
-            formType: selectedForm.formType,
-            selectedFields: fields.map(field => field.label),
-          },
-        );
-        const document = await vscode.workspace.openTextDocument(
-          vscode.Uri.parse(fileUri),
-        );
-        const editor = await vscode.window.showTextDocument(document, {
-          preview: false,
-          preserveFocus: false,
-        });
-        await editor.insertSnippet(
-          new vscode.SnippetString(generated.content),
-          editor.selection.active,
-        );
-      } catch (error) {
-        vscode.window.showErrorMessage(
-          `Failed to generate Twig form rows: ${error}`,
-        );
-      }
-    },
-  ));
-
-  context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.symfony.generateTwigExtends',
     async (fileUri: string) => {
       const languageClient = clientState.clientForUri(vscode.Uri.parse(fileUri));
@@ -579,7 +390,7 @@ export function registerSymfonyGenerationCommands(
         if (!selected) {
           return;
         }
-        const generated = await languageClient.sendRequest<FormFieldGeneration>(
+        const generated = await languageClient.sendRequest<GeneratedContent>(
           'shopware/symfony/twig/extends/generate',
           {
             fileUri,
@@ -631,7 +442,7 @@ export function registerSymfonyGenerationCommands(
         if (!selected || selected.length === 0) {
           return;
         }
-        const generated = await languageClient.sendRequest<FormFieldGeneration>(
+        const generated = await languageClient.sendRequest<GeneratedContent>(
           'shopware/symfony/twig/blocks/generate',
           {
             fileUri,

@@ -48,11 +48,6 @@ func registerHoverProviders(server *lsp.Server, root string, phpFeatures *phpsem
 			services.environment,
 		),
 	)
-	server.RegisterHoverProvider(hover.NewFormHoverProvider(
-		root,
-		services.forms,
-		services.php,
-	))
 	server.RegisterHoverProvider(hover.NewSerializerHoverProvider(
 		services.serializer,
 		services.php,

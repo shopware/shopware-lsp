@@ -175,7 +175,7 @@ exact public names shown by MCP `tools/list`; unknown names are rejected.
   containers, with deprecated completion items and hint diagnostics for
   services or their PHP classes
 - XML/YAML service-tag contract diagnostics for conventional tags such as
-  `twig.extension`, `form.type`, `security.voter`, and
+  `twig.extension`, `security.voter`, and
   `kernel.event_subscriber`, including modern/legacy interface alternatives
 - Symfony XML/YAML container-constant and enum completion, PHP
   go-to-definition, and missing-reference diagnostics for global, inherited
@@ -265,7 +265,7 @@ exact public names shown by MCP `tools/list`; unknown names are rejected.
 - Local Symfony profiler analytics discover modern `var/cache/*/profiler` and
   legacy `app/cache/*/profiler` indexes, read bounded raw or gzip profile data,
   and correlate recent requests with routes, controller locations, static and
-  runtime Twig templates, root form types, rendered Symfony UX Twig
+  runtime Twig templates, rendered Symfony UX Twig
   Components, and sent-mail subjects. Runtime components navigate to their PHP
   class or anonymous template; mail results open the matching profiler mail
   panel when an absolute profiler URL is available. URL/hash/controller/route
@@ -296,7 +296,7 @@ exact public names shown by MCP `tools/list`; unknown names are rejected.
 
 ### Symfony Project Scaffolding
 - `Symfony: New File…` is available from the command palette and folder
-  context menu for Console commands, controllers, form types, Twig extensions,
+  context menu for Console commands, controllers, Twig extensions,
   compiler passes, kernel tests, web tests, and YAML/XML/PHP service
   configuration files
 - PHP namespaces are derived from the most-specific Composer PSR-4 mapping;
@@ -646,11 +646,6 @@ include these hints.
 - Persistent custom-operator indexing and context-aware completion for legacy
   `getOperators()` and Twig 3.21+/4 `getExpressionParsers()`, including named
   and positional aliases
-- Controller `createForm(...)->createView()` provenance with Twig form-field
-  completion, PHP definition navigation, typed hover, typo diagnostics, and an
-  interactive generator for selected `{{ form_row(variable.field) }}` calls;
-  `form.vars.*` keys written by type/core/extension `buildView()` and
-  `finishView()` methods provide the same completion/navigation/hover checks
 - Interactive Twig parent-template selection and inherited block-override
   generation, with unsaved override exclusion and cursor-aware snippets
 - Native indexing for `#[AsTwigFunction]` and `#[AsTwigFilter]` methods,
@@ -840,36 +835,6 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
 - System config key completion in PHP (`SystemConfigService::get()`, `getInt()`, `getString()`, `getFloat()`, `getBool()`, `set()`, `getDomain()`)
 - System config key completion in Twig (`config()` function)
 - Go-to-definition for system config keys
-
-### Symfony Form Support
-- PHP form types/extensions and XML, YAML, and PHP service aliases
-- PHPDoc `#FormType` parameter contracts provide exact alias/class completion
-  and PHP declaration navigation plus missing-reference diagnostics and typo
-  fixes at matching call arguments
-- Inherited type options, builder fields, `data_class` properties, completion,
-  navigation, hover, diagnostics, and typo quick fixes
-- Provenance-gated Twig `FormView` child completion, definition, hover, and
-  missing-field diagnostics from controller-rendered form types, plus
-  persisted `FormView.vars` metadata from form types, extensions, and the core
-  `FormType`
-- Semantic form-factory recognition for `createForm`, `create`,
-  `createBuilder`, `createNamed`, and `createNamedBuilder`
-- Symfony 2.8+ diagnostics for deprecated builder string aliases, with a
-  conflict-safe quick fix that imports and inserts the form type `::class`
-- Interactive `buildForm()` field generation from writable `data_class`
-  properties and setters, with inherited-field discovery, existing-field
-  exclusion, scalar/date/enum type guessing, options, and
-  conflict-safe imports
-- Related form-type code lenses on public PHP methods, with class-constant,
-  legacy-alias, and named-argument resolution
-- FormType navigation code lenses on controller-backed Twig `form_start()`,
-  `form()`, `form_end()`, and `form_rest()` calls
-- Bidirectional form-type ↔ `data_class` code lenses, including multiple forms
-  for one model, exact class targets, and unsaved form configuration overlays
-- Structured form-type and effective-option analytics include aliases, parent
-  chains, data classes, field/view-variable counts, defaults, allowed types,
-  declaration kinds, and exact source provenance; `Symfony: Browse Form
-  Types…` provides the searchable type-to-option navigator
 
 ### Symfony Validator Support
 - Inherited constraint-option completion, definition, hover, diagnostics, and
@@ -1369,7 +1334,6 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
 | Missing Messenger message or configured handler method | Warning | PHP, XML, YAML |
 | Invokable Symfony command should declare `int` | Hint | PHP |
 | Invokable Symfony command returns a non-integer exit code | Warning | PHP |
-| Deprecated Symfony form-type string alias | Hint | PHP |
 | Deprecated Symfony service or service class | Hint | PHP, XML, YAML |
 | Service class violates a conventional tag contract | Warning | XML, YAML |
 | Missing Symfony container constant or enum | Error | XML, YAML |

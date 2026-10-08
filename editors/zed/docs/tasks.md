@@ -35,7 +35,7 @@ anything project-specific: Zed sets `$ZED_WORKTREE_ROOT` per window and
 project you open. They point at `scripts/sw-action.py` inside this checkout,
 so `git pull` here updates every project at once.
 
-That means **moving or deleting this checkout breaks all 22 tasks**, with the
+That means **moving or deleting this checkout breaks all 20 tasks**, with the
 same symptom as any other task misconfiguration: `task: spawn` runs and
 nothing happens. The clone already has to stay put for the dev extension, so
 this is not a new constraint, just a second thing depending on it.
@@ -43,7 +43,7 @@ this is not a new constraint, just a second thing depending on it.
 Re-running updates in place. Entries labelled `Shopware: ...` are replaced;
 anything else in your `tasks.json` is kept, and the previous file is backed up.
 
-The trade-off is that all 22 appear in `task: spawn` for every project, Rust
+The trade-off is that all 20 appear in `task: spawn` for every project, Rust
 and Node included. They filter out by typing *sho*, and outside a Shopware or
 Symfony project they fail cleanly because the server refuses to start. To scope
 them to one project instead, use the old layout -- copy `scripts/sw-action.py`
@@ -59,8 +59,7 @@ ones.
 |---|---|---|
 | `twig-extends` | Pick a parent template, insert `{% extends %}` | verified |
 | `twig-blocks` | Pick parent blocks, insert overrides | verified |
-| `form-fields` | Pick fields off the data class, rewrite the FormType | verified |
-| `scaffold` | Any of the server's 24 scaffolds | verified, 23 kinds |
+| `scaffold` | Server-provided scaffolds | verified except for the entity-definition workflow |
 | `snippet` | Create a storefront translation in chosen snippet files | verified |
 | `snippet-admin` | Same for Administration snippets | verified |
 | `twig-extend-block` | Override a storefront block in an extension | verified |
@@ -69,7 +68,6 @@ ones.
 | `service-definition` | Render a service definition, arguments resolved from the index | verified |
 | `compiler-pass` | Create a compiler pass and register it in the bundle | verified |
 | `translation-extract` | Replace Twig text with a key, add it to every locale file | verified |
-| `twig-form-fields` | Pick a form variable and its fields, insert `form_row` calls | verified |
 | `routes` | Browse every Symfony route and open its controller | verified |
 | `locate-service` | Find where a service id or class is defined | verified |
 | `template-usages` | Find the templates that extend or include this one | verified |
@@ -93,9 +91,7 @@ accepts `path:line:column`. That CLI is only on `PATH` after running
 `cli: install` from Zed's command palette, so the app bundle is checked as
 well; with neither available the location is printed instead of opened.
 
-The `forms/types` analytics command is not wired up because it returns
-nothing for Shopware, for the same reason `twig-form-fields` cannot be
-exercised here. Doctrine ORM entity analytics are no longer provided.
+Doctrine ORM entity analytics are no longer provided.
 
 `scaffold` covers both families: the `symfony` kinds return a single file, the
 `shopware` kinds a `WorkspaceEdit` that the script applies (including
@@ -122,30 +118,9 @@ Some kinds need an extra option, for example
 comment; on a core template the server replies "No version comment found for
 block", which the script surfaces as-is.
 
-Two deliberate gaps. The `entity-definition` scaffold is a multi-step
+The `entity-definition` scaffold is a multi-step
 bootstrap/preview/apply workflow, so the script points you at the
 `shopware_entity_schema_*` MCP tools instead.
-
-`twig-form-fields` targets **Symfony form rendering**,
-`{{ form_row(form.name) }}`, which Shopware does not use anywhere: no
-`form_row`, `form_widget` or `form_start` appears under `src/`. Administration
-templates such as `sw-bulk-edit-customer.html.twig` are Vue components written
-in Twig syntax, not Symfony forms, so an empty result there is correct.
-
-It is verified against a real Symfony 7 application, and the fixture has to be
-real: with hand-written stubs for `AbstractController` and `FormInterface` the
-server resolves the variable to `FormView` but never links it to a `FormType`,
-and `candidates` comes back empty. Install `symfony/framework-bundle` and
-`symfony/form` for real and it resolves:
-
-```json
-{"forms": [{"variable": "form", "formType": "App\\Form\\ProductType",
-            "fields": ["active", "name", "price", "stock"]}]}
-```
-
-Note that the `twig/templateVariables` analytics command still reports
-`formTypes: None` for that variable; it does not expose the field, and
-`candidates` resolves the link internally. Do not use it to diagnose this.
 
 ---
 
