@@ -228,8 +228,6 @@ func propertyServiceCandidates(
 		"template": "Twig\\Environment",
 		"router": "Symfony\\Component\\Routing\\Generator\\" +
 			"UrlGeneratorInterface",
-		"em": "Doctrine\\ORM\\EntityManagerInterface",
-		"om": "Doctrine\\Persistence\\ObjectManager",
 	}
 	for searchName := range searchNames {
 		target := aliases[searchName]

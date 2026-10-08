@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/shopware/shopware-lsp/internal/doctrine"
 	"github.com/shopware/shopware-lsp/internal/form"
 	"github.com/shopware/shopware-lsp/internal/indexer"
 	phpparser "github.com/shopware/shopware-lsp/internal/parser/php"
@@ -17,7 +16,7 @@ import (
 )
 
 func TestFormFieldGeneratorActionOnlyInsideTypedBuildForm(t *testing.T) {
-	provider, _, _ := newFormFieldGeneratorFixture(t)
+	provider, _ := newFormFieldGeneratorFixture(t)
 	source := formFieldGeneratorSource("")
 	request := symfonyGeneratorCodeActionRequest(
 		"file:///project/src/Form/ProfileType.php",
@@ -55,7 +54,7 @@ func TestFormFieldGeneratorRecognizesDirectSymfonyTypesWithoutVendorSources(
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, forms.Close()) })
 	forms.SetPHPIndex(phpIndex)
-	provider := NewFormFieldGeneratorProvider(forms, phpIndex, nil)
+	provider := NewFormFieldGeneratorProvider(forms, phpIndex)
 	source := `<?php
 namespace App\Form;
 use Symfony\Component\Form\AbstractType;
@@ -80,7 +79,7 @@ class CheckoutType extends AbstractType
 }
 
 func TestFormFieldGeneratorCandidatesUseSemanticDataClass(t *testing.T) {
-	provider, _, _ := newFormFieldGeneratorFixture(t)
+	provider, _ := newFormFieldGeneratorFixture(t)
 	source := formFieldGeneratorSource("")
 	raw := mustGeneratorJSON(t, formFieldGeneratorRequest{
 		FileURI:   "file:///project/src/Form/ProfileType.php",
@@ -103,7 +102,7 @@ func TestFormFieldGeneratorCandidatesUseSemanticDataClass(t *testing.T) {
 			"createdAt:DateTimeImmutable:DateTimeType",
 			"description:null|string:TextareaType",
 			"password:string:PasswordType",
-			"product:App\\Model\\Product:EntityType",
+			"product:App\\Model\\Product:",
 			"status:App\\Model\\Status:EnumType",
 			"title:string:TextType",
 		},
@@ -115,7 +114,7 @@ func TestFormFieldGeneratorCandidatesUseSemanticDataClass(t *testing.T) {
 }
 
 func TestFormFieldGeneratorWritesFieldsOptionsAndImports(t *testing.T) {
-	provider, _, _ := newFormFieldGeneratorFixture(t)
+	provider, _ := newFormFieldGeneratorFixture(t)
 	source := formFieldGeneratorSource("")
 	raw := mustGeneratorJSON(t, formFieldGeneratorRequest{
 		FileURI:   "file:///project/src/Form/ProfileType.php",
@@ -136,11 +135,6 @@ func TestFormFieldGeneratorWritesFieldsOptionsAndImports(t *testing.T) {
 	require.NoError(t, err)
 	result := value.(formFieldGenerationResponse)
 
-	assert.Contains(
-		t,
-		result.Content,
-		"use Symfony\\Bridge\\Doctrine\\Form\\Type\\EntityType;",
-	)
 	assert.Contains(
 		t,
 		result.Content,
@@ -167,12 +161,7 @@ func TestFormFieldGeneratorWritesFieldsOptionsAndImports(t *testing.T) {
 		result.Content,
 		"$builder->add('description', TextareaType::class);",
 	)
-	assert.Contains(
-		t,
-		result.Content,
-		"$builder->add('product', EntityType::class, "+
-			"['class' => Product::class]);",
-	)
+
 	assert.Contains(
 		t,
 		result.Content,
@@ -186,7 +175,7 @@ func TestFormFieldGeneratorWritesFieldsOptionsAndImports(t *testing.T) {
 func TestFormFieldGeneratorFallsBackToQualifiedNamesOnImportConflict(
 	t *testing.T,
 ) {
-	provider, _, _ := newFormFieldGeneratorFixture(t)
+	provider, _ := newFormFieldGeneratorFixture(t)
 	source := formFieldGeneratorSource(`
 use App\Other\EnumType;
 use App\Other\Status;
@@ -223,7 +212,7 @@ use App\Other\Status;
 func TestDataFieldsForClassInSnapshotIncludesPublicSetProperties(
 	t *testing.T,
 ) {
-	_, phpIndex, _ := newFormFieldGeneratorFixture(t)
+	_, phpIndex := newFormFieldGeneratorFixture(t)
 	snapshot := phpIndex.SemanticSnapshot()
 	fields := form.DataFieldsForClassInSnapshot(
 		snapshot,
@@ -241,7 +230,7 @@ func TestDataFieldsForClassInSnapshotIncludesPublicSetProperties(
 
 func newFormFieldGeneratorFixture(
 	t *testing.T,
-) (*FormFieldGeneratorProvider, *php.PHPIndex, *doctrine.Index) {
+) (*FormFieldGeneratorProvider, *php.PHPIndex) {
 	t.Helper()
 	phpIndex, err := php.NewPHPIndex(t.TempDir())
 	require.NoError(t, err)
@@ -282,8 +271,6 @@ enum Status: string
 `,
 		"/project/src/Model/Product.php": `<?php
 namespace App\Model;
-use Doctrine\ORM\Mapping as ORM;
-#[ORM\Entity]
 class Product {}
 `,
 	}
@@ -299,18 +286,7 @@ class Product {}
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, forms.Close()) })
 	forms.SetPHPIndex(phpIndex)
-	doctrineIndex, err := doctrine.NewIndex(root)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, doctrineIndex.Close()) })
-	require.NoError(t, doctrineIndex.Index(indexer.NewParsedFile(
-		"/project/src/Model/Product.php",
-		[]byte(files["/project/src/Model/Product.php"]),
-	)))
-	return NewFormFieldGeneratorProvider(
-		forms,
-		phpIndex,
-		doctrineIndex,
-	), phpIndex, doctrineIndex
+	return NewFormFieldGeneratorProvider(forms, phpIndex), phpIndex
 }
 
 func formFieldGeneratorSource(extraImports string) string {

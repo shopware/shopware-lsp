@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/shopware/shopware-lsp/internal/console"
-	"github.com/shopware/shopware-lsp/internal/doctrine"
 	"github.com/shopware/shopware-lsp/internal/indexer"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/php"
@@ -36,9 +35,6 @@ func TestSymfonyWorkspaceSymbolsCoverPluginNavigationDomains(t *testing.T) {
 	twigIndex, err := twig.NewTwigIndexer(cache)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, twigIndex.Close()) })
-	doctrineIndex, err := doctrine.NewIndex(cache)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, doctrineIndex.Close()) })
 	componentIndex, err := twigcomponent.NewIndex(cache)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, componentIndex.Close()) })
@@ -60,7 +56,6 @@ func TestSymfonyWorkspaceSymbolsCoverPluginNavigationDomains(t *testing.T) {
 		"base.html.twig",
 	)
 	extensionPath := filepath.Join(root, "src", "Twig", "ShopExtension.php")
-	entityPath := filepath.Join(root, "src", "Entity", "Product.php")
 	componentPath := filepath.Join(
 		root,
 		"src",
@@ -105,13 +100,6 @@ final class ShopExtension extends AbstractExtension {
     public function currency(string $iso): string {}
 }
 `,
-		entityPath: `<?php
-namespace App\Entity;
-use Doctrine\ORM\Mapping as ORM;
-#[ORM\Entity]
-#[ORM\Table(name: 'products')]
-final class Product {}
-`,
 		componentPath: `<?php
 namespace App\Twig\Components;
 use Symfony\UX\TwigComponent\Attribute\AsTwigComponent;
@@ -136,7 +124,6 @@ final class CatalogController {
 		require.NoError(t, routeIndex.Index(parsed))
 		require.NoError(t, commandIndex.Index(parsed))
 		require.NoError(t, twigIndex.Index(parsed))
-		require.NoError(t, doctrineIndex.Index(parsed))
 		require.NoError(t, componentIndex.Index(parsed))
 		require.NoError(t, translationIndex.Index(parsed))
 		if filepath.Ext(path) == ".php" {
@@ -149,7 +136,6 @@ final class CatalogController {
 		routeIndex,
 		commandIndex,
 		twigIndex,
-		doctrineIndex,
 		componentIndex,
 		translationIndex,
 		phpIndex,
@@ -221,16 +207,6 @@ final class CatalogController {
 			query: "shop_currency", name: "shop_currency",
 			container: "Twig function", path: extensionPath,
 			kind: protocol.SymbolFunction,
-		},
-		{
-			query: "Product", name: "Product",
-			container: "Doctrine entity", path: entityPath,
-			kind: protocol.SymbolClass, exactRange: true,
-		},
-		{
-			query: "products", name: "products",
-			container: "Doctrine table", path: entityPath,
-			kind: protocol.SymbolStruct, exactRange: true,
 		},
 		{
 			query: "Alert", name: "Alert",

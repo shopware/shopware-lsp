@@ -5,10 +5,7 @@ import "github.com/shopware/shopware-lsp/internal/indexer"
 type doctrineCandidateFlags uint16
 
 const (
-	doctrineMappingCandidate doctrineCandidateFlags = 1 << iota
-	doctrineDQLCandidate
-	doctrineDQLFunctionCandidate
-	doctrineTypeCandidate
+	doctrineTypeCandidate doctrineCandidateFlags = 1 << iota
 
 	doctrineExtensionMarker
 	doctrineNameMarker
@@ -33,32 +30,8 @@ type doctrineCandidateMatcher struct {
 }
 
 var (
-	doctrinePHPExactCandidates = newDoctrineCandidateMatcher(
-		false,
-		doctrineCandidatePattern{"ORM\\", doctrineMappingCandidate},
-		doctrineCandidatePattern{"ODM\\", doctrineMappingCandidate},
-		doctrineCandidatePattern{"@Entity", doctrineMappingCandidate},
-		doctrineCandidatePattern{"@Document", doctrineMappingCandidate},
-		doctrineCandidatePattern{"#[Entity", doctrineMappingCandidate},
-		doctrineCandidatePattern{"#[Document", doctrineMappingCandidate},
-		doctrineCandidatePattern{"$dql", doctrineDQLCandidate},
-		doctrineCandidatePattern{
-			"stringFunctions",
-			doctrineDQLFunctionCandidate,
-		},
-		doctrineCandidatePattern{
-			"numericFunctions",
-			doctrineDQLFunctionCandidate,
-		},
-		doctrineCandidatePattern{
-			"datetimeFunctions",
-			doctrineDQLFunctionCandidate,
-		},
-	)
 	doctrinePHPFoldCandidates = newDoctrineCandidateMatcher(
 		true,
-		doctrineCandidatePattern{"createquery", doctrineDQLCandidate},
-		doctrineCandidatePattern{"setdql", doctrineDQLCandidate},
 		doctrineCandidatePattern{"addtype", doctrineTypeCandidate},
 		doctrineCandidatePattern{"overridetype", doctrineTypeCandidate},
 		doctrineCandidatePattern{"gettyperegistry", doctrineTypeCandidate},
@@ -69,22 +42,9 @@ var (
 	)
 	doctrineYAMLCandidates = newDoctrineCandidateMatcher(
 		true,
-		doctrineCandidatePattern{"type: entity", doctrineMappingCandidate},
-		doctrineCandidatePattern{"type: embeddable", doctrineMappingCandidate},
-		doctrineCandidatePattern{"repositoryclass:", doctrineMappingCandidate},
-		doctrineCandidatePattern{"targetentity:", doctrineMappingCandidate},
 		doctrineCandidatePattern{"doctrine:", doctrineNameMarker},
 		doctrineCandidatePattern{"dbal:", doctrineDBALMarker},
 		doctrineCandidatePattern{"types:", doctrineTypesMarker},
-	)
-	doctrineXMLExactCandidates = newDoctrineCandidateMatcher(
-		false,
-		doctrineCandidatePattern{
-			"doctrine-mapping",
-			doctrineMappingCandidate,
-		},
-		doctrineCandidatePattern{"<entity", doctrineMappingCandidate},
-		doctrineCandidatePattern{"<document", doctrineMappingCandidate},
 	)
 	doctrineXMLFoldCandidates = newDoctrineCandidateMatcher(
 		true,
@@ -173,36 +133,6 @@ func (matcher doctrineCandidateMatcher) match(
 	return result
 }
 
-func matchDoctrineCandidatePair(
-	content []byte,
-	exact,
-	folded doctrineCandidateMatcher,
-) doctrineCandidateFlags {
-	if len(exact.states) == 0 {
-		return folded.match(content)
-	}
-	if len(folded.states) == 0 {
-		return exact.match(content)
-	}
-
-	var result doctrineCandidateFlags
-	var exactState uint16
-	var foldedState uint16
-	for _, value := range content {
-		if value >= 128 {
-			exactState = 0
-			foldedState = 0
-			continue
-		}
-		exactState = exact.states[exactState].next[value]
-		foldedValue := lowerDoctrineCandidateASCII(value)
-		foldedState = folded.states[foldedState].next[foldedValue]
-		result |= exact.states[exactState].flags |
-			folded.states[foldedState].flags
-	}
-	return result
-}
-
 func doctrineCandidates(
 	file *indexer.ParsedFile,
 ) doctrineCandidateFlags {
@@ -212,11 +142,7 @@ func doctrineCandidates(
 	var markers doctrineCandidateFlags
 	switch file.Extension() {
 	case ".php":
-		markers = matchDoctrineCandidatePair(
-			file.Content,
-			doctrinePHPExactCandidates,
-			doctrinePHPFoldCandidates,
-		)
+		markers = doctrinePHPFoldCandidates.match(file.Content)
 		if markers&doctrineTypeCandidate == 0 &&
 			markers&doctrineExtensionMarker != 0 &&
 			markers&doctrineNameMarker != 0 &&
@@ -232,20 +158,13 @@ func doctrineCandidates(
 			markers |= doctrineTypeCandidate
 		}
 	case ".xml":
-		markers = matchDoctrineCandidatePair(
-			file.Content,
-			doctrineXMLExactCandidates,
-			doctrineXMLFoldCandidates,
-		)
+		markers = doctrineXMLFoldCandidates.match(file.Content)
 		if markers&doctrineDBALMarker != 0 &&
 			markers&doctrineTypeTagMarker != 0 {
 			markers |= doctrineTypeCandidate
 		}
 	}
-	return markers & (doctrineMappingCandidate |
-		doctrineDQLCandidate |
-		doctrineDQLFunctionCandidate |
-		doctrineTypeCandidate)
+	return markers & doctrineTypeCandidate
 }
 
 func lowerDoctrineCandidateASCII(value byte) byte {

@@ -17,27 +17,27 @@ of a particular editor.
 | YAML compatibility | Composer-version-gated Symfony 2.8 deprecation inspections for invalid backslash escapes, reserved leading indicators, and colons in unquoted block-mapping values, with native-CST recovery support and syntax-safe quote/escape actions |
 | Translations | YAML, XLIFF/XML, PHP-array, and compiled-catalog indexing; Twig and type-aware PHP key/domain completion, definition, hover, diagnostics, typo replacement and catalog insertion actions; parameter placeholder completion; interactive extraction of static Twig text or HTML attribute values into selected YAML/XLIFF locale resources with active-domain inference |
 | Console | Attribute, legacy class, method-command, `configure()`, modern parameter-attribute, and compiled-container indexing, including named/positional `AsCommand` alias arrays and literal local `self::` / `static::` command-name constants; context-aware `AsCommand` attribute completion for conventional, inherited, and typed-invokable command scopes; type-aware command/argument/option completion, definition, hover, missing-reference diagnostics, and typo actions; helper-name completion, class navigation, and hover for typed `HelperSet::get()` / `has()` and `Command::getHelper()` calls, discovered from persisted literal `getName()` returns; Symfony 7.3 `#[AsCommand]` `__invoke()` return-type/exit-code diagnostics with an `int` return-type action; current-document run code lenses for class-level, method-level, static-name, and `configure()->setName()` declarations execute the canonical command through the workspace `bin/console`; a searchable persistent command catalog exposes aliases, targets, descriptions, arguments, and options to the VS Code command-palette runner and future clients; contextual import-aware insertion of supported Console input/output, cursor, style, and application parameters into invokable commands while preserving optional/variadic parameter order; conservative whole-class migration of direct legacy `Command` subclasses with static `configure()` inputs to invokable commands, including Argument/Option attributes, input-read rewriting, import cleanup, parent-constructor removal, and exit-constant repair |
-| Embedded PHP strings | Native lossless JSON validation and semantic coloring for static strings passed to typed `JsonResponse::fromJsonString()` / `setJson()` calls, with alias/subclass resolution, conservative interpolation exclusion, PHP escape decoding, and byte-exact host range mapping; typed DomCrawler `filter()` / `children()` and `CssSelectorConverter::toXPath()` arguments receive native selector-delimiter validation and CSS-aware class, ID, element, attribute, pseudo-function, operator, string, and number coloration; a dedicated lossless XPath frontend structurally validates and colors typed DomCrawler `filterXPath()` / `evaluate()` expressions including axes, functions, element/attribute names, variables, operators, strings, and numbers; the three injection families share one PHP CST scan and one semantic receiver analysis per request; native DQL intelligence is covered under Doctrine |
+| Embedded PHP strings | Native lossless JSON validation and semantic coloring for static strings passed to typed `JsonResponse::fromJsonString()` / `setJson()` calls, with alias/subclass resolution, conservative interpolation exclusion, PHP escape decoding, and byte-exact host range mapping; typed DomCrawler `filter()` / `children()` and `CssSelectorConverter::toXPath()` arguments receive native selector-delimiter validation and CSS-aware class, ID, element, attribute, pseudo-function, operator, string, and number coloration; a dedicated lossless XPath frontend structurally validates and colors typed DomCrawler `filterXPath()` / `evaluate()` expressions including axes, functions, element/attribute names, variables, operators, strings, and numbers; the three injection families share one PHP CST scan and one semantic receiver analysis per request; ORM DQL intelligence is outside the Shopware feature set |
 | HTTP client | Typed option-key completion, exact declaration navigation, and default/type hover for `HttpClientInterface::request()` and `withOptions()` arrays, backed by persisted semantic metadata for `OPTIONS_DEFAULTS` constant-array entries and unsaved receiver-type validation |
 | Events | Subscriber arrays, `AsEventListener`, XML/YAML/PHP service tags, dispatch sites, and cross-file event constants; type-aware event/listener-method completion, definition, references, hover, diagnostics, typo actions, and cross-file missing-method creation with inferred event parameter unions |
 | Messenger | Persistent message graphs from class/method `AsMessageHandler`, legacy `MessageSubscriberInterface`, and PHP/XML/YAML `messenger.message_handler` service tags; inferred and explicit message types including unions; typed `MessageBusInterface::dispatch()` sites; cross-language message/handler completion, definition, references, hover, diagnostics, typo actions, code lenses, cache restore, and stale removal |
 | Environment variables | Persistent declarations from `.env`, `.env.*`, `*.env`, Dockerfiles, and Compose environment mappings/sequences; PHP/XML/YAML `%env(...)%`, PHP `env('…')`, and direct `#[Autowire(env: '…')]` references with chained-processor parsing, completion for incomplete expressions, multi-target definition, Find References, secret-safe hover, cache restore, and stale removal |
-| Forms | PHP form types and extensions plus XML/YAML/PHP service aliases; inherited `getParent()` options, `configureOptions()` definitions, `buildForm()` fields, and `data_class` writable properties; type/option/field completion, definition, hover, diagnostics, typo actions, and unsaved-document overlays; persistent controller `createForm(...)->createView()` provenance drives Twig `FormView` child completion, PHP definition navigation, typed hover, missing-field diagnostics, and FormType code lenses on `form_start()`, `form()`, `form_end()`, and `form_rest()`; persisted type/core/extension `buildView()` and `finishView()` assignments provide `form.vars.*` completion, definition, typed/default hover, and typo diagnostics; semantic form-factory recognition and related form-type code lenses for public PHP methods; bidirectional form-type ↔ `data_class` code lenses with multiple reverse targets and unsaved overlays; Composer-version-gated legacy builder-alias inspection with import-aware `::class` migration; interactive generation of missing builder fields from inherited writable properties/setters with scalar/date/enum/Doctrine type guessing, generated options, and collision-safe imports; structured type/option analytics with aliases, parent/data-class relationships, field/view-variable counts, merged option kinds/defaults/allowed types, exact multi-source provenance, cache restore, and a searchable editor navigator |
+| Forms | PHP form types and extensions plus XML/YAML/PHP service aliases; inherited `getParent()` options, `configureOptions()` definitions, `buildForm()` fields, and `data_class` writable properties; type/option/field completion, definition, hover, diagnostics, typo actions, and unsaved-document overlays; persistent controller `createForm(...)->createView()` provenance drives Twig `FormView` child completion, PHP definition navigation, typed hover, missing-field diagnostics, and FormType code lenses on `form_start()`, `form()`, `form_end()`, and `form_rest()`; persisted type/core/extension `buildView()` and `finishView()` assignments provide `form.vars.*` completion, definition, typed/default hover, and typo diagnostics; semantic form-factory recognition and related form-type code lenses for public PHP methods; bidirectional form-type ↔ `data_class` code lenses with multiple reverse targets and unsaved overlays; Composer-version-gated legacy builder-alias inspection with import-aware `::class` migration; interactive generation of missing builder fields from inherited writable properties/setters with scalar/date/enum type guessing, generated options, and collision-safe imports; structured type/option analytics with aliases, parent/data-class relationships, field/view-variable counts, merged option kinds/defaults/allowed types, exact multi-source provenance, cache restore, and a searchable editor navigator |
 | Security | Voter-supported attributes, YAML role hierarchy and access-control roles, PHP authorization calls, `IsGranted`/`Security` attributes and legacy annotations, and Twig authorization functions; source-aligned modern SecurityBundle YAML key completion/hover across nested form/JSON/LDAP/Basic/login-link/throttling/remember-me/remote-user/X.509/logout/switch-user/access-token/OIDC contexts and `when@environment` sections; persistent XML/YAML/typed-PHP-configurator user-provider and firewall symbols; cross-format provider-name completion, definition, references, diagnostics, typo actions, cache restore, nested authenticator providers, and unsaved-document overlays |
 | Symfony configuration | Persistent root signatures from modern `new TreeBuilder('name')` and legacy `TreeBuilder->root('name')` `getConfigTreeBuilder()` methods; root-key completion, exact declaration navigation, and related code lenses from top-level and `when@environment` PHP arrays and YAML mappings; relative/globbed PHP `imports[].resource` and YAML `resource:` definition navigation and code lenses; bundle/current-directory resource completion in YAML and XML with conventional legacy/modern config and controller roots; cache restore and stale removal |
 | Serializer | `deserialize()` target indexing for class constants, string class names, array targets, and the supported `ClassName::class . '[]'` concatenation; definition, references, hover, missing-class diagnostics, typo actions, and class code lenses |
 | Validator | Inherited public constraint-option completion, definition, hover, diagnostics, and typo actions for option arrays; `validators`-domain messages in constraint objects/attributes/properties and violation builders; constraint-to-validator and constraint-message-to-catalog code lenses with unsaved PHP overlays |
-| Doctrine | Unified ORM/ODM model metadata from PHP attributes, legacy annotations (including `ODM` aliases), XML, and YAML; inherited and embedded fields; typed object managers/repositories and magic finder methods; compiled-container ORM/ODM `Bundle:Model` namespaces plus convention fallbacks shared by completion, navigation, diagnostics, DQL, QueryBuilder, and repository result typing; assigned and unassigned/fluent ORM QueryBuilder alias/relation/field/parameter inference with nested `Expr`, class/right joins, and `indexBy`; typed DBAL QueryBuilder/Connection table, column, and join-alias completion, definition, hover, diagnostics, and typo actions; native standalone DQL in `$dql`, typed `createQuery()`, and `setDQL()` strings with entity/relation-field completion, definition, references, hover, diagnostics, typo actions, unsaved overlays, cache restore, and cached built-in function discovery/navigation; scope-aware ORM class/property/lifecycle attribute completion with namespace-alias reuse, installed-class filtering, and automatic `HasLifecycleCallbacks`; mapping class/property/lifecycle/type intelligence; inheritance/discriminator metadata plus subtype-aware discriminator-map completion, definition, hover, diagnostics, typo actions, and references across PHP attributes/annotations and XML/YAML; table indexes/unique constraints with normalized field/column intelligence across PHP attributes/annotations and XML/YAML; cached custom DBAL/ODM type discovery with literal or class-constant-backed `getName()` names, static DoctrineBundle YAML/XML and PHP `extension()` DBAL aliases, static runtime `addType`/`overrideType`/type-registry registrations, conventional class-name fallback, and mapping-filename-aware ORM/MongoDB/CouchDB/ODM scoping; type-registration class completion, definition, hover, missing/invalid diagnostics, typo actions, and cross-language Find References across registration keys, implementation classes, PHP attributes, and XML/YAML usages; bidirectional PHP model/external mapping code lenses and typed repository-call related navigation; type-checked, ambiguity-safe string entity migration to import-aware `::class` references across repository/object-manager APIs including `find`; structured entity and field analytics expose model kind/source, table, repository, inheritance, source locations, inherited/embedded field paths, mapping/PHP/enum/relation types, declaring classes, and constraint counts, with a searchable VS Code entity-to-field navigator |
+| Doctrine DBAL | Typed DBAL QueryBuilder/Connection table, column, and join-alias completion, definition, hover, diagnostics, and typo actions backed by Shopware DAL definitions; custom DBAL type registration discovery, class completion/navigation/hover/validation, and registration references; ORM/ODM and the Doctrine entity browser are intentionally outside the Shopware feature set |
 | Assets, AssetMapper, Encore, Assetic, and Vite | Static `public`/`web` and bundle `Resources/public` resources with dynamic-media pruning; `manifest.json`, `entrypoints.json`, Webpack Encore, `importmap.php`, installed AssetMapper modules, and `vite.config.js`/`.ts` Rollup input indexing including variable and spread maps; named packages from Symfony YAML, XML/PHP service tags, and inferred Shopware bundle packages, with package-aware bundle/base-path/theme resolution; native legacy Assetic `stylesheets`/`javascripts` blocks with direct file, directory, glob, bundle, and lazily refreshed compiled named-formula resolution; Twig `asset()`, `importmap()`, Encore, and Vite entry helpers plus type-aware PHP `Packages` calls; path, package, and entrypoint completion, definition, references, hover, diagnostics, typo actions, target-file code lenses, and persistent cache restore |
 | Stimulus | Persistent controllers from conventional JS/TS filenames, `startStimulusApp()` registrations, and enabled `controllers.json` package entries; normalized HTML and original Twig names; `stimulus_controller()` and multi-controller `data-controller` completion, definition, references, hover, diagnostics, typo actions, stale removal, unsaved overlays, and cached Twig usages, with plain HTML handled on demand to avoid scanning generated frontend trees |
 | PHP | Workspace semantic graph, type inference, completion, definition, hover, references, signature help, rename, and diagnostics; persistent PHPDoc `#Class`, `#Interface`, and `#ClassInterface` parameter contracts with kind-filtered exact completion/navigation for function, constructor, and inherited method call arguments; context-aware Symfony `Response::HTTP_*` completion in status-code setters and comparisons |
-| Project navigation | Ranked and capped `workspace/symbol` search for Symfony services, route names and normalized concrete/absolute/partial route-URL matches, console commands, Twig templates/blocks/macros/functions/filters, Doctrine entities/tables, Twig/Live Components, and translation keys, with exact declaration ranges where available; route symbols expose normalized endpoint method/path/controller metadata; bidirectional controller/template/route, form-type, and Doctrine model/mapping code lenses backed by indexed references; PHP, YAML, and XML route declarations expose portable endpoint code lenses that resolve direct, service, and invokable controller actions; structured route and Doctrine analytics catalogs power searchable editor browsers for endpoints/controllers/templates and entity fields |
+| Project navigation | Ranked and capped `workspace/symbol` search for Symfony services, route names and normalized concrete/absolute/partial route-URL matches, console commands, Twig templates/blocks/macros/functions/filters, Twig/Live Components, and translation keys, with exact declaration ranges where available; route symbols expose normalized endpoint method/path/controller metadata; bidirectional controller/template/route, form-type code lenses backed by indexed references; PHP, YAML, and XML route declarations expose portable endpoint code lenses that resolve direct, service, and invokable controller actions; structured route analytics catalogs power searchable editor browsers for endpoints/controllers/templates |
 | Project scaffolding | Portable command-palette and folder-context generators for Console commands, controllers, form types, Twig extensions, compiler passes, kernel/web tests, and YAML/XML/PHP service configurations; most-specific Composer PSR-4 namespace resolution, indexed command-prefix reuse, Symfony/Twig-version-aware templates, native-parser validation, symlink-aware workspace boundaries, collision rejection, and atomic editor workspace edits |
 | Shopware | Snippets, feature flags, system config, theme config/icons, extensions, and Administration components |
 
 PHPDoc assistant contracts from the plugin's `DocHashTagReferenceContributor`
 are persisted in the PHP semantic graph. `#Route`, `#Service`, `#Parameter`,
-`#Class`, `#Interface`, `#ClassInterface`, `#Entity`, `#FormType`, and
+`#Class`, `#Interface`, `#ClassInterface`, `#FormType`, and
 `#Template` provide exact completion and definition navigation at function,
 constructor, and inherited method call arguments. `#TranslationKey` and
 `#TranslationDomain` additionally correlate named or positional sibling
@@ -169,51 +169,18 @@ interface kind constraint.
   `ConfigurationInterface` tree signatures.
 - Serializer metadata-group support and validation mapping-file schemas.
 
-### 4. Doctrine
+### 4. Doctrine DBAL
 
-- Native SQL/native-query strings and dynamically assembled DQL expressions;
-  static standalone DQL strings in `$dql`, typed `createQuery()`, and
-  `setDQL()` contexts are implemented.
-- Assigned and unassigned/fluent ORM QueryBuilder chains, nested `Expr`
-  methods, right joins, and `indexBy` fields are implemented.
-- Built-in DQL functions are discovered from Doctrine ORM's parser registry
-  and provide completion, implementation navigation, and hover.
-- Custom Doctrine type names from literal and class-constant-backed
-  `getName()` returns, static DoctrineBundle YAML/XML `dbal.types` aliases,
-  PHP `extension('doctrine', …)` registrations with string/imported
-  `::class`/expanded class values, static `Type::addType()` /
-  `Type::overrideType()` and type-registry registrations, mapping-manager
-  scoping, and conventional class-name fallback are implemented.
-  Configuration-schema completion, generated fluent configuration builders,
-  and dynamically constructed/injected registry registrations remain.
-- Legacy ORM/ODM namespace maps from compiled containers and convention-based
-  bundle fallbacks resolve `Bundle:Model` consistently in repository APIs,
-  DQL, QueryBuilder, completion, definitions, diagnostics, and PHP result
-  inference.
-- Typed object-manager `find()` calls return the requested mapped model, and
-  `getRepository()` returns a configured custom repository class when present
-  while retaining Doctrine result and magic-finder inference.
-- Incomplete XML mappings recover semantic contexts from empty model,
-  repository, property, target, embedded-class, enum, lifecycle, and type
-  attributes, and root ODM `embedded-document`/`embedded` declarations are
-  indexed as embeddable models.
-- Mapped PHP property metadata preserves namespace-resolved nullable, union,
-  intersection, and parenthesized DNF types; the native PHP parser recognizes
-  DNF-typed property declarations losslessly.
-- MongoDB ODM PHP reference/embed attributes and annotations resolve
-  `targetDocument` alongside ORM `targetEntity`/`class`, so untyped document
-  properties retain exact target ranges and metadata.
-- Discriminator maps are implemented across PHP attributes, legacy
-  annotations, XML, and YAML with subtype-aware completion, definition, hover,
-  missing/invalid diagnostics, typo actions, and reference navigation. Table
-  indexes and unique constraints are implemented across PHP attributes/legacy
-  annotations, XML, and YAML with field/column completion, definition, hover,
-  diagnostics, typo suggestions, Find References, and analytics counts. Named
-  queries, second-level cache configuration, and advanced ODM mapping options
-  remain.
-- Portable related-file code lenses between PHP models and external mappings
-  are implemented, including reverse mapping-to-class navigation and typed
-  repository-call model targets.
+- Typed QueryBuilder/Connection table and column intelligence uses indexed
+  Shopware DAL definitions, with join-alias completion and hover.
+- Custom DBAL type names and static YAML/XML/PHP registrations provide
+  class completion, navigation, hover, diagnostics, typo actions, references,
+  and cache restore.
+- ORM/ODM mappings, repository/magic-finder inference, DQL, mapping code
+  lenses/actions, and entity/field analytics and browser are intentionally
+  removed from the Shopware-focused feature set.
+- Native SQL intelligence and dynamically constructed type registrations
+  remain unsupported.
 
 ### 5. Assets and frontend tooling
 
@@ -240,7 +207,7 @@ interface kind constraint.
 - Workspace symbols are implemented for services, container parameters, routes
   and concrete route URL matches, conventional and route-backed controller
   actions, commands, templates, Twig
-  blocks/macros/extensions, Doctrine entities/tables, Twig/Live Components,
+  blocks/macros/extensions, Twig/Live Components,
   translation domains, and translation keys.
 - The plugin's service-locator collector is implemented as a structured
   language-server request accepting an exact service ID or PHP class. It
@@ -269,12 +236,6 @@ interface kind constraint.
   templates and opens matching mail panels only after an explicit user
   selection; HTTP profiler fetching is intentionally excluded so analytics
   never perform workspace-triggered network requests.
-- The plugin's Doctrine entity and field collectors are implemented as
-  structured language-server analytics requests. Entity results support text,
-  kind, and Ant-style source-file filters; field results include inherited and
-  flattened embedded paths, mapping/PHP/enum/relation types, declaring classes,
-  and exact source locations. `Symfony: Browse Doctrine Entities…` provides
-  the interactive editor surface.
 - The plugin's form-type and form-option collectors are implemented as
   structured language-server analytics requests. Type results expose every
   class and legacy/container alias with parent/data-class relationships and
@@ -309,7 +270,7 @@ interface kind constraint.
   and exact first-level Twig-accessible property/getter/method declarations;
   `Symfony: Analyze Twig Template Variables…` provides the editor surface.
 - Controller/template/route—including persistent Twig `controller()` usages—
-  form-type, Doctrine model/mapping, and DI decorator/parent/prototype code
+  form-type and DI decorator/parent/prototype code
   lenses, plus PHP class-to-service and effective-autowire constructor lenses,
   PHP/YAML Symfony configuration root/resource lenses, and YAML/XML/PHP
   routing-resource lenses are implemented as portable equivalents for IntelliJ
@@ -324,8 +285,8 @@ interface kind constraint.
   route controllers—including service aliases and invokable controllers—and
   clickable Twig-variable catalogs with typed member navigation plus
   print/conditional/collection-loop insertion.
-- Related-file navigation between controllers, templates, routes, form types,
-  and Doctrine models/mappings is implemented.
+- Related-file navigation between controllers, templates, routes, and form types
+  is implemented.
 
 IDE-only profiler panels, settings UI, and terminal integration are out of the
 language-server core. The plugin's project-tree file generators are exposed

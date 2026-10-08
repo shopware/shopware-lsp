@@ -15,7 +15,7 @@ once, and said so for months.
 | MCP server | yes, as a context server |
 | Snippets (1 PHP, 6 config XML) | yes, ported and confirmed working |
 | `yamlValidation` for `lsp.yaml` | via `examples/settings.json`, pointing at the server's own schema |
-| 22 palette commands | no palette; 10 full equivalents as tasks. See [Command parity](#command-parity) |
+| 21 palette commands | no palette; 10 full equivalents as tasks. See [Command parity](#command-parity) |
 | 23 client commands behind code actions | 12 full equivalents as tasks; the menu entries are filtered out |
 | Explorer and editor context menus | no, Zed has no extension menu API |
 | Code lenses | yes, text renders; clicking does nothing. See [Code lenses](#code-lenses) |
@@ -28,7 +28,7 @@ Two lists, counted separately because they are easy to conflate. The
 The **client commands** are the ones the server asks a client to run, almost
 all attached to code actions rather than to the palette.
 
-10 of 22 palette commands and 12 of 23 client commands have a full task
+10 of 21 palette commands and 12 of 23 client commands have a full task
 equivalent. 3 actions serve both lists, so those are 19 distinct
 actions, and with the partial and standalone ones below that is the
 21 in the action table above. The examples expose them through 22 tasks;
@@ -55,7 +55,6 @@ Not covered at all, and why:
 | `insertSnippet`, `insertSnippetAtPosition` | worth adding; needs a picker over existing snippets |
 | `runConsoleCommandPicker`, `runConsoleCommand` | a task runs bin/console directly; only the picker is missing |
 | `extendComponent`, `overrideMethod` | picker-then-insert over Vue components, no equivalent yet |
-| `browseDoctrineEntities` | no browser yet; useful for Symfony projects using Doctrine |
 | `browseProfilerRequests` | no profiler browser yet |
 | `restart` | Zed's own `language server: restart` covers it |
 | `copySnippetUsage` | clipboard convenience not implemented; would need platform-specific integration |

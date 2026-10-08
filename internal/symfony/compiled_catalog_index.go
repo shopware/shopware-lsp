@@ -30,7 +30,6 @@ type compiledCatalogRecord struct {
 	Parameters []Parameter
 	Globals    []ContainerTwigGlobal
 	Components []ContainerTwigComponent
-	Aliases    map[string][]string
 	Routes     []Route
 }
 
@@ -58,6 +57,7 @@ func newCompiledCatalogIndex(root, cache, id string, container *ContainerCatalog
 	return idx, nil
 }
 func (idx *CompiledCatalogIndex) ID() string { return idx.id }
+
 func (idx *CompiledCatalogIndex) ShouldEnterDirectory(path string) bool {
 	for _, parent := range []string{"var", "app"} {
 		base := filepath.Join(idx.root, parent)
@@ -108,7 +108,6 @@ func (idx *CompiledCatalogIndex) Prepare(file *indexer.ParsedFile) (any, error) 
 	}
 	record.Globals = ParseXMLTwigGlobalsTree(file.Path, tree)
 	record.Components = ParseXMLTwigComponentsTree(file.Path, tree)
-	record.Aliases = ParseXMLDoctrineNamespaceAliasesTree(tree.Root)
 	return record, nil
 }
 func (idx *CompiledCatalogIndex) Index(file *indexer.ParsedFile) error {
@@ -179,7 +178,7 @@ func (idx *CompiledCatalogIndex) publish() {
 	for _, param := range record.Parameters {
 		cw.parameters[param.Name] = param
 	}
-	cw.twigGlobals, cw.twigComponents, cw.doctrineAliases = record.Globals, record.Components, record.Aliases
+	cw.twigGlobals, cw.twigComponents = record.Globals, record.Components
 	cw.revision++
 }
 func (idx *CompiledCatalogIndex) RemovedFiles(paths []string) error {
@@ -196,6 +195,7 @@ func (idx *CompiledCatalogIndex) RemovedFilesIn(paths []string, mutation *indexe
 	})
 }
 func (idx *CompiledCatalogIndex) Clear() error { return idx.ClearIn(nil) }
+
 func (idx *CompiledCatalogIndex) ClearIn(mutation *indexer.Mutation) error {
 	if err := idx.repository.ClearIn(mutation); err != nil {
 		return err

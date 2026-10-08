@@ -284,10 +284,6 @@
         "title": "Symfony: Browse Profiler Requests…"
       },
       {
-        "command": "shopware.symfony.browseDoctrineEntities",
-        "title": "Symfony: Browse Doctrine Entities…"
-      },
-      {
         "command": "shopware.symfony.browseFormTypes",
         "title": "Symfony: Browse Form Types…"
       },

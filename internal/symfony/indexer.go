@@ -150,19 +150,6 @@ func (idx *ServiceIndex) GetCompiledTwigComponentsState() (
 	return idx.containerWatcher.GetTwigComponentsState()
 }
 
-// GetDoctrineNamespaceAliasesState exposes the compiled container's legacy
-// entity/document namespace aliases without coupling the Doctrine index to the
-// service-index implementation.
-func (idx *ServiceIndex) GetDoctrineNamespaceAliasesState() (
-	map[string][]string,
-	uint64,
-) {
-	if idx == nil || idx.containerWatcher == nil {
-		return nil, 0
-	}
-	return idx.containerWatcher.GetDoctrineNamespaceAliasesState()
-}
-
 // ReloadCompiledContainer reparses the currently discovered Symfony container.
 // It is useful after an explicit cache warmup; normal editor use is updated by
 // the filesystem watcher.

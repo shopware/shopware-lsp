@@ -70,7 +70,7 @@ func TypeRegistrationReferenceAt(
 		return TypeRegistrationReference{}, false
 	}
 	for _, registration := range TypeRegistrationsInDocument(path, root) {
-		if mappingRangeContainsCursor(registration.NameRange, offset) {
+		if rangeContainsCursor(registration.NameRange, offset) {
 			return TypeRegistrationReference{
 				Role:  TypeRegistrationName,
 				Name:  registration.Name,
@@ -78,7 +78,7 @@ func TypeRegistrationReferenceAt(
 				Range: registration.NameRange,
 			}, true
 		}
-		if mappingRangeContainsCursor(registration.ClassRange, offset) {
+		if rangeContainsCursor(registration.ClassRange, offset) {
 			classConstant := false
 			objectCreation := false
 			if strings.EqualFold(filepath.Ext(path), ".php") {
@@ -386,7 +386,7 @@ func phpTypeRegistrationReferenceAt(
 				value,
 				resolver,
 			)
-			if mappingRangeContainsCursor(nameRange, offset) {
+			if rangeContainsCursor(nameRange, offset) {
 				return TypeRegistrationReference{
 					Role:          TypeRegistrationName,
 					Name:          name,
@@ -408,7 +408,7 @@ func phpTypeRegistrationReferenceAt(
 				}
 				continue
 			}
-			if mappingRangeContainsCursor(classRange, offset) ||
+			if rangeContainsCursor(classRange, offset) ||
 				(value == nil &&
 					phpCursorAfterArrayArrow(item, offset)) {
 				if value == nil {
@@ -455,7 +455,7 @@ func phpRuntimeTypeRegistrationReferenceAt(
 				resolver,
 				runtimeCall.ObjectCreation,
 			)
-		if mappingRangeContainsCursor(nameRange, offset) {
+		if rangeContainsCursor(nameRange, offset) {
 			return TypeRegistrationReference{
 				Role:           TypeRegistrationName,
 				Name:           name,
@@ -473,10 +473,10 @@ func phpRuntimeTypeRegistrationReferenceAt(
 			phpCursorAfterCallArgumentSeparator(call, offset)
 		incompleteValue := class == "" && value != nil &&
 			phpCursorInIncompleteCallValue(call, value, offset)
-		if mappingRangeContainsCursor(classRange, offset) ||
-			mappingRangeContainsCursor(valueRange, offset) ||
+		if rangeContainsCursor(classRange, offset) ||
+			rangeContainsCursor(valueRange, offset) ||
 			missingValue || incompleteValue {
-			if !hasMappingRange(classRange) {
+			if !hasRange(classRange) {
 				classRange = cst.TextRange{
 					Start: offset,
 					End:   offset,
@@ -633,7 +633,7 @@ func phpTypeClassOptionReferenceAt(
 		if value == nil && phpCursorAfterArrayArrow(option, offset) {
 			rng = cst.TextRange{Start: offset, End: offset}
 			classConstant = true
-		} else if !mappingRangeContainsCursor(rng, offset) {
+		} else if !rangeContainsCursor(rng, offset) {
 			return TypeRegistrationReference{}, false
 		}
 		return TypeRegistrationReference{
@@ -737,7 +737,7 @@ func yamlTypeRegistrationReferenceAt(
 	key := yamlquery.PairKey(pair)
 	value := yamlquery.PairValue(pair)
 	if len(path) == typesAt+2 &&
-		mappingRangeContainsCursor(yamlScalarRange(key), offset) {
+		rangeContainsCursor(yamlScalarRange(key), offset) {
 		role = TypeRegistrationName
 	}
 	classNode := value

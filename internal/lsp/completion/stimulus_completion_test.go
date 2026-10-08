@@ -50,7 +50,7 @@ export default class extends Controller {}`,
 		node := document.SyntaxTree.Root.NodeAtOffset(offset)
 		items := provider.GetCompletions(
 			context.Background(),
-			doctrineCompletionRequestAt(document, node, offset),
+			completionRequestAt(document, node, offset),
 		)
 		item := requireCompletion(t, items, test.label)
 		assert.Equal(t, int(protocol.ModuleCompletion), item.Kind)
@@ -68,7 +68,7 @@ export default class extends Controller {}`,
 	htmlNode := htmlDocument.SyntaxTree.Root.NodeAtOffset(htmlOffset)
 	htmlItems := provider.GetCompletions(
 		context.Background(),
-		doctrineCompletionRequestAt(
+		completionRequestAt(
 			htmlDocument,
 			htmlNode,
 			htmlOffset,

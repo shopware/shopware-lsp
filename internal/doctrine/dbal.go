@@ -11,6 +11,7 @@ import (
 	phpsyntax "github.com/shopware/shopware-lsp/internal/parser/php/syntax"
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/php/types"
+	"github.com/shopware/shopware-lsp/internal/shopware/dal"
 )
 
 type DBALReferenceRole uint8
@@ -66,12 +67,9 @@ func (idx *Index) DBALReferenceAt(
 	method := strings.ToLower(phpquery.CallMethodName(call))
 	argument := phpquery.ArgumentIndex(call, literal)
 	reference := DBALReference{
-		Name: phpquery.StringValue(literal),
-		Node: literal,
-		Range: ReferenceRange(Reference{
-			Kind: StringReference,
-			Node: literal,
-		}),
+		Name:  phpquery.StringValue(literal),
+		Node:  literal,
+		Range: phpquery.StringContentRange(literal),
 	}
 
 	if receiver == dbalQueryBuilderReceiver {
@@ -126,38 +124,50 @@ func (idx *Index) DBALCompletionsAt(
 	}
 	switch reference.Role {
 	case DBALTableReference:
-		models, err := idx.Models()
+		if idx.dal == nil {
+			return nil
+		}
+		models, err := idx.dal.Definitions()
 		if err != nil {
 			return nil
 		}
 		var result []DBALCompletion
 		for _, model := range models {
-			if model.Table == "" {
+			if model.Name == "" {
 				continue
 			}
 			result = append(result, DBALCompletion{
-				Label:  model.Table,
+				Label:  model.Name,
 				Detail: model.Class,
 				Kind:   DBALTableCompletion,
 			})
 		}
 		sort.Slice(result, func(left, right int) bool {
-			return result[left].Label < result[right].Label
+			if result[left].Label != result[right].Label {
+				return result[left].Label < result[right].Label
+			}
+			return result[left].Detail < result[right].Detail
 		})
-		return result
+		unique := result[:0]
+		for _, item := range result {
+			if len(unique) == 0 || unique[len(unique)-1].Label != item.Label {
+				unique = append(unique, item)
+			}
+		}
+		return unique
 	case DBALColumnReference:
-		model, found, err := idx.ModelForTable(reference.Table)
+		model, found, err := idx.DefinitionForTable(reference.Table)
 		if err != nil || !found {
 			return nil
 		}
-		fields, err := idx.Fields(model.Class)
-		if err != nil {
-			return nil
-		}
+		fields := model.Fields
 		var result []DBALCompletion
 		seen := make(map[string]struct{})
 		for _, field := range fields {
-			name := field.Column
+			if field.Association {
+				continue
+			}
+			name := field.StorageName
 			if name == "" {
 				name = field.Name
 			}
@@ -196,46 +206,44 @@ func (idx *Index) DBALCompletionsAt(
 	}
 }
 
-func (idx *Index) ModelForTable(
-	table string,
-) (Model, bool, error) {
-	if idx == nil || table == "" {
-		return Model{}, false, nil
+func (idx *Index) DefinitionForTable(table string) (dal.Definition, bool, error) {
+	if idx == nil || idx.dal == nil {
+		return dal.Definition{}, false, nil
 	}
-	models, err := idx.Models()
+	definitions, err := idx.dal.Definition(table)
 	if err != nil {
-		return Model{}, false, err
+		return dal.Definition{}, false, err
 	}
-	for _, model := range models {
-		if strings.EqualFold(model.Table, table) {
-			return model, true, nil
-		}
+	if len(definitions) > 0 {
+		sort.Slice(definitions, func(left, right int) bool {
+			if definitions[left].File != definitions[right].File {
+				return definitions[left].File < definitions[right].File
+			}
+			return definitions[left].ClassRange.Start < definitions[right].ClassRange.Start
+		})
+		return definitions[0], true, nil
 	}
-	return Model{}, false, nil
+	return dal.Definition{}, false, nil
 }
 
-func (idx *Index) FieldForColumn(
-	table,
-	column string,
-) (Model, Field, bool, error) {
-	model, found, err := idx.ModelForTable(table)
+func (idx *Index) FieldForColumn(table, column string) (dal.Definition, dal.Field, bool, error) {
+	definition, found, err := idx.DefinitionForTable(table)
 	if err != nil || !found {
-		return Model{}, Field{}, false, err
+		return definition, dal.Field{}, false, err
 	}
-	fields, err := idx.Fields(model.Class)
-	if err != nil {
-		return Model{}, Field{}, false, err
-	}
-	for _, field := range fields {
-		name := field.Column
+	for _, field := range definition.Fields {
+		if field.Association {
+			continue
+		}
+		name := field.StorageName
 		if name == "" {
 			name = field.Name
 		}
 		if strings.EqualFold(name, column) {
-			return model, field, true, nil
+			return definition, field, true, nil
 		}
 	}
-	return model, Field{}, false, nil
+	return definition, dal.Field{}, false, nil
 }
 
 type dbalReceiverKind uint8

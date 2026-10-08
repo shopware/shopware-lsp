@@ -198,8 +198,6 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 	if err != nil {
 		return nil, fmt.Errorf("create Doctrine index: %w", err)
 	}
-	doctrineIndex.SetNamespaceAliasProvider(serviceIndex)
-	phpIndex.RegisterTypeExtension(doctrine.NewPHPTypeExtension(doctrineIndex))
 	workspace.indexers = append(workspace.indexers, doctrineIndex)
 	assetIndex, err := asset.NewIndex(root, cacheDir, workspace.store)
 	if err != nil {
@@ -284,6 +282,7 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 	if err != nil {
 		return nil, fmt.Errorf("create Shopware DAL index: %w", err)
 	}
+	doctrineIndex.SetDALIndex(dalIndex)
 	workspace.indexers = append(workspace.indexers, dalIndex)
 	entitySchemaSources, err := entityschema.NewSourceIndex(cacheDir, workspace.store)
 	if err != nil {
@@ -423,7 +422,8 @@ func domainForIndexer(id string) string {
 
 func (w *Workspace) Root() string                  { return w.root }
 func (w *Workspace) Scanner() *indexer.FileScanner { return w.scanner }
-func (w *Workspace) InitialForceReindex() bool     { return w.initialForce }
+
+func (w *Workspace) InitialForceReindex() bool { return w.initialForce }
 
 func (w *Workspace) Close() error {
 	w.closeOnce.Do(func() {

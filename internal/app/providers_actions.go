@@ -56,7 +56,6 @@ func registerActionAndCommandProviders(server *lsp.Server, root string, versioni
 	formFieldGenerator := codeaction.NewFormFieldGeneratorProvider(
 		services.forms,
 		services.php,
-		services.doctrine,
 	)
 	server.RegisterActionProvider(formFieldGenerator)
 	twigFormFieldGenerator := codeaction.NewTwigFormFieldGeneratorProvider(
@@ -84,12 +83,6 @@ func registerActionAndCommandProviders(server *lsp.Server, root string, versioni
 	)
 	server.RegisterActionProvider(
 		codeaction.NewTwigExtensionAttributeCodeActionProvider(services.php),
-	)
-	server.RegisterActionProvider(
-		codeaction.NewDoctrineClassConstantCodeActionProvider(
-			services.doctrine,
-			services.php,
-		),
 	)
 	twigTranslationExtractor := codeaction.NewTwigTranslationExtractProvider(
 		services.translations,
@@ -119,10 +112,6 @@ func registerActionAndCommandProviders(server *lsp.Server, root string, versioni
 		services.services,
 		services.php,
 		services.twig,
-	))
-	server.RegisterCommandProvider(analytics.NewDoctrineCatalogProvider(
-		root,
-		services.doctrine,
 	))
 	server.RegisterCommandProvider(analytics.NewFormCatalogProvider(
 		root,

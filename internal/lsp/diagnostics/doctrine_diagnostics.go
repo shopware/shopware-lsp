@@ -14,20 +14,10 @@ import (
 )
 
 const (
-	missingDoctrineEntityCode             lsp.DiagnosticID = "symfony.doctrine.entity.missing"
-	missingDoctrineFieldCode              lsp.DiagnosticID = "symfony.doctrine.field.missing"
-	missingDoctrineTableCode              lsp.DiagnosticID = "symfony.doctrine.table.missing"
-	missingDoctrineColumnCode             lsp.DiagnosticID = "symfony.doctrine.column.missing"
-	missingDoctrineMagicFieldCode         lsp.DiagnosticID = "symfony.doctrine.magic_field.missing"
-	missingDoctrineMappingClass           lsp.DiagnosticID = "symfony.doctrine.mapping_class.missing"
-	missingDoctrinePropertyCode           lsp.DiagnosticID = "symfony.doctrine.mapping_property.missing"
-	missingDoctrineConstraintFieldCode    lsp.DiagnosticID = "symfony.doctrine.constraint_field.missing"
-	missingDoctrineConstraintColumnCode   lsp.DiagnosticID = "symfony.doctrine.constraint_column.missing"
-	missingDoctrineCallbackCode           lsp.DiagnosticID = "symfony.doctrine.lifecycle_method.missing"
-	unknownDoctrineTypeCode               lsp.DiagnosticID = "symfony.doctrine.type.unknown"
-	missingDoctrineTypeClassCode          lsp.DiagnosticID = "symfony.doctrine.type_class.missing"
-	invalidDoctrineTypeClassCode          lsp.DiagnosticID = "symfony.doctrine.type_class.invalid"
-	invalidDoctrineDiscriminatorClassCode lsp.DiagnosticID = "symfony.doctrine.discriminator_class.invalid"
+	missingDoctrineTableCode     lsp.DiagnosticID = "symfony.doctrine.table.missing"
+	missingDoctrineColumnCode    lsp.DiagnosticID = "symfony.doctrine.column.missing"
+	missingDoctrineTypeClassCode lsp.DiagnosticID = "symfony.doctrine.type_class.missing"
+	invalidDoctrineTypeClassCode lsp.DiagnosticID = "symfony.doctrine.type_class.invalid"
 )
 
 type DoctrineAnalyzer struct {
@@ -107,96 +97,6 @@ func (p *DoctrineAnalyzer) typeRegistrationDiagnostics(
 				nil,
 			))
 		}
-	}
-	return result
-}
-
-func (p *DoctrineAnalyzer) mappingDiagnostics(
-	document *lsp.TextDocument,
-	path string,
-) ([]lsp.Problem, error) {
-	references := doctrine.MappingReferencesInDocument(
-		path,
-		document.SyntaxTree.Root,
-		document.Source,
-	)
-	if len(references) == 0 {
-		return nil, nil
-	}
-	customTypes := doctrine.TypeDeclarationsForMapping(
-		path,
-		p.index.TypeDeclarations(p.phpIndex),
-	)
-	typeNames := doctrine.BuiltInTypes()
-	for _, declaration := range customTypes {
-		typeNames = append(typeNames, declaration.Name)
-	}
-	constraintFields := make(map[string][]doctrine.Field)
-	for _, model := range doctrine.ModelsInDocument(
-		path,
-		document.SyntaxTree.Root,
-		document.Source,
-	) {
-		key := strings.ToLower(model.Class)
-		constraintFields[key] = append(
-			constraintFields[key],
-			model.Fields...,
-		)
-	}
-	run := doctrineMappingDiagnosticsRun{
-		analyzer:         p,
-		document:         document,
-		classNames:       p.phpIndex.ClassNamesView(),
-		customTypes:      customTypes,
-		typeNames:        typeNames,
-		constraintFields: constraintFields,
-	}
-	var result []lsp.Problem
-	for _, reference := range references {
-		if reference.Name == "" || reference.Range.Len() == 0 {
-			continue
-		}
-		problem := run.problem(reference)
-		if problem != nil {
-			result = append(result, *problem)
-		}
-	}
-	return result, nil
-}
-
-func hasDoctrineField(fields []doctrine.Field, name string) bool {
-	for _, field := range fields {
-		if strings.EqualFold(field.Name, name) {
-			return true
-		}
-	}
-	return false
-}
-
-func dqlEntitySuggestions(
-	source string,
-	rng cst.TextRange,
-	candidates []string,
-) []string {
-	if int(rng.Start) > len(source) {
-		return candidates
-	}
-	doubleQuoted := false
-	for position := int(rng.Start) - 1; position >= 0; position-- {
-		switch source[position] {
-		case '"':
-			doubleQuoted = true
-			position = -1
-		case '\'', '\n', '\r':
-			position = -1
-		}
-	}
-	if !doubleQuoted {
-		return candidates
-	}
-	result := make([]string, len(candidates))
-	for position, candidate := range candidates {
-		result[position] = strings.ReplaceAll(candidate, `\`, `\\`)
 	}
 	return result
 }

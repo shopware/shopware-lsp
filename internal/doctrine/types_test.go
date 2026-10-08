@@ -72,46 +72,6 @@ final class PostalAddressType extends \Doctrine\DBAL\Types\Type {}
 	)
 }
 
-func TestTypeDeclarationsForMappingManager(t *testing.T) {
-	declarations := []TypeDeclaration{
-		{Name: "dbal", Family: DBALTypeFamily},
-		{Name: "mongo", Family: MongoDBTypeFamily},
-		{Name: "couch", Family: CouchDBTypeFamily},
-	}
-	names := func(values []TypeDeclaration) []string {
-		result := make([]string, 0, len(values))
-		for _, value := range values {
-			result = append(result, value.Name)
-		}
-		return result
-	}
-	require.Equal(
-		t,
-		[]string{"dbal"},
-		names(TypeDeclarationsForMapping("Product.orm.yaml", declarations)),
-	)
-	require.Equal(
-		t,
-		[]string{"mongo"},
-		names(TypeDeclarationsForMapping("Product.mongodb.xml", declarations)),
-	)
-	require.Equal(
-		t,
-		[]string{"couch"},
-		names(TypeDeclarationsForMapping("Product.couchdb.yml", declarations)),
-	)
-	require.Equal(
-		t,
-		[]string{"mongo", "couch"},
-		names(TypeDeclarationsForMapping("Product.odm.xml", declarations)),
-	)
-	require.Equal(
-		t,
-		[]string{"dbal", "mongo", "couch"},
-		names(TypeDeclarationsForMapping("Product.yaml", declarations)),
-	)
-}
-
 func TestTypeRegistrationsInYAMLAndXML(t *testing.T) {
 	yamlSource := `when@test:
   doctrine:
@@ -560,7 +520,6 @@ return static function ($containerConfigurator): void {
 	}
 	require.Equal(t, "App\\Doctrine\\MoneyType", exact.Class)
 	require.Equal(t, classPath, exact.File)
-	require.Equal(t, DBALTypeFamily, exact.Family)
 
 	require.NoError(t, doctrineIndex.Close())
 	reopened, err := NewIndex(cache)

@@ -18,7 +18,6 @@ func registerSymbolAndDocumentProviders(server *lsp.Server, services workspaceSe
 		services.routes,
 		services.console,
 		services.twig,
-		services.doctrine,
 		services.twigComponents,
 		services.translations,
 		services.php,

@@ -119,65 +119,6 @@ class ImportProducts {
 	assert.Equal(t, []string{"AsCommand"}, completionLabels(items))
 }
 
-func TestPHPAttributeCompletionUsesDoctrineAliasAndLifecycleCompanion(
-	t *testing.T,
-) {
-	provider, root := phpAttributeCompletionFixture(t)
-	source := `<?php
-namespace App\Entity;
-use Doctrine\ORM\Mapping as ORM;
-
-#[ORM\Entity]
-class Product
-{
-    #[Col]
-    private string $name;
-
-    #[Pre]
-    public function updateTimestamp(): void {}
-}`
-	propertyItems := phpAttributeCompletions(
-		t,
-		provider,
-		root,
-		source,
-		strings.Index(source, "Col")+len("Col"),
-	)
-	for _, expected := range []string{
-		"Column",
-		"GeneratedValue",
-		"Id",
-		"JoinColumn",
-		"ManyToMany",
-		"ManyToOne",
-		"OneToMany",
-		"OneToOne",
-	} {
-		assert.Contains(t, completionLabels(propertyItems), expected)
-	}
-	column := completionByLabel(t, propertyItems, "Column")
-	columnEdit, ok := column.TextEdit.(protocol.TextEdit)
-	require.True(t, ok)
-	assert.Equal(t, `ORM\Column`, columnEdit.NewText)
-	assert.Empty(t, column.AdditionalTextEdits)
-
-	methodItems := phpAttributeCompletions(
-		t,
-		provider,
-		root,
-		source,
-		strings.Index(source, "Pre")+len("Pre"),
-	)
-	prePersist := completionByLabel(t, methodItems, "PrePersist")
-	prePersistEdit, ok := prePersist.TextEdit.(protocol.TextEdit)
-	require.True(t, ok)
-	assert.Equal(t, `ORM\PrePersist`, prePersistEdit.NewText)
-	require.Len(t, prePersist.AdditionalTextEdits, 1)
-	companion, ok := prePersist.AdditionalTextEdits[0].(protocol.TextEdit)
-	require.True(t, ok)
-	assert.Equal(t, "#[ORM\\HasLifecycleCallbacks]\n", companion.NewText)
-}
-
 func TestPHPAttributeCompletionReusesAliasesAndAvoidsShortNameConflicts(
 	t *testing.T,
 ) {
@@ -256,16 +197,8 @@ class Product {}
 		entity,
 		strings.LastIndex(entity, "Ent")+len("Ent"),
 	)
-	for _, expected := range []string{
-		"Embeddable",
-		"Entity",
-		"HasLifecycleCallbacks",
-		"Index",
-		"Table",
-		"UniqueConstraint",
-	} {
-		assert.Contains(t, completionLabels(entityItems), expected)
-	}
+	assert.Empty(t, entityItems)
+
 }
 
 func TestPHPAttributeCompletionRejectsInvalidScopesAndMissingClasses(

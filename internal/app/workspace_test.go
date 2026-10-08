@@ -419,56 +419,6 @@ function load($serializer): void {
 	assert.Equal(t, usages, restored)
 }
 
-func TestWorkspaceIndexesAndRestoresDoctrineMetadata(t *testing.T) {
-	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
-	projectRoot := t.TempDir()
-	entityPath := filepath.Join(projectRoot, "src", "Product.php")
-	require.NoError(t, os.MkdirAll(filepath.Dir(entityPath), 0o755))
-	source := `<?php
-namespace App\Entity;
-use Doctrine\ORM\Mapping as ORM;
-#[ORM\Entity(repositoryClass: \App\Repository\ProductRepository::class)]
-#[ORM\Table(name: 'product')]
-class Product {
-    #[ORM\Column(type: 'string')]
-    private string $name;
-}`
-	require.NoError(t, os.WriteFile(entityPath, []byte(source), 0o644))
-
-	workspace, err := NewWorkspace(
-		context.Background(),
-		projectRoot,
-		lsp.NewServer(nil, projectRoot, "test"),
-	)
-	require.NoError(t, err)
-	require.NoError(t, workspace.Scanner().IndexAll(context.Background()))
-	model, found, err := workspaceDoctrineIndex(t, workspace).Model(
-		"App\\Entity\\Product",
-	)
-	require.NoError(t, err)
-	require.True(t, found)
-	require.Equal(t, "product", model.Table)
-	fields, err := workspaceDoctrineIndex(t, workspace).Fields(model.Class)
-	require.NoError(t, err)
-	require.Len(t, fields, 1)
-	require.Equal(t, "name", fields[0].Name)
-	require.NoError(t, workspace.Close())
-
-	reopened, err := NewWorkspace(
-		context.Background(),
-		projectRoot,
-		lsp.NewServer(nil, projectRoot, "test"),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, reopened.Close()) })
-	restored, found, err := workspaceDoctrineIndex(t, reopened).Model(
-		model.Class,
-	)
-	require.NoError(t, err)
-	require.True(t, found)
-	assert.Equal(t, model, restored)
-}
-
 func TestWorkspaceIndexesAndRestoresStimulusControllers(t *testing.T) {
 	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
 	projectRoot := t.TempDir()

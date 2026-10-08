@@ -47,7 +47,7 @@ The September production-only scan now has a maximum of 64. Useful remaining
 3. `completion.(*AdminCompletionProvider).twigVueMemberCompletionsAt` — split
    receiver discovery from member filtering and LSP item rendering.
 
-`phpdoc.Parse`, `doctrine.lexDQL`, and large lexer/parser switches are lower
+`phpdoc.Parse` and large lexer/parser switches are lower
 priority. Their complexity is mostly grammar dispatch and changes can affect
 recovery behavior or hot-path latency.
 

@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/shopware/shopware-lsp/internal/doctrine"
 	"github.com/shopware/shopware-lsp/internal/form"
 	"github.com/shopware/shopware-lsp/internal/language"
 	"github.com/shopware/shopware-lsp/internal/lsp"
@@ -67,7 +66,6 @@ const (
 		"UrlType"
 	uuidType = "Symfony\\Component\\Form\\Extension\\Core\\Type\\" +
 		"UuidType"
-	entityType = "Symfony\\Bridge\\Doctrine\\Form\\Type\\EntityType"
 )
 
 // FormFieldGeneratorProvider ports the reference plugin's interactive
@@ -76,18 +74,15 @@ const (
 type FormFieldGeneratorProvider struct {
 	forms    *form.Index
 	phpIndex *php.PHPIndex
-	doctrine *doctrine.Index
 }
 
 func NewFormFieldGeneratorProvider(
 	forms *form.Index,
 	phpIndex *php.PHPIndex,
-	doctrineIndex *doctrine.Index,
 ) *FormFieldGeneratorProvider {
 	return &FormFieldGeneratorProvider{
 		forms:    forms,
 		phpIndex: phpIndex,
-		doctrine: doctrineIndex,
 	}
 }
 
@@ -544,14 +539,6 @@ func (p *FormFieldGeneratorProvider) guessFormField(
 					classValue: className,
 				}},
 			}
-		case p.isDoctrineModel(className):
-			return guessedFormField{
-				formType: entityType,
-				options: []guessedFormOption{{
-					name:       "class",
-					classValue: className,
-				}},
-			}
 		default:
 			return guessedFormField{}
 		}
@@ -578,16 +565,6 @@ func (p *FormFieldGeneratorProvider) guessFormField(
 	default:
 		return guessedFormField{}
 	}
-}
-
-func (p *FormFieldGeneratorProvider) isDoctrineModel(
-	className string,
-) bool {
-	if p == nil || p.doctrine == nil || className == "" {
-		return false
-	}
-	_, found, err := p.doctrine.Model(className)
-	return err == nil && found
 }
 
 func (p *FormFieldGeneratorProvider) rewriteFormFields(
