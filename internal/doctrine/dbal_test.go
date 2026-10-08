@@ -8,6 +8,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/indexer"
 	phpparser "github.com/shopware/shopware-lsp/internal/parser/php"
 	"github.com/shopware/shopware-lsp/internal/php"
+	"github.com/shopware/shopware-lsp/internal/shopware/dal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,16 +20,15 @@ func TestDBALTableColumnAndAliasIntelligence(t *testing.T) {
 	phpIndex, err := php.NewPHPIndex(t.TempDir())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, phpIndex.Close()) })
-	mapping := `<doctrine-mapping>
-  <entity name="App\User" table="cms_users">
-    <field name="name" type="string"/>
-    <field name="email" column="user_email" type="string"/>
-  </entity>
-</doctrine-mapping>`
-	require.NoError(t, idx.Index(indexer.NewParsedFile(
-		"/project/config/User.orm.xml",
-		[]byte(mapping),
-	)))
+	schema, err := dal.NewIndex(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, schema.Close()) })
+	idx.SetDALIndex(schema)
+	require.NoError(t, schema.Index(indexer.NewParsedFile("/project/src/UserDefinition.php", []byte(`<?php
+class UserDefinition extends EntityDefinition {
+ public const ENTITY_NAME = 'cms_users';
+ protected function defineFields(): FieldCollection {return new FieldCollection([new StringField('name','name'),new StringField('user_email','email')]);}
+}`))))
 	stubs := `<?php
 namespace Doctrine\DBAL;
 class Connection {
@@ -117,13 +117,13 @@ function write(Connection $connection, QueryBuilder $builder): void {
 		}
 	}
 
-	table, found, err := idx.ModelForTable("cms_users")
+	table, found, err := idx.DefinitionForTable("cms_users")
 	require.NoError(t, err)
 	require.True(t, found)
-	assert.Equal(t, "App\\User", table.Class)
+	assert.Equal(t, "UserDefinition", table.Class)
 	model, field, found, err := idx.FieldForColumn("cms_users", "user_email")
 	require.NoError(t, err)
 	require.True(t, found)
-	assert.Equal(t, "App\\User", model.Class)
+	assert.Equal(t, "UserDefinition", model.Class)
 	assert.Equal(t, "email", field.Name)
 }

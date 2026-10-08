@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/shopware/shopware-lsp/internal/console"
-	"github.com/shopware/shopware-lsp/internal/doctrine"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	"github.com/shopware/shopware-lsp/internal/php"
@@ -31,7 +30,6 @@ type SymfonyWorkspaceSymbolProvider struct {
 	routes       *symfony.RouteIndexer
 	commands     *console.Index
 	twig         *twig.TwigIndexer
-	doctrine     *doctrine.Index
 	components   *twigcomponent.Index
 	translations *translation.Index
 	php          *php.PHPIndex
@@ -42,7 +40,6 @@ func NewSymfonyWorkspaceSymbolProvider(
 	routes *symfony.RouteIndexer,
 	commands *console.Index,
 	twigIndex *twig.TwigIndexer,
-	doctrineIndex *doctrine.Index,
 	components *twigcomponent.Index,
 	translations *translation.Index,
 	phpIndex *php.PHPIndex,
@@ -52,7 +49,6 @@ func NewSymfonyWorkspaceSymbolProvider(
 		routes:       routes,
 		commands:     commands,
 		twig:         twigIndex,
-		doctrine:     doctrineIndex,
 		components:   components,
 		translations: translations,
 		php:          phpIndex,
@@ -105,9 +101,6 @@ func (p *SymfonyWorkspaceSymbolProvider) WorkspaceSymbols(
 		return nil, err
 	}
 	if err := p.collectTwig(ctx, query, add); err != nil {
-		return nil, err
-	}
-	if err := p.collectDoctrine(ctx, add); err != nil {
 		return nil, err
 	}
 	if err := p.collectComponents(ctx, add); err != nil {
@@ -554,41 +547,6 @@ func (p *SymfonyWorkspaceSymbolProvider) collectTwig(
 	return ctx.Err()
 }
 
-func (p *SymfonyWorkspaceSymbolProvider) collectDoctrine(
-	ctx context.Context,
-	add func(candidate),
-) error {
-	if p.doctrine == nil {
-		return nil
-	}
-	models, err := p.doctrine.Models()
-	if err != nil {
-		return err
-	}
-	for _, model := range models {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		add(candidate{
-			name:      shortClassName(model.Class),
-			container: "Doctrine " + model.Kind.String() + " · " + model.Class,
-			path:      model.File,
-			rng:       model.NameRange,
-			kind:      protocol.SymbolClass,
-		})
-		if model.Table != "" {
-			add(candidate{
-				name:      model.Table,
-				container: "Doctrine table · " + model.Class,
-				path:      model.File,
-				rng:       model.NameRange,
-				kind:      protocol.SymbolStruct,
-			})
-		}
-	}
-	return nil
-}
-
 func (p *SymfonyWorkspaceSymbolProvider) collectComponents(
 	ctx context.Context,
 	add func(candidate),
@@ -744,12 +702,4 @@ func symbolLocation(
 		location.Range.End.Line = current.line - 1
 	}
 	return location, true
-}
-
-func shortClassName(class string) string {
-	class = strings.Trim(class, `\`)
-	if index := strings.LastIndex(class, `\`); index >= 0 {
-		return class[index+1:]
-	}
-	return filepath.Base(class)
 }

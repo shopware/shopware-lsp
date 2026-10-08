@@ -4,45 +4,25 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/shopware/shopware-lsp/internal/doctrine"
 	shopwaredal "github.com/shopware/shopware-lsp/internal/shopware/dal"
 )
 
-// dbalSchemaCatalog combines every indexed source that describes physical
-// tables used through Doctrine DBAL. ORM mappings and Shopware DAL definitions
-// are separate domain indexes, but a QueryBuilder can address either schema.
+// dbalSchemaCatalog describes physical tables from Shopware DAL definitions.
 type dbalSchemaCatalog struct {
-	doctrine *doctrine.Index
-	dal      *shopwaredal.Index
-	tables   map[string]*dbalSchemaTable
-	names    []string
+	dal    *shopwaredal.Index
+	tables map[string]*dbalSchemaTable
+	names  []string
 
 	dalResolved map[string]bool
 	dalLoaded   bool
 }
 
 type dbalSchemaTable struct {
-	doctrineModels []doctrine.Model
 	dalDefinitions []shopwaredal.Definition
 }
 
-func newDBALSchemaCatalog(
-	doctrineIndex *doctrine.Index,
-	dalIndex *shopwaredal.Index,
-	models []doctrine.Model,
-) *dbalSchemaCatalog {
-	catalog := &dbalSchemaCatalog{
-		doctrine:    doctrineIndex,
-		dal:         dalIndex,
-		tables:      make(map[string]*dbalSchemaTable),
-		dalResolved: make(map[string]bool),
-	}
-	for _, model := range models {
-		if table := catalog.addTable(model.Table); table != nil {
-			table.doctrineModels = append(table.doctrineModels, model)
-		}
-	}
-	return catalog
+func newDBALSchemaCatalog(dalIndex *shopwaredal.Index) *dbalSchemaCatalog {
+	return &dbalSchemaCatalog{dal: dalIndex, tables: make(map[string]*dbalSchemaTable), dalResolved: make(map[string]bool)}
 }
 
 func (catalog *dbalSchemaCatalog) addTable(name string) *dbalSchemaTable {
@@ -167,21 +147,6 @@ func (catalog *dbalSchemaCatalog) Columns(
 		}
 		seen[key] = true
 		result = append(result, name)
-	}
-	if catalog.doctrine != nil {
-		for _, model := range table.doctrineModels {
-			fields, err := catalog.doctrine.Fields(model.Class)
-			if err != nil {
-				return nil, true, err
-			}
-			for _, field := range fields {
-				name := field.Column
-				if name == "" {
-					name = field.Name
-				}
-				add(name)
-			}
-		}
 	}
 	for _, definition := range table.dalDefinitions {
 		for _, field := range definition.Fields {

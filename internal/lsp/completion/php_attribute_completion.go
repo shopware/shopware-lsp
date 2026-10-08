@@ -13,7 +13,6 @@ import (
 	phpsyntax "github.com/shopware/shopware-lsp/internal/parser/php/syntax"
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/php/languagelevel"
-	phpresolver "github.com/shopware/shopware-lsp/internal/php/resolver"
 	"github.com/shopware/shopware-lsp/internal/php/semantic"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
@@ -39,9 +38,6 @@ const (
 	phpConsoleCommandClass        = "Symfony\\Component\\Console\\Command\\Command"
 	phpInputInterface             = "Symfony\\Component\\Console\\Input\\InputInterface"
 	phpOutputInterface            = "Symfony\\Component\\Console\\Output\\OutputInterface"
-
-	doctrineMappingNamespace = "Doctrine\\ORM\\Mapping"
-	doctrineEntityAttribute  = doctrineMappingNamespace + "\\Entity"
 )
 
 type phpAttributeArgumentStyle uint8
@@ -58,7 +54,6 @@ type phpAttributeSpec struct {
 	detail        string
 	documentation string
 	arguments     phpAttributeArgumentStyle
-	doctrine      bool
 }
 
 type phpAttributeEditContext struct {
@@ -149,11 +144,7 @@ func (p *PHPAttributeCompletionProvider) GetCompletions(
 			continue
 		}
 		seen[key] = struct{}{}
-		qualifier, importEdit := phpAttributeQualifier(
-			request,
-			spec.fqn,
-			spec.doctrine,
-		)
+		qualifier, importEdit := componentAttributeImport(request, spec.fqn)
 		if qualifier == "" {
 			continue
 		}
@@ -183,27 +174,6 @@ func (p *PHPAttributeCompletionProvider) GetCompletions(
 		var additionalEdits []interface{}
 		if importEdit != nil {
 			additionalEdits = append(additionalEdits, *importEdit)
-		}
-		if phpDoctrineLifecycleAttribute(spec.fqn) &&
-			!phpHasAttribute(
-				class,
-				resolver,
-				doctrineMappingNamespace+"\\HasLifecycleCallbacks",
-			) {
-			companion := "\\Doctrine\\ORM\\Mapping\\HasLifecycleCallbacks"
-			if alias := phpDoctrineMappingAlias(request.Root); alias != "" {
-				companion = alias + "\\HasLifecycleCallbacks"
-			}
-			additionalEdits = append(additionalEdits, protocol.TextEdit{
-				Range: phpCompletionRange(
-					cst.TextRange{
-						Start: class.RangeTrimmedTrivia().Start,
-						End:   class.RangeTrimmedTrivia().Start,
-					},
-					request.LineIndex,
-				),
-				NewText: "#[" + companion + "]\n",
-			})
 		}
 		item.AdditionalTextEdits = additionalEdits
 		items = append(items, item)
@@ -244,9 +214,6 @@ func (p *PHPAttributeCompletionProvider) attributeSpecs(
 		if phpAttributeCommandClass(class, classFQN, resolver, snapshot) {
 			result = append(result, commandAttributeSpec())
 		}
-		if phpAttributeDoctrineEntity(class, classFQN, resolver) {
-			result = append(result, doctrineClassAttributeSpecs()...)
-		}
 		return result
 	case componentAttributeMethodTarget:
 		method := phpAttributeMethodAtOrAfter(class, request.Node,
@@ -264,18 +231,12 @@ func (p *PHPAttributeCompletionProvider) attributeSpecs(
 		if phpAttributeTwigExtension(class, classFQN, resolver, snapshot) {
 			result = append(result, twigExtensionAttributeSpecs()...)
 		}
-		if phpAttributeDoctrineEntity(class, classFQN, resolver) {
-			result = append(result, doctrineMethodAttributeSpecs()...)
-		}
 		if phpAttributeCommandClass(class, classFQN, resolver, snapshot) ||
 			phpAttributeConsoleParameters(method, resolver) {
 			result = append(result, commandAttributeSpec())
 		}
 		return result
 	case componentAttributePropertyTarget:
-		if phpAttributeDoctrineEntity(class, classFQN, resolver) {
-			return doctrinePropertyAttributeSpecs()
-		}
 	}
 	return nil
 }
@@ -356,56 +317,6 @@ func commandAttributeSpec() phpAttributeSpec {
 	}
 }
 
-func doctrinePropertyAttributeSpecs() []phpAttributeSpec {
-	return doctrineAttributeSpecs(
-		"Column",
-		"Id",
-		"GeneratedValue",
-		"OneToMany",
-		"OneToOne",
-		"ManyToOne",
-		"ManyToMany",
-		"JoinColumn",
-	)
-}
-
-func doctrineClassAttributeSpecs() []phpAttributeSpec {
-	return doctrineAttributeSpecs(
-		"Entity",
-		"Table",
-		"UniqueConstraint",
-		"Index",
-		"Embeddable",
-		"HasLifecycleCallbacks",
-	)
-}
-
-func doctrineMethodAttributeSpecs() []phpAttributeSpec {
-	return doctrineAttributeSpecs(
-		"PostLoad",
-		"PostPersist",
-		"PostRemove",
-		"PostUpdate",
-		"PrePersist",
-		"PreRemove",
-		"PreUpdate",
-	)
-}
-
-func doctrineAttributeSpecs(names ...string) []phpAttributeSpec {
-	result := make([]phpAttributeSpec, 0, len(names))
-	for _, name := range names {
-		result = append(result, phpAttributeSpec{
-			name:          name,
-			fqn:           doctrineMappingNamespace + "\\" + name,
-			detail:        "Doctrine ORM mapping attribute",
-			documentation: "Adds Doctrine ORM `" + name + "` mapping metadata.",
-			doctrine:      true,
-		})
-	}
-	return result
-}
-
 func phpAttributeEditAt(
 	request *lsp.CompletionRequest,
 	offset uint32,
@@ -483,51 +394,6 @@ func phpAttributeInsertText(
 	return text, snippet
 }
 
-func phpAttributeQualifier(
-	request *lsp.CompletionRequest,
-	fqn string,
-	doctrine bool,
-) (string, *protocol.TextEdit) {
-	if doctrine {
-		short := fqn[strings.LastIndex(fqn, "\\")+1:]
-		if alias := phpDoctrineMappingAlias(request.Root); alias != "" {
-			return alias + "\\" + short, nil
-		}
-	}
-	return componentAttributeImport(request, fqn)
-}
-
-func phpDoctrineMappingAlias(root *phpsyntax.Node) string {
-	for _, declaration := range phpquery.UseDeclarations(root) {
-		for _, imported := range phpresolver.ParseUseDeclaration(
-			declaration.Text(),
-		) {
-			if imported.Kind == phpresolver.ClassImport &&
-				strings.EqualFold(
-					strings.Trim(imported.Target, "\\"),
-					doctrineMappingNamespace,
-				) {
-				return imported.Alias
-			}
-		}
-	}
-	return ""
-}
-
-func phpDoctrineLifecycleAttribute(fqn string) bool {
-	name := fqn[strings.LastIndex(fqn, "\\")+1:]
-	switch name {
-	case "PostLoad", "PostPersist", "PostRemove", "PostUpdate",
-		"PrePersist", "PreRemove", "PreUpdate":
-		return strings.HasPrefix(
-			strings.Trim(fqn, "\\"),
-			doctrineMappingNamespace+"\\",
-		)
-	default:
-		return false
-	}
-}
-
 func phpAttributeClassFQN(
 	root,
 	class *phpsyntax.Node,
@@ -589,15 +455,6 @@ func phpAttributeTwigExtension(
 		}
 	}
 	return false
-}
-
-func phpAttributeDoctrineEntity(
-	class *phpsyntax.Node,
-	classFQN string,
-	resolver *php.NameResolver,
-) bool {
-	return strings.Contains(classFQN, "\\Entity\\") ||
-		phpHasAttribute(class, resolver, doctrineEntityAttribute)
 }
 
 func phpAttributeCommandClass(

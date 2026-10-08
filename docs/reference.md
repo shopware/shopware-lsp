@@ -258,7 +258,7 @@ exact public names shown by MCP `tools/list`; unknown names are rejected.
   controller action; PHP `Request::METHOD_*` constants are evaluated natively
 - Workspace symbols include Symfony services and container parameters, routes
   and concrete route URLs, controller actions, commands, Twig
-  templates/blocks/macros/extensions, Doctrine entities/tables, Twig/Live
+  templates/blocks/macros/extensions, Twig/Live
   Components, and translation domains/keys
 - A structured route analytics request correlates route sources, normalized
   methods and URLs, resolved controller locations, and rendered Twig
@@ -532,8 +532,7 @@ include these hints.
   navigation plus kind-aware missing-reference diagnostics and typo fixes at
   function, constructor, and inherited method call arguments
 - Context-aware `#` / `#[…]` attribute completion with conflict-safe imports
-  for controllers, Console commands, Twig extensions/components, and Doctrine
-  entities; lifecycle callbacks also add the required class marker
+  for controllers, Console commands, and Twig extensions/components
 - Context-aware Symfony `Response::HTTP_*` completion for
   `setStatusCode()` arguments and `getStatusCode()` comparisons
 - Clickable PHP/Twig route-name inlays expose the resolved path beside static
@@ -790,8 +789,6 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
   matches, console commands, and translation keys
 - Project-wide Twig template, block, macro, function, filter, and
   Twig/Live Component symbols
-- Doctrine entity and table symbols, with ranked results and exact source
-  ranges where available
 
 ### Snippet Support
 - Snippet completion in Twig, PHP, and JavaScript/TypeScript files
@@ -878,7 +875,7 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
   conflict-safe quick fix that imports and inserts the form type `::class`
 - Interactive `buildForm()` field generation from writable `data_class`
   properties and setters, with inherited-field discovery, existing-field
-  exclusion, scalar/date/enum/Doctrine type guessing, options, and
+  exclusion, scalar/date/enum type guessing, options, and
   conflict-safe imports
 - Related form-type code lenses on public PHP methods, with class-constant,
   legacy-alias, and named-argument resolution
@@ -922,75 +919,24 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
 - Secret-like values are redacted from hover output
 - Persistent cache restore and stale-file removal
 
-### Doctrine Support
-- Unified ORM/ODM metadata from PHP attributes and annotations plus external
-  XML and YAML mappings
-- Completion can bootstrap empty XML mapping attributes for model,
-  repository, property, relation, embedded, enum, lifecycle, and type values;
-  root ODM embedded-document mappings participate as embeddable models
-- MongoDB ODM PHP `ReferenceOne/Many` and `EmbedOne/Many` mappings resolve
-  `targetDocument` in both attributes and legacy annotations, including
-  untyped properties
-- Entity, repository, relation, field, lifecycle, mapping-type, Criteria,
-  DQL, QueryBuilder, and magic-finder intelligence
-- Legacy ORM/ODM `Bundle:Model` namespace shortcuts from the compiled Symfony
-  container, with convention-based bundle fallbacks, completion, navigation,
-  hover/diagnostics, DQL/QueryBuilder resolution, and repository result typing
-- PHP inference for direct object-manager `find()` calls and mapped custom
-  repository classes, preserving entity result types while exposing custom
-  repository methods
-- Doctrine field analytics preserve resolved PHP nullable, union,
-  intersection, and parenthesized DNF property types instead of flattening
-  intersections or dropping `null`
-- Structured Doctrine analytics requests expose model kind/source, table,
-  repository, inheritance, source locations, inherited/embedded field paths,
-  mapping/PHP/enum/relation types, declaring classes, and table
-  index/unique-constraint counts; `Symfony: Browse Doctrine Entities…`
-  provides a searchable entity-to-field source navigator
-- PHPDoc `#Entity` parameter contracts provide exact mapped-model completion
-  and navigation to PHP or external mapping declarations, with
-  missing-reference diagnostics and typo fixes
-- Scope-aware ORM class/property/lifecycle attribute completion that preserves
-  existing `Doctrine\ORM\Mapping` aliases
-- Inheritance/discriminator metadata from PHP attributes, legacy annotations,
-  XML, and YAML, with subtype-filtered discriminator-class completion,
-  definition, hover, missing/invalid-target diagnostics, typo fixes, and
-  reference navigation
-- Table indexes and unique constraints from PHP attributes/legacy annotations,
-  XML, and YAML retain exact `fields`/`columns` members; completion,
-  property navigation, hover, typo diagnostics/fixes, Find References, cache
-  restore, and entity-catalog counts share the normalized mapping model
-- Built-in and custom DBAL/ODM mapping-type completion, navigation, hover, and
-  validation; custom type names resolve literal and class-constant-backed
-  `getName()` returns, static DoctrineBundle YAML/XML aliases and PHP
-  `extension('doctrine', …)` `dbal.types` aliases, and the conventional
-  `FooBarType` → `foo_bar` fallback. PHP configuration supports imported
-  `::class`, string, and expanded `['class' => …]` values, including
-  incomplete editing states. Static runtime `Type::addType()` /
-  `Type::overrideType()` and `Type::getTypeRegistry()->register()` calls are
-  indexed as well, with class-string/class-constant and object-instance-aware
-  completion. ORM, MongoDB, CouchDB, and generic ODM mapping filenames receive
-  their matching type families; registration class values provide
-  subtype-filtered completion, PHP navigation, hover, missing/invalid-class
-  diagnostics, and typo fixes. Find References links registration keys and
-  implementation declarations with PHP attributes plus XML/YAML mapping
-  usages
-- Native standalone DQL strings in `$dql` assignments and typed
-  `EntityManager::createQuery()`/`Query::setDQL()` calls, including entity and
-  relation-alias fields, completion, navigation, hover, diagnostics, typo
-  actions, persistent Find References, and cache restore
-- Cached built-in DQL function discovery from Doctrine ORM's parser registry,
-  with function completion, navigation to the implementation class, and hover
-- Assigned and fluent QueryBuilder chains, including relation/class joins,
-  nested `Expr` methods, `indexBy` fields, and inferred query parameters
+### Doctrine DBAL Support
+
 - Typed DBAL QueryBuilder/Connection table, column, and join-alias completion,
-  navigation, hover, diagnostics, and typo actions backed by ORM table metadata
-- Bidirectional related-navigation code lenses between PHP models and external
-  mappings
-- Public-method code lenses from typed manager-registry, object-manager,
-  QueryBuilder, and Doctrine cache calls to PHP and external model declarations
-- Contextual, type-checked migration of string entity names in repository and
-  object-manager calls (including `find`) to conflict-safe `::class` references
+  navigation, and hover backed by Shopware DAL definitions.
+- Table and column typo diagnostics and quick fixes use Shopware DAL storage
+  names, excluding association-only fields. Unknown tables without a nearby
+  indexed match are left alone.
+- Custom DBAL types are discovered from literal/class-constant `getName()`
+  returns, conventional class names, DoctrineBundle YAML/XML and PHP
+  `extension('doctrine', …)` registrations, and static runtime `addType`,
+  `overrideType`, and type-registry registrations.
+- Type registration classes have subtype-filtered completion, navigation,
+  hover, missing/invalid-class diagnostics, typo fixes, and references between
+  registration keys and implementation declarations.
+- The existing `symfony.doctrine` domain controls DBAL support. ORM/ODM
+  mappings, repository inference, DQL, mapping actions/code lenses, and the
+  Doctrine entity browser are no longer provided. General PHP intelligence
+  remains available for installed library classes.
 
 ### Stimulus Support
 - Persistent controller discovery from conventional `_controller`/
@@ -2184,14 +2130,8 @@ The matching direct-token cursor is likewise allocation-free. Twig typed
 accessors, YAML scalar lookup, and PHP modifier lookup use it in their hot
 paths, removing another roughly 824,000 corpus mallocs; total allocation volume,
 retained heap, CPU, and retired instructions remain effectively flat.
-Doctrine candidate screening now uses immutable ASCII multi-pattern automata
-instead of scanning each file independently for as many as 21 markers. Exact
-and folded automata preserve the former per-pattern case sensitivity, and a
-2,000-input randomized equivalence test guards that boundary while the scanner
-itself allocates zero bytes. Paired 61,032-file runs reduce cold indexing from
-9.90 to 8.94 seconds, process CPU from 31.67 to 30.56 seconds, and retired
-instructions from 384.6 to 363.6 billion. Allocation count and the roughly
-240.4 MiB retained heap remain effectively unchanged.
+DBAL type-registration candidate screening uses an allocation-free ASCII
+automaton; ORM/ODM candidate extraction has been removed.
 PHP name contexts now allocate class, function, and constant import maps lazily
 by kind. When the first map of a kind is created, the binder republishes its
 header to scopes already created in the same namespace block; sibling namespace
@@ -2464,10 +2404,7 @@ bounded batching for repository rows and scanner fingerprints, shares prepared
 statements and path arguments across namespaces, and skips insert setup for
 delete-only replacements. A 46-repository, 512-path removal benchmark dropped
 from about 48.0 ms, 6.78 MiB, and 235,534 allocations to 3.1 ms, 1.05 MiB, and
-1,700 allocations. Doctrine candidate screening advances its exact and
-case-folded automata in one source pass; the focused scanner benchmark is about
-47% faster, and paired full-corpus runs retired 0.8–1.3 billion fewer
-instructions without adding allocations. Twig-context and PHP route-usage
+1,700 allocations. Twig-context and PHP route-usage
 candidate gates share a fixed-pattern ASCII automaton as well, replacing one
 source scan per keyword with one scan per feature. The worst-case Twig gate
 benchmark fell from roughly 13.6 ms to 0.27 ms for a 114 KiB source string;

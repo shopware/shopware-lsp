@@ -93,10 +93,9 @@ accepts `path:line:column`. That CLI is only on `PATH` after running
 `cli: install` from Zed's command palette, so the app bundle is checked as
 well; with neither available the location is printed instead of opened.
 
-Two upstream analytics commands are deliberately not wired up, because both
-return nothing for Shopware: `doctrine/entities` is empty, since Shopware uses
-the DAL rather than Doctrine ORM, and `forms/types` is empty for the same
-reason `twig-form-fields` cannot be exercised here.
+The `forms/types` analytics command is not wired up because it returns
+nothing for Shopware, for the same reason `twig-form-fields` cannot be
+exercised here. Doctrine ORM entity analytics are no longer provided.
 
 `scaffold` covers both families: the `symfony` kinds return a single file, the
 `shopware` kinds a `WorkspaceEdit` that the script applies (including

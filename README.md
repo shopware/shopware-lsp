@@ -73,8 +73,8 @@ editing.
   and service configuration across PHP, XML, and YAML.
 - Routes, controllers, route parameters, imports, URLs, and references across
   PHP, Twig, XML, YAML, JavaScript, and TypeScript.
-- Doctrine ORM/ODM metadata, repositories, QueryBuilder, DQL, DBAL tables, and
-  custom types.
+- Doctrine DBAL table and column intelligence backed by Shopware DAL definitions,
+  join aliases, and custom type registrations.
 - Console commands, Messenger messages and handlers, events and listeners,
   forms, validation, security, Serializer targets, Stimulus controllers,
   assets, environment variables, and bundle configuration.
@@ -105,7 +105,7 @@ editing.
 
 ### Project tools
 
-- Searchable route, service, command, Doctrine entity, form type, Twig
+- Searchable route, service, command, form type, Twig
   extension, component, template usage, and profiler request browsers.
 - Safe scaffolds for controllers, commands, form types, Twig extensions,
   compiler passes, tests, service files, and Shopware DAL models.
@@ -198,7 +198,7 @@ whole workspace.
 |---|---|
 | PHP | Semantic types, completion, navigation, references, rename, diagnostics, code actions, code lenses |
 | Twig and HTML | Formatting, templates, blocks, routes, translations, components, forms, assets, Stimulus, typed variables |
-| XML and YAML | Services, routes, Doctrine mappings, configuration, translations, validation, security |
+| XML and YAML | Services, routes, DBAL type registrations, configuration, translations, validation, security |
 | JavaScript and TypeScript | Administration components, snippets, routes, assets, Stimulus |
 | Vue | Shopware Administration component templates, scripts, styles, props, slots, events, and blocks |
 | SCSS | Theme variables, feature flags, classes, colors, completion, navigation, diagnostics |

@@ -19,9 +19,6 @@
     "shopware.symfony.analyzeTwigTemplateVariables": {
       "gap": "analytics browser, no equivalent yet"
     },
-    "shopware.symfony.browseDoctrineEntities": {
-      "gap": "no browser yet; useful for Symfony projects using Doctrine"
-    },
     "shopware.symfony.browseFormTypes": {
       "gap": "analytics browser, no equivalent yet"
     },

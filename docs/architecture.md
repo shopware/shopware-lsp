@@ -212,7 +212,7 @@ They are registered as `indexer.Indexer` implementations in
 | Package | Domain |
 | --- | --- |
 | `symfony` | Service container, routes, route usage, DI aliases |
-| `doctrine` | ORM metadata, DQL, mappings |
+| `doctrine` | DBAL references and custom type registrations, using Shopware DAL schemas |
 | `twig` | Templates, blocks, extends/include graph, versioning |
 | `twigcomponent` | Twig component catalog |
 | `admin` | Shopware Administration components, TypeScript declarations, Vue contracts |
@@ -285,7 +285,7 @@ command it runs the server on stdin/stdout.
 5. Constructs each domain index, in dependency order, injecting the
    dependencies each one needs (`serviceIndex.SetPHPIndex(phpIndex)`,
    `twigIndex.SetDependencies(phpIndex, serviceIndex)`, …) and registering PHP
-   type extensions (`inference.FakerTypes`, Shopware, Symfony, Doctrine, event).
+   type extensions (`inference.FakerTypes`, Shopware, Symfony, event).
 6. Resolves the Shopware target version.
 7. Registers each index with the scanner **if its domain is enabled**
    (`domainForIndexer(idx.ID())` → domain name → configuration lookup).

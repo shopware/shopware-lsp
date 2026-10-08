@@ -16,7 +16,6 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/admin"
 	"github.com/shopware/shopware-lsp/internal/console"
-	"github.com/shopware/shopware-lsp/internal/doctrine"
 	"github.com/shopware/shopware-lsp/internal/httpclient"
 	"github.com/shopware/shopware-lsp/internal/indexer"
 	"github.com/shopware/shopware-lsp/internal/lsp"
@@ -5475,7 +5474,6 @@ class ProductType extends AbstractType
 	realFormGenerator := codeaction.NewFormFieldGeneratorProvider(
 		workspaceFormIndex(t, workspace),
 		phpIndex,
-		workspaceDoctrineIndex(t, workspace),
 	)
 	realFormGeneratorActions := realFormGenerator.GetCodeActions(
 		ctx,
@@ -5613,18 +5611,6 @@ function build(FormBuilderInterface $builder): void
 		workspace,
 	).Classes()
 	require.NoError(t, err)
-	doctrineModels, err := workspaceDoctrineIndex(t, workspace).Models()
-	require.NoError(t, err)
-	doctrineCatalogProvider := analytics.NewDoctrineCatalogProvider(
-		root,
-		workspaceDoctrineIndex(t, workspace),
-	)
-	doctrineCatalog, err := doctrineCatalogProvider.Entities(
-		ctx,
-		analytics.DoctrineEntityCatalogRequest{},
-	)
-	require.NoError(t, err)
-	require.Len(t, doctrineCatalog, len(doctrineModels))
 	translationDomains, err := workspaceTranslationIndex(
 		t,
 		workspace,
@@ -6474,50 +6460,6 @@ class IndexTestExtension extends AbstractExtension
 		migratedFunctions[0].Method,
 	)
 	require.Empty(t, migratedFilters)
-	_, found = phpIndex.FindClass("Doctrine\\Persistence\\ManagerRegistry")
-	require.True(t, found)
-	doctrineActionIndex, err := doctrine.NewIndex(t.TempDir())
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, doctrineActionIndex.Close()) })
-	require.NoError(t, doctrineActionIndex.Index(indexer.NewParsedFile(
-		"/real-world-doctrine-action.orm.yaml",
-		[]byte(`Shopware\Core\Kernel:
-  type: entity
-`),
-	)))
-	doctrineActionDocument := lsp.NewTextDocument(
-		"file:///real-world-doctrine-action.php",
-		`<?php
-namespace App\Service;
-use Doctrine\Persistence\ManagerRegistry;
-function load(ManagerRegistry $registry): void
-{
-    $registry->getRepository('Kernel');
-}`,
-		1,
-	)
-	doctrineActions := codeaction.
-		NewDoctrineClassConstantCodeActionProvider(
-			doctrineActionIndex,
-			phpIndex,
-		).
-		GetCodeActions(
-			ctx,
-			realWorldCodeActionRequest(
-				t,
-				doctrineActionDocument,
-				"Kernel",
-			),
-		)
-	require.Len(t, doctrineActions, 1)
-	doctrineActionEdits := doctrineActions[0].Edit.Changes[doctrineActionDocument.URI]
-	require.Len(t, doctrineActionEdits, 2)
-	require.Equal(t, "Kernel::class", doctrineActionEdits[0].NewText)
-	require.Contains(
-		t,
-		doctrineActionEdits[1].NewText,
-		"use Shopware\\Core\\Kernel;",
-	)
 	deprecatedTwigMemberDocument := lsp.NewTextDocument(
 		"file:///real-world-deprecated-member.twig",
 		`{# @var header \Shopware\Storefront\Pagelet\Header\HeaderPagelet #}
@@ -7001,42 +6943,6 @@ class RealWorldController
 	routeAttributeEdit, ok := routeAttributeCompletion.TextEdit.(protocol.TextEdit)
 	require.True(t, ok)
 	require.Equal(t, "Route('${1}')$0", routeAttributeEdit.NewText)
-	doctrineAttributeSource := `<?php
-namespace App\Entity;
-use Doctrine\ORM\Mapping as ORM;
-#[ORM\Entity]
-class RealWorldEntity
-{
-    #[Col]
-    private string $name;
-}
-`
-	doctrineAttributeCompletions := realWorldPHPAttributeCompletions(
-		phpIndex,
-		doctrineAttributeSource,
-		"Col",
-	)
-	doctrineAttributeLabels := realWorldCompletionLabels(
-		doctrineAttributeCompletions,
-	)
-	_, doctrineColumnInstalled := phpIndex.FindClass(
-		"Doctrine\\ORM\\Mapping\\Column",
-	)
-	if doctrineColumnInstalled {
-		require.Contains(t, doctrineAttributeLabels, "Column")
-		columnAttributeCompletion := realWorldCompletionByLabel(
-			t,
-			doctrineAttributeCompletions,
-			"Column",
-		)
-		columnAttributeEdit, columnEditOK :=
-			columnAttributeCompletion.TextEdit.(protocol.TextEdit)
-		require.True(t, columnEditOK)
-		require.Equal(t, `ORM\Column`, columnAttributeEdit.NewText)
-		require.Empty(t, columnAttributeCompletion.AdditionalTextEdits)
-	} else {
-		require.Empty(t, doctrineAttributeLabels)
-	}
 	defaultLanguageConstants := symfony.ResolveContainerConstant(
 		phpIndex,
 		"Shopware\\Core\\Defaults::LANGUAGE_SYSTEM",
@@ -7694,7 +7600,7 @@ return static function (ContainerConfigurator $container): void {
 	var retainedMemory runtime.MemStats
 	runtime.ReadMemStats(&retainedMemory)
 	t.Logf(
-		"cold index: %s, classes=%d, php_constants=%d, messenger_messages=%d, collect_message_handlers=%d, collect_message_dispatches=%d, environment_variables=%d, app_env_declarations=%d, app_env_references=%d, deprecated_services=%d, doctrine_models=%d, assets=%d, asset_packages=%d, administration_package_usages=%d, html_asset_usages=%d, encore_entries=%d, importmap_entries=%d, vite_entries=%d, vite_usages=%d, twig_macros=%d, twig_tests=%d, twig_operators=%d, deprecated_twig_functions=%d, twig_tags=%d, twig_globals=%d, base_template_references=%d, product_template_inputs=%d, product_template_blocks=%d, twig_components=%d, twig_constant_references=%d, twig_php_class_references=%d, twig_trans_filter_usages=%d, twig_defined_test_usages=%d, security_providers=%d, security_firewalls=%d, heap_end=%s, heap_retained=%s, total_alloc=%s",
+		"cold index: %s, classes=%d, php_constants=%d, messenger_messages=%d, collect_message_handlers=%d, collect_message_dispatches=%d, environment_variables=%d, app_env_declarations=%d, app_env_references=%d, deprecated_services=%d, assets=%d, asset_packages=%d, administration_package_usages=%d, html_asset_usages=%d, encore_entries=%d, importmap_entries=%d, vite_entries=%d, vite_usages=%d, twig_macros=%d, twig_tests=%d, twig_operators=%d, deprecated_twig_functions=%d, twig_tags=%d, twig_globals=%d, base_template_references=%d, product_template_inputs=%d, product_template_blocks=%d, twig_components=%d, twig_constant_references=%d, twig_php_class_references=%d, twig_trans_filter_usages=%d, twig_defined_test_usages=%d, security_providers=%d, security_firewalls=%d, heap_end=%s, heap_retained=%s, total_alloc=%s",
 		coldElapsed.Round(time.Millisecond),
 		classCount,
 		phpConstantCount,
@@ -7705,7 +7611,6 @@ return static function (ContainerConfigurator $container): void {
 		len(appEnv.Declarations),
 		len(appEnv.References),
 		deprecatedServiceCount,
-		len(doctrineModels),
 		len(assets.names),
 		len(assets.packages),
 		len(assets.administrationUsages),
@@ -7777,35 +7682,6 @@ function real_world_template_assistant(string $template): void {}
 function real_world_translation_assistant(string $key, string $domain): void {}
 `),
 	)))
-	assistantDoctrineMappingPath := filepath.Join(
-		root,
-		".shopware-lsp",
-		"virtual_assistant_entity.orm.xml",
-	)
-	require.NoError(t, workspaceDoctrineIndex(t, workspace).Index(
-		indexer.NewParsedFile(
-			assistantDoctrineMappingPath,
-			[]byte(`<doctrine-mapping>
-<entity name="Shopware\Core\Kernel"/>
-</doctrine-mapping>`),
-		),
-	))
-	doctrineModels, err = workspaceDoctrineIndex(t, workspace).Models()
-	require.NoError(t, err)
-	doctrineCatalog, err = doctrineCatalogProvider.Entities(
-		ctx,
-		analytics.DoctrineEntityCatalogRequest{
-			Query: "Shopware\\Core\\Kernel",
-		},
-	)
-	require.NoError(t, err)
-	require.Len(t, doctrineCatalog, 1)
-	require.Equal(
-		t,
-		"Shopware\\Core\\Kernel",
-		doctrineCatalog[0].Class,
-	)
-	require.Equal(t, "xml", doctrineCatalog[0].Source)
 	routeAssistantName := "frontend.sitemap.proxy"
 	routeAssistantSource := "<?php real_world_route_assistant('" +
 		routeAssistantName + "');"
@@ -8040,62 +7916,6 @@ function real_world_translation_assistant(string $key, string $domain): void {}
 		uriutil.FileURI(filepath.Join(root, "src", "Core", "Kernel.php")),
 		classAssistantDefinition[0].URI,
 	)
-	entityAssistantSource := "<?php real_world_entity_assistant('" +
-		classAssistantName + "');"
-	entityAssistantDocument := lsp.NewTextDocument(
-		uriutil.FileURI(filepath.Join(
-			root,
-			"src",
-			"EntityAssistantUsage.php",
-		)),
-		entityAssistantSource,
-		1,
-	)
-	entityAssistantOffset := uint32(
-		strings.Index(entityAssistantSource, classAssistantName) +
-			len(classAssistantName),
-	)
-	entityAssistantRequest := realWorldCompletionRequest(
-		entityAssistantDocument,
-		entityAssistantOffset,
-	)
-	entityAssistantContext := phpIndex.AddDocumentContext(
-		ctx,
-		filepath.Join(root, "src", "EntityAssistantUsage.php"),
-		entityAssistantDocument.Version,
-		entityAssistantRequest.Node,
-		entityAssistantRequest.Root,
-	)
-	entityAssistantCompletionProvider := lspcompletion.
-		NewDoctrineCompletionProvider(
-			workspaceDoctrineIndex(t, workspace),
-			phpIndex,
-		)
-	entityAssistantCompletions := entityAssistantCompletionProvider.
-		GetCompletions(entityAssistantContext, entityAssistantRequest)
-	entityAssistantCompletion := realWorldCompletionByLabel(
-		t,
-		entityAssistantCompletions,
-		classAssistantName,
-	)
-	entityAssistantEdit, ok := entityAssistantCompletion.TextEdit.(protocol.TextEdit)
-	require.True(t, ok)
-	require.Equal(t, classAssistantName, entityAssistantEdit.NewText)
-	entityAssistantDefinition := lspdefinition.
-		NewDoctrineDefinitionProvider(
-			workspaceDoctrineIndex(t, workspace),
-			phpIndex,
-		).
-		GetDefinition(
-			entityAssistantContext,
-			realWorldDefinitionRequest(
-				entityAssistantDocument,
-				entityAssistantRequest.Node,
-				entityAssistantOffset,
-			),
-		)
-	require.NotEmpty(t, entityAssistantDefinition)
-
 	formAssistantName := "entity"
 	formAssistantSource := "<?php real_world_form_assistant('" +
 		formAssistantName + "');"
@@ -8588,15 +8408,6 @@ function real_world_translation_assistant(string $key, string $domain): void {}
 	)
 	require.Equal(
 		t,
-		doctrineAttributeLabels,
-		realWorldCompletionLabels(realWorldPHPAttributeCompletions(
-			restoredPHP,
-			doctrineAttributeSource,
-			"Col",
-		)),
-	)
-	require.Equal(
-		t,
 		loopCompletionLabels,
 		realWorldCompletionLabels(realWorldTwigCompletions(
 			root,
@@ -8919,23 +8730,6 @@ function real_world_translation_assistant(string $key, string $domain): void {}
 	).Classes()
 	require.NoError(t, err)
 	require.Equal(t, serializerClasses, restoredSerializerClasses)
-	restoredDoctrineModels, err := workspaceDoctrineIndex(
-		t,
-		reopened,
-	).Models()
-	require.NoError(t, err)
-	require.Equal(t, doctrineModels, restoredDoctrineModels)
-	restoredDoctrineCatalog, err := analytics.NewDoctrineCatalogProvider(
-		root,
-		workspaceDoctrineIndex(t, reopened),
-	).Entities(
-		ctx,
-		analytics.DoctrineEntityCatalogRequest{
-			Query: "Shopware\\Core\\Kernel",
-		},
-	)
-	require.NoError(t, err)
-	require.Equal(t, doctrineCatalog, restoredDoctrineCatalog)
 	restoredHTMLRoutes, err := workspaceRouteIndex(
 		t,
 		reopened,
@@ -9155,43 +8949,6 @@ function real_world_translation_assistant(string $key, string $domain): void {}
 				classAssistantDocument,
 				restoredClassAssistantRequest.Node,
 				classAssistantOffset,
-			),
-		),
-	)
-	restoredEntityAssistantRequest := realWorldCompletionRequest(
-		entityAssistantDocument,
-		entityAssistantOffset,
-	)
-	restoredEntityAssistantContext := restoredPHP.AddDocumentContext(
-		ctx,
-		filepath.Join(root, "src", "EntityAssistantUsage.php"),
-		entityAssistantDocument.Version,
-		restoredEntityAssistantRequest.Node,
-		restoredEntityAssistantRequest.Root,
-	)
-	require.Equal(
-		t,
-		entityAssistantCompletions,
-		lspcompletion.NewDoctrineCompletionProvider(
-			workspaceDoctrineIndex(t, reopened),
-			restoredPHP,
-		).GetCompletions(
-			restoredEntityAssistantContext,
-			restoredEntityAssistantRequest,
-		),
-	)
-	require.Equal(
-		t,
-		entityAssistantDefinition,
-		lspdefinition.NewDoctrineDefinitionProvider(
-			workspaceDoctrineIndex(t, reopened),
-			restoredPHP,
-		).GetDefinition(
-			restoredEntityAssistantContext,
-			realWorldDefinitionRequest(
-				entityAssistantDocument,
-				restoredEntityAssistantRequest.Node,
-				entityAssistantOffset,
 			),
 		),
 	)

@@ -68,7 +68,6 @@ func realWorldSymbolSnapshot(
 		workspaceRouteIndex(t, workspace),
 		workspaceConsoleIndex(t, workspace),
 		workspaceTwigIndex(t, workspace),
-		workspaceDoctrineIndex(t, workspace),
 		workspaceTwigComponentIndex(t, workspace),
 		workspaceTranslationIndex(t, workspace),
 		workspacePHPIndex(t, workspace),

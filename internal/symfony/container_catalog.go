@@ -19,7 +19,6 @@ type ContainerCatalog struct {
 	parameters      map[string]Parameter
 	twigGlobals     []ContainerTwigGlobal
 	twigComponents  []ContainerTwigComponent
-	doctrineAliases map[string][]string
 	revision        uint64
 	mu              sync.RWMutex
 	lastUpdated     time.Time
@@ -29,10 +28,9 @@ type ContainerCatalog struct {
 // NewContainerCatalog creates an empty compiled container catalog.
 func NewContainerCatalog(projectRoot string) (*ContainerCatalog, error) {
 	cw := &ContainerCatalog{
-		projectRoot:     projectRoot,
-		services:        make(map[string]Service),
-		parameters:      make(map[string]Parameter),
-		doctrineAliases: make(map[string][]string),
+		projectRoot: projectRoot,
+		services:    make(map[string]Service),
+		parameters:  make(map[string]Parameter),
 	}
 
 	return cw, nil
@@ -49,7 +47,6 @@ func (cw *ContainerCatalog) findAndLoadContainer() error {
 		cw.parameters = make(map[string]Parameter)
 		cw.twigGlobals = nil
 		cw.twigComponents = nil
-		cw.doctrineAliases = nil
 		cw.revision++
 		cw.mu.Unlock()
 
@@ -110,7 +107,6 @@ func (cw *ContainerCatalog) loadContainer() error {
 	}
 	twigGlobals := ParseXMLTwigGlobalsTree(cw.containerPath, tree)
 	twigComponents := ParseXMLTwigComponentsTree(cw.containerPath, tree)
-	doctrineAliases := ParseXMLDoctrineNamespaceAliasesTree(tree.Root)
 
 	// Update the in-memory cache
 	cw.mu.Lock()
@@ -124,7 +120,6 @@ func (cw *ContainerCatalog) loadContainer() error {
 		[]ContainerTwigComponent(nil),
 		twigComponents...,
 	)
-	cw.doctrineAliases = cloneDoctrineNamespaceAliases(doctrineAliases)
 
 	// Store the new data
 	for _, service := range services {
@@ -223,25 +218,6 @@ func (cw *ContainerCatalog) GetTwigGlobals() []ContainerTwigGlobal {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
 	return append([]ContainerTwigGlobal(nil), cw.twigGlobals...)
-}
-
-func (cw *ContainerCatalog) GetDoctrineNamespaceAliasesState() (
-	map[string][]string,
-	uint64,
-) {
-	cw.mu.RLock()
-	defer cw.mu.RUnlock()
-	return cloneDoctrineNamespaceAliases(cw.doctrineAliases), cw.revision
-}
-
-func cloneDoctrineNamespaceAliases(
-	source map[string][]string,
-) map[string][]string {
-	result := make(map[string][]string, len(source))
-	for alias, namespaces := range source {
-		result[alias] = append([]string(nil), namespaces...)
-	}
-	return result
 }
 
 // Close stops the watcher and cleans up resources

@@ -59,17 +59,7 @@ func registerDiagnosticInspections(
 	server.RegisterInspection(inspections.NewInvokableCommand(services.php))
 	registerProblemInspection(server, "symfony.doctrine", phpOnly, "symfony", []string{
 		"symfony.doctrine.column.missing",
-		"symfony.doctrine.constraint_column.missing",
-		"symfony.doctrine.constraint_field.missing",
-		"symfony.doctrine.discriminator_class.invalid",
-		"symfony.doctrine.entity.missing",
-		"symfony.doctrine.field.missing",
-		"symfony.doctrine.lifecycle_method.missing",
-		"symfony.doctrine.magic_field.missing",
-		"symfony.doctrine.mapping_class.missing",
-		"symfony.doctrine.mapping_property.missing",
 		"symfony.doctrine.table.missing",
-		"symfony.doctrine.type.unknown",
 		"symfony.doctrine.type_class.invalid",
 		"symfony.doctrine.type_class.missing",
 	}, diagnostics.NewDoctrineAnalyzer(

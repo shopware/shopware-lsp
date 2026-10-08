@@ -223,7 +223,7 @@ var DomainCatalog = []CatalogEntry{
 	{ID: "symfony.services", Label: "Symfony Services", Parent: "symfony", DependsOn: []string{"php"}},
 	{ID: "symfony.routes", Label: "Symfony Routes", Parent: "symfony", DependsOn: []string{"php"}},
 	{ID: "symfony.console", Label: "Symfony Console", Parent: "symfony", DependsOn: []string{"php"}},
-	{ID: "symfony.doctrine", Label: "Doctrine", Parent: "symfony", DependsOn: []string{"php", "symfony.services"}},
+	{ID: "symfony.doctrine", Label: "Doctrine DBAL", Parent: "symfony", DependsOn: []string{"php", "symfony.services"}},
 	{ID: "symfony.assets", Label: "Symfony Assets", Parent: "symfony"},
 	{ID: "symfony.events", Label: "Symfony Events", Parent: "symfony", DependsOn: []string{"php", "symfony.services"}},
 	{ID: "symfony.messenger", Label: "Symfony Messenger", Parent: "symfony", DependsOn: []string{"php"}},
