@@ -51,7 +51,7 @@ new UniqueName(['' => 'value']);
 	)
 	items := NewValidationCompletionProvider().GetCompletions(
 		ctx,
-		securityCompletionRequest(document, node, offset),
+		completionRequest(document, node, offset),
 	)
 	requireCompletion(t, items, "message")
 	requireCompletion(t, items, "groups")

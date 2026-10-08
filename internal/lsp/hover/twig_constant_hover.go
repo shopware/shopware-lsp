@@ -100,7 +100,7 @@ func (p *TwigConstantHoverProvider) GetHover(
 			&markdown,
 			"**%s** `%s`",
 			kind,
-			escapeSecurityMarkdown(
+			escapeHoverMarkdown(
 				p.phpIndex.ConstantSymbolName(symbol),
 			),
 		)
@@ -108,14 +108,14 @@ func (p *TwigConstantHoverProvider) GetHover(
 			fmt.Fprintf(
 				&markdown,
 				"\n\nType: `%s`",
-				escapeSecurityMarkdown(symbol.Type.String()),
+				escapeHoverMarkdown(symbol.Type.String()),
 			)
 		}
 		if symbol.DocSummary() != "" {
 			fmt.Fprintf(
 				&markdown,
 				"\n\n%s",
-				escapeSecurityMarkdown(symbol.DocSummary()),
+				escapeHoverMarkdown(symbol.DocSummary()),
 			)
 		}
 		if symbol.Flags.Has(semantic.DeprecatedFlag) {
@@ -127,7 +127,7 @@ func (p *TwigConstantHoverProvider) GetHover(
 			Kind:  protocol.Markdown,
 			Value: markdown.String(),
 		},
-		Range: securityProtocolRange(
+		Range: hoverProtocolRange(
 			references[0].Range,
 			request.LineIndex,
 		),

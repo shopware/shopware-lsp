@@ -1,4 +1,4 @@
-package completion
+package definition
 
 import (
 	"github.com/shopware/shopware-lsp/internal/lsp"
@@ -6,18 +6,18 @@ import (
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 )
 
-func completionRequest(
+func definitionRequest(
 	document *lsp.TextDocument,
 	node *cst.Node,
 	offset uint32,
-) *lsp.CompletionRequest {
+) *lsp.DefinitionRequest {
 	line, character := document.LineIndex.PositionUTF16(offset)
-	params := &protocol.CompletionParams{}
+	params := &protocol.DefinitionParams{}
 	params.TextDocument.URI = document.URI
 	params.Position.Line = int(line)
 	params.Position.Character = int(character)
-	return &lsp.CompletionRequest{
-		CompletionParams: params,
+	return &lsp.DefinitionRequest{
+		DefinitionParams: params,
 		SyntaxContext: lsp.SyntaxContext{
 			Document:        document,
 			Language:        document.SyntaxLanguage,
@@ -28,16 +28,4 @@ func completionRequest(
 			Node:            node,
 		},
 	}
-}
-
-func completionRequestAt(
-	document *lsp.TextDocument,
-	node *cst.Node,
-	offset uint32,
-) *lsp.CompletionRequest {
-	request := consoleCompletionRequest(document, node)
-	line, character := document.LineIndex.PositionUTF16(offset)
-	request.Position.Line = int(line)
-	request.Position.Character = int(character)
-	return request
 }

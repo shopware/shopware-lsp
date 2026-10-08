@@ -22,7 +22,6 @@ import (
 	"github.com/shopware/shopware-lsp/internal/messenger"
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/php/inference"
-	"github.com/shopware/shopware-lsp/internal/security"
 	"github.com/shopware/shopware-lsp/internal/serializer"
 	"github.com/shopware/shopware-lsp/internal/shopware"
 	shopwaredal "github.com/shopware/shopware-lsp/internal/shopware/dal"
@@ -176,11 +175,6 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 	}
 	formIndex.SetPHPIndex(phpIndex)
 	workspace.indexers = append(workspace.indexers, formIndex)
-	securityIndex, err := security.NewIndex(cacheDir, workspace.store)
-	if err != nil {
-		return nil, fmt.Errorf("create Security index: %w", err)
-	}
-	workspace.indexers = append(workspace.indexers, securityIndex)
 	configurationIndex, err := symfonyconfig.NewIndex(
 		cacheDir,
 		workspace.store,
@@ -336,7 +330,6 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 		messenger:           messengerIndex,
 		environment:         environmentIndex,
 		forms:               formIndex,
-		security:            securityIndex,
 		configuration:       configurationIndex,
 		serializer:          serializerIndex,
 		stimulus:            stimulusIndex,
@@ -383,8 +376,6 @@ func domainForIndexer(id string) string {
 		return "symfony.environment"
 	case "symfony.form":
 		return "symfony.forms"
-	case "symfony.security":
-		return "symfony.security"
 	case "symfony.configuration":
 		return "symfony.configuration"
 	case "symfony.serializer":

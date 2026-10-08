@@ -767,8 +767,6 @@ func inspectionDomain(id string) string {
 		return "symfony.messenger"
 	case strings.HasPrefix(id, "symfony.form"):
 		return "symfony.forms"
-	case strings.HasPrefix(id, "symfony.security"):
-		return "symfony.security"
 	case strings.HasPrefix(id, "symfony.serializer"):
 		return "symfony.serializer"
 	case strings.HasPrefix(id, "symfony.validation"):

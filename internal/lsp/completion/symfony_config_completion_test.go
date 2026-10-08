@@ -65,7 +65,7 @@ final class Configuration {
 		)
 		items := provider.GetCompletions(
 			context.Background(),
-			securityCompletionRequest(
+			completionRequest(
 				document,
 				document.SyntaxTree.Root.NodeAtOffset(offset),
 				offset,
@@ -104,7 +104,7 @@ func TestSymfonyConfigCompletionRejectsNestedOrdinaryArrays(t *testing.T) {
 		)
 		items := NewSymfonyConfigCompletionProvider(index).GetCompletions(
 			context.Background(),
-			securityCompletionRequest(
+			completionRequest(
 				document,
 				document.SyntaxTree.Root.NodeAtOffset(offset),
 				offset,

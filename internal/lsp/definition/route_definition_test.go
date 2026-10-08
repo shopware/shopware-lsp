@@ -87,7 +87,7 @@ return static function (RoutingConfigurator $routes): void {
 			offset := uint32(strings.Index(fixture.source, fixture.marker) + 2)
 			locations := NewRouteDefinitionProvider(nil).GetDefinition(
 				context.Background(),
-				securityDefinitionRequest(
+				definitionRequest(
 					document,
 					document.SyntaxTree.Root.NodeAtOffset(offset),
 					offset,
@@ -147,7 +147,7 @@ final class FooBundle implements \Symfony\Component\HttpKernel\Bundle\BundleInte
 	offset := uint32(strings.Index(source, "@FooBundle") + 3)
 	locations := NewRouteDefinitionProvider(nil, phpIndex).GetDefinition(
 		context.Background(),
-		securityDefinitionRequest(
+		definitionRequest(
 			document,
 			document.SyntaxTree.Root.NodeAtOffset(offset),
 			offset,
@@ -172,7 +172,7 @@ func TestRouteDefinitionMatchesConcreteTwigHTMLURL(t *testing.T) {
 	node := document.SyntaxTree.Root.NodeAtOffset(offset)
 	locations := NewRouteDefinitionProvider(index).GetDefinition(
 		context.Background(),
-		securityDefinitionRequest(document, node, offset),
+		definitionRequest(document, node, offset),
 	)
 	require.Len(t, locations, 1)
 	assert.Equal(t, uriutil.FileURI(routePath), locations[0].URI)
@@ -194,7 +194,7 @@ func TestRouteDefinitionMatchesAbsoluteTwigHTMLURL(t *testing.T) {
 	node := document.SyntaxTree.Root.NodeAtOffset(offset)
 	locations := NewRouteDefinitionProvider(index).GetDefinition(
 		context.Background(),
-		securityDefinitionRequest(document, node, offset),
+		definitionRequest(document, node, offset),
 	)
 	require.Len(t, locations, 1)
 	assert.Equal(t, uriutil.FileURI(routePath), locations[0].URI)
@@ -220,7 +220,7 @@ func TestRouteDefinitionMatchesJavaScriptRequestURL(t *testing.T) {
 	node := document.SyntaxTree.Root.NodeAtOffset(offset)
 	locations := NewRouteDefinitionProvider(index).GetDefinition(
 		context.Background(),
-		securityDefinitionRequest(document, node, offset),
+		definitionRequest(document, node, offset),
 	)
 	require.Len(t, locations, 1)
 	assert.Equal(t, uriutil.FileURI(routePath), locations[0].URI)
@@ -246,7 +246,7 @@ func TestRouteDefinitionFromTwigRouteComparison(t *testing.T) {
 	node := document.SyntaxTree.Root.NodeAtOffset(offset)
 	locations := NewRouteDefinitionProvider(index).GetDefinition(
 		context.Background(),
-		securityDefinitionRequest(document, node, offset),
+		definitionRequest(document, node, offset),
 	)
 	require.Len(t, locations, 1)
 	assert.Equal(t, uriutil.FileURI(routePath), locations[0].URI)
@@ -302,7 +302,7 @@ $consumer->open('catalog.show');
 	)
 	locations := NewRouteDefinitionProvider(routeIndex).GetDefinition(
 		ctx,
-		securityDefinitionRequest(document, node, offset),
+		definitionRequest(document, node, offset),
 	)
 	require.Len(t, locations, 1)
 	assert.Equal(t, uriutil.FileURI(routePath), locations[0].URI)
@@ -354,7 +354,7 @@ func TestRouteParameterDefinitionSupportsTwigIdentifierHashKeys(t *testing.T) {
 			require.NotNil(t, node)
 			locations := NewRouteDefinitionProvider(index).GetDefinition(
 				context.Background(),
-				securityDefinitionRequest(document, node, offset),
+				definitionRequest(document, node, offset),
 			)
 			if !test.found {
 				assert.Empty(t, locations)
@@ -387,7 +387,7 @@ func TestRouteParameterDefinitionSupportsPHPArrayKeys(t *testing.T) {
 	require.NotNil(t, node)
 	locations := NewRouteDefinitionProvider(index).GetDefinition(
 		context.Background(),
-		securityDefinitionRequest(document, node, offset),
+		definitionRequest(document, node, offset),
 	)
 	require.Len(t, locations, 1)
 	assert.Equal(t, uriutil.FileURI(routePath), locations[0].URI)
@@ -398,7 +398,7 @@ func TestRouteParameterDefinitionSupportsPHPArrayKeys(t *testing.T) {
 	require.NotNil(t, valueNode)
 	assert.Empty(t, NewRouteDefinitionProvider(index).GetDefinition(
 		context.Background(),
-		securityDefinitionRequest(document, valueNode, valueOffset),
+		definitionRequest(document, valueNode, valueOffset),
 	))
 }
 
@@ -427,7 +427,7 @@ return static function (RoutingConfigurator $routes): void {
 	node := document.SyntaxTree.Root.NodeAtOffset(offset)
 	locations := NewRouteDefinitionProvider(index).GetDefinition(
 		context.Background(),
-		securityDefinitionRequest(document, node, offset),
+		definitionRequest(document, node, offset),
 	)
 	require.Len(t, locations, 1)
 	assert.Equal(t, uriutil.FileURI(routePath), locations[0].URI)
@@ -467,7 +467,7 @@ catalog.current:
 		node := document.SyntaxTree.Root.NodeAtOffset(offset)
 		locations := NewRouteDefinitionProvider(index).GetDefinition(
 			context.Background(),
-			securityDefinitionRequest(document, node, offset),
+			definitionRequest(document, node, offset),
 		)
 		require.Len(t, locations, 2)
 		for _, location := range locations {
@@ -500,7 +500,7 @@ func TestRouteDefinitionIgnoresFinalAndNonPathAttributeStrings(t *testing.T) {
 		node := document.SyntaxTree.Root.NodeAtOffset(offset)
 		assert.Empty(t, NewRouteDefinitionProvider(index).GetDefinition(
 			context.Background(),
-			securityDefinitionRequest(document, node, offset),
+			definitionRequest(document, node, offset),
 		))
 	}
 }

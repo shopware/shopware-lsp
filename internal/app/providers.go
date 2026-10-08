@@ -23,7 +23,6 @@ import (
 	"github.com/shopware/shopware-lsp/internal/messenger"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	"github.com/shopware/shopware-lsp/internal/php"
-	"github.com/shopware/shopware-lsp/internal/security"
 	"github.com/shopware/shopware-lsp/internal/serializer"
 	"github.com/shopware/shopware-lsp/internal/shopware"
 	shopwaredal "github.com/shopware/shopware-lsp/internal/shopware/dal"
@@ -54,7 +53,6 @@ type workspaceServices struct {
 	messenger           *messenger.Index
 	environment         *environment.Index
 	forms               *form.Index
-	security            *security.Index
 	configuration       *symfonyconfig.Index
 	serializer          *serializer.Index
 	stimulus            *stimulus.Index

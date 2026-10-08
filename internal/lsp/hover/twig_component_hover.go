@@ -215,7 +215,7 @@ func (p *TwigComponentHoverProvider) GetHover(
 			Kind:  protocol.Markdown,
 			Value: markdown.String(),
 		},
-		Range: securityProtocolRange(usage.Range, request.LineIndex),
+		Range: hoverProtocolRange(usage.Range, request.LineIndex),
 	}, nil
 }
 
@@ -259,7 +259,7 @@ func (p *TwigComponentHoverProvider) liveActionArgumentHover(
 					Kind:  protocol.Markdown,
 					Value: value,
 				},
-				Range: securityProtocolRange(
+				Range: hoverProtocolRange(
 					reference.Range,
 					request.LineIndex,
 				),
@@ -317,7 +317,7 @@ func (p *TwigComponentHoverProvider) liveActionHover(
 					signature.String(),
 				),
 			},
-			Range: securityProtocolRange(
+			Range: hoverProtocolRange(
 				reference.Range,
 				request.LineIndex,
 			),
@@ -357,7 +357,7 @@ func (p *TwigComponentHoverProvider) blockHover(
 					),
 				),
 			},
-			Range: securityProtocolRange(
+			Range: hoverProtocolRange(
 				usage.Range,
 				request.LineIndex,
 			),
@@ -392,7 +392,7 @@ func (p *TwigComponentHoverProvider) variableHover(
 						escapeComponentMarkdown(component.Class),
 					),
 				},
-				Range: securityProtocolRange(rng, request.LineIndex),
+				Range: hoverProtocolRange(rng, request.LineIndex),
 			}, nil
 		}
 		return nil, nil
@@ -404,7 +404,7 @@ func (p *TwigComponentHoverProvider) variableHover(
 				Value: "**Twig computed proxy** `computed`\n\n" +
 					"Provides cached access to zero-argument component getters.",
 			},
-			Range: securityProtocolRange(rng, request.LineIndex),
+			Range: hoverProtocolRange(rng, request.LineIndex),
 		}, nil
 	}
 	for _, prop := range props {
@@ -446,7 +446,7 @@ func (p *TwigComponentHoverProvider) computedHover(
 				Kind:  protocol.Markdown,
 				Value: value,
 			},
-			Range: securityProtocolRange(rng, request.LineIndex),
+			Range: hoverProtocolRange(rng, request.LineIndex),
 		}, nil
 	}
 	return nil, nil
@@ -495,7 +495,7 @@ func componentVariablePropHover(
 			Kind:  protocol.Markdown,
 			Value: markdown.String(),
 		},
-		Range: securityProtocolRange(rng, request.LineIndex),
+		Range: hoverProtocolRange(rng, request.LineIndex),
 	}
 }
 
@@ -554,7 +554,7 @@ func (p *TwigComponentHoverProvider) propHover(
 				Kind:  protocol.Markdown,
 				Value: markdown.String(),
 			},
-			Range: securityProtocolRange(
+			Range: hoverProtocolRange(
 				usage.Range,
 				request.LineIndex,
 			),

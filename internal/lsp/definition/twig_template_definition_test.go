@@ -102,7 +102,7 @@ function resolve_template(string $template): void {}
 		phpIndex,
 	).GetDefinition(
 		ctx,
-		securityDefinitionRequest(document, node, offset),
+		definitionRequest(document, node, offset),
 	)
 	require.Len(t, locations, 1)
 	require.Equal(t, uriutil.FileURI(targetPath), locations[0].URI)
@@ -166,7 +166,7 @@ func TestStandalonePHPTemplateStringDefinitionIsExactAndLowNoise(
 			node := document.SyntaxTree.Root.NodeAtOffset(offset)
 			locations := provider.GetDefinition(
 				context.Background(),
-				securityDefinitionRequest(document, node, offset),
+				definitionRequest(document, node, offset),
 			)
 			require.Len(t, locations, test.wantCount)
 			if test.wantCount != 0 {

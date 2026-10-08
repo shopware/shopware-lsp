@@ -48,7 +48,7 @@ export default class extends Controller {}`
 	node := document.SyntaxTree.Root.NodeAtOffset(offset)
 	locations := NewStimulusDefinitionProvider(index).GetDefinition(
 		context.Background(),
-		securityDefinitionRequest(document, node, offset),
+		definitionRequest(document, node, offset),
 	)
 	require.Len(t, locations, 1)
 	assert.Equal(t, uriutil.FileURI(controllerPath), locations[0].URI)
@@ -87,7 +87,7 @@ func TestStimulusDefinitionNavigatesToControllersJSON(t *testing.T) {
 	node := document.SyntaxTree.Root.NodeAtOffset(offset)
 	locations := NewStimulusDefinitionProvider(index).GetDefinition(
 		context.Background(),
-		securityDefinitionRequest(document, node, offset),
+		definitionRequest(document, node, offset),
 	)
 	require.Len(t, locations, 1)
 	assert.Equal(t, uriutil.FileURI(configPath), locations[0].URI)

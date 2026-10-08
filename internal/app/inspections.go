@@ -87,12 +87,6 @@ func registerDiagnosticInspections(
 		"symfony.messenger.message.missing",
 	}, diagnostics.NewMessengerAnalyzer(services.php))
 	server.RegisterInspection(inspections.NewForm(services.forms, services.php))
-	registerProblemInspection(server, "symfony.security", []language.ID{
-		language.PHP, language.Twig, language.XML, language.YAML,
-	}, "symfony", []string{
-		"symfony.security.attribute.missing",
-		"symfony.security.provider.missing",
-	}, diagnostics.NewSecurityAnalyzer(services.security, services.php))
 	registerProblemInspection(server, "symfony.serializer", phpOnly, "symfony", []string{
 		"symfony.serializer.class.missing",
 	}, diagnostics.NewSerializerAnalyzer(services.serializer, services.php))

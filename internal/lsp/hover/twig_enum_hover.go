@@ -46,21 +46,21 @@ func (p *TwigEnumHoverProvider) GetHover(
 		fmt.Fprintf(
 			&markdown,
 			"**PHP enum** `%s`",
-			escapeSecurityMarkdown(symbol.FullyQualified),
+			escapeHoverMarkdown(symbol.FullyQualified),
 		)
 		cases := twigEnumCases(p.phpIndex, symbol)
 		if len(cases) != 0 {
 			fmt.Fprintf(
 				&markdown,
 				"\n\nCases: `%s`",
-				escapeSecurityMarkdown(strings.Join(cases, "`, `")),
+				escapeHoverMarkdown(strings.Join(cases, "`, `")),
 			)
 		}
 	} else {
 		fmt.Fprintf(
 			&markdown,
 			"**PHP class** `%s`\n\nThis class is not an enum.",
-			escapeSecurityMarkdown(symbol.FullyQualified),
+			escapeHoverMarkdown(symbol.FullyQualified),
 		)
 	}
 	return &protocol.Hover{
@@ -68,7 +68,7 @@ func (p *TwigEnumHoverProvider) GetHover(
 			Kind:  protocol.Markdown,
 			Value: markdown.String(),
 		},
-		Range: securityProtocolRange(reference.Range, request.LineIndex),
+		Range: hoverProtocolRange(reference.Range, request.LineIndex),
 	}, nil
 }
 

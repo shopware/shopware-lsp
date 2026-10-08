@@ -219,7 +219,7 @@ They are registered as `indexer.Indexer` implementations in
 | `snippet`, `translation` | Storefront/admin snippets and Symfony translations |
 | `theme`, `style`, `asset` | Theme config and icons, SCSS classes, public assets and Encore entries |
 | `feature`, `systemconfig`, `extension` | Feature flags, system config, extension metadata |
-| `console`, `event`, `messenger`, `form`, `security`, `serializer`, `environment`, `symfonyconfig`, `stimulus`, `httpclient`, `validation` | Symfony subsystems |
+| `console`, `event`, `messenger`, `form`, `serializer`, `environment`, `symfonyconfig`, `stimulus`, `httpclient`, `validation` | Symfony subsystems |
 | `shopware`, `shopware/dal`, `shopware/entityschema`, `appscript` | Shopware version resolution, DAL, entity schemas, app scripts |
 
 ### Protocol and features

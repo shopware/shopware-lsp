@@ -95,7 +95,7 @@ interface PackageInterface {
 		node := document.SyntaxTree.Root.NodeAtOffset(offset)
 		items := provider.GetCompletions(
 			context.Background(),
-			securityCompletionRequest(document, node, offset),
+			completionRequest(document, node, offset),
 		)
 		requireCompletion(t, items, test.label)
 	}
@@ -118,7 +118,7 @@ function url(PackageInterface $assets): string {
 	)
 	items := provider.GetCompletions(
 		ctx,
-		securityCompletionRequest(document, node, offset),
+		completionRequest(document, node, offset),
 	)
 	requireCompletion(t, items, "build/app.css")
 }
@@ -185,7 +185,7 @@ func TestAssetCompletionUsesNamedPackageLogicalPathsAndNames(t *testing.T) {
 		node := document.SyntaxTree.Root.NodeAtOffset(offset)
 		items := provider.GetCompletions(
 			context.Background(),
-			securityCompletionRequest(document, node, offset),
+			completionRequest(document, node, offset),
 		)
 		requireCompletion(t, items, test.label)
 	}
@@ -223,7 +223,7 @@ func TestAssetCompletionInLegacyAsseticTags(t *testing.T) {
 	node := document.SyntaxTree.Root.NodeAtOffset(offset)
 	items := NewAssetCompletionProvider(index, nil).GetCompletions(
 		context.Background(),
-		securityCompletionRequest(document, node, offset),
+		completionRequest(document, node, offset),
 	)
 	requireCompletion(
 		t,
@@ -263,7 +263,7 @@ func TestAssetCompletionInLegacyAsseticTags(t *testing.T) {
 	namedNode := namedDocument.SyntaxTree.Root.NodeAtOffset(namedOffset)
 	namedItems := NewAssetCompletionProvider(index, nil).GetCompletions(
 		context.Background(),
-		securityCompletionRequest(
+		completionRequest(
 			namedDocument,
 			namedNode,
 			namedOffset,
@@ -331,7 +331,7 @@ class Usage {
 		)
 		items := provider.GetCompletions(
 			ctx,
-			securityCompletionRequest(document, node, offset),
+			completionRequest(document, node, offset),
 		)
 		if test.want {
 			requireCompletion(t, items, "uploads")
@@ -366,7 +366,7 @@ return [
 	node := document.SyntaxTree.Root.NodeAtOffset(offset)
 	items := NewAssetCompletionProvider(index, nil).GetCompletions(
 		context.Background(),
-		securityCompletionRequest(document, node, offset),
+		completionRequest(document, node, offset),
 	)
 	requireCompletion(t, items, "app")
 	require.NotContains(t, completionLabels(items), "bootstrap")
@@ -444,7 +444,7 @@ func TestAssetCompletionWrapsTypedTwigHTMLAttributes(t *testing.T) {
 		node := document.SyntaxTree.Root.NodeAtOffset(documentOffset)
 		items := provider.GetCompletions(
 			context.Background(),
-			securityCompletionRequest(document, node, documentOffset),
+			completionRequest(document, node, documentOffset),
 		)
 		require.NotContains(t, completionLabels(items), test.exclude)
 		var selected *protocol.CompletionItem

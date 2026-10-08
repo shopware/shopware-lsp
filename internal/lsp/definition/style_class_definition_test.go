@@ -32,7 +32,7 @@ func TestStyleClassDefinitionNavigatesFromTwigToNestedSCSS(t *testing.T) {
 	node := document.SyntaxTree.Root.NodeAtOffset(offset)
 	locations := NewStyleClassDefinitionProvider(index).GetDefinition(
 		context.Background(),
-		securityDefinitionRequest(document, node, offset),
+		definitionRequest(document, node, offset),
 	)
 
 	require.Len(t, locations, 1)
@@ -54,7 +54,7 @@ func TestStyleClassDefinitionUsesLiveVueTemplateAndStyle(t *testing.T) {
 	node := document.SyntaxTree.Root.NodeAtOffset(offset)
 	locations := NewStyleClassDefinitionProvider(index).GetDefinition(
 		context.Background(),
-		securityDefinitionRequest(document, node, offset),
+		definitionRequest(document, node, offset),
 	)
 
 	require.Len(t, locations, 1)

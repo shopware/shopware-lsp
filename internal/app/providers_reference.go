@@ -37,9 +37,6 @@ func registerReferenceProviders(server *lsp.Server, phpFeatures *phpsemantic.Pro
 			services.environment,
 		),
 	)
-	server.RegisterReferencesProvider(reference.NewSecurityReferenceProvider(
-		services.security,
-	))
 	server.RegisterReferencesProvider(reference.NewSerializerReferenceProvider(
 		services.serializer,
 		services.php,

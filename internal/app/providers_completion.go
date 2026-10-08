@@ -61,9 +61,6 @@ func registerCompletionProviders(server *lsp.Server, root string, phpFeatures *p
 		services.forms,
 		services.php,
 	))
-	server.RegisterCompletionProvider(completion.NewSecurityCompletionProvider(
-		services.security,
-	))
 	server.RegisterCompletionProvider(
 		completion.NewSymfonyConfigCompletionProvider(
 			services.configuration,

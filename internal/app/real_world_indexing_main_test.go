@@ -46,7 +46,6 @@ import (
 	twigquery "github.com/shopware/shopware-lsp/internal/parser/twig/query"
 	twigsyntax "github.com/shopware/shopware-lsp/internal/parser/twig/syntax"
 	"github.com/shopware/shopware-lsp/internal/pathmatch"
-	"github.com/shopware/shopware-lsp/internal/security"
 	"github.com/shopware/shopware-lsp/internal/snippet"
 	"github.com/shopware/shopware-lsp/internal/symfony"
 	"github.com/shopware/shopware-lsp/internal/twig"
@@ -5575,20 +5574,6 @@ function build(FormBuilderInterface $builder): void
 		"symfony.yaml.unquoted_indicator": 1,
 		"symfony.yaml.unquoted_colon":     1,
 	}, yamlCompatibilityCodes)
-	securityNames, err := workspaceSecurityIndex(t, workspace).Names()
-	require.NoError(t, err)
-	require.Contains(t, securityNames, "PUBLIC_ACCESS")
-	require.Contains(t, securityNames, "IS_AUTHENTICATED_FULLY")
-	securityProviders, err := workspaceSecurityIndex(
-		t,
-		workspace,
-	).ConfigNames(security.ConfigProvider)
-	require.NoError(t, err)
-	securityFirewalls, err := workspaceSecurityIndex(
-		t,
-		workspace,
-	).ConfigNames(security.ConfigFirewall)
-	require.NoError(t, err)
 	configurationRoots, err := workspaceSymfonyConfigIndex(
 		t,
 		workspace,
@@ -7600,7 +7585,7 @@ return static function (ContainerConfigurator $container): void {
 	var retainedMemory runtime.MemStats
 	runtime.ReadMemStats(&retainedMemory)
 	t.Logf(
-		"cold index: %s, classes=%d, php_constants=%d, messenger_messages=%d, collect_message_handlers=%d, collect_message_dispatches=%d, environment_variables=%d, app_env_declarations=%d, app_env_references=%d, deprecated_services=%d, assets=%d, asset_packages=%d, administration_package_usages=%d, html_asset_usages=%d, encore_entries=%d, importmap_entries=%d, vite_entries=%d, vite_usages=%d, twig_macros=%d, twig_tests=%d, twig_operators=%d, deprecated_twig_functions=%d, twig_tags=%d, twig_globals=%d, base_template_references=%d, product_template_inputs=%d, product_template_blocks=%d, twig_components=%d, twig_constant_references=%d, twig_php_class_references=%d, twig_trans_filter_usages=%d, twig_defined_test_usages=%d, security_providers=%d, security_firewalls=%d, heap_end=%s, heap_retained=%s, total_alloc=%s",
+		"cold index: %s, classes=%d, php_constants=%d, messenger_messages=%d, collect_message_handlers=%d, collect_message_dispatches=%d, environment_variables=%d, app_env_declarations=%d, app_env_references=%d, deprecated_services=%d, assets=%d, asset_packages=%d, administration_package_usages=%d, html_asset_usages=%d, encore_entries=%d, importmap_entries=%d, vite_entries=%d, vite_usages=%d, twig_macros=%d, twig_tests=%d, twig_operators=%d, deprecated_twig_functions=%d, twig_tags=%d, twig_globals=%d, base_template_references=%d, product_template_inputs=%d, product_template_blocks=%d, twig_components=%d, twig_constant_references=%d, twig_php_class_references=%d, twig_trans_filter_usages=%d, twig_defined_test_usages=%d, heap_end=%s, heap_retained=%s, total_alloc=%s",
 		coldElapsed.Round(time.Millisecond),
 		classCount,
 		phpConstantCount,
@@ -7633,8 +7618,6 @@ return static function (ContainerConfigurator $container): void {
 		len(twigPHPClassReferences),
 		len(twigTransFilterUsages),
 		len(twigDefinedTestUsages),
-		len(securityProviders),
-		len(securityFirewalls),
 		formatBytes(endMemory.HeapAlloc),
 		formatBytes(retainedMemory.HeapAlloc),
 		formatBytes(retainedMemory.TotalAlloc),
@@ -8697,21 +8680,6 @@ function real_world_translation_assistant(string $key, string $domain): void {}
 	)
 	require.NoError(t, err)
 	require.Equal(t, entityFormOptionCatalog, restoredEntityFormOptions)
-	restoredSecurityNames, err := workspaceSecurityIndex(t, reopened).Names()
-	require.NoError(t, err)
-	require.Equal(t, securityNames, restoredSecurityNames)
-	restoredSecurityProviders, err := workspaceSecurityIndex(
-		t,
-		reopened,
-	).ConfigNames(security.ConfigProvider)
-	require.NoError(t, err)
-	require.Equal(t, securityProviders, restoredSecurityProviders)
-	restoredSecurityFirewalls, err := workspaceSecurityIndex(
-		t,
-		reopened,
-	).ConfigNames(security.ConfigFirewall)
-	require.NoError(t, err)
-	require.Equal(t, securityFirewalls, restoredSecurityFirewalls)
 	restoredConfigurationRoots, err := workspaceSymfonyConfigIndex(
 		t,
 		reopened,
