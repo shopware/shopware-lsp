@@ -14,7 +14,6 @@ import (
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/messenger"
 	"github.com/shopware/shopware-lsp/internal/php"
-	"github.com/shopware/shopware-lsp/internal/security"
 	"github.com/shopware/shopware-lsp/internal/serializer"
 	"github.com/shopware/shopware-lsp/internal/stimulus"
 	"github.com/shopware/shopware-lsp/internal/symfony"
@@ -275,97 +274,6 @@ class ProfileType extends \Symfony\Component\Form\AbstractType {
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, indexed, restored)
-}
-
-func TestWorkspaceIndexesAndRestoresSymfonySecurity(t *testing.T) {
-	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
-	projectRoot := t.TempDir()
-	configDir := filepath.Join(projectRoot, "config", "packages")
-	sourceDir := filepath.Join(projectRoot, "src", "Security")
-	require.NoError(t, os.MkdirAll(configDir, 0o755))
-	require.NoError(t, os.MkdirAll(sourceDir, 0o755))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(configDir, "security.yaml"),
-		[]byte(`security:
-  providers:
-    app_users:
-      memory: null
-  firewalls:
-    main:
-      provider: app_users
-  role_hierarchy:
-    ROLE_EDITOR: [ROLE_USER]
-  access_control:
-    - { path: ^/admin, roles: ROLE_ADMIN }
-`),
-		0o644,
-	))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(sourceDir, "ArticleVoter.php"),
-		[]byte(`<?php
-namespace App\Security;
-use Symfony\Component\Security\Core\Authorization\Voter\Voter;
-final class ArticleVoter extends Voter {
-    protected function supports(string $attribute, mixed $subject): bool {
-        return $attribute === 'article.edit';
-    }
-    protected function voteOnAttribute(string $attribute, mixed $subject, $token): bool {
-        return true;
-    }
-}`),
-		0o644,
-	))
-
-	workspace, err := NewWorkspace(
-		context.Background(),
-		projectRoot,
-		lsp.NewServer(nil, projectRoot, "test"),
-	)
-	require.NoError(t, err)
-	require.NoError(t, workspace.Scanner().IndexAll(context.Background()))
-	securityIndex := workspaceSecurityIndex(t, workspace)
-	role, found, err := securityIndex.Attribute("ROLE_EDITOR")
-	require.NoError(t, err)
-	require.True(t, found)
-	require.NotEmpty(t, role.Declarations())
-	attribute, found, err := securityIndex.Attribute("article.edit")
-	require.NoError(t, err)
-	require.True(t, found)
-	require.Equal(
-		t,
-		"App\\Security\\ArticleVoter",
-		attribute.Declarations()[0].Class,
-	)
-	providerSymbol, found, err := securityIndex.ConfigSymbol(
-		"app_users",
-		security.ConfigProvider,
-	)
-	require.NoError(t, err)
-	require.True(t, found)
-	require.Len(t, providerSymbol.References(), 1)
-	require.NoError(t, workspace.Close())
-
-	reopened, err := NewWorkspace(
-		context.Background(),
-		projectRoot,
-		lsp.NewServer(nil, projectRoot, "test"),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, reopened.Close()) })
-	restored, found, err := workspaceSecurityIndex(
-		t,
-		reopened,
-	).Attribute("article.edit")
-	require.NoError(t, err)
-	require.True(t, found)
-	assert.Equal(t, attribute, restored)
-	restoredProvider, found, err := workspaceSecurityIndex(
-		t,
-		reopened,
-	).ConfigSymbol("app_users", security.ConfigProvider)
-	require.NoError(t, err)
-	require.True(t, found)
-	assert.Equal(t, providerSymbol, restoredProvider)
 }
 
 func TestWorkspaceIndexesAndRestoresSerializerTargets(t *testing.T) {
@@ -1304,17 +1212,6 @@ func workspaceFormIndex(t *testing.T, workspace *Workspace) *form.Index {
 		}
 	}
 	t.Fatal("form index is not registered")
-	return nil
-}
-
-func workspaceSecurityIndex(t *testing.T, workspace *Workspace) *security.Index {
-	t.Helper()
-	for _, idx := range workspace.indexers {
-		if candidate, ok := idx.(*security.Index); ok {
-			return candidate
-		}
-	}
-	t.Fatal("security index is not registered")
 	return nil
 }
 

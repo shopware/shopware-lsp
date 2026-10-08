@@ -56,10 +56,6 @@ func registerHoverProviders(server *lsp.Server, root string, phpFeatures *phpsem
 		services.forms,
 		services.php,
 	))
-	server.RegisterHoverProvider(hover.NewSecurityHoverProvider(
-		root,
-		services.security,
-	))
 	server.RegisterHoverProvider(hover.NewSerializerHoverProvider(
 		services.serializer,
 		services.php,

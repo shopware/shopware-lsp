@@ -90,7 +90,7 @@ func (p *TwigMacroHoverProvider) GetHover(
 			Kind:  protocol.Markdown,
 			Value: markdown.String(),
 		},
-		Range: securityProtocolRange(reference.Range, request.LineIndex),
+		Range: hoverProtocolRange(reference.Range, request.LineIndex),
 	}, nil
 }
 

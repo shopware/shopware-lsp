@@ -285,19 +285,6 @@ exact public names shown by MCP `tools/list`; unknown names are rejected.
   and folders relative to the current config plus files under each bundle's
   legacy/modern config and controller directories
 
-### Symfony Security
-
-- Persistent user-provider and firewall symbols from SecurityBundle XML,
-  YAML, and typed `Symfony\Config\SecurityConfig` PHP configuration
-- Cross-format provider completion, navigation, references, hover, missing-name
-  diagnostics, cache restore, and unsaved-document overlays
-- Chain, firewall, nested authenticator, and switch-user provider references,
-  including fluent PHP configurator aliases
-- Source-aligned nested SecurityBundle YAML key completion and hover for form,
-  JSON, LDAP, Basic, login-link, throttling, remember-me, remote-user, X.509,
-  logout, switch-user, and access-token/OIDC configuration, including
-  `when@environment` sections
-
 ### Symfony Configuration
 
 - Persistent configuration-root discovery from modern and legacy

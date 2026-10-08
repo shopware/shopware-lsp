@@ -99,7 +99,7 @@ func TestAssetDefinitionNavigatesPhysicalManifestAndEncoreTargets(t *testing.T) 
 		node := document.SyntaxTree.Root.NodeAtOffset(offset)
 		locations := provider.GetDefinition(
 			context.Background(),
-			securityDefinitionRequest(document, node, offset),
+			definitionRequest(document, node, offset),
 		)
 		require.NotEmpty(t, locations, test.value)
 		assert.Equal(t, uriutil.FileURI(test.target), locations[0].URI)
@@ -157,7 +157,7 @@ func TestAssetDefinitionResolvesNamedPackageAndItsDeclaration(t *testing.T) {
 		node := document.SyntaxTree.Root.NodeAtOffset(offset)
 		locations := provider.GetDefinition(
 			context.Background(),
-			securityDefinitionRequest(document, node, offset),
+			definitionRequest(document, node, offset),
 		)
 		require.NotEmpty(t, locations)
 		assert.Equal(t, uriutil.FileURI(test.target), locations[0].URI)
@@ -196,7 +196,7 @@ func TestAssetDefinitionNavigatesLegacyAsseticBundleGlob(t *testing.T) {
 	node := document.SyntaxTree.Root.NodeAtOffset(offset)
 	locations := NewAssetDefinitionProvider(index, nil).GetDefinition(
 		context.Background(),
-		securityDefinitionRequest(document, node, offset),
+		definitionRequest(document, node, offset),
 	)
 	require.Len(t, locations, 1)
 	assert.Equal(t, uriutil.FileURI(target), locations[0].URI)
@@ -230,7 +230,7 @@ func TestAssetDefinitionNavigatesLegacyAsseticBundleGlob(t *testing.T) {
 	namedNode := namedDocument.SyntaxTree.Root.NodeAtOffset(namedOffset)
 	namedLocations := NewAssetDefinitionProvider(index, nil).GetDefinition(
 		context.Background(),
-		securityDefinitionRequest(
+		definitionRequest(
 			namedDocument,
 			namedNode,
 			namedOffset,
@@ -272,7 +272,7 @@ return [
 	node := document.SyntaxTree.Root.NodeAtOffset(offset)
 	locations := NewAssetDefinitionProvider(index, nil).GetDefinition(
 		context.Background(),
-		securityDefinitionRequest(document, node, offset),
+		definitionRequest(document, node, offset),
 	)
 	require.Len(t, locations, 2)
 	assert.Equal(t, uriutil.FileURI(target), locations[0].URI)

@@ -58,7 +58,7 @@ function load($serializer): void {
 		phpIndex,
 	).GetDefinition(
 		context.Background(),
-		securityDefinitionRequest(document, node, offset),
+		definitionRequest(document, node, offset),
 	)
 	require.Len(t, locations, 1)
 	assert.Equal(t, uriutil.FileURI(modelPath), locations[0].URI)

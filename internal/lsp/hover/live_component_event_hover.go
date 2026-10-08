@@ -127,7 +127,7 @@ func (p *LiveComponentEventHoverProvider) eventHover(
 			Kind:  protocol.Markdown,
 			Value: value.String(),
 		},
-		Range: securityProtocolRange(rng, request.LineIndex),
+		Range: hoverProtocolRange(rng, request.LineIndex),
 	}, nil
 }
 
@@ -173,7 +173,7 @@ func (p *LiveComponentEventHoverProvider) argumentHover(
 					Kind:  protocol.Markdown,
 					Value: value,
 				},
-				Range: securityProtocolRange(rng, request.LineIndex),
+				Range: hoverProtocolRange(rng, request.LineIndex),
 			}, nil
 		}
 	}

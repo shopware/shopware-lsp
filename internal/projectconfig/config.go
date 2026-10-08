@@ -229,7 +229,6 @@ var DomainCatalog = []CatalogEntry{
 	{ID: "symfony.messenger", Label: "Symfony Messenger", Parent: "symfony", DependsOn: []string{"php"}},
 	{ID: "symfony.environment", Label: "Environment Variables", Parent: "symfony"},
 	{ID: "symfony.forms", Label: "Symfony Forms", Parent: "symfony", DependsOn: []string{"php"}},
-	{ID: "symfony.security", Label: "Symfony Security", Parent: "symfony", DependsOn: []string{"php"}},
 	{ID: "symfony.configuration", Label: "Symfony Configuration", Parent: "symfony", DependsOn: []string{"php"}},
 	{ID: "symfony.serializer", Label: "Symfony Serializer", Parent: "symfony", DependsOn: []string{"php"}},
 	{ID: "symfony.stimulus", Label: "Symfony Stimulus", Parent: "symfony"},

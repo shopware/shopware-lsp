@@ -79,7 +79,7 @@ final class Configuration {
 		)
 		locations := provider.GetDefinition(
 			context.Background(),
-			securityDefinitionRequest(
+			definitionRequest(
 				document,
 				document.SyntaxTree.Root.NodeAtOffset(offset),
 				offset,
@@ -142,7 +142,7 @@ return [
 		)
 		locations := provider.GetDefinition(
 			context.Background(),
-			securityDefinitionRequest(
+			definitionRequest(
 				document,
 				document.SyntaxTree.Root.NodeAtOffset(offset),
 				offset,
@@ -182,7 +182,7 @@ return ['imports' => [['resource' => 'legacy_*.php']]];
 	t.Cleanup(func() { require.NoError(t, index.Close()) })
 	locations := NewSymfonyConfigDefinitionProvider(index).GetDefinition(
 		context.Background(),
-		securityDefinitionRequest(
+		definitionRequest(
 			document,
 			document.SyntaxTree.Root.NodeAtOffset(offset),
 			offset,

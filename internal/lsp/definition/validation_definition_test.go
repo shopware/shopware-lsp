@@ -64,7 +64,7 @@ new UniqueName(['message' => 'key']);
 	)
 	locations := NewValidationDefinitionProvider().GetDefinition(
 		ctx,
-		securityDefinitionRequest(document, node, offset),
+		definitionRequest(document, node, offset),
 	)
 	require.Len(t, locations, 1)
 	assert.Equal(t, uriutil.FileURI(constraintPath), locations[0].URI)

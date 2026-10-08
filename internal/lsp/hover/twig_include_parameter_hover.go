@@ -106,7 +106,7 @@ func (p *TwigIncludeParameterHoverProvider) GetHover(
 			Kind:  protocol.Markdown,
 			Value: value,
 		},
-		Range: securityProtocolRange(parameter.Range, request.LineIndex),
+		Range: hoverProtocolRange(parameter.Range, request.LineIndex),
 	}, nil
 }
 
