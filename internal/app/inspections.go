@@ -74,9 +74,6 @@ func registerDiagnosticInspections(
 		"symfony.encore.entry.missing",
 		"symfony.vite.entry.missing",
 	}, diagnostics.NewAssetAnalyzer(services.assets, services.php))
-	registerProblemInspection(server, "symfony.stimulus", twigOnly, "symfony", []string{
-		"symfony.stimulus.controller.missing",
-	}, diagnostics.NewStimulusAnalyzer(services.stimulus))
 	server.RegisterInspection(inspections.NewEvent(
 		services.events,
 		services.php,

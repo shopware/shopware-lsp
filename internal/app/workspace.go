@@ -27,7 +27,6 @@ import (
 	shopwaredal "github.com/shopware/shopware-lsp/internal/shopware/dal"
 	"github.com/shopware/shopware-lsp/internal/shopware/entityschema"
 	"github.com/shopware/shopware-lsp/internal/snippet"
-	"github.com/shopware/shopware-lsp/internal/stimulus"
 	"github.com/shopware/shopware-lsp/internal/style"
 	"github.com/shopware/shopware-lsp/internal/symfony"
 	"github.com/shopware/shopware-lsp/internal/symfonyconfig"
@@ -198,11 +197,6 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 		return nil, fmt.Errorf("create asset index: %w", err)
 	}
 	workspace.indexers = append(workspace.indexers, assetIndex)
-	stimulusIndex, err := stimulus.NewIndex(cacheDir, workspace.store)
-	if err != nil {
-		return nil, fmt.Errorf("create Stimulus index: %w", err)
-	}
-	workspace.indexers = append(workspace.indexers, stimulusIndex)
 	var styleIndex *style.Index
 	if configuration.DomainEnabled("scss") {
 		styleIndex, err = style.NewIndex(cacheDir, workspace.store)
@@ -332,7 +326,6 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 		forms:               formIndex,
 		configuration:       configurationIndex,
 		serializer:          serializerIndex,
-		stimulus:            stimulusIndex,
 		styles:              styleIndex,
 		php:                 phpIndex,
 		twig:                twigIndex,
@@ -380,8 +373,6 @@ func domainForIndexer(id string) string {
 		return "symfony.configuration"
 	case "symfony.serializer":
 		return "symfony.serializer"
-	case "symfony.stimulus":
-		return "symfony.stimulus"
 	case "style.classes":
 		return "scss"
 	case "twig.indexer":

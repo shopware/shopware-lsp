@@ -15,7 +15,6 @@ import (
 	"github.com/shopware/shopware-lsp/internal/messenger"
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/serializer"
-	"github.com/shopware/shopware-lsp/internal/stimulus"
 	"github.com/shopware/shopware-lsp/internal/symfony"
 	"github.com/shopware/shopware-lsp/internal/translation"
 	"github.com/shopware/shopware-lsp/internal/twig"
@@ -325,71 +324,6 @@ function load($serializer): void {
 	).Usages("App\\Model")
 	require.NoError(t, err)
 	assert.Equal(t, usages, restored)
-}
-
-func TestWorkspaceIndexesAndRestoresStimulusControllers(t *testing.T) {
-	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
-	projectRoot := t.TempDir()
-	controllerPath := filepath.Join(
-		projectRoot,
-		"assets",
-		"controllers",
-		"hello_controller.js",
-	)
-	templatePath := filepath.Join(
-		projectRoot,
-		"templates",
-		"page.html.twig",
-	)
-	require.NoError(t, os.MkdirAll(filepath.Dir(controllerPath), 0o755))
-	require.NoError(t, os.MkdirAll(filepath.Dir(templatePath), 0o755))
-	require.NoError(t, os.WriteFile(
-		controllerPath,
-		[]byte(`import { Controller } from '@hotwired/stimulus';
-export default class extends Controller {}`),
-		0o644,
-	))
-	require.NoError(t, os.WriteFile(
-		templatePath,
-		[]byte(`<div data-controller="hello"></div>`),
-		0o644,
-	))
-
-	workspace, err := NewWorkspace(
-		context.Background(),
-		projectRoot,
-		lsp.NewServer(nil, projectRoot, "test"),
-	)
-	require.NoError(t, err)
-	require.NoError(t, workspace.Scanner().IndexAll(context.Background()))
-	controllers, err := workspaceStimulusIndex(t, workspace).Controllers()
-	require.NoError(t, err)
-	require.Len(t, controllers, 1)
-	assert.Equal(t, "hello", controllers[0].Name)
-	usages, err := workspaceStimulusIndex(t, workspace).Usages("hello")
-	require.NoError(t, err)
-	require.Len(t, usages, 1)
-	require.NoError(t, workspace.Close())
-
-	reopened, err := NewWorkspace(
-		context.Background(),
-		projectRoot,
-		lsp.NewServer(nil, projectRoot, "test"),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, reopened.Close()) })
-	restoredControllers, err := workspaceStimulusIndex(
-		t,
-		reopened,
-	).Controllers()
-	require.NoError(t, err)
-	assert.Equal(t, controllers, restoredControllers)
-	restoredUsages, err := workspaceStimulusIndex(
-		t,
-		reopened,
-	).Usages("hello")
-	require.NoError(t, err)
-	assert.Equal(t, usages, restoredUsages)
 }
 
 func TestWorkspaceIndexesAndRestoresPublicAssets(t *testing.T) {
@@ -1148,20 +1082,6 @@ func workspaceAssetIndex(t *testing.T, workspace *Workspace) *asset.Index {
 		}
 	}
 	t.Fatal("asset index is not registered")
-	return nil
-}
-
-func workspaceStimulusIndex(
-	t *testing.T,
-	workspace *Workspace,
-) *stimulus.Index {
-	t.Helper()
-	for _, idx := range workspace.indexers {
-		if candidate, ok := idx.(*stimulus.Index); ok {
-			return candidate
-		}
-	}
-	t.Fatal("Stimulus index is not registered")
 	return nil
 }
 

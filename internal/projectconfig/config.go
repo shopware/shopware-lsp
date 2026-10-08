@@ -231,7 +231,6 @@ var DomainCatalog = []CatalogEntry{
 	{ID: "symfony.forms", Label: "Symfony Forms", Parent: "symfony", DependsOn: []string{"php"}},
 	{ID: "symfony.configuration", Label: "Symfony Configuration", Parent: "symfony", DependsOn: []string{"php"}},
 	{ID: "symfony.serializer", Label: "Symfony Serializer", Parent: "symfony", DependsOn: []string{"php"}},
-	{ID: "symfony.stimulus", Label: "Symfony Stimulus", Parent: "symfony"},
 	{ID: "symfony.validation", Label: "Symfony Validation", Parent: "symfony", DependsOn: []string{"php"}},
 	{ID: "symfony.twigComponents", Label: "Symfony Twig Components", Parent: "symfony", DependsOn: []string{"twig"}},
 	{ID: "shopware", Label: "Shopware"},

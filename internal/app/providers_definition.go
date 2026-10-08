@@ -32,9 +32,6 @@ func registerDefinitionProviders(server *lsp.Server, root string, phpFeatures *p
 		services.assets,
 		services.php,
 	))
-	server.RegisterDefinitionProvider(
-		definition.NewStimulusDefinitionProvider(services.stimulus),
-	)
 	if server.DomainEnabled("scss") {
 		server.RegisterDefinitionProvider(
 			definition.NewStyleClassDefinitionProvider(services.styles),

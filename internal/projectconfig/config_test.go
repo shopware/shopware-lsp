@@ -95,7 +95,9 @@ func TestResolveCascadesDisabledDependencies(t *testing.T) {
 
 func TestDecodeRejectsUnknownAndInvalidValues(t *testing.T) {
 	t.Parallel()
-	_, err := Decode([]byte(`{"version":1,"features":{"future":false}}`))
+	_, err := Decode([]byte(`{"version":1,"domains":{"symfony.stimulus":false}}`))
+	require.ErrorContains(t, err, "unknown domain")
+	_, err = Decode([]byte(`{"version":1,"features":{"future":false}}`))
 	require.ErrorContains(t, err, "unknown feature")
 	_, err = Decode([]byte(`{"version":1,"diagnostics":{"rules":{"php.arguments":"loud"}}}`))
 	require.ErrorContains(t, err, "invalid severity")

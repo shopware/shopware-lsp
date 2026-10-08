@@ -76,7 +76,7 @@ editing.
 - Doctrine DBAL table and column intelligence backed by Shopware DAL definitions,
   join aliases, and custom type registrations.
 - Console commands, Messenger messages and handlers, events and listeners,
-  forms, validation, Serializer targets, Stimulus controllers,
+  forms, validation, Serializer targets,
   assets, environment variables, and bundle configuration.
 - Symfony UX Twig and Live Component props, actions, events, listeners, blocks,
   templates, and cross-language references.
@@ -197,9 +197,9 @@ whole workspace.
 | File type | Examples of framework support |
 |---|---|
 | PHP | Semantic types, completion, navigation, references, rename, diagnostics, code actions, code lenses |
-| Twig and HTML | Formatting, templates, blocks, routes, translations, components, forms, assets, Stimulus, typed variables |
+| Twig | Formatting, templates, blocks, routes, translations, components, forms, assets, typed variables |
 | XML and YAML | Services, routes, DBAL type registrations, configuration, translations, validation |
-| JavaScript and TypeScript | Administration components, snippets, routes, assets, Stimulus |
+| JavaScript and TypeScript | Administration components, snippets, routes, assets |
 | Vue | Shopware Administration component templates, scripts, styles, props, slots, events, and blocks |
 | SCSS | Theme variables, feature flags, classes, colors, completion, navigation, diagnostics |
 | JSON | Snippets, theme configuration, Composer and Shopware metadata, entity snapshots |

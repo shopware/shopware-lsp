@@ -45,9 +45,6 @@ func registerReferenceProviders(server *lsp.Server, phpFeatures *phpsemantic.Pro
 		services.assets,
 		services.php,
 	))
-	server.RegisterReferencesProvider(
-		reference.NewStimulusReferenceProvider(services.stimulus),
-	)
 	if server.DomainEnabled("scss") {
 		server.RegisterReferencesProvider(
 			reference.NewStyleClassReferenceProvider(services.styles),

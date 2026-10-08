@@ -28,7 +28,6 @@ import (
 	shopwaredal "github.com/shopware/shopware-lsp/internal/shopware/dal"
 	"github.com/shopware/shopware-lsp/internal/shopware/entityschema"
 	"github.com/shopware/shopware-lsp/internal/snippet"
-	"github.com/shopware/shopware-lsp/internal/stimulus"
 	"github.com/shopware/shopware-lsp/internal/style"
 	"github.com/shopware/shopware-lsp/internal/symfony"
 	"github.com/shopware/shopware-lsp/internal/symfonyconfig"
@@ -55,7 +54,6 @@ type workspaceServices struct {
 	forms               *form.Index
 	configuration       *symfonyconfig.Index
 	serializer          *serializer.Index
-	stimulus            *stimulus.Index
 	styles              *style.Index
 	php                 *php.PHPIndex
 	twig                *twig.TwigIndexer
