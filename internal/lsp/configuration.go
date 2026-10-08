@@ -775,8 +775,7 @@ func inspectionDomain(id string) string {
 		return "symfony.assets"
 	case strings.HasPrefix(id, "symfony.service"),
 		strings.HasPrefix(id, "symfony.container"),
-		strings.HasPrefix(id, "symfony.duplicate"),
-		strings.HasPrefix(id, "symfony.legacy"):
+		strings.HasPrefix(id, "symfony.duplicate"):
 		return "symfony.services"
 	case strings.HasPrefix(id, "twig.component"):
 		return "symfony.twigComponents"

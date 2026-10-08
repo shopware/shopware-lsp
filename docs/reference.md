@@ -174,8 +174,6 @@ exact public names shown by MCP `tools/list`; unknown names are rejected.
 - Deprecated service metadata from XML/YAML/PHP definitions and compiled
   containers, with deprecated completion items and hint diagnostics for
   services or their PHP classes
-- Hint diagnostics for legacy `factory_class` / `factory_method` /
-  `factory_service` and XML factory-attribute forms
 - XML/YAML service-tag contract diagnostics for conventional tags such as
   `twig.extension`, `form.type`, `security.voter`, and
   `kernel.event_subscriber`, including modern/legacy interface alternatives
@@ -825,8 +823,6 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
 - Diagnostics for missing static route names
 - Deprecated controller class/method diagnostics on XML/YAML/Twig controller
   references and PHP/Twig route-name usages
-- Hint diagnostics for legacy route `pattern` and `_method` / `_scheme`
-  requirement settings in YAML and XML
 - Route completion in Twig anchor `href` and form `action` attributes with
   automatic `path()` insertion and placeholder arguments; concrete static URLs
   support normalized absolute/partial reverse navigation, hover, and
@@ -1374,15 +1370,13 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
 | Invokable Symfony command should declare `int` | Hint | PHP |
 | Invokable Symfony command returns a non-integer exit code | Warning | PHP |
 | Deprecated Symfony form-type string alias | Hint | PHP |
-| Deprecated invalid escape or unquoted YAML indicator | Hint | YAML |
-| Deprecated colon in an unquoted YAML mapping value | Hint | YAML |
 | Deprecated Symfony service or service class | Hint | PHP, XML, YAML |
 | Service class violates a conventional tag contract | Warning | XML, YAML |
 | Missing Symfony container constant or enum | Error | XML, YAML |
 | Unknown YAML service named argument | Warning | YAML |
 | Missing configured service or event-listener method | Warning | PHP, XML, YAML |
 | Incompatible service supplied to a constructor/method argument | Warning | XML, YAML, PHP |
-| Deprecated controller action or legacy route/DI setting | Hint | PHP, Twig, XML, YAML |
+| Deprecated controller action | Hint | PHP, Twig, XML, YAML |
 | Deprecated Twig function, filter, custom tag, or typed PHP member | Hint | Twig |
 | Missing or non-enum class in `enum()` / `enum_cases()` | Warning | Twig |
 | Invalid `_self` macro import inside a Twig component | Error | Twig |
