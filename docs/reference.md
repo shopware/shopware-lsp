@@ -925,15 +925,6 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
   Doctrine entity browser are no longer provided. General PHP intelligence
   remains available for installed library classes.
 
-### Stimulus Support
-- Persistent controller discovery from conventional `_controller`/
-  `-controller` JavaScript and TypeScript files, explicit
-  `startStimulusApp()` registrations, and enabled `controllers.json` entries
-- Controller completion and navigation in Twig `stimulus_controller()` calls
-  and `data-controller` attributes in Twig or plain HTML
-- Cross-template references, hover, missing-controller diagnostics, typo quick
-  fixes, stale removal, and cache restore; plain HTML is parsed on demand
-
 ### Theme Config Support
 - SCSS variable completion from theme configuration (prefixed with `$`), plus
   conservative unknown-variable diagnostics backed by workspace declarations
@@ -1378,7 +1369,6 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
 | PHP argument, constructor, and return mismatch | Error | PHP |
 | Invalid PHP visibility or override | Error | PHP |
 | Missing abstract/interface implementation | Error | PHP |
-| Missing Stimulus controller | Warning | Twig, HTML |
 | Missing Messenger subscriber handler method | Warning | PHP |
 | Missing Messenger message or configured handler method | Warning | PHP, XML, YAML |
 | Invokable Symfony command should declare `int` | Hint | PHP |
@@ -1406,7 +1396,6 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
 |---|---|
 | PHP (.php) | Completion, hover, go-to-definition, references, signature help, rename, diagnostics, code actions, code lens |
 | Twig (.twig) | Completion, go-to-definition, hover, diagnostics, code actions, code lens |
-| HTML (.html) | Stimulus completion, go-to-definition, references, hover, diagnostics, code actions |
 | XML (.xml) | Completion, go-to-definition, diagnostics, code actions |
 | YAML (.yaml, .yml) | Completion, go-to-definition, diagnostics, code actions |
 | JSON (.json) | Indexed for snippets and theme config |

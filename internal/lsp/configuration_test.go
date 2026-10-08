@@ -44,6 +44,29 @@ func TestSCSSInspectionUsesSCSSDomain(t *testing.T) {
 	require.Equal(t, "scss", inspectionDomain("scss.variable"))
 }
 
+func TestConfigurationRejectsRemovedStimulusDiagnosticIDs(t *testing.T) {
+	for _, test := range []struct {
+		diagnostics projectconfig.DiagnosticsConfig
+		errorText   string
+	}{
+		{projectconfig.DiagnosticsConfig{Inspections: map[string]bool{"symfony.stimulus": false}}, "unknown inspection"},
+		{projectconfig.DiagnosticsConfig{Rules: map[string]projectconfig.Severity{"symfony.stimulus.controller.missing": projectconfig.SeverityOff}}, "unknown diagnostic rule"},
+	} {
+		server := NewServer(nil, "", "test")
+		_, err := server.initialize(context.Background(), &protocol.InitializeParams{
+			RootURI: uriutil.FileURI(t.TempDir()),
+			InitializationOptions: protocol.InitializationOptions{
+				CLIMode: true,
+				Configuration: &projectconfig.Partial{
+					Diagnostics: &test.diagnostics,
+				},
+			},
+		})
+		require.ErrorContains(t, err, test.errorText)
+		require.NoError(t, server.CloseAll())
+	}
+}
+
 func TestDiagnosticConfigurationDisablesAndOverridesRules(t *testing.T) {
 	for _, test := range []struct {
 		name        string

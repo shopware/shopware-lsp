@@ -30,9 +30,6 @@ func registerHoverProviders(server *lsp.Server, root string, phpFeatures *phpsem
 		services.assets,
 		services.php,
 	))
-	server.RegisterHoverProvider(
-		hover.NewStimulusHoverProvider(root, services.stimulus),
-	)
 	server.RegisterHoverProvider(hover.NewEventHoverProvider(
 		root,
 		services.events,

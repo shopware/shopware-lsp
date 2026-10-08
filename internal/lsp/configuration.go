@@ -773,8 +773,6 @@ func inspectionDomain(id string) string {
 		return "symfony.validation"
 	case strings.HasPrefix(id, "symfony.asset"):
 		return "symfony.assets"
-	case strings.HasPrefix(id, "symfony.stimulus"):
-		return "symfony.stimulus"
 	case strings.HasPrefix(id, "symfony.service"),
 		strings.HasPrefix(id, "symfony.container"),
 		strings.HasPrefix(id, "symfony.duplicate"),

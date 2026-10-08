@@ -38,9 +38,6 @@ func registerCompletionProviders(server *lsp.Server, root string, phpFeatures *p
 		services.assets,
 		services.php,
 	))
-	server.RegisterCompletionProvider(
-		completion.NewStimulusCompletionProvider(services.stimulus),
-	)
 	server.RegisterCompletionProvider(completion.NewEventCompletionProvider(
 		services.events,
 		services.php,
