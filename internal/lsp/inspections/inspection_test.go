@@ -16,7 +16,6 @@ import (
 	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
 	phpsyntax "github.com/shopware/shopware-lsp/internal/parser/php/syntax"
 	"github.com/shopware/shopware-lsp/internal/php"
-	"github.com/shopware/shopware-lsp/internal/php/project"
 	"github.com/shopware/shopware-lsp/internal/rewrite"
 	"github.com/shopware/shopware-lsp/internal/shopware/dal"
 	"github.com/shopware/shopware-lsp/internal/twig"
@@ -743,41 +742,6 @@ func TestAdminModuleRegistryInspectionBuildsTypoReplacement(t *testing.T) {
 		`Shopware.Module.getModuleRegistry().get('sw-product');`,
 		updated,
 	)
-}
-
-func TestYAMLCompatibilityInspectionBuildsValidatedReplacement(t *testing.T) {
-	document := lsp.NewTextDocument(
-		"file:///project/config/services.yaml",
-		"class: \"Foo\\Bar\"\n",
-		1,
-	)
-	inspection := NewYAMLCompatibility(&project.Model{
-		Dependencies: []project.Package{{
-			Name:    "symfony/http-kernel",
-			Version: "7.3.0",
-		}},
-	})
-	collector := &problemCollector{}
-	require.NoError(t, inspection.Inspect(context.Background(), document, collector))
-	require.Len(t, collector.problems, 1)
-	problem := collector.problems[0]
-	require.Equal(t, lsp.DiagnosticID("symfony.yaml.quoted_escape"), problem.ID)
-	require.Len(t, problem.Fixes, 1)
-
-	fix := quickFixWithID(t, inspection, problem.Fixes[0].ID)
-	plan, err := fix.Build(context.Background(), fixContext(
-		t,
-		document,
-		problem,
-		problem.Fixes[0],
-		nil,
-	))
-	require.NoError(t, err)
-	require.Len(t, plan.Documents, 1)
-	updated, err := plan.Documents[0].Apply()
-	require.NoError(t, err)
-	require.Equal(t, "class: \"Foo\\\\Bar\"\n", updated)
-	require.Empty(t, lsp.NewTextDocument(document.URI, updated, 2).ParseErrors)
 }
 
 func TestServiceArgumentFixRewritesYAMLServiceDefinition(t *testing.T) {

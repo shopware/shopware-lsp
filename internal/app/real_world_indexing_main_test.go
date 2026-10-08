@@ -5554,26 +5554,6 @@ function build(FormBuilderInterface $builder): void
 		"Symfony\\Bridge\\Doctrine\\Form\\Type\\EntityType",
 		deprecatedFormAliases[0].Payload.(map[string]any)["className"],
 	)
-	yamlCompatibilityDocument := lsp.NewTextDocument(
-		"file:///real-world-yaml-compatibility.yaml",
-		"escaped: \"App\\Invalid\"\n"+
-			"reference: @logger\n"+
-			"label: left: right\n",
-		1,
-	)
-	yamlCompatibilityDiagnostics, err := lspdiagnostics.
-		NewYAMLCompatibilityAnalyzer(phpIndex.Project()).
-		Analyze(ctx, yamlCompatibilityDocument)
-	require.NoError(t, err)
-	yamlCompatibilityCodes := make(map[string]int)
-	for _, diagnostic := range yamlCompatibilityDiagnostics {
-		yamlCompatibilityCodes[fmt.Sprint(diagnostic.ID)]++
-	}
-	require.Equal(t, map[string]int{
-		"symfony.yaml.quoted_escape":      1,
-		"symfony.yaml.unquoted_indicator": 1,
-		"symfony.yaml.unquoted_colon":     1,
-	}, yamlCompatibilityCodes)
 	configurationRoots, err := workspaceSymfonyConfigIndex(
 		t,
 		workspace,

@@ -111,18 +111,12 @@ func registerDiagnosticInspections(
 		"symfony.route.duplicate",
 		"symfony.service.duplicate",
 	}, diagnostics.NewDuplicateAnalyzer())
-	registerProblemInspection(server, "symfony.legacy_configuration", xmlYAML, "symfony", []string{
-		"symfony.route.pattern.deprecated",
-		"symfony.route.requirement.deprecated",
-		"symfony.service.factory.deprecated",
-	}, diagnostics.NewLegacyConfigurationAnalyzer())
 	server.RegisterInspection(inspections.NewServicesXMLMigration())
 	server.RegisterInspection(inspections.NewSCSSVariable(
 		services.styles,
 		services.symbols,
 	))
 
-	server.RegisterInspection(inspections.NewYAMLCompatibility(services.php.Project()))
 	server.RegisterInspection(inspections.NewController(
 		services.routes,
 		services.services,
