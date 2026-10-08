@@ -172,7 +172,7 @@ go test ./internal/shopware/entityschema -run '^$' \
   and workspace-symbol collection around small scanners, plans, and collectors.
 - Split translation and asset diagnostic runs into catalog acquisition,
   reference validation, lookup, and diagnostic presentation. Split PHP
-  semantic diagnostics and Symfony Form/Doctrine diagnostics into focused
+  semantic diagnostics and Doctrine diagnostics into focused
   passes and role-specific handlers.
 - Split type rendering by type family, array-literal inference by literal
   shape, Administration declaration lookup by symbol kind, and Vue type

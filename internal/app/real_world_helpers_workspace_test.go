@@ -8,12 +8,11 @@ import (
 	"testing"
 
 	"github.com/shopware/shopware-lsp/internal/admin"
-	"github.com/shopware/shopware-lsp/internal/lsp/analytics"
 	"github.com/shopware/shopware-lsp/internal/appscript"
 	"github.com/shopware/shopware-lsp/internal/console"
 	"github.com/shopware/shopware-lsp/internal/event"
-	"github.com/shopware/shopware-lsp/internal/form"
 	"github.com/shopware/shopware-lsp/internal/lsp"
+	"github.com/shopware/shopware-lsp/internal/lsp/analytics"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	shopwaredal "github.com/shopware/shopware-lsp/internal/shopware/dal"
 	"github.com/shopware/shopware-lsp/internal/snippet"
@@ -358,20 +357,6 @@ func requireEventListener(
 	)
 }
 
-func requireFormOption(
-	t *testing.T,
-	options []form.Option,
-	name string,
-) {
-	t.Helper()
-	for _, option := range options {
-		if option.Name == name {
-			return
-		}
-	}
-	t.Fatalf("form option %q not found in %#v", name, options)
-}
-
 func requireSemanticTokenText(
 	t *testing.T,
 	document *lsp.TextDocument,
@@ -389,36 +374,6 @@ func requireSemanticTokenText(
 		}
 	}
 	t.Fatalf("semantic token %q with type %d not found", text, tokenType)
-}
-
-func requireAnalyticsFormType(
-	t *testing.T,
-	types []analytics.FormTypeCatalogEntry,
-	name string,
-) analytics.FormTypeCatalogEntry {
-	t.Helper()
-	for _, current := range types {
-		if current.Name == name {
-			return current
-		}
-	}
-	t.Fatalf("form type catalog entry %q not found in %#v", name, types)
-	return analytics.FormTypeCatalogEntry{}
-}
-
-func requireAnalyticsFormOption(
-	t *testing.T,
-	options []analytics.FormOptionCatalogEntry,
-	name string,
-) analytics.FormOptionCatalogEntry {
-	t.Helper()
-	for _, current := range options {
-		if current.Name == name {
-			return current
-		}
-	}
-	t.Fatalf("form option catalog entry %q not found in %#v", name, options)
-	return analytics.FormOptionCatalogEntry{}
 }
 
 func realWorldDecodeCommandResponse(

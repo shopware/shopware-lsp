@@ -265,51 +265,6 @@ class ProductController
 	)
 }
 
-func TestPHPIndexCollectsTwigFormViewTypes(t *testing.T) {
-	index, err := NewPHPIndex(t.TempDir())
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, index.Close()) })
-
-	source := `<?php
-namespace App\Controller;
-
-use App\Form\CheckoutType;
-use App\Form\SearchType;
-
-class CheckoutController
-{
-    public function checkout()
-    {
-        $form = $this->createForm(CheckoutType::class);
-        $view = $form->createView();
-
-        return $this->render('checkout.html.twig', [
-            'checkout' => $view,
-            'search' => $this->createForm(SearchType::class)->createView(),
-        ]);
-    }
-}`
-	require.NoError(t, index.Index(indexer.NewParsedFile(
-		"/project/src/CheckoutController.php",
-		[]byte(source),
-	)))
-
-	variables, err := index.TwigTemplateVariables("checkout.html.twig")
-	require.NoError(t, err)
-	assertTwigVariableFormTypes(
-		t,
-		variables,
-		"checkout",
-		"App\\Form\\CheckoutType",
-	)
-	assertTwigVariableFormTypes(
-		t,
-		variables,
-		"search",
-		"App\\Form\\SearchType",
-	)
-}
-
 func assertTwigVariableType(
 	t *testing.T,
 	variables []TwigTemplateVariable,
@@ -320,22 +275,6 @@ func assertTwigVariableType(
 	for _, variable := range variables {
 		if variable.Name == name {
 			assert.Equal(t, expected, variable.Type)
-			return
-		}
-	}
-	t.Fatalf("Twig variable %q not found in %#v", name, variables)
-}
-
-func assertTwigVariableFormTypes(
-	t *testing.T,
-	variables []TwigTemplateVariable,
-	name string,
-	expected ...string,
-) {
-	t.Helper()
-	for _, variable := range variables {
-		if variable.Name == name {
-			assert.Equal(t, expected, variable.FormTypes)
 			return
 		}
 	}

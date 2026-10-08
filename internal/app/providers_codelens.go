@@ -62,10 +62,6 @@ func registerCodeLensProviders(server *lsp.Server, root string, services workspa
 			services.php,
 		),
 	)
-	server.RegisterCodeLensProvider(codelens.NewFormRelatedCodeLensProvider(
-		services.forms,
-		services.php,
-	))
 	server.RegisterCodeLensProvider(
 		codelens.NewViteCodeLensProvider(services.assets),
 	)

@@ -53,16 +53,6 @@ func registerActionAndCommandProviders(server *lsp.Server, root string, versioni
 		services.services,
 	)
 	server.RegisterActionProvider(symfonyGenerators)
-	formFieldGenerator := codeaction.NewFormFieldGeneratorProvider(
-		services.forms,
-		services.php,
-	)
-	server.RegisterActionProvider(formFieldGenerator)
-	twigFormFieldGenerator := codeaction.NewTwigFormFieldGeneratorProvider(
-		services.forms,
-		services.php,
-	)
-	server.RegisterActionProvider(twigFormFieldGenerator)
 	twigTemplateGenerator := codeaction.NewTwigTemplateGeneratorProvider(
 		services.twig,
 	)
@@ -95,8 +85,6 @@ func registerActionAndCommandProviders(server *lsp.Server, root string, versioni
 	server.RegisterCommandProvider(commands.NewExtensionCommandProvider(services.extensions))
 	server.RegisterCommandProvider(commands.NewTwigCommandProvider(root, services.extensions, versioning, server))
 	server.RegisterCommandProvider(symfonyGenerators)
-	server.RegisterCommandProvider(formFieldGenerator)
-	server.RegisterCommandProvider(twigFormFieldGenerator)
 	server.RegisterCommandProvider(twigTemplateGenerator)
 	server.RegisterCommandProvider(twigTranslationExtractor)
 	if adminTwigOverride != nil {
@@ -112,11 +100,6 @@ func registerActionAndCommandProviders(server *lsp.Server, root string, versioni
 		services.services,
 		services.php,
 		services.twig,
-	))
-	server.RegisterCommandProvider(analytics.NewFormCatalogProvider(
-		root,
-		services.forms,
-		services.php,
 	))
 	server.RegisterCommandProvider(analytics.NewServiceLocatorProvider(
 		services.services,

@@ -29,12 +29,11 @@ var twigContextCandidateMatcher = textutil.NewFoldASCIIMatcher(
 // Type is persisted in canonical PHP type syntax instead of as types.Type,
 // whose immutable representation intentionally has no exported fields.
 type TwigTemplateVariable struct {
-	Template  string
-	Name      string
-	Type      string
-	FormTypes []string
-	File      string
-	Range     cst.TextRange
+	Template string
+	Name     string
+	Type     string
+	File     string
+	Range    cst.TextRange
 }
 
 type TwigTemplateContext struct {
@@ -65,7 +64,6 @@ func extractTwigTemplateContexts(
 			collector = &twigContextCollector{
 				template:  template,
 				path:      path,
-				root:      root,
 				document:  document,
 				scope:     scope,
 				variables: make(map[string]TwigTemplateVariable),
@@ -285,7 +283,6 @@ func normalizeTwigTemplateName(template string) string {
 type twigContextCollector struct {
 	template  string
 	path      string
-	root      *phpsyntax.Node
 	document  *semantic.Document
 	scope     *phpsyntax.Node
 	variables map[string]TwigTemplateVariable
@@ -471,33 +468,16 @@ func (collector *twigContextCollector) add(
 			typeName = inferred.String()
 		}
 	}
-	formTypes := collector.formTypesForTwigValue(
-		value,
-		make(map[string]struct{}),
-		0,
-	)
 	existing, exists := collector.variables[name]
 	if exists && existing.Type != "unknown" && typeName == "unknown" {
-		existing.FormTypes = appendUniqueTwigFormTypes(
-			existing.FormTypes,
-			formTypes...,
-		)
-		collector.variables[name] = existing
 		return
 	}
-	if exists {
-		formTypes = appendUniqueTwigFormTypes(
-			existing.FormTypes,
-			formTypes...,
-		)
-	}
 	collector.variables[name] = TwigTemplateVariable{
-		Template:  collector.template,
-		Name:      name,
-		Type:      typeName,
-		FormTypes: formTypes,
-		File:      collector.path,
-		Range:     rng,
+		Template: collector.template,
+		Name:     name,
+		Type:     typeName,
+		File:     collector.path,
+		Range:    rng,
 	}
 }
 
@@ -582,214 +562,6 @@ func (collector *twigContextCollector) typeForAssignedVariable(
 	return collector.typeForTwigValue(best, visited, depth+1)
 }
 
-func (collector *twigContextCollector) formTypesForTwigValue(
-	value *phpsyntax.Node,
-	visited map[string]struct{},
-	depth int,
-) []string {
-	if value == nil || depth > 8 {
-		return nil
-	}
-	switch value.Kind() {
-	case phpsyntax.PhpVariable:
-		return collector.formTypesForAssignedVariable(
-			phpquery.VariableName(value),
-			value.Range().Start,
-			visited,
-			depth+1,
-		)
-	case phpsyntax.PhpMemberCall, phpsyntax.PhpScopedCall:
-		if strings.EqualFold(
-			phpquery.CallMethodName(value),
-			"createView",
-		) {
-			return collector.formTypesForFormExpression(
-				phpquery.CallReceiver(value),
-				value.Range().Start,
-				visited,
-				depth+1,
-			)
-		}
-	case phpsyntax.PhpParenthesized:
-		for child := range value.ChildNodes() {
-			if result := collector.formTypesForTwigValue(
-				child,
-				visited,
-				depth+1,
-			); len(result) != 0 {
-				return result
-			}
-		}
-	}
-	return nil
-}
-
-func (collector *twigContextCollector) formTypesForFormExpression(
-	value *phpsyntax.Node,
-	before uint32,
-	visited map[string]struct{},
-	depth int,
-) []string {
-	if value == nil || depth > 8 {
-		return nil
-	}
-	if value.Kind() == phpsyntax.PhpVariable {
-		return collector.formTypesForAssignedVariable(
-			phpquery.VariableName(value),
-			before,
-			visited,
-			depth+1,
-		)
-	}
-	switch value.Kind() {
-	case phpsyntax.PhpMemberCall, phpsyntax.PhpScopedCall,
-		phpsyntax.PhpFunctionCall:
-		method := strings.ToLower(phpquery.CallMethodName(value))
-		typeIndex := -1
-		switch method {
-		case "createform", "create", "createbuilder":
-			typeIndex = 0
-		case "createnamed", "createnamedbuilder":
-			typeIndex = 1
-		case "getform":
-			return collector.formTypesForFormExpression(
-				phpquery.CallReceiver(value),
-				value.Range().Start,
-				visited,
-				depth+1,
-			)
-		}
-		if typeIndex >= 0 {
-			typeNode := argumentExpression(
-				value,
-				[]string{"type"},
-				typeIndex,
-			)
-			if typeName := twigFormTypeExpression(
-				collector.root,
-				typeNode,
-			); typeName != "" {
-				return []string{typeName}
-			}
-		}
-	case phpsyntax.PhpParenthesized:
-		for child := range value.ChildNodes() {
-			if result := collector.formTypesForFormExpression(
-				child,
-				before,
-				visited,
-				depth+1,
-			); len(result) != 0 {
-				return result
-			}
-		}
-	}
-	return nil
-}
-
-func (collector *twigContextCollector) formTypesForAssignedVariable(
-	name string,
-	before uint32,
-	visited map[string]struct{},
-	depth int,
-) []string {
-	if name == "" || collector.scope == nil || depth > 8 {
-		return nil
-	}
-	key := fmt.Sprintf(
-		"%d:%s:%d",
-		collector.scope.Range().Start,
-		name,
-		before,
-	)
-	if _, exists := visited[key]; exists {
-		return nil
-	}
-	visited[key] = struct{}{}
-	var result []string
-	phpquery.Visit(
-		collector.scope,
-		func(assignment *phpsyntax.Node) bool {
-			if assignment.Range().Start >= before ||
-				phpquery.FunctionLikeAt(assignment) != collector.scope {
-				return true
-			}
-			nodes := directNodesForTwigContext(assignment)
-			if len(nodes) < 2 ||
-				nodes[0].Kind() != phpsyntax.PhpVariable ||
-				phpquery.VariableName(nodes[0]) != name {
-				return true
-			}
-			right := nodes[len(nodes)-1]
-			current := collector.formTypesForFormExpression(
-				right,
-				assignment.Range().Start,
-				visited,
-				depth+1,
-			)
-			if len(current) == 0 {
-				current = collector.formTypesForTwigValue(
-					right,
-					visited,
-					depth+1,
-				)
-			}
-			result = appendUniqueTwigFormTypes(result, current...)
-			return true
-		},
-		phpsyntax.PhpAssignmentExpression,
-	)
-	return result
-}
-
-func twigFormTypeExpression(
-	root,
-	node *phpsyntax.Node,
-) string {
-	if root == nil || node == nil {
-		return ""
-	}
-	resolver := NewNameResolver(root)
-	if raw := phpquery.ClassConstantName(node); raw != "" {
-		return strings.Trim(resolver.Resolve(raw), `\`)
-	}
-	if node.Kind() == phpsyntax.PhpString {
-		value := phpquery.StringValue(node)
-		if !strings.Contains(value, `\`) {
-			return value
-		}
-		return strings.Trim(resolver.Resolve(value), `\`)
-	}
-	return ""
-}
-
-func appendUniqueTwigFormTypes(
-	target []string,
-	values ...string,
-) []string {
-	seen := make(map[string]struct{}, len(target)+len(values))
-	for _, value := range target {
-		seen[strings.ToLower(strings.Trim(value, `\`))] = struct{}{}
-	}
-	for _, value := range values {
-		value = strings.Trim(strings.TrimSpace(value), `\`)
-		if value == "" {
-			continue
-		}
-		key := strings.ToLower(value)
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		seen[key] = struct{}{}
-		target = append(target, value)
-	}
-	sort.SliceStable(target, func(left, right int) bool {
-		return strings.ToLower(target[left]) <
-			strings.ToLower(target[right])
-	})
-	return target
-}
-
 func isTwigArrayContextFunction(name string) bool {
 	name = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(name), `\`))
 	switch name {
@@ -856,17 +628,7 @@ func (idx *PHPIndex) TwigTemplateVariables(
 			existing, exists := merged[key]
 			if !exists ||
 				(existing.Type == "unknown" && variable.Type != "unknown") {
-				variable.FormTypes = appendUniqueTwigFormTypes(
-					variable.FormTypes,
-					existing.FormTypes...,
-				)
 				merged[key] = variable
-			} else {
-				existing.FormTypes = appendUniqueTwigFormTypes(
-					existing.FormTypes,
-					variable.FormTypes...,
-				)
-				merged[key] = existing
 			}
 		}
 	}
@@ -981,10 +743,6 @@ func (idx *PHPIndex) enrichUnknownTwigVariables(
 			continue
 		}
 		variable.Type = replacement.Type
-		variable.FormTypes = appendUniqueTwigFormTypes(
-			variable.FormTypes,
-			replacement.FormTypes...,
-		)
 		result[position] = variable
 	}
 	return result
@@ -994,13 +752,7 @@ func cloneTwigTemplateVariables(
 	variables []TwigTemplateVariable,
 ) []TwigTemplateVariable {
 	result := make([]TwigTemplateVariable, len(variables))
-	for position, variable := range variables {
-		result[position] = variable
-		result[position].FormTypes = append(
-			[]string(nil),
-			variable.FormTypes...,
-		)
-	}
+	copy(result, variables)
 	return result
 }
 

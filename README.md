@@ -76,7 +76,7 @@ editing.
 - Doctrine DBAL table and column intelligence backed by Shopware DAL definitions,
   join aliases, and custom type registrations.
 - Console commands, Messenger messages and handlers, events and listeners,
-  forms, validation, Serializer targets,
+  validation, Serializer targets,
   assets, environment variables, and bundle configuration.
 - Symfony UX Twig and Live Component props, actions, events, listeners, blocks,
   templates, and cross-language references.
@@ -97,7 +97,7 @@ editing.
 - Workspace-wide PHP symbols, inheritance, traits, types, PHPDoc generics,
   flow-sensitive inference, completion, hover, definitions, references,
   signature help, rename, and diagnostics.
-- Typed Twig variables from controllers, components, globals, forms, and
+- Typed Twig variables from controllers, components, globals, and
   annotations, including Twig 3.29 documentation comments, member completion,
   hover documentation, and navigation back to PHP.
 - Framework-aware diagnostics for missing symbols, incompatible arguments,
@@ -105,9 +105,9 @@ editing.
 
 ### Project tools
 
-- Searchable route, service, command, form type, Twig
+- Searchable route, service, command, Twig
   extension, component, template usage, and profiler request browsers.
-- Safe scaffolds for controllers, commands, form types, Twig extensions,
+- Safe scaffolds for controllers, commands, Twig extensions,
   compiler passes, tests, service files, and Shopware DAL models.
 - One production analysis path shared by the editor, CLI, MCP server, and
   refactoring engine.
@@ -183,7 +183,7 @@ After the initial workspace index completes:
 2. Open a service configuration file and complete a service ID, tag, class,
    parameter, constructor argument, or configured method.
 3. Open a Twig template and complete a template path, snippet key, component,
-   route, asset, form field, or typed variable member.
+   route, asset, or typed variable member.
 4. Run **Symfony: Browse Routes...** or **Symfony: Locate Service...** from the
    command palette.
 5. Run **Shopware: New File...** to preview a framework-aware scaffold.
@@ -197,7 +197,7 @@ whole workspace.
 | File type | Examples of framework support |
 |---|---|
 | PHP | Semantic types, completion, navigation, references, rename, diagnostics, code actions, code lenses |
-| Twig | Formatting, templates, blocks, routes, translations, components, forms, assets, typed variables |
+| Twig | Formatting, templates, blocks, routes, translations, components, assets, typed variables |
 | XML and YAML | Services, routes, DBAL type registrations, configuration, translations, validation |
 | JavaScript and TypeScript | Administration components, snippets, routes, assets |
 | Vue | Shopware Administration component templates, scripts, styles, props, slots, events, and blocks |

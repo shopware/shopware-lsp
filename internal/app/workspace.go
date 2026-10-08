@@ -16,7 +16,6 @@ import (
 	"github.com/shopware/shopware-lsp/internal/event"
 	"github.com/shopware/shopware-lsp/internal/extension"
 	"github.com/shopware/shopware-lsp/internal/feature"
-	"github.com/shopware/shopware-lsp/internal/form"
 	"github.com/shopware/shopware-lsp/internal/indexer"
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/messenger"
@@ -168,12 +167,6 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 		return nil, fmt.Errorf("create environment index: %w", err)
 	}
 	workspace.indexers = append(workspace.indexers, environmentIndex)
-	formIndex, err := form.NewIndex(cacheDir, workspace.store)
-	if err != nil {
-		return nil, fmt.Errorf("create form index: %w", err)
-	}
-	formIndex.SetPHPIndex(phpIndex)
-	workspace.indexers = append(workspace.indexers, formIndex)
 	configurationIndex, err := symfonyconfig.NewIndex(
 		cacheDir,
 		workspace.store,
@@ -323,7 +316,6 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 		events:              eventIndex,
 		messenger:           messengerIndex,
 		environment:         environmentIndex,
-		forms:               formIndex,
 		configuration:       configurationIndex,
 		serializer:          serializerIndex,
 		styles:              styleIndex,
@@ -367,8 +359,6 @@ func domainForIndexer(id string) string {
 		return "symfony.messenger"
 	case "symfony.environment":
 		return "symfony.environment"
-	case "symfony.form":
-		return "symfony.forms"
 	case "symfony.configuration":
 		return "symfony.configuration"
 	case "symfony.serializer":

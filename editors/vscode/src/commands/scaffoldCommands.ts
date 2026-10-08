@@ -146,13 +146,6 @@ const newFileScaffolds: NewFileScaffoldItem[] = [
     placeHolder: 'Product',
   },
   {
-    label: 'Form Type',
-    description: 'Symfony form type',
-    backend: 'symfony',
-    scaffoldKind: 'form',
-    placeHolder: 'ProductType',
-  },
-  {
     label: 'Twig Extension',
     description: 'Twig functions and filters',
     backend: 'symfony',

@@ -83,7 +83,6 @@ func registerDiagnosticInspections(
 		"symfony.messenger.handler_method.missing",
 		"symfony.messenger.message.missing",
 	}, diagnostics.NewMessengerAnalyzer(services.php))
-	server.RegisterInspection(inspections.NewForm(services.forms, services.php))
 	registerProblemInspection(server, "symfony.serializer", phpOnly, "symfony", []string{
 		"symfony.serializer.class.missing",
 	}, diagnostics.NewSerializerAnalyzer(services.serializer, services.php))

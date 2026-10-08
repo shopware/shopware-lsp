@@ -14,7 +14,6 @@ import (
 	"github.com/shopware/shopware-lsp/internal/event"
 	"github.com/shopware/shopware-lsp/internal/extension"
 	"github.com/shopware/shopware-lsp/internal/feature"
-	"github.com/shopware/shopware-lsp/internal/form"
 	"github.com/shopware/shopware-lsp/internal/indexer"
 	"github.com/shopware/shopware-lsp/internal/language"
 	"github.com/shopware/shopware-lsp/internal/lsp"
@@ -51,7 +50,6 @@ type workspaceServices struct {
 	events              *event.Index
 	messenger           *messenger.Index
 	environment         *environment.Index
-	forms               *form.Index
 	configuration       *symfonyconfig.Index
 	serializer          *serializer.Index
 	styles              *style.Index

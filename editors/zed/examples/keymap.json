@@ -6,10 +6,6 @@
     "bindings": {
       "alt-shift-e": ["task::Spawn", { "task_name": "Shopware: insert Twig extends" }],
       "alt-shift-b": ["task::Spawn", { "task_name": "Shopware: insert Twig blocks" }],
-      "alt-shift-f": [
-        "task::Spawn",
-        { "task_name": "Shopware: insert Twig form rows" }
-      ],
       "alt-shift-t": [
         "task::Spawn",
         { "task_name": "Shopware: insert translation (extract selection)" }
@@ -31,7 +27,6 @@
   {
     "context": "Editor && extension == php",
     "bindings": {
-      "alt-shift-f": ["task::Spawn", { "task_name": "Shopware: insert form fields" }],
       "alt-shift-g": [
         "task::Spawn",
         { "task_name": "Shopware: show service definition" }

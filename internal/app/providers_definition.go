@@ -53,10 +53,6 @@ func registerDefinitionProviders(server *lsp.Server, root string, phpFeatures *p
 			services.environment,
 		),
 	)
-	server.RegisterDefinitionProvider(definition.NewFormDefinitionProvider(
-		services.forms,
-		services.php,
-	))
 	server.RegisterDefinitionProvider(
 		definition.NewSymfonyConfigDefinitionProvider(
 			services.configuration,

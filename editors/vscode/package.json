@@ -284,10 +284,6 @@
         "title": "Symfony: Browse Profiler Requests…"
       },
       {
-        "command": "shopware.symfony.browseFormTypes",
-        "title": "Symfony: Browse Form Types…"
-      },
-      {
         "command": "shopware.symfony.locateService",
         "title": "Symfony: Locate Service…"
       },

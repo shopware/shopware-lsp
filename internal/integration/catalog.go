@@ -112,8 +112,6 @@ func ClientCommands() []ClientCommand {
 			field("bundleUri", "Bundle file", "uri", true),
 			field("bundleClass", "Bundle class", "string", true),
 		)),
-		command("shopware.symfony.generateFormFields", "Generate form fields from an inferred data class", "codeAction", classArguments()),
-		command("shopware.symfony.generateTwigFormFields", "Generate Twig form rows", "codeAction", uriArguments()),
 		command("shopware.symfony.generateTwigExtends", "Choose and insert a Twig parent template", "codeAction", uriArguments()),
 		command("shopware.symfony.generateTwigBlocks", "Choose and insert parent Twig blocks", "codeAction", uriArguments()),
 		command("shopware.symfony.extractTwigTranslation", "Extract selected Twig text into translations", "codeAction", fields(
@@ -177,7 +175,6 @@ func Scaffolds() []ScaffoldDefinition {
 		}),
 		scaffold("symfony", "command", "Command", "Symfony Console command", "workspace-edit", "CacheWarm"),
 		scaffold("symfony", "controller", "Controller", "Symfony controller with route", "workspace-edit", "Product"),
-		scaffold("symfony", "form", "Form Type", "Symfony form type", "workspace-edit", "ProductType"),
 		scaffold("symfony", "twig-extension", "Twig Extension", "Twig functions and filters", "workspace-edit", "PriceExtension"),
 		scaffold("symfony", "compiler-pass", "Compiler Pass", "Dependency-injection compiler pass", "workspace-edit", "CollectServicesPass"),
 		scaffold("symfony", "kernel-test", "Kernel Test", "KernelTestCase integration test", "workspace-edit", "Container"),

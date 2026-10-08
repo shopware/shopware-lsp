@@ -118,7 +118,6 @@ final class Alert {}
 			"layout.html.twig",
 			"ignored-fourth.html.twig",
 		},
-		`App\Form\ProductType`,
 	)
 	rawContent = append(
 		rawContent,
@@ -168,7 +167,6 @@ final class Alert {}
 		"product/show.html.twig",
 		"layout.html.twig",
 	}, newest.RenderedTemplates)
-	assert.Equal(t, []string{`App\Form\ProductType`}, newest.FormTypes)
 	assert.Equal(t, []ProfilerMailMessage{{
 		Title: "Time for Symfony Mailer!",
 		Panel: "mailer",
@@ -320,7 +318,6 @@ func profilerFixtureContent(
 	controller string,
 	route string,
 	templates []string,
-	formType string,
 ) []byte {
 	var content strings.Builder
 	content.WriteString(profilerSerializedFixture("_controller", controller))
@@ -339,14 +336,6 @@ func profilerFixtureContent(
 		)
 	}
 	content.WriteString("}")
-	content.WriteByte(0)
-	content.WriteString(
-		`\Symfony\Bundle\FrameworkBundle\DataCollector\FormDataCollector"` +
-			`"forms";a:1:{` +
-			`"type_class";a:1:{"value";s:` +
-			fmt.Sprint(len(formType)) +
-			`:"` + formType + `";}}`,
-	)
 	content.WriteByte(0)
 	return []byte(content.String())
 }
