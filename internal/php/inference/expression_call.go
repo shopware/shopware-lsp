@@ -40,6 +40,7 @@ func (s *functionState) inferCall(
 		context := s.nameContextAt(node.Range().Start)
 		var results []types.Type
 		var generatedFallbacks []types.Type
+		var mismatches []string
 		candidateCount := 0
 		context.VisitFunctionNames(name, func(candidateName string) bool {
 			s.analyzer.Snapshot.VisitFunctionViews(
@@ -68,6 +69,8 @@ func (s *functionState) inferCall(
 							generatedFallbacks,
 							resolved.ReturnType,
 						)
+					} else {
+						mismatches = append(mismatches, resolved.Mismatch)
 					}
 					return true
 				},
@@ -81,7 +84,7 @@ func (s *functionState) inferCall(
 			s.report(
 				node,
 				"php.arguments",
-				"No matching signature for "+name,
+				noMatchingSignatureMessage(name+"()", mismatches),
 			)
 		}
 		return joinTypes(s.relations, results)
@@ -114,6 +117,7 @@ func (s *functionState) inferCall(
 	hasMembers := false
 	var results []types.Type
 	var generatedFallbacks []types.Type
+	var mismatches []string
 	(resolver.MemberResolver{Snapshot: s.analyzer.Snapshot}).VisitMethods(
 		receiver,
 		name,
@@ -147,6 +151,8 @@ func (s *functionState) inferCall(
 					generatedFallbacks,
 					resolved.ReturnType,
 				)
+			} else {
+				mismatches = append(mismatches, resolved.Mismatch)
 			}
 			return true
 		},
@@ -158,7 +164,7 @@ func (s *functionState) inferCall(
 		s.report(
 			node,
 			"php.arguments",
-			"No matching signature for "+name,
+			noMatchingSignatureMessage(name+"()", mismatches),
 		)
 	}
 	result := joinTypes(s.relations, results)
@@ -166,6 +172,17 @@ func (s *functionState) inferCall(
 		result = types.Nullable(result)
 	}
 	return result
+}
+
+// noMatchingSignatureMessage names the rejected callable without its
+// fully-qualified prefix and, when exactly one declaration was considered,
+// explains which argument or parameter caused the mismatch.
+func noMatchingSignatureMessage(callable string, mismatches []string) string {
+	message := "No matching signature for " + strings.TrimPrefix(callable, "\\")
+	if len(mismatches) == 1 && mismatches[0] != "" {
+		message += ": " + mismatches[0]
+	}
+	return message
 }
 
 func callableResult(value types.Type) (types.Type, bool) {
