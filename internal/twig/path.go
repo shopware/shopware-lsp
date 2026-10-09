@@ -110,13 +110,16 @@ func legacyBundleTemplateName(bundle, relative string) string {
 func getBundleNameByPath(twigPath string) string {
 	index := strings.Index(twigPath, "Resources/views")
 	if index != -1 {
-		possiblePath := strings.Trim(twigPath[:index], "/")
-
+		possiblePath := strings.TrimSuffix(twigPath[:index], "/")
+		bundleRoot := possiblePath
 		if filepath.Base(possiblePath) == "src" {
-			return filepath.Base(filepath.Dir(possiblePath))
+			bundleRoot = filepath.Dir(possiblePath)
+		}
+		if name := composerPluginBundleName(bundleRoot); name != "" {
+			return name
 		}
 
-		return filepath.Base(possiblePath)
+		return filepath.Base(strings.Trim(bundleRoot, "/"))
 	}
 
 	return "unknown"
