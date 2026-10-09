@@ -187,7 +187,7 @@ func registerDiagnosticInspections(
 		"shopware.store.manufacturer-link",
 		"shopware.store.require-core",
 		"shopware.store.support-link",
-	}, diagnostics.NewShopwareStoreComposerAnalyzer())
+	}, diagnostics.NewShopwareStoreComposerAnalyzer(root))
 	registerProblemInspection(server, "shopware.entity_snapshot", jsonOnly, "shopware-lsp", []string{
 		"shopware.entity_snapshot.invalid",
 		"shopware.entity_snapshot.graph",

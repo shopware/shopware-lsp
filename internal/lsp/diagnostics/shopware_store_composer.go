@@ -11,15 +11,18 @@ import (
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
+	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
-type ShopwareStoreComposerAnalyzer struct{}
-
-func NewShopwareStoreComposerAnalyzer() *ShopwareStoreComposerAnalyzer {
-	return &ShopwareStoreComposerAnalyzer{}
+type ShopwareStoreComposerAnalyzer struct {
+	root string
 }
 
-func (*ShopwareStoreComposerAnalyzer) Analyze(
+func NewShopwareStoreComposerAnalyzer(root string) *ShopwareStoreComposerAnalyzer {
+	return &ShopwareStoreComposerAnalyzer{root: root}
+}
+
+func (a *ShopwareStoreComposerAnalyzer) Analyze(
 	_ context.Context,
 	document *lsp.TextDocument,
 ) ([]lsp.Problem, error) {
@@ -31,7 +34,7 @@ func (*ShopwareStoreComposerAnalyzer) Analyze(
 	if err := json.Unmarshal(document.Text, &composer); err != nil {
 		return nil, nil
 	}
-	if composer["type"] != "shopware-platform-plugin" {
+	if composer["type"] != "shopware-platform-plugin" || a.isLocalPathPackage(document.URI, composer) {
 		return nil, nil
 	}
 	rootRange := cst.TextRange{End: uint32(len(document.Source))}
@@ -79,6 +82,18 @@ func (*ShopwareStoreComposerAnalyzer) Analyze(
 		))
 	}
 	return result, nil
+}
+
+// isLocalPathPackage reports whether the root project installs this plugin
+// from a local Composer path repository. Store submission rules do not apply
+// to such plugins because they are never distributed through the Store.
+func (a *ShopwareStoreComposerAnalyzer) isLocalPathPackage(uri string, composer map[string]any) bool {
+	path, err := uriutil.Path(uri)
+	if err != nil {
+		return false
+	}
+	name, _ := composer["name"].(string)
+	return isRootPathPackage(a.root, filepath.Dir(path), name)
 }
 
 func validateLocalizedComposerValue(
