@@ -14,12 +14,17 @@ import (
 	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
-type ShopwareStoreComposerAnalyzer struct {
-	root string
+// StoreComplianceResolver supplies the extension's explicit Store validation setting.
+type StoreComplianceResolver interface {
+	StoreComplianceEnabled(dir string) (bool, error)
 }
 
-func NewShopwareStoreComposerAnalyzer(root string) *ShopwareStoreComposerAnalyzer {
-	return &ShopwareStoreComposerAnalyzer{root: root}
+type ShopwareStoreComposerAnalyzer struct {
+	compliance StoreComplianceResolver
+}
+
+func NewShopwareStoreComposerAnalyzer(compliance StoreComplianceResolver) *ShopwareStoreComposerAnalyzer {
+	return &ShopwareStoreComposerAnalyzer{compliance: compliance}
 }
 
 func (a *ShopwareStoreComposerAnalyzer) Analyze(
@@ -34,7 +39,7 @@ func (a *ShopwareStoreComposerAnalyzer) Analyze(
 	if err := json.Unmarshal(document.Text, &composer); err != nil {
 		return nil, nil
 	}
-	if composer["type"] != "shopware-platform-plugin" || a.isLocalPathPackage(document.URI, composer) {
+	if composer["type"] != "shopware-platform-plugin" || !a.storeComplianceEnabled(document.URI) {
 		return nil, nil
 	}
 	rootRange := cst.TextRange{End: uint32(len(document.Source))}
@@ -84,16 +89,13 @@ func (a *ShopwareStoreComposerAnalyzer) Analyze(
 	return result, nil
 }
 
-// isLocalPathPackage reports whether the root project installs this plugin
-// from a local Composer path repository. Store submission rules do not apply
-// to such plugins because they are never distributed through the Store.
-func (a *ShopwareStoreComposerAnalyzer) isLocalPathPackage(uri string, composer map[string]any) bool {
+func (a *ShopwareStoreComposerAnalyzer) storeComplianceEnabled(uri string) bool {
 	path, err := uriutil.Path(uri)
-	if err != nil {
+	if err != nil || a.compliance == nil {
 		return false
 	}
-	name, _ := composer["name"].(string)
-	return isRootPathPackage(a.root, filepath.Dir(path), name)
+	enabled, err := a.compliance.StoreComplianceEnabled(filepath.Dir(path))
+	return err == nil && enabled
 }
 
 func validateLocalizedComposerValue(

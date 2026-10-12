@@ -128,6 +128,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/cgo"
 	"sync"
@@ -152,6 +153,17 @@ type fileSystemEvent struct {
 // descriptor for every watched file, which is prohibitively expensive for a
 // Shopware checkout and can exhaust the machine-wide descriptor table.
 func (fs *FileScanner) StartWatcher() error {
+	// FSEvents reports canonical paths (for example /private/var instead of
+	// /var). Keep indexing under the configured workspace spelling so events
+	// update the same records and match supplemental indexer path filters.
+	resolvedRoot, err := filepath.EvalSymlinks(fs.projectRoot)
+	if err != nil {
+		return fmt.Errorf("resolve file watcher root: %w", err)
+	}
+	resolvedRoot, err = filepath.Abs(resolvedRoot)
+	if err != nil {
+		return fmt.Errorf("resolve absolute file watcher root: %w", err)
+	}
 	fs.watcherMu.Lock()
 	if fs.watcherLive {
 		fs.watcherMu.Unlock()
@@ -167,7 +179,7 @@ func (fs *FileScanner) StartWatcher() error {
 	ready := make(chan error, 1)
 	handle := cgo.NewHandle(fs)
 	fs.watcherWg.Add(1)
-	go fs.runFSEventStream(handle, ready)
+	go fs.runFSEventStream(handle, ready, resolvedRoot)
 	if err := <-ready; err != nil {
 		fs.cancel()
 		fs.watcherWg.Wait()
@@ -179,20 +191,21 @@ func (fs *FileScanner) StartWatcher() error {
 	}
 
 	fs.watcherWg.Add(1)
-	go fs.watchFSEvents()
+	go fs.watchFSEvents(resolvedRoot)
 	return nil
 }
 
 func (fs *FileScanner) runFSEventStream(
 	handle cgo.Handle,
 	ready chan<- error,
+	resolvedRoot string,
 ) {
 	defer fs.watcherWg.Done()
 	defer handle.Delete()
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	path := C.CString(fs.projectRoot)
+	path := C.CString(resolvedRoot)
 	defer C.free(unsafe.Pointer(path))
 	watcher := C.shopwareFSEventCreate(path, C.uintptr_t(handle))
 	if watcher == nil {
@@ -227,7 +240,7 @@ func goShopwareFSEvent(
 	}
 }
 
-func (fs *FileScanner) watchFSEvents() {
+func (fs *FileScanner) watchFSEvents(resolvedRoot string) {
 	defer fs.watcherWg.Done()
 	pending := make(map[string]struct{})
 	fullScan := false
@@ -311,13 +324,23 @@ func (fs *FileScanner) watchFSEvents() {
 			if event.flags&rescanFlags != 0 {
 				fullScan = true
 			} else if event.path != "" {
-				pending[event.path] = struct{}{}
+				pending[fs.fseventWorkspacePath(event.path, resolvedRoot)] = struct{}{}
 			}
 			resetTimer()
 		case <-timer.C:
 			process()
 		}
 	}
+}
+
+// fseventWorkspacePath maps canonical events back to the indexed workspace
+// without filesystem reads, including after a file or directory was removed.
+func (fs *FileScanner) fseventWorkspacePath(path, resolvedRoot string) string {
+	relative, within := relativePathWithin(resolvedRoot, path)
+	if !within {
+		return path
+	}
+	return filepath.Join(fs.projectRoot, relative)
 }
 
 func (fs *FileScanner) StopWatcher() {

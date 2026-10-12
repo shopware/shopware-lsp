@@ -348,6 +348,13 @@ server.RegisterDocumentObserver(lsp.DocumentObserver{
 Observers are replayed for already-open documents when they register, which
 makes workspace initialization order irrelevant.
 
+`internal/extension.ConfigIndex` stores full shopware-cli extension configuration
+from the native YAML CST in the shared store. `GetConfig(extensionRoot)` selects
+`.config/shopware-extension.yml`, `.shopware-extension.yml`, or
+`.shopware-extension.yaml` in that order, querying only those indexed paths.
+Editor overlays preserve that precedence and refresh dependent Composer
+diagnostics; closing a config restores the current disk snapshot.
+
 ## Concurrency model
 
 Four distinct concurrency regimes, each with different rules.
