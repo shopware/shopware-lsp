@@ -11,15 +11,23 @@ import (
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
+	"github.com/shopware/shopware-lsp/internal/uriutil"
 )
 
-type ShopwareStoreComposerAnalyzer struct{}
-
-func NewShopwareStoreComposerAnalyzer() *ShopwareStoreComposerAnalyzer {
-	return &ShopwareStoreComposerAnalyzer{}
+// StoreComplianceResolver supplies the extension's explicit Store validation setting.
+type StoreComplianceResolver interface {
+	StoreComplianceEnabled(dir string) (bool, error)
 }
 
-func (*ShopwareStoreComposerAnalyzer) Analyze(
+type ShopwareStoreComposerAnalyzer struct {
+	compliance StoreComplianceResolver
+}
+
+func NewShopwareStoreComposerAnalyzer(compliance StoreComplianceResolver) *ShopwareStoreComposerAnalyzer {
+	return &ShopwareStoreComposerAnalyzer{compliance: compliance}
+}
+
+func (a *ShopwareStoreComposerAnalyzer) Analyze(
 	_ context.Context,
 	document *lsp.TextDocument,
 ) ([]lsp.Problem, error) {
@@ -31,7 +39,7 @@ func (*ShopwareStoreComposerAnalyzer) Analyze(
 	if err := json.Unmarshal(document.Text, &composer); err != nil {
 		return nil, nil
 	}
-	if composer["type"] != "shopware-platform-plugin" {
+	if composer["type"] != "shopware-platform-plugin" || !a.storeComplianceEnabled(document.URI) {
 		return nil, nil
 	}
 	rootRange := cst.TextRange{End: uint32(len(document.Source))}
@@ -79,6 +87,15 @@ func (*ShopwareStoreComposerAnalyzer) Analyze(
 		))
 	}
 	return result, nil
+}
+
+func (a *ShopwareStoreComposerAnalyzer) storeComplianceEnabled(uri string) bool {
+	path, err := uriutil.Path(uri)
+	if err != nil || a.compliance == nil {
+		return false
+	}
+	enabled, err := a.compliance.StoreComplianceEnabled(filepath.Dir(path))
+	return err == nil && enabled
 }
 
 func validateLocalizedComposerValue(

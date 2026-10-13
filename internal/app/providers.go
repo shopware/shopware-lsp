@@ -39,6 +39,7 @@ import (
 )
 
 type workspaceServices struct {
+	extensionConfig     *extension.ConfigIndex
 	paths               *indexer.FileScanner
 	symbols             *indexer.WorkspaceSymbolCatalog
 	services            *symfony.ServiceIndex

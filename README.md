@@ -66,6 +66,12 @@ editing.
 - Shopware DAL completion, navigation, type inference, diagnostics, migrations,
   and a visual entity designer for definitions, mappings, and extensions.
 - App Script, migration, Store metadata, and extension-aware project support.
+  Store metadata diagnostics require `validation.store_compliance: true` in the
+  plugin's extension config. Like shopware-cli, it prefers
+  `.config/shopware-extension.yml`, then `.shopware-extension.yml`, then
+  `.shopware-extension.yaml`, relative to the plugin root. The first existing
+  file is selected without merging. Missing or false settings leave these
+  diagnostics disabled; unsaved edits take effect immediately.
 
 ### Symfony intelligence
 

@@ -20,7 +20,7 @@ func TestShopwareStoreComposerAnalyzer(t *testing.T) {
         "manufacturerLink": {"de-DE": "https://example.com", "en-GB": "https://example.com"}
     }
 }`, 1)
-	problems, err := NewShopwareStoreComposerAnalyzer().Analyze(
+	problems, err := NewShopwareStoreComposerAnalyzer(storeComplianceSetting(true)).Analyze(
 		context.Background(),
 		document,
 	)
@@ -28,4 +28,22 @@ func TestShopwareStoreComposerAnalyzer(t *testing.T) {
 	require.Len(t, problems, 2)
 	require.Equal(t, lsp.DiagnosticID("shopware.store.description"), problems[0].ID)
 	require.Equal(t, lsp.DiagnosticID("shopware.store.support-link"), problems[1].ID)
+}
+
+type storeComplianceSetting bool
+
+func (enabled storeComplianceSetting) StoreComplianceEnabled(string) (bool, error) {
+	return bool(enabled), nil
+}
+
+func TestShopwareStoreComposerAnalyzerRequiresExplicitOptIn(t *testing.T) {
+	document := lsp.NewTextDocument("file:///project/composer.json", `{"type":"shopware-platform-plugin"}`, 1)
+	for _, resolver := range []StoreComplianceResolver{nil, storeComplianceSetting(false)} {
+		problems, err := NewShopwareStoreComposerAnalyzer(resolver).Analyze(context.Background(), document)
+		require.NoError(t, err)
+		require.Empty(t, problems)
+	}
+	problems, err := NewShopwareStoreComposerAnalyzer(storeComplianceSetting(true)).Analyze(context.Background(), document)
+	require.NoError(t, err)
+	require.NotEmpty(t, problems)
 }
