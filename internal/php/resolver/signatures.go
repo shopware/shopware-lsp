@@ -20,6 +20,9 @@ type ResolvedSignature struct {
 	Templates       map[string]types.Type
 	Compatible      bool
 	ContractApplied bool
+	// Mismatch describes the first reason an incompatible signature was
+	// rejected. It is empty when Compatible is true.
+	Mismatch string
 }
 
 func ResolveSignature(
@@ -72,8 +75,8 @@ func (r *signatureResolver) resolve() ResolvedSignature {
 			return r.result
 		}
 	}
-	if !r.hasRequiredParameters() {
-		r.result.Compatible = false
+	if missing, ok := r.missingRequiredParameter(); ok {
+		r.reject("missing argument for parameter " + missing)
 		return r.result
 	}
 	r.validateTemplateBounds()
@@ -84,7 +87,7 @@ func (r *signatureResolver) resolve() ResolvedSignature {
 func (r *signatureResolver) addArgument(argument Argument) bool {
 	parameterIndex, valid := r.parameterIndex(argument)
 	if !valid {
-		r.result.Compatible = false
+		r.reject("positional argument after named argument")
 		return false
 	}
 	if parameterIndex < 0 {
@@ -95,14 +98,20 @@ func (r *signatureResolver) addArgument(argument Argument) bool {
 			// reject them, so generated stubs retain strict arity validation.
 			return true
 		}
-		r.result.Compatible = false
+		if argument.Name != "" {
+			r.reject("unknown named argument $" +
+				strings.TrimPrefix(argument.Name, "$"))
+		} else {
+			r.reject("too many arguments")
+		}
 		return false
 	}
 	parameter := r.result.Symbol.Parameters[parameterIndex]
 	r.captureDirectReturnTemplate(parameter, argument.Type)
 	if r.provided.Has(parameterIndex) &&
 		!parameter.Flags.Has(semantic.VariadicFlag) {
-		r.result.Compatible = false
+		r.reject("parameter " + describeParameter(parameterIndex, parameter) +
+			" is passed more than once")
 		return false
 	}
 	r.captureArgument(parameterIndex, parameter, argument)
@@ -177,18 +186,39 @@ func (r *signatureResolver) captureArgument(
 		&r.result.Templates,
 	)
 	if !r.argumentTypeCompatible(parameter, argument.Type) {
-		r.result.Compatible = false
+		r.reject("parameter " + describeParameter(parameterIndex, parameter) +
+			" expects " + r.expectedType(parameter).String() +
+			", " + argument.Type.String() + " given")
 	}
+}
+
+// reject marks the signature incompatible and keeps the first reason so
+// diagnostics can explain the mismatch instead of only reporting it.
+func (r *signatureResolver) reject(reason string) {
+	r.result.Compatible = false
+	if r.result.Mismatch == "" {
+		r.result.Mismatch = reason
+	}
+}
+
+func (r *signatureResolver) expectedType(parameter semantic.Parameter) types.Type {
+	expected := parameter.Type
+	if len(r.result.Templates) > 0 {
+		expected = types.Substitute(expected, r.result.Templates)
+	}
+	return expected
+}
+
+func describeParameter(index int, parameter semantic.Parameter) string {
+	return "#" + strconv.Itoa(index+1) +
+		" ($" + strings.TrimPrefix(parameter.Name, "$") + ")"
 }
 
 func (r *signatureResolver) argumentTypeCompatible(
 	parameter semantic.Parameter,
 	actual types.Type,
 ) bool {
-	expected := parameter.Type
-	if len(r.result.Templates) > 0 {
-		expected = types.Substitute(expected, r.result.Templates)
-	}
+	expected := r.expectedType(parameter)
 	if types.ContainsUncertain(actual) ||
 		r.relations.IsAssignableTo(actual, expected) {
 		return true
@@ -206,14 +236,14 @@ func (r *signatureResolver) argumentTypeCompatible(
 	return documentedMatches || nativeMatches
 }
 
-func (r *signatureResolver) hasRequiredParameters() bool {
+func (r *signatureResolver) missingRequiredParameter() (string, bool) {
 	for index, parameter := range r.result.Symbol.Parameters {
 		if !r.provided.Has(index) && !parameter.Optional &&
 			!parameter.Flags.Has(semantic.VariadicFlag) {
-			return false
+			return describeParameter(index, parameter), true
 		}
 	}
-	return true
+	return "", false
 }
 
 func (r *signatureResolver) validateTemplateBounds() {
@@ -237,7 +267,8 @@ func (r *signatureResolver) validateTemplateBounds() {
 		bound := types.Substitute(template.Bound, r.result.Templates)
 		if !bound.IsUnknown() && !r.relations.IsAssignableTo(value, bound) &&
 			!nominallySatisfiesGenericBound(r.relations, value, bound) {
-			r.result.Compatible = false
+			r.reject("template " + template.Name + " expects " +
+				bound.String() + ", " + value.String() + " given")
 		}
 	}
 }

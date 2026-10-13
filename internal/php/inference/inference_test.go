@@ -5002,3 +5002,53 @@ func symbolNamed(t *testing.T, document *semantic.Document, name string) semanti
 	t.Fatalf("missing symbol %q", name)
 	return semantic.Symbol{}
 }
+
+func TestNoMatchingSignatureExplainsArgumentMismatch(t *testing.T) {
+	t.Parallel()
+	root := phpparser.Parse(`<?php
+namespace App;
+function decode(string $json, bool $associative): void {}
+function run(float $price): void {
+    \App\decode($price, true);
+}
+`).Tree.Root
+	bound := binder.New().Bind("/decode.php", 1, root)
+	snapshot := semantic.NewSnapshot(1, []*semantic.Document{bound})
+	analyzed := New(snapshot).Analyze(binder.Link(bound, snapshot), root)
+	var messages []string
+	for _, issue := range analyzed.Issues {
+		if issue.Code == "php.arguments" {
+			messages = append(messages, issue.Message)
+		}
+	}
+	require.Len(t, messages, 1)
+	require.Equal(
+		t,
+		"No matching signature for App\\decode(): parameter #1 ($json) expects string, float given",
+		messages[0],
+	)
+}
+
+func TestNoMatchingSignatureExplainsArityMismatch(t *testing.T) {
+	t.Parallel()
+	root := phpparser.Parse(`<?php
+function consume(string $value): void {}
+function run(): void {
+    consume();
+    consume('a', value: 'b');
+}
+`).Tree.Root
+	bound := binder.New().Bind("/arity.php", 1, root)
+	snapshot := semantic.NewSnapshot(1, []*semantic.Document{bound})
+	analyzed := New(snapshot).Analyze(binder.Link(bound, snapshot), root)
+	var messages []string
+	for _, issue := range analyzed.Issues {
+		if issue.Code == "php.arguments" {
+			messages = append(messages, issue.Message)
+		}
+	}
+	require.ElementsMatch(t, []string{
+		"No matching signature for consume(): missing argument for parameter #1 ($value)",
+		"No matching signature for consume(): parameter #1 ($value) is passed more than once",
+	}, messages)
+}
