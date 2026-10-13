@@ -5007,13 +5007,14 @@ func TestNoMatchingSignatureExplainsArgumentMismatch(t *testing.T) {
 	t.Parallel()
 	root := phpparser.Parse(`<?php
 namespace App;
+function decode(string $json, bool $associative): void {}
 function run(float $price): void {
-    \json_decode($price, true);
+    \App\decode($price, true);
 }
 `).Tree.Root
-	bound := binder.New().Bind("/json-decode.php", 1, root)
+	bound := binder.New().Bind("/decode.php", 1, root)
 	snapshot := semantic.NewSnapshot(1, []*semantic.Document{bound})
-	analyzed := New(snapshot, Builtins).Analyze(binder.Link(bound, snapshot), root)
+	analyzed := New(snapshot).Analyze(binder.Link(bound, snapshot), root)
 	var messages []string
 	for _, issue := range analyzed.Issues {
 		if issue.Code == "php.arguments" {
@@ -5023,7 +5024,7 @@ function run(float $price): void {
 	require.Len(t, messages, 1)
 	require.Equal(
 		t,
-		"No matching signature for json_decode(): parameter #1 ($json) expects string, float given",
+		"No matching signature for App\\decode(): parameter #1 ($json) expects string, float given",
 		messages[0],
 	)
 }
