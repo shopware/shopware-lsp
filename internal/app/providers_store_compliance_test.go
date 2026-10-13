@@ -15,8 +15,12 @@ import (
 )
 
 func TestStoreComplianceOverlayRefreshesComposerDiagnostics(t *testing.T) {
+	t.Parallel()
 	for _, location := range extension.ConfigLocations {
-		t.Run(location, func(t *testing.T) { testExtensionConfigOverlay(t, location) })
+		t.Run(location, func(t *testing.T) {
+			t.Parallel()
+			testExtensionConfigOverlay(t, location)
+		})
 	}
 }
 

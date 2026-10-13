@@ -373,6 +373,7 @@
   "scripts": {
     "compile": "npm run check-types && node esbuild.js",
     "check-types": "tsc --noEmit",
+    "test": "npm run compile && node --test test/*.test.js",
     "test:entity-designer": "npm run compile && node --test test/entityDesignerWebview.test.js",
     "test:configuration": "npm run compile && node --test test/configuration.test.js",
     "test:commands": "npm run compile && node --test test/commandEdits.test.js test/translationExtraction.test.js",

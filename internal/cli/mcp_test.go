@@ -19,6 +19,7 @@ import (
 )
 
 func TestMCPServerAdvertisesAnalysisAndWriteTools(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	session := connectMCPTestClient(t, root)
 	initializeResult := session.InitializeResult()
@@ -138,6 +139,7 @@ func TestMCPServerAdvertisesAnalysisAndWriteTools(t *testing.T) {
 }
 
 func TestMCPConfigurationDisablesExactTools(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	configuration := projectconfig.Default()
 	configuration.MCP.Tools["shopware_hover"] = false
@@ -157,6 +159,7 @@ func TestMCPConfigurationDisablesExactTools(t *testing.T) {
 }
 
 func TestMCPConfigurationUsesProjectAndEditorLayers(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	path := projectconfig.Path(root)
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
@@ -184,6 +187,7 @@ func TestMCPConfigurationUsesProjectAndEditorLayers(t *testing.T) {
 }
 
 func TestMCPScaffoldCatalogAndShopwarePreviewWrite(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	session := connectMCPTestClient(t, root)
 	ctx := context.Background()
@@ -228,6 +232,7 @@ func TestMCPScaffoldCatalogAndShopwarePreviewWrite(t *testing.T) {
 }
 
 func TestMCPSymfonyScaffoldWritesThroughProductionCommand(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "src", "Controller"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "composer.json"), []byte(`{
@@ -254,6 +259,7 @@ func TestMCPSymfonyScaffoldWritesThroughProductionCommand(t *testing.T) {
 }
 
 func TestMCPEntitySchemaBootstrapPreviewAndApply(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	plugin := filepath.Join(root, "custom", "plugins", "Example")
 	directory := filepath.Join(plugin, "src", "Content", "Example")
@@ -498,6 +504,7 @@ func TestCompactEntitySchemaDiffKeepsTableRenameQuestions(t *testing.T) {
 }
 
 func TestMCPEntitySchemaCreatesMappingDefinition(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	plugin := filepath.Join(root, "custom", "plugins", "Example")
 	directory := filepath.Join(plugin, "src", "Content", "ProductTag")
@@ -555,6 +562,7 @@ func TestMCPEntitySchemaCreatesMappingDefinition(t *testing.T) {
 }
 
 func TestMCPEntitySchemaCreatesEntityExtension(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	plugin := filepath.Join(root, "custom", "plugins", "Example")
 	definitionDirectory := filepath.Join(plugin, "src", "Content", "Product")
@@ -638,6 +646,7 @@ class ProductDefinition extends EntityDefinition {
 }
 
 func TestMCPEntitySchemaCreatesBulkEntityExtension(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	plugin := filepath.Join(root, "custom", "plugins", "BulkExample")
 	extensionDirectory := filepath.Join(plugin, "src", "Extension", "Catalog")
@@ -748,6 +757,7 @@ class ` + className + ` extends EntityDefinition {
 }
 
 func TestMCPDiagnosticsAndCodeActionUseProductionLSP(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	path := filepath.Join(
 		root,
@@ -818,6 +828,7 @@ func TestMCPDiagnosticsAndCodeActionUseProductionLSP(t *testing.T) {
 }
 
 func TestMCPTwigVersioningQuickFixUsesProductionIndex(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	upstreamPath := filepath.Join(
 		root,
@@ -902,6 +913,7 @@ func TestMCPTwigVersioningQuickFixUsesProductionIndex(t *testing.T) {
 }
 
 func TestMCPRejectsPathsOutsideWorkspaceBeforeIndexing(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	session := connectMCPTestClient(t, root)
 	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
@@ -916,6 +928,7 @@ func TestMCPRejectsPathsOutsideWorkspaceBeforeIndexing(t *testing.T) {
 }
 
 func TestMCPRejectsUnsafeWorkspaceEdits(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runtime := &mcpRuntime{root: root}
 	outside := uriutil.FileURI(filepath.Join(filepath.Dir(root), "outside.php"))
@@ -960,7 +973,6 @@ func connectMCPTestClientWithConfiguration(
 	configuration projectconfig.Effective,
 ) *mcp.ClientSession {
 	t.Helper()
-	t.Setenv("SHOPWARE_LSP_CACHE_DIR", t.TempDir())
 	runner := New(Options{Version: "test"})
 	runner.root = root
 	runner.allowUnsupportedProject = true

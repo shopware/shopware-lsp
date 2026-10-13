@@ -49,7 +49,7 @@ jobs:
           mode: walltime
           # The runner defaults to 3s per benchmark; 1s still yields 100 measured
           # rounds per benchmark and keeps the run within a few minutes.
-          run: go test -bench=. -benchtime=1s ${{ steps.packages.outputs.list }}
+          run: go test -run='^$' -bench=. -benchtime=1s ${{ steps.packages.outputs.list }}
         env:
           # Go on arm64 needs frame-pointer unwinding for complete flamegraphs.
           CODSPEED_PERF_UNWINDING_MODE: fp
