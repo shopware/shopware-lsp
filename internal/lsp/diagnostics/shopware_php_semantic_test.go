@@ -2,6 +2,7 @@ package diagnostics
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/shopware/shopware-lsp/internal/indexer"
@@ -74,6 +75,14 @@ function run(EntityRepository $repository, InternalService $internal): void
         $repository->search('again');
     }
     $repository->search('outside');
+    foreach ($repository->search('source') as $entity) {
+    }
+    for ($result = $repository->search('init'); $repository->search('condition'); $repository->search('update')) {
+    }
+    while (false) {
+        foreach ($repository->search('nested source') as $entity) {
+        }
+    }
 
     \Shopware\Core\Internal\internal_helper();
     $internal->secret();
@@ -89,7 +98,7 @@ function run(EntityRepository $repository, InternalService $internal): void
 	)
 	require.NoError(t, err)
 	require.Equal(t, map[lsp.DiagnosticID]int{
-		ShopwarePHPRepositoryInLoopCode:           2,
+		ShopwarePHPRepositoryInLoopCode:           5,
 		ShopwarePHPInternalClassExtensionCode:     1,
 		ShopwarePHPInternalFunctionCallCode:       1,
 		ShopwarePHPInternalMethodCallCode:         1,
@@ -108,6 +117,10 @@ function run(EntityRepository $repository, InternalService $internal): void
 			require.Equal(t, "InternalBase", highlight)
 		case ShopwarePHPConcreteDecoratorExtensionCode:
 			require.Equal(t, "Core", highlight)
+		case ShopwarePHPRepositoryInLoopCode:
+			line := document.Source[problem.Range.Start:]
+			line = line[:strings.IndexByte(line, ')')]
+			require.NotContains(t, []string{"search('source'", "search('init'"}, line)
 		}
 	}
 }

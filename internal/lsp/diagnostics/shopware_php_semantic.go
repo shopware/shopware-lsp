@@ -617,12 +617,28 @@ func phpPackageRoot(namespace string) string {
 }
 
 func insidePHPLoop(node *phpsyntax.Node) bool {
-	for current := node.Parent(); current != nil; current = current.Parent() {
+	child := node
+	for current := node.Parent(); current != nil; child, current = current, current.Parent() {
 		switch current.Kind() {
-		case phpsyntax.PhpForStatement,
-			phpsyntax.PhpForeachStatement,
-			phpsyntax.PhpWhileStatement,
+		case phpsyntax.PhpForeachStatement:
+			if !containsPHPNode(phpquery.ExtractionLoopParts(current).Condition, child) {
+				return true
+			}
+		case phpsyntax.PhpForStatement:
+			if !containsPHPNode(phpquery.ExtractionLoopParts(current).Init, child) {
+				return true
+			}
+		case phpsyntax.PhpWhileStatement,
 			phpsyntax.PhpDoWhileStatement:
+			return true
+		}
+	}
+	return false
+}
+
+func containsPHPNode(nodes []*phpsyntax.Node, node *phpsyntax.Node) bool {
+	for _, candidate := range nodes {
+		if candidate.Range() == node.Range() && candidate.Kind() == node.Kind() {
 			return true
 		}
 	}
