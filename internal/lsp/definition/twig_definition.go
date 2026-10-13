@@ -83,7 +83,9 @@ func (p *TwigDefinitionProvider) twigDefinitions(ctx context.Context, params *ls
 	if twig.IsTwigTemplateString(params.Node) {
 		itemValue := twigquery.StringValue(twigquery.LiteralStringAt(params.Node))
 
-		files, _ := p.twigIndexer.GetTwigFilesByRelPath(itemValue)
+		files, _ := p.twigIndexer.GetTwigFilesForReference(
+			params.Node, itemValue,
+		)
 		currentPath, err := uriutil.Path(params.TextDocument.URI)
 		if err != nil {
 			return nil
