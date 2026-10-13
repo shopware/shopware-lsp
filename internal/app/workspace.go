@@ -251,6 +251,11 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 	}
 	extensionIndex.SetPHPIndex(phpIndex)
 	workspace.indexers = append(workspace.indexers, extensionIndex)
+	extensionConfig, err := extension.NewConfigIndex(cacheDir, workspace.store)
+	if err != nil {
+		return nil, fmt.Errorf("create extension configuration index: %w", err)
+	}
+	workspace.indexers = append(workspace.indexers, extensionConfig)
 	var adminIndex *admin.AdminComponentIndexer
 	if configuration.DomainEnabled("administration") {
 		adminIndex, err = admin.NewAdminComponentIndexer(cacheDir, workspace.store)
@@ -329,6 +334,7 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 		systemConfig:        systemConfigIndex,
 		theme:               themeIndex,
 		extensions:          extensionIndex,
+		extensionConfig:     extensionConfig,
 		admin:               adminIndex,
 		dal:                 dalIndex,
 		entitySchemaSources: entitySchemaSources,
@@ -341,6 +347,8 @@ func NewWorkspace(_ context.Context, root string, server *lsp.Server) (_ *Worksp
 
 func domainForIndexer(id string) string {
 	switch id {
+	case "extension.config":
+		return "shopware"
 	case "php.index":
 		return "php"
 	case "symfony.service", "symfony.compiled_container":

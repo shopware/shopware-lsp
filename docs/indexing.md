@@ -554,7 +554,10 @@ must never add their own watcher.
 
 - **Linux / Windows** — `fsnotify` (`watcher.go`).
 - **macOS** — native FSEvents (`watcher_darwin.go`). kqueue's
-  one-descriptor-per-file cost is prohibitive on a Shopware workspace.
+  one-descriptor-per-file cost is prohibitive on a Shopware workspace. The
+  watcher resolves the physical root once and maps canonical event paths back
+  to the configured workspace path, so symlinked roots and `/var` aliases
+  update the same indexed records, including on deletion.
 
 Events are accumulated into pending add/remove sets and processed after a
 200 ms debounce (`watcherDebounce`), which coalesces the burst an editor save or

@@ -18,6 +18,9 @@ func registerDiagnosticInspections(
 	phpFeatures *phpsemantic.Provider,
 	services workspaceServices,
 ) {
+	if server.DomainEnabled("shopware") {
+		registerExtensionConfigDocumentObserver(server, services.extensionConfig)
+	}
 	phpOnly := []language.ID{language.PHP}
 	jsonOnly := []language.ID{language.JSON}
 	twigOnly := []language.ID{language.Twig}
@@ -187,7 +190,7 @@ func registerDiagnosticInspections(
 		"shopware.store.manufacturer-link",
 		"shopware.store.require-core",
 		"shopware.store.support-link",
-	}, diagnostics.NewShopwareStoreComposerAnalyzer())
+	}, diagnostics.NewShopwareStoreComposerAnalyzer(services.extensionConfig))
 	registerProblemInspection(server, "shopware.entity_snapshot", jsonOnly, "shopware-lsp", []string{
 		"shopware.entity_snapshot.invalid",
 		"shopware.entity_snapshot.graph",
