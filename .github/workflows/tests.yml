@@ -43,14 +43,19 @@ jobs:
     - name: Install dependencies
       run: go mod download
 
+    - name: Install gotestsum
+      run: |
+        go install gotest.tools/gotestsum@v1.13.0
+        echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
     - name: Run tests
-      run: go test -v ./...
+      run: gotestsum --format testname -- ./...
 
     - name: Compile real-world integration suite
-      run: go test -tags=integration ./internal/app -run '^$'
+      run: gotestsum --format pkgname -- -tags=integration ./internal/app -run '^$'
 
     - name: Run race condition tests
-      run: go test -race ./internal/...
+      run: gotestsum --format pkgname -- -race ./internal/...
 
   lint:
     name: Lint
