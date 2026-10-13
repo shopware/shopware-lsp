@@ -30,6 +30,63 @@ func TestTemplateDiagnosticsForTwig(t *testing.T) {
 	}
 }
 
+func TestTemplateDiagnosticsForShopwareBundleNamespaces(t *testing.T) {
+	index, err := twig.NewTwigIndexer(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, index.Close()) })
+	path := "/project/vendor/store.shopware.com/swagcmsextensions/src/Resources/views/storefront/card.html.twig"
+	require.NoError(t, index.Index(indexer.NewParsedFile(path, []byte("card"))))
+	// An application template outside the bundle hierarchy must not satisfy a
+	// Shopware include just because its relative name matches.
+	require.NoError(t, index.Index(indexer.NewParsedFile(
+		"/project/templates/app-only.html.twig", []byte("app"),
+	)))
+	provider := NewTemplateAnalyzer(index, nil)
+	for _, test := range []struct {
+		source  string
+		missing bool
+	}{
+		{`{% sw_include "@SwagCmsExtensions/storefront/card.html.twig" %}`, false},
+		{`{% sw_extends "@SwagCmsExtensions/storefront/card.html.twig" %}`, false},
+		{`{% sw_extends {template: "@SwagCmsExtensions/storefront/card.html.twig", scopes: ['default']} %}`, false},
+		{`{% sw_include "@UnknownBundle/storefront/card.html.twig" %}`, false},
+		{`{% sw_include "storefront/card.html.twig" %}`, false},
+		{`{% sw_include "@SwagCmsExtensions/" ~ "storefront/card.html.twig" %}`, false},
+		{`{% sw_include ["missing.html.twig", "@SwagCmsExtensions/storefront/card.html.twig"] %}`, false},
+		{`{% sw_include "@SwagCmsExtensions/storefront/missing.html.twig" %}`, true},
+		{`{% sw_include "@SwagCmsExtensions/app-only.html.twig" %}`, true},
+		{`{% sw_include "app-only.html.twig" %}`, false},
+		{`{% include "@SwagCmsExtensions/storefront/card.html.twig" %}`, true},
+		{`{% extends "@SwagCmsExtensions/storefront/card.html.twig" %}`, true},
+		{`{{ include("@SwagCmsExtensions/storefront/card.html.twig") }}`, true},
+		{`{% sw_include include("@SwagCmsExtensions/storefront/card.html.twig") %}`, true},
+		{`{% include "@swagcmsextensions/storefront/card.html.twig" %}`, false},
+	} {
+		t.Run(test.source, func(t *testing.T) {
+			document := lsp.NewTextDocument("file:///project/page.html.twig", test.source, 1)
+			problems, analyzeErr := provider.Analyze(context.Background(), document)
+			require.NoError(t, analyzeErr)
+			if test.missing {
+				require.Len(t, problems, 1)
+				assert.Equal(t, missingTemplateCode, problems[0].ID)
+				// Diagnostics still report the spelling and range in the document.
+				assert.Equal(t, problemRangeText(document, problems[0].Range),
+					problems[0].Payload.(map[string]any)["templateName"])
+			} else {
+				assert.Empty(t, problems)
+			}
+		})
+	}
+
+	require.NoError(t, index.RemovedFiles([]string{path}))
+	problems, err := provider.Analyze(context.Background(), lsp.NewTextDocument(
+		"file:///project/page.html.twig",
+		`{% sw_include "@SwagCmsExtensions/storefront/card.html.twig" %}`, 2,
+	))
+	require.NoError(t, err)
+	require.Len(t, problems, 1)
+}
+
 func TestTemplateDiagnosticsForTwigTemplateExpressions(t *testing.T) {
 	provider := templateDiagnosticsFixture(t)
 	document := lsp.NewTextDocument(

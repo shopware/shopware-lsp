@@ -25,6 +25,7 @@ const missingTemplateCode lsp.DiagnosticID = "twig.template.missing"
 type templateDiagnosticCandidate struct {
 	name   string
 	range_ cst.TextRange
+	node   *cst.Node
 }
 
 type templateDiagnosticGroup struct {
@@ -76,6 +77,7 @@ func (p *TemplateAnalyzer) Analyze(
 					templateDiagnosticCandidate{
 						name:   target.Template,
 						range_: target.Range,
+						node:   document.SyntaxTree.Root.NodeAtOffset(target.Range.Start),
 					},
 				)
 			}
@@ -108,7 +110,9 @@ func (p *TemplateAnalyzer) Analyze(
 		}
 		found := false
 		for _, candidate := range group.candidates {
-			files, err := p.twigIndex.GetTwigFilesByRelPath(candidate.name)
+			files, err := p.twigIndex.GetTwigFilesForReference(
+				candidate.node, candidate.name,
+			)
 			if err != nil {
 				return nil, fmt.Errorf(
 					"query Twig template %q: %w",

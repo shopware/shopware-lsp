@@ -88,6 +88,41 @@ type TwigTemplateTargetGroup struct {
 	Kind          TemplateReferenceKind
 }
 
+// GetTwigFilesForReference resolves a Twig template using the enclosing tag's
+// lookup semantics, including TemplateFinder's fallback to the original name.
+func (idx *TwigIndexer) GetTwigFilesForReference(node *twigsyntax.Node, template string) ([]TwigFile, error) {
+	name := twigTemplateLookupName(node, template)
+	if name != template {
+		files, err := idx.GetTwigFilesByRelPath(name)
+		if err != nil || len(files) != 0 {
+			return files, err
+		}
+	}
+	return idx.GetTwigFilesByRelPath(template)
+}
+
+// twigTemplateLookupName maps Shopware's inheritance-aware tags to the shared
+// Resources/views alias. TemplateFinder strips the requested namespace before
+// searching the bundle hierarchy, so it need not match a plugin's directory.
+// Ordinary Twig tags and functions retain their exact namespace semantics.
+func twigTemplateLookupName(node *twigsyntax.Node, template string) string {
+	if node == nil || twigquery.FunctionCallAt(node) != nil {
+		return template
+	}
+	name := twigquery.TagName(twigquery.TagAt(node))
+	if name != "sw_include" && name != "sw_extends" {
+		return template
+	}
+	if strings.HasPrefix(template, "@") {
+		_, relative, found := strings.Cut(template, "/")
+		if !found {
+			return template
+		}
+		template = relative
+	}
+	return "@Storefront/" + template
+}
+
 func IsTwigTemplateString(node *twigsyntax.Node) bool {
 	literal := twigquery.LiteralStringAt(node)
 	if literal == nil || !twigquery.StringIsStatic(literal) {

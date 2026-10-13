@@ -571,6 +571,10 @@ include these hints.
 - Template path completion in Twig files (`extends`, `include`, `sw_extends`, `sw_include` tags)
 - Template path completion in PHP files (`renderStorefront` method calls)
 - Go-to-definition for template paths in Twig and PHP files
+- `sw_include` and `sw_extends` diagnostics and navigation resolve the shared
+  template path across indexed bundle views, independent of the requested
+  `@BundleName` or plugin folder name, matching Shopware's template finder.
+  Ordinary Twig tags and functions keep exact namespace lookup.
 - Exact standalone PHP strings ending in `.twig` also navigate when their
   logical template exists; they remain excluded from usage indexing and rename
   so ordinary configuration strings do not create false semantic edges

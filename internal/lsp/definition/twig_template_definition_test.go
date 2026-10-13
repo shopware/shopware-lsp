@@ -13,8 +13,40 @@ import (
 	"github.com/shopware/shopware-lsp/internal/php"
 	"github.com/shopware/shopware-lsp/internal/twig"
 	"github.com/shopware/shopware-lsp/internal/uriutil"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestShopwareTemplateDefinitionUsesBundleHierarchy(t *testing.T) {
+	index, err := twig.NewTwigIndexer(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, index.Close()) })
+	paths := []string{
+		"/project/vendor/store.shopware.com/swagcmsextensions/src/Resources/views/storefront/card.html.twig",
+		"/project/custom/plugins/MyTheme/src/Resources/views/storefront/card.html.twig",
+	}
+	for _, path := range paths {
+		require.NoError(t, index.Index(indexer.NewParsedFile(path, []byte("card"))))
+	}
+	provider := NewTwigDefinitionProvider("/project", index, nil, nil)
+	for _, tag := range []string{"sw_include", "sw_extends", "include", "extends"} {
+		t.Run(tag, func(t *testing.T) {
+			source := `{% ` + tag + ` "@SwagCmsExtensions/storefront/card.html.twig" %}`
+			document := lsp.NewTextDocument("file:///project/page.html.twig", source, 1)
+			offset := uint32(strings.Index(source, "SwagCmsExtensions") + 2)
+			locations := provider.GetDefinition(context.Background(), definitionRequest(
+				document, document.SyntaxTree.Root.NodeAtOffset(offset), offset,
+			))
+			if !strings.HasPrefix(tag, "sw_") {
+				assert.Empty(t, locations)
+				return
+			}
+			require.Len(t, locations, 2)
+			assert.ElementsMatch(t, []string{uriutil.FileURI(paths[0]), uriutil.FileURI(paths[1])},
+				[]string{locations[0].URI, locations[1].URI})
+		})
+	}
+}
 
 func TestTwigTemplateDefinitionIgnoresTemplateAnnotation(t *testing.T) {
 	root := t.TempDir()
