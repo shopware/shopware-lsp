@@ -34,6 +34,7 @@ func TestCLIExtractFunctionSelectionPreview(t *testing.T) {
 }
 
 func TestMCPExtractFunctionSelectionAndAllOccurrences(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		source, title, expected string
 		args                    map[string]any

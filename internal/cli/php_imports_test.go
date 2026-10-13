@@ -11,6 +11,7 @@ import (
 )
 
 func TestMCPPHPImportCleanupUsesProductionAnalysisAndEdits(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"quickfix", "source.organizeImports"} {
 		t.Run(kind, func(t *testing.T) {
 			root := t.TempDir()
