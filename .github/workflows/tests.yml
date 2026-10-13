@@ -44,9 +44,11 @@ jobs:
       run: go mod download
 
     - name: Install gotestsum
-      run: |
-        go install gotest.tools/gotestsum@v1.13.0
-        echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      uses: jaxxstorm/action-install-gh-release@v1.10.0
+      with:
+        repo: gotestyourself/gotestsum
+        tag: v1.13.0
+        cache: enable
 
     - name: Run tests
       run: gotestsum --format testname -- ./...
