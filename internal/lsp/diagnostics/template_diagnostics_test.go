@@ -87,6 +87,69 @@ func TestTemplateDiagnosticsForShopwareBundleNamespaces(t *testing.T) {
 	require.Len(t, problems, 1)
 }
 
+func TestTemplateDiagnosticsForVendorBundleNamespaces(t *testing.T) {
+	cacheDir := t.TempDir()
+	phpIndex, err := php.NewPHPIndex(cacheDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, phpIndex.Close()) })
+	twigIndex, err := twig.NewTwigIndexer(cacheDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, twigIndex.Close()) })
+	twigIndex.SetDependencies(phpIndex, nil)
+
+	// The template is indexed before the bundle class that gives it its
+	// @WebProfiler namespace; resolution happens at query time.
+	require.NoError(t, twigIndex.Index(indexer.NewParsedFile(
+		"/project/vendor/symfony/web-profiler-bundle/Resources/views/Profiler/layout.html.twig",
+		[]byte("layout"),
+	)))
+	for path, content := range map[string]string{
+		"/project/vendor/symfony/http-kernel/Bundle/Bundle.php": `<?php
+namespace Symfony\Component\HttpKernel\Bundle;
+abstract class Bundle {}
+`,
+		"/project/vendor/symfony/web-profiler-bundle/WebProfilerBundle.php": `<?php
+namespace Symfony\Bundle\WebProfilerBundle;
+use Symfony\Component\HttpKernel\Bundle\Bundle;
+class WebProfilerBundle extends Bundle {}
+`,
+		"/project/vendor/friendsofsymfony/user-bundle/FOSUserBundle.php": `<?php
+namespace FOS\UserBundle;
+use Symfony\Component\HttpKernel\Bundle\Bundle;
+class FOSUserBundle extends Bundle {}
+`,
+	} {
+		require.NoError(t, phpIndex.Index(indexer.NewParsedFile(path, []byte(content))))
+	}
+	require.NoError(t, twigIndex.Index(indexer.NewParsedFile(
+		"/project/vendor/friendsofsymfony/user-bundle/Resources/views/layout.html.twig",
+		[]byte("user layout"),
+	)))
+
+	provider := NewTemplateAnalyzer(twigIndex, phpIndex)
+	for _, test := range []struct {
+		source  string
+		missing bool
+	}{
+		{`{% extends '@WebProfiler/Profiler/layout.html.twig' %}`, false},
+		{`{% include '@FOSUser/layout.html.twig' %}`, false},
+		{`{% include '@User/layout.html.twig' %}`, true},
+		{`{% include '@WebProfiler/Profiler/missing.html.twig' %}`, true},
+	} {
+		t.Run(test.source, func(t *testing.T) {
+			document := lsp.NewTextDocument("file:///project/page.html.twig", test.source, 1)
+			problems, analyzeErr := provider.Analyze(context.Background(), document)
+			require.NoError(t, analyzeErr)
+			if test.missing {
+				require.Len(t, problems, 1)
+				assert.Equal(t, missingTemplateCode, problems[0].ID)
+			} else {
+				assert.Empty(t, problems)
+			}
+		})
+	}
+}
+
 func TestTemplateDiagnosticsForTwigTemplateExpressions(t *testing.T) {
 	provider := templateDiagnosticsFixture(t)
 	document := lsp.NewTextDocument(

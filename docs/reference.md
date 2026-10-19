@@ -575,6 +575,12 @@ include these hints.
   template path across indexed bundle views, independent of the requested
   `@BundleName` or plugin folder name, matching Shopware's template finder.
   Ordinary Twig tags and functions keep exact namespace lookup.
+- Bundle Twig namespaces (`@WebProfiler`, `@FOSUser`, `@Administration`)
+  are derived at query time from the indexed bundle class — its short name
+  with a trailing `Bundle` suffix dropped, rooted at the class file's
+  directory — not from the Composer directory holding the templates, so
+  mismatched directory/class names resolve and undeclared namespaces keep
+  reporting as missing.
 - Exact standalone PHP strings ending in `.twig` also navigate when their
   logical template exists; they remain excluded from usage indexing and rename
   so ordinary configuration strings do not create false semantic edges

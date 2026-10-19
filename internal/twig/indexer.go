@@ -12,6 +12,7 @@ import (
 	"github.com/shopware/shopware-lsp/internal/indexer"
 	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	"github.com/shopware/shopware-lsp/internal/php"
+	"github.com/shopware/shopware-lsp/internal/php/semantic"
 	"github.com/shopware/shopware-lsp/internal/symfony"
 )
 
@@ -39,6 +40,10 @@ type TwigIndexer struct {
 
 	globalPathsMu sync.RWMutex
 	globalPaths   map[string]struct{}
+
+	bundleCacheMu  sync.Mutex
+	bundleSnapshot *semantic.Snapshot
+	bundleRoots    []bundleTemplateRoot
 }
 
 func NewTwigIndexer(configDir string, stores ...*indexer.Store) (_ *TwigIndexer, returnErr error) {
@@ -1047,7 +1052,59 @@ func (idx *TwigIndexer) GetTemplateReferencesByPath(
 }
 
 func (idx *TwigIndexer) GetAllTemplateFiles() ([]string, error) {
-	return idx.twigFileIndex.GetAllKeys()
+	keys, err := idx.twigFileIndex.GetAllKeys()
+	if err != nil || len(idx.bundleTemplateRoots()) == 0 {
+		return keys, err
+	}
+	values, err := idx.twigFileIndex.GetAllValues()
+	if err != nil {
+		return keys, nil
+	}
+	paths := make(map[string]struct{})
+	for _, value := range values {
+		paths[value.Path] = struct{}{}
+	}
+	// A guessed namespace may be shared; only drop it when the file whose
+	// bundle class proves it wrong is its sole source.
+	keySources := make(map[string]int)
+	for path := range paths {
+		for _, name := range TemplateNames(path) {
+			keySources[name]++
+		}
+	}
+	names := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		names[key] = struct{}{}
+	}
+	for path := range paths {
+		bundle, relative, ok := idx.bundleForTemplatePath(path)
+		if !ok {
+			continue
+		}
+		names["@"+bundle.Namespace+"/"+relative] = struct{}{}
+		if !strings.Contains(filepath.ToSlash(path), "/Resources/views/") {
+			continue
+		}
+		guessed := getBundleNameByPath(filepath.ToSlash(path))
+		if guessed == "" || guessed == "unknown" || guessed == bundle.Namespace ||
+			guessed == "Storefront" {
+			continue
+		}
+		for _, invented := range []string{
+			"@" + guessed + "/" + relative,
+			legacyBundleTemplateName(guessed, relative),
+		} {
+			if keySources[invented] <= 1 {
+				delete(names, invented)
+			}
+		}
+	}
+	result := make([]string, 0, len(names))
+	for name := range names {
+		result = append(result, name)
+	}
+	sort.Strings(result)
+	return result, nil
 }
 
 // HasOtherTemplateFile answers the cheap availability question used while
@@ -1328,15 +1385,28 @@ func (idx *TwigIndexer) dependencies() (
 }
 
 func (idx *TwigIndexer) GetMacros(template string) ([]Macro, error) {
-	catalogs, err := idx.twigMacroIndex.GetValues(
-		normalizeMacroTemplate(template),
-	)
-	if err != nil {
-		return nil, err
-	}
 	var result []Macro
-	for _, catalog := range catalogs {
-		result = append(result, catalog.Macros...)
+	seen := make(map[string]struct{})
+	for _, alias := range idx.indexedAliasesForTemplate(template) {
+		catalogs, err := idx.twigMacroIndex.GetValues(
+			normalizeMacroTemplate(alias),
+		)
+		if err != nil {
+			return nil, err
+		}
+		for _, catalog := range catalogs {
+			for _, macro := range catalog.Macros {
+				key := macro.FilePath + "\x00" + macro.NameRange.String()
+				if _, duplicate := seen[key]; duplicate {
+					continue
+				}
+				seen[key] = struct{}{}
+				result = append(result, macro)
+			}
+		}
+		if len(result) != 0 {
+			break
+		}
 	}
 	sortMacros(result)
 	return result, nil
@@ -1363,15 +1433,25 @@ func (idx *TwigIndexer) GetMacroUsages(
 	template,
 	name string,
 ) ([]MacroUsage, error) {
-	records, err := idx.twigMacroUsageIndex.GetValues(
-		macroUsageKey(template, name),
-	)
-	if err != nil {
-		return nil, err
-	}
 	var result []MacroUsage
-	for _, record := range records {
-		result = append(result, record.Usages...)
+	seen := make(map[string]struct{})
+	for _, alias := range idx.indexedAliasesForTemplate(template) {
+		records, err := idx.twigMacroUsageIndex.GetValues(
+			macroUsageKey(alias, name),
+		)
+		if err != nil {
+			return nil, err
+		}
+		for _, record := range records {
+			for _, usage := range record.Usages {
+				key := usage.FilePath + "\x00" + usage.Range.String()
+				if _, duplicate := seen[key]; duplicate {
+					continue
+				}
+				seen[key] = struct{}{}
+				result = append(result, usage)
+			}
+		}
 	}
 	sortMacroUsages(result)
 	return result, nil
@@ -1440,9 +1520,18 @@ func (idx *TwigIndexer) GetTemplateVariables(
 		visiting[state] = struct{}{}
 		defer delete(visiting, state)
 
-		catalogs, err := idx.templateVariableIndex.GetValues(template)
-		if err != nil {
-			return err
+		var catalogs []TemplateVariableCatalog
+		for _, alias := range idx.indexedAliasesForTemplate(template) {
+			found, err := idx.templateVariableIndex.GetValues(
+				normalizeMacroTemplate(alias),
+			)
+			if err != nil {
+				return err
+			}
+			catalogs = append(catalogs, found...)
+			if len(catalogs) != 0 {
+				break
+			}
 		}
 		for _, catalog := range catalogs {
 			for _, variable := range catalog.Variables {
@@ -1521,7 +1610,20 @@ func (idx *TwigIndexer) FindTemplateVariable(
 }
 
 func (idx *TwigIndexer) GetTwigFilesByRelPath(relPath string) ([]TwigFile, error) {
-	return idx.twigFileIndex.GetValues(relPath)
+	files, err := idx.twigFileIndex.GetValues(relPath)
+	if err != nil || len(files) != 0 {
+		return files, err
+	}
+	// A bundle namespace is derived from its bundle class, not from the
+	// directory TemplateNames guessed at index time (@web-profiler-bundle
+	// for WebProfilerBundle). Resolve through the bundle class map so
+	// mismatched Composer directories still find their templates, while an
+	// unknown namespace keeps reporting as missing.
+	namespace, relative, ok := splitNamespacedTemplate(relPath)
+	if !ok {
+		return files, nil
+	}
+	return idx.resolveBundleTemplateFiles(namespace, relative)
 }
 
 func (idx *TwigIndexer) GetTwigFileByPath(
