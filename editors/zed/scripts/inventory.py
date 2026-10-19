@@ -152,6 +152,7 @@ def initialize(binary, root):
                         "resolveSupport": {"properties": ["edit"]},
                     },
                     "publishDiagnostics": {"dataSupport": True},
+                    "diagnostic": {},
                 }
             },
             "initializationOptions": {
