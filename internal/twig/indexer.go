@@ -259,17 +259,23 @@ func (idx *TwigIndexer) Index(file *indexer.ParsedFile) error {
 	}
 }
 
-// ShouldEnterDirectory keeps template assets to directories the scanner walks
-// anyway. Template roots are part of a normal scan; a skipped directory such as
-// var/cache holds no template a project can address.
-func (idx *TwigIndexer) ShouldEnterDirectory(string) bool {
-	return false
+// ShouldEnterDirectory reopens only storefront dist roots. Every other
+// template root is part of a normal scan; a skipped directory such as
+// var/cache holds no template a project can address, and unrelated build
+// output in other `dist` directories stays skipped.
+func (idx *TwigIndexer) ShouldEnterDirectory(path string) bool {
+	return isStorefrontDistDirectory(path)
 }
 
 // ShouldIndexPath adds the template files the language registry does not claim,
 // such as the .svg views Symfony's profiler includes. Files it does claim are
-// already scanned, so they reach Index without help.
+// already scanned, so they reach Index without help — except below a dist
+// root, which the scanner skips, where Twig templates need the same claim.
 func (idx *TwigIndexer) ShouldIndexPath(path string) bool {
+	if _, ok := storefrontDistRelative(filepath.ToSlash(path)); ok &&
+		strings.EqualFold(filepath.Ext(path), ".twig") {
+		return !isExcludedTwigPath(path)
+	}
 	return !indexer.IsScannedPath(path) && IsTemplateAssetPath(path)
 }
 

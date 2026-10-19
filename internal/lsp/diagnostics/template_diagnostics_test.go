@@ -87,6 +87,49 @@ func TestTemplateDiagnosticsForShopwareBundleNamespaces(t *testing.T) {
 	require.Len(t, problems, 1)
 }
 
+func TestTemplateDiagnosticsResolveStorefrontDistTemplates(t *testing.T) {
+	index, err := twig.NewTwigIndexer(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, index.Close()) })
+	dist := "/project/src/Storefront/Resources/app/storefront/dist"
+	require.NoError(t, index.Index(indexer.NewParsedFile(
+		dist+"/assets/icon/solid/arrow-medium-right.svg",
+		[]byte("<svg></svg>"),
+	)))
+	require.NoError(t, index.Index(indexer.NewParsedFile(
+		dist+"/storefront/fragment.html.twig",
+		[]byte("fragment"),
+	)))
+	// A Twig-syntax file outside every loader root must not become a
+	// suggestion carrying its absolute path.
+	require.NoError(t, index.Index(indexer.NewParsedFile(
+		"/Users/example/project/custom/apps/MyApp/Resources/scripts/ping/ping.twig",
+		[]byte("ping"),
+	)))
+	provider := NewTemplateAnalyzer(index, nil)
+	document := lsp.NewTextDocument(
+		"file:///project/src/Storefront/Resources/views/storefront/layout/breadcrumb.html.twig",
+		`{% set icon = source('@Storefront/assets/icon/solid/arrow-medium-right.svg') %}
+{% include '@Storefront/storefront/fragment.html.twig' %}
+{{ source('@Storefront/assets/icon/missing.svg') }}
+{% include 'ping.twig' %}`,
+		1,
+	)
+	result, err := provider.Analyze(context.Background(), document)
+	require.NoError(t, err)
+	require.Len(t, result, 2)
+	assert.Equal(
+		t,
+		"Template '@Storefront/assets/icon/missing.svg' not found",
+		result[0].Message,
+	)
+	assert.Equal(t, "Template 'ping.twig' not found", result[1].Message)
+	for _, suggestion := range problemSuggestionStrings(result[1]) {
+		assert.NotContains(t, suggestion, "/Users/")
+		assert.NotContains(t, suggestion, "Resources/scripts")
+	}
+}
+
 func TestTemplateDiagnosticsForTwigTemplateExpressions(t *testing.T) {
 	provider := templateDiagnosticsFixture(t)
 	document := lsp.NewTextDocument(

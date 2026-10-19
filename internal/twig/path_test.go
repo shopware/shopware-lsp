@@ -34,11 +34,52 @@ func TestTemplateNames(t *testing.T) {
 	)
 }
 
+func TestTemplateNamesForStorefrontDist(t *testing.T) {
+	// Shopware's TwigLoaderConfigCompilerPass registers each bundle's
+	// Resources/app/storefront/dist directory under the bundle namespace.
+	assert.Equal(
+		t,
+		[]string{"@Storefront/assets/icon/solid/arrow-medium-right.svg"},
+		TemplateNames("/project/src/Storefront/Resources/app/storefront/dist/assets/icon/solid/arrow-medium-right.svg"),
+	)
+	assert.Equal(
+		t,
+		[]string{"@MyPlugin/assets/icon/check.svg"},
+		TemplateNames("/project/custom/plugins/MyPlugin/src/Resources/app/storefront/dist/assets/icon/check.svg"),
+	)
+	assert.Equal(
+		t,
+		[]string{"@MyApp/assets/icon/check.svg"},
+		TemplateNames("/project/custom/apps/MyApp/Resources/app/storefront/dist/assets/icon/check.svg"),
+	)
+	assert.Equal(
+		t,
+		"@Storefront/assets/icon/solid/arrow-medium-right.svg",
+		ConvertToRelativePath("/project/src/Storefront/Resources/app/storefront/dist/assets/icon/solid/arrow-medium-right.svg"),
+	)
+}
+
+func TestTemplateNamesOutsideTemplateRoots(t *testing.T) {
+	// A Twig-syntax file no loader root contains has no template name;
+	// deriving one from its absolute path would leak that path into
+	// template suggestions.
+	assert.Empty(t, TemplateNames(
+		"/Users/example/project/custom/apps/MyApp/Resources/scripts/ping/ping.twig",
+	))
+	assert.Empty(t, TemplateNames("/project/page.html.twig"))
+}
+
 func TestIsTemplateAssetPath(t *testing.T) {
 	assert.True(t, IsTemplateAssetPath(
 		"/project/src/Core/Profiling/Resources/views/Collector/checkmark.svg",
 	))
 	assert.True(t, IsTemplateAssetPath("/project/templates/mail/logo.svg"))
+	assert.True(t, IsTemplateAssetPath(
+		"/project/src/Storefront/Resources/app/storefront/dist/assets/icon/check.svg",
+	))
+	assert.False(t, IsTemplateAssetPath(
+		"/project/src/Storefront/Resources/app/storefront/dist/storefront/page.html.twig",
+	))
 	// Twig files take the full indexing path instead.
 	assert.False(t, IsTemplateAssetPath(
 		"/project/src/Storefront/Resources/views/storefront/base.html.twig",

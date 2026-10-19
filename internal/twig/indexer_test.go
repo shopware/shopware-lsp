@@ -102,6 +102,66 @@ func TestTwigIndexerIndexesTemplatesWithoutATwigExtension(t *testing.T) {
 	require.Empty(t, files)
 }
 
+func TestTwigIndexerIndexesStorefrontDistThroughFileScanner(t *testing.T) {
+	tempDir := t.TempDir()
+	dist := filepath.Join(
+		tempDir, "src", "Storefront", "Resources", "app", "storefront", "dist",
+	)
+	iconPath := filepath.Join(dist, "assets", "icon", "solid", "arrow.svg")
+	fragmentPath := filepath.Join(dist, "storefront", "fragment.html.twig")
+	require.NoError(t, os.MkdirAll(filepath.Dir(iconPath), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Dir(fragmentPath), 0755))
+	require.NoError(t, os.WriteFile(iconPath, []byte(`<svg></svg>`), 0644))
+	require.NoError(t, os.WriteFile(
+		fragmentPath,
+		[]byte(`{% block fragment %}content{% endblock %}`),
+		0644,
+	))
+	// A Twig-syntax app script is not below a loader root, so scanning it
+	// must not invent a template name from its absolute path.
+	scriptPath := filepath.Join(
+		tempDir, "custom", "apps", "MyApp", "Resources", "scripts", "ping", "ping.twig",
+	)
+	require.NoError(t, os.MkdirAll(filepath.Dir(scriptPath), 0755))
+	require.NoError(t, os.WriteFile(scriptPath, []byte(`ping`), 0644))
+
+	twigIndexer, err := NewTwigIndexer(filepath.Join(tempDir, "cache"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, twigIndexer.Close()) })
+
+	fileScanner, err := indexer.NewFileScanner(
+		tempDir,
+		filepath.Join(tempDir, "scanner.db"),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, fileScanner.Close()) })
+	fileScanner.AddIndexer(twigIndexer)
+
+	require.NoError(t, fileScanner.IndexAll(context.Background()))
+
+	files, err := twigIndexer.GetTwigFilesByRelPath("@Storefront/assets/icon/solid/arrow.svg")
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	require.Equal(t, iconPath, files[0].Path)
+
+	files, err = twigIndexer.GetTwigFilesByRelPath("@Storefront/storefront/fragment.html.twig")
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	require.Equal(t, fragmentPath, files[0].Path)
+
+	names, err := twigIndexer.GetAllTemplateFiles()
+	require.NoError(t, err)
+	for _, name := range names {
+		require.NotContains(t, name, tempDir)
+		require.NotContains(t, name, "scripts/ping")
+	}
+
+	require.NoError(t, twigIndexer.RemovedFiles([]string{iconPath}))
+	files, err = twigIndexer.GetTwigFilesByRelPath("@Storefront/assets/icon/solid/arrow.svg")
+	require.NoError(t, err)
+	require.Empty(t, files)
+}
+
 func TestTwigIndexerStoresSymfonyTemplateAliases(t *testing.T) {
 	idx, err := NewTwigIndexer(t.TempDir())
 	require.NoError(t, err)

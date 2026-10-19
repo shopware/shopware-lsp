@@ -188,6 +188,11 @@ func similarTemplateNames(
 	var result []string
 	for _, name := range missingNames {
 		for _, candidate := range suggestion.SimilarTemplates(name, candidates) {
+			// Template suggestions are loader names; a filesystem path
+			// can never be one, whatever an index key contains.
+			if filepath.IsAbs(candidate) || strings.HasPrefix(candidate, "/") {
+				continue
+			}
 			if _, duplicate := seen[candidate]; duplicate {
 				continue
 			}
