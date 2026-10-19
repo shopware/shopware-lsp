@@ -113,6 +113,53 @@ func TestSemanticQueries(t *testing.T) {
 	}
 }
 
+func TestHashStringMapWithUnquotedKeys(t *testing.T) {
+	source := `{% sw_icon 'arrow-medium-right' style { size: 'fluid', pack: 'solid' } %}`
+	result := twigparser.Parse(source)
+	icons := Nodes(result.Tree.Root, syntax.ShopwareIcon)
+	if len(icons) != 1 {
+		t.Fatalf("icon query failed:\n%s", syntax.DebugTree(result.Tree.Root))
+	}
+	config := HashStringMap(icons[0])
+	if config["pack"] != "solid" || config["size"] != "fluid" || len(config) != 2 {
+		t.Fatalf("hash query returned %#v:\n%s", config, syntax.DebugTree(result.Tree.Root))
+	}
+	if !HashHasKey(icons[0], "pack") || HashHasKey(icons[0], "missing") {
+		t.Fatalf("HashHasKey mismatch for %#v", config)
+	}
+	iconStrings := Nodes(icons[0], syntax.TwigLiteralString)
+	// Icon name, size value, and pack value; unquoted keys are not strings.
+	if len(iconStrings) != 3 {
+		t.Fatalf("expected 3 string literals:\n%s", syntax.DebugTree(result.Tree.Root))
+	}
+	if !StringIsHashValueForKey(iconStrings[2], "pack") {
+		t.Fatal("pack value with unquoted key was not recognized")
+	}
+	if StringIsHashValueForKey(iconStrings[1], "pack") {
+		t.Fatal("size value was mistaken for the pack value")
+	}
+}
+
+func TestHashStringMapSkipsDynamicEntries(t *testing.T) {
+	result := twigparser.Parse(
+		`{{ path('route', {id: product.id, 'quoted': 'v', 42: 'num', (dyn): 'p', pack: somePack, nested: {inner: 'x'}}) }}`,
+	)
+	hashes := Nodes(result.Tree.Root, syntax.TwigLiteralHash)
+	if len(hashes) == 0 {
+		t.Fatalf("hash not found:\n%s", syntax.DebugTree(result.Tree.Root))
+	}
+	config := HashStringMap(hashes[0])
+	if config["quoted"] != "v" || config["42"] != "num" || len(config) != 2 {
+		t.Fatalf("hash query returned %#v:\n%s", config, syntax.DebugTree(result.Tree.Root))
+	}
+	if !HashHasKey(hashes[0], "pack") {
+		t.Fatal("pack key with a non-string value should still be present")
+	}
+	if HashHasKey(hashes[0], "dyn") || HashHasKey(hashes[0], "inner") {
+		t.Fatalf("dynamic or nested keys should not be reported: %#v", config)
+	}
+}
+
 func TestFunctionArgumentAndHashKeyQueries(t *testing.T) {
 	result := twigparser.Parse(`{{ path('product.show', {'id': product.id}) }}`)
 	calls := Nodes(result.Tree.Root, syntax.TwigFunctionCall)
