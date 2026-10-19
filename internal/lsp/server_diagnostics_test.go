@@ -265,6 +265,7 @@ func requireChannelClosed(t *testing.T, channel <-chan struct{}, message string)
 func startDiagnosticLifecycleClient(
 	t *testing.T,
 	server *Server,
+	onRefresh ...func(),
 ) (*jsonrpc2.Conn, <-chan protocol.PublishDiagnosticsParams) {
 	t.Helper()
 	serverSide, clientSide := net.Pipe()
@@ -281,6 +282,11 @@ func startDiagnosticLifecycleClient(
 			_ *jsonrpc2.Conn,
 			request *jsonrpc2.Request,
 		) (interface{}, error) {
+			if request.Method == "workspace/diagnostic/refresh" {
+				for _, callback := range onRefresh {
+					callback()
+				}
+			}
 			if request.Method != "textDocument/publishDiagnostics" ||
 				request.Params == nil {
 				return nil, nil
@@ -447,6 +453,97 @@ func TestDiagnosticPerformanceTraceEnvironment(t *testing.T) {
 		t.Run(test.value, func(t *testing.T) {
 			t.Setenv("SHOPWARE_LSP_TRACE_DIAGNOSTICS", test.value)
 			require.Equal(t, test.enabled, diagnosticPerformanceTraceEnabled())
+		})
+	}
+}
+
+func TestDiagnosticDeliveryNegotiationOverJSONRPC(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		pull    bool
+		refresh bool
+	}{
+		{name: "legacy push"},
+		{name: "pull and push capabilities", pull: true},
+		{name: "pull with refresh", pull: true, refresh: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := NewServer(nil, t.TempDir(), "test")
+			inspection := &countingInspection{}
+			server.RegisterInspection(inspection)
+			refreshed := make(chan struct{}, 16)
+			client, published := startDiagnosticLifecycleClient(t, server, func() { refreshed <- struct{}{} })
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			textCapabilities := map[string]any{"publishDiagnostics": map[string]any{}}
+			if test.pull {
+				textCapabilities["diagnostic"] = map[string]any{}
+			}
+			var initialized struct {
+				Capabilities map[string]any `json:"capabilities"`
+			}
+			require.NoError(t, client.Call(ctx, "initialize", map[string]any{
+				"rootUri": uriutil.FileURI(t.TempDir()),
+				"capabilities": map[string]any{
+					"textDocument": textCapabilities,
+					"workspace":    map[string]any{"diagnostics": map[string]any{"refreshSupport": test.refresh}},
+				},
+			}, &initialized))
+			_, advertised := initialized.Capabilities["diagnosticProvider"]
+			assert.Equal(t, test.pull, advertised)
+			const uri = "file:///project/test.yaml"
+			require.NoError(t, client.Notify(ctx, "textDocument/didOpen", map[string]any{
+				"textDocument": map[string]any{"uri": uri, "version": 1, "text": "value: bad\n"},
+			}))
+			pull := func(want int) {
+				t.Helper()
+				var report protocol.DiagnosticResult
+				require.NoError(t, client.Call(ctx, "textDocument/diagnostic", map[string]any{
+					"textDocument": map[string]any{"uri": uri},
+				}, &report))
+				assert.Equal(t, "full", report.Kind)
+				assert.Len(t, report.Items, want)
+			}
+			if test.pull {
+				if test.refresh {
+					requireChannelClosed(t, refreshed, "missing open refresh")
+				}
+				pull(1)
+				pull(1)
+				assert.Equal(t, 1, inspection.calls)
+				server.PublishDiagnostics(ctx, nil)
+				if test.refresh {
+					requireChannelClosed(t, refreshed, "missing workspace refresh")
+				}
+				pull(1)
+				assert.Equal(t, 2, inspection.calls, "workspace updates must invalidate cached reports")
+			} else {
+				assert.Len(t, waitForPublishedDiagnostics(t, published).Diagnostics, 1)
+			}
+			require.NoError(t, notifyDiagnosticLifecycleChange(client, uri, 2))
+			if test.pull {
+				if test.refresh {
+					requireChannelClosed(t, refreshed, "missing change refresh")
+				}
+				pull(1)
+			} else {
+				assert.Equal(t, 2, waitForPublishedDiagnostics(t, published).Version)
+			}
+			require.NoError(t, client.Notify(ctx, "textDocument/didClose", map[string]any{
+				"textDocument": map[string]any{"uri": uri},
+			}))
+			pull(0)
+			if !test.pull {
+				assert.Empty(t, waitForPublishedDiagnostics(t, published).Diagnostics)
+			}
+			select {
+			case unexpected := <-published:
+				t.Fatalf("unexpected push: %+v", unexpected)
+			case <-time.After(2 * diagnosticsDebounce):
+			}
+			if !test.refresh {
+				assert.Empty(t, refreshed)
+			}
 		})
 	}
 }

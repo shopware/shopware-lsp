@@ -16,7 +16,7 @@ func (s *Server) serverCapabilities() map[string]interface{} {
 			"shopwareLSP": s.negotiatedClientState(true, ""),
 		},
 	}
-	if len(s.inspections.byID) > 0 && s.EffectiveConfiguration().Diagnostics.Enabled {
+	if s.pullDiagnostics && len(s.inspections.byID) > 0 && s.EffectiveConfiguration().Diagnostics.Enabled {
 		capabilities["diagnosticProvider"] = map[string]interface{}{
 			"interFileDependencies": true,
 			"workspaceDiagnostics":  false,

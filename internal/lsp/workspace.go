@@ -70,6 +70,8 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 		return nil, err
 	}
 	s.workDoneProgress = params.Capabilities.Window.WorkDoneProgress
+	s.pullDiagnostics = params.Capabilities.TextDocument.Diagnostic != nil
+	s.diagnosticRefreshSupport = params.Capabilities.Workspace.Diagnostics.RefreshSupport
 	if s.projectDetectionRequired &&
 		!s.allowUnsupportedProject &&
 		!params.InitializationOptions.AllowUnsupportedProject {

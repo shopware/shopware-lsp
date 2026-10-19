@@ -18,8 +18,17 @@ type InitializeParams struct {
 }
 
 type ClientCapabilities struct {
+	Workspace    WorkspaceClientCapabilities    `json:"workspace,omitempty"`
 	TextDocument TextDocumentClientCapabilities `json:"textDocument,omitempty"`
 	Window       WindowClientCapabilities       `json:"window,omitempty"`
+}
+
+type WorkspaceClientCapabilities struct {
+	Diagnostics DiagnosticWorkspaceClientCapabilities `json:"diagnostics,omitempty"`
+}
+
+type DiagnosticWorkspaceClientCapabilities struct {
+	RefreshSupport bool `json:"refreshSupport,omitempty"`
 }
 
 type WindowClientCapabilities struct {
@@ -27,8 +36,13 @@ type WindowClientCapabilities struct {
 }
 
 type TextDocumentClientCapabilities struct {
+	Diagnostic *DiagnosticClientCapabilities `json:"diagnostic,omitempty"`
 	CodeAction *CodeActionClientCapabilities `json:"codeAction,omitempty"`
 }
+
+// DiagnosticClientCapabilities records presence of pull diagnostic support.
+// No optional document diagnostic capabilities are needed by the server yet.
+type DiagnosticClientCapabilities struct{}
 
 type CodeActionClientCapabilities struct {
 	DataSupport    bool                     `json:"dataSupport,omitempty"`

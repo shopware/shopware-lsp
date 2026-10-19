@@ -87,7 +87,8 @@ func initializeClientProfile(
 	})
 
 	params := map[string]interface{}{
-		"rootUri": uriutil.FileURI(root),
+		"rootUri":      uriutil.FileURI(root),
+		"capabilities": map[string]any{"textDocument": map[string]any{"diagnostic": map[string]any{}}},
 		"initializationOptions": map[string]interface{}{
 			"shopwareClient": map[string]interface{}{
 				"protocolVersion":     lsp.ClientProtocolVersion,

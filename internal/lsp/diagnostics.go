@@ -202,6 +202,17 @@ func (s *Server) publishDiagnostics(ctx context.Context, uri string, version int
 		return
 	}
 
+	if s.pullDiagnostics {
+		// Invalidate through scheduleDiagnostics, then let the client pull the
+		// latest snapshot. Never publish a second set of diagnostics.
+		if s.diagnosticRefreshSupport && ctx.Err() == nil {
+			if err := conn.Call(ctx, "workspace/diagnostic/refresh", nil, nil); err != nil && ctx.Err() == nil {
+				log.Printf("Error refreshing diagnostics: %v", err)
+			}
+		}
+		return
+	}
+
 	diagnostics := s.diagnosticsForDocument(ctx, document)
 	s.diagnosticsPublishMu.Lock()
 	defer s.diagnosticsPublishMu.Unlock()
@@ -224,6 +235,9 @@ func (s *Server) publishDiagnostics(ctx context.Context, uri string, version int
 // editor closes a document. Publishing and clearing share a lock so a canceled
 // background analysis cannot write a stale result after the empty result.
 func (s *Server) clearPublishedDiagnostics(ctx context.Context, uri string) {
+	if s.pullDiagnostics {
+		return
+	}
 	conn := s.connection()
 	if conn == nil {
 		return

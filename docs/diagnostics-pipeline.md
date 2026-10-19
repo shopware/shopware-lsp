@@ -532,7 +532,16 @@ default. A configured `off` drops the problem entirely.
 
 ## Scheduling, debouncing, and caching
 
-`scheduleDiagnostics(uri, version, delay)` is the only entry point. It:
+The server selects diagnostic delivery at initialization. Clients advertising
+`textDocument.diagnostic` receive `diagnosticProvider` and use pull reports;
+other clients receive `textDocument/publishDiagnostics` notifications. Pull
+clients never receive push notifications, including close-document clears.
+When a pull client supports `workspace.diagnostics.refreshSupport`, scheduled
+updates request `workspace/diagnostic/refresh` so index, dependency, and
+configuration changes prompt a new pull. Without refresh support, those changes
+are reflected on the client's next diagnostic request.
+
+`scheduleDiagnostics(uri, version, delay)` is the only scheduling entry point. It:
 
 - creates a cancellable job under the server lifecycle context;
 - bumps a per-URI **generation** counter and invalidates that URI's cache
@@ -561,9 +570,8 @@ type diagnosticsCacheEntry struct {
 
 Because `TextDocument` snapshots are immutable, pointer identity is a valid
 freshness test. `diagnosticsForDocument` serves both the push path and the pull
-path (`textDocument/diagnostic`), so a pull request right after a push costs
-nothing. Results are copied in and out of the cache so a caller cannot mutate
-the shared slice. A canceled run is never cached.
+path (`textDocument/diagnostic`), so repeated pulls reuse the analysis. Results
+are copied in and out of the cache so a caller cannot mutate the shared slice. A canceled run is never cached.
 
 Pull responses always return a full report with `"kind": "full"` and an `items`
 array, including `"items": []` for empty or unavailable documents and cached
