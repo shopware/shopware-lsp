@@ -41,6 +41,8 @@ type Server struct {
 	actionProviders                 []ActionProvider
 	inspections                     *inspectionRegistry
 	codeActionResolveSupport        bool
+	pullDiagnostics                 bool
+	diagnosticRefreshSupport        bool
 	hoverProviders                  []HoverProvider
 	signatureProviders              []SignatureHelpProvider
 	renameProviders                 []RenameProvider

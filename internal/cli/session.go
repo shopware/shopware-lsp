@@ -231,6 +231,7 @@ func newCLISession(
 		}},
 		"capabilities": map[string]interface{}{
 			"textDocument": map[string]interface{}{
+				"diagnostic": map[string]interface{}{},
 				"codeAction": map[string]interface{}{
 					"dataSupport": true,
 					"resolveSupport": map[string]interface{}{
