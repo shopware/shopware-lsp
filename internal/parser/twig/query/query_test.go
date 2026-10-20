@@ -7,6 +7,8 @@ import (
 
 	twigparser "github.com/shopware/shopware-lsp/internal/parser/twig"
 	"github.com/shopware/shopware-lsp/internal/parser/twig/syntax"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -117,27 +119,21 @@ func TestHashStringMapWithUnquotedKeys(t *testing.T) {
 	source := `{% sw_icon 'arrow-medium-right' style { size: 'fluid', pack: 'solid' } %}`
 	result := twigparser.Parse(source)
 	icons := Nodes(result.Tree.Root, syntax.ShopwareIcon)
-	if len(icons) != 1 {
-		t.Fatalf("icon query failed:\n%s", syntax.DebugTree(result.Tree.Root))
-	}
+	require.Len(t, icons, 1, "icon query failed:\n%s", syntax.DebugTree(result.Tree.Root))
+
 	config := HashStringMap(icons[0])
-	if config["pack"] != "solid" || config["size"] != "fluid" || len(config) != 2 {
-		t.Fatalf("hash query returned %#v:\n%s", config, syntax.DebugTree(result.Tree.Root))
-	}
-	if !HashHasKey(icons[0], "pack") || HashHasKey(icons[0], "missing") {
-		t.Fatalf("HashHasKey mismatch for %#v", config)
-	}
+	assert.Equal(t, map[string]string{"pack": "solid", "size": "fluid"}, config,
+		"hash query returned %#v:\n%s", config, syntax.DebugTree(result.Tree.Root))
+	assert.True(t, HashHasKey(icons[0], "pack"), "HashHasKey mismatch for %#v", config)
+	assert.False(t, HashHasKey(icons[0], "missing"), "HashHasKey mismatch for %#v", config)
+
 	iconStrings := Nodes(icons[0], syntax.TwigLiteralString)
 	// Icon name, size value, and pack value; unquoted keys are not strings.
-	if len(iconStrings) != 3 {
-		t.Fatalf("expected 3 string literals:\n%s", syntax.DebugTree(result.Tree.Root))
-	}
-	if !StringIsHashValueForKey(iconStrings[2], "pack") {
-		t.Fatal("pack value with unquoted key was not recognized")
-	}
-	if StringIsHashValueForKey(iconStrings[1], "pack") {
-		t.Fatal("size value was mistaken for the pack value")
-	}
+	require.Len(t, iconStrings, 3, "string literals:\n%s", syntax.DebugTree(result.Tree.Root))
+	assert.True(t, StringIsHashValueForKey(iconStrings[2], "pack"),
+		"pack value with unquoted key was not recognized")
+	assert.False(t, StringIsHashValueForKey(iconStrings[1], "pack"),
+		"size value was mistaken for the pack value")
 }
 
 func TestHashStringMapSkipsDynamicEntries(t *testing.T) {
@@ -145,19 +141,17 @@ func TestHashStringMapSkipsDynamicEntries(t *testing.T) {
 		`{{ path('route', {id: product.id, 'quoted': 'v', 42: 'num', (dyn): 'p', pack: somePack, nested: {inner: 'x'}}) }}`,
 	)
 	hashes := Nodes(result.Tree.Root, syntax.TwigLiteralHash)
-	if len(hashes) == 0 {
-		t.Fatalf("hash not found:\n%s", syntax.DebugTree(result.Tree.Root))
-	}
+	require.NotEmpty(t, hashes, "hash not found:\n%s", syntax.DebugTree(result.Tree.Root))
+
 	config := HashStringMap(hashes[0])
-	if config["quoted"] != "v" || config["42"] != "num" || len(config) != 2 {
-		t.Fatalf("hash query returned %#v:\n%s", config, syntax.DebugTree(result.Tree.Root))
-	}
-	if !HashHasKey(hashes[0], "pack") {
-		t.Fatal("pack key with a non-string value should still be present")
-	}
-	if HashHasKey(hashes[0], "dyn") || HashHasKey(hashes[0], "inner") {
-		t.Fatalf("dynamic or nested keys should not be reported: %#v", config)
-	}
+	assert.Equal(t, map[string]string{"quoted": "v", "42": "num"}, config,
+		"hash query returned %#v:\n%s", config, syntax.DebugTree(result.Tree.Root))
+	assert.True(t, HashHasKey(hashes[0], "pack"),
+		"pack key with a non-string value should still be present")
+	assert.False(t, HashHasKey(hashes[0], "dyn"),
+		"dynamic keys should not be reported: %#v", config)
+	assert.False(t, HashHasKey(hashes[0], "inner"),
+		"nested keys should not be reported: %#v", config)
 }
 
 func TestFunctionArgumentAndHashKeyQueries(t *testing.T) {
