@@ -7,9 +7,37 @@ import (
 	"strings"
 )
 
+// storefrontDistMarker is the compiled storefront asset directory Shopware's
+// TwigLoaderConfigCompilerPass registers as an extra path of the owning
+// bundle's Twig namespace, alongside Resources/views.
+const storefrontDistMarker = "/Resources/app/storefront/dist/"
+
 // templateRootMarkers are the directories a Twig loader is pointed at. Anything
 // below one of them is addressable as a template.
-var templateRootMarkers = []string{"/Resources/views/", "/templates/"}
+var templateRootMarkers = []string{
+	"/Resources/views/",
+	"/templates/",
+	storefrontDistMarker,
+}
+
+// storefrontDistRelative returns the namespace-relative name of a file below
+// a bundle's storefront dist root, without the bundle namespace itself.
+func storefrontDistRelative(normalized string) (string, bool) {
+	index := strings.LastIndex(normalized, storefrontDistMarker)
+	if index < 0 {
+		return "", false
+	}
+	return normalized[index+len(storefrontDistMarker):], true
+}
+
+// isStorefrontDistDirectory reports whether a directory is a storefront dist
+// root or sits below one. The scanner skips every `dist` directory, so the
+// Twig indexer uses this to reopen only the dist roots a loader serves.
+func isStorefrontDistDirectory(directory string) bool {
+	normalized := filepath.ToSlash(directory)
+	return strings.HasSuffix(normalized, strings.TrimSuffix(storefrontDistMarker, "/")) ||
+		strings.Contains(normalized, storefrontDistMarker)
+}
 
 // IsTemplateAssetPath reports whether a file lives under a template root while
 // carrying an extension other than .twig. Twig loaders serve whatever sits
@@ -35,9 +63,20 @@ func IsTemplateAssetPath(templatePath string) bool {
 }
 
 func ConvertToRelativePath(twigPath string) string {
-	index := strings.Index(twigPath, "Resources/views")
+	normalized := filepath.ToSlash(twigPath)
+	if relative, ok := storefrontDistRelative(normalized); ok {
+		if relative == "" {
+			return ""
+		}
+		if bundle := getBundleNameByPath(normalized); bundle != "" && bundle != "unknown" {
+			return fmt.Sprintf("@%s/%s", bundle, relative)
+		}
+		return ""
+	}
+
+	index := strings.Index(normalized, "Resources/views")
 	if index != -1 {
-		path := strings.TrimPrefix(strings.TrimPrefix(twigPath[index:], "Resources/views"), "/")
+		path := strings.TrimPrefix(strings.TrimPrefix(normalized[index:], "Resources/views"), "/")
 
 		if path == "" {
 			return ""
@@ -46,13 +85,29 @@ func ConvertToRelativePath(twigPath string) string {
 		return fmt.Sprintf("@Storefront/%s", path)
 	}
 
-	path := strings.TrimPrefix(twigPath, "/")
+	// Files below no loader root have no portable template name. Deriving
+	// one from the absolute path would leak it into template suggestions.
+	if isAbsolutePath(normalized) {
+		return ""
+	}
+
+	path := strings.TrimPrefix(normalized, "/")
 
 	if path == "" {
 		return ""
 	}
 
 	return fmt.Sprintf("@Storefront/%s", path)
+}
+
+func isAbsolutePath(normalized string) bool {
+	if strings.HasPrefix(normalized, "/") {
+		return true
+	}
+	// Windows drive-letter paths, including the slash-normalized form.
+	return len(normalized) >= 3 && normalized[1] == ':' && normalized[2] == '/' &&
+		((normalized[0] >= 'a' && normalized[0] <= 'z') ||
+			(normalized[0] >= 'A' && normalized[0] <= 'Z'))
 }
 
 // isExcludedTwigPath reports whether a file uses Twig syntax without being a
@@ -76,6 +131,17 @@ func TemplateNames(twigPath string) []string {
 		if name != "" && !slices.Contains(names, name) {
 			names = append(names, name)
 		}
+	}
+
+	// The dist root is registered only under its bundle namespace, so it
+	// contributes exactly that one name and no un-namespaced alias.
+	if relative, ok := storefrontDistRelative(normalized); ok {
+		if relative != "" {
+			if bundle := getBundleNameByPath(normalized); bundle != "" && bundle != "unknown" {
+				add("@" + bundle + "/" + relative)
+			}
+		}
+		return names
 	}
 
 	if marker := "/Resources/views/"; strings.Contains(normalized, marker) {
@@ -108,16 +174,26 @@ func legacyBundleTemplateName(bundle, relative string) string {
 }
 
 func getBundleNameByPath(twigPath string) string {
-	index := strings.Index(twigPath, "Resources/views")
-	if index != -1 {
-		possiblePath := strings.Trim(twigPath[:index], "/")
-
-		if filepath.Base(possiblePath) == "src" {
-			return filepath.Base(filepath.Dir(possiblePath))
+	normalized := filepath.ToSlash(twigPath)
+	for _, marker := range []string{"/Resources/views/", storefrontDistMarker} {
+		if index := strings.Index(normalized, marker); index != -1 {
+			return bundleNameBefore(normalized, index)
 		}
-
-		return filepath.Base(possiblePath)
 	}
 
 	return "unknown"
+}
+
+// bundleNameBefore derives the bundle, plugin, app, or theme name from the
+// directory owning a Resources root: the directory directly above
+// Resources, or the one above `src` for bundles laid out as
+// `<Bundle>/src/Resources`.
+func bundleNameBefore(normalized string, index int) string {
+	possiblePath := strings.Trim(normalized[:index], "/")
+
+	if filepath.Base(possiblePath) == "src" {
+		return filepath.Base(filepath.Dir(possiblePath))
+	}
+
+	return filepath.Base(possiblePath)
 }
