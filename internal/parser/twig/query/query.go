@@ -455,33 +455,140 @@ func BlockName(node *syntax.Node) string {
 }
 
 // HashStringMap extracts string-to-string entries from the closest Twig hash.
+// Keys may be quoted strings, unquoted names, or numbers; values must be
+// static string literals. Pairs with a dynamic key or a non-string value are
+// omitted.
 func HashStringMap(node *syntax.Node) map[string]string {
-	hash := ClosestNodeOfKind(node, syntax.TwigLiteralHash)
 	result := make(map[string]string)
+	hash := hashFor(node)
 	if hash == nil {
-		scope := TagAt(node)
-		if scope == nil {
-			scope = node
-		}
-		for candidate := range IterateNodes(scope, syntax.TwigLiteralHash) {
-			hash = candidate
-			break
-		}
-		if hash == nil {
-			return result
-		}
+		return result
 	}
 
 	for pair := range IterateNodes(hash, syntax.TwigLiteralHashPair) {
-		var values []string
-		for literal := range IterateNodes(pair, syntax.TwigLiteralString) {
-			values = append(values, StringValue(literal))
+		if HashAt(pair) != hash {
+			continue
 		}
-		if len(values) >= 2 {
-			result[values[0]] = values[1]
+		key, ok := hashPairKey(pair)
+		if !ok {
+			continue
+		}
+		if value, ok := hashPairStringValue(pair); ok {
+			result[key] = value
 		}
 	}
 	return result
+}
+
+// HashHasKey reports whether the hash used by HashStringMap contains an entry
+// with the given static key, regardless of the entry's value. It lets callers
+// distinguish an absent key from a key whose value is not a static string.
+func HashHasKey(node *syntax.Node, key string) bool {
+	hash := hashFor(node)
+	if hash == nil {
+		return false
+	}
+	for pair := range IterateNodes(hash, syntax.TwigLiteralHashPair) {
+		if HashAt(pair) != hash {
+			continue
+		}
+		if pairKey, ok := hashPairKey(pair); ok && pairKey == key {
+			return true
+		}
+	}
+	return false
+}
+
+func hashFor(node *syntax.Node) *syntax.Node {
+	if hash := ClosestNodeOfKind(node, syntax.TwigLiteralHash); hash != nil {
+		return hash
+	}
+	scope := TagAt(node)
+	if scope == nil {
+		scope = node
+	}
+	for candidate := range IterateNodes(scope, syntax.TwigLiteralHash) {
+		return candidate
+	}
+	return nil
+}
+
+func hashPairParts(pair *syntax.Node) (key, value *syntax.Node) {
+	for child := range pair.ChildNodes() {
+		switch child.Kind() {
+		case syntax.TwigLiteralHashKey:
+			if key == nil {
+				key = child
+			}
+		case syntax.TwigLiteralHashValue, syntax.TwigExpression:
+			if value == nil {
+				value = child
+			}
+		}
+	}
+	return key, value
+}
+
+func hashPairKey(pair *syntax.Node) (string, bool) {
+	key, _ := hashPairParts(pair)
+	if key == nil {
+		return "", false
+	}
+	for child := range key.ChildNodes() {
+		switch child.Kind() {
+		case syntax.TwigLiteralString:
+			return StringValue(child), true
+		case syntax.TwigLiteralNumber:
+			return strings.TrimSpace(child.Text()), true
+		case syntax.TwigLiteralName:
+			if name := firstLiteralName(child); name != "" {
+				return name, true
+			}
+			return "", false
+		default:
+			// Dynamic keys such as (expression) have no static name.
+			return "", false
+		}
+	}
+	for token := range key.ChildTokens() {
+		if token.Kind() == syntax.TkWord {
+			return token.Text(), true
+		}
+	}
+	return "", false
+}
+
+func hashPairStringValue(pair *syntax.Node) (string, bool) {
+	literal := hashPairStringLiteral(pair)
+	if literal == nil {
+		return "", false
+	}
+	return StringValue(literal), true
+}
+
+func hashPairStringLiteral(pair *syntax.Node) *syntax.Node {
+	_, value := hashPairParts(pair)
+	return staticStringLiteral(value)
+}
+
+func staticStringLiteral(node *syntax.Node) *syntax.Node {
+	for node != nil {
+		if node.Kind() == syntax.TwigLiteralString {
+			if StringIsStatic(node) {
+				return node
+			}
+			return nil
+		}
+		var only *syntax.Node
+		for child := range node.ChildNodes() {
+			if only != nil {
+				return nil
+			}
+			only = child
+		}
+		node = only
+	}
+	return nil
 }
 
 func HashAt(node *syntax.Node) *syntax.Node {
@@ -493,23 +600,15 @@ func HashKeyAt(node *syntax.Node) *syntax.Node {
 }
 
 // StringIsHashValueForKey reports whether node is a string literal in a hash
-// pair whose string key equals key.
+// pair whose key equals key. The key may be quoted or an unquoted name.
 func StringIsHashValueForKey(node *syntax.Node, key string) bool {
 	literal := LiteralStringAt(node)
 	pair := ClosestNodeOfKind(literal, syntax.TwigLiteralHashPair)
 	if literal == nil || pair == nil {
 		return false
 	}
-	var values [2]*syntax.Node
-	count := 0
-	for candidate := range IterateNodes(pair, syntax.TwigLiteralString) {
-		values[count] = candidate
-		count++
-		if count == len(values) {
-			break
-		}
-	}
-	return count == len(values) && values[1] == literal && StringValue(values[0]) == key
+	pairKey, ok := hashPairKey(pair)
+	return ok && pairKey == key && hashPairStringLiteral(pair) == literal
 }
 
 // StartingHTMLTagAt returns the HTML start tag containing node.

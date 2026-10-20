@@ -7,6 +7,8 @@ import (
 
 	twigparser "github.com/shopware/shopware-lsp/internal/parser/twig"
 	"github.com/shopware/shopware-lsp/internal/parser/twig/syntax"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -111,6 +113,45 @@ func TestSemanticQueries(t *testing.T) {
 	if !StringIsHashValueForKey(iconStrings[2], "pack") {
 		t.Fatal("pack value was not recognized as the value of the pack option")
 	}
+}
+
+func TestHashStringMapWithUnquotedKeys(t *testing.T) {
+	source := `{% sw_icon 'arrow-medium-right' style { size: 'fluid', pack: 'solid' } %}`
+	result := twigparser.Parse(source)
+	icons := Nodes(result.Tree.Root, syntax.ShopwareIcon)
+	require.Len(t, icons, 1, "icon query failed:\n%s", syntax.DebugTree(result.Tree.Root))
+
+	config := HashStringMap(icons[0])
+	assert.Equal(t, map[string]string{"pack": "solid", "size": "fluid"}, config,
+		"hash query returned %#v:\n%s", config, syntax.DebugTree(result.Tree.Root))
+	assert.True(t, HashHasKey(icons[0], "pack"), "HashHasKey mismatch for %#v", config)
+	assert.False(t, HashHasKey(icons[0], "missing"), "HashHasKey mismatch for %#v", config)
+
+	iconStrings := Nodes(icons[0], syntax.TwigLiteralString)
+	// Icon name, size value, and pack value; unquoted keys are not strings.
+	require.Len(t, iconStrings, 3, "string literals:\n%s", syntax.DebugTree(result.Tree.Root))
+	assert.True(t, StringIsHashValueForKey(iconStrings[2], "pack"),
+		"pack value with unquoted key was not recognized")
+	assert.False(t, StringIsHashValueForKey(iconStrings[1], "pack"),
+		"size value was mistaken for the pack value")
+}
+
+func TestHashStringMapSkipsDynamicEntries(t *testing.T) {
+	result := twigparser.Parse(
+		`{{ path('route', {id: product.id, 'quoted': 'v', 42: 'num', (dyn): 'p', pack: somePack, nested: {inner: 'x'}}) }}`,
+	)
+	hashes := Nodes(result.Tree.Root, syntax.TwigLiteralHash)
+	require.NotEmpty(t, hashes, "hash not found:\n%s", syntax.DebugTree(result.Tree.Root))
+
+	config := HashStringMap(hashes[0])
+	assert.Equal(t, map[string]string{"quoted": "v", "42": "num"}, config,
+		"hash query returned %#v:\n%s", config, syntax.DebugTree(result.Tree.Root))
+	assert.True(t, HashHasKey(hashes[0], "pack"),
+		"pack key with a non-string value should still be present")
+	assert.False(t, HashHasKey(hashes[0], "dyn"),
+		"dynamic keys should not be reported: %#v", config)
+	assert.False(t, HashHasKey(hashes[0], "inner"),
+		"nested keys should not be reported: %#v", config)
 }
 
 func TestFunctionArgumentAndHashKeyQueries(t *testing.T) {

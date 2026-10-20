@@ -57,6 +57,38 @@ func TestThemeAnalyzer_twigDiagnostics(t *testing.T) {
 			},
 		},
 		{
+			name:     "valid icon with unquoted pack in style hash",
+			content:  `{% sw_icon 'arrow-medium-right' style { size: 'fluid', pack: 'solid' } %}`,
+			expected: []lsp.Problem{},
+		},
+		{
+			name:    "invalid icon with unquoted pack in style hash",
+			content: `{% sw_icon 'missing' style { pack: 'solid' } %}`,
+			expected: []lsp.Problem{
+				{
+					Range:    cst.TextRange{Start: 11, End: 20},
+					Message:  "Icon 'missing' not found in pack 'solid'",
+					Source:   "shopware",
+					Severity: protocol.DiagnosticSeverityError,
+					ID:       "theme.icon.missing",
+					Payload: map[string]any{
+						"iconName": "missing",
+						"pack":     "solid",
+					},
+				},
+			},
+		},
+		{
+			name:     "non-string pack value is skipped",
+			content:  `{% sw_icon 'nonexistent-icon' style { pack: somePack } %}`,
+			expected: []lsp.Problem{},
+		},
+		{
+			name:     "non-string pack value with quoted key is skipped",
+			content:  `{% sw_icon 'nonexistent-icon' {'pack': somePack} %}`,
+			expected: []lsp.Problem{},
+		},
+		{
 			name: "multiple icons with mixed validity",
 			content: `{% sw_icon 'heart' %}
 {% sw_icon 'invalid-icon' %}
@@ -90,6 +122,9 @@ func TestThemeAnalyzer_twigDiagnostics(t *testing.T) {
 					"default": {
 						"heart": tempDir + "/icon/default/heart.svg",
 						"home":  tempDir + "/icon/default/home.svg",
+					},
+					"solid": {
+						"arrow-medium-right": tempDir + "/icon/solid/arrow-medium-right.svg",
 					},
 				},
 			}

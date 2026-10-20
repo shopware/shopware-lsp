@@ -70,6 +70,11 @@ func (t *ThemeAnalyzer) twigDiagnostics(ctx context.Context, document *lsp.TextD
 		cfg := twigquery.HashStringMap(tagNode)
 		pack, ok := cfg["pack"]
 		if !ok {
+			if twigquery.HashHasKey(tagNode, "pack") {
+				// The pack is set to a non-string expression, so its
+				// value cannot be known statically.
+				continue
+			}
 			pack = "default"
 		}
 
