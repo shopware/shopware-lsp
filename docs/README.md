@@ -2,6 +2,10 @@
 
 ## Start here
 
+Installing the experimental language server? See the
+[installation guide](installation.md) for PhpStorm, VS Code, Zed, and other
+editors, including the required PhpStorm EAP plugin repository setup.
+
 New to the codebase? Read [`architecture.md`](architecture.md) first. It
 explains the process model, the layers and their dependency rules, what happens
 between process start and a served request, and where a given change belongs.

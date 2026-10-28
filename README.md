@@ -124,61 +124,17 @@ tracks detailed framework coverage.
 
 ## Install
 
-### VS Code
+> [!WARNING]
+> Shopware Language Server is experimental. Features and editor integrations
+> may change, and you may encounter bugs or incomplete results.
 
-Shopware Language Server requires VS Code 1.101 or newer.
-
-1. Install **Shopware Language Server** from the
-   [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=shopware.shopware-lsp).
-2. Open a Shopware or Symfony workspace folder.
-3. Start editing. The platform-specific extension package includes the server
-   executable and starts it automatically for supported projects.
-
-VSCodium and other Open VSX clients can install the extension from
-[Open VSX](https://open-vsx.org/extension/shopware/shopware-lsp).
-
-The default activation mode is conservative. The extension starts only when it
-recognizes Shopware Composer metadata, a Shopware app manifest, Symfony's
-`config/bundles.php`, or an explicit `.config/shopware/lsp.yaml` file. It does
-not index unrelated PHP projects.
-
-### Preview builds
-
-Odd-minor tags (for example `0.3.0`) run the
-[Pre-release workflow](https://github.com/shopware/shopware-lsp/actions/workflows/pre-release.yml),
-which builds platform-specific pre-release VSIX packages for macOS, Linux,
-Alpine, and Windows and attaches them to a GitHub pre-release. The marketplaces
-only accept numeric `major.minor.patch` versions, so the extension follows the
-VS Code convention: odd minors are pre-releases, even minors are stable.
-
-1. Open the latest pre-release on
-   [GitHub Releases](https://github.com/shopware/shopware-lsp/releases).
-2. Download the VSIX for your operating system and architecture.
-3. Run **Extensions: Install from VSIX...** in VS Code.
-
-After approval through the gated `preview` deployment environment, pre-release
-packages are also published to the pre-release channel of the Marketplace and
-Open VSX. Use the stable channel for production installations.
-
-### Zed
-
-The [Zed extension](editors/zed/README.md) provides language-server support,
-MCP tools for the Agent Panel, snippets, and optional generator tasks. Install
-it as a development extension by selecting `editors/zed` in Zed's **Install
-Dev Extension** action. Rust via rustup is required to compile the extension;
-the server binary is downloaded automatically.
-
-### Other editors and standalone use
-
-Download a server archive from
-[GitHub Releases](https://github.com/shopware/shopware-lsp/releases), place the
-`shopware-lsp` executable on your `PATH`, and configure your editor to start it
-over stdin/stdout. Running the binary without a subcommand starts the language
-server.
-
-See [custom commands](docs/custom-commands.md) for custom protocol commands and a Neovim example. Editor
-integrators can use the versioned
-[PhpStorm integration guide](docs/phpstorm-integration.md).
+See the [installation guide](docs/installation.md) for
+[PhpStorm](docs/installation.md#phpstorm),
+[VS Code](docs/installation.md#vs-code),
+[Zed](docs/installation.md#zed), and
+[other editors or standalone use](docs/installation.md#other-editors-and-standalone-use).
+The PhpStorm preview requires manually adding the Shopware EAP plugin repository;
+the guide includes the setup steps.
 
 ## Try it in five minutes
 
