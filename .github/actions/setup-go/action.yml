@@ -3,7 +3,7 @@ description: Keep each job's compiled packages across source changes
 runs:
   using: composite
   steps:
-    - uses: actions/setup-go@v6
+    - uses: actions/setup-go@v7.0.0
       id: go
       with:
         go-version-file: go.mod
@@ -17,13 +17,13 @@ runs:
         echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
 
     - name: Cache Go modules
-      uses: actions/cache@v5
+      uses: actions/cache@v6.1.0
       with:
         path: ${{ steps.paths.outputs.modules }}
         key: go-modules-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}
 
     - name: Cache compiled Go packages
-      uses: actions/cache@v5
+      uses: actions/cache@v6.1.0
       with:
         path: ${{ steps.paths.outputs.build }}
         # Separate race/lint/test outputs; save new builds even when go.sum
