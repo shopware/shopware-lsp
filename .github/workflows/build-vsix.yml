@@ -20,12 +20,12 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -48,7 +48,7 @@ jobs:
           node scripts/build-vsix-release.mjs "${args[@]}"
 
       - name: Upload VSIX packages
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: vsix-packages
           path: |

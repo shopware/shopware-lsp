@@ -23,10 +23,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7.0.0
         with:
           go-version: '1.27.0'
           cache: true
@@ -44,7 +44,7 @@ jobs:
           echo "list=${packages}" >> "$GITHUB_OUTPUT"
 
       - name: Run the benchmarks
-        uses: CodSpeedHQ/action@v5
+        uses: CodSpeedHQ/action@v5.6.0
         with:
           mode: walltime
           # The runner defaults to 3s per benchmark; 1s still yields 100 measured
