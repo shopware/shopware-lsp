@@ -450,9 +450,8 @@ fn field_types(
         && !bootstrap.definition_kinds.contains(&input.definition_kind)
     {
         return Err(CliError::fail(format!(
-            "definition kind {} is unavailable for Shopware constraint {}",
-            crate::gofmt::go_quote(&input.definition_kind),
-            crate::gofmt::go_quote(&bootstrap.plugin.shopware_version)
+            "definition kind {:?} is unavailable for Shopware constraint {:?}",
+            input.definition_kind, bootstrap.plugin.shopware_version
         )));
     }
     let exact_id = input.id.trim().to_owned();
@@ -497,8 +496,8 @@ fn field_types(
     }
     if !exact_id.is_empty() && result.as_ref().is_none_or(Vec::is_empty) {
         return Err(CliError::fail(format!(
-            "field type {} is unavailable; call shopware_entity_schema_field_types without id to list valid ids",
-            crate::gofmt::go_quote(&exact_id)
+            "field type {:?} is unavailable; call shopware_entity_schema_field_types without id to list valid ids",
+            exact_id
         )));
     }
     let next_action = if exact_id.is_empty() {

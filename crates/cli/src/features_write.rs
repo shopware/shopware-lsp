@@ -9,7 +9,6 @@ use swlsp_lsp_protocol::{CodeAction, DiagnosticResult, WorkspaceEdit};
 
 use crate::args::{Codeaction, Rename};
 use crate::edit::{EditMode, apply_workspace_edit};
-use crate::gofmt::go_quote;
 use crate::session::{position_params, text_document_params};
 use crate::target::{code_action_selection, parse_position_target};
 use crate::{CliError, Runner};
@@ -79,9 +78,8 @@ pub(crate) fn run_code_action(runner: &Runner, flags: &Codeaction) -> Result<(),
     };
     if let Some(disabled) = &action.disabled {
         return Err(CliError::fail(format!(
-            "code action {} is disabled: {}",
-            go_quote(&action.title),
-            disabled.reason
+            "code action {:?} is disabled: {}",
+            action.title, disabled.reason
         )));
     }
     if action.edit.is_none() && action.data.is_some() {
@@ -92,9 +90,8 @@ pub(crate) fn run_code_action(runner: &Runner, flags: &Codeaction) -> Result<(),
         action = resolved.unwrap_or_default();
         if let Some(disabled) = &action.disabled {
             return Err(CliError::fail(format!(
-                "code action {} is disabled: {}",
-                go_quote(&action.title),
-                disabled.reason
+                "code action {:?} is disabled: {}",
+                action.title, disabled.reason
             )));
         }
     }
@@ -111,14 +108,13 @@ pub(crate) fn run_code_action(runner: &Runner, flags: &Codeaction) -> Result<(),
     }
     if let Some(command) = &action.command {
         return Err(CliError::fail(format!(
-            "code action {} requires editor command {}; use the corresponding CLI execute command",
-            go_quote(&action.title),
-            go_quote(&command.command)
+            "code action {:?} requires editor command {:?}; use the corresponding CLI execute command",
+            action.title, command.command
         )));
     }
     Err(CliError::fail(format!(
-        "code action {} returned neither edits nor a command",
-        go_quote(&action.title)
+        "code action {:?} returned neither edits nor a command",
+        action.title
     )))
 }
 
@@ -185,12 +181,8 @@ fn parse_json_argument(runner: &Runner, argument: Option<&str>) -> Result<Value,
             .map_err(|error| CliError::fail(format!("read JSON argument: {error}")))?;
         content
     } else if let Some(path) = argument.strip_prefix('@') {
-        std::fs::read(path).map_err(|error| {
-            CliError::fail(format!(
-                "read JSON argument file: {}",
-                crate::gofmt::path_error("open", path, &error)
-            ))
-        })?
+        std::fs::read(path)
+            .map_err(|error| CliError::fail(format!("read JSON argument file {path}: {error}")))?
     } else {
         argument.as_bytes().to_vec()
     };

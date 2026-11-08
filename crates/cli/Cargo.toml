@@ -38,6 +38,10 @@ log = { version = "0.4", features = ["std"] }
 # Command-line parsing (src/args.rs). Only plain help and diagnostics: the CLI
 # declares no flatten_help/HelpAll actions and ships no completions yet.
 usage-rs = { version = "7.3.0", default-features = false, features = ["help", "diagnostics"] }
+# Unified diffs for workspace-edit previews (src/edit.rs).
+similar = "3.2"
+# `serve --listen-timeout` durations and the human-readable timings.
+humantime = "2.3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

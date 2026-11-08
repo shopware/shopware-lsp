@@ -9,8 +9,6 @@ use swlsp_lsp_protocol::{
 };
 
 use crate::CliError;
-use crate::difflib::{split_lines, unified_diff};
-use crate::gofmt::path_error;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EditMode {
@@ -67,12 +65,8 @@ struct Applier {
 impl Applier {
     fn load(&mut self, uri: &str, create: bool) -> Result<&mut PendingDocumentEdit, CliError> {
         if !self.documents.contains_key(uri) {
-            let path = swlsp_uriutil::path(uri).map_err(|error| {
-                CliError::fail(format!(
-                    "resolve edit URI {}: {error}",
-                    crate::gofmt::go_quote(uri)
-                ))
-            })?;
+            let path = swlsp_uriutil::path(uri)
+                .map_err(|error| CliError::fail(format!("resolve edit URI {:?}: {error}", uri)))?;
             let mut document = PendingDocumentEdit {
                 path: path.clone(),
                 before: String::new(),
@@ -95,10 +89,7 @@ impl Applier {
                     }
                 }
                 Err(error) if !create && error.kind() != std::io::ErrorKind::NotFound => {
-                    return Err(CliError::fail(format!(
-                        "read edit target {path}: {}",
-                        path_error("open", &path, &error)
-                    )));
+                    return Err(CliError::fail(format!("read edit target {path}: {error}")));
                 }
                 Err(_) if !create => {
                     return Err(CliError::fail(format!(
@@ -122,8 +113,8 @@ impl Applier {
         }
         let Some(text_document) = &change.text_document else {
             return Err(CliError::fail(format!(
-                "unsupported workspace edit change kind {}",
-                crate::gofmt::go_quote(&change.kind)
+                "unsupported workspace edit change kind {:?}",
+                change.kind
             )));
         };
         let document = self.load(&text_document.uri, false)?;
@@ -145,10 +136,7 @@ impl Applier {
         }
         if change.options.is_some() && options.ignore_if_not_exists {
             let path = swlsp_uriutil::path(&change.uri).map_err(|error| {
-                CliError::fail(format!(
-                    "resolve delete URI {}: {error}",
-                    crate::gofmt::go_quote(&change.uri)
-                ))
+                CliError::fail(format!("resolve delete URI {:?}: {error}", change.uri))
             })?;
             if matches!(std::fs::metadata(&path), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
             {
@@ -211,26 +199,19 @@ fn finish_document(
         } else {
             document.path.as_str()
         };
-        let diff = unified_diff(
-            &split_lines(&document.before),
-            &split_lines(&document.after),
-            &document.path,
-            to_file,
-            3,
-        );
+        let diff = similar::TextDiff::from_lines(&document.before, &document.after)
+            .unified_diff()
+            .context_radius(3)
+            .header(&document.path, to_file)
+            .to_string();
         writer.write_all(diff.as_bytes()).map_err(|error| {
             CliError::fail(format!("write diff for {}: {error}", document.path))
         })?;
     }
     if mode.write {
         if document.deleted {
-            std::fs::remove_file(&document.path).map_err(|error| {
-                CliError::fail(format!(
-                    "delete {}: {}",
-                    document.path,
-                    path_error("remove", &document.path, &error)
-                ))
-            })?;
+            std::fs::remove_file(&document.path)
+                .map_err(|error| CliError::fail(format!("delete {}: {error}", document.path)))?;
             return Ok(());
         }
         let directory = std::path::Path::new(&document.path)
@@ -238,18 +219,10 @@ fn finish_document(
             .map(|parent| parent.to_string_lossy().into_owned())
             .unwrap_or_else(|| ".".into());
         std::fs::create_dir_all(&directory).map_err(|error| {
-            CliError::fail(format!(
-                "create edit directory: {}",
-                path_error("mkdir", &directory, &error)
-            ))
+            CliError::fail(format!("create edit directory {directory}: {error}"))
         })?;
-        write_file(&document.path, document.after.as_bytes(), document.mode).map_err(|error| {
-            CliError::fail(format!(
-                "write {}: {}",
-                document.path,
-                path_error("open", &document.path, &error)
-            ))
-        })?;
+        write_file(&document.path, document.after.as_bytes(), document.mode)
+            .map_err(|error| CliError::fail(format!("write {}: {error}", document.path)))?;
     }
     Ok(())
 }

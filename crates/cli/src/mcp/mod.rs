@@ -13,11 +13,10 @@ use std::io::{BufReader, Read, Write};
 use std::sync::Mutex;
 
 use serde::Serialize;
+use serde_json::value::RawValue;
 use serde_json::{Map, Value, json};
 use swlsp_projectconfig::{Effective, Partial};
 
-use crate::gofmt::go_quote;
-use crate::gojson::marshal;
 use crate::session::{CliSession, SessionOptions};
 use crate::{CliError, Output, Runner};
 
@@ -183,7 +182,7 @@ fn reject_unknown_configuration_fields(value: &Value) -> Result<(), String> {
         };
         for (key, item) in map {
             if !allowed.contains(&key.as_str()) {
-                return Err(format!("json: unknown field {}", go_quote(key)));
+                return Err(format!("json: unknown field {:?}", key));
             }
             nested(key, item)?;
         }
@@ -238,43 +237,40 @@ struct Writer(Output);
 
 impl Writer {
     fn respond(&self, id: &Value, result: Result<Value, RpcError>) {
-        let message = match result {
-            Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
-            Err(error) => {
-                let mut body = Map::new();
-                body.insert("code".into(), json!(error.code));
-                body.insert("message".into(), json!(error.message));
-                if let Some(data) = error.data {
-                    body.insert("data".into(), data);
-                }
-                json!({"jsonrpc": "2.0", "id": id, "error": body})
-            }
-        };
-        self.send_ordered(id, message);
-    }
-
-    /// Writes `{"jsonrpc","id","result"|"error"}` in Go's field order.
-    fn send_ordered(&self, id: &Value, message: Value) {
-        let mut line = String::from("{\"jsonrpc\":\"2.0\",\"id\":");
-        line.push_str(&marshal(id));
-        if let Some(result) = message.get("result") {
-            line.push_str(",\"result\":");
-            line.push_str(&encode_result(result));
-        } else if let Some(error) = message.get("error") {
-            line.push_str(",\"error\":{\"code\":");
-            line.push_str(&marshal(&error["code"]));
-            line.push_str(",\"message\":");
-            line.push_str(&marshal(&error["message"]));
-            if let Some(data) = error.get("data") {
-                line.push_str(",\"data\":");
-                line.push_str(&marshal(data));
-            }
-            line.push('}');
+        #[derive(Serialize)]
+        struct Response<'a> {
+            jsonrpc: &'static str,
+            id: &'a Value,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            result: Option<Box<RawValue>>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            error: Option<RpcError>,
         }
-        line.push_str("}\n");
+        let (result, error) = match result {
+            Ok(result) => (
+                Some(
+                    RawValue::from_string(encode_result(&result))
+                        .unwrap_or_else(|_| RawValue::NULL.to_owned()),
+                ),
+                None,
+            ),
+            Err(error) => (None, Some(error)),
+        };
+        let mut line = to_json(&Response {
+            jsonrpc: "2.0",
+            id,
+            result,
+            error,
+        });
+        line.push('\n');
         let mut output = self.0.clone();
         let _ = output.write_all(line.as_bytes());
     }
+}
+
+/// Compact JSON text of `value`.
+fn to_json<T: Serialize + ?Sized>(value: &T) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "null".into())
 }
 
 /// Results are pre-encoded where Go's struct field order matters; such
@@ -285,7 +281,7 @@ fn encode_result(result: &Value) -> String {
     {
         return raw.to_owned();
     }
-    marshal(result)
+    to_json(result)
 }
 
 const RAW_KEY: &str = "\u{0}raw";
@@ -294,10 +290,11 @@ fn raw_result(text: String) -> Value {
     json!({ RAW_KEY: text })
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub(crate) struct RpcError {
     code: i64,
     message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     data: Option<Value>,
 }
 
@@ -354,8 +351,8 @@ fn serve(
             let tag = message.get("jsonrpc").and_then(Value::as_str).unwrap_or("");
             if tag != "2.0" {
                 return Err(format!(
-                    "invalid message version tag {}; expected \"2.0\"",
-                    go_quote(tag)
+                    "invalid message version tag {:?}; expected \"2.0\"",
+                    tag
                 ));
             }
             let Some(method) = message
@@ -461,21 +458,21 @@ fn handle(
         return Err(RpcError::new(
             0,
             format!(
-                "method {} is invalid during session initialization",
-                go_quote(method)
+                "method {:?} is invalid during session initialization",
+                method
             ),
         ));
     }
     let Some(info) = method_info(method) else {
         return Err(RpcError::new(
             METHOD_NOT_FOUND,
-            format!("method not found: {}", go_quote(method)),
+            format!("method not found: {:?}", method),
         ));
     };
     if info.notification && call {
         return Err(RpcError::new(
             INVALID_REQUEST,
-            format!("invalid request: unexpected id for {}", go_quote(method)),
+            format!("invalid request: unexpected id for {:?}", method),
         ));
     }
     if !info.missing_params_ok && params.is_none() {
@@ -488,15 +485,12 @@ fn handle(
         None | Some(Value::Null) => None,
         Some(Value::Object(map)) => Some(map),
         Some(other) => {
-            let raw = marshal(&other);
+            let raw = to_json(&other);
             return Err(RpcError::new(
                 INVALID_PARAMS,
                 format!(
-                    "handling '{method}': invalid params: unmarshaling {} into a *mcp.{}: json: cannot unmarshal {} into Go value of type mcp.{}",
-                    go_quote(&raw),
-                    info.params_type,
-                    go_quote(&raw),
-                    info.params_type
+                    "handling '{method}': invalid params: unmarshaling {:?} into a *mcp.{}: json: cannot unmarshal {:?} into Go value of type mcp.{}",
+                    raw, info.params_type, raw, info.params_type
                 ),
             ));
         }
@@ -558,8 +552,8 @@ fn handle(
         "prompts/get" => Err(RpcError::new(
             INVALID_PARAMS,
             format!(
-                "unknown prompt {}",
-                go_quote(params.get("name").and_then(Value::as_str).unwrap_or(""))
+                "unknown prompt {:?}",
+                params.get("name").and_then(Value::as_str).unwrap_or("")
             ),
         )),
         "resources/read" => Err(RpcError {
@@ -576,7 +570,7 @@ fn handle(
             }
             Err(RpcError::new(
                 METHOD_NOT_FOUND,
-                format!("method not found: {}", go_quote(method)),
+                format!("method not found: {:?}", method),
             ))
         }
         "tools/call" => {
@@ -608,9 +602,9 @@ fn initialize_result(runtime: &McpRuntime<'_>, requested: &str) -> String {
     };
     format!(
         "{{\"capabilities\":{capabilities},\"instructions\":{},\"protocolVersion\":{},\"serverInfo\":{{\"name\":\"shopware-lsp\",\"version\":{}}}}}",
-        marshal(INSTRUCTIONS),
-        marshal(version),
-        marshal(runtime.runner.version())
+        to_json(INSTRUCTIONS),
+        to_json(version),
+        to_json(runtime.runner.version())
     )
 }
 
@@ -638,7 +632,7 @@ fn call_tool(
     else {
         return Err(RpcError::new(
             INVALID_PARAMS,
-            format!("unknown tool {}", go_quote(name)),
+            format!("unknown tool {:?}", name),
         ));
     };
     let result_type = if client_version >= "2026-07-28" {
@@ -649,7 +643,7 @@ fn call_tool(
     let error_result = |message: &str| {
         raw_result(format!(
             "{{\"content\":[{{\"type\":\"text\",\"text\":{}}}],\"isError\":true{result_type}}}",
-            marshal(message)
+            to_json(message)
         ))
     };
     // Validate input and apply defaults (Go `applySchema`).
@@ -657,10 +651,10 @@ fn call_tool(
         None | Some(Value::Null) => Value::Object(Map::new()),
         Some(Value::Object(map)) => Value::Object(map.clone()),
         Some(other) => {
-            let raw = marshal(other);
+            let raw = to_json(other);
             return Ok(error_result(&format!(
-                "validating \"arguments\": unmarshaling arguments: json: cannot unmarshal {} into Go value of type map[string]interface {{}}",
-                go_quote(&raw)
+                "validating \"arguments\": unmarshaling arguments: json: cannot unmarshal {:?} into Go value of type map[string]interface {{}}",
+                raw
             )));
         }
     };
@@ -670,10 +664,10 @@ fn call_tool(
     let arguments = normalize_arguments(arguments);
     match tools::dispatch(runtime, name, arguments) {
         Ok(output) => {
-            let structured = marshal(&output);
+            let structured = to_json(&output);
             Ok(raw_result(format!(
                 "{{\"content\":[{{\"type\":\"text\",\"text\":{}}}],\"structuredContent\":{structured}{result_type}}}",
-                marshal(&structured)
+                to_json(&structured)
             )))
         }
         Err(error) => Ok(error_result(&error.message)),

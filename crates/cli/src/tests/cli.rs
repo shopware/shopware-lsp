@@ -311,6 +311,38 @@ fn apply_workspace_edit_rejects_create_over_existing_empty_file() {
 }
 
 #[test]
+fn apply_workspace_edit_previews_a_unified_diff() {
+    let root = temp_dir();
+    let file = path(root.path(), "a.php");
+    write(&file, "one\ntwo\nthree\n");
+    let mut edit = WorkspaceEdit::default();
+    edit.changes.insert(
+        swlsp_uriutil::file_uri(&file),
+        vec![TextEdit {
+            range: Range {
+                start: Position {
+                    line: 1,
+                    character: 0,
+                },
+                end: Position {
+                    line: 1,
+                    character: 3,
+                },
+            },
+            new_text: "2".into(),
+            ..TextEdit::default()
+        }],
+    );
+    let mut preview = Vec::new();
+    apply_workspace_edit(&mut preview, Some(&edit), EditMode::default()).unwrap();
+    assert_eq!(
+        String::from_utf8(preview).unwrap(),
+        format!("--- {file}\n+++ {file}\n@@ -1,3 +1,3 @@\n one\n-two\n+2\n three\n")
+    );
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "one\ntwo\nthree\n");
+}
+
+#[test]
 fn apply_workspace_edit_previews_and_applies_delete_file() {
     let root = temp_dir();
     let file = path(root.path(), "obsolete.php");

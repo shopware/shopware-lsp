@@ -11,7 +11,6 @@ use swlsp_indexer::{PathExclusions, VendorPackages, is_scanned_path, should_skip
 use swlsp_uriutil::filepath;
 
 use crate::args::Check;
-use crate::gofmt::{format_duration, format_float_v, path_error, round_duration};
 use crate::session::{DiagnosticOutput, diagnostic_severity_value};
 use crate::{Cancel, CliError, Runner};
 
@@ -48,8 +47,15 @@ pub struct SkippedFile {
     pub reason: String,
 }
 
-fn seconds_duration(seconds: f64) -> String {
-    format_duration(round_duration((seconds * 1e9) as i64, 1_000_000))
+/// A duration in seconds rounded to milliseconds, as `1s 234ms`.
+pub(crate) fn seconds_duration(seconds: f64) -> String {
+    let millis = (seconds * 1e3).round();
+    let millis = if millis.is_finite() && millis > 0.0 {
+        millis as u64
+    } else {
+        0
+    };
+    humantime::format_duration(std::time::Duration::from_millis(millis)).to_string()
 }
 
 pub(crate) fn run_index(runner: &Runner, force: bool) -> Result<(), CliError> {
@@ -234,14 +240,11 @@ fn inspect_cache(path: &str) -> Result<CacheStats, CliError> {
         ..CacheStats::default()
     };
     fn walk(path: &std::path::Path, result: &mut CacheStats) -> Result<(), CliError> {
-        let metadata = std::fs::symlink_metadata(path).map_err(|error| {
-            CliError::fail(path_error("lstat", &path.to_string_lossy(), &error))
-        })?;
+        let metadata = std::fs::symlink_metadata(path)
+            .map_err(|error| CliError::fail(format!("{}: {error}", path.display())))?;
         if metadata.is_dir() {
             let mut entries: Vec<_> = std::fs::read_dir(path)
-                .map_err(|error| {
-                    CliError::fail(path_error("open", &path.to_string_lossy(), &error))
-                })?
+                .map_err(|error| CliError::fail(format!("{}: {error}", path.display())))?
                 .filter_map(Result::ok)
                 .map(|entry| entry.path())
                 .collect();
@@ -440,23 +443,16 @@ pub fn resolve_check_files_with_exclusions(
         let mut path = target.clone();
         if path.starts_with("file://") {
             path = swlsp_uriutil::path(&path).map_err(|error| {
-                CliError::fail(format!(
-                    "resolve check target {}: {error}",
-                    crate::gofmt::go_quote(target)
-                ))
+                CliError::fail(format!("resolve check target {:?}: {error}", target))
             })?;
         }
         let absolute = filepath::abs(&path).map_err(|error| {
-            CliError::fail(format!(
-                "resolve check target {}: {error}",
-                crate::gofmt::go_quote(target)
-            ))
+            CliError::fail(format!("resolve check target {:?}: {error}", target))
         })?;
         let metadata = std::fs::metadata(&absolute).map_err(|error| {
             CliError::fail(format!(
-                "inspect check target {}: {}",
-                crate::gofmt::go_quote(target),
-                path_error("stat", &absolute, &error)
+                "inspect check target {:?}: {absolute}: {error}",
+                target
             ))
         })?;
         if !metadata.is_dir() {
@@ -476,8 +472,8 @@ pub fn resolve_check_files_with_exclusions(
         );
         if let Some(error) = walk_error {
             return Err(CliError::fail(format!(
-                "walk check target {}: {error}",
-                crate::gofmt::go_quote(target)
+                "walk check target {:?}: {error}",
+                target
             )));
         }
     }
@@ -499,7 +495,7 @@ fn walk_check_directory(
     let entries = match std::fs::read_dir(directory) {
         Ok(entries) => entries,
         Err(cause) => {
-            *error = Some(path_error("open", directory, &cause));
+            *error = Some(format!("{directory}: {cause}"));
             return;
         }
     };
@@ -586,8 +582,8 @@ pub(crate) fn diagnostic_severity(value: &str) -> Result<i32, CliError> {
         "warning" | "warn" => Ok(2),
         "error" => Ok(1),
         _ => Err(CliError::fail(format!(
-            "unknown diagnostic severity {}",
-            crate::gofmt::go_quote(value)
+            "unknown diagnostic severity {:?}",
+            value
         ))),
     }
 }
@@ -602,31 +598,18 @@ pub(crate) fn severity_label(severity: i32) -> &'static str {
     }
 }
 
-/// Go `fmt.Sprintf(" [%v]", code)`.
+/// ` [code]` for a diagnostic code, empty when there is none.
 pub(crate) fn diagnostic_code_suffix(code: Option<&serde_json::Value>) -> String {
     match code {
         None | Some(serde_json::Value::Null) => String::new(),
-        Some(code) => format!(" [{}]", go_sprint(code)),
+        Some(code) => format!(" [{}]", code_text(code)),
     }
 }
 
-/// Go `fmt.Sprint` of a decoded `interface{}` JSON value.
-pub(crate) fn go_sprint(value: &serde_json::Value) -> String {
+/// A diagnostic code as text: strings unquoted, numbers as written.
+pub(crate) fn code_text(value: &serde_json::Value) -> String {
     match value {
-        serde_json::Value::Null => "<nil>".into(),
-        serde_json::Value::Bool(value) => value.to_string(),
-        serde_json::Value::Number(number) => format_float_v(number.as_f64().unwrap_or(0.0)),
         serde_json::Value::String(value) => value.clone(),
-        serde_json::Value::Array(values) => format!(
-            "[{}]",
-            values.iter().map(go_sprint).collect::<Vec<_>>().join(" ")
-        ),
-        serde_json::Value::Object(map) => format!(
-            "map[{}]",
-            map.iter()
-                .map(|(key, value)| format!("{key}:{}", go_sprint(value)))
-                .collect::<Vec<_>>()
-                .join(" ")
-        ),
+        value => value.to_string(),
     }
 }

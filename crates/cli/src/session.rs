@@ -16,7 +16,6 @@ use serde_json::value::RawValue;
 use serde_json::{Value, json};
 use swlsp_lsp_protocol::{Diagnostic, DiagnosticRelatedInformation, DiagnosticResult, Position};
 
-use crate::ordered::Node;
 use crate::{Cancel, CliError, Output};
 
 const POLL: Duration = Duration::from_millis(25);
@@ -36,10 +35,7 @@ enum IndexEvent {
 #[derive(Debug, Clone, Default)]
 pub struct Configuration {
     /// The catalog exactly as the server sent it.
-    pub raw: Node,
-    pub path: Node,
-    pub effective: Node,
-    pub scopes: Node,
+    pub raw: Value,
     pub exclude: Vec<String>,
     pub severity: String,
     pub fail_on: String,
@@ -47,12 +43,9 @@ pub struct Configuration {
 
 impl Configuration {
     fn from_raw(text: &str) -> Result<Self, CliError> {
-        let raw =
-            crate::config_order::reorder_catalog(Node::parse(text).map_err(|error| {
-                CliError::fail(format!("decode configuration catalog: {error}"))
-            })?);
-        let value: Value = serde_json::from_str(text).unwrap_or(Value::Null);
-        let effective = &value["effective"];
+        let raw: Value = serde_json::from_str(text)
+            .map_err(|error| CliError::fail(format!("decode configuration catalog: {error}")))?;
+        let effective = &raw["effective"];
         let exclude = effective["indexing"]["exclude"]
             .as_array()
             .map(|items| {
@@ -63,12 +56,6 @@ impl Configuration {
             })
             .unwrap_or_default();
         Ok(Self {
-            path: raw
-                .get("path")
-                .cloned()
-                .unwrap_or(Node::String(String::new())),
-            effective: raw.get("effective").cloned().unwrap_or(Node::Null),
-            scopes: raw.get("scopes").cloned().unwrap_or(Node::Null),
             exclude,
             severity: effective["check"]["severity"]
                 .as_str()
@@ -241,7 +228,7 @@ pub struct CliSession {
     index_events: Receiver<IndexEvent>,
     pub cancel: Cancel,
     pub root: String,
-    pub capabilities: Node,
+    pub capabilities: Value,
     pub configuration: Configuration,
     pub initial_index: IndexingResult,
     close_result: Mutex<Option<Result<(), String>>>,
@@ -292,7 +279,7 @@ impl CliSession {
             index_events,
             cancel: cancel.clone(),
             root: options.root.clone(),
-            capabilities: Node::Null,
+            capabilities: Value::Null,
             configuration: Configuration::default(),
             initial_index: IndexingResult::default(),
             close_result: Mutex::new(None),
@@ -326,7 +313,7 @@ impl CliSession {
             },
         });
         match session.client.call("initialize", initialize, cancel, None) {
-            Ok(text) => session.capabilities = Node::parse(&text).unwrap_or(Node::Null),
+            Ok(text) => session.capabilities = serde_json::from_str(&text).unwrap_or(Value::Null),
             Err(error) => {
                 let _ = session.close();
                 return Err(CliError::fail(format!("initialize LSP session: {error}")));
@@ -414,12 +401,8 @@ impl CliSession {
         }
         let absolute = swlsp_uriutil::filepath::abs(&path)
             .map_err(|error| CliError::fail(format!("resolve document path: {error}")))?;
-        let content = std::fs::read(&absolute).map_err(|error| {
-            CliError::fail(format!(
-                "read document: {}",
-                crate::gofmt::path_error("open", &absolute, &error)
-            ))
-        })?;
+        let content = std::fs::read(&absolute)
+            .map_err(|error| CliError::fail(format!("read document {absolute}: {error}")))?;
         let extension = swlsp_uriutil::filepath::ext(&absolute).to_lowercase();
         let mut language_id = extension.trim_start_matches('.').to_owned();
         if let Some(language) = language_for(&absolute) {

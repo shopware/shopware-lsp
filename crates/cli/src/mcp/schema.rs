@@ -11,8 +11,6 @@ use std::sync::OnceLock;
 use serde_json::Value;
 use serde_json::value::RawValue;
 
-use crate::gofmt::{format_float_v, go_quote, go_quote_list};
-
 const TOOLS_JSON: &str = include_str!("tools.json");
 
 pub struct ToolDefinition {
@@ -70,35 +68,13 @@ fn json_type(instance: Option<&Value>) -> &'static str {
     }
 }
 
-/// Go `fmt` `%v` of a decoded `any` value.
-pub fn go_value(instance: Option<&Value>) -> String {
+/// The offending value in a type error: strings unquoted, anything else
+/// as compact JSON.
+fn display_value(instance: Option<&Value>) -> String {
     match instance {
-        None | Some(Value::Null) => "<invalid reflect.Value>".into(),
-        Some(value) => go_value_nested(value),
-    }
-}
-
-fn go_value_nested(value: &Value) -> String {
-    match value {
-        Value::Null => "<nil>".into(),
-        Value::Bool(value) => value.to_string(),
-        Value::String(value) => value.clone(),
-        Value::Number(number) => format_float_v(number.as_f64().unwrap_or(0.0)),
-        Value::Array(values) => format!(
-            "[{}]",
-            values
-                .iter()
-                .map(go_value_nested)
-                .collect::<Vec<_>>()
-                .join(" ")
-        ),
-        Value::Object(map) => format!(
-            "map[{}]",
-            map.iter()
-                .map(|(key, value)| format!("{key}:{}", go_value_nested(value)))
-                .collect::<Vec<_>>()
-                .join(" ")
-        ),
+        None => "null".into(),
+        Some(Value::String(value)) => value.clone(),
+        Some(value) => value.to_string(),
     }
 }
 
@@ -108,10 +84,10 @@ fn validate_inner(instance: Option<&Value>, schema: &Value, path: &str) -> Resul
         Value::String(want) => {
             if !(got == want || (got == "integer" && want == "number")) {
                 return Err(format!(
-                    "type: {} has type {}, want {}",
-                    go_value(instance),
-                    go_quote(got),
-                    go_quote(want)
+                    "type: {} has type {:?}, want {:?}",
+                    display_value(instance),
+                    got,
+                    want
                 ));
             }
         }
@@ -119,10 +95,10 @@ fn validate_inner(instance: Option<&Value>, schema: &Value, path: &str) -> Resul
             let types: Vec<&str> = types.iter().filter_map(Value::as_str).collect();
             if !(types.contains(&got) || (got == "integer" && types.contains(&"number"))) {
                 return Err(format!(
-                    "type: {} has type {}, want one of {}",
-                    go_value(instance),
-                    go_quote(got),
-                    go_quote(&types.join(", "))
+                    "type: {} has type {:?}, want one of {:?}",
+                    display_value(instance),
+                    got,
+                    types.join(", ")
                 ));
             }
         }
@@ -155,10 +131,7 @@ fn validate_inner(instance: Option<&Value>, schema: &Value, path: &str) -> Resul
                         .filter(|name| !evaluated.contains(name))
                         .collect();
                     if !disallowed.is_empty() {
-                        return Err(format!(
-                            "unexpected additional properties {}",
-                            go_quote_list(&disallowed)
-                        ));
+                        return Err(format!("unexpected additional properties {disallowed:?}"));
                     }
                 }
                 Some(additional @ Value::Object(_)) => {
@@ -178,10 +151,7 @@ fn validate_inner(instance: Option<&Value>, schema: &Value, path: &str) -> Resul
                     .filter(|name| !map.contains_key(*name))
                     .collect();
                 if !missing.is_empty() {
-                    return Err(format!(
-                        "required: missing properties: {}",
-                        go_quote_list(&missing)
-                    ));
+                    return Err(format!("required: missing properties: {missing:?}"));
                 }
             }
         }
@@ -209,11 +179,11 @@ mod tests {
     }
 
     #[test]
-    fn reports_go_validation_errors() {
+    fn reports_validation_errors() {
         let schema = hover_schema();
         assert_eq!(
             validate(&json!({}), &schema).unwrap_err(),
-            "validating root: required: missing properties: [\"path\" \"line\"]"
+            "validating root: required: missing properties: [\"path\", \"line\"]"
         );
         assert_eq!(
             validate(&json!({"path": "a", "line": "x"}), &schema).unwrap_err(),
@@ -229,7 +199,7 @@ mod tests {
         );
         assert_eq!(
             validate(&json!({"path": null, "line": 1}), &schema).unwrap_err(),
-            "validating root: validating /properties/path: type: <invalid reflect.Value> has type \"null\", want \"string\""
+            "validating root: validating /properties/path: type: null has type \"null\", want \"string\""
         );
         assert!(validate(&json!({"path": "a", "line": 1.0}), &schema).is_ok());
     }

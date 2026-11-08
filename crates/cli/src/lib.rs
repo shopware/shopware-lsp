@@ -8,16 +8,11 @@
 //! converted at this boundary.
 
 mod args;
-mod config_order;
-mod difflib;
 mod edit;
 mod features_read;
 mod features_write;
-pub mod gofmt;
-pub mod gojson;
 mod logger;
 mod mcp;
-pub mod ordered;
 mod project_info;
 mod serve;
 mod session;
@@ -31,8 +26,6 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 
 use crate::args::{Command, ShopwareLsp};
-use crate::gojson::write_json;
-use crate::ordered::Node;
 
 pub use edit::{EditMode, apply_protocol_text_edits, apply_workspace_edit};
 pub use logger::{LogSink, install_logger, set_log_sink};
@@ -399,8 +392,11 @@ impl Runner {
     }
 
     pub(crate) fn write_json<T: Serialize + ?Sized>(&self, value: &T) -> Result<(), CliError> {
+        let mut text = serde_json::to_vec_pretty(value)
+            .map_err(|error| CliError::fail(format!("encode JSON output: {error}")))?;
+        text.push(b'\n');
         let mut out = self.out.clone();
-        write_json(&mut out, value).map_err(CliError::from)
+        out.write_all(&text).map_err(CliError::from)
     }
 
     pub(crate) fn write_text(&self, text: &str) -> Result<(), CliError> {
@@ -424,12 +420,8 @@ impl Runner {
         }
         let absolute = swlsp_uriutil::filepath::abs(&root)
             .map_err(|error| CliError::fail(format!("resolve workspace root: {error}")))?;
-        let metadata = std::fs::metadata(&absolute).map_err(|error| {
-            CliError::fail(format!(
-                "workspace root: {}",
-                gofmt::path_error("stat", &absolute, &error)
-            ))
-        })?;
+        let metadata = std::fs::metadata(&absolute)
+            .map_err(|error| CliError::fail(format!("workspace root {absolute}: {error}")))?;
         if !metadata.is_dir() {
             return Err(CliError::fail(format!(
                 "workspace root is not a directory: {absolute}"
@@ -462,13 +454,13 @@ impl Runner {
         let result = session.wait_for_index()?;
         session.initial_index = result;
         if self.verbose {
-            let mut nanos = (result.time_in_seconds * 1e9) as i64;
-            if nanos <= 0 {
-                nanos = started.elapsed().as_nanos() as i64;
+            let mut seconds = result.time_in_seconds;
+            if seconds <= 0.0 {
+                seconds = started.elapsed().as_secs_f64();
             }
             self.write_err(&format!(
                 "Workspace ready in {}\n",
-                gofmt::format_duration(gofmt::round_duration(nanos, 1_000_000))
+                workspace_commands::seconds_duration(seconds)
             ))?;
         }
         Ok(session)
@@ -513,17 +505,16 @@ fn run_config(runner: &Runner) -> Result<(), CliError> {
     if runner.json {
         return runner.write_json(&configuration.raw);
     }
-    // Go writes a map, so the keys come out sorted.
-    runner.write_json(&Node::Object(vec![
-        ("effective".into(), configuration.effective),
-        ("path".into(), configuration.path),
-        ("scopes".into(), configuration.scopes),
-    ]))
+    let raw = &configuration.raw;
+    runner.write_json(&serde_json::json!({
+        "effective": raw["effective"],
+        "path": raw.get("path").cloned().unwrap_or_else(|| "".into()),
+        "scopes": raw["scopes"],
+    }))
 }
 
 fn run_version(runner: &Runner) -> Result<(), CliError> {
     if runner.json {
-        // Go map[string]string: sorted keys.
         return runner.write_json(&serde_json::json!({
             "name": "shopware-lsp",
             "version": runner.options.version,
@@ -657,20 +648,12 @@ impl Profiles {
             );
         }
         if !cpu.is_empty() {
-            std::fs::File::create(cpu).map_err(|error| {
-                CliError::fail(format!(
-                    "create CPU profile: {}",
-                    gofmt::path_error("open", cpu, &error)
-                ))
-            })?;
+            std::fs::File::create(cpu)
+                .map_err(|error| CliError::fail(format!("create CPU profile {cpu}: {error}")))?;
         }
         if !trace.is_empty() {
-            std::fs::File::create(trace).map_err(|error| {
-                CliError::fail(format!(
-                    "create trace: {}",
-                    gofmt::path_error("open", trace, &error)
-                ))
-            })?;
+            std::fs::File::create(trace)
+                .map_err(|error| CliError::fail(format!("create trace {trace}: {error}")))?;
         }
         #[cfg(all(unix, feature = "cpu-profile"))]
         let cpu = if cpu.is_empty() {
@@ -705,14 +688,14 @@ impl Profiles {
                 .and_then(|report| report.pprof())
                 .map_err(|error| format!("write CPU profile: {error}"))?;
             std::fs::write(&path, profile.encode_to_vec())
-                .map_err(|error| gofmt::path_error("open", &path, &error))?;
+                .map_err(|error| format!("write CPU profile {path}: {error}"))?;
         }
         if self.memory.is_empty() {
             return Ok(());
         }
         std::fs::File::create(&self.memory)
             .map(|_| ())
-            .map_err(|error| gofmt::path_error("open", &self.memory, &error))
+            .map_err(|error| format!("create heap profile {}: {error}", self.memory))
     }
 }
 

@@ -16,13 +16,12 @@ use super::{McpRuntime, output, scaffold};
 use crate::CliError;
 use crate::edit::{EditMode, apply_workspace_edit};
 use crate::features_write::{action_kind, matches_code_action_kind};
-use crate::gofmt::go_quote;
 use crate::session::{
     CliDocument, CliSession, DiagnosticOutput, position_params, text_document_params,
 };
 use crate::target::code_action_selection;
 use crate::workspace_commands::{
-    diagnostic_severity, go_sprint, resolve_check_files_with_exclusions, severity_label,
+    code_text, diagnostic_severity, resolve_check_files_with_exclusions, severity_label,
 };
 
 const DEFAULT_DIAGNOSTIC_LIMIT: i64 = 200;
@@ -347,23 +346,22 @@ fn apply_code_action(
                 .collect();
             if matches.is_empty() {
                 return Err(CliError::fail(format!(
-                    "no code action with exact title {}",
-                    go_quote(&input.title)
+                    "no code action with exact title {:?}",
+                    input.title
                 )));
             }
             if matches.len() > 1 {
                 return Err(CliError::fail(format!(
-                    "code action title {} is ambiguous; also provide kind",
-                    go_quote(&input.title)
+                    "code action title {:?} is ambiguous; also provide kind",
+                    input.title
                 )));
             }
             let mut action = matches.remove(0);
             let disabled = |action: &CodeAction| {
                 action.disabled.as_ref().map(|disabled| {
                     CliError::fail(format!(
-                        "code action {} is disabled: {}",
-                        go_quote(&action.title),
-                        disabled.reason
+                        "code action {:?} is disabled: {}",
+                        action.title, disabled.reason
                     ))
                 })
             };
@@ -383,14 +381,13 @@ fn apply_code_action(
             let Some(edit) = action.edit.as_ref() else {
                 if let Some(command) = &action.command {
                     return Err(CliError::fail(format!(
-                        "code action {} requires unsupported editor command {}",
-                        go_quote(&action.title),
-                        go_quote(&command.command)
+                        "code action {:?} requires unsupported editor command {:?}",
+                        action.title, command.command
                     )));
                 }
                 return Err(CliError::fail(format!(
-                    "code action {} returned no edits",
-                    go_quote(&action.title)
+                    "code action {:?} returned no edits",
+                    action.title
                 )));
             };
             runtime.validate_workspace_edit(edit)?;
@@ -705,7 +702,7 @@ impl McpRuntime<'_> {
             severity: severity_label(severity).to_lowercase(),
             code: match &diagnostic.code {
                 None | Some(Value::Null) => String::new(),
-                Some(code) => go_sprint(code),
+                Some(code) => code_text(code),
             },
             source: diagnostic.source.clone(),
             message: diagnostic.message.clone(),
@@ -727,9 +724,8 @@ impl McpRuntime<'_> {
     pub(crate) fn validate_workspace_edit(&self, edit: &WorkspaceEdit) -> Result<(), CliError> {
         let reject = |uri: &str, error: CliError| {
             CliError::fail(format!(
-                "reject workspace edit target {}: {}",
-                go_quote(uri),
-                error.message
+                "reject workspace edit target {:?}: {}",
+                uri, error.message
             ))
         };
         for uri in edit.changes.keys() {
@@ -741,8 +737,8 @@ impl McpRuntime<'_> {
                 && change.kind != swlsp_lsp_protocol::DELETE_FILE_OPERATION
             {
                 return Err(CliError::fail(format!(
-                    "reject unsupported workspace resource operation {}",
-                    go_quote(&change.kind)
+                    "reject unsupported workspace resource operation {:?}",
+                    change.kind
                 )));
             }
             let uri = change

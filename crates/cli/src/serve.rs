@@ -11,7 +11,6 @@ use std::time::{Duration, Instant};
 use crossbeam_channel::bounded;
 
 use crate::args::Serve;
-use crate::gofmt::{format_duration, parse_duration, path_error};
 use crate::logger::{LogSink, set_log_sink};
 use crate::{CliError, Output, Runner};
 
@@ -20,14 +19,11 @@ const POLL: Duration = Duration::from_millis(25);
 pub(crate) fn run_serve(runner: &Runner, flags: &Serve) -> Result<(), CliError> {
     let timeout = match flags.listen_timeout.as_deref() {
         None => Duration::ZERO,
-        Some(value) => match parse_duration(value) {
-            Some(nanos) if nanos >= 0 => Duration::from_nanos(nanos as u64),
-            _ => {
-                return Err(CliError::usage(format!(
-                    "invalid --listen-timeout {value:?}: expected a duration such as 30s"
-                )));
-            }
-        },
+        Some(value) => humantime::parse_duration(value).map_err(|error| {
+            CliError::usage(format!(
+                "invalid --listen-timeout {value:?}: {error} (expected a duration such as 30s)"
+            ))
+        })?,
     };
     if let Some(log_file) = flags.logfile.as_deref() {
         let mut options = std::fs::OpenOptions::new();
@@ -37,12 +33,9 @@ pub(crate) fn run_serve(runner: &Runner, flags: &Serve) -> Result<(), CliError> 
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o644);
         }
-        let file = options.open(log_file).map_err(|error| {
-            CliError::fail(format!(
-                "open log file: {}",
-                path_error("open", log_file, &error)
-            ))
-        })?;
+        let file = options
+            .open(log_file)
+            .map_err(|error| CliError::fail(format!("open log file {log_file}: {error}")))?;
         set_log_sink(LogSink::File(file));
     }
     log::info!("Shopware LSP version: {}", runner.version());
@@ -74,7 +67,7 @@ pub(crate) fn run_serve(runner: &Runner, flags: &Serve) -> Result<(), CliError> 
             listener.cleanup(&address);
             return Err(CliError::fail(format!(
                 "listen timeout after {}",
-                format_duration(timeout.as_nanos() as i64)
+                humantime::format_duration(timeout)
             )));
         }
         match listener.accept() {
@@ -172,12 +165,8 @@ type Accepted = (Box<dyn Read + Send>, Box<dyn Write + Send>, Shutdown);
 
 #[cfg(unix)]
 fn bind_unix(address: &str) -> Result<Listener, String> {
-    let listener = UnixListener::bind(address).map_err(|error| {
-        format!(
-            "listen unix {address}: bind: {}",
-            crate::gofmt::errno_text(&error)
-        )
-    })?;
+    let listener = UnixListener::bind(address)
+        .map_err(|error| format!("listen unix {address}: bind: {error}"))?;
     listener
         .set_nonblocking(true)
         .map_err(|error| error.to_string())?;
@@ -367,10 +356,7 @@ fn tcp_listen_error(address: &str, error: &io::Error) -> String {
         }
     }
     if error.raw_os_error().is_some() {
-        return format!(
-            "listen tcp {address}: bind: {}",
-            crate::gofmt::errno_text(error)
-        );
+        return format!("listen tcp {address}: bind: {error}");
     }
-    format!("listen tcp {address}: {}", crate::gofmt::errno_text(error))
+    format!("listen tcp {address}: {error}")
 }
