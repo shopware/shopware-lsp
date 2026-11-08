@@ -5,7 +5,7 @@ use std::sync::Arc;
 use swlsp_indexer::{CancelToken, FileScanner, Indexer, ParsedFile, SupplementalPathIndexer};
 
 use super::*;
-use crate::index::{path_match_for_tests, slash_path_within};
+use crate::index::slash_path_within;
 
 fn s(path: &Path) -> String {
     path.to_str().unwrap().to_owned()
@@ -611,23 +611,7 @@ fn index_persists_vite_entries_and_twig_usages() {
 }
 
 #[test]
-fn path_match_follows_go_path_match() {
-    for (pattern, name, expected) in [
-        ("css/*.css", "css/app.css", true),
-        ("css/*.css", "css/sub/app.css", false),
-        ("css/a?p.css", "css/app.css", true),
-        ("css/[a-c]pp.css", "css/bpp.css", true),
-        ("css/[^a]pp.css", "css/app.css", false),
-        ("*", "a/b", false),
-        ("a*b*c", "axxbyyc", true),
-        ("[", "a", false),
-    ] {
-        assert_eq!(
-            path_match_for_tests(pattern, name),
-            expected,
-            "{pattern} {name}"
-        );
-    }
+fn html_asset_type_matches_extensions() {
     assert!(matches_html_asset_type("a.SCSS", HtmlAssetType::Css));
     assert!(!matches_html_asset_type("a.png", HtmlAssetType::JavaScript));
 }

@@ -23,6 +23,7 @@ swlsp-php-inference = { path = "../php-inference" }
 swlsp-php-project = { path = "../php-project" }
 swlsp-php-semantic = { path = "../php-semantic" }
 swlsp-php-types = { path = "../php-types" }
+swlsp-pathmatch = { path = "../pathmatch" }
 swlsp-textutil = { path = "../textutil" }
 swlsp-admin-twigmigration = { path = "../admin-twigmigration" }
 serde = { version = "1", features = ["derive"] }

@@ -1046,7 +1046,7 @@ fn assetic_resource_matches(name: &str, pattern: &str) -> bool {
     if !pattern.contains(['*', '?', '[']) {
         return false;
     }
-    path_match(&go_to_lower(&pattern), &go_to_lower(&name))
+    swlsp_pathmatch::go_glob(&go_to_lower(&pattern), &go_to_lower(&name), false)
 }
 
 fn assetic_bundle_base_path(package_name: &str) -> String {
@@ -1058,115 +1058,4 @@ fn assetic_bundle_base_path(package_name: &str) -> String {
     } else {
         format!("bundles/{name}")
     }
-}
-
-/// Go `path.Match`: `*` and `?` never match `/`; malformed patterns fail.
-fn path_match(pattern: &str, name: &str) -> bool {
-    fn class_matches(class: &[char], character: char) -> Option<(bool, usize)> {
-        // Returns (matched, consumed) for a `[...]` class starting after `[`.
-        let mut index = 0;
-        let negated = class.first() == Some(&'^');
-        if negated {
-            index += 1;
-        }
-        let mut matched = false;
-        let mut first = true;
-        loop {
-            let current = *class.get(index)?;
-            if current == ']' && !first {
-                index += 1;
-                break;
-            }
-            first = false;
-            let mut low = current;
-            index += 1;
-            if low == '\\' {
-                low = *class.get(index)?;
-                index += 1;
-            }
-            let mut high = low;
-            if class.get(index) == Some(&'-')
-                && class.get(index + 1).is_some_and(|next| *next != ']')
-            {
-                high = class[index + 1];
-                index += 2;
-                if high == '\\' {
-                    high = *class.get(index)?;
-                    index += 1;
-                }
-            }
-            if low <= character && character <= high {
-                matched = true;
-            }
-        }
-        Some((matched != negated, index))
-    }
-
-    fn matches(pattern: &[char], name: &[char]) -> Option<bool> {
-        let (mut p, mut n) = (0, 0);
-        let (mut star_p, mut star_n) = (None, 0);
-        loop {
-            if p < pattern.len() {
-                match pattern[p] {
-                    '*' => {
-                        star_p = Some(p);
-                        star_n = n;
-                        p += 1;
-                        continue;
-                    }
-                    '?' if n < name.len() && name[n] != '/' => {
-                        p += 1;
-                        n += 1;
-                        continue;
-                    }
-                    '[' if n < name.len() && name[n] != '/' => {
-                        let (ok, consumed) = class_matches(&pattern[p + 1..], name[n])?;
-                        if ok {
-                            p += consumed + 1;
-                            n += 1;
-                            continue;
-                        }
-                    }
-                    '\\' if p + 1 < pattern.len() => {
-                        if n < name.len() && name[n] == pattern[p + 1] {
-                            p += 2;
-                            n += 1;
-                            continue;
-                        }
-                    }
-                    '\\' => return None,
-                    literal
-                        if !matches!(literal, '?' | '[')
-                            && n < name.len()
-                            && name[n] == literal =>
-                    {
-                        p += 1;
-                        n += 1;
-                        continue;
-                    }
-                    _ => {}
-                }
-            } else if n == name.len() {
-                return Some(true);
-            }
-            // Backtrack: let the last star absorb one more non-separator.
-            match star_p {
-                Some(star) if star_n < name.len() && name[star_n] != '/' => {
-                    star_n += 1;
-                    n = star_n;
-                    p = star + 1;
-                }
-                _ => return Some(false),
-            }
-        }
-    }
-
-    let pattern: Vec<char> = pattern.chars().collect();
-    let name: Vec<char> = name.chars().collect();
-    matches(&pattern, &name).unwrap_or(false)
-}
-
-#[cfg(test)]
-pub(crate) fn path_match_for_tests(pattern: &str, name: &str) -> bool {
-    path_match(pattern, name)
 }

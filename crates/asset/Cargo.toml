@@ -16,6 +16,7 @@ swlsp-parser-xml = { path = "../parser-xml" }
 swlsp-parser-yaml = { path = "../parser-yaml" }
 swlsp-php = { path = "../php" }
 swlsp-php-types = { path = "../php-types" }
+swlsp-pathmatch = { path = "../pathmatch" }
 swlsp-uriutil = { path = "../uriutil" }
 serde = { version = "1", features = ["derive"] }
 

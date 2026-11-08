@@ -1806,6 +1806,7 @@ dependencies = [
  "swlsp-parser-twig",
  "swlsp-parser-xml",
  "swlsp-parser-yaml",
+ "swlsp-pathmatch",
  "swlsp-php",
  "swlsp-php-types",
  "swlsp-syntax",
@@ -2825,7 +2826,7 @@ dependencies = [
 name = "swlsp-pathmatch"
 version = "0.1.0"
 dependencies = [
- "regex",
+ "globset",
 ]
 
 [[package]]
@@ -3204,6 +3205,7 @@ dependencies = [
  "swlsp-parser-twig",
  "swlsp-parser-xml",
  "swlsp-parser-yaml",
+ "swlsp-pathmatch",
  "swlsp-php",
  "swlsp-php-inference",
  "swlsp-php-project",
