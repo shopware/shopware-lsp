@@ -1,19 +1,20 @@
 name: Build release binaries
 
-# Builds the shipped Rust server (crates/cli, binary shopware-lsp) natively for
-# every release target and uploads one artifact per Rust target triple, named
-# server-<triple>. GoReleaser (.goreleaser.yaml) and the VSIX packager
-# (scripts/build-vsix-release.mjs) consume them after
-# scripts/release/stage-binaries.sh lays them out under target/.
+# Builds the shipped Rust server (crates/cli, binary shopware-lsp) for every
+# release target and uploads one artifact per Rust target triple, named
+# server-<triple>. scripts/release/stage-binaries.sh lays them out under
+# target/, then scripts/release/package-release.sh (zip archives, checksums)
+# and scripts/build-vsix-release.mjs (VSIX) consume them.
 #
-# Coverage matches the former Go release builds:
-# - Linux amd64/arm64/armv7: musl, i.e. fully static binaries that run on any
-#   distribution including Alpine (the alpine-* VSIX targets reuse them). The
-#   std resolver works in a static musl binary, unlike static glibc whose
-#   getaddrinfo dlopens the host's NSS modules. The binary uses mimalloc
-#   instead of musl's malloc (crates/cli/src/main.rs). The bundled SQLite and
-#   mimalloc are C, so amd64/arm64 build natively with musl-tools' musl-gcc,
-#   and armv7 cross-compiles with cargo-zigbuild (zig cc ships musl headers).
+# - Linux amd64/arm64/armv7, two builds each:
+#   - glibc (default archives, linux-* VSIX, Homebrew): dynamically linked,
+#     built with cargo-zigbuild against a glibc 2.17 floor so it runs on every
+#     mainstream distribution with the system resolver and allocator. A step
+#     fails the build if any symbol needs a newer glibc.
+#   - musl (*_musl archives, alpine-* VSIX): fully static, with mimalloc
+#     instead of musl's malloc (crates/cli/src/main.rs). The bundled SQLite and
+#     mimalloc are C, so amd64/arm64 build natively with musl-tools' musl-gcc
+#     and armv7 cross-compiles with cargo-zigbuild.
 # - macOS x86_64 and arm64, built on an Apple Silicon runner.
 # - Windows x86_64 (MSVC, static CRT so no VC++ redistributable is needed).
 
@@ -37,6 +38,28 @@ jobs:
       fail-fast: true
       matrix:
         include:
+          # glibc builds (default Linux packages): dynamically linked against a
+          # glibc 2.17 floor through cargo-zigbuild, so they run on every
+          # mainstream distribution and use the system resolver and malloc.
+          - target: x86_64-unknown-linux-gnu
+            zig-target: x86_64-unknown-linux-gnu.2.17
+            runner: ubuntu-24.04
+            zigbuild: true
+            glibc-floor: '2.17'
+            smoke: true
+          - target: aarch64-unknown-linux-gnu
+            zig-target: aarch64-unknown-linux-gnu.2.17
+            runner: ubuntu-24.04-arm
+            zigbuild: true
+            glibc-floor: '2.17'
+            smoke: true
+          - target: armv7-unknown-linux-gnueabihf
+            zig-target: armv7-unknown-linux-gnueabihf.2.17
+            runner: ubuntu-24.04
+            zigbuild: true
+            glibc-floor: '2.17'
+            smoke: false
+          # musl builds (Alpine and fully static use): static, with mimalloc.
           - target: x86_64-unknown-linux-musl
             runner: ubuntu-24.04
             static: true
@@ -106,7 +129,8 @@ jobs:
         # The dist profile strips symbols and debug info (see Cargo.toml).
         env:
           CARGO_BUILD_COMMAND: ${{ matrix.zigbuild && 'zigbuild' || 'build' }}
-        run: cargo "$CARGO_BUILD_COMMAND" --locked --profile dist -p swlsp-cli --bin shopware-lsp --target "${{ matrix.target }}"
+          BUILD_TARGET: ${{ matrix.zig-target || matrix.target }}
+        run: cargo "$CARGO_BUILD_COMMAND" --locked --profile dist -p swlsp-cli --bin shopware-lsp --target "$BUILD_TARGET"
 
       - name: Locate binary
         id: binary
@@ -129,6 +153,19 @@ jobs:
             *"statically linked"*|*"static-pie linked"*) ;;
             *) echo "::error::$BINARY is not statically linked"; exit 1 ;;
           esac
+
+      - name: Require the glibc floor
+        if: matrix.glibc-floor
+        env:
+          BINARY: ${{ steps.binary.outputs.path }}
+          FLOOR: ${{ matrix.glibc-floor }}
+        run: |
+          newest="$(objdump -T "$BINARY" | grep -oE 'GLIBC_[0-9.]+' | sed 's/GLIBC_//' | sort -Vu | tail -1)"
+          echo "newest required glibc symbol version: $newest (floor $FLOOR)"
+          if [ "$(printf '%s\n%s\n' "$newest" "$FLOOR" | sort -V | tail -1)" != "$FLOOR" ]; then
+            echo "::error::$BINARY needs glibc $newest, newer than the $FLOOR floor"
+            exit 1
+          fi
 
       - name: Smoke test
         if: matrix.smoke

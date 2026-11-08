@@ -37,37 +37,38 @@ pre-release marking, and (for stable) the Homebrew cask:
 **Server binaries** (the Rust `swlsp-cli` crate). The Go tree under
 `internal/` is the reference oracle only and is not released.
 
-`.github/workflows/build-binaries.yml` compiles each target natively and
-uploads it as an artifact named `server-<triple>`:
+`.github/workflows/build-binaries.yml` compiles each target and uploads it as
+an artifact named `server-<triple>`:
 
 | Rust target | Runner | Archive name | Notes |
 |---|---|---|---|
 | `x86_64-apple-darwin` | `macos-15` (cross from arm64) | `darwin_amd64` | |
 | `aarch64-apple-darwin` | `macos-15` | `darwin_arm64` | |
-| `x86_64-unknown-linux-musl` | `ubuntu-24.04` + `musl-tools` | `linux_amd64` | static musl + mimalloc, runs on Alpine |
-| `aarch64-unknown-linux-musl` | `ubuntu-24.04-arm` + `musl-tools` | `linux_arm64` | static musl + mimalloc, runs on Alpine |
-| `armv7-unknown-linux-musleabihf` | `ubuntu-24.04` + `cargo-zigbuild` | `linux_arm` | static musl + mimalloc |
+| `x86_64-unknown-linux-gnu` | `ubuntu-24.04` + `cargo-zigbuild` | `linux_amd64` | glibc, dynamic, glibc 2.17 floor |
+| `aarch64-unknown-linux-gnu` | `ubuntu-24.04-arm` + `cargo-zigbuild` | `linux_arm64` | glibc, dynamic, glibc 2.17 floor |
+| `armv7-unknown-linux-gnueabihf` | `ubuntu-24.04` + `cargo-zigbuild` | `linux_arm` | glibc, dynamic, glibc 2.17 floor |
+| `x86_64-unknown-linux-musl` | `ubuntu-24.04` + `musl-tools` | `linux_amd64_musl` | static musl + mimalloc, for Alpine |
+| `aarch64-unknown-linux-musl` | `ubuntu-24.04-arm` + `musl-tools` | `linux_arm64_musl` | static musl + mimalloc, for Alpine |
+| `armv7-unknown-linux-musleabihf` | `ubuntu-24.04` + `cargo-zigbuild` | `linux_arm_musl` | static musl + mimalloc |
 | `x86_64-pc-windows-msvc` | `windows-2025` | `windows_amd64` | static CRT |
 
-- the Linux binaries are fully static musl builds. musl's own resolver works
-  without NSS (a static glibc crashes in `getaddrinfo` when it loads the
-  host's NSS modules), and the binary replaces musl's slow multi-threaded
-  malloc with mimalloc (`crates/cli/src/main.rs`)
+- Linux ships two builds. The default (`linux_*`, the `linux-*` VSIX
+  packages and Homebrew) is a dynamically linked glibc build, compiled by
+  cargo-zigbuild against glibc 2.17 so it runs on every mainstream
+  distribution; it uses the system resolver and allocator. CI fails the
+  build if a binary needs a newer glibc symbol. The `*_musl` archives and
+  the `alpine-*` VSIX packages carry a fully static musl build that uses
+  mimalloc instead of musl's slow multi-threaded malloc
+  (`crates/cli/src/main.rs`).
 - the tag is embedded at compile time through `SHOPWARE_LSP_VERSION`
   (`option_env!`, `dev` for local builds)
 - release binaries keep symbol names but drop DWARF line tables
   (`CARGO_PROFILE_RELEASE_STRIP=debuginfo`)
 - `scripts/release/stage-binaries.sh` lays the artifacts out as
-  `target/<triple>/release/shopware-lsp[.exe]`; GoReleaser
-  (`goreleaser release --clean`, pinned and checksum-verified by
-  `scripts/release/install-goreleaser.sh`) then collects them through its Rust
-  builder with `scripts/release/prebuilt-cargo.sh` as a no-op `cargo`, so it
-  never compiles anything itself
-- published as `<project>_<version>_<os>_<arch>.zip` plus `checksums.txt`,
-  with the same names as the former Go releases
-- Linux `deb`, `rpm`, and `apk` packages (nfpm) for `amd64`, `arm64`, and
-  `armv7` (`armhf.deb`, `armv7.apk`, `armv7hl.rpm`), installing the static
-  binary to `/usr/bin/shopware-lsp`
+  `target/<triple>/release/shopware-lsp[.exe]`, and
+  `scripts/release/package-release.sh` zips each one (binary, `LICENSE`,
+  `README.md`, `THIRD_PARTY_NOTICES.md`) as
+  `shopware-lsp_<version>_<os>_<arch>[_musl].zip` and writes `checksums.txt`
 
 **VSIX packages** (built by `scripts/build-vsix-release.mjs`, 8 targets):
 
@@ -75,11 +76,11 @@ uploads it as an artifact named `server-<triple>`:
 |---|---|---|
 | `darwin-x64` | `x86_64-apple-darwin` | `shopware-lsp` |
 | `darwin-arm64` | `aarch64-apple-darwin` | `shopware-lsp` |
-| `linux-x64` | `x86_64-unknown-linux-musl` | `shopware-lsp` |
-| `linux-arm64` | `aarch64-unknown-linux-musl` | `shopware-lsp` |
-| `linux-armhf` | `armv7-unknown-linux-musleabihf` | `shopware-lsp` |
-| `alpine-x64` | `x86_64-unknown-linux-musl` (reused) | `shopware-lsp` |
-| `alpine-arm64` | `aarch64-unknown-linux-musl` (reused) | `shopware-lsp` |
+| `linux-x64` | `x86_64-unknown-linux-gnu` | `shopware-lsp` |
+| `linux-arm64` | `aarch64-unknown-linux-gnu` | `shopware-lsp` |
+| `linux-armhf` | `armv7-unknown-linux-gnueabihf` | `shopware-lsp` |
+| `alpine-x64` | `x86_64-unknown-linux-musl` | `shopware-lsp` |
+| `alpine-arm64` | `aarch64-unknown-linux-musl` | `shopware-lsp` |
 | `win32-x64` | `x86_64-pc-windows-msvc` | `shopware-lsp.exe` |
 
 The binary stays at the extension root (`extension/shopware-lsp[.exe]` inside
@@ -90,16 +91,18 @@ Plus a `SHA256SUMS` file covering all eight `.vsix` files.
 
 **Distribution:**
 
-- GitHub release on `shopware/shopware-lsp` with the zips, Linux packages,
-  `checksums.txt`, all VSIX files, and `SHA256SUMS` attached. GoReleaser
-  creates it as a draft; the workflow publishes it (stable, or
+- GitHub release on `shopware/shopware-lsp` with the zips, `checksums.txt`,
+  all VSIX files, and `SHA256SUMS` attached. The `release-lsp` job creates it
+  as a draft with `gh release create --draft` (`--prerelease` on the
+  pre-release channel); the workflow publishes it (stable, or
   `--prerelease --latest=false`) only after the VSIX files are attached.
-  GoReleaser cannot detect the channel itself because both channels use plain
-  `X.Y.Z` tags.
-- Release notes come from the GoReleaser changelog (conventional commits,
-  excluding `docs:` and `test:` prefixes) on both channels.
-- Stable releases only: a Homebrew cask update in `shopware/homebrew-tap`.
-  The pre-release pipeline runs GoReleaser with `--skip=homebrew`.
+  Both channels use plain `X.Y.Z` tags; minor parity decides the channel.
+- Release notes are GitHub's generated notes (`--generate-notes`).
+- Stable releases only: after the release is public, the `homebrew` job
+  writes `Casks/shopware-lsp.rb` in `shopware/homebrew-tap`
+  (`scripts/release/update-homebrew-cask.sh`, glibc archives on Linux) and
+  pushes it with the octo-sts tap token. No `deb`/`rpm`/`apk` packages are
+  published.
 - Marketplace publication to the
   [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=shopware.shopware-lsp)
   and [Open VSX](https://open-vsx.org/extension/shopware/shopware-lsp).
@@ -112,7 +115,7 @@ Plus a `SHA256SUMS` file covering all eight `.vsix` files.
   jobs do not run until the environment gate passes.
 - For local reproduction only: rustup (the toolchain comes from
   `rust-toolchain.toml`), a C compiler, Node.js 24, `@vscode/vsce@3.9.1`,
-  and optionally GoReleaser >= 2.20 for `make release-dry-run`.
+  and `zip` for `make release-dry-run`.
 
 CI secrets and identities (maintainers normally never touch these, but this is
 where publishing credentials live):
@@ -143,30 +146,31 @@ where publishing credentials live):
    --no-git-tag-version`) before packaging, so a manual bump
    is not strictly required. Keeping the manifest version in sync with the
    channel avoids confusion for local `vsce package` runs.
-4. **Create and push the tag.** The worktree must be clean — GoReleaser
-   rejects a dirty worktree in release mode (`target/` is ignored, so staged
-   binaries do not count).
+4. **Create and push the tag.** `gh release create --verify-tag` requires the
+   tag to exist on GitHub before the draft is created.
    ```sh
    git tag 0.2.1
    git push origin 0.2.1
    ```
 5. **Watch the workflow.** Pushing the tag triggers `Release` (even minor) or
    `Pre-release` (odd minor) under *Actions*. The stage order is:
-   - Stable: `route` → `build-binaries.yml` (6 native builds) → GoReleaser
-     packaging (includes the Homebrew cask) → `build-vsix.yml`
+   - Stable: `route` → `build-binaries.yml` (9 builds) → `release-lsp`
+     (zip archives, `checksums.txt`, draft release) → `build-vsix.yml`
      (`version: <tag>`, `pre-release: false`) →
      attach VSIX + `SHA256SUMS` to the draft release and publish it →
-     publish to both marketplaces (`environment: release`).
-   - Pre-release: `route` → `tests.yml` → `build-binaries.yml` → GoReleaser
-     packaging (`--skip=homebrew`, draft release) in parallel with
+     Homebrew cask update and publication to both marketplaces
+     (`environment: release`).
+   - Pre-release: `route` → `tests.yml` → `build-binaries.yml` →
+     `release-lsp` (draft pre-release, no Homebrew) in parallel with
      `build-vsix.yml` (`version: <tag>`, `pre-release: true`) → attach VSIX
      + `SHA256SUMS` and publish as pre-release → publish with
      `--pre-release` flags (`environment: preview`) + summary links.
    - Both pipelines verify `SHA256SUMS` (`sha256sum --check`) before every
      upload/publish step; a checksum failure fails the job before anything
      is published.
-6. **Verify the GitHub release.** Confirm the tag page lists the six
-   binary zips, the nine `deb`/`rpm`/`apk` packages, `checksums.txt`, all eight `.vsix` files, and `SHA256SUMS`,
+6. **Verify the GitHub release.** Confirm the tag page lists the nine
+   binary zips (six platforms plus three `_musl` archives), `checksums.txt`,
+   all eight `.vsix` files, and `SHA256SUMS`,
    and that the pre-release flag is set only for odd minors.
 7. **Verify the marketplaces.** Check the Marketplace and Open VSX pages for
    the new version (stable channel) or the pre-release version
@@ -193,7 +197,7 @@ scripts/release/stage-binaries.sh /path/to/artifacts
 node scripts/build-vsix-release.mjs --version=0.3.59 --pre-release
 node scripts/build-vsix-release.mjs --dry-run   # check binaries, print the plan
 
-# GoReleaser snapshot packaging of the staged binaries (no publishing)
+# Zip the staged binaries into dist/ with checksums.txt (no publishing)
 make release-dry-run
 ```
 
@@ -201,25 +205,27 @@ Notes:
 
 - The script requires a numeric `--version`; anything else (including
   semver suffixes) is rejected up front.
-- The script asserts the Linux binaries are statically linked (`file`
-  must report `statically linked` or `static-pie linked`) and fails
-  otherwise; `build-binaries.yml` checks the same right after compiling.
+- The script asserts the musl binaries in the Alpine packages are statically
+  linked (`file` must report `statically linked` or `static-pie linked`);
+  `build-binaries.yml` checks the same right after compiling, and checks the
+  glibc builds against their 2.17 floor.
 - Staged `shopware-lsp` / `shopware-lsp.exe` files inside
   `editors/vscode/` are build scratch space and are always removed in a
   `finally` block; do not commit them.
-- Only CI runs the publishing `goreleaser release --clean`; it needs
-  `GITHUB_TOKEN` and `HOMEBREW_TAP_GITHUB_TOKEN`.
+- Only CI publishes: `gh release create` with `GITHUB_TOKEN`, and the cask
+  push with the octo-sts token for `shopware/homebrew-tap`.
 
 ## Troubleshooting
 
 - **Neither workflow ran after pushing a tag.** The tag must match
   `[0-9]+.[0-9]+.[0-9]+` exactly. A `v` prefix (`v0.2.1`) or a suffix
   (`0.2.1-rc.1`) matches neither pipeline and is silently ignored.
-- **GoReleaser fails with "dirty worktree".** Commit or stash first, then
-  re-tag. In CI this cannot happen (fresh checkout).
-- **GoReleaser reports `prebuilt-cargo: ... is missing`.** A
+- **`package-release.sh` reports `missing target/<triple>/...`.** A
   `server-<triple>` artifact was not downloaded or staged; re-run the failed
   `build-binaries` job.
+- **`gh release create` fails because the release exists.** A previous run
+  already created the draft. Delete the draft (not the tag) and re-run the
+  `release-lsp` job.
 - **"Invalid VSCode extension version".** The version passed to
   `build-vsix-release.mjs` (or read from `editors/vscode/package.json`
   when no override is given) was not numeric `X.Y.Z`.
@@ -247,11 +253,10 @@ Notes:
 | `.github/workflows/tests.yml` | Rust (Linux/macOS/Windows), Go oracle, race, lint, VS Code, Zed gates |
 | `.github/actions/setup-rust` | installs the `rust-toolchain.toml` toolchain, extra targets, Cargo cache |
 | `scripts/release/stage-binaries.sh` | artifacts → `target/<triple>/release/` |
-| `scripts/release/install-goreleaser.sh` | pinned, checksum-verified GoReleaser |
-| `scripts/release/prebuilt-cargo.sh` | no-op `cargo` for GoReleaser's Rust builder |
+| `scripts/release/package-release.sh` | zip archives (glibc and `_musl` Linux builds) and `checksums.txt` |
+| `scripts/release/update-homebrew-cask.sh` | writes `Casks/shopware-lsp.rb` for the tap (stable only) |
 | `scripts/build-vsix-release.mjs` | stage binary → `vsce package` × 8 → `SHA256SUMS` |
-| `.goreleaser.yaml` | target list, archives, Linux packages, draft release, changelog, Homebrew cask |
-| `Makefile` (`release`, `release-dry-run`) | local host-only VSIX and GoReleaser snapshot packaging |
+| `Makefile` (`release`, `release-dry-run`) | local host-only VSIX and archive packaging |
 | `editors/vscode/package.json` | extension manifest; `version` is overridden by the tag at release time |
 | `crates/cli/src/main.rs` (`option_env!("SHOPWARE_LSP_VERSION")`) | server version; `dev` unless set at build time |
 

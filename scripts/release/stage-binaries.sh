@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Move build-binaries artifacts into the layout GoReleaser and the VSIX
-# packager read: target/<triple>/release/shopware-lsp[.exe] (under
-# CARGO_TARGET_DIR instead of target/ when that is set; GoReleaser itself
-# always reads target/).
+# Move build-binaries artifacts into the layout package-release.sh and the
+# VSIX packager read: target/<triple>/release/shopware-lsp[.exe] (under
+# CARGO_TARGET_DIR instead of target/ when that is set).
 #
 #   scripts/release/stage-binaries.sh <downloaded-artifacts-dir>
 #
@@ -17,6 +16,9 @@ target_dir="${CARGO_TARGET_DIR:-$repository_root/target}"
 expected=(
   x86_64-apple-darwin
   aarch64-apple-darwin
+  x86_64-unknown-linux-gnu
+  aarch64-unknown-linux-gnu
+  armv7-unknown-linux-gnueabihf
   x86_64-unknown-linux-musl
   aarch64-unknown-linux-musl
   armv7-unknown-linux-musleabihf

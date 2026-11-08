@@ -95,8 +95,10 @@ Download a server archive from
 over stdin/stdout. Running the binary without a subcommand starts the language
 server. Archives (`shopware-lsp_<version>_<os>_<arch>.zip`) exist for macOS
 (amd64, arm64), Linux (amd64, arm64, arm) and Windows (amd64), with
-`checksums.txt` alongside; Linux also has `.deb`, `.rpm` and `.apk` packages.
-The Linux binaries are statically linked and also run on Alpine.
+`checksums.txt` alongside. The Linux archives need glibc 2.17 or newer; on
+Alpine or other musl systems use the fully static `*_musl` archives. On macOS
+and Linux, `brew install --cask shopware/tap/shopware-lsp` installs the
+release binary.
 
 The server is a single self-contained Rust executable: no runtime, PHP, or
 system SQLite is required. Earlier releases shipped a Go build whose

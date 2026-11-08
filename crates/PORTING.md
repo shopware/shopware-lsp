@@ -230,7 +230,7 @@ Ports proceed bottom-up; a wave starts when the crates it depends on exist.
 | composition root | `swlsp-app` | done (27 tests + real-world suite); registrations, inspections, 28 indexers, catalog and capabilities identical to Go; cold index 65.5 s / 340 MB vs Go 66.1 s / 750 MB; warm start 228 MB vs 370 MB; p95 latency within every Go budget |
 | cli, MCP | `swlsp-cli` (binary `shopware-lsp`) | done (56 tests); all 34 commands, flags, exit codes, MCP (16 tools, wire shape) and `serve` identical to Go apart from documented deviations; cold `index` 67.5 s / 340 MB vs Go 72.8 s / 691 MB |
 | pull-diagnostics race after didOpen | `swlsp-lsp` | fixed: diagnostics resume before `shopware/indexingCompleted` (0/50 empty vs 9/10 before; Go has the same race, 20/50) |
-| CI, release packaging, editor launcher switch | `Makefile`, `rust-toolchain.toml`, `.github/`, `.goreleaser.yaml`, `scripts/release`, `editors/` | done locally (artifact names identical to 0.3.61; VSIX, Zed contract and MCP/LSP smoke checks pass); new workflows not yet run on GitHub |
+| CI, release packaging, editor launcher switch | `Makefile`, `rust-toolchain.toml`, `.github/`, `scripts/release`, `editors/` | done locally (artifact names identical to 0.3.61; VSIX, Zed contract and MCP/LSP smoke checks pass); new workflows not yet run on GitHub |
 | end-to-end performance (2026-11-08) | `scripts/bench` | Rust beats Go on the full mix: 9,967 requests over 15 categories (admin JS/TS/Twig, Storefront Twig, PHP, migrations, XML, YAML, SCSS, plus route/translation/event/repository-focused positions) take 125.7 s vs Go 265.7 s; cold index 21.5 s vs 54.8 s; RSS after indexing 333 MiB vs 696 MiB; peak 759 MiB vs 1012 MiB. Only admin codeLens is within noise of Go (1.06x, +5 ms over 20 files); every other group is faster. Symfony UX fixtures (300 / 3,000 components): 1.6 s vs 5.6 s and 1.5 s vs 18.7 s. Response mismatches are completion ordering only (Go returns several catalogs in map or commit order) |
 
 ### Follow-ups
@@ -263,9 +263,16 @@ deviations.
 - `gh actions-lock --no-fix` reports all workflows valid. Workflows reference
   the repository's composite actions as `$/.github/actions/...`
   (`--migrate-local-actions`) so the actions those use are locked as well.
-- Linux release binaries are static musl builds (`*-unknown-linux-musl`,
-  `dist` profile) with mimalloc as the global allocator, so the standard
-  resolver works and no custom DNS code is needed. On `~/shopware` (cold,
+- Linux releases ship two builds per architecture: a dynamically linked
+  glibc build (`*-unknown-linux-gnu`, glibc 2.17 floor via cargo-zigbuild;
+  default archives, `linux-*` VSIX, Homebrew) and a static musl build with
+  mimalloc (`*_musl` archives, `alpine-*` VSIX). Both use the standard
+  resolver, so no custom DNS code is needed. GoReleaser is gone:
+  `scripts/release/package-release.sh` zips the binaries and writes
+  `checksums.txt`, `gh release create --draft` creates the release, and
+  `scripts/release/update-homebrew-cask.sh` writes the cask after
+  publication; deb/rpm/apk packages are no longer published. musl build
+  numbers: On `~/shopware` (cold,
   7,489 requests) against the former static-glibc build: requests 123-125 s
   vs 138-144 s, index time equal, peak RSS +2-4%, but RSS right after
   indexing 432-438 MiB vs 320 MiB (mimalloc returns freed pages after 1 s;

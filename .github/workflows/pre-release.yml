@@ -43,8 +43,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
-        with:
-          fetch-depth: 0
 
       - name: Download release binaries
         uses: actions/download-artifact@v8.0.2
@@ -55,19 +53,20 @@ jobs:
       - name: Stage release binaries
         run: scripts/release/stage-binaries.sh "$RUNNER_TEMP/binaries"
 
-      - name: Install GoReleaser
-        run: scripts/release/install-goreleaser.sh "$RUNNER_TEMP/bin"
-
-      - name: Install the pinned Rust toolchain
-        # GoReleaser's Rust builder runs `rustup target add` for each target.
-        run: rustup toolchain install
-
-      # Creates a draft release with the binary archives and deb/rpm/apk
-      # packages. Pre-releases never update the Homebrew tap.
-      - name: Release
-        run: '"$RUNNER_TEMP/bin/goreleaser" release --clean --skip=homebrew'
+      - name: Package archives
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: scripts/release/package-release.sh "$TAG" dist
+
+      # A draft until the VSIX packages are attached. Pre-releases never
+      # update the Homebrew tap.
+      - name: Create draft pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: >-
+          gh release create "$TAG" dist/*.zip dist/checksums.txt
+          --draft --prerelease --verify-tag --generate-notes --title "$TAG"
 
   build:
     name: Build VSIX packages

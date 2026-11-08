@@ -94,8 +94,9 @@ make check
 
 Set `SHOPWARE_LSP_VERSION=<version>` when building to embed a version (the
 binary reports `dev` otherwise). Release binaries are built natively per
-target by `.github/workflows/build-binaries.yml` and packaged by GoReleaser
-(`.goreleaser.yaml`, archives/packages/checksums/Homebrew) and
+target by `.github/workflows/build-binaries.yml` (glibc and static musl builds
+on Linux) and packaged by `scripts/release/package-release.sh` (zip archives,
+checksums), `scripts/release/update-homebrew-cask.sh` (Homebrew) and
 `scripts/build-vsix-release.mjs` (VSIX); see `RELEASING.md`.
 
 Benchmarks written with the `testing` package run in CI through CodSpeed
