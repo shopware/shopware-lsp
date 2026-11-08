@@ -61,6 +61,15 @@ fn normalize_route_search_path_cases() {
         ("foo/bar", "foo/bar"),
         ("foo:bar", "foo:bar"),
         ("/edit/foo%2Ebar~v1?preview=1", "/edit/foo%2Ebar~v1"),
+        ("/a b/é", "/a%20b/%C3%A9"),
+        // The URL standard escapes the space while parsing, so `!` stays
+        // (Go: "/a%20b%21"); relative references escape like Go.
+        ("https://shop.example/a b!?x", "/a%20b!"),
+        ("/a b!?x", "/a%20b%21"),
+        ("//shop.example/[x]#y", "/[x]"),
+        ("/a%zz?x", "/a%zz"),
+        ("mailto:x@y", "mailto:x@y"),
+        ("http://", "/"),
     ] {
         assert_eq!(normalize_route_search_path(value), expected, "{value:?}");
     }
@@ -447,4 +456,10 @@ fn route_url_path_rejects_opaque_and_fragments() {
     assert_eq!(route_url_path("mailto:info@example.test"), "");
     assert_eq!(route_url_path("#details"), "");
     assert_eq!(route_url_path("catalog/42"), "/catalog/42");
+    assert_eq!(route_url_path("tel:+4912345"), "");
+    assert_eq!(route_url_path("javascript:void(0)"), "");
+    assert_eq!(
+        route_url_path("https://shop.example/catalog/42?x#y"),
+        "/catalog/42"
+    );
 }

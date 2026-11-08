@@ -13,7 +13,6 @@ use swlsp_php_semantic::{Symbol, SymbolKind};
 use swlsp_syntax::TextRange;
 use swlsp_twig::{TemplateReferenceKind, TwigIndexer};
 
-mod gourl;
 mod profiler;
 mod profiler_serialized;
 mod request;

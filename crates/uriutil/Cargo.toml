@@ -6,6 +6,8 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+percent-encoding = "2"
+url = "2"
 
 [dev-dependencies]
 tempfile = "3"

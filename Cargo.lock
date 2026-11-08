@@ -2085,6 +2085,7 @@ dependencies = [
  "swlsp-twigcomponent",
  "swlsp-uriutil",
  "tempfile",
+ "url",
 ]
 
 [[package]]
@@ -3230,7 +3231,9 @@ dependencies = [
  "swlsp-php-types",
  "swlsp-syntax",
  "swlsp-textutil",
+ "swlsp-uriutil",
  "tempfile",
+ "url",
 ]
 
 [[package]]
@@ -3351,7 +3354,9 @@ dependencies = [
 name = "swlsp-uriutil"
 version = "0.1.0"
 dependencies = [
+ "percent-encoding",
  "tempfile",
+ "url",
 ]
 
 [[package]]

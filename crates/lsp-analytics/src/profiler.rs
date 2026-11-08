@@ -11,6 +11,7 @@ use swlsp_lsp::{CommandFunc, CommandProvider, Context};
 use swlsp_php::PhpIndex;
 use swlsp_twig::TwigIndexer;
 use swlsp_uriutil::filepath;
+use url::{Position, Url};
 
 use crate::profiler_serialized::profiler_twig_components;
 use crate::request::{Field, decode, present};
@@ -838,56 +839,51 @@ pub(crate) fn normalized_profiler_base_url(value: &str) -> Result<String> {
     if value.is_empty() {
         return Ok(String::new());
     }
-    let parsed = crate::gourl::parse(value);
-    let Ok(mut parsed) = parsed.and_then(|parsed| {
-        if parsed.scheme.is_empty() || parsed.host.is_empty() {
-            Err(())
-        } else {
-            Ok(parsed)
-        }
-    }) else {
+    let Some(parsed) = Url::parse(value).ok().filter(has_host) else {
         return Err(errorf!("profiler baseUrl must be an absolute HTTP(S) URL"));
     };
-    if parsed.scheme != "http" && parsed.scheme != "https" {
+    if !is_http(&parsed) {
         return Err(errorf!("profiler baseUrl must use HTTP or HTTPS"));
     }
-    if parsed.user.is_some() {
+    if !parsed.username().is_empty() || parsed.password().is_some() {
         return Err(errorf!("profiler baseUrl must not contain credentials"));
     }
-    parsed.raw_query.clear();
-    while parsed.path.last() == Some(&b'/') {
-        parsed.path.pop();
-    }
-    Ok(parsed.to_go_string())
+    // Without query and fragment; trailing slashes go so that
+    // `{base}/_profiler/...` has exactly one separator.
+    Ok(format!(
+        "{}{}",
+        &parsed[..Position::BeforePath],
+        parsed.path().trim_end_matches('/')
+    ))
+}
+
+fn has_host(url: &Url) -> bool {
+    url.host_str().is_some_and(|host| !host.is_empty())
+}
+
+fn is_http(url: &Url) -> bool {
+    matches!(url.scheme(), "http" | "https")
 }
 
 pub(crate) fn profiler_url(base_url: &str, request_url: &str, hash: &str) -> String {
     if !base_url.is_empty() {
         return format!("{base_url}/_profiler/{hash}");
     }
-    let Ok(mut parsed) = crate::gourl::parse(request_url) else {
+    let Some(mut parsed) = Url::parse(request_url)
+        .ok()
+        .filter(|url| is_http(url) && has_host(url))
+    else {
         return format!("_profiler/{hash}");
     };
-    if (parsed.scheme != "http" && parsed.scheme != "https") || parsed.host.is_empty() {
-        return format!("_profiler/{hash}");
-    }
-    let mut prefix: &[u8] = b"";
-    if let Some(found) = FRONT_CONTROLLER_PATTERN.find(&parsed.path) {
-        let mut end = found.end();
-        if parsed.path[..end].ends_with(b"/") {
-            end -= 1;
-        }
-        prefix = &parsed.path[..end];
-    }
-    let mut path = prefix.to_vec();
-    while path.last() == Some(&b'/') {
-        path.pop();
-    }
-    path.extend_from_slice(b"/_profiler/");
-    path.extend_from_slice(hash.as_bytes());
-    parsed.path = path;
-    parsed.raw_query.clear();
-    parsed.to_go_string()
+    let path = parsed.path();
+    let prefix = FRONT_CONTROLLER_PATTERN
+        .find(path.as_bytes())
+        .map_or("", |found| &path[..found.end()]);
+    let path = format!("{}/_profiler/{hash}", prefix.trim_end_matches('/'));
+    parsed.set_path(&path);
+    parsed.set_query(None);
+    parsed.set_fragment(None);
+    parsed.into()
 }
 
 /// Go `*os.PathError` text for an I/O error.

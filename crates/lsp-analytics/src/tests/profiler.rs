@@ -323,11 +323,19 @@ fn profiler_go_parity_helpers() {
             "https://user:pa%20ss@Shop.test:8080/app_test.php?x#y",
             "abc123"
         ),
-        "https://user:pa%20ss@Shop.test:8080/app_test.php/_profiler/abc123"
+        "https://user:pa%20ss@shop.test:8080/app_test.php/_profiler/abc123"
     );
     assert_eq!(
         profiler_url("", "http://shop.test/a b/index.php/x?", "abc123"),
-        "http://shop.test/a%20b/index.php/_profiler/abc123?"
+        "http://shop.test/a%20b/index.php/_profiler/abc123"
+    );
+    assert_eq!(
+        profiler_url("", "https://shop.test/de/product?x=1#y", "abc123"),
+        "https://shop.test/_profiler/abc123"
+    );
+    assert_eq!(
+        profiler_url("", "ftp://shop.test/x", "abc123"),
+        "_profiler/abc123"
     );
     assert_eq!(
         profiler_url("", "http://a:b:c/x", "abc123"),
@@ -335,7 +343,11 @@ fn profiler_go_parity_helpers() {
     );
     assert_eq!(
         profiler_url("", "http://[::1]:80/x", "abc123"),
-        "http://[::1]:80/_profiler/abc123"
+        "http://[::1]/_profiler/abc123"
+    );
+    assert_eq!(
+        profiler_url("", "http://[::1]:8000/x", "abc123"),
+        "http://[::1]:8000/_profiler/abc123"
     );
     assert_eq!(
         profiler_url("", "http://[1.2.3.4]/x", "abc123"),
@@ -345,6 +357,28 @@ fn profiler_go_parity_helpers() {
         crate::profiler::normalized_profiler_base_url(" https://x.test/a/?q=1#f ").unwrap(),
         "https://x.test/a"
     );
+    assert_eq!(
+        crate::profiler::normalized_profiler_base_url("http://localhost:8000/").unwrap(),
+        "http://localhost:8000"
+    );
+    assert_eq!(
+        crate::profiler::normalized_profiler_base_url("https://x.test").unwrap(),
+        "https://x.test"
+    );
+    for (value, message) in [
+        ("x.test", "absolute"),
+        ("mailto:x@y", "absolute"),
+        ("ftp://x.test", "HTTP or HTTPS"),
+        ("https://u:p@x.test", "credentials"),
+    ] {
+        assert!(
+            crate::profiler::normalized_profiler_base_url(value)
+                .unwrap_err()
+                .to_string()
+                .contains(message),
+            "{value:?}"
+        );
+    }
     assert!(
         crate::profiler::normalized_profiler_base_url("https://u@x.test")
             .unwrap_err()

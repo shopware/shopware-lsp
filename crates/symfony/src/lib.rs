@@ -12,7 +12,6 @@
 mod compiled_catalog_index;
 mod compiled_route_catalog;
 mod container_catalog;
-mod go_url;
 mod model;
 mod path_match;
 mod reference;

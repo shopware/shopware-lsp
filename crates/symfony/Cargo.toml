@@ -25,10 +25,12 @@ swlsp-php-semantic = { path = "../php-semantic" }
 swlsp-php-types = { path = "../php-types" }
 swlsp-pathmatch = { path = "../pathmatch" }
 swlsp-textutil = { path = "../textutil" }
+swlsp-uriutil = { path = "../uriutil" }
 swlsp-admin-twigmigration = { path = "../admin-twigmigration" }
 serde = { version = "1", features = ["derive"] }
 regex = "1"
 log = "0.4"
+url = "2"
 
 [dev-dependencies]
 tempfile = "3"

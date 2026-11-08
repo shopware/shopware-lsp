@@ -1,7 +1,5 @@
 //! Route name, path, and parameter contexts in PHP, Twig, and JavaScript.
 
-use crate::go_url;
-
 use swlsp_parser_js::query as jsquery;
 use swlsp_parser_js::syntax as jssyntax;
 use swlsp_parser_php::query as phpquery;
@@ -634,20 +632,67 @@ pub fn normalize_route_search_path(value: &str) -> String {
     let has_authority_prefix = value.contains("://") || value.starts_with("//");
     // Braces would be escaped by EscapedPath; placeholders must stay intact.
     if !value.contains(['{', '}'])
-        && let Some(parsed) = go_url::parse(value)
+        && let Some(parsed) = parse_route_url(value)
     {
-        let path = parsed.escaped_path();
-        if has_authority_prefix || !parsed.host.is_empty() {
+        let path = parsed.path;
+        if has_authority_prefix || parsed.has_host {
             if go_trim_space(&path).is_empty() {
                 return "/".to_owned();
             }
             return path;
         }
-        if !parsed.is_abs() && !go_trim_space(&path).is_empty() {
+        if !parsed.absolute && !go_trim_space(&path).is_empty() {
             return path;
         }
     }
     normalize_route_search_path_fallback(value)
+}
+
+/// The parts of a URL reference that route path normalization needs.
+struct RouteUrl {
+    /// The reference names a scheme (`https:`, `mailto:`).
+    absolute: bool,
+    /// The scheme is followed by an opaque value (`mailto:x`, `tel:1`).
+    opaque: bool,
+    has_host: bool,
+    /// Escaped path without query and fragment ("" for opaque URLs).
+    path: String,
+}
+
+/// Parses a URL or relative reference; `None` for malformed input.
+fn parse_route_url(value: &str) -> Option<RouteUrl> {
+    // The URL standard strips tabs and newlines instead of rejecting them.
+    if value.bytes().any(|byte| byte < b' ' || byte == 0x7f) {
+        return None;
+    }
+    let (url, absolute) = match url::Url::parse(value) {
+        Ok(url) => (url, true),
+        // Network-path reference: borrow a scheme to read host and path.
+        Err(url::ParseError::RelativeUrlWithoutBase) if value.starts_with("//") => {
+            (url::Url::parse(&format!("http:{value}")).ok()?, false)
+        }
+        Err(url::ParseError::RelativeUrlWithoutBase) => {
+            let end = value.find(['?', '#']).unwrap_or(value.len());
+            return Some(RouteUrl {
+                absolute: false,
+                opaque: false,
+                has_host: false,
+                path: swlsp_uriutil::escaped_path(&value[..end])?,
+            });
+        }
+        Err(_) => return None,
+    };
+    let opaque = url.cannot_be_a_base();
+    Some(RouteUrl {
+        absolute,
+        opaque,
+        has_host: url.host_str().is_some_and(|host| !host.is_empty()),
+        path: if opaque {
+            String::new()
+        } else {
+            swlsp_uriutil::escaped_path(url.path())?
+        },
+    })
 }
 
 fn normalize_route_search_path_fallback(value: &str) -> String {
@@ -685,10 +730,7 @@ pub fn route_url_path(value: &str) -> String {
     if value.is_empty() || value.starts_with('#') {
         return String::new();
     }
-    if let Some(parsed) = go_url::parse(value)
-        && !parsed.scheme.is_empty()
-        && !parsed.opaque.is_empty()
-    {
+    if parse_route_url(value).is_some_and(|parsed| parsed.opaque) {
         return String::new();
     }
     let path = normalize_route_search_path(value);
