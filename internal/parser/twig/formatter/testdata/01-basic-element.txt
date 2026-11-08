@@ -1,3 +1,0 @@
-<sw-button>Click me</sw-button>
------
-<sw-button>Click me</sw-button>

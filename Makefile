@@ -1,12 +1,9 @@
-# The shipped language server is the Rust crate swlsp-cli (crates/). The Go
-# tree (main.go, internal/) is kept as the reference oracle for differential
-# testing and stays buildable; it no longer produces release artifacts.
+# The language server is the Rust crate swlsp-cli (crates/).
 #
-# Toolchains: Rust from rust-toolchain.toml (rustup picks it up), Go from
-# go.mod, Node.js 24 for the VS Code extension.
+# Toolchains: Rust from rust-toolchain.toml (rustup picks it up), Node.js 24
+# for the VS Code extension.
 
 CARGO        ?= cargo
-GO           ?= go
 NPM          ?= npm
 VSCODE_DIR   := editors/vscode
 ZED_DIR      := editors/zed
@@ -71,35 +68,6 @@ notices:
 notices-check: notices
 	git diff --exit-code -- THIRD_PARTY_NOTICES.md
 
-## Go reference oracle -------------------------------------------------------
-
-# Go packages of the oracle. Listed explicitly so ./... never descends into
-# Cargo's target/ directory at the repository root.
-GO_PACKAGES := . ./cmd/... ./internal/...
-
-.PHONY: go-build
-go-build:
-	CGO_ENABLED=1 $(GO) build $(GO_PACKAGES)
-
-.PHONY: go-test
-go-test:
-	CGO_ENABLED=1 $(GO) test $(GO_PACKAGES)
-
-.PHONY: go-test-race
-go-test-race:
-	CGO_ENABLED=1 $(GO) test -race ./internal/...
-
-.PHONY: go-test-integration-compile
-go-test-integration-compile:
-	CGO_ENABLED=1 $(GO) test -tags=integration ./internal/app -run '^$$'
-
-.PHONY: go-lint
-go-lint:
-	golangci-lint run $(GO_PACKAGES)
-
-.PHONY: go-check
-go-check: go-test go-test-integration-compile go-lint
-
 ## VS Code extension ---------------------------------------------------------
 
 .PHONY: vscode-install
@@ -139,7 +107,7 @@ zed-contracts:
 ## Full local validation -----------------------------------------------------
 
 .PHONY: check
-check: rust-check go-check vscode-check vscode-test zed-check zed-test zed-build zed-contracts
+check: rust-check vscode-check vscode-test zed-check zed-test zed-build zed-contracts
 
 ## Release packaging ---------------------------------------------------------
 #

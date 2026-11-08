@@ -1,10 +1,14 @@
 # Rust port — working notes
 
-The Rust implementation under `crates/` is the shipped server: CI, releases
-and the VS Code and Zed launchers build `shopware-lsp` from `crates/cli`. The
-Go implementation under `internal/` stays in the tree as the differential
-oracle (and keeps its own CI jobs) until the maintainer removes it. This file
-records the conventions every port follows and the current status.
+The Rust implementation under `crates/` is the only implementation: CI,
+releases and the VS Code and Zed launchers build `shopware-lsp` from
+`crates/cli`. The Go implementation (`main.go`, `internal/`, `cmd/`) that
+served as the differential oracle during the port has been removed; it is
+in git history up to commit `254e995` (`git show 254e995:internal/...`).
+References below to Go packages, the oracle, or `scripts/compare-cst.sh`
+describe how the port was verified, not current tooling. This file records
+the conventions the crates follow, the deliberate deviations from the Go
+behavior, and the porting status.
 
 ## Conventions
 

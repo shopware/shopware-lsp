@@ -424,7 +424,7 @@ async function updateProjectConfiguration(
 ): Promise<void> {
   const uri = vscode.Uri.joinPath(folder.uri, projectConfigurationPath);
   let document: Record<string, unknown> = {
-    $schema: 'https://raw.githubusercontent.com/shopware/shopware-lsp/main/internal/projectconfig/schema.json',
+    $schema: 'https://raw.githubusercontent.com/shopware/shopware-lsp/main/crates/projectconfig/schema.json',
     version: 1,
   };
   try {

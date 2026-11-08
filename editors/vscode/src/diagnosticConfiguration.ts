@@ -18,7 +18,7 @@ import {
 
 const configureDiagnosticCommand = 'shopwareLSP.configureDiagnostic';
 const openConfigurationCommand = 'shopwareLSP.openConfiguration';
-const schemaURL = 'https://raw.githubusercontent.com/shopware/shopware-lsp/main/internal/projectconfig/schema.json';
+const schemaURL = 'https://raw.githubusercontent.com/shopware/shopware-lsp/main/crates/projectconfig/schema.json';
 
 type DiagnosticTarget = 'file' | 'directory' | 'extension' | 'workspace';
 type DiagnosticEffect = {target: DiagnosticTarget; all: boolean};

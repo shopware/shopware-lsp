@@ -1,3 +1,0 @@
-<sw-button variant="primary">Click me</sw-button>
------
-<sw-button variant="primary">Click me</sw-button>

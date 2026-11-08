@@ -1093,7 +1093,7 @@ def run_template_usages(args, binary):
 
 
 CONFIG_TEMPLATE = """# Shopware LSP project configuration.
-# Schema: https://raw.githubusercontent.com/shopware/shopware-lsp/main/internal/projectconfig/schema.json
+# Schema: https://raw.githubusercontent.com/shopware/shopware-lsp/main/crates/projectconfig/schema.json
 #
 # `version` is mandatory. Without it the server refuses the whole file with
 # "configuration version is required".

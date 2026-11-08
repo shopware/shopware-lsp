@@ -1,3 +1,0 @@
-<div>Before {{ expression }} After</div>
------
-<div>Before {{ expression }} After</div>

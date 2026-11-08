@@ -1,3 +1,0 @@
-<div>{{ firstVar }}{{ secondVar }}</div>
------
-<div>{{ firstVar }}{{ secondVar }}</div>

@@ -1,7 +1,0 @@
-<template><div><sw-button>Foo</sw-button></div></template>
------
-<template>
-    <div>
-        <sw-button>Foo</sw-button>
-    </div>
-</template>

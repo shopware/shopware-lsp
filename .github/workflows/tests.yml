@@ -5,11 +5,8 @@ on:
   push:
     branches: [ main ]
     paths:
-      - '**.go'
       - 'editors/vscode/**'
       - 'editors/zed/**'
-      - 'go.mod'
-      - 'go.sum'
       - '**.rs'
       - 'crates/**'
       - 'Cargo.toml'
@@ -20,18 +17,13 @@ on:
       - 'THIRD_PARTY_NOTICES.md'
       - 'about.toml'
       - 'about.hbs'
-      - '.golangci.yml'
       - '.github/workflows/tests.yml'
-      - '.github/actions/setup-go/**'
       - '.github/actions/setup-rust/**'
   pull_request:
     branches: [ main, feat/next-gen ]
     paths:
-      - '**.go'
       - 'editors/vscode/**'
       - 'editors/zed/**'
-      - 'go.mod'
-      - 'go.sum'
       - '**.rs'
       - 'crates/**'
       - 'Cargo.toml'
@@ -42,26 +34,23 @@ on:
       - 'THIRD_PARTY_NOTICES.md'
       - 'about.toml'
       - 'about.hbs'
-      - '.golangci.yml'
       - '.github/workflows/tests.yml'
-      - '.github/actions/setup-go/**'
       - '.github/actions/setup-rust/**'
 
 jobs:
   test:
     name: Test
-    needs: [unit, race]
+    needs: [rust, notices]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
-    - name: Require both Go test runs
+    - name: Require the Rust test runs and the notices check
       env:
-        UNIT_RESULT: ${{ needs.unit.result }}
-        RACE_RESULT: ${{ needs.race.result }}
-      run: test "$UNIT_RESULT" = success && test "$RACE_RESULT" = success
+        RESULTS: ${{ join(needs.*.result, ',') }}
+      run: test "$RESULTS" = success,success
 
-  rust-lint:
-    name: Rust format and lint
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
@@ -125,72 +114,6 @@ jobs:
 
     - name: Build the shipped server
       run: cargo build --locked --release -p swlsp-cli --bin shopware-lsp
-
-  unit:
-    name: Go tests and build
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v7.0.1
-
-    - name: Set up Go
-      uses: $/.github/actions/setup-go
-
-    - name: Install dependencies
-      run: go mod download
-
-    - name: Install gotestsum
-      uses: jaxxstorm/action-install-gh-release@v3.0.0
-      with:
-        repo: gotestyourself/gotestsum
-        tag: v1.13.0
-        cache: enable
-
-    - name: Run tests
-      run: gotestsum --format pkgname -- -count=1 ./...
-
-    - name: Compile real-world integration suite
-      run: go test -c -tags=integration ./internal/app -o "${RUNNER_TEMP}/app-integration.test"
-
-    - name: Build LSP server
-      run: go build -v ./...
-
-  race:
-    name: Go race tests
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v7.0.1
-
-    - name: Set up Go
-      uses: $/.github/actions/setup-go
-
-    - name: Install gotestsum
-      uses: jaxxstorm/action-install-gh-release@v3.0.0
-      with:
-        repo: gotestyourself/gotestsum
-        tag: v1.13.0
-        cache: enable
-
-    - name: Run race condition tests
-      run: gotestsum --format pkgname -- -race -count=1 ./internal/...
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v7.0.1
-
-    - name: Set up Go
-      uses: $/.github/actions/setup-go
-
-    - name: Run linting
-      uses: golangci/golangci-lint-action@v9.3.0
-      with:
-        version: v2.13.0
-        args: --timeout=5m
 
   vscode:
     name: VS Code extension
@@ -256,12 +179,10 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [test, lint, rust-lint, rust, vscode, zed]
+    needs: [test, lint, rust, vscode, zed]
     if: ${{ always() }}
     steps:
-    # Preserve the existing required check while building in the unit job,
-    # where compiled packages are already available.
     - name: Require all checks
       env:
         RESULTS: ${{ join(needs.*.result, ',') }}
-      run: test "$RESULTS" = success,success,success,success,success,success
+      run: test "$RESULTS" = success,success,success,success,success

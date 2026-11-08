@@ -1,7 +1,0 @@
-<div>
-    {{ somewhatLongFooBarBaz }}/{{ somewhatLongerFooBarBaz }}
-</div>
------
-<div>
-    {{ somewhatLongFooBarBaz }}/{{ somewhatLongerFooBarBaz }}
-</div>

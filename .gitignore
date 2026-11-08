@@ -5,7 +5,6 @@ node_modules
 /dist
 /out
 /.opencode
-internal/php/alias_resolver.go
-internal/php/php.db
+/.claude/worktrees/
 **/.claude/settings.local.json
 /target

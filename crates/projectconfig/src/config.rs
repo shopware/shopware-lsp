@@ -1107,19 +1107,3 @@ fn normalize_path_patterns(values: &[String]) -> Vec<String> {
     }
     result
 }
-
-#[cfg(test)]
-mod schema_sync_tests {
-    /// The Go oracle embeds `internal/projectconfig/schema.json`, which is
-    /// also the URL editors reference; it must match the crate copy.
-    #[test]
-    fn schema_matches_the_go_oracle_copy() {
-        let go = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../internal/projectconfig/schema.json"
-        );
-        if let Ok(go) = std::fs::read_to_string(go) {
-            assert!(go == super::SCHEMA, "copy schema.json to both trees");
-        }
-    }
-}

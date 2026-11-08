@@ -232,10 +232,7 @@ impl<T: Target + Default> Target for ConfigTranslated<T> {
     }
 
     fn qualified_name() -> String {
-        format!(
-            "github.com/shopware/shopware-lsp/internal/extension.ConfigTranslated[{}]",
-            T::qualified_name()
-        )
+        format!("extension.ConfigTranslated[{}]", T::qualified_name())
     }
 
     fn mapping(&mut self, decoder: &mut Decoder<'_>, id: Id) -> R<bool> {
@@ -344,7 +341,7 @@ impl Target for ConfigValidationList {
     }
 
     fn qualified_name() -> String {
-        "github.com/shopware/shopware-lsp/internal/extension.ConfigValidationList".to_owned()
+        "extension.ConfigValidationList".to_owned()
     }
 
     fn null(&mut self) -> bool {
@@ -389,7 +386,7 @@ impl Target for ConfigValidationIgnore {
     }
 
     fn qualified_name() -> String {
-        "github.com/shopware/shopware-lsp/internal/extension.ConfigValidationIgnore".to_owned()
+        "extension.ConfigValidationIgnore".to_owned()
     }
 
     /// Go `UnmarshalYAML`: scalars are identifiers; anything else decodes

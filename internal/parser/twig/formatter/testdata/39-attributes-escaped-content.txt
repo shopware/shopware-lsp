@@ -1,5 +1,0 @@
-<mt-select :options="[{&quot;label&quot;:$tc('admin'),&quot;value&quot;:&quot;admin&quot;}]"></mt-select>
------
-<mt-select
-    :options="[{&quot;label&quot;:$tc('admin'),&quot;value&quot;:&quot;admin&quot;}]"
-></mt-select>

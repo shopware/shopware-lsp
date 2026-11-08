@@ -257,11 +257,9 @@ mod tests {
 
     #[test]
     fn project_xml_corpus() {
-        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../internal");
-        for path in [
-            "extension/testdata/manifest.xml",
-            "systemconfig/testdata/common.xml",
-        ] {
+        // A Shopware app manifest and a system-config definition.
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/testdata");
+        for path in ["manifest.xml", "common.xml"] {
             let content = std::fs::read_to_string(format!("{root}/{path}")).unwrap();
             let parse = assert_lossless(&content);
             assert!(parse.errors.is_empty(), "{path}: {:?}", parse.errors);

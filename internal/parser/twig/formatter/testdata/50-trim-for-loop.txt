@@ -1,5 +1,0 @@
-{%- for x in xs -%}body{%- endfor -%}
------
-{%- for x in xs -%}body{%- endfor -%}
------
-{%- for x in xs -%}body{%- endfor -%}

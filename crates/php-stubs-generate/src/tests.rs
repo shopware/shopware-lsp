@@ -198,7 +198,7 @@ fn lock_validation() {
     );
     let lock = load_lock(Path::new(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../internal/php/stubs/phpstorm-stubs.lock.json"
+        "/../php-stubs/data/phpstorm-stubs.lock.json"
     )))
     .unwrap();
     assert_eq!(lock.commit.len(), 40);
@@ -243,7 +243,8 @@ fn version_helpers_match_go() {
 fn regenerates_committed_artifact() {
     let source = std::env::var("PHPSTORM_STUBS_SOURCE").expect("PHPSTORM_STUBS_SOURCE");
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let lock = load_lock(&repository.join("internal/php/stubs/phpstorm-stubs.lock.json")).unwrap();
+    let lock =
+        load_lock(&repository.join("crates/php-stubs/data/phpstorm-stubs.lock.json")).unwrap();
     verify_source(Path::new(&source), &lock).unwrap();
     let (generated, _) = build(Path::new(&source), &lock, EmptyListPolicy::Committed).unwrap();
     let committed =

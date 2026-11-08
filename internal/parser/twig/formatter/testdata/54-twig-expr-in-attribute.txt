@@ -1,5 +1,0 @@
-<div {{ attributes }}></div>
------
-<div {{ attributes }}></div>
------
-<div {{ attributes }}></div>

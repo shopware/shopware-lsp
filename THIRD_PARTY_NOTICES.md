@@ -8,9 +8,9 @@ Do not edit by hand: change about.hbs and regenerate.
 ## JetBrains phpstorm-stubs
 
 The generated PHP runtime catalog in
-`internal/php/stubs/phpstorm-stubs.msgpack` is derived from
+`crates/php-stubs/data/phpstorm-stubs.msgpack` is derived from
 [JetBrains/phpstorm-stubs](https://github.com/JetBrains/phpstorm-stubs) at the
-revision recorded in `internal/php/stubs/phpstorm-stubs.lock.json`.
+revision recorded in `crates/php-stubs/data/phpstorm-stubs.lock.json`.
 
 phpstorm-stubs is licensed under the Apache License 2.0. A copy is included at
 `third_party/phpstorm-stubs/LICENSE`.

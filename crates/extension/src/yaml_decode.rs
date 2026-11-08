@@ -1132,7 +1132,7 @@ macro_rules! struct_target {
             }
 
             fn qualified_name() -> String {
-                concat!("github.com/shopware/shopware-lsp/internal/extension.", $name).to_owned()
+                concat!("extension.", $name).to_owned()
             }
 
             fn mapping(

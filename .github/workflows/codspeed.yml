@@ -18,50 +18,6 @@ jobs:
     permissions:
       contents: read # required for actions/checkout
       id-token: write # required for OIDC authentication with CodSpeed
-    env:
-      CGO_ENABLED: '1'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7.0.1
-
-      - name: Set up Go
-        uses: actions/setup-go@v7.0.0
-        with:
-          go-version: '1.27.0'
-          cache: true
-
-      - name: Install dependencies
-        run: go mod download
-
-      - name: Find benchmark packages
-        id: packages
-        # Only build packages that define benchmarks: the CodSpeed runner uses an
-        # isolated, cold GOCACHE, so every extra package is compiled from scratch.
-        run: |
-          packages="$(grep -rl --include='*_test.go' '^func Benchmark' internal \
-            | xargs -n1 dirname | sort -u | sed 's|^|./|' | tr '\n' ' ')"
-          echo "list=${packages}" >> "$GITHUB_OUTPUT"
-
-      - name: Run the benchmarks
-        uses: CodSpeedHQ/action@v5.6.0
-        with:
-          mode: walltime
-          # The runner defaults to 3s per benchmark; 1s still yields 100 measured
-          # rounds per benchmark and keeps the run within a few minutes.
-          run: go test -run='^$' -bench=. -benchtime=1s ${{ steps.packages.outputs.list }}
-        env:
-          # Go on arm64 needs frame-pointer unwinding for complete flamegraphs.
-          CODSPEED_PERF_UNWINDING_MODE: fp
-
-  rust-benchmarks:
-    name: Rust benchmarks
-    # Same fixed instance type as the Go suite so results are comparable.
-    runs-on: runs-on=${{ github.run_id }}/cpu=2/family=m8g.large/image=ubuntu24-full-arm64/spot=price-capacity-optimized
-    timeout-minutes: 25
-    permissions:
-      contents: read # required for actions/checkout
-      id-token: write # required for OIDC authentication with CodSpeed
 
     steps:
       - name: Checkout code
@@ -76,7 +32,7 @@ jobs:
         run: cargo install --locked cargo-codspeed --version 6.0.0
 
       - name: Build the benchmarks
-        # Only swlsp-bench defines benchmarks (crates/bench mirrors the Go suite).
+        # Only swlsp-bench defines benchmarks.
         run: cargo codspeed build -p swlsp-bench
 
       - name: Run the benchmarks

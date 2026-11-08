@@ -1,5 +1,0 @@
-<sw-button>{# comment #}</sw-button>
------
-<sw-button>
-    {# comment #}
-</sw-button>

@@ -430,22 +430,3 @@ pub(crate) fn template(name: &str, bound: Type, default: Type) -> TemplateParame
         ..TemplateParameter::default()
     }
 }
-
-#[cfg(test)]
-mod artifact_sync_tests {
-    /// While the Go oracle exists it embeds its own copy of the catalog
-    /// (`go:embed` cannot reach this crate); both must stay identical.
-    #[test]
-    fn catalog_matches_the_go_oracle_copy() {
-        let go = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../internal/php/stubs/phpstorm-stubs.msgpack"
-        );
-        if let Ok(go) = std::fs::read(go) {
-            assert!(
-                go == super::CATALOG_DATA,
-                "regenerate or copy phpstorm-stubs.msgpack to both trees"
-            );
-        }
-    }
-}

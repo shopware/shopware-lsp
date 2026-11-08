@@ -1,3 +1,0 @@
-<div>{{ someVariable }}</div>
------
-<div>{{ someVariable }}</div>

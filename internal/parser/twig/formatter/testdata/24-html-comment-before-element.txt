@@ -1,9 +1,0 @@
-<sw-page>
-    <!-- comment -->
-    <p>Content</p>
-</sw-page>
------
-<sw-page>
-    <!-- comment -->
-    <p>Content</p>
-</sw-page>

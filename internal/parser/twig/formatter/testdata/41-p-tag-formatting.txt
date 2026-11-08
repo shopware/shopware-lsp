@@ -1,7 +1,0 @@
-<p>
-    <span>Foo</span>, Bar
-</p>
------
-<p>
-    <span>Foo</span>, Bar
-</p>

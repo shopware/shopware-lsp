@@ -16,7 +16,6 @@ workflows:
         - 'actions/upload-artifact@v7.0.2'
     '.github/workflows/codspeed.yml':
         - 'actions/checkout@v7.0.1'
-        - 'actions/setup-go@v7.0.0'
         - 'codspeedhq/action@v5.6.0'
         - 'swatinem/rust-cache@v2.9.3'
     '.github/workflows/pre-release.yml':
@@ -29,12 +28,8 @@ workflows:
         - 'actions/setup-node@v7.1.0'
         - 'octo-sts/action@v1.1.1'
     '.github/workflows/tests.yml':
-        - 'actions/cache@v6.1.0'
         - 'actions/checkout@v7.0.1'
-        - 'actions/setup-go@v7.0.0'
         - 'actions/setup-node@v7.1.0'
-        - 'golangci/golangci-lint-action@v9.3.0'
-        - 'jaxxstorm/action-install-gh-release@v3.0.0'
         - 'swatinem/rust-cache@v2.9.3'
         - 'taiki-e/install-action@v2.87.31'
     '.github/workflows/zed-contracts.yml':
@@ -43,11 +38,6 @@ dependencies:
     'actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7':
         ref: 'v5.0.4'
         commit: 'sha1-668228422ae6a00e4ad889ee87cd7109ec5666a7'
-        owner_id: 44036562
-        repo_id: 215566462
-    'actions/cache@v6.1.0':
-        ref: 'v6.1.0'
-        commit: 'sha1-55cc8345863c7cc4c66a329aec7e433d2d1c52a9'
         owner_id: 44036562
         repo_id: 215566462
     'actions/checkout@v7.0.1':
@@ -65,11 +55,6 @@ dependencies:
         commit: 'sha1-ed597411d8f924073f98dfc5c65a23a2325f34cd'
         owner_id: 44036562
         repo_id: 205262760
-    'actions/setup-go@v7.0.0':
-        ref: 'v7.0.0'
-        commit: 'sha1-b7ad1dad31e06c5925ef5d2fc7ad053ef454303e'
-        owner_id: 44036562
-        repo_id: 192624594
     'actions/setup-node@v7.1.0':
         ref: 'v7.1.0'
         commit: 'sha1-949feb2413d6458794dcd2491c4babbbce0c15c1'
@@ -88,16 +73,6 @@ dependencies:
         uses:
             - 'actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7'
             - 'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd'
-    'golangci/golangci-lint-action@v9.3.0':
-        ref: 'v9.3.0'
-        commit: 'sha1-ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a'
-        owner_id: 35628013
-        repo_id: 232539879
-    'jaxxstorm/action-install-gh-release@v3.0.0':
-        ref: 'v3.0.0'
-        commit: 'sha1-25e24d2d23ae098373794ef1d6faecb48ee52da8'
-        owner_id: 1622940
-        repo_id: 265029375
     'mlugg/setup-zig@v2.2.1':
         ref: 'v2.2.1'
         commit: 'sha1-d1434d08867e3ee9daa34448df10607b98908d29'

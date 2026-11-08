@@ -10,7 +10,7 @@ const USAGE: &str = "usage: generate-phpstorm-stubs [-source DIR] [-lock FILE] [
 [-skip-revision-check] [-go-head]
 
   -source DIR            path to a phpstorm-stubs checkout (default ../phpstorm-stubs)
-  -lock FILE             pinned source manifest (default internal/php/stubs/phpstorm-stubs.lock.json)
+  -lock FILE             pinned source manifest (default crates/php-stubs/data/phpstorm-stubs.lock.json)
   -output FILE           generated catalog path (default crates/php-stubs/data/phpstorm-stubs.msgpack)
   -skip-revision-check   allow a source tree without the locked Git revision
   -go-head               write empty lists like the current Go generator instead of
@@ -27,7 +27,7 @@ struct Options {
 fn parse_options() -> Result<Options, String> {
     let mut options = Options {
         source: PathBuf::from("../phpstorm-stubs"),
-        lock: PathBuf::from("internal/php/stubs/phpstorm-stubs.lock.json"),
+        lock: PathBuf::from("crates/php-stubs/data/phpstorm-stubs.lock.json"),
         output: PathBuf::from("crates/php-stubs/data/phpstorm-stubs.msgpack"),
         skip_revision_check: false,
         policy: EmptyListPolicy::Committed,

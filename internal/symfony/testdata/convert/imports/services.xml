@@ -1,7 +1,0 @@
-<container>
-    <imports>
-        <import resource="packages/listeners.xml"/>
-        <import resource="other.yaml" ignore-errors="true"/>
-        <import resource="not_found.yaml" ignore-errors="not_found"/>
-    </imports>
-</container>
