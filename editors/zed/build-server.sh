@@ -33,7 +33,7 @@ git -C "$SRC" rev-parse --git-dir >/dev/null 2>&1 || {
   echo "  git clone https://github.com/shopware/shopware-lsp.git $SRC" >&2
   exit 1
 }
-command -v go >/dev/null || { echo "go not found (brew install go)" >&2; exit 1; }
+command -v cargo >/dev/null || { echo "cargo not found (install Rust with rustup)" >&2; exit 1; }
 
 git -C "$SRC" fetch --quiet origin "$BRANCH"
 REV="$(git -C "$SRC" rev-parse --short FETCH_HEAD)"
@@ -47,8 +47,11 @@ git -C "$SRC" worktree add --detach --quiet "$WORKTREE" FETCH_HEAD
 VERSION="0.0.0-nextgen.$WHEN.$REV"
 
 mkdir -p "$DEST"
-# CGO is required; the release pipeline sets it too.
-(cd "$WORKTREE" && CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=$VERSION" -o "$DEST/shopware-lsp" .)
+# The shipped server is the Rust crate swlsp-cli; SQLite is bundled, so no
+# system libraries are needed. The version is embedded at compile time.
+(cd "$WORKTREE" && SHOPWARE_LSP_VERSION="$VERSION" CARGO_TARGET_DIR="$WORKTREE/target" \
+  cargo build --locked --release -p swlsp-cli --bin shopware-lsp)
+install -m 755 "$WORKTREE/target/release/shopware-lsp" "$DEST/shopware-lsp"
 
 echo "built $BRANCH at $REV -> $DEST/shopware-lsp"
 "$DEST/shopware-lsp" version

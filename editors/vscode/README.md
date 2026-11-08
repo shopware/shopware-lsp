@@ -114,9 +114,8 @@ a write; entity changes retain the preview-revision and destructive-change
 confirmation checks used by the visual designer.
 
 Set `shopwareLSP.mcp.enabled` to `false` for a workspace folder to hide that
-server from VS Code AI clients. A custom `shopwareLSP.serverPath` and the
-`shopwareLSP.memoryLimitMiB` setting apply to both the editor server and the
-MCP process. Use `shopwareLSP.mcp.tools` to disable exact MCP tool names only
+server from VS Code AI clients. A custom `shopwareLSP.serverPath` applies to
+both the editor server and the MCP process. Use `shopwareLSP.mcp.tools` to disable exact MCP tool names only
 for the current user/workspace, or commit `mcp.tools` in
 `.config/shopware/lsp.yaml` so every MCP client uses the same policy.
 
@@ -150,9 +149,7 @@ diagnostic settings.
 
 ## Resource usage
 
-`shopwareLSP.memoryLimitMiB` applies a soft memory limit to the language-server
-and MCP processes. Its default value of `0` uses the server's balanced GC
-policy. For large Shopware workspaces, `512` is an opt-in low-memory starting
-point when lower peak memory matters more than indexing CPU. Very low limits
-can cause frequent garbage collection and substantially increase CPU use.
-Restart the language server after changing this setting.
+The bundled server is written in Rust and has no garbage collector, so it
+needs no memory tuning. `shopwareLSP.memoryLimitMiB` set a soft memory limit
+(`GOMEMLIMIT`) for the former Go server; it is deprecated and no longer has an
+effect.

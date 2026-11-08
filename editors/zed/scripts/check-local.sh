@@ -10,7 +10,10 @@ export SHOPWARE_LSP_CACHE_DIR="$CHECK_DIR/cache"
 
 mkdir -p "$CHECK_DIR/fixture/.config/shopware"
 printf 'version: 1\n' > "$CHECK_DIR/fixture/.config/shopware/lsp.yaml"
-(cd "$REPOSITORY_ROOT" && go build -o "$CHECK_DIR/shopware-lsp" .)
+# Build the shipped Rust server. CARGO_TARGET_DIR is honoured when set.
+TARGET_DIR="${CARGO_TARGET_DIR:-$REPOSITORY_ROOT/target}"
+(cd "$REPOSITORY_ROOT" && cargo build --locked -p swlsp-cli --bin shopware-lsp)
+cp "$TARGET_DIR/debug/shopware-lsp" "$CHECK_DIR/shopware-lsp"
 
 python3 "$HERE/contract-check.py" --offline --binary "$CHECK_DIR/shopware-lsp"
 python3 "$HERE/inventory.py" --check \

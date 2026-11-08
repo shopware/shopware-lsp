@@ -2,7 +2,7 @@
 
 The repository-wide contributor guide applies. This directory contains the
 Rust/WASM client, terminal task adapters, and their tests; analysis stays in the
-shared Go server.
+shared Rust server under `crates/` (the Go tree is only a reference oracle).
 
 - Build for `wasm32-wasip2` with the toolchain in `rust-toolchain.toml`.
 - Keep host-independent logic in pure helpers and Zed API hooks thin. Native
@@ -21,8 +21,8 @@ shared Go server.
 - Do not install tasks into the developer's Zed configuration during tests.
   Use `--print` or an isolated `ZED_CONFIG_DIR`.
 
-From the repository root, run `mise run zed:check`, `mise run zed:test`,
-`mise run zed:build`, and `mise run zed:contracts`. The contract task builds
+From the repository root, run `make zed-check`, `make zed-test`,
+`make zed-build`, and `make zed-contracts`. The contract task builds
 the local server and checks its LSP/MCP contracts and the sibling VS Code
 manifest without downloading a published server. Registry checks remain in
 the separate scheduled workflow. See `TESTING.md` for manual Zed checks.

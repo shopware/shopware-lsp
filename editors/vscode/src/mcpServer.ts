@@ -97,7 +97,6 @@ export function registerMcpServerDefinitionProvider(
             ? `Shopware LSP (${candidate.folder.name})`
             : 'Shopware LSP',
           version: String(context.extension.packageJSON.version ?? 'dev'),
-          memoryLimitMiB: candidate.configuration.get<number>('memoryLimitMiB', 0),
           editorConfiguration: readEditorConfiguration(candidate.folder.uri),
           allowUnsupportedProject: candidate.decision.allowUnsupportedProject,
         });
@@ -122,7 +121,6 @@ export function registerMcpServerDefinitionProvider(
         event.affectsConfiguration('shopwareLSP.mcp.enabled') ||
         event.affectsConfiguration('shopwareLSP.activationMode') ||
         event.affectsConfiguration('shopwareLSP.serverPath') ||
-        event.affectsConfiguration('shopwareLSP.memoryLimitMiB') ||
         event.affectsConfiguration('shopwareLSP.phpExtensions') ||
         event.affectsConfiguration('shopwareLSP.disabledPhpExtensions') ||
         event.affectsConfiguration('shopwareLSP.shopwareTargetVersion') ||

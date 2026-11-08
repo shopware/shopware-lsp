@@ -79,7 +79,8 @@
           "default": 0,
           "minimum": 0,
           "scope": "machine-overridable",
-          "description": "Optional soft Go memory limit for the language-server process in MiB. Zero uses the server's balanced GC policy. A value of 512 is a low-memory starting point for large Shopware workspaces; lower values may increase indexing CPU substantially."
+          "description": "Deprecated: soft memory limit for the former Go language server (GOMEMLIMIT). The Rust server has no garbage collector and ignores it.",
+          "deprecationMessage": "The Rust language server has no garbage collector; this setting no longer has an effect."
         },
         "shopwareLSP.mcp.enabled": {
           "type": "boolean",

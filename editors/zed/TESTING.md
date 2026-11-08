@@ -161,7 +161,7 @@ Checks:
 
 The normal CI job builds this checkout's server and uses `--offline` to check
 LSP, MCP, and project detection without network access. From the repository
-root, `mise run zed:contracts` runs the same checks and the inventory gate with
+root, `make zed-contracts` runs the same checks and the inventory gate with
 isolated caches. Open VSX payload and archive checks run separately on a
 weekly schedule against the published server.
 

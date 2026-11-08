@@ -14,7 +14,6 @@ import {registerSymfonyGenerationCommands} from './commands/symfonyGenerationCom
 import {registerTwigCatalogCommands} from './commands/twigCatalogCommands';
 import {registerTwigVariableCommands} from './twigVariables';
 import {registerMcpServerDefinitionProvider} from './mcpServer';
-import {normalizeMemoryLimitMiB} from './mcpServerModel';
 import {
   decideActivation,
   inactiveServerProject,
@@ -85,9 +84,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       coordinatorOutput.appendLine(`Detected ${project.kind} project: ${folder.uri.fsPath}`);
     }
-    const memoryLimit = normalizeMemoryLimitMiB(
-      configuration.get<number>('memoryLimitMiB', 0),
-    );
     const key = folder.uri.toString();
     return {
       key,
@@ -99,7 +95,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         key,
         serverPath,
         decision.allowUnsupportedProject,
-        memoryLimit,
       ),
     };
   };
@@ -120,7 +115,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     key: string,
     serverPath: string,
     allowUnsupportedProject: boolean,
-    memoryLimit: number,
   ): Promise<WorkspaceClientEntry | undefined> {
     const output = vscode.window.createOutputChannel(`Shopware LSP: ${folder.name}`);
     const serverOptions: ServerOptions = {
@@ -129,11 +123,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ? ['-allow-unsupported-project', 'serve']
         : ['serve'],
       transport: TransportKind.stdio,
-      ...(memoryLimit > 0 ? {
-        options: {
-          env: {...process.env, GOMEMLIMIT: `${memoryLimit}MiB`},
-        },
-      } : {}),
     };
     const workspacePattern = new vscode.RelativePattern(folder, '**/*');
     const languageFilters = [
@@ -184,9 +173,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
     output.appendLine(`Starting Shopware Language Server at ${serverPath}`);
     output.appendLine(`Workspace: ${folder.uri.fsPath}`);
-    if (memoryLimit > 0) {
-      output.appendLine(`Using a ${memoryLimit} MiB soft memory limit`);
-    }
     try {
       await client.start();
       if (inactiveServerProject(client.initializeResult?.capabilities.experimental)) {
@@ -297,7 +283,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const restartSections = [
         'shopwareLSP.activationMode',
         'shopwareLSP.serverPath',
-        'shopwareLSP.memoryLimitMiB',
       ];
       const affected = manager.runningEntries().filter(entry =>
         restartSections.some(section =>

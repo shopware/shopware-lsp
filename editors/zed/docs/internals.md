@@ -76,10 +76,10 @@ These paths are relative to `editors/zed` in the Shopware LSP repository.
 
 ```bash
 # From the repository root:
-mise run zed:check
-mise run zed:test
-mise run zed:build
-mise run zed:contracts
+make zed-check
+make zed-test
+make zed-build
+make zed-contracts
 ```
 
 See [TESTING.md](../TESTING.md) for what each layer covers and the manual Zed

@@ -33,8 +33,6 @@ struct ShopwareLspExtension {
     /// The normalized editor configuration, remembered for the same reason:
     /// the MCP hook has no `Worktree` and so cannot read Zed settings itself.
     cached_configuration: Option<String>,
-    /// `GOMEMLIMIT` value, remembered for the MCP process for the same reason.
-    cached_memory_limit: Option<String>,
 }
 
 /// Where the binary lives inside the downloaded `.vsix`, which is a plain zip.
@@ -235,16 +233,6 @@ fn normalized_configuration(
     config
 }
 
-/// `GOMEMLIMIT` for `shopwareLSP.memoryLimitMiB`.
-///
-/// The server honours the variable through `internal/runtimeconfig`, but has no
-/// setting for it, so the client has to apply it when spawning. Zero means the
-/// server's own balanced policy, so nothing is set.
-fn memory_limit_env(shopware: &zed::serde_json::Value) -> Option<String> {
-    let mib = shopware.get("memoryLimitMiB")?.as_i64()?;
-    (mib > 0).then(|| format!("{mib}MiB"))
-}
-
 /// Everything the language-server hook reads from the host.
 ///
 /// Gathering it into a struct is what makes the decision testable: the hook
@@ -253,7 +241,6 @@ fn memory_limit_env(shopware: &zed::serde_json::Value) -> Option<String> {
 struct LanguageServerFacts {
     configured_binary: Option<String>,
     arguments: Vec<String>,
-    shopware: zed::serde_json::Value,
     on_path: Option<String>,
     shell_env: Vec<(String, String)>,
 }
@@ -265,25 +252,19 @@ struct LanguageServerPlan {
     binary: Option<String>,
     args: Vec<String>,
     env: Vec<(String, String)>,
-    memory_limit: Option<String>,
 }
 
+/// `shopwareLSP.memoryLimitMiB` used to become `GOMEMLIMIT` for the Go
+/// server. The shipped server is Rust and has no garbage collector, so the
+/// setting is ignored and only the shell environment is passed through.
 fn plan_language_server(
     facts: LanguageServerFacts,
     cached_binary: Option<String>,
 ) -> LanguageServerPlan {
-    let memory_limit = memory_limit_env(&facts.shopware);
-
-    let mut env = facts.shell_env;
-    if let Some(limit) = memory_limit.clone() {
-        env.push(("GOMEMLIMIT".to_string(), limit));
-    }
-
     LanguageServerPlan {
         binary: resolve_server(facts.configured_binary, cached_binary, || facts.on_path),
         args: facts.arguments,
-        env,
-        memory_limit,
+        env: facts.shell_env,
     }
 }
 
@@ -303,7 +284,6 @@ struct CarriedOver {
     binary: Option<String>,
     root: Option<String>,
     configuration: Option<String>,
-    memory_limit: Option<String>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -317,9 +297,6 @@ fn plan_context_server(facts: ContextServerFacts, carried: CarriedOver) -> Conte
     // The MCP process is spawned separately, so editor configuration reaches it
     // only through the environment. Upstream uses the same two variables.
     let mut env: Vec<(String, String)> = Vec::new();
-    if let Some(limit) = carried.memory_limit {
-        env.push(("GOMEMLIMIT".to_string(), limit));
-    }
     if let Some(configuration) = carried.configuration.filter(|value| value != "{}") {
         env.push((
             "SHOPWARE_LSP_EDITOR_CONFIGURATION".to_string(),
@@ -546,7 +523,6 @@ impl zed::Extension for ShopwareLspExtension {
             cached_download: None,
             cached_worktree_root: None,
             cached_configuration: None,
-            cached_memory_limit: None,
         }
     }
 
@@ -564,13 +540,11 @@ impl zed::Extension for ShopwareLspExtension {
             arguments: binary_settings
                 .and_then(|binary| binary.arguments.clone())
                 .unwrap_or_default(),
-            shopware: Self::shopware_settings(worktree),
             on_path: worktree.which(SERVER_NAME),
             shell_env: worktree.shell_env(),
         };
 
         let plan = plan_language_server(facts, self.cached_binary_path.clone());
-        self.cached_memory_limit = plan.memory_limit;
 
         let binary = match plan.binary {
             Some(path) => {
@@ -661,7 +635,6 @@ impl zed::Extension for ShopwareLspExtension {
                 binary: self.cached_binary_path.clone(),
                 root: self.cached_worktree_root.clone(),
                 configuration: self.cached_configuration.clone(),
-                memory_limit: self.cached_memory_limit.clone(),
             },
         );
 
@@ -989,25 +962,10 @@ mod tests {
     }
 
     #[test]
-    fn memory_limit_becomes_a_go_memory_limit() {
-        assert_eq!(
-            memory_limit_env(&zed::serde_json::json!({"memoryLimitMiB": 512})),
-            Some("512MiB".to_string())
-        );
-        // Zero is documented as "use the server's balanced policy".
-        assert_eq!(
-            memory_limit_env(&zed::serde_json::json!({"memoryLimitMiB": 0})),
-            None
-        );
-        assert_eq!(memory_limit_env(&zed::serde_json::json!({})), None);
-    }
-
-    #[test]
     fn language_server_plan_covers_the_whole_hook() {
         let facts = LanguageServerFacts {
             configured_binary: None,
             arguments: vec!["-rpc.trace".into()],
-            shopware: zed::serde_json::json!({"memoryLimitMiB": 512}),
             on_path: Some("/usr/local/bin/shopware-lsp".into()),
             shell_env: vec![("PATH".into(), "/usr/bin".into())],
         };
@@ -1015,13 +973,9 @@ mod tests {
 
         assert_eq!(plan.binary.as_deref(), Some("/usr/local/bin/shopware-lsp"));
         assert_eq!(plan.args, vec!["-rpc.trace".to_string()]);
-        assert_eq!(plan.memory_limit.as_deref(), Some("512MiB"));
-        // The shell environment is preserved, with the limit appended.
-        assert_eq!(plan.env[0], ("PATH".to_string(), "/usr/bin".to_string()));
-        assert_eq!(
-            plan.env[1],
-            ("GOMEMLIMIT".to_string(), "512MiB".to_string())
-        );
+        // The shell environment is preserved; the deprecated Go memory limit
+        // is not turned into GOMEMLIMIT for the Rust server.
+        assert_eq!(plan.env, vec![("PATH".to_string(), "/usr/bin".to_string())]);
     }
 
     #[test]
@@ -1029,7 +983,6 @@ mod tests {
         let plan = plan_language_server(LanguageServerFacts::default(), None);
         assert_eq!(plan.binary, None, "None is the signal to download");
         assert!(plan.env.is_empty());
-        assert_eq!(plan.memory_limit, None);
     }
 
     #[test]
@@ -1042,7 +995,6 @@ mod tests {
                 binary: Some("/usr/local/bin/shopware-lsp".into()),
                 root: Some("/srv/shop".into()),
                 configuration: Some(r#"{"features":{"hover":true}}"#.into()),
-                memory_limit: Some("512MiB".into()),
             },
         );
 
@@ -1050,13 +1002,10 @@ mod tests {
         assert_eq!(plan.args, vec!["-root", "/srv/shop", "mcp"]);
         assert_eq!(
             plan.env,
-            vec![
-                ("GOMEMLIMIT".to_string(), "512MiB".to_string()),
-                (
-                    "SHOPWARE_LSP_EDITOR_CONFIGURATION".to_string(),
-                    r#"{"features":{"hover":true}}"#.to_string()
-                ),
-            ]
+            vec![(
+                "SHOPWARE_LSP_EDITOR_CONFIGURATION".to_string(),
+                r#"{"features":{"hover":true}}"#.to_string()
+            )]
         );
     }
 
@@ -1117,19 +1066,19 @@ mod tests {
             ContextServerFacts {
                 command_path: Some("/opt/sw".into()),
                 command_arguments: Some(vec!["mcp".into()]),
-                command_env: vec![("GOMEMLIMIT".into(), "256MiB".into())],
+                command_env: vec![("RUST_LOG".into(), "debug".into())],
                 settings_root: Some("/ignored".into()),
             },
             CarriedOver {
-                memory_limit: Some("512MiB".into()),
+                configuration: Some(r#"{"features":{"hover":true}}"#.into()),
                 ..Default::default()
             },
         );
 
         assert_eq!(plan.binary.as_deref(), Some("/opt/sw"));
         assert_eq!(plan.args, vec!["mcp".to_string()]);
-        // The explicit env comes last, so it overrides the carried value.
-        assert_eq!(plan.env.last().unwrap().1, "256MiB");
+        // The explicit env comes last, so it overrides the carried values.
+        assert_eq!(plan.env.last().unwrap().1, "debug");
     }
 
     #[test]

@@ -15,7 +15,7 @@ existing is a common way to end up with no language server at all.
   "lsp": {
     "shopware-lsp": {
       "settings": {
-        "shopwareLSP": { "activationMode": "auto", "memoryLimitMiB": 512 }
+        "shopwareLSP": { "activationMode": "auto", "features": { "semanticTokens": false } }
       }
     }
   }
@@ -88,7 +88,7 @@ configuration namespace, so they are translated rather than forwarded:
 |---|---|
 | `phpExtensions`, `disabledPhpExtensions`, `shopwareTargetVersion` | named `initializationOptions` fields |
 | `features`, `domains`, `indexing.*`, `diagnostics.*`, `mcp.tools` | `initializationOptions.configuration`, the `lsp.yaml` shape |
-| `memoryLimitMiB` | `GOMEMLIMIT` on both the language server and the MCP process |
+| `memoryLimitMiB` | **ignored.** It set `GOMEMLIMIT` for the former Go server; the Rust server has no garbage collector |
 | `activationMode` | **not supported.** VS Code decides whether to start the server at all; Zed's extension API cannot. The server refuses to start outside a Shopware or Symfony project anyway |
 | `serverPath` | use `lsp.shopware-lsp.binary.path` |
 | `phpExecutable` | **not supported.** Only used by VS Code's Symfony console code lenses, which Zed cannot run |

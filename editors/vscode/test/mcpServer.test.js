@@ -3,7 +3,6 @@ const path = require('node:path');
 const {test} = require('node:test');
 const {
   createMcpProcessDefinition,
-  normalizeMemoryLimitMiB,
 } = require('../dist/mcpServerModel.js');
 const {
   resolveServerExecutable,
@@ -16,22 +15,18 @@ test('builds a workspace-scoped MCP stdio process', () => {
     workspaceRoot: '/workspace/shopware',
     label: 'Shopware LSP',
     version: '0.2.0',
-    memoryLimitMiB: 512.9,
   });
   assert.deepEqual(definition, {
     label: 'Shopware LSP',
     command: '/extension/shopware-lsp',
     args: ['-root', '/workspace/shopware', 'mcp'],
     cwd: '/workspace/shopware',
-    env: {GOMEMLIMIT: '512MiB'},
+    env: {},
     version: '0.2.0',
   });
 });
 
-test('omits an inactive memory limit and normalizes invalid values', () => {
-  assert.equal(normalizeMemoryLimitMiB(undefined), 0);
-  assert.equal(normalizeMemoryLimitMiB(Number.NaN), 0);
-  assert.equal(normalizeMemoryLimitMiB(-1), 0);
+test('does not pass a Go runtime memory limit to the server', () => {
   assert.deepEqual(createMcpProcessDefinition({
     serverPath: '/extension/shopware-lsp',
     workspaceRoot: '/workspace/shopware',
@@ -104,5 +99,11 @@ test('finds repository builds from editors/vscode and prefers packaged binaries'
       platform,
       exists: candidate => candidate === developmentBinary || candidate === packagedBinary,
     }), packagedBinary);
+    const cargoBinary = path.join('/repository', 'target', 'release', binaryName);
+    assert.equal(resolveServerExecutable({
+      extensionPath,
+      platform,
+      exists: candidate => candidate === developmentBinary || candidate === cargoBinary,
+    }), cargoBinary);
   }
 });
