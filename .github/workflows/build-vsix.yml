@@ -17,7 +17,7 @@ jobs:
   build:
     name: Build VSIX packages
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
@@ -35,6 +35,16 @@ jobs:
         run: |
           npm ci --prefix editors/vscode
           npm install --global @vscode/vsce@3.9.1
+
+      # Binaries come from build-binaries.yml earlier in the calling run.
+      - name: Download release binaries
+        uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: server-*
+          path: ${{ runner.temp }}/binaries
+
+      - name: Stage release binaries
+        run: scripts/release/stage-binaries.sh "$RUNNER_TEMP/binaries"
 
       - name: Build VSIX packages
         env:

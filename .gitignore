@@ -8,3 +8,4 @@ node_modules
 internal/php/alias_resolver.go
 internal/php/php.db
 **/.claude/settings.local.json
+/target

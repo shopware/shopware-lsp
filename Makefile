@@ -1,25 +1,141 @@
-PACKAGE_NAME          := shopware-cli
-GOLANG_CROSS_VERSION  ?= v1.27.0
-GORELEASER_ARGS       ?=
+# The shipped language server is the Rust crate swlsp-cli (crates/). The Go
+# tree (main.go, internal/) is kept as the reference oracle for differential
+# testing and stays buildable; it no longer produces release artifacts.
+#
+# Toolchains: Rust from rust-toolchain.toml (rustup picks it up), Go from
+# go.mod, Node.js 24 for the VS Code extension.
 
-.PHONY: release-dry-run
-release-dry-run:
-	@docker run \
-		--rm \
-		-e CGO_ENABLED=1 \
-		-v `pwd`:/go/src/$(PACKAGE_NAME) \
-		-w /go/src/$(PACKAGE_NAME) \
-		ghcr.io/shyim/goreleaser-cross:${GOLANG_CROSS_VERSION} \
-		--clean --skip=validate --skip=publish --snapshot
+CARGO        ?= cargo
+GO           ?= go
+NPM          ?= npm
+VSCODE_DIR   := editors/vscode
+ZED_DIR      := editors/zed
+
+.PHONY: all
+all: build vscode-build
+
+## Rust server ---------------------------------------------------------------
+
+# Release binary at target/release/shopware-lsp. Set SHOPWARE_LSP_VERSION to
+# embed a version (defaults to "dev").
+.PHONY: build
+build:
+	$(CARGO) build --locked --release -p swlsp-cli --bin shopware-lsp
+
+.PHONY: rust-build
+rust-build:
+	$(CARGO) build --locked --workspace
+
+.PHONY: rust-test
+# Everything `cargo test` builds except doc-tests: the crates have none, and
+# rustdoc costs ~9 s for 96 empty doc-test runs.
+RUST_TEST_TARGETS := --lib --bins --tests --examples
+
+rust-test:
+	$(CARGO) test --locked --workspace $(RUST_TEST_TARGETS)
+
+.PHONY: rust-clippy
+rust-clippy:
+	$(CARGO) clippy --locked --workspace --all-targets -- -D warnings
+
+.PHONY: rust-fmt
+rust-fmt:
+	$(CARGO) fmt --all
+
+.PHONY: rust-fmt-check
+rust-fmt-check:
+	$(CARGO) fmt --all --check
+
+.PHONY: rust-test-integration-compile
+rust-test-integration-compile:
+	$(CARGO) clippy --locked -p swlsp-app --features integration --all-targets -- -D warnings
+
+.PHONY: rust-check
+rust-check: rust-fmt-check rust-clippy rust-test rust-test-integration-compile
+
+## Go reference oracle -------------------------------------------------------
+
+# Go packages of the oracle. Listed explicitly so ./... never descends into
+# Cargo's target/ directory at the repository root.
+GO_PACKAGES := . ./cmd/... ./internal/...
+
+.PHONY: go-build
+go-build:
+	CGO_ENABLED=1 $(GO) build $(GO_PACKAGES)
+
+.PHONY: go-test
+go-test:
+	CGO_ENABLED=1 $(GO) test $(GO_PACKAGES)
+
+.PHONY: go-test-race
+go-test-race:
+	CGO_ENABLED=1 $(GO) test -race ./internal/...
+
+.PHONY: go-test-integration-compile
+go-test-integration-compile:
+	CGO_ENABLED=1 $(GO) test -tags=integration ./internal/app -run '^$$'
+
+.PHONY: go-lint
+go-lint:
+	golangci-lint run $(GO_PACKAGES)
+
+.PHONY: go-check
+go-check: go-test go-test-integration-compile go-lint
+
+## VS Code extension ---------------------------------------------------------
+
+.PHONY: vscode-install
+vscode-install:
+	$(NPM) --prefix $(VSCODE_DIR) ci
+
+.PHONY: vscode-check
+vscode-check:
+	$(NPM) --prefix $(VSCODE_DIR) run check-types
+
+.PHONY: vscode-build
+vscode-build:
+	$(NPM) --prefix $(VSCODE_DIR) run compile
+
+.PHONY: vscode-test
+vscode-test:
+	$(NPM) --prefix $(VSCODE_DIR) test
+
+## Zed extension -------------------------------------------------------------
+
+.PHONY: zed-check
+zed-check:
+	cd $(ZED_DIR) && $(CARGO) fmt --check && $(CARGO) clippy --locked --all-targets -- -D warnings
+
+.PHONY: zed-test
+zed-test:
+	cd $(ZED_DIR) && $(CARGO) test --locked && python3 scripts/test-sw-action.py
+
+.PHONY: zed-build
+zed-build:
+	cd $(ZED_DIR) && $(CARGO) build --locked --release --target wasm32-wasip2
+
+.PHONY: zed-contracts
+zed-contracts:
+	bash $(ZED_DIR)/scripts/check-local.sh
+
+## Full local validation -----------------------------------------------------
+
+.PHONY: check
+check: rust-check go-check vscode-check vscode-test zed-check zed-test zed-build zed-contracts
+
+## Release packaging ---------------------------------------------------------
+#
+# CI builds every target natively (.github/workflows/build-binaries.yml) and
+# packages them with GoReleaser (archives, deb/rpm/apk, checksums, Homebrew)
+# and scripts/build-vsix-release.mjs (VSIX). Locally, `make release` builds
+# the host binary and packages only the host VSIX into out/.
 
 .PHONY: release
-release:
-	docker run \
-		--rm \
-		-e CGO_ENABLED=1 \
-		-e GITHUB_TOKEN \
-		-e HOMEBREW_TAP_GITHUB_TOKEN \
-		-v `pwd`:/go/src/$(PACKAGE_NAME) \
-		-w /go/src/$(PACKAGE_NAME) \
-		ghcr.io/shyim/goreleaser-cross:${GOLANG_CROSS_VERSION} \
-		release --clean $(GORELEASER_ARGS)
+release: vscode-install
+	node scripts/build-vsix-release.mjs --local
+
+# Snapshot GoReleaser packaging of prebuilt binaries laid out as
+# target/<rust-triple>/release/shopware-lsp[.exe] (see .goreleaser.yaml).
+.PHONY: release-dry-run
+release-dry-run:
+	goreleaser release --snapshot --clean --skip=publish,validate

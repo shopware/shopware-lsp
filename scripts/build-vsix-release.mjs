@@ -2,6 +2,7 @@
 
 import {createHash} from 'node:crypto';
 import {existsSync} from 'node:fs';
+import os from 'node:os';
 import {
   chmod,
   copyFile,
@@ -20,9 +21,12 @@ const repositoryRoot = path.resolve(
 );
 const extensionDirectory = path.join(repositoryRoot, 'editors/vscode');
 const outputDirectory = path.join(repositoryRoot, 'out');
-const goreleaserDirectory = path.join(repositoryRoot, 'dist');
-const crossImage = process.env.GORELEASER_CROSS_IMAGE ||
-  'ghcr.io/shyim/goreleaser-cross:v1.27.0';
+// Release binaries are built natively per Rust target by
+// .github/workflows/build-binaries.yml and staged by
+// scripts/release/stage-binaries.sh as target/<triple>/release/<binary>.
+const targetDirectory = process.env.CARGO_TARGET_DIR
+  ? path.resolve(repositoryRoot, process.env.CARGO_TARGET_DIR)
+  : path.join(repositoryRoot, 'target');
 
 // The VSCode Marketplace and Open VSX only accept numeric major.minor.patch
 // versions; semver pre-release identifiers are rejected at publish time.
@@ -30,10 +34,20 @@ const versionPattern = /^\d+\.\d+\.\d+$/;
 
 const options = new Set(process.argv.slice(2));
 if (options.has('--help')) {
-  console.log('Usage: build-vsix-release.mjs [--pre-release] [--version=<version>]');
+  console.log([
+    'Usage: build-vsix-release.mjs [--pre-release] [--version=<version>] [--local] [--dry-run]',
+    '',
+    'Packages one VSIX per VS Code platform target from prebuilt Rust release',
+    'binaries at target/<rust-triple>/release/shopware-lsp[.exe].',
+    '',
+    '  --local    build only the host target with cargo and package its VSIX',
+    '  --dry-run  check the binaries and print the plan without packaging',
+  ].join('\n'));
   process.exit(0);
 }
 const preRelease = options.delete('--pre-release');
+const local = options.delete('--local');
+const dryRun = options.delete('--dry-run');
 let versionOverride;
 for (const option of options) {
   if (option.startsWith('--version=')) {
@@ -55,16 +69,37 @@ if (!versionPattern.test(version)) {
   throw new Error(`Invalid VSCode extension version: ${version}`);
 }
 
-const targets = [
-  {vsce: 'darwin-x64', build: 'darwin-amd64', binary: 'shopware-lsp'},
-  {vsce: 'darwin-arm64', build: 'darwin-arm64', binary: 'shopware-lsp'},
-  {vsce: 'linux-x64', build: 'linux-amd64', binary: 'shopware-lsp'},
-  {vsce: 'linux-arm64', build: 'linux-arm64', binary: 'shopware-lsp'},
-  {vsce: 'linux-armhf', build: 'linux-armv7', binary: 'shopware-lsp'},
-  {vsce: 'alpine-x64', build: 'linux-amd64', binary: 'shopware-lsp'},
-  {vsce: 'alpine-arm64', build: 'linux-arm64', binary: 'shopware-lsp'},
-  {vsce: 'win32-x64', build: 'windows-amd64', binary: 'shopware-lsp.exe'},
+// The Linux binaries are fully static (glibc, crt-static), so the Alpine
+// packages reuse them, as they reused the static Go builds before.
+const allTargets = [
+  {vsce: 'darwin-x64', triple: 'x86_64-apple-darwin', binary: 'shopware-lsp'},
+  {vsce: 'darwin-arm64', triple: 'aarch64-apple-darwin', binary: 'shopware-lsp'},
+  {vsce: 'linux-x64', triple: 'x86_64-unknown-linux-gnu', binary: 'shopware-lsp'},
+  {vsce: 'linux-arm64', triple: 'aarch64-unknown-linux-gnu', binary: 'shopware-lsp'},
+  {vsce: 'linux-armhf', triple: 'armv7-unknown-linux-gnueabihf', binary: 'shopware-lsp'},
+  {vsce: 'alpine-x64', triple: 'x86_64-unknown-linux-gnu', binary: 'shopware-lsp'},
+  {vsce: 'alpine-arm64', triple: 'aarch64-unknown-linux-gnu', binary: 'shopware-lsp'},
+  {vsce: 'win32-x64', triple: 'x86_64-pc-windows-msvc', binary: 'shopware-lsp.exe'},
 ];
+const staticLinuxTriples = [
+  'x86_64-unknown-linux-gnu',
+  'aarch64-unknown-linux-gnu',
+  'armv7-unknown-linux-gnueabihf',
+];
+
+function hostVsceTarget() {
+  const platform = {darwin: 'darwin', linux: 'linux', win32: 'win32'}[os.platform()];
+  const arch = {x64: 'x64', arm64: 'arm64', arm: 'armhf'}[os.arch()];
+  const target = platform && arch ? `${platform}-${arch}` : undefined;
+  if (!allTargets.some(candidate => candidate.vsce === target)) {
+    throw new Error(`No VSIX target for host ${os.platform()}-${os.arch()}`);
+  }
+  return target;
+}
+
+const targets = local
+  ? allTargets.filter(target => target.vsce === hostVsceTarget())
+  : allTargets;
 
 function run(command, args, options = {}) {
   console.log(`\n> ${command} ${args.join(' ')}`);
@@ -98,41 +133,37 @@ function output(command, args, options = {}) {
   return result.stdout.trim();
 }
 
-function resolveArtifactPath(artifactPath) {
-  return path.isAbsolute(artifactPath)
-    ? artifactPath
-    : path.resolve(repositoryRoot, artifactPath);
+function binaryPath(target) {
+  // A local build uses cargo's host layout, without a triple directory.
+  return local
+    ? path.join(targetDirectory, 'release', target.binary)
+    : path.join(targetDirectory, target.triple, 'release', target.binary);
 }
 
-async function loadBinaries() {
-  const manifestPath = path.join(goreleaserDirectory, 'artifacts.json');
-  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
-  const artifacts = Array.isArray(manifest) ? manifest : manifest.artifacts;
-  if (!Array.isArray(artifacts)) {
-    throw new Error(`Invalid GoReleaser artifact manifest: ${manifestPath}`);
-  }
-
+function loadBinaries() {
   const binaries = new Map();
-  for (const artifact of artifacts) {
-    if (artifact.type !== 'Binary' || !artifact.extra?.ID) {
-      continue;
-    }
-    binaries.set(artifact.extra.ID, resolveArtifactPath(artifact.path));
-  }
   for (const target of targets) {
-    const binary = binaries.get(target.build);
-    if (!binary || !existsSync(binary)) {
-      throw new Error(`GoReleaser did not produce ${target.build}`);
+    const binary = binaryPath(target);
+    if (!existsSync(binary)) {
+      throw new Error(
+        `Missing release binary for ${target.vsce}: ${binary}. ` +
+        'Stage the build-binaries artifacts with scripts/release/stage-binaries.sh ' +
+        'or pass --local to build the host target.',
+      );
     }
+    binaries.set(target.vsce, binary);
   }
   return binaries;
 }
 
 function assertStaticLinuxBinaries(binaries) {
-  for (const build of ['linux-amd64', 'linux-arm64', 'linux-armv7']) {
-    const description = output('file', ['-b', binaries.get(build)]);
-    if (!description.includes('statically linked')) {
-      throw new Error(`${build} is not statically linked: ${description}`);
+  if (local) return;
+  for (const triple of staticLinuxTriples) {
+    const target = targets.find(candidate => candidate.triple === triple);
+    const description = output('file', ['-b', binaries.get(target.vsce)]);
+    if (!description.includes('statically linked') &&
+      !description.includes('static-pie linked')) {
+      throw new Error(`${triple} is not statically linked: ${description}`);
     }
   }
 }
@@ -142,32 +173,28 @@ async function checksum(filePath) {
   return createHash('sha256').update(content).digest('hex');
 }
 
-function isExactTag() {
-  const result = spawnSync(
-    'git',
-    ['describe', '--tags', '--exact-match'],
-    {cwd: repositoryRoot, stdio: 'pipe'},
-  );
-  return result.status === 0;
-}
-
 await rm(outputDirectory, {recursive: true, force: true});
 await mkdir(outputDirectory, {recursive: true});
-// On an exact tag, build through the release pipe (without publishing) so
-// binaries embed the tagged version. GoReleaser rejects a dirty worktree in
-// release mode, so the version override is applied only after this step.
-// Untagged checkouts (local development) fall back to a snapshot build.
-const goreleaserArguments = isExactTag()
-  ? ['release', '--clean', '--skip=validate', '--skip=publish', '--skip=nfpm']
-  : ['build', '--clean', '--snapshot', '--skip=validate'];
-run('docker', [
-  'run',
-  '--rm',
-  '--volume', `${repositoryRoot}:/go/src/shopware-lsp`,
-  '--workdir', '/go/src/shopware-lsp',
-  crossImage,
-  ...goreleaserArguments,
-]);
+if (local) {
+  // Embed the package version, as the CI build embeds the tag.
+  run(
+    'cargo',
+    ['build', '--locked', '--release', '-p', 'swlsp-cli', '--bin', 'shopware-lsp'],
+    {env: {...process.env, SHOPWARE_LSP_VERSION: version}},
+  );
+}
+const binaries = loadBinaries();
+assertStaticLinuxBinaries(binaries);
+if (dryRun) {
+  for (const target of targets) {
+    console.log(
+      `${target.vsce}: ${binaries.get(target.vsce)} -> ` +
+      `shopware-lsp-${version}${preRelease ? '-pre-release' : ''}-${target.vsce}.vsix`,
+    );
+  }
+  console.log('\nDry run: no VSIX packages were created.');
+  process.exit(0);
+}
 if (versionOverride) {
   run(
     'npm',
@@ -177,8 +204,6 @@ if (versionOverride) {
 }
 run('npm', ['run', 'package'], {cwd: extensionDirectory});
 
-const binaries = await loadBinaries();
-assertStaticLinuxBinaries(binaries);
 const stagedUnixBinary = path.join(extensionDirectory, 'shopware-lsp');
 const stagedWindowsBinary = path.join(extensionDirectory, 'shopware-lsp.exe');
 const packaged = [];
@@ -188,7 +213,7 @@ try {
     const stagedBinary = path.join(extensionDirectory, target.binary);
     await rm(stagedUnixBinary, {force: true});
     await rm(stagedWindowsBinary, {force: true});
-    await copyFile(binaries.get(target.build), stagedBinary);
+    await copyFile(binaries.get(target.vsce), stagedBinary);
     if (target.binary === 'shopware-lsp') {
       await chmod(stagedBinary, 0o755);
     }

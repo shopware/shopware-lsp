@@ -1,0 +1,131 @@
+name: Build release binaries
+
+# Builds the shipped Rust server (crates/cli, binary shopware-lsp) natively for
+# every release target and uploads one artifact per Rust target triple, named
+# server-<triple>. GoReleaser (.goreleaser.yaml) and the VSIX packager
+# (scripts/build-vsix-release.mjs) consume them after
+# scripts/release/stage-binaries.sh lays them out under target/.
+#
+# Coverage matches the former Go release builds:
+# - Linux amd64/arm64/armv7: glibc with crt-static, i.e. fully static binaries
+#   that also run on Alpine/musl (the alpine-* VSIX targets reuse them).
+# - macOS x86_64 and arm64, built on an Apple Silicon runner.
+# - Windows x86_64 (MSVC, static CRT so no VC++ redistributable is needed).
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version embedded in the binary (SHOPWARE_LSP_VERSION)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+            static: true
+            smoke: true
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            static: true
+            smoke: true
+          - target: armv7-unknown-linux-gnueabihf
+            runner: ubuntu-24.04
+            static: true
+            smoke: false
+          - target: aarch64-apple-darwin
+            runner: macos-15
+            smoke: true
+          - target: x86_64-apple-darwin
+            runner: macos-15
+            smoke: false
+          - target: x86_64-pc-windows-msvc
+            runner: windows-2025
+            smoke: true
+    env:
+      SHOPWARE_LSP_VERSION: ${{ inputs.version }}
+      # Keep symbol names for panic backtraces; drop DWARF line tables to keep
+      # the binaries (and VSIX downloads) small, as Go's -s -w did.
+      CARGO_PROFILE_RELEASE_STRIP: debuginfo
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+crt-static
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+crt-static
+      CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_RUSTFLAGS: -C target-feature=+crt-static
+      CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: arm-linux-gnueabihf-gcc
+      CC_armv7_unknown_linux_gnueabihf: arm-linux-gnueabihf-gcc
+      AR_armv7_unknown_linux_gnueabihf: arm-linux-gnueabihf-ar
+      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
+
+      - name: Install the armhf cross toolchain
+        if: matrix.target == 'armv7-unknown-linux-gnueabihf'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
+
+      - name: Set up Rust
+        uses: $/.github/actions/setup-rust
+        with:
+          targets: ${{ matrix.target }}
+          cache-key: release-${{ matrix.target }}
+
+      - name: Build
+        shell: bash
+        # The dist profile strips symbols and debug info (see Cargo.toml).
+        run: cargo build --locked --profile dist -p swlsp-cli --bin shopware-lsp --target "${{ matrix.target }}"
+
+      - name: Locate binary
+        id: binary
+        shell: bash
+        run: |
+          name=shopware-lsp
+          case "${{ matrix.target }}" in *-windows-*) name=shopware-lsp.exe ;; esac
+          path="target/${{ matrix.target }}/dist/$name"
+          test -s "$path"
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+
+      - name: Require a static Linux binary
+        if: matrix.static
+        env:
+          BINARY: ${{ steps.binary.outputs.path }}
+        run: |
+          description="$(file -b "$BINARY")"
+          echo "$description"
+          case "$description" in
+            *"statically linked"*|*"static-pie linked"*) ;;
+            *) echo "::error::$BINARY is not statically linked"; exit 1 ;;
+          esac
+
+      - name: Smoke test
+        if: matrix.smoke
+        shell: bash
+        env:
+          BINARY: ${{ steps.binary.outputs.path }}
+        run: |
+          output="$("$BINARY" version)"
+          echo "$output"
+          case "$output" in
+            *"$SHOPWARE_LSP_VERSION"*) ;;
+            *) echo "::error::binary does not report version $SHOPWARE_LSP_VERSION"; exit 1 ;;
+          esac
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: server-${{ matrix.target }}
+          path: ${{ steps.binary.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7

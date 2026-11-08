@@ -1,4 +1,4 @@
-name: Go Tests
+name: Tests
 
 on:
   workflow_call:
@@ -10,10 +10,18 @@ on:
       - 'editors/zed/**'
       - 'go.mod'
       - 'go.sum'
-      - 'mise.toml'
+      - '**.rs'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'Makefile'
+      - 'LICENSE'
+      - 'THIRD_PARTY_NOTICES.md'
       - '.golangci.yml'
       - '.github/workflows/tests.yml'
       - '.github/actions/setup-go/**'
+      - '.github/actions/setup-rust/**'
   pull_request:
     branches: [ main, feat/next-gen ]
     paths:
@@ -22,10 +30,18 @@ on:
       - 'editors/zed/**'
       - 'go.mod'
       - 'go.sum'
-      - 'mise.toml'
+      - '**.rs'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'Makefile'
+      - 'LICENSE'
+      - 'THIRD_PARTY_NOTICES.md'
       - '.golangci.yml'
       - '.github/workflows/tests.yml'
       - '.github/actions/setup-go/**'
+      - '.github/actions/setup-rust/**'
 
 jobs:
   test:
@@ -39,6 +55,51 @@ jobs:
         UNIT_RESULT: ${{ needs.unit.result }}
         RACE_RESULT: ${{ needs.race.result }}
       run: test "$UNIT_RESULT" = success && test "$RACE_RESULT" = success
+
+  rust-lint:
+    name: Rust format and lint
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7.0.1
+
+    - name: Set up Rust
+      uses: $/.github/actions/setup-rust
+      with:
+        cache-key: lint
+
+    - name: Check formatting
+      run: cargo fmt --all --check
+
+    - name: Run clippy
+      run: cargo clippy --locked --workspace --all-targets -- -D warnings
+
+  rust:
+    name: Rust tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7.0.1
+
+    - name: Set up Rust
+      uses: $/.github/actions/setup-rust
+      with:
+        cache-key: test
+
+    - name: Run tests
+      # Doc-tests are skipped (there are none); see RUST_TEST_TARGETS in the
+      # Makefile.
+      run: cargo test --workspace --locked --lib --bins --tests --examples
+
+    - name: Compile real-world integration suite
+      run: make rust-test-integration-compile
+
+    - name: Build the shipped server
+      run: cargo build --locked --release -p swlsp-cli --bin shopware-lsp
 
   unit:
     name: Go tests and build
@@ -136,15 +197,18 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v7.0.1
 
-    - name: Set up Go
-      uses: $/.github/actions/setup-go
-
-    - name: Install pinned Rust toolchain and WASM target
-      run: rustup show
+    - name: Install pinned Rust toolchains and WASM target
+      # editors/zed pins its own toolchain with the wasm32-wasip2 target; the
+      # contract check builds the server with the root toolchain.
+      run: |
+        rustup show
+        (cd ../.. && rustup toolchain install)
 
     - uses: Swatinem/rust-cache@v2.9.3
       with:
-        workspaces: editors/zed
+        workspaces: |
+          editors/zed
+          .
 
     - name: Check formatting and lint
       run: |
@@ -167,7 +231,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [test, lint, vscode, zed]
+    needs: [test, lint, rust-lint, rust, vscode, zed]
     if: ${{ always() }}
     steps:
     # Preserve the existing required check while building in the unit job,
@@ -175,4 +239,4 @@ jobs:
     - name: Require all checks
       env:
         RESULTS: ${{ join(needs.*.result, ',') }}
-      run: test "$RESULTS" = success,success,success,success
+      run: test "$RESULTS" = success,success,success,success,success,success

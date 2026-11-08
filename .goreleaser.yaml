@@ -1,124 +1,41 @@
 version: 2
+# The shipped server is Rust. Release binaries are compiled natively per target
+# by .github/workflows/build-binaries.yml and laid out as
+# target/<rust-triple>/release/shopware-lsp[.exe] before GoReleaser runs.
+# GoReleaser's Rust builder then only collects them: `tool` is a no-op that
+# fails when a prebuilt binary is missing, so GoReleaser never compiles
+# anything. Archive, package, checksum and Homebrew names are unchanged from
+# the former Go builds (GoReleaser maps the triples to the same os/arch,
+# including armv7 -> linux_arm.zip, armhf.deb, armv7.apk, armv7hl.rpm; this
+# needs GoReleaser >= 2.20).
+project_name: shopware-lsp
 builds:
-  - id: darwin-amd64
-    main: ./
+  - id: shopware-lsp
+    builder: rust
     binary: shopware-lsp
-    goos:
-      - darwin
-    goarch:
-      - amd64
-    goamd64:
-      - v3
-    env:
-      - PKG_CONFIG_SYSROOT_DIR=/sysroot/macos/amd64
-      - PKG_CONFIG_PATH=/sysroot/macos/amd64/usr/local/lib/pkgconfig
-      - CC=o64-clang
-      - CXX=o64-clang++
-      - CGO_ENABLED=1
-      - GOEXPERIMENT=simd
-    ldflags:
-      - -s -w -X main.version={{.Version}}
-  - id: darwin-arm64
-    main: ./
-    binary: shopware-lsp
-    goos:
-      - darwin
-    goarch:
-      - arm64
-    goarm64:
-      - v8.4,crypto
-    env:
-      - PKG_CONFIG_SYSROOT_DIR=/sysroot/macos/arm64
-      - PKG_CONFIG_PATH=/sysroot/macos/arm64/usr/local/lib/pkgconfig
-      - CC=oa64-clang
-      - CXX=oa64-clang++
-      - CGO_ENABLED=1
-      - GOEXPERIMENT=simd
-    ldflags:
-      - -s -w -X main.version={{.Version}}
-  - id: linux-amd64
-    main: ./
-    binary: shopware-lsp
-    goos:
-      - linux
-    goarch:
-      - amd64
-    goamd64:
-      - v3
-    ldflags:
-      - -s -w -linkmode external -extldflags -static -X main.version={{.Version}}
-    env:
-      - PKG_CONFIG_SYSROOT_DIR=/sysroot/linux/amd64
-      - PKG_CONFIG_PATH=/sysroot/linux/amd64/usr/local/lib/pkgconfig
-      - CC=x86_64-linux-gnu-gcc
-      - CXX=x86_64-linux-gnu-g++
-      - CGO_ENABLED=1
-      - GOEXPERIMENT=simd
-  - id: linux-arm64
-    main: ./
-    binary: shopware-lsp
-    goos:
-      - linux
-    goarch:
-      - arm64
-    ldflags:
-      - -s -w -linkmode external -extldflags -static -X main.version={{.Version}}
-    env:
-      - PKG_CONFIG_SYSROOT_DIR=/sysroot/linux/arm64
-      - PKG_CONFIG_PATH=/sysroot/linux/arm64/usr/local/lib/pkgconfig
-      - CC=aarch64-linux-gnu-gcc
-      - CXX=aarch64-linux-gnu-g++
-      - CGO_ENABLED=1
-      - GOEXPERIMENT=simd
-  - id: linux-armv7
-    main: ./
-    binary: shopware-lsp
-    goos:
-      - linux
-    goarch:
-      - arm
-    goarm:
-      - "7"
-    ldflags:
-      - -s -w -linkmode external -extldflags -static -X main.version={{.Version}}
-    env:
-      - CC=arm-linux-gnueabihf-gcc
-      - CXX=arm-linux-gnueabihf-g++
-      - CGO_ENABLED=1
-  - id: windows-amd64
-    main: ./
-    binary: shopware-lsp
-    goos:
-      - windows
-    goarch:
-      - amd64
-    goamd64:
-      - v3
-    ldflags:
-      - -s -w -X main.version={{.Version}}
-    env:
-      - CC=x86_64-w64-mingw32-gcc
-      - CXX=x86_64-w64-mingw32-g++
-      - CGO_ENABLED=1
-      - GOEXPERIMENT=simd
+    tool: ./scripts/release/prebuilt-cargo.sh
+    command: build
+    flags:
+      - --release
+      - --package=swlsp-cli
+    targets:
+      - x86_64-apple-darwin
+      - aarch64-apple-darwin
+      - x86_64-unknown-linux-gnu
+      - aarch64-unknown-linux-gnu
+      - armv7-unknown-linux-gnueabihf
+      - x86_64-pc-windows-msvc
 archives:
   - id: golang-cross
     ids:
-      - darwin-amd64
-      - darwin-arm64
-      - linux-amd64
-      - linux-arm64
-      - linux-armv7
-      - windows-amd64
+      - shopware-lsp
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [ 'zip' ]
     wrap_in_directory: false
 nfpms:
   - id: linux-packages
     ids:
-      - linux-amd64
-      - linux-arm64
-      - linux-armv7
+      - shopware-lsp
     package_name: shopware-lsp
     file_name_template: "{{ .ConventionalFileName }}"
     vendor: shopware AG

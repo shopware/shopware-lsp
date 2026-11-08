@@ -25,16 +25,39 @@ jobs:
           minor="$(echo "$TAG" | cut -d. -f2)"
           echo "pre-release=$((minor % 2))" >> "$GITHUB_OUTPUT"
 
-  release-lsp:
-    name: Release LSP
+  binaries:
+    name: Build release binaries
     needs: route
     if: needs.route.outputs.pre-release == '0'
+    uses: ./.github/workflows/build-binaries.yml
+    with:
+      version: ${{ github.ref_name }}
+
+  release-lsp:
+    name: Release LSP
+    needs: binaries
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
+
+      - name: Download release binaries
+        uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: server-*
+          path: ${{ runner.temp }}/binaries
+
+      - name: Stage release binaries
+        run: scripts/release/stage-binaries.sh "$RUNNER_TEMP/binaries"
+
+      - name: Install GoReleaser
+        run: scripts/release/install-goreleaser.sh "$RUNNER_TEMP/bin"
+
+      - name: Install the pinned Rust toolchain
+        # GoReleaser's Rust builder runs `rustup target add` for each target.
+        run: rustup toolchain install
 
       - name: Gather Homebrew Token
         uses: octo-sts/action@v1.1.1
@@ -43,8 +66,11 @@ jobs:
           scope: shopware/homebrew-tap
           identity: lsp
 
+      # Packages the prebuilt Rust binaries into the same zip archives,
+      # deb/rpm/apk packages, checksums.txt and Homebrew cask as before, as a
+      # draft release.
       - name: Release
-        run: make release
+        run: '"$RUNNER_TEMP/bin/goreleaser" release --clean'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.sts-shopware.outputs.token }}

@@ -53,3 +53,34 @@ jobs:
         env:
           # Go on arm64 needs frame-pointer unwinding for complete flamegraphs.
           CODSPEED_PERF_UNWINDING_MODE: fp
+
+  rust-benchmarks:
+    name: Rust benchmarks
+    # Same fixed instance type as the Go suite so results are comparable.
+    runs-on: runs-on=${{ github.run_id }}/cpu=2/family=m8g.large/image=ubuntu24-full-arm64/spot=price-capacity-optimized
+    timeout-minutes: 25
+    permissions:
+      contents: read # required for actions/checkout
+      id-token: write # required for OIDC authentication with CodSpeed
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Rust
+        uses: $/.github/actions/setup-rust
+        with:
+          cache-key: codspeed
+
+      - name: Install cargo-codspeed
+        run: cargo install --locked cargo-codspeed --version 6.0.0
+
+      - name: Build the benchmarks
+        # Only swlsp-bench defines benchmarks (crates/bench mirrors the Go suite).
+        run: cargo codspeed build -p swlsp-bench
+
+      - name: Run the benchmarks
+        uses: CodSpeedHQ/action@v5.6.0
+        with:
+          mode: walltime
+          run: cargo codspeed run -p swlsp-bench

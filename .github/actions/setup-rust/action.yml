@@ -1,0 +1,31 @@
+name: Set up the pinned Rust toolchain
+description: Install the toolchain from rust-toolchain.toml, extra targets, and a Cargo cache
+inputs:
+  targets:
+    description: Space-separated extra Rust targets to install
+    required: false
+    default: ''
+  cache-key:
+    description: Extra key that separates caches of jobs building different things
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Install toolchain
+      shell: bash
+      env:
+        TARGETS: ${{ inputs.targets }}
+      run: |
+        # rust-toolchain.toml at the repository root pins the channel and
+        # components; this installs exactly that toolchain.
+        rustup toolchain install
+        for target in $TARGETS; do
+          rustup target add "$target"
+        done
+        rustc --version
+        cargo --version
+
+    - uses: Swatinem/rust-cache@v2.9.3
+      with:
+        key: ${{ inputs.cache-key }}
