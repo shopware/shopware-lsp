@@ -1,0 +1,53 @@
+# cargo-about configuration for THIRD_PARTY_NOTICES.md (`make notices`).
+#
+# Only crates linked into the shipped `shopware-lsp` binary are listed:
+# build scripts, proc macros' build dependencies and dev-dependencies are not
+# distributed. `targets` covers every release target so platform-specific
+# dependencies (mimalloc on musl, windows-sys, ...) are included.
+#
+# `accepted` lists the licenses the dependency tree actually uses, in order of
+# preference for `OR` expressions. Adding a license here is a decision: do not
+# add copyleft or unknown licenses without review. The less common ones:
+# - CDLA-Permissive-2.0: webpki-roots (Mozilla's CA certificate data);
+# - CC0-1.0: notify;
+# - bzip2-1.0.6: libbz2-rs-sys (BSD-style; altered versions must be marked).
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CDLA-Permissive-2.0",
+    "CC0-1.0",
+    "bzip2-1.0.6",
+]
+targets = [
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "armv7-unknown-linux-musleabihf",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+
+# ring's top-level LICENSE only points at the real license files, and the
+# scanner otherwise also picks up every ISC header in its sources. Bumping
+# ring changes the checksums; update them with `sha256sum` on the new files.
+[ring]
+[ring.clarify]
+license = "Apache-2.0 AND ISC"
+
+[[ring.clarify.files]]
+path = "LICENSE-other-bits"
+license = "ISC"
+checksum = "f025ccfb7dfb6bdfedc75ca0f67acc69e6fb4998143d834f7c2f38a29989680f"
+
+[[ring.clarify.files]]
+path = "LICENSE-BoringSSL"
+license = "Apache-2.0"
+checksum = "005fc765ddc5115da796cca915baa9557abae13ff35e0a47c47affc56f6c414d"

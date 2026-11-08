@@ -18,6 +18,8 @@ on:
       - 'Makefile'
       - 'LICENSE'
       - 'THIRD_PARTY_NOTICES.md'
+      - 'about.toml'
+      - 'about.hbs'
       - '.golangci.yml'
       - '.github/workflows/tests.yml'
       - '.github/actions/setup-go/**'
@@ -38,6 +40,8 @@ on:
       - 'Makefile'
       - 'LICENSE'
       - 'THIRD_PARTY_NOTICES.md'
+      - 'about.toml'
+      - 'about.hbs'
       - '.golangci.yml'
       - '.github/workflows/tests.yml'
       - '.github/actions/setup-go/**'
@@ -73,6 +77,27 @@ jobs:
 
     - name: Run clippy
       run: cargo clippy --locked --workspace --all-targets -- -D warnings
+
+  notices:
+    name: Third-party notices
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7.0.1
+
+    - name: Set up Rust
+      uses: $/.github/actions/setup-rust
+      with:
+        cache-key: notices
+
+    - name: Install cargo-about
+      uses: taiki-e/install-action@v2.87.31
+      with:
+        tool: cargo-about@0.9.2
+
+    - name: Require an up-to-date THIRD_PARTY_NOTICES.md
+      # Regenerate with `make notices` after changing dependencies.
+      run: make notices-check
 
   rust:
     name: Rust tests (${{ matrix.os }})

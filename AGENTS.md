@@ -61,6 +61,7 @@ make rust-test                   # cargo test --locked --workspace (no doc-tests
 make rust-clippy                 # cargo clippy --workspace --all-targets -D warnings
 make rust-fmt-check              # cargo fmt --all --check
 make rust-test-integration-compile  # compile/lint the opt-in real-world suite
+make notices                     # regenerate THIRD_PARTY_NOTICES.md (cargo-about 0.9.2) after dependency changes
 
 # Go reference oracle
 make go-build                    # go build ./...
