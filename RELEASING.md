@@ -44,11 +44,15 @@ uploads it as an artifact named `server-<triple>`:
 |---|---|---|---|
 | `x86_64-apple-darwin` | `macos-15` (cross from arm64) | `darwin_amd64` | |
 | `aarch64-apple-darwin` | `macos-15` | `darwin_arm64` | |
-| `x86_64-unknown-linux-gnu` | `ubuntu-24.04` | `linux_amd64` | glibc `crt-static`, runs on Alpine |
-| `aarch64-unknown-linux-gnu` | `ubuntu-24.04-arm` | `linux_arm64` | glibc `crt-static`, runs on Alpine |
-| `armv7-unknown-linux-gnueabihf` | `ubuntu-24.04` + `gcc-arm-linux-gnueabihf` | `linux_arm` | glibc `crt-static` |
+| `x86_64-unknown-linux-musl` | `ubuntu-24.04` + `musl-tools` | `linux_amd64` | static musl + mimalloc, runs on Alpine |
+| `aarch64-unknown-linux-musl` | `ubuntu-24.04-arm` + `musl-tools` | `linux_arm64` | static musl + mimalloc, runs on Alpine |
+| `armv7-unknown-linux-musleabihf` | `ubuntu-24.04` + `cargo-zigbuild` | `linux_arm` | static musl + mimalloc |
 | `x86_64-pc-windows-msvc` | `windows-2025` | `windows_amd64` | static CRT |
 
+- the Linux binaries are fully static musl builds. musl's own resolver works
+  without NSS (a static glibc crashes in `getaddrinfo` when it loads the
+  host's NSS modules), and the binary replaces musl's slow multi-threaded
+  malloc with mimalloc (`crates/cli/src/main.rs`)
 - the tag is embedded at compile time through `SHOPWARE_LSP_VERSION`
   (`option_env!`, `dev` for local builds)
 - release binaries keep symbol names but drop DWARF line tables
@@ -71,11 +75,11 @@ uploads it as an artifact named `server-<triple>`:
 |---|---|---|
 | `darwin-x64` | `x86_64-apple-darwin` | `shopware-lsp` |
 | `darwin-arm64` | `aarch64-apple-darwin` | `shopware-lsp` |
-| `linux-x64` | `x86_64-unknown-linux-gnu` | `shopware-lsp` |
-| `linux-arm64` | `aarch64-unknown-linux-gnu` | `shopware-lsp` |
-| `linux-armhf` | `armv7-unknown-linux-gnueabihf` | `shopware-lsp` |
-| `alpine-x64` | `x86_64-unknown-linux-gnu` (reused) | `shopware-lsp` |
-| `alpine-arm64` | `aarch64-unknown-linux-gnu` (reused) | `shopware-lsp` |
+| `linux-x64` | `x86_64-unknown-linux-musl` | `shopware-lsp` |
+| `linux-arm64` | `aarch64-unknown-linux-musl` | `shopware-lsp` |
+| `linux-armhf` | `armv7-unknown-linux-musleabihf` | `shopware-lsp` |
+| `alpine-x64` | `x86_64-unknown-linux-musl` (reused) | `shopware-lsp` |
+| `alpine-arm64` | `aarch64-unknown-linux-musl` (reused) | `shopware-lsp` |
 | `win32-x64` | `x86_64-pc-windows-msvc` | `shopware-lsp.exe` |
 
 The binary stays at the extension root (`extension/shopware-lsp[.exe]` inside

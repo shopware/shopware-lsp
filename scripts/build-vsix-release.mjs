@@ -69,22 +69,22 @@ if (!versionPattern.test(version)) {
   throw new Error(`Invalid VSCode extension version: ${version}`);
 }
 
-// The Linux binaries are fully static (glibc, crt-static), so the Alpine
+// The Linux binaries are fully static (musl), so the Alpine
 // packages reuse them, as they reused the static Go builds before.
 const allTargets = [
   {vsce: 'darwin-x64', triple: 'x86_64-apple-darwin', binary: 'shopware-lsp'},
   {vsce: 'darwin-arm64', triple: 'aarch64-apple-darwin', binary: 'shopware-lsp'},
-  {vsce: 'linux-x64', triple: 'x86_64-unknown-linux-gnu', binary: 'shopware-lsp'},
-  {vsce: 'linux-arm64', triple: 'aarch64-unknown-linux-gnu', binary: 'shopware-lsp'},
-  {vsce: 'linux-armhf', triple: 'armv7-unknown-linux-gnueabihf', binary: 'shopware-lsp'},
-  {vsce: 'alpine-x64', triple: 'x86_64-unknown-linux-gnu', binary: 'shopware-lsp'},
-  {vsce: 'alpine-arm64', triple: 'aarch64-unknown-linux-gnu', binary: 'shopware-lsp'},
+  {vsce: 'linux-x64', triple: 'x86_64-unknown-linux-musl', binary: 'shopware-lsp'},
+  {vsce: 'linux-arm64', triple: 'aarch64-unknown-linux-musl', binary: 'shopware-lsp'},
+  {vsce: 'linux-armhf', triple: 'armv7-unknown-linux-musleabihf', binary: 'shopware-lsp'},
+  {vsce: 'alpine-x64', triple: 'x86_64-unknown-linux-musl', binary: 'shopware-lsp'},
+  {vsce: 'alpine-arm64', triple: 'aarch64-unknown-linux-musl', binary: 'shopware-lsp'},
   {vsce: 'win32-x64', triple: 'x86_64-pc-windows-msvc', binary: 'shopware-lsp.exe'},
 ];
 const staticLinuxTriples = [
-  'x86_64-unknown-linux-gnu',
-  'aarch64-unknown-linux-gnu',
-  'armv7-unknown-linux-gnueabihf',
+  'x86_64-unknown-linux-musl',
+  'aarch64-unknown-linux-musl',
+  'armv7-unknown-linux-musleabihf',
 ];
 
 function hostVsceTarget() {

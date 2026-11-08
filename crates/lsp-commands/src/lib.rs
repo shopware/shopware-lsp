@@ -7,8 +7,6 @@
 //! returned to the client.
 
 mod console;
-#[cfg(target_os = "linux")]
-mod dns;
 mod extension;
 mod pretty;
 mod sjson;

@@ -7,8 +7,13 @@ name: Build release binaries
 # scripts/release/stage-binaries.sh lays them out under target/.
 #
 # Coverage matches the former Go release builds:
-# - Linux amd64/arm64/armv7: glibc with crt-static, i.e. fully static binaries
-#   that also run on Alpine/musl (the alpine-* VSIX targets reuse them).
+# - Linux amd64/arm64/armv7: musl, i.e. fully static binaries that run on any
+#   distribution including Alpine (the alpine-* VSIX targets reuse them). The
+#   std resolver works in a static musl binary, unlike static glibc whose
+#   getaddrinfo dlopens the host's NSS modules. The binary uses mimalloc
+#   instead of musl's malloc (crates/cli/src/main.rs). The bundled SQLite and
+#   mimalloc are C, so amd64/arm64 build natively with musl-tools' musl-gcc,
+#   and armv7 cross-compiles with cargo-zigbuild (zig cc ships musl headers).
 # - macOS x86_64 and arm64, built on an Apple Silicon runner.
 # - Windows x86_64 (MSVC, static CRT so no VC++ redistributable is needed).
 
@@ -32,17 +37,20 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
+          - target: x86_64-unknown-linux-musl
             runner: ubuntu-24.04
             static: true
+            musl-tools: true
             smoke: true
-          - target: aarch64-unknown-linux-gnu
+          - target: aarch64-unknown-linux-musl
             runner: ubuntu-24.04-arm
             static: true
+            musl-tools: true
             smoke: true
-          - target: armv7-unknown-linux-gnueabihf
+          - target: armv7-unknown-linux-musleabihf
             runner: ubuntu-24.04
             static: true
+            zigbuild: true
             smoke: false
           - target: aarch64-apple-darwin
             runner: macos-15
@@ -58,23 +66,34 @@ jobs:
       # Keep symbol names for panic backtraces; drop DWARF line tables to keep
       # the binaries (and VSIX downloads) small, as Go's -s -w did.
       CARGO_PROFILE_RELEASE_STRIP: debuginfo
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+crt-static
-      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+crt-static
-      CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_RUSTFLAGS: -C target-feature=+crt-static
-      CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: arm-linux-gnueabihf-gcc
-      CC_armv7_unknown_linux_gnueabihf: arm-linux-gnueabihf-gcc
-      AR_armv7_unknown_linux_gnueabihf: arm-linux-gnueabihf-ar
+      # musl targets link statically by default. musl-tools installs one
+      # musl-gcc wrapper for the runner's own architecture; cc-rs would look
+      # for aarch64-linux-musl-gcc on arm64.
+      CC_x86_64_unknown_linux_musl: musl-gcc
+      CC_aarch64_unknown_linux_musl: musl-gcc
       CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
 
-      - name: Install the armhf cross toolchain
-        if: matrix.target == 'armv7-unknown-linux-gnueabihf'
+      - name: Install musl-gcc
+        if: matrix.musl-tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
+          sudo apt-get install -y --no-install-recommends musl-tools
+
+      - name: Install Zig
+        if: matrix.zigbuild
+        uses: mlugg/setup-zig@v2.2.1
+        with:
+          version: 0.16.0
+          use-cache: false
+
+      - name: Install cargo-zigbuild
+        if: matrix.zigbuild
+        uses: taiki-e/install-action@v2.87.31
+        with:
+          tool: cargo-zigbuild@0.24.0
 
       - name: Set up Rust
         uses: $/.github/actions/setup-rust
@@ -85,7 +104,9 @@ jobs:
       - name: Build
         shell: bash
         # The dist profile strips symbols and debug info (see Cargo.toml).
-        run: cargo build --locked --profile dist -p swlsp-cli --bin shopware-lsp --target "${{ matrix.target }}"
+        env:
+          CARGO_BUILD_COMMAND: ${{ matrix.zigbuild && 'zigbuild' || 'build' }}
+        run: cargo "$CARGO_BUILD_COMMAND" --locked --profile dist -p swlsp-cli --bin shopware-lsp --target "${{ matrix.target }}"
 
       - name: Locate binary
         id: binary

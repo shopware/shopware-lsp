@@ -283,11 +283,9 @@ fn github_content(relative: &str, version: &str) -> Result<String, String> {
     let url = format!(
         "https://raw.githubusercontent.com/shopware/shopware/{version}/src/Storefront/{relative}"
     );
-    let builder = ureq::AgentBuilder::new().timeout(std::time::Duration::from_secs(30));
-    // Static Linux builds must not resolve through glibc's NSS (see `dns`).
-    #[cfg(target_os = "linux")]
-    let builder = builder.resolver(crate::dns::Resolver);
-    let agent = builder.build();
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(30))
+        .build();
     let response = match agent.get(&url).call() {
         Ok(response) => response,
         Err(ureq::Error::Status(status, _)) => {

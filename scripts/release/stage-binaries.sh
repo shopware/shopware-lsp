@@ -17,9 +17,9 @@ target_dir="${CARGO_TARGET_DIR:-$repository_root/target}"
 expected=(
   x86_64-apple-darwin
   aarch64-apple-darwin
-  x86_64-unknown-linux-gnu
-  aarch64-unknown-linux-gnu
-  armv7-unknown-linux-gnueabihf
+  x86_64-unknown-linux-musl
+  aarch64-unknown-linux-musl
+  armv7-unknown-linux-musleabihf
   x86_64-pc-windows-msvc
 )
 

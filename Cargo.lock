@@ -964,6 +964,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
+name = "libmimalloc-sys"
+version = "0.1.49"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a45a52f43e1c16f667ccfe4dd8c85b7f7c204fd5e3bf46c5b0db9a5c3c0b8e9"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "libsqlite3-sys"
 version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1049,6 +1058,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b0ca1155a9ecc25aa12e8313a119f32edf0255fea2f44839c4ac0a12b2ac157"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "mimalloc"
+version = "0.1.52"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d4139bb28d14ad1facf21d5eb8825051b326e172d216b39f6d31df53cc97862"
+dependencies = [
+ "libmimalloc-sys",
 ]
 
 [[package]]
@@ -1671,15 +1689,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "simple-dns"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f6dbb5d714bdbc8d8f9d0f556c4e914384b794af849092033513f0898245f88"
-dependencies = [
- "bitflags 2.13.2",
-]
-
-[[package]]
 name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1888,6 +1897,7 @@ dependencies = [
  "humantime",
  "libc",
  "log",
+ "mimalloc",
  "pprof",
  "regex",
  "serde",
@@ -2219,7 +2229,6 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
- "simple-dns",
  "swlsp-console",
  "swlsp-extension",
  "swlsp-indexer",

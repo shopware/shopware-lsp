@@ -2,6 +2,12 @@
 
 use std::io::Write;
 
+// musl's malloc takes a global lock and scales poorly across the indexer's
+// threads; the static musl release builds use mimalloc instead.
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 const LICENSE: &str = include_str!("../../../LICENSE");
 const THIRD_PARTY_NOTICES: &str = include_str!("../../../THIRD_PARTY_NOTICES.md");
 
