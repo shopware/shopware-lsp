@@ -208,46 +208,6 @@ fn err_unsafe_is_stable() {
     );
 }
 
-/// Every applicable migration on every Administration template, in a stable
-/// textual format shared with the Go oracle.
-pub(crate) fn dump_migrations(path: &str, source: &str, out: &mut String) {
-    use std::fmt::Write;
-    let parse = swlsp_parser_twig::parse(source);
-    for tag in twigquery::nodes(&parse.root(), &[HTML_TAG]) {
-        let Some(name) = twigquery::nodes(&tag, &[HTML_STARTING_TAG])
-            .first()
-            .and_then(twigquery::html_tag_name)
-        else {
-            continue;
-        };
-        let Some(rule) = rule_for_tag(&name) else {
-            continue;
-        };
-        let start = u32::from(tag.text_range().start());
-        let _ = write!(out, "{path}\t{start}\t{}\t", rule.id);
-        match compile(source, &tag, rule) {
-            Ok(edits) => {
-                for edit in &edits {
-                    let _ = write!(
-                        out,
-                        "[{},{})<{}> ",
-                        u32::from(edit.range.start()),
-                        u32::from(edit.range.end()),
-                        edit.new_text
-                            .replace('\\', "\\\\")
-                            .replace('\n', "\\n")
-                            .replace('\t', "\\t")
-                    );
-                }
-                out.push('\n');
-            }
-            Err(error) => {
-                let _ = writeln!(out, "ERROR unsafe={} {error}", error.is_unsafe());
-            }
-        }
-    }
-}
-
 fn real_world_root() -> std::path::PathBuf {
     std::env::var_os("SHOPWARE_LSP_REAL_WORLD_ROOT")
         .map(std::path::PathBuf::from)
@@ -379,24 +339,4 @@ fn administration_twig_migrations_on_trunk() {
     );
     assert_eq!(all.0, all.1 + all.2);
     eprintln!("total: reported={} fixed={} manual={}", all.0, all.1, all.2);
-}
-
-/// Writes the oracle dump for `SHOPWARE_LSP_TWIGMIGRATION_DUMP` (output path)
-/// over the real-world checkout.
-#[test]
-#[ignore = "differential oracle helper"]
-fn dump_real_world_migrations() {
-    let Some(output) = std::env::var_os("SHOPWARE_LSP_TWIGMIGRATION_DUMP") else {
-        return;
-    };
-    let root = real_world_root();
-    let mut out = String::new();
-    for path in administration_templates(&root) {
-        let Ok(content) = std::fs::read(&path) else {
-            continue;
-        };
-        let source = String::from_utf8_lossy(&content).into_owned();
-        dump_migrations(&path.to_string_lossy(), &source, &mut out);
-    }
-    std::fs::write(output, out).expect("write dump");
 }

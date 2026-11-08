@@ -13,7 +13,8 @@ Before opening this PR:
 - Small fixes (typos, docs) can go straight to a PR.
 - Larger changes (new LSP features, new language/file-type support, changes to
   existing completion or diagnostic behavior) should be discussed in an issue first.
-- Run `go test ./...` and `golangci-lint run ./...` locally.
+- Run `make rust-check` locally (and the VS Code or Zed checks if you changed
+  a client).
 - Add or update tests for bug fixes and new behavior — including fixtures for any
   new Twig/XML/YAML/PHP parsing paths.
 - Note any change to the indexer or its cache format, since it affects startup

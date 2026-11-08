@@ -3,7 +3,7 @@
 This document is the integration contract for replacing the Shopware-specific
 analysis in `shopware6-phpstorm-plugin` with Shopware LSP. The PhpStorm plugin
 should become a thin process and UI adapter. Indexing, parsing, framework
-analysis, diagnostics, navigation, rewriting, and generators remain in the Go
+analysis, diagnostics, navigation, rewriting, and generators remain in the Rust
 server shared by VS Code, the CLI, and MCP.
 
 The implementation described here targets PhpStorm 2026.2. JetBrains documents
@@ -69,7 +69,7 @@ pinned Shopware LSP release asset matching the current OS and architecture,
 verify it against the release `checksums.txt`, store it in an IDE-managed
 versioned cache, and launch only after verification. JetBrains Marketplace
 cannot publish different plugin distributions per OS, so downloading the
-platform binary is preferable to bundling every CGO build in one plugin
+platform binary is preferable to bundling every platform build in one plugin
 ([JetBrains plugin content documentation](https://plugins.jetbrains.com/docs/intellij/plugin-content.html)).
 If no release asset exists for a platform, show a clear unsupported-target
 message and allow selecting a custom executable.

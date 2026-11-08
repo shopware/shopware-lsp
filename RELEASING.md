@@ -34,8 +34,7 @@ Rules that follow from this:
 Every release produces the same set of artifacts, differing only in version,
 pre-release marking, and (for stable) the Homebrew cask:
 
-**Server binaries** (the Rust `swlsp-cli` crate). The Go tree under
-`internal/` is the reference oracle only and is not released.
+**Server binaries** (the Rust `swlsp-cli` crate).
 
 `.github/workflows/build-binaries.yml` compiles each target and uploads it as
 an artifact named `server-<triple>`:
@@ -135,7 +134,7 @@ where publishing credentials live):
    even minor = stable, odd minor = pre-release.
 2. **Make sure `main` is green.** The pre-release pipeline runs the full
    `tests.yml` suite (Rust fmt/clippy/tests on Linux, macOS and Windows, the
-   Go oracle's tests, race tests and lint, VS Code and Zed checks) before
+   third-party notices check, VS Code and Zed checks) before
    packaging. The stable pipeline assumes the tag was validated the same way,
    so run the equivalent locally:
    ```sh
@@ -250,7 +249,7 @@ Notes:
 | `.github/workflows/pre-release.yml` | pre-release pipeline (odd minors, runs `tests.yml` first) |
 | `.github/workflows/build-binaries.yml` | reusable native Rust builds, one `server-<triple>` artifact per target |
 | `.github/workflows/build-vsix.yml` | reusable VSIX build (`version` + `pre-release` inputs) from those artifacts |
-| `.github/workflows/tests.yml` | Rust (Linux/macOS/Windows), Go oracle, race, lint, VS Code, Zed gates |
+| `.github/workflows/tests.yml` | Rust (Linux/macOS/Windows), lint, notices, VS Code, Zed gates |
 | `.github/actions/setup-rust` | installs the `rust-toolchain.toml` toolchain, extra targets, Cargo cache |
 | `scripts/release/stage-binaries.sh` | artifacts → `target/<triple>/release/` |
 | `scripts/release/package-release.sh` | zip archives (glibc and `_musl` Linux builds) and `checksums.txt` |

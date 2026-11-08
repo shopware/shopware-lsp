@@ -8,3 +8,4 @@ node_modules
 /.claude/worktrees/
 **/.claude/settings.local.json
 /target
+__pycache__/

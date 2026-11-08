@@ -66,7 +66,7 @@ These paths are relative to `editors/zed` in the Shopware LSP repository.
 | `src/lib.rs` | The entire extension. Pure helpers, then `impl zed::Extension`, then unit tests |
 | `docs/` | Markdown and JSON schema shown in Zed's context-server UI, embedded via `include_str!` |
 | `scripts/contract-check.py` | Verifies assumptions about Open VSX and the server binary |
-| `build-server.sh` | Builds the server from `main`, for fixes that have merged but not shipped. Needs Go and CGO |
+| `build-server.sh` | Builds the server from `main`, for fixes that have merged but not shipped. Needs Rust (rustup) and a C compiler |
 | `install-tasks.sh` | Installs the generator tasks into `~/.config/zed/tasks.json`, pointing at this checkout. `--keymap` merges bindings too |
 | `update-server.sh` | Installs the published server into `~/.local/bin` |
 | `AGENTS.md` | Architecture, constraints, and conventions for contributors and agents |

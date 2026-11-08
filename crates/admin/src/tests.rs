@@ -26,5 +26,3 @@ mod usage_symbol_precedence_test;
 mod usage_test;
 mod value_type_test;
 mod vue_scope_test;
-
-mod oracle_dump;

@@ -6,8 +6,8 @@ produce a validated quick fix later.
 
 It assumes familiarity with the syntax layer described in
 [`parser-architecture.md`](parser-architecture.md): every diagnostic range is a
-`cst.TextRange` of byte offsets, and every diagnostic is anchored to a
-`cst.Element` in an immutable tree.
+`TextRange` of byte offsets, and every diagnostic is anchored to a
+`SyntaxElement` in an immutable tree.
 
 ## Table of contents
 
@@ -16,7 +16,7 @@ It assumes familiarity with the syntax layer described in
 - [Inspections](#inspections)
 - [Problems](#problems)
 - [Writing an analyzer](#writing-an-analyzer)
-- [Reporting: from Problem to protocol.Diagnostic](#reporting-from-problem-to-protocoldiagnostic)
+- [Reporting: from Problem to protocol::Diagnostic](#reporting-from-problem-to-protocoldiagnostic)
 - [The diagnostic envelope and element anchors](#the-diagnostic-envelope-and-element-anchors)
 - [Quick fixes](#quick-fixes)
 - [Configuration and gating](#configuration-and-gating)
@@ -34,7 +34,7 @@ The model is IntelliJ's, not a bag of independent providers:
   and which diagnostic codes it can emit. Registration is validated up front,
   and a duplicate or undeclared code is a hard failure at composition time.
 - A **problem** is the internal, byte-oriented finding. It carries a
-  `cst.TextRange`, optionally the `cst.Element` it belongs to, and the fixes
+  `TextRange`, optionally the `SyntaxElement` it belongs to, and the fixes
   bound to it *at report time*. Fixes are not rediscovered later by fanning out
   over providers.
 - A **quick fix** is looked up from its owning inspection by ID and receives
@@ -49,35 +49,35 @@ The model is IntelliJ's, not a bag of independent providers:
  textDocument/didOpen | didChange | didSave
         │
         ▼
- Server.scheduleDiagnostics(uri, version, delay)     debounced, cancels prior job
+ Server::schedule_diagnostics(uri, version, delay)   debounced, cancels prior job
         │
         ▼
- Server.diagnosticsForDocument(ctx, document)        cache: (document ptr, generation)
+ Server::diagnostics_for_document(ctx, document)     cache: (document Arc, generation)
         │
         ▼
- Server.collectDiagnostics(ctx, document)
+ Server::collect_diagnostics(ctx, document)
         │
-        │  for each inspection registered for document.SyntaxLanguage
+        │  for each inspection registered for document.language
         │  ├─ client presentation profile gate
         │  ├─ domain gate            (configuration domain on/off)
         │  ├─ inspection gate        (diagnostics.inspections)
         │  └─ rule gate              (at least one non-off rule)
         │
         ▼
- Inspection.Inspect(ctx, document, reporter)
-        │      analyzers walk document.SyntaxTree via <lang>/query
-        │      and emit []lsp.Problem
+ Inspection::inspect(ctx, document, reporter)
+        │      analyzers walk the document tree via <lang>::query
+        │      and emit Vec<Problem>
         ▼
- inspectionProblemReporter.Report(problem)
+ InspectionProblemReporter::report(problem)
         ├─ validate the code is declared
         ├─ apply configured severity / off
         ├─ validate the range
-        ├─ anchor: rewrite.NewElementHandle(uri, version, language, element)
+        ├─ anchor: ElementHandle::new(uri, version, language, element)
         ├─ encode problem + bound-fix payloads
-        └─ protocol.Diagnostic{ Range: UTF-16, Code, Source, Data: envelope }
+        └─ protocol::Diagnostic { range: UTF-16, code, source, data: envelope }
         │
         ▼
- normalizeDiagnostics  → sort by position/code/message, drop duplicates
+ normalize_diagnostics → sort by position/code/message, drop duplicates
         │
         ▼
  textDocument/publishDiagnostics        (or textDocument/diagnostic pull)
@@ -89,48 +89,49 @@ The model is IntelliJ's, not a bag of independent providers:
  decode envelope → resolve anchor against the current tree
         │
         ▼
- QuickFix.Present(ctx, FixContext) → title, kind, eager|lazy
+ QuickFix::present(ctx, FixContext) → title, kind, eager|lazy
         │
         ▼
- RewriteQuickFix.Build → rewrite.WorkspacePlan     (or CommandQuickFix.BuildCommand)
+ RewriteQuickFix::build → WorkspacePlan     (or CommandQuickFix::build_command)
         │
         ▼
- Server.validateWorkspacePlan   re-parse, compare error counts, check paths
+ Server::validate_workspace_plan   re-parse, compare error counts, check paths
         │
         ▼
- protocol.WorkspaceEdit    (or a disabled action with a reason)
+ protocol::WorkspaceEdit    (or a disabled action with a reason)
 ```
 
 ## Inspections
 
-```go
-// internal/lsp/inspection_types.go
-type InspectionDefinition struct {
-    ID        string
-    Languages []language.ID
-    Problems  []ProblemDefinition
+```rust
+// crates/lsp/src/inspection.rs
+pub struct InspectionDefinition {
+    pub id: String,
+    pub languages: Vec<LanguageId>,
+    pub problems: Vec<ProblemDefinition>,
 }
 
-type ProblemDefinition struct {
-    ID                DiagnosticID                // the LSP diagnostic code
-    Source            string                      // the LSP diagnostic source
-    DefaultSeverity   protocol.DiagnosticSeverity
-    DisabledByDefault bool
+pub struct ProblemDefinition {
+    pub id: DiagnosticId,                              // the LSP diagnostic code
+    pub source: String,                                // the LSP diagnostic source
+    pub default_severity: protocol::DiagnosticSeverity,
+    pub disabled_by_default: bool,
 }
 
-type Inspection interface {
-    Definition() InspectionDefinition
-    Inspect(context.Context, *TextDocument, ProblemReporter) error
-    QuickFixes() []QuickFix
+pub trait Inspection: Send + Sync {
+    fn definition(&self) -> InspectionDefinition;
+    fn inspect(&self, ctx: &Context, document: &Arc<TextDocument>,
+               reporter: &mut dyn ProblemReporter) -> Result<(), BoxError>;
+    fn quick_fixes(&self) -> Vec<Arc<dyn QuickFix>>;
 }
 ```
 
-`Server.RegisterInspection` panics on an invalid registration — this runs during
+`Server::register_inspection` panics on an invalid registration — this runs during
 workspace composition, so a mistake fails at startup rather than producing
-silently missing diagnostics. `inspectionRegistry.register` rejects:
+silently missing diagnostics. `InspectionRegistry::register` rejects:
 
 - an empty or duplicate inspection ID;
-- an inspection with no languages, or an empty language ID;
+- an inspection with no languages;
 - an inspection with no diagnostics;
 - a diagnostic with an empty ID or an empty `Source`;
 - the same diagnostic code declared twice, or owned by two inspections;
@@ -141,83 +142,80 @@ registration cannot leave partial state behind. It indexes three ways: by
 inspection ID, by diagnostic code (the owner lookup used during code-action
 resolution), and by language (the dispatch list used per document).
 
-Language dispatch is exact: `collectDiagnostics` iterates
-`s.inspections.inspections(document.SyntaxLanguage)`. An inspection that wants
+Language dispatch is exact: `collect_diagnostics` iterates
+`registry.inspections.for_language(document.language)`. An inspection that wants
 to run on both PHP and Twig declares both.
 
-### The boundInspection adapter
+### The BoundInspection adapter
 
 Most inspections are not written as bare `Inspection` implementations. They use
-the `boundInspection` adapter in `internal/lsp/inspections`, which separates
-three concerns:
+the `BoundInspection` adapter in `crates/lsp-inspections/src/inspection.rs`,
+which separates three concerns:
 
-```go
-// internal/lsp/inspections/inspection.go
-type boundInspection struct {
-    definition lsp.InspectionDefinition
-    analyzer   ProblemAnalyzer      // one analyzer, or…
-    analyzers  []ProblemAnalyzer    // …several composed under one inspection
-    fixes      []lsp.QuickFix
-    bind       bindProblems         // code + payload → the fixes to offer
+```rust
+// crates/lsp-inspections/src/inspection.rs
+pub struct BoundInspection {
+    pub definition: InspectionDefinition,
+    pub analyzers: Vec<Arc<dyn ProblemAnalyzer>>,  // run in order under one inspection
+    pub fixes: Vec<Arc<dyn QuickFix>>,
+    pub bind: Option<BindProblems>,                // code + payload → the fixes to offer
 }
 ```
 
-An analyzer implements only
-`Analyze(ctx, *lsp.TextDocument) ([]lsp.Problem, error)` — it does the tree
-work and knows nothing about the reporter, the envelope, or the LSP protocol.
-`boundInspection` then re-checks every returned problem against the declared
+An analyzer implements only the `ProblemAnalyzer` trait
+(`fn analyze(&self, ctx: &Context, document: &Arc<TextDocument>) -> Result<Vec<Problem>, BoxError>`)
+— it does the tree work and knows nothing about the reporter, the envelope, or
+the LSP protocol. `BoundInspection` then re-checks every returned problem against the declared
 codes and attaches bound fixes through `bind`.
 
-Analyzers live in `internal/lsp/diagnostics`; the inspections that wire them up
-live in `internal/lsp/inspections`. That split is why a diagnostic can be unit
+Analyzers live in `swlsp-lsp-diagnostics`; the inspections that wire them up
+live in `swlsp-lsp-inspections`. That split is why a diagnostic can be unit
 tested against a source string without a server.
 
 ## Problems
 
-```go
-type Problem struct {
-    ID                 DiagnosticID
-    Range              cst.TextRange   // byte offsets
-    Element            cst.Element     // anchor; derived from Range when nil
-    Message            string
-    Severity           protocol.DiagnosticSeverity  // 0 → the declared default
-    Source             string                        // "" → the declared source
-    Tags               []protocol.DiagnosticTag
-    RelatedInformation []protocol.DiagnosticRelatedInformation
-    Payload            any             // JSON-encoded into the envelope
-    Fixes              []BoundFix
+```rust
+// crates/lsp/src/inspection.rs
+pub struct Problem {
+    pub id: DiagnosticId,
+    pub range: TextRange,                          // byte offsets
+    pub element: Option<SyntaxElement>,            // anchor; derived from range when None
+    pub message: String,
+    pub severity: Option<protocol::DiagnosticSeverity>,  // None → the declared default
+    pub source: String,                            // "" → the declared source
+    pub tags: Vec<protocol::DiagnosticTag>,
+    pub related_information: Vec<protocol::DiagnosticRelatedInformation>,
+    pub payload: Option<serde_json::Value>,        // carried in the envelope
+    pub fixes: Vec<BoundFix>,
 }
 
-type BoundFix struct {
-    ID      FixID
-    Payload any
-}
+pub struct BoundFix { pub id: FixId, pub payload: Option<Value>, /* … */ }
 
-func BindFix[T any](id FixID, payload T) BoundFix
+pub fn bind_fix<T: Serialize>(id: impl Into<FixId>, payload: T) -> BoundFix
 ```
 
 Three fields deserve attention.
 
-**`Range`** should almost always come from `Node.RangeTrimmedTrivia()`, not
-`Node.Range()`. A parser marker frequently opens before the leading whitespace
+**`range`** should almost always come from `node.range_trimmed_trivia()`
+(`SyntaxNodeExt`), not `node.text_range()`. A parser marker frequently opens before the leading whitespace
 is consumed, so the raw range can start on indentation and the editor squiggle
 would begin in the margin. Narrowing further — to the name token rather than
 the whole declaration — makes the diagnostic point at what the user needs to
 change.
 
-**`Element`** is the anchor for quick fixes. Set it to the node the fix will
-operate on. If left nil, the reporter derives it with
-`root.DescendantForRange(problem.Range)`, which is the smallest element fully
+**`element`** is the anchor for quick fixes. Set it to the node the fix will
+operate on. If left `None`, it is derived with
+`root.descendant_for_range(problem.range)`, which is the smallest element fully
 containing the range — usually right, but explicit is better when the fix needs
 a specific ancestor.
 
-**`Payload`** is arbitrary JSON that survives the round trip to the client and
+**`payload`** is arbitrary JSON that survives the round trip to the client and
 back. Use it to carry the facts the fix needs so the fix does not have to
-re-derive them, and decode it with the typed helper:
+re-derive them, and decode it with the typed helpers on `FixContext`:
 
-```go
-payload, err := lsp.DecodeProblemPayload[ShopwareMigrationPayload](fixContext)
-boundPayload, err := lsp.DecodeBoundFixPayload[MyFixPayload](fixContext)
+```rust
+let payload: ShopwareMigrationPayload = fix.problem_payload()?;
+let bound: MyFixPayload = fix.fix_payload()?;
 ```
 
 ## Writing an analyzer
@@ -225,85 +223,87 @@ boundPayload, err := lsp.DecodeBoundFixPayload[MyFixPayload](fixContext)
 A complete, real analyzer — the Shopware 6.5 `AbstractMessageHandler`
 migration:
 
-```go
-// internal/lsp/diagnostics/shopware_migration_message_handler.go
-func (p *ShopwareMigrationAnalyzer) messageHandlerMigrationProblems(
-    ctx context.Context,
-    root *phpsyntax.Node,
-) []lsp.Problem {
-    resolver := php.NewNameResolver(root)
-    var result []lsp.Problem
-    for _, class := range phpquery.Classes(root) {
-        if ctx.Err() != nil {
-            return result
+```rust
+// crates/lsp-diagnostics/src/migration/message_handler.rs
+pub(super) fn message_handler_migration_problems(
+    &self,
+    ctx: &Context,
+    root: &SyntaxNode,
+) -> Vec<Problem> {
+    let resolver = scan::resolver(root);
+    let mut result = Vec::new();
+    for class in scan::classes(root) {
+        if ctx.is_cancelled() {
+            return result;
         }
-        extends := phpquery.DirectChild(class, phpsyntax.PhpExtendsClause)
-        parent := phpquery.DirectChild(extends, phpsyntax.PhpName)
-        if parent == nil || !strings.EqualFold(
-            strings.Trim(resolver.Resolve(strings.TrimSpace(parent.Text())), "\\"),
-            abstractMessageHandlerClass,
+        let Some(parent) = phpquery::direct_child(&class, PHP_EXTENDS_CLAUSE)
+            .and_then(|extends| phpquery::direct_child(&extends, PHP_NAME))
+        else {
+            continue;
+        };
+        if !equal_fold(
+            resolver.resolve(node_text(&parent).trim()).trim_matches('\\'),
+            ABSTRACT_MESSAGE_HANDLER_CLASS,
         ) {
-            continue
+            continue;
         }
-        handle := phpOwnMethodForMigration(class, "handle")
-        invoke := phpOwnMethodForMigration(class, "__invoke")
-        // Rector can still perform the structural migration when a handler has
-        // neither method. Only an existing handle()/__invoke() pair would make
-        // renaming handle() ambiguous.
-        safe := handle == nil || invoke == nil
-
-        name := phpquery.DirectChild(class, phpsyntax.PhpName)
-        rng := class.RangeTrimmedTrivia()
-        if name != nil {
-            rng = name.RangeTrimmedTrivia()
-        }
-        result = append(result, lsp.Problem{
-            ID:       messageHandlerSubscriberCode,
-            Range:    rng,
-            Element:  class,
-            Message:  "Shopware 6.5: migrate AbstractMessageHandler to an attributed Messenger subscriber",
-            Severity: protocol.DiagnosticSeverityWarning,
-            Source:   "shopware-rector",
-            Payload: ShopwareMigrationPayload{
-                Rule: "message-handler-subscriber",
-                Kind: "class",
-                Safe: safe,
+        let handle = php_own_method_for_migration(&class, "handle");
+        let invoke = php_own_method_for_migration(&class, "__invoke");
+        // Rector can still perform the structural migration when a handler
+        // has neither method. Only an existing handle() and __invoke() pair
+        // would make renaming handle() ambiguous.
+        let safe = handle.is_none() || invoke.is_none();
+        result.push(migration_problem(
+            MESSAGE_HANDLER_SUBSCRIBER_CODE,
+            class_name_range(&class),   // the name's trimmed range, else the class's
+            &class,                     // the anchor element
+            "Shopware 6.5: migrate AbstractMessageHandler to an attributed Messenger subscriber"
+                .to_owned(),
+            &ShopwareMigrationPayload {
+                rule: "message-handler-subscriber".into(),
+                kind: "class".into(),
+                safe,
+                ..ShopwareMigrationPayload::default()
             },
-        })
+        ));
     }
-    return result
+    result
 }
 ```
 
+`migration_problem` builds the `Problem` with a warning severity, the
+`shopware-rector` source, and the serialized payload.
+
 The patterns to copy:
 
-1. **Check `ctx.Err()` inside every loop.** Diagnostics run on a cancellable
+1. **Check `ctx.is_cancelled()` (or `ctx.check()?`) inside every loop.** Diagnostics run on a cancellable
    background job that is superseded by the next keystroke. An analyzer that
    ignores cancellation burns CPU on results nobody will read.
-2. **Go through `query`.** `phpquery.Classes`, `phpquery.DirectChild` — never
+2. **Use the `query` helpers.** `phpquery::direct_child` and friends — never
    positional child indexing.
 3. **Report on the narrowest sensible range**, and use
-   `RangeTrimmedTrivia()`.
-4. **Anchor on the node the fix edits** (`Element: class`), which may be wider
+   `range_trimmed_trivia()`.
+4. **Anchor on the node the fix edits** (`&class` here), which may be wider
    than the reported range.
 5. **Put the fix's decision inputs in the payload** (`safe` here) so the fix
    does not re-analyze the tree.
 6. **Guard on missing input.** Analyzers routinely start with
-   `document.SyntaxTree == nil || document.SyntaxTree.Root == nil` checks — a
-   file with an unregistered extension has no tree.
+   `let Some(root) = document.root() else { return Ok(Vec::new()) };` — a file
+   with an unregistered extension has no tree.
 
-## Reporting: from Problem to protocol.Diagnostic
+## Reporting: from Problem to protocol::Diagnostic
 
-`inspectionProblemReporter.Report` is the single funnel. In order, it:
+`InspectionProblemReporter::report` (`crates/lsp/src/diagnostics.rs`) is the
+single funnel. In order, it:
 
 1. **Rejects undeclared codes.** Reporting a code the inspection did not
    declare is an error, not a warning.
 2. **Applies configuration.** If the effective policy sets the rule to `off`,
    the problem is dropped. If the rule is unconfigured and the declaration is
-   `DisabledByDefault`, it is dropped.
-3. **Validates the range** against the document length — inverted or
-   out-of-bounds ranges are an error.
-4. **Builds the anchor** with `rewrite.NewElementHandle`, deriving the element
+   `disabled_by_default`, it is dropped.
+3. **Validates the range** against the document length — out-of-bounds ranges
+   are an error.
+4. **Builds the anchor** with `ElementHandle::new`, deriving the element
    from the range when the problem did not supply one.
 5. **Encodes payloads** for the problem and every bound fix, verifying each
    bound fix ID is actually registered on this inspection.
@@ -311,43 +311,44 @@ The patterns to copy:
    declaration's default, else — overriding both — the configured severity.
 7. **Resolves source**: the problem's, else the declaration's.
 8. **Converts the range to LSP coordinates** with
-   `protocolRangeFromText(document.LineIndex, problem.Range)`, i.e.
-   `LineIndex.PositionUTF16` on both ends.
+   `protocol_range(document.line_index(), problem.range)`, i.e.
+   `LineIndex::position_utf16` on both ends.
 
 The result:
 
-```go
-protocol.Diagnostic{
-    Range:              protocolRangeFromText(document.LineIndex, problem.Range),
-    Severity:           severity,
-    Code:               string(problem.ID),
-    Source:             source,
-    Message:            problem.Message,
-    Tags:               problem.Tags,
-    RelatedInformation: problem.RelatedInformation,
-    Data:               data,   // the envelope, under "_shopwareLSP"
+```rust
+protocol::Diagnostic {
+    range: protocol_range(self.document.line_index(), problem.range),
+    severity: Some(severity),
+    code: Some(Value::String(problem.id.0)),
+    source,
+    message: problem.message,
+    tags: problem.tags,
+    related_information: problem.related_information,
+    data: Some(data),   // the envelope, under "_shopwareLSP"
 }
 ```
 
 ## The diagnostic envelope and element anchors
 
-Everything a quick fix needs later travels in `Diagnostic.Data`, under the
+Everything a quick fix needs later travels in `Diagnostic.data`, under the
 single key `_shopwareLSP`:
 
-```go
-// internal/lsp/inspection_registry.go
-const diagnosticEnvelopeKey = "_shopwareLSP"
-const diagnosticEnvelopeSchema = 1
+```rust
+// crates/lsp/src/inspection.rs
+pub(crate) const DIAGNOSTIC_ENVELOPE_KEY: &str = "_shopwareLSP";
+pub(crate) const DIAGNOSTIC_ENVELOPE_SCHEMA: i64 = 1;
 
-type diagnosticEnvelope struct {
-    Schema          int                   `json:"schema"`
-    Inspection      string                `json:"inspection"`
-    Code            DiagnosticID          `json:"code"`
-    URI             string                `json:"uri"`
-    DocumentVersion int                   `json:"documentVersion"`
-    Anchor          rewrite.ElementHandle `json:"anchor"`
-    Payload         json.RawMessage       `json:"payload,omitempty"`
-    Fixes           []boundFixEnvelope    `json:"fixes,omitempty"`
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DiagnosticEnvelope {
+    pub schema: i64,
+    pub inspection: String,
+    pub code: DiagnosticId,
+    pub uri: String,
+    pub document_version: i32,
+    pub anchor: ElementHandle,
+    pub payload: Option<Value>,          // omitted when None
+    pub fixes: Vec<BoundFixEnvelope>,    // omitted when empty
 }
 ```
 
@@ -357,98 +358,107 @@ from an older server version is rejected instead of misinterpreted.
 ### ElementHandle
 
 A CST node pointer cannot be serialized, and by the time the client asks for
-code actions the tree may have been replaced. `rewrite.ElementHandle` is the
-serializable stand-in:
+code actions the tree may have been replaced. `swlsp_rewrite::ElementHandle` is
+the serializable stand-in:
 
-```go
-// internal/rewrite/handle.go
-type ElementHandle struct {
-    URI      string
-    Version  int
-    Language language.ID
-    Kind     cst.Kind
-    Range    cst.TextRange
-    TextHash uint64 `json:"textHash,string"`  // FNV-1a of the element text
+```rust
+// crates/rewrite/src/handle.rs
+#[serde(rename_all = "camelCase")]
+pub struct ElementHandle {
+    pub uri: String,
+    pub version: i32,
+    pub language: LanguageId,
+    pub kind: Kind,
+    pub range: TextRange,
+    pub text_hash: u64,   // FNV-1a of the element text, serialized as a string
 }
 ```
 
-`Resolve` re-finds the element in a current tree and refuses anything
+`resolve` re-finds the element in a current tree and refuses anything
 suspicious:
 
-```go
-func (h ElementHandle) Resolve(uri string, version int, languageID language.ID, tree *cst.Tree) (cst.Element, error) {
-    if h.URI != uri || h.Version != version || h.Language != languageID {
-        return nil, ErrStaleHandle
+```rust
+pub fn resolve(&self, uri: &str, version: i32, language: LanguageId, tree: &Tree)
+    -> Result<SyntaxElement, HandleError>
+{
+    if self.uri != uri || self.version != version || self.language != language {
+        return Err(HandleError::Stale);
     }
-    if tree == nil || tree.Root == nil || h.Range.Start > h.Range.End ||
-        h.Range.End > tree.Root.Range().End {
-        return nil, ErrMissingHandle
+    let root = tree.root();
+    if self.range.end() > root.text_range().end() {
+        return Err(HandleError::Missing);
     }
-    candidate := tree.Root.DescendantForRange(h.Range)
-    for candidate != nil {
-        if candidate.Kind() == h.Kind && candidate.Range() == h.Range &&
-            hashText(candidate.Text()) == h.TextHash {
-            return candidate, nil
+    let mut candidate = Some(root.covering_element(self.range));
+    while let Some(element) = candidate {
+        if element.kind() == self.kind
+            && element.text_range() == self.range
+            && hash_text(tree.text(self.range)) == self.text_hash
+        {
+            return Ok(element);
         }
-        candidate = candidate.Parent()
+        candidate = element.parent().map(SyntaxElement::Node);
     }
-    return nil, fmt.Errorf("%w: %s kind %s", ErrStaleHandle, h.Range, h.Kind)
+    Err(HandleError::StaleElement { range: self.range, kind: self.kind.name().into_owned() })
 }
 ```
 
 Four things must agree — URI, document version, language, and then kind, exact
 range, and text hash. The walk up the ancestor chain from
-`DescendantForRange` handles the case where the anchored element is not the
-innermost element at that range. A mismatch is `ErrStaleHandle`, which the code
+`covering_element` handles the case where the anchored element is not the
+innermost element at that range. A mismatch is a stale `HandleError`, which the code
 action layer turns into a disabled action reading "The document changed;
 request code actions again" rather than an edit against the wrong text.
 
-The `TextHash` is deliberately serialized as a JSON **string**: JavaScript
-clients cannot represent every `uint64` in a JSON number without rounding.
+The `text_hash` is deliberately serialized as a JSON **string**: JavaScript
+clients cannot represent every `u64` in a JSON number without rounding.
 
 ## Quick fixes
 
-```go
-// internal/lsp/inspection_types.go
-type QuickFix interface {
-    ID() FixID
-    Present(context.Context, FixContext) (FixPresentation, bool, error)
+```rust
+// crates/lsp/src/inspection.rs
+pub trait QuickFix: Send + Sync {
+    fn id(&self) -> FixId;
+    /// Ok(None) when the fix is not available for this problem.
+    fn present(&self, ctx: &Context, fix: &FixContext)
+        -> Result<Option<FixPresentation>, BoxError>;
+    fn as_rewrite(&self) -> Option<&dyn RewriteQuickFix> { None }
+    fn as_command(&self) -> Option<&dyn CommandQuickFix> { None }
 }
 
-type FixPresentation struct {
-    Title      string
-    Kind       protocol.CodeActionKind
-    Preferred  bool
-    Resolution FixResolution   // FixEager | FixLazy
+pub struct FixPresentation {
+    pub title: String,
+    pub kind: Option<protocol::CodeActionKind>,
+    pub preferred: bool,
+    pub resolution: FixResolution,   // Eager | Lazy
 }
 
-type FixContext struct {
-    Document       *TextDocument
-    Diagnostic     protocol.Diagnostic
-    Anchor         rewrite.ElementHandle
-    ProblemPayload json.RawMessage
-    FixPayload     json.RawMessage
-    Documents      DocumentResolver
+pub struct FixContext {
+    pub document: Arc<TextDocument>,
+    pub diagnostic: protocol::Diagnostic,
+    pub anchor: ElementHandle,
+    pub problem_payload: Option<Value>,
+    pub fix_payload: Option<Value>,
+    pub documents: Arc<dyn DocumentResolver>,
 }
 ```
 
-`Present` is cheap and always runs — it decides the title, the kind, whether
-the fix applies at all (the `bool`), and whether the edit is computed now or on
+`present` is cheap and always runs — it decides the title, the kind, whether
+the fix applies at all (`None` when it does not), and whether the edit is computed now or on
 `codeAction/resolve`.
 
-Two implementations extend `QuickFix`:
+A `QuickFix` exposes one of two implementation traits through `as_rewrite` or
+`as_command`:
 
-```go
-// A structural source rewrite.
-type RewriteQuickFix interface {
-    QuickFix
-    Build(context.Context, FixContext) (rewrite.WorkspacePlan, error)
+```rust
+/// A structural source rewrite.
+pub trait RewriteQuickFix: Send + Sync {
+    fn build(&self, ctx: &Context, fix: &FixContext) -> Result<WorkspacePlan, BoxError>;
 }
 
-// An LSP command, for workflows needing user input or editor snippet semantics.
-type CommandQuickFix interface {
-    QuickFix
-    BuildCommand(context.Context, FixContext) (*protocol.CommandAction, error)
+/// An LSP command, for workflows needing user input or editor snippet semantics.
+pub trait CommandQuickFix: Send + Sync {
+    fn build_command(&self, ctx: &Context, fix: &FixContext)
+        -> Result<Option<protocol::CommandAction>, BoxError>;
 }
 ```
 
@@ -457,27 +467,32 @@ exact diagnostic binding without manufacturing an empty edit plan.
 
 ### Resolution
 
-`FixLazy` defers `Build` to `codeAction/resolve`, which matters when computing
+`FixResolution::Lazy` defers `build` to `codeAction/resolve`, which matters when computing
 the edit is expensive and the user may never invoke it. The server honors it
 only when the client advertises resolve support:
 
-```go
-if presentation.Resolution == FixEager || !s.codeActionResolveSupport {
-    s.populateInspectionEdit(ctx, &action, fix, fixContext)
+```rust
+if presentation.resolution == FixResolution::Eager || !resolve_support {
+    self.populate_inspection_edit(ctx, &mut action, fix.as_ref(), &fix_context);
 }
 ```
 
 ### Plan validation
 
-`Server.validateWorkspacePlan` runs before any plan becomes a
+`Server::validate_workspace_plan` runs before any plan becomes a
 `WorkspaceEdit`. For each planned document it re-resolves the current document,
-rejects a source or version mismatch as `ErrStaleHandle`, applies the edit, and
-re-parses the result:
+rejects a source or version mismatch as stale, applies the edit, and re-parses
+the result:
 
-```go
-_, result, parsed := s.documentManager.languages.ParsePath(planned.URI, updated)
-if parsed && len(result.Errors) > len(current.Document.ParseErrors) {
-    return fmt.Errorf("rewrite introduces %d parser errors", len(result.Errors)-len(current.Document.ParseErrors))
+```rust
+let updated = planned.apply()?;
+if let Some((_, parse)) = parse_path(&planned.uri, &updated)
+    && parse.errors.len() > current.document.parse_errors().len()
+{
+    return Err(format!(
+        "rewrite introduces {} parser errors",
+        parse.errors.len() - current.document.parse_errors().len()
+    ).into());
 }
 ```
 
@@ -493,33 +508,33 @@ request code actions again"`, …). The pipeline never ships an unvalidated edit
 
 ## Configuration and gating
 
-Four independent gates run per inspection, per document, in
-`collectDiagnostics`:
+Diagnostics as a whole can be disabled by the file's policy. Beyond that, four
+independent gates run per inspection, per document, in `collect_diagnostics`:
 
-1. **Client presentation profile.** `inspectionPresentedToClient` suppresses
+1. **Client presentation profile.** `inspection_presented_to_client` suppresses
    inspections the host IDE already provides. Under the framework-only profile
    used by the PhpStorm integration, `php.semantic` and
    `symfony.embedded_language` are withheld so generic PHP presentation stays
    with the IDE. See [`phpstorm-integration.md`](phpstorm-integration.md).
-2. **Domain.** `inspectionDomain(id)` maps an inspection to a configuration
+2. **Domain.** `inspection_domain(id)` (`crates/lsp/src/configuration.rs`) maps an inspection to a configuration
    domain (`php.semantic` → `php`, `shopware.migration` →
    `shopware.migrations`, `shopware.snippet` → `shopware.snippets`, …), and the
    domain can be switched off wholesale.
 3. **Inspection.** `diagnostics.inspections[<id>]` in project configuration can
    disable one inspection; an unconfigured inspection is enabled.
-4. **Rules.** `inspectionHasEnabledRule` skips an inspection entirely when
+4. **Rules.** `inspection_has_enabled_rule` skips an inspection entirely when
    every one of its codes is either configured `off` or unconfigured and
-   `DisabledByDefault`. This is the gate that keeps a 21-code inspection from
+   `disabled_by_default`. This is the gate that keeps a 21-code inspection from
    running when the user turned all of it off.
 
 Severity resolution and rule enablement both come from
-`projectconfig.DiagnosticPolicy`, which is computed per file path:
+`swlsp_projectconfig::DiagnosticPolicy`, which is computed per file path:
 
-```go
-policy := s.diagnosticPolicy(document.URI)
+```rust
+let policy = self.diagnostic_policy(&document.uri);
 ```
 
-`projectconfig` resolves project configuration, editor settings, and
+`swlsp-projectconfig` resolves project configuration, editor settings, and
 path-scoped overrides into that policy, so `.config/shopware/lsp.yaml` can turn
 a rule to `off`, `hint`, `information`, `warning`, or `error` for a glob such as
 `custom/plugins/*/src/Generated/**`. Nested configuration files may only
@@ -541,87 +556,86 @@ updates request `workspace/diagnostic/refresh` so index, dependency, and
 configuration changes prompt a new pull. Without refresh support, those changes
 are reflected on the client's next diagnostic request.
 
-`scheduleDiagnostics(uri, version, delay)` is the only scheduling entry point. It:
+`schedule_diagnostics(uri, version, delay)` is the only scheduling entry point. It:
 
 - creates a cancellable job under the server lifecycle context;
 - bumps a per-URI **generation** counter and invalidates that URI's cache
   entry;
 - cancels any previously scheduled job for the same URI;
-- starts a background timer that runs `publishDiagnostics` after `delay`, or
-  aborts on cancellation.
+- starts a background job that waits `delay` and then publishes that document's
+  diagnostics, or aborts on cancellation.
 
-Interactive edits schedule with `diagnosticsDebounce` (150 ms). Explicit
-`PublishDiagnostics` calls use no delay.
+Interactive edits schedule with `DIAGNOSTICS_DEBOUNCE` (150 ms). Explicit
+`publish_diagnostics` calls use no delay.
 
-`publishDiagnostics` re-checks the document version before analyzing and again,
-under `diagnosticsPublishMu`, before notifying — so a superseded job cannot
+Publishing re-checks the document version before analyzing and again,
+under the `diagnostics_publish` lock, before notifying — so a superseded job cannot
 publish stale results over a newer run, and a canceled analysis cannot write
 after the close-document clear.
 
 The cache is keyed on both the document pointer and the generation:
 
-```go
-type diagnosticsCacheEntry struct {
-    document    *TextDocument
-    generation  uint64
-    diagnostics []protocol.Diagnostic
+```rust
+// crates/lsp/src/diagnostics.rs
+struct CacheEntry {
+    document: Arc<TextDocument>,
+    generation: u64,
+    diagnostics: Vec<protocol::Diagnostic>,
 }
 ```
 
-Because `TextDocument` snapshots are immutable, pointer identity is a valid
-freshness test. `diagnosticsForDocument` serves both the push path and the pull
+Because `TextDocument` snapshots are immutable, `Arc::ptr_eq` identity is a
+valid freshness test. `diagnostics_for_document` serves both the push path and the pull
 path (`textDocument/diagnostic`), so repeated pulls reuse the analysis. Results
-are copied in and out of the cache so a caller cannot mutate the shared slice. A canceled run is never cached.
+are cloned in and out of the cache. A canceled run is never cached.
 
 Pull responses always return a full report with `"kind": "full"` and an `items`
 array, including `"items": []` for empty or unavailable documents and cached
 empty results. The server does not currently return unchanged reports.
 
-`RefreshOpenDocumentDiagnostics(match)` re-analyzes open documents affected by a
+`refresh_open_document_diagnostics(matches)` re-analyzes open documents affected by a
 change elsewhere — the "open dependency changed" case — using the debounce so a
 workspace overlay does not schedule one job per keystroke. It is skipped in CLI
 mode.
 
 ## Parser and language-level diagnostics
 
-Syntax errors are not a special path. Because `Parse` is total, the tree always
-exists, and `parsekit.Error` values ride along on the document:
+Syntax errors are not a special path. Because parsing is total, the tree always
+exists, and `ParseError` values ride along on the document:
 
-```go
-// internal/lsp/document.go
-type TextDocument struct {
+```rust
+// crates/lsp/src/document.rs
+pub struct TextDocument {
     // ...
-    ParseErrors []parsekit.Error
+    parse_errors: Vec<ParseError>,   // read through parse_errors()
 }
 ```
 
 The PHP semantic provider turns them into ordinary problems alongside its
 semantic findings:
 
-```go
-// internal/lsp/phpsemantic/diagnostics_run.go
-func (r *phpDiagnosticRun) analyze() []lsp.Problem {
-    r.addParseErrors()
-    r.addLanguageLevelProblems()
-    r.addReferenceProblems()
-    r.addSemanticIssues()
-    r.addDuplicateDeclarations()
-    return r.diagnostics
+```rust
+// crates/lsp-phpsemantic/src/diagnostics.rs
+fn analyze(mut self) -> Vec<Problem> {
+    self.add_parse_errors();
+    self.add_language_level_problems();
+    self.add_reference_problems();
+    self.add_semantic_issues();
+    self.add_duplicate_declarations();
+    self.diagnostics
 }
 
-func (r *phpDiagnosticRun) addParseErrors() {
-    for errorIndex := range r.document.ParseErrors {
-        parseError := &r.document.ParseErrors[errorIndex]
-        if r.suppressions.Suppresses(parseError.Range.Start, "php.parse") {
-            continue
+fn add_parse_errors(&mut self) {
+    for parse_error in self.document.parse_errors() {
+        if self.suppressed(parse_error.range, "php.parse") {
+            continue;
         }
-        r.diagnostics = append(r.diagnostics, lsp.Problem{
-            Range:    parseError.Range,
-            Severity: protocol.DiagnosticSeverityError,
-            ID:       "php.parse",
-            Source:   "shopware-php",
-            Message:  parseError.Message(),
-        })
+        self.diagnostics.push(problem(
+            "php.parse",
+            parse_error.range,
+            DiagnosticSeverity::ERROR,
+            parse_error.message(),
+        ));
     }
 }
 ```
@@ -634,31 +648,30 @@ Two consequences worth internalizing:
 - Parse-error diagnostics obey the same suppression comments and severity
   configuration as everything else (`php.parse`, `php.version`, …).
 
-Language-level checks work the same way: `languagelevel.Detect(root)` walks the
+Language-level checks work the same way: `languagelevel::detect(root)` walks the
 tree for version-gated syntax and reports `php.version` when the configured
 PHP version does not support it.
 
 ### Embedded languages
 
 String literals holding another language are diagnosed by parsing them on
-demand. `php.EmbeddedLanguageStrings` recognizes the signature that makes a
+demand. `embedded_language_strings` (`swlsp-php`) recognizes the signature that makes a
 literal JSON, CSS, or XPath, and each sub-language runs its own frontend over
 just that literal:
 
-```go
-// internal/lsp/diagnostics/embedded_language_diagnostics.go
-embedded := php.EmbeddedLanguageStrings(
-    p.phpIndex, path, document.Version, string(document.Text), document.SyntaxTree.Root,
-)
-for _, literal := range embedded {
-    switch literal.Language {
-    case php.EmbeddedLanguageJSON:
-        result = append(result, embeddedJSONDiagnostics(literal.EmbeddedPHPString, document.LineIndex)...)
-    case php.EmbeddedLanguageCSS:
-        result = append(result, embeddedCSSDiagnostics(literal.EmbeddedPHPString, document.LineIndex)...)
-    case php.EmbeddedLanguageXPath:
-        result = append(result, embeddedXPathDiagnostics(literal.EmbeddedPHPString, document.LineIndex)...)
+```rust
+// crates/lsp-diagnostics/src/symfony/embedded.rs
+for literal in embedded_language_strings(
+    php_index, &path, i64::from(document.version), document.source(), &root,
+) {
+    if ctx.is_cancelled() {
+        return Ok(Vec::new());
     }
+    result.extend(match literal.language {
+        EmbeddedLanguage::Json => embedded_json_diagnostics(&literal.string),
+        EmbeddedLanguage::Css => embedded_css_diagnostics(&literal.string),
+        EmbeddedLanguage::XPath => embedded_xpath_diagnostics(&literal.string),
+    });
 }
 ```
 
@@ -670,7 +683,7 @@ sections directly in one tree; see
 
 ## Normalization
 
-Independent inspections legitimately overlap. `normalizeDiagnostics` gives the
+Independent inspections legitimately overlap. `normalize_diagnostics` gives the
 editor a stable, deduplicated list:
 
 - **Sort** (stable) by start line, start character, end line, end character,
@@ -693,19 +706,19 @@ slow.
 
 ## Registering a new inspection
 
-1. **Write the analyzer** in `internal/lsp/diagnostics`, implementing
-   `Analyze(ctx, *lsp.TextDocument) ([]lsp.Problem, error)`. Guard on a nil
-   syntax tree, check `ctx.Err()` in loops, use the language's `query` package,
-   and report trimmed ranges.
-2. **Declare the inspection** in `internal/lsp/inspections`, listing its
-   languages and every `ProblemDefinition` it can emit — each with a `Source`
-   and a `DefaultSeverity`. Set `DisabledByDefault` for opt-in checks.
+1. **Write the analyzer** in `swlsp-lsp-diagnostics`, implementing
+   `ProblemAnalyzer::analyze`. Guard on a missing syntax tree, check
+   cancellation in loops, use the language's `query` module, and report
+   trimmed ranges.
+2. **Declare the inspection** in `swlsp-lsp-inspections`, listing its
+   languages and every `ProblemDefinition` it can emit — each with a `source`
+   and a `default_severity`. Set `disabled_by_default` for opt-in checks.
 3. **Add quick fixes** implementing `RewriteQuickFix` or `CommandQuickFix`, and
    wire them in `bind` so each code offers the right fixes with the right
    payloads.
-4. **Register it** from the application composition root with
-   `Server.RegisterInspection`.
-5. **Map a configuration domain** in `inspectionDomain` if the inspection
+4. **Register it** from the application composition root
+   (`crates/app/src/inspections.rs`) with `Server::register_inspection`.
+5. **Map a configuration domain** in `inspection_domain` if the inspection
    belongs to a toggleable feature domain.
 6. **Test it** — see below.
 
@@ -716,23 +729,24 @@ slow.
 Analyzer tests construct a `TextDocument` from a source string and assert on
 the returned problems, with no server involved:
 
-```go
-document := lsp.NewTextDocument("file:///src/Handler.php", source, 1)
-problems, err := analyzer.Analyze(context.Background(), document)
-require.NoError(t, err)
+```rust
+let document = Arc::new(TextDocument::new("file:///src/Handler.php", source, 1));
+let problems = analyzer.analyze(&Context::background(), &document).unwrap();
 ```
 
-`NewTextDocument` parses through the default registry, so the tree, line index,
-and parse errors are all populated. Assert on `cst.TextRange` values rather than
+`TextDocument::new` parses through the default registry, so the tree, line
+index, and parse errors are all populated. Assert on `TextRange` values rather than
 line/column where possible — they are stable against reformatting of the
 fixture.
 
 ### Server level
 
-`internal/lsp/server_diagnostics_test.go` covers the scheduling, debounce, and
-cache behavior end to end. `internal/app/diagnostics_audit_test.go` audits the
-registered inspection set as a whole — the guard against a code being declared
-twice, losing its source, or drifting from its configuration domain.
+`crates/lsp/src/tests/diagnostics_tests.rs` covers the scheduling, debounce, and
+cache behavior end to end. Registry validation (duplicate codes, missing
+sources) fails at composition time, so every test that builds the production
+workspace in `swlsp-app` exercises it. The real-world
+`crates/app/src/tests/real_world/diagnostics_audit.rs` harness runs the PHP
+diagnostics over a real checkout and groups the recurring findings.
 
 ### CLI
 

@@ -23,7 +23,7 @@ Covered today:
 | `target_for` (errors) | Unsupported platforms must fail loudly and name the `binary.path` escape hatch, not silently pick a wrong build. |
 | `binary_path_for` | Encodes the `extension/` prefix inside the vsix, plus the `.exe` suffix on Windows. |
 | `parse_latest_release` | Payload shape, and that each failure says which field was missing. |
-| `mcp_args` | The exact argv: `--root x mcp`. The binary accepts global flags on either side of the command but rejects Go-style `-root`. |
+| `mcp_args` | The exact argv: `--root x mcp`. The binary accepts global flags on either side of the command but rejects single-dash `-root`. |
 | `is_superseded_download` | Pruning deletes 31 MB directories. It must not match a binary someone dropped in the work dir. |
 
 These were mutation-checked: breaking the linux-x64 mapping, reversing the MCP
@@ -239,7 +239,7 @@ server. Re-run `zed: install dev extension` first.
       valid `MarkupKind`, so Zed drops the whole list. Fixed upstream in
       shopware/shopware-lsp#65.
 - [x] Diagnostics appear (unused imports are a reliable source). Expect no
-      squiggle: `inspections/php_imports.go` sends unused imports as severity
+      squiggle: `crates/lsp-inspections/src/shopware/php_imports.rs` sends unused imports as severity
       Hint tagged Unnecessary, which Zed renders as faded text, so the import
       just looks dimmer than its neighbours. Hover names the rule
       (`shopware-php php.unusedImport`). Turn on `diagnostics.inline` if that

@@ -50,7 +50,7 @@ After that, read the subsystem you are changing.
 
 **"I want to support new syntax."**
 [`parser-architecture.md`](parser-architecture.md) →
-`internal/parser/<lang>/{lexer,parser,syntax}` → add a lossless parser test and a
+`crates/parser-<lang>/src/{lexer,parser,syntax}.rs` → add a lossless parser test and a
 recovery test.
 
 **"I want to add a completion / hover / definition feature."**
@@ -68,7 +68,7 @@ helper you need → [`indexing.md`](indexing.md) if the data is not indexed yet.
 index-to-provider path.
 
 **"I want to change PHP type or inference behavior."**
-[`php-semantic-engine.md`](php-semantic-engine.md) → `internal/php/{types,resolver,inference}`.
+[`php-semantic-engine.md`](php-semantic-engine.md) → `crates/php-{types,resolver,inference}`.
 
 **"I need to understand why my quick fix is disabled."**
 [`refactoring-engine.md`](refactoring-engine.md#validation) and

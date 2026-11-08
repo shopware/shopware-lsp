@@ -2,7 +2,7 @@
 
 The repository-wide contributor guide applies. This directory contains the
 Rust/WASM client, terminal task adapters, and their tests; analysis stays in the
-shared Rust server under `crates/` (the Go tree is only a reference oracle).
+shared Rust server under `crates/`.
 
 - Build for `wasm32-wasip2` with the toolchain in `rust-toolchain.toml`.
 - Keep host-independent logic in pure helpers and Zed API hooks thin. Native

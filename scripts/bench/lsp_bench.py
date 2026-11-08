@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Drive a shopware-lsp binary over stdio and measure request latency.
 
-Runs the same deterministic request mix against any server binary (Rust or the
-Go oracle), so two result files can be compared with `compare.py`:
+Runs the same deterministic request mix against any server binary (for
+example two builds of different revisions), so two result files can be
+compared with `compare.py`:
 
+    lsp_bench.py --server target/base/shopware-lsp --root ~/shopware \
+        --out target/bench/base.json
     lsp_bench.py --server target/release/shopware-lsp --root ~/shopware \
-        --out target/bench/rs.json
-    lsp_bench.py --server target/bench/go-shopware-lsp --root ~/shopware \
-        --out target/bench/go.json
-    compare.py target/bench/go.json target/bench/rs.json
+        --out target/bench/new.json
+    compare.py target/bench/base.json target/bench/new.json
 
 Each run uses its own cache directory (`--cache`); pass `--cold` to wipe it
 first. Results record wall time per request, the indexing time, peak RSS

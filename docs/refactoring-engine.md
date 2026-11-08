@@ -5,9 +5,9 @@ edit — a one-token quick fix, a cross-file rename, a scaffolded new class —
 flows through the same three stages: resolve an element in an immutable
 snapshot, compile byte edits, validate the result before the editor sees it.
 
-The core is [`internal/rewrite`](../internal/rewrite), with language-aware
-helpers in [`internal/php/rewrite`](../internal/php/rewrite) and callers in
-`internal/lsp/{inspections,codeaction,refactor,scaffold}`.
+The core is [`swlsp-rewrite`](../crates/rewrite), with language-aware
+helpers in [`swlsp-php-rewrite`](../crates/php-rewrite) and callers in
+`crates/lsp-{inspections,codeaction,refactor,scaffold}`.
 
 ## Table of contents
 
@@ -37,13 +37,14 @@ A CST is a lossless view of one exact source snapshot. Changing source means:
 2. compile the change to byte edits **against that snapshot**;
 3. hand the edits to the client as a workspace edit.
 
-The package doc states it plainly:
+The crate doc states it plainly:
 
-```go
-// Package rewrite builds validated, lossless source edits from immutable CST
-// elements. It deliberately does not mutate syntax trees: callers resolve an
-// element in one document snapshot and compile the requested change to byte
-// edits for that same snapshot.
+```rust
+//! Validated, lossless source edits compiled from immutable syntax trees.
+//!
+//! Trees are never mutated: callers resolve an element in one document
+//! snapshot and compile the requested change to byte edits for that same
+//! snapshot.
 ```
 
 Two consequences follow, and both are load-bearing:
@@ -51,79 +52,82 @@ Two consequences follow, and both are load-bearing:
 - **A rewrite is only valid for the snapshot it was built against.** If the
   document changed, the rewrite is stale and must be rejected, not adapted. That
   is what [`ElementHandle`](#element-handles) enforces.
-- **The server never writes files.** It returns a `protocol.WorkspaceEdit`. The
+- **The server never writes files.** It returns a `protocol::WorkspaceEdit`. The
   editor, the CLI, and MCP each apply it through their own path, and all three
   get the same validation.
 
 ## Edits
 
-```go
-// internal/rewrite/rewrite.go
-type Edit struct {
-    Range   cst.TextRange   // byte offsets into the snapshot
-    NewText string
-    order   int             // declaration order, for insertion coalescing
+```rust
+// crates/rewrite/src/lib.rs
+pub struct Edit {
+    pub range: TextRange,   // byte offsets into the snapshot
+    pub new_text: String,
+    order: usize,           // declaration order, for insertion coalescing
 }
 ```
 
 An `Edit` is a byte-range replacement. Insertion is a zero-width range;
-deletion is an empty `NewText`. There is no "insert node" or "wrap in
+deletion is an empty `new_text`. There is no "insert node" or "wrap in
 parentheses" operation — everything reduces to replacing bytes, which is what
 makes losslessness trivially preserved: bytes you did not touch are unchanged,
 including formatting and comments.
 
 ## Builder and conflict rules
 
-```go
-builder := rewrite.NewBuilder(document.Source)
+```rust
+let mut builder = Builder::new(document.source());
 
-builder.Replace(element, "newText")     // element.Range() ← text
-builder.Delete(element)                 // element.Range() ← ""
-builder.InsertBefore(element, "text")   // at element.Range().Start
-builder.InsertAfter(element, "text")    // at element.Range().End
-builder.Insert(offset, "text")          // zero-width at offset
-builder.ReplaceRange(rng, "text")       // explicit range
+builder.replace(&element, "newText")?;     // element range ← text
+builder.delete(&element)?;                 // element range ← ""
+builder.insert_before(&element, "text")?;  // at the element's start
+builder.insert_after(&element, "text")?;   // at the element's end
+builder.insert(offset, "text")?;           // zero-width at offset
+builder.replace_range(range, "text")?;     // explicit range
 
-edits, err := builder.Finish()
+let edits = builder.finish()?;
 ```
 
-Every method funnels into `ReplaceRange`, which validates the range against the
-snapshot length and returns `ErrInvalidRange` for an inverted or out-of-bounds
-range. Passing a nil element is also `ErrInvalidRange` rather than a panic.
+Elements are anything implementing `SyntaxRange` (nodes, tokens, elements, or
+a plain `TextRange`). Every method funnels into `replace_range`, which
+validates the range against the snapshot length and returns
+`RewriteError::InvalidRange` for an out-of-bounds range.
 
-`Finish()` does three things:
+`finish()` does three things:
 
 **1. Sorts** by start, then end, then declaration order — stably.
 
 **2. Coalesces insertions at the same offset** in declaration order:
 
-```go
-if previous.Range.Start == previous.Range.End &&
-    edit.Range.Start == edit.Range.End &&
-    previous.Range.Start == edit.Range.Start {
-    previous.NewText += edit.NewText
-    continue
+```rust
+if previous.range.is_empty()
+    && edit.range.is_empty()
+    && previous.range.start() == edit.range.start()
+{
+    previous.new_text.push_str(&edit.new_text);
+    continue;
 }
 ```
 
-So two `InsertBefore` calls on the same element produce the text in the order
+So two `insert_before` calls on the same element produce the text in the order
 you wrote them, not an overlap error. This is what makes composing independent
 rewrites work — adding a `use` declaration and adding an attribute at the same
 offset simply concatenate.
 
-**3. Rejects overlaps** with `ErrOverlap`. `editsConflict` treats a zero-width
+**3. Rejects overlaps** with `RewriteError::Overlap`. `edits_conflict` treats a zero-width
 insertion as conflicting only when it lands *strictly inside* another edit's
 range — touching a boundary is fine:
 
-```go
-func editsConflict(left, right Edit) bool {
-    if left.Range.Start == left.Range.End {
-        return left.Range.Start > right.Range.Start && left.Range.Start < right.Range.End
+```rust
+fn edits_conflict(left: &Edit, right: &Edit) -> bool {
+    let (left, right) = (left.range, right.range);
+    if left.is_empty() {
+        return left.start() > right.start() && left.start() < right.end();
     }
-    if right.Range.Start == right.Range.End {
-        return right.Range.Start > left.Range.Start && right.Range.Start < left.Range.End
+    if right.is_empty() {
+        return right.start() > left.start() && right.start() < left.end();
     }
-    return left.Range.Start < right.Range.End && right.Range.Start < left.Range.End
+    left.start() < right.end() && right.start() < left.end()
 }
 ```
 
@@ -133,60 +137,68 @@ result would be undefined.
 
 ## Applying edits
 
-```go
-func Apply(source string, edits []Edit) (string, error)
+```rust
+pub fn apply(source: &str, edits: &[Edit]) -> Result<String>
 ```
 
-`Apply` re-validates through a fresh `Builder` (so it cannot be handed
-unvalidated edits) and then applies them **back to front**:
+`apply` re-validates through a fresh `Builder` (so it cannot be handed
+unvalidated edits), rejects ranges that would split a UTF-8 character, and then
+copies the source into a new string in one ascending pass:
 
-```go
-for index := len(validated) - 1; index >= 0; index-- {
-    edit := validated[index]
-    result = result[:edit.Range.Start] + edit.NewText + result[edit.Range.End:]
+```rust
+let mut cursor = 0usize;
+for edit in &validated {
+    let start = usize::from(edit.range.start());
+    result.push_str(&source[cursor..start]);
+    result.push_str(&edit.new_text);
+    cursor = usize::from(edit.range.end());
 }
+result.push_str(&source[cursor..]);
 ```
 
-Descending order means earlier offsets stay valid as later ones are rewritten —
-no offset bookkeeping, no shift accumulation. The input snapshot is never
-mutated.
+Because the edits are sorted and non-overlapping, every range refers to the
+original snapshot — no offset bookkeeping, no shift accumulation. The input
+snapshot is never mutated.
 
 ## Document and workspace plans
 
-```go
-type DocumentPlan struct {
-    URI       string
-    Version   *int          // nil = versionless (a freshly created file)
-    Source    string        // the snapshot the edits were built against
-    LineIndex *cst.LineIndex
-    Edits     []Edit
+```rust
+pub struct DocumentPlan {
+    pub uri: String,
+    pub version: Option<i32>,               // None = versionless (a freshly created file)
+    pub source: Arc<str>,                   // the snapshot the edits were built against
+    pub line_index: Option<Arc<LineIndex>>, // built on demand when absent
+    pub edits: Vec<Edit>,
 }
 
-func NewDocumentPlan(uri string, version *int, source string, edits []Edit) DocumentPlan
-func (p DocumentPlan) Apply() (string, error)
+impl DocumentPlan {
+    pub fn new(uri, version: Option<i32>, source, edits: Vec<Edit>) -> Self;
+    pub fn with_line_index(self, line_index: Arc<LineIndex>) -> Self;
+    pub fn apply(&self) -> Result<String>;
+}
 ```
 
 A `DocumentPlan` carries the snapshot alongside the edits. That is what lets the
 server verify, at apply time, that the document has not changed — and what lets
 tests apply a plan without a server.
 
-```go
-type WorkspacePlan struct {
-    Documents []DocumentPlan
-    Creates   []CreateFilePlan
-    Deletes   []DeleteFilePlan
+```rust
+pub struct WorkspacePlan {
+    pub documents: Vec<DocumentPlan>,
+    pub creates: Vec<CreateFilePlan>,
+    pub deletes: Vec<DeleteFilePlan>,
 }
 
-type CreateFilePlan struct { URI, Content string }
-type DeleteFilePlan struct { URI string; Version *int; Source string }
+pub struct CreateFilePlan { pub uri: String, pub content: String }
+pub struct DeleteFilePlan { pub uri: String, pub version: Option<i32>, pub source: String }
 ```
 
-`WorkspaceEdit()` compiles the plan into `protocol.DocumentChanges` in a fixed
+`workspace_edit()` compiles the plan into ordered `documentChanges` in a fixed
 order — **creates, then document edits, then deletes** — because a document edit
 may target a file the same plan creates. A create becomes a
-`CreateFileOperation` with `Overwrite: false, IgnoreIfExists: false` (so an
-unexpected existing file is an error, not a silent clobber), followed by a
-versionless text edit inserting the content.
+`create` resource operation with default options (neither `overwrite` nor
+`ignoreIfExists`, so an unexpected existing file is an error, not a silent
+clobber), followed by a versionless text edit inserting non-empty content.
 
 A URI may appear only once across all three sections; a duplicate is an error
 rather than an ambiguous merge.
@@ -200,46 +212,52 @@ A quick fix is presented, sent to the client, and possibly resolved and applied
 many keystrokes later. A CST pointer cannot survive that, and a byte range alone
 is not enough — the document may have changed underneath it.
 
-```go
-// internal/rewrite/handle.go
-type ElementHandle struct {
-    URI      string
-    Version  int
-    Language language.ID
-    Kind     cst.Kind
-    Range    cst.TextRange
-    TextHash uint64 `json:"textHash,string"`   // FNV-1a of the element text
+```rust
+// crates/rewrite/src/handle.rs
+#[serde(rename_all = "camelCase")]
+pub struct ElementHandle {
+    pub uri: String,
+    pub version: i32,
+    pub language: LanguageId,
+    pub kind: Kind,
+    pub range: TextRange,
+    #[serde(with = "hash_serde")]   // a decimal string
+    pub text_hash: u64,             // FNV-1a of the element text
 }
 ```
 
-`Resolve` re-finds the element and refuses anything that does not match exactly:
+`resolve` re-finds the element and refuses anything that does not match exactly:
 
-```go
-func (h ElementHandle) Resolve(uri string, version int, languageID language.ID, tree *cst.Tree) (cst.Element, error) {
-    if h.URI != uri || h.Version != version || h.Language != languageID {
-        return nil, ErrStaleHandle
+```rust
+pub fn resolve(&self, uri: &str, version: i32, language: LanguageId, tree: &Tree)
+    -> Result<SyntaxElement, HandleError>
+{
+    if self.uri != uri || self.version != version || self.language != language {
+        return Err(HandleError::Stale);
     }
-    if tree == nil || tree.Root == nil || h.Range.Start > h.Range.End ||
-        h.Range.End > tree.Root.Range().End {
-        return nil, ErrMissingHandle
+    let root = tree.root();
+    if self.range.end() > root.text_range().end() {
+        return Err(HandleError::Missing);
     }
-    candidate := tree.Root.DescendantForRange(h.Range)
-    for candidate != nil {
-        if candidate.Kind() == h.Kind && candidate.Range() == h.Range &&
-            hashText(candidate.Text()) == h.TextHash {
-            return candidate, nil
+    let mut candidate = Some(root.covering_element(self.range));
+    while let Some(element) = candidate {
+        if element.kind() == self.kind
+            && element.text_range() == self.range
+            && hash_text(tree.text(self.range)) == self.text_hash
+        {
+            return Ok(element);
         }
-        candidate = candidate.Parent()
+        candidate = element.parent().map(SyntaxElement::Node);
     }
-    return nil, fmt.Errorf("%w: %s kind %s", ErrStaleHandle, h.Range, h.Kind)
+    Err(HandleError::StaleElement { range: self.range, kind: self.kind.name().into_owned() })
 }
 ```
 
 Six checks: URI, version, language, kind, exact range, text hash. The walk up
-from `DescendantForRange` handles the case where the anchored element is not the
+from `covering_element` handles the case where the anchored element is not the
 innermost element at that range.
 
-`TextHash` is serialized as a JSON **string** deliberately: JavaScript clients
+`text_hash` is serialized as a JSON **string** deliberately: JavaScript clients
 cannot represent every `uint64` in a JSON number without rounding, and a
 silently rounded hash would defeat the check.
 
@@ -247,37 +265,44 @@ Callers turn the two error types into user-facing reasons:
 
 | Error | Meaning | Typical message |
 | --- | --- | --- |
-| `ErrStaleHandle` | The document changed | "The document changed; request code actions again" |
-| `ErrMissingHandle` | No element to anchor to | "The quick fix could not be prepared" |
+| `HandleError::Stale` / `StaleElement` | The document changed | "The document changed; request code actions again" |
+| `HandleError::Missing` | No element to anchor to | "The quick fix could not be prepared" |
 
 ## Validation
 
-`Server.validateWorkspacePlan` runs before **any** plan becomes a
-`WorkspaceEdit`. Four checks, per section.
+`Server::validate_workspace_plan` (`crates/lsp/src/code_action.rs`) runs
+before **any** plan becomes a `WorkspaceEdit`. Four checks, per section.
 
-**Created files** must be inside the workspace root, must not already exist, and
-must parse without errors:
+**Created files** must be inside the workspace root, must not be open or
+already exist, and must parse without errors:
 
-```go
-if _, err := os.Stat(path); err == nil || !errors.Is(err, os.ErrNotExist) {
-    return fmt.Errorf("created document %q already exists or cannot be checked", created.URI)
+```rust
+match std::fs::metadata(&path) {
+    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+    _ => return Err(format!("created document {} already exists or cannot be checked", ...).into()),
 }
-if _, result, parsed := s.documentManager.languages.ParsePath(created.URI, created.Content); parsed && len(result.Errors) != 0 {
-    return fmt.Errorf("created document has %d parser errors", len(result.Errors))
+if let Some((_, parse)) = parse_path(&created.uri, &created.content)
+    && !parse.errors.is_empty()
+{
+    return Err(format!("created document has {} parser errors", parse.errors.len()).into());
 }
 ```
 
 **Edited documents** must still match the snapshot, and applying the edit must
 not make the syntax worse:
 
-```go
-if current.Document.Source != planned.Source || !sameOptionalVersion(current.Version, planned.Version) {
-    return rewrite.ErrStaleHandle
+```rust
+let current = self.resolve_snapshot(ctx, &planned.uri)?;
+if current.document.source() != &*planned.source
+    || !same_optional_version(current.version, planned.version)
+{
+    return Err(stale());
 }
-updated, err := planned.Apply()
-_, result, parsed := s.documentManager.languages.ParsePath(planned.URI, updated)
-if parsed && len(result.Errors) > len(current.Document.ParseErrors) {
-    return fmt.Errorf("rewrite introduces %d parser errors", len(result.Errors)-len(current.Document.ParseErrors))
+let updated = planned.apply()?;
+if let Some((_, parse)) = parse_path(&planned.uri, &updated)
+    && parse.errors.len() > current.document.parse_errors().len()
+{
+    return Err(format!("rewrite introduces {} parser errors", ...).into());
 }
 ```
 
@@ -286,7 +311,7 @@ fix must be able to apply inside an already-broken file — that is often exactl
 when you need it — but it must not add new syntax errors. This one check catches
 most malformed-rewrite bugs before a user ever sees them.
 
-**Deleted files** must exist as regular files and must match the recorded
+**Deleted files** must be inside the workspace root, exist as regular files, and must match the recorded
 snapshot and version.
 
 **Cancellation** is checked between every item.
@@ -294,9 +319,11 @@ snapshot and version.
 When validation fails the code action is returned **disabled with a reason**
 rather than dropped or shipped:
 
-```go
-action.Disabled = &protocol.CodeActionDisabled{Reason: "The generated edit is no longer valid"}
-action.Edit = nil
+```rust
+action.disabled = Some(protocol::CodeActionDisabled {
+    reason: "The generated edit is no longer valid".to_owned(),
+});
+action.edit = None;
 ```
 
 A disabled action with a reason is good UX; a broken edit is not.
@@ -305,60 +332,47 @@ A disabled action with a reason is good UX; a broken edit is not.
 
 Replacing a deprecated Vue I18n `$tc` call with `$t`, complete:
 
-```go
-// internal/lsp/inspections/admin_i18n.go
-func (adminI18nTCFix) Build(
-    _ context.Context,
-    fixContext lsp.FixContext,
-) (rewrite.WorkspacePlan, error) {
-    // 1. decode the payload the analyzer bound when it reported the problem
-    payload, err := lsp.DecodeBoundFixPayload[adminI18nTCReplacement](fixContext)
-    if err != nil {
-        return rewrite.WorkspacePlan{}, err
-    }
-    if payload.Replacement != "$t" {
-        return rewrite.WorkspacePlan{}, fmt.Errorf("invalid Vue I18n replacement")
-    }
+```rust
+// crates/lsp-inspections/src/admin/fixes.rs
+impl RewriteQuickFix for AdminI18nTcFix {
+    fn build(&self, _ctx: &Context, fix: &FixContext) -> Result<WorkspacePlan, BoxError> {
+        // 1. decode the payload the analyzer bound when it reported the problem
+        let payload: AdminI18nTcReplacement = fix.fix_payload()?;
+        if payload.replacement != "$t" {
+            return Err("invalid Vue I18n replacement".into());
+        }
 
-    // 2. resolve the anchor against the CURRENT tree
-    element, err := fixContext.Anchor.Resolve(
-        fixContext.Document.URI,
-        fixContext.Document.Version,
-        fixContext.Document.SyntaxLanguage,
-        fixContext.Document.SyntaxTree,
-    )
-    if err != nil {
-        return rewrite.WorkspacePlan{}, err
-    }
+        // 2. resolve the anchor against the CURRENT tree
+        let element = resolve_anchor(fix)?;
 
-    // 3. re-verify the assumption the fix depends on
-    if element.Text() != "$tc" {
-        return rewrite.WorkspacePlan{}, rewrite.ErrStaleHandle
-    }
+        // 3. re-verify the assumption the fix depends on
+        let text = match &element {
+            SyntaxElement::Node(node) => node.text().to_string(),
+            SyntaxElement::Token(token) => token.text().to_owned(),
+        };
+        if text != "$tc" {
+            return Err(Box::new(HandleError::Stale));
+        }
 
-    // 4. compile edits against this snapshot
-    builder := rewrite.NewBuilder(fixContext.Document.Source)
-    if err := builder.Replace(element, payload.Replacement); err != nil {
-        return rewrite.WorkspacePlan{}, err
-    }
-    edits, err := builder.Finish()
-    if err != nil {
-        return rewrite.WorkspacePlan{}, err
-    }
+        // 4. compile edits against this snapshot
+        let mut builder = Builder::new(fix.document.source());
+        builder.replace(&element, payload.replacement)?;
+        let edits = builder.finish()?;
 
-    // 5. return a versioned plan
-    version := fixContext.Document.Version
-    return rewrite.WorkspacePlan{Documents: []rewrite.DocumentPlan{
-        rewrite.NewDocumentPlan(
-            fixContext.Document.URI, &version, fixContext.Document.Source, edits,
-        ),
-    }}, nil
+        // 5. return a versioned plan for the fix document
+        Ok(single_document_plan(fix, edits))
+    }
 }
 ```
 
-Step 3 is the one people skip. `ElementHandle.Resolve` proves the *element* is
+`resolve_anchor` (`crates/lsp-inspections/src/inspection.rs`) calls
+`ElementHandle::resolve` with the fix document's URI, version, language, and
+tree. `single_document_plan` builds one `DocumentPlan` with
+`Some(document.version)` and reuses the document's line index.
+
+Step 3 is the one people skip. `ElementHandle::resolve` proves the *element* is
 unchanged, but a fix usually also depends on a *semantic* assumption. Re-check
-it and return `ErrStaleHandle` if it no longer holds — that turns a wrong edit
+it and return `HandleError::Stale` if it no longer holds — that turns a wrong edit
 into a graceful "request code actions again".
 
 Also note: **always pass the version.** A versioned document edit lets the
@@ -368,82 +382,82 @@ Omit it only for files the same plan creates.
 ## Language-aware rewrites: the PHP editor
 
 Byte edits are the right primitive, but "add an interface to this class" should
-not be written by hand at every call site. `internal/php/rewrite` provides a
+not be written by hand at every call site. `swlsp-php-rewrite` provides a
 composable editor over the PHP CST:
 
-```go
-// internal/php/rewrite/editor.go
-editor := phprewrite.NewEditor(source, root)
+```rust
+// crates/php-rewrite/src/editor.rs
+let mut editor = Editor::new(source, Some(&root));
 // ... schedule several related changes ...
-edits, err := editor.Finish()
+let edits = editor.finish()?;
 ```
 
 Available operations:
 
 | Area | Methods |
 | --- | --- |
-| Imports and references | `ClassReference(className)` |
-| Class shape | `SetExtends`, `RemoveExtends`, `AddImplements`, `RemoveImplements`, `AddAttribute` |
-| Members | `InsertClassMember`, `RemoveClassMember` |
-| Lists | `InsertArgument`, `AppendArgument`, `RemoveArgument`, `InsertParameter`, `AppendParameter`, `RemoveParameter` |
-| Types | `SetParameterType`, `SetPropertyType`, `SetReturnType` |
-| PHPDoc | `FindPHPDocAnnotation` and related helpers |
-| Raw | `ReplaceRange`, `Insert`, `Delete` |
+| Imports and references | `class_reference(class_name)` |
+| Class shape | `set_extends`, `remove_extends`, `add_implements`, `remove_implements`, `add_attribute` |
+| Members | `insert_class_member`, `remove_class_member` |
+| Lists | `insert_argument`, `append_argument`, `remove_argument`, `insert_parameter`, `append_parameter`, `remove_parameter` |
+| Types | `set_parameter_type`, `set_property_type`, `set_return_type` |
+| PHPDoc | `find_phpdoc_annotation`, `replace_phpdoc_annotation`, `remove_phpdoc_annotation` |
+| Raw | `replace_range`, `insert`, `delete` |
 
 Two of these deserve highlighting because they encode judgment you would
 otherwise re-derive:
 
-**`ClassReference(className)`** returns the shortest unambiguous reference to a
+**`class_reference(class_name)`** returns the shortest unambiguous reference to a
 class *and* schedules a `use` declaration when one is useful. If an existing
 alias would conflict, it falls back to a fully-qualified reference rather than
 rewriting someone's imports:
 
-```go
-// ClassReference returns the shortest unambiguous reference to className and
-// schedules a use declaration when one is useful. Conflicting aliases fall
-// back to a fully-qualified reference rather than changing existing imports.
+```rust
+/// The shortest unambiguous reference to `class_name`, scheduling a use
+/// declaration when one is useful. Conflicting aliases fall back to a
+/// fully qualified reference rather than changing existing imports.
+pub fn class_reference(&mut self, class_name: &str) -> Result<String>
 ```
 
-**`InsertClassMember`** inserts before the closing brace and re-indents every
+**`insert_class_member`** inserts before the closing brace and re-indents every
 non-empty line to match the surrounding class body, so generated members do not
 arrive with the generator's indentation.
 
-Both compose: schedule an import, an attribute, and a member, then `Finish()`
+Both compose: schedule an import, an attribute, and a member, then `finish()`
 once. The insertion-coalescing rule in `Builder` is what makes several
 independent operations at the same offset behave.
 
-When you need a Twig, XML, or YAML rewrite, use `rewrite.Builder` directly with
-ranges from that language's `query` package. Only PHP currently has enough
+When you need a Twig, XML, or YAML rewrite, use `swlsp_rewrite::Builder` directly with
+ranges from that language's `query` module. Only PHP currently has enough
 recurring rewrite shapes to justify a dedicated editor.
 
 ## Rename
 
 `textDocument/rename` uses **first-match** dispatch, not fan-out:
 
-```go
-// internal/lsp/rename.go
-for _, provider := range s.renameProviders {
-    edit, err := provider.Rename(ctx, request)
-    if err != nil {
-        return nil, fmt.Errorf("rename provider %T: %w", provider, err)
-    }
-    if edit != nil {
-        return edit, nil          // first provider that answers wins
+```rust
+// crates/lsp/src/features.rs
+for provider in &registry.rename {
+    let edit = provider
+        .rename(&ctx, &request)
+        .map_err(|error| provider_error("rename", provider.provider_name(), error))?;
+    if edit.is_some() {
+        return Ok(edit);          // first provider that answers wins
     }
 }
-return nil, nil
+Ok(None)
 ```
 
 That differs from completion and definition deliberately: concatenating two
 providers' rename edits would produce a conflicting or double-applied refactor.
-A rename provider must therefore be confident about ownership — return `nil`
+A rename provider must therefore be confident about ownership — return `None`
 unless the symbol under the cursor is clearly yours.
 
-Rename providers live in `internal/lsp/refactor`:
+Rename providers live in `crates/lsp-refactor/src`:
 
-- `php_twig_rename.go` — a PHP symbol whose name also appears in Twig
-- `twig_template_rename.go` — template paths and block names
-- `admin_rename.go` — Administration components and their references
+- `php_twig_rename.rs` — a PHP symbol whose name also appears in Twig
+- `twig_template_rename.rs` — template paths and block names
+- `admin_rename.rs` — Administration components and their references
 
 Cross-language rename is exactly why rewrite plans are workspace-scoped:
 renaming a Twig block touches every template that extends or overrides it, and
@@ -454,20 +468,21 @@ all of those edits must land as one workspace edit or none.
 `workspace/willRenameFiles` lets the server update references *before* the
 editor moves a file:
 
-```go
-// internal/lsp/file_rename.go
-type FileRenameRequest struct {
-    *protocol.RenameFilesParams
-    Documents []*TextDocument      // every open document
+```rust
+// crates/lsp/src/providers.rs
+pub struct FileRenameRequest {
+    pub params: protocol::RenameFilesParams,
+    pub documents: Vec<Arc<TextDocument>>,   // every open document
 }
 
-type FileRenameProvider interface {
-    WillRenameFiles(context.Context, *FileRenameRequest) (*protocol.WorkspaceEdit, error)
+pub trait FileRenameProvider: Send + Sync {
+    fn will_rename_files(&self, ctx: &Context, request: &FileRenameRequest)
+        -> ProviderResult<Option<protocol::WorkspaceEdit>>;
 }
 ```
 
 Unlike symbol rename this **is** a fan-out: every provider contributes, and
-their `Changes` maps are merged per URI. Different providers own different
+their `changes` maps are merged per URI. Different providers own different
 reference kinds — a moved Twig template affects `extends`/`include` paths, a
 moved PHP class affects imports — and those are independent.
 
@@ -476,7 +491,7 @@ too, not just indexed files.
 
 ## Scaffolding
 
-`internal/lsp/scaffold` generates new code — entities, plugins, DAL
+`swlsp-lsp-scaffold` generates new code — entities, plugins, DAL
 definitions, Administration components. It uses the same machinery:
 `CreateFilePlan` for new files, `DocumentPlan` for registration edits in
 existing files, one `WorkspacePlan` for the whole operation.
@@ -491,12 +506,16 @@ Some workflows genuinely cannot be an edit — they need user input, editor
 snippet semantics, or a multi-step interaction. Those implement
 `CommandQuickFix` instead:
 
-```go
-type CommandQuickFix interface {
-    QuickFix
-    BuildCommand(context.Context, FixContext) (*protocol.CommandAction, error)
+```rust
+// crates/lsp/src/inspection.rs
+pub trait CommandQuickFix: Send + Sync {
+    fn build_command(&self, ctx: &Context, fix: &FixContext)
+        -> Result<Option<protocol::CommandAction>, BoxError>;
 }
 ```
+
+A `QuickFix` exposes it through `as_command()`, just as a rewrite fix exposes
+`RewriteQuickFix` through `as_rewrite()`.
 
 **Prefer edits.** A workspace edit works in every client. A command only works
 in a client that implements it, and the server filters out actions whose
@@ -518,11 +537,11 @@ unified diff without touching the disk.
 4. **Resolve the anchor, then re-verify the semantic assumption.** A matching
    element is not proof that the fix still applies.
 5. **Prefer `RewriteQuickFix` over `CommandQuickFix`.**
-6. **Prefer lazy resolution** (`FixLazy`) for non-trivial or cross-file
+6. **Prefer lazy resolution** (`FixResolution::Lazy`) for non-trivial or cross-file
    rewrites, so element handles get a chance to reject a stale document instead
    of computing an edit nobody asked for.
 7. **Compose through one builder or editor.** Do not concatenate strings and
-   hope the offsets line up; let `Finish()` catch the conflict.
+   hope the offsets line up; let `finish()` catch the conflict.
 8. **Return a reason, not a broken edit.** If the rewrite cannot be produced
    safely, fail — the caller turns that into a disabled action with an
    explanation.
@@ -536,18 +555,16 @@ Test a rewrite at three levels.
 
 **The edit itself** — apply the plan and compare source:
 
-```go
-plan, err := fix.Build(context.Background(), fixContext)
-require.NoError(t, err)
-require.Len(t, plan.Documents, 1)
+```rust
+let plan = fix.build(&Context::background(), &fix_context).unwrap();
+assert_eq!(plan.documents.len(), 1);
 
-updated, err := plan.Documents[0].Apply()
-require.NoError(t, err)
-require.Equal(t, expectedSource, updated)
+let updated = plan.documents[0].apply().unwrap();
+assert_eq!(updated, expected_source);
 ```
 
 **Staleness** — build the fix against one document version, then resolve against
-a newer one and assert `ErrStaleHandle`. This is the regression that matters
+a newer one and assert a stale `HandleError` (`is_stale()`). This is the regression that matters
 most, because it only manifests as a corrupted file in production.
 
 **Protocol shape** — a server-level test that the action is offered, that
@@ -556,14 +573,14 @@ correct UTF-16. Use a real `TextDocument` so the conversion is actually
 exercised; a hand-built range skips the most error-prone step.
 
 Also assert the **validation** path: a fix that would introduce parser errors
-must be rejected. `internal/rewrite/rewrite_test.go` covers builder conflicts,
-coalescing, and `Apply`; `internal/php/rewrite/*_test.go` covers the PHP editor
-operations; `internal/lsp/codeaction` and `internal/lsp/inspections` cover
+must be rejected. `crates/rewrite/src/tests.rs` covers builder conflicts,
+coalescing, and `apply`; `crates/php-rewrite/src/tests` covers the PHP editor
+operations; `swlsp-lsp-codeaction` and `swlsp-lsp-inspections` cover
 presentation and end-to-end fix behavior.
 
 ```bash
-go test ./internal/rewrite ./internal/php/rewrite
-go test ./internal/lsp/inspections ./internal/lsp/codeaction ./internal/lsp/refactor
+cargo test -p swlsp-rewrite -p swlsp-php-rewrite
+cargo test -p swlsp-lsp-inspections -p swlsp-lsp-codeaction -p swlsp-lsp-refactor
 shopware-lsp --root /path/to/project codeaction --kind quickfix src/Controller.php:24:18
 shopware-lsp --root /path/to/project rename -d src/Controller.php:24:18 NewName
 ```
@@ -576,7 +593,7 @@ eyeball a rewrite against a real project.
 - [`diagnostics-pipeline.md`](diagnostics-pipeline.md) — where quick fixes are
   bound and resolved
 - [`parser-architecture.md`](parser-architecture.md) — elements, ranges, and
-  `RangeTrimmedTrivia`
+  `range_trimmed_trivia`
 - [`lsp-server.md`](lsp-server.md) — command filtering and client capabilities
 - [`php-semantic-engine.md`](php-semantic-engine.md) — the semantic information
   PHP rewrites depend on
@@ -593,7 +610,7 @@ client checks target versions again immediately before applying the returned edi
 and retains compatibility with older custom
 servers that apply the command themselves and return no edit.
 
-Command adapters live in `internal/lsp/commands`; domain indexes expose plain Go
+Command adapters live in `swlsp-lsp-commands`; domain indexes expose plain Rust
 APIs. The same server snapshot resolver and plan validator serve these commands
 and rewrite quick fixes.
 

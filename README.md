@@ -174,7 +174,7 @@ Configure Language Server...** for a searchable settings UI, or commit
 `.config/shopware/lsp.yaml` when the team should share the same policy.
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/shopware/shopware-lsp/main/internal/projectconfig/schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/shopware/shopware-lsp/main/crates/projectconfig/schema.json
 version: 1
 shopware:
   targetVersion: "6.7"
@@ -195,7 +195,7 @@ extension may contain its own `.config/shopware/lsp.yaml` for diagnostics below
 that directory. VS Code user and workspace settings remain local overrides.
 
 See the [project configuration reference](docs/reference.md#project-configuration)
-and the bundled [JSON schema](internal/projectconfig/schema.json) for every
+and the bundled [JSON schema](crates/projectconfig/schema.json) for every
 option.
 
 The server is a native Rust binary without a garbage collector, so it needs no
@@ -274,9 +274,7 @@ Architecture, for contributors:
 
 The language server is written in Rust (`crates/`); `rust-toolchain.toml`
 pins the toolchain and rustup installs it on first use. SQLite is bundled, so a
-C compiler is the only other build requirement. The original Go implementation
-(`main.go`, `internal/`) stays in the tree as a reference oracle for
-differential testing and is no longer shipped.
+C compiler is the only other build requirement.
 
 Build from source:
 
@@ -285,8 +283,8 @@ cargo build --locked --release -p swlsp-cli   # target/release/shopware-lsp
 SHOPWARE_LSP_VERSION=1.2.3 cargo build --locked --release -p swlsp-cli  # embed a version
 ```
 
-Validate everything (Rust, the Go oracle, VS Code and Zed clients; needs Go,
-Node.js 24 and golangci-lint for the non-Rust parts):
+Validate everything (Rust server, VS Code and Zed clients; needs Node.js 24
+and Python 3 for the editor parts):
 
 ```bash
 make check

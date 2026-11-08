@@ -414,35 +414,3 @@ fn pretty_matches_go() {
         "{\n  \"a\": {\n    \"b\": \"x\",\n    \"c\": [\n      1,\n      2,\n      {\n        \"d\": true\n      }\n    ]\n  },\n  \"e\": [1, 2, 3],\n  \"f\": []\n}\n"
     );
 }
-
-/// Differential replay against Go: `SJSON_ORACLE_CASES` holds JSON lines
-/// `{Json, Path, Value}`, `SJSON_ORACLE_GO` the Go results.
-#[test]
-#[ignore]
-fn sjson_oracle_replay() {
-    let cases = std::fs::read_to_string(std::env::var("SJSON_ORACLE_CASES").unwrap()).unwrap();
-    let go = std::fs::read_to_string(std::env::var("SJSON_ORACLE_GO").unwrap()).unwrap();
-    let mut diffs = 0;
-    let mut total = 0;
-    for (case, expected) in cases.lines().zip(go.lines()) {
-        total += 1;
-        let case: Value = serde_json::from_str(case).unwrap();
-        let expected: String = serde_json::from_str(expected).unwrap();
-        let actual = match crate::sjson::set(
-            case["Json"].as_str().unwrap(),
-            case["Path"].as_str().unwrap(),
-            case["Value"].as_str().unwrap(),
-        ) {
-            Ok(value) => String::from_utf8(crate::pretty::pretty(value.as_bytes())).unwrap(),
-            Err(error) => format!("ERR:{error}"),
-        };
-        if actual != expected {
-            diffs += 1;
-            if diffs < 5 {
-                eprintln!("case {case}\n go {expected:?}\n rs {actual:?}");
-            }
-        }
-    }
-    eprintln!("{total} cases, {diffs} diffs");
-    assert_eq!(diffs, 0);
-}

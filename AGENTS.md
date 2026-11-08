@@ -10,15 +10,12 @@ with [`docs/architecture.md`](docs/architecture.md).
 ## Product and architectural invariants
 
 Shopware LSP provides completion, navigation, hover, diagnostics, refactoring,
-symbols, and other IDE features for Shopware and Symfony projects. The shipped
-backend is written in Rust (`crates/`, binary `shopware-lsp` from
-`crates/cli`); the VS Code client is TypeScript. The original Go
-implementation (`main.go`, `internal/`) stays in the tree as the reference
-oracle for differential testing (see `crates/PORTING.md` and
-`scripts/compare-cst.sh`). It must keep building and passing its CI job, but
-it no longer produces release artifacts. Package names below such as
-`internal/parser` name the Go original; each has a `swlsp-<name>` crate in
-`crates/<name>` that follows the same rules.
+symbols, and other IDE features for Shopware and Symfony projects. The server
+is written in Rust: a Cargo workspace under `crates/`, one crate per subsystem
+(`crates/<name>`, package `swlsp-<name>`), with the `shopware-lsp` binary in
+`crates/cli`. The VS Code client is TypeScript and the Zed client is
+Rust/WASM. `crates/PORTING.md` records crate conventions and the history of
+the port from the earlier Go implementation.
 
 Keep these invariants intact:
 
@@ -29,55 +26,50 @@ Keep these invariants intact:
 - The editor, CLI, and MCP server use the same production workspace,
   configuration, indexes, diagnostics, providers, and rewrite engine. Do not
   implement a second analysis path for one frontend.
-- Language parsing uses the native, lossless CST infrastructure under
-  `internal/parser`. Do not introduce Tree-sitter or a second parser stack.
+- Language parsing uses the native, lossless CST infrastructure in
+  `crates/syntax` and the `crates/parser-<language>` crates. Do not introduce
+  Tree-sitter or a second parser stack.
 - CST ranges are byte offsets into the exact source snapshot. Convert to or
   from UTF-16 positions only at the LSP boundary.
 - Parsers must tolerate incomplete editor input and return a usable, lossless
   tree. Syntax errors are data, not a reason to discard the tree.
-- Workspace data is stored in one namespaced SQLite store. The Rust server
-  bundles SQLite through `rusqlite`'s `bundled` feature (a C compiler is
-  needed, no system library). The Go oracle still requires CGO for
-  `github.com/mattn/go-sqlite3`.
-- `fsnotify` through `FileScanner` is the only source of filesystem index
-  events. Do not add independent watchers in feature packages.
+- Workspace data is stored in one namespaced SQLite store. SQLite is bundled
+  through `rusqlite`'s `bundled` feature (a C compiler is needed, no system
+  library).
+- The `swlsp-indexer` watcher (the `notify` crate) feeding `FileScanner` is
+  the only source of filesystem index events. Do not add independent watchers
+  in feature crates.
 - Request-time features must query existing indexes or the current open
   document. They must not rescan the workspace.
 
 ## Toolchain and common commands
 
 `rust-toolchain.toml` pins the Rust toolchain (rustup installs it on first
-use; keep it in step with `rust-version` in `Cargo.toml`). `go.mod` pins Go for
-the oracle, and CI pins Node.js 24 and golangci-lint. The `Makefile` holds the
-common tasks. The Zed client's Rust toolchain and WASM target are pinned
-separately in `editors/zed/rust-toolchain.toml` for compatibility with Zed's
-rustup build.
+use; keep it in step with `rust-version` in `Cargo.toml`). CI pins Node.js 24
+for the VS Code client. The `Makefile` holds the common tasks. The Zed
+client's Rust toolchain and WASM target are pinned separately in
+`editors/zed/rust-toolchain.toml` for compatibility with Zed's rustup build.
 
 ```bash
-# Shipped Rust server
+# Server
 make build                       # cargo build --locked --release -p swlsp-cli
 cargo test -p swlsp-twig         # one crate while iterating
+cargo test -p swlsp-twig name    # tests whose path contains "name"
 make rust-test                   # cargo test --locked --workspace (no doc-tests)
 make rust-clippy                 # cargo clippy --workspace --all-targets -D warnings
 make rust-fmt-check              # cargo fmt --all --check
-make rust-test-integration-compile  # compile/lint the opt-in real-world suite
-make notices                     # regenerate THIRD_PARTY_NOTICES.md (cargo-about 0.9.2) after dependency changes
-
-# Go reference oracle
-make go-build                    # go build ./...
-make go-test                     # go test ./...
-go test ./internal/twig -run '^TestName$' -count=1
-make go-test-race                # go test -race ./internal/...
-go test -bench=. -run '^$' ./internal/parser/...
-make go-lint                     # golangci-lint run
-scripts/compare-cst.sh <lang> <corpus> <ext>...   # differential CST check
+make rust-test-integration-compile   # clippy over the opt-in real-world suite
+make rust-check                  # all of the above
+make notices                     # regenerate THIRD_PARTY_NOTICES.md (cargo-about)
+cargo run -p swlsp-parser-php --bin dump-cst-php -- FILE   # print a CST
 scripts/bench/lsp_bench.py --server BIN --root ~/shopware --out OUT.json
-scripts/bench/compare.py GO.json RS.json           # end-to-end Go vs Rust
+scripts/bench/compare.py A.json B.json       # end-to-end comparison of two runs
 
 # VS Code extension
 npm --prefix editors/vscode ci
 npm --prefix editors/vscode run check-types
 npm --prefix editors/vscode run compile
+npm --prefix editors/vscode test
 npm --prefix editors/vscode run test:configuration
 npm --prefix editors/vscode run test:entity-designer
 npm --prefix editors/vscode run test:mcp
@@ -86,7 +78,11 @@ npm --prefix editors/vscode run test:mcp
 make zed-check
 make zed-test
 make zed-build
-make zed-contracts               # builds the Rust server, checks LSP/MCP contracts
+make zed-contracts               # builds the server, checks LSP/MCP contracts
+
+# Releases
+make release                     # local VSIX build
+make release-dry-run             # package staged binaries into dist/
 
 # Full local validation
 make check
@@ -94,42 +90,32 @@ make check
 
 Set `SHOPWARE_LSP_VERSION=<version>` when building to embed a version (the
 binary reports `dev` otherwise). Release binaries are built natively per
-target by `.github/workflows/build-binaries.yml` (glibc and static musl builds
-on Linux) and packaged by `scripts/release/package-release.sh` (zip archives,
-checksums), `scripts/release/update-homebrew-cask.sh` (Homebrew) and
+target by `.github/workflows/build-binaries.yml` and packaged by
+`scripts/release/` (archives, packages, checksums) and
 `scripts/build-vsix-release.mjs` (VSIX); see `RELEASING.md`.
 
-Benchmarks written with the `testing` package run in CI through CodSpeed
-(`.github/workflows/codspeed.yml`, walltime instrument, one job on a two-vCPU
-RunsOn `m8g.large` Spot runner, `-benchtime=1s`). Only packages that define
-benchmarks are built. These are still the Go oracle's benchmarks; the Rust
-crates have no CodSpeed suite yet.
+Benchmarks live in `crates/bench` (criterion-compatible benches under
+`crates/bench/benches`) and run in CI through CodSpeed
+(`.github/workflows/codspeed.yml`, `cargo codspeed build -p swlsp-bench`
+then `cargo codspeed run`). Run them locally with
+`cargo bench -p swlsp-bench`.
 
-Every benchmark case costs about a second of CI time on every run, so
-benchmarks are for tracking production code paths. Keep A/B comparisons
-against rejected or test-only alternatives, and wide size sweeps, out of the
-committed suite: use them locally while tuning, then keep one representative
-case (or a short and a long input).
+Every benchmark case costs CI time on every run, so benchmarks are for
+tracking production code paths. Keep A/B comparisons against rejected or
+test-only alternatives, and wide size sweeps, out of the committed suite: use
+them locally while tuning, then keep one representative case (or a short and
+a long input).
 
-`make check` also compiles the Go opt-in real-world integration suite without
-running it. Production Go files are capped at 2,500 lines by
-`internal/architecture/maintainability_test.go`, and `.golangci.yml` rejects
-new functions with cognitive complexity above 65. Treat these as coarse
-regression ceilings: refactor by responsibility instead of formatting code to
-satisfy a number, and tighten thresholds only after the lower baseline has
-focused correctness coverage.
-
-Debug builds keep line tables only (`[profile.dev]` in `Cargo.toml`); pass
-`--config 'profile.dev.debug="full"'` for a debugger session. Crates have no
-doc-tests, so `make rust-test` skips rustdoc; use `cargo test --doc` if you add
-one. Standalone repositories (`DataIndexer::repository` without a workspace
-store, as in most tests) share one `repositories.db` per directory.
+Clippy runs with `-D warnings`, so new warnings fail CI. Keep files and
+functions focused on one responsibility; split a module by responsibility
+instead of reformatting code or adding `#[allow]` to quiet a lint.
 
 Prefer targeted tests while iterating, then run validation proportional to the
-change. `make rust-check` (fmt, clippy, tests) is the normal backend
-pre-handoff check; when the Go oracle changes, also run `go test ./...`,
-relevant race tests, and `golangci-lint run`. Run the VS Code checks when protocol shape,
-configuration, commands, server startup, MCP wiring, or extension code changes.
+change. `make rust-check` (fmt, clippy, tests, integration-suite compile) is
+the normal backend pre-handoff check. Run the VS Code checks when protocol
+shape, configuration, commands, server startup, MCP wiring, or extension code
+changes, and the Zed checks when the Zed client or the server's LSP/MCP
+contract changes.
 
 Use `npm ci`, not `npm install`, unless intentionally changing dependencies and
 the lockfile.
@@ -138,43 +124,43 @@ the lockfile.
 
 | Path | Responsibility |
 |---|---|
-| `crates/cli` | Shipped `shopware-lsp` binary: CLI, `serve`, MCP (port of `main.go` + `internal/cli`) |
-| `crates/<name>` | Rust port of each Go subsystem as `swlsp-<name>`; status and conventions in `crates/PORTING.md` |
-| `main.go` | Go oracle entry point; applies runtime policy and delegates to the CLI |
-| `internal/cli` | `serve`, `check`, `index`, feature commands, profiling, and MCP transport |
-| `internal/app` | Workspace construction, ownership, indexer wiring, inspections, and provider registration |
-| `internal/lsp` | JSON-RPC/LSP server, document lifecycle, protocol conversion, inspection and quick-fix infrastructure |
-| `internal/lsp/<feature>` | Completion, definition, hover, references, symbols, refactors, and other provider implementations |
-| `internal/language` | Built-in language registry and extension-to-parser mapping |
-| `internal/parser/cst` | Language-neutral lossless tree, byte ranges, kinds, and line indexes |
-| `internal/parser/parsekit` | Language-neutral event parser, recovery, and CST sink |
-| `internal/parser/<language>` | Native lexer, parser, syntax kinds, and query helpers for one language |
-| `internal/indexer` | File scanning, coordinated mutations, SQLite repositories, cache versions, and workspace-symbol FTS |
-| `internal/rewrite` | Validated immutable source edits and workspace edit plans |
-| `internal/php` | PHP project model, symbols, semantic graph, types, inference, stubs, and rewrites |
-| `internal/symfony`, `internal/doctrine`, etc. | Domain indexes and framework intelligence |
-| `internal/shopware` | Shopware versioning and Shopware-specific domains such as DAL and entity schemas |
-| `internal/projectconfig` | Root/extension configuration, validation, domains, diagnostics policy, and JSON schema |
+| `crates/cli` | Shipped `shopware-lsp` binary: `serve`, `check`, `index`, feature commands, MCP; flags declared in `src/args.rs` |
+| `crates/app` | Workspace construction, ownership, indexer wiring, inspections (`src/inspections.rs`), and provider registration (`src/providers*.rs`) |
+| `crates/lsp` | JSON-RPC/LSP server, document lifecycle, configuration, protocol conversion, inspection and quick-fix infrastructure |
+| `crates/lsp-protocol` | LSP types (`lsp-types`) plus Shopware protocol extensions |
+| `crates/lsp-<feature>` | Providers: completion, definition, hover, reference, symbol, codeaction, refactor, inspections, diagnostics, and others |
+| `crates/syntax` | Language-neutral lossless tree, byte ranges, kinds, line index, and the event parser |
+| `crates/parser-<language>` | Native lexer, parser, syntax kinds, and `query` helpers for one language (PHP, Twig, JS, XML, XPath, YAML, JSON, SCSS, Vue) |
+| `crates/language` | Built-in language registry and extension-to-parser mapping |
+| `crates/indexer` | File scanning, watcher, coordinated mutations, SQLite store and repositories, cache versions, and workspace-symbol FTS |
+| `crates/rewrite` | Validated immutable source edits and workspace edit plans |
+| `crates/php`, `crates/php-<stage>` | PHP project model, binder, semantic graph, types, resolver, inference, PHPDoc, stubs, and rewrites |
+| `crates/symfony`, `crates/doctrine`, `crates/twig`, etc. | Domain indexes and framework intelligence |
+| `crates/shopware`, `crates/shopware-*`, `crates/admin` | Shopware versioning and Shopware-specific domains such as DAL, entity schemas, and the Administration |
+| `crates/projectconfig` | Root/extension configuration, validation, domains, diagnostics policy, and JSON schema |
+| `crates/uriutil`, `crates/pathmatch`, `crates/textutil`, etc. | Small shared utilities |
+| `crates/bench` | CodSpeed benchmarks |
 | `editors/vscode/src` | Thin VS Code client, command UI, configuration UI, generators, and MCP registration |
 | `editors/zed` | Rust/WASM Zed client, MCP configuration, terminal task adapters, and contract tests |
-| `scripts` | Release and packaging helpers (`scripts/release/`), `compare-cst.sh` oracle diff, `bench/` end-to-end LSP benchmark |
+| `scripts` | Release and packaging helpers (`scripts/release/`), `bench/` end-to-end LSP benchmark |
 | `third_party/phpstorm-stubs` | Pinned source metadata for generated PHP runtime stubs |
 
-Avoid fixed provider counts in documentation or tests; provider registration
-changes frequently. `internal/app/providers.go` and
-`internal/app/inspections.go` are the authoritative composition roots.
+Avoid fixed provider or crate counts in documentation or tests; registration
+changes frequently. `crates/app/src/providers.rs` and
+`crates/app/src/inspections.rs` are the authoritative composition roots.
 
 ## Runtime data flow
 
 ### Startup and indexing
 
-1. `main.go` delegates to `internal/cli`.
+1. `crates/cli/src/main.rs` parses arguments and starts `serve` (the default
+   with no command).
 2. The LSP `initialize` request supplies the workspace root and client options.
-3. `internal/app.NewWorkspace` opens the shared store, constructs indexes and
+3. `swlsp_app::Workspace::new` opens the shared store, constructs indexes and
    their dependencies, and registers enabled indexers with `FileScanner`.
-4. `registerFeatures` and `registerDiagnosticInspections` connect domain
+4. `register_features` and `register_diagnostic_inspections` connect domain
    services to protocol capabilities.
-5. The scanner parses a candidate file once through `internal/language`, lets
+5. The scanner parses a candidate file once through `swlsp-language`, lets
    indexers prepare read-only data concurrently, and commits per-file changes
    through a coordinated mutation.
 
@@ -205,61 +191,65 @@ require a restart and cache invalidation.
 When changing or adding a parser:
 
 - Keep lexing, parsing, syntax kinds, and queries in their existing separate
-  packages.
-- Reserve a non-overlapping `cst.Kind` range with `cst.RegisterLanguage` for a
-  new language.
+  modules (`lexer.rs`, `parser.rs`, `syntax.rs`, `query`).
+- Declare a new language's kinds with `swlsp_syntax::language!` and reserve a
+  non-overlapping kind base.
 - Preserve all input, including whitespace, comments, unknown constructs, and
   malformed fragments.
-- Assert `result.Tree.Root.Text() == source` in parser tests.
+- Assert that the root text equals the source in parser tests
+  (`assert_eq!(parse.root().text().to_string(), source)`).
 - Add recovery tests for incomplete constructs likely to occur while typing.
 - Use syntax/query helpers in consumers instead of duplicating token walks or
   parsing source with regular expressions.
-- Add the frontend and extensions to `internal/language/builtin.go` only after
-  losslessness and recovery are covered.
-- Run parser benchmarks or `internal/parser/performance_validation_test.go`
-  when changing hot lexer/parser paths.
+- Add the frontend and extensions to `crates/language` only after losslessness
+  and recovery are covered.
+- Provide a `src/bin/dump-cst-<lang>.rs` that calls `swlsp_syntax::dump::run`.
+- Run the parser benchmarks in `crates/bench` when changing hot lexer/parser
+  paths.
 
 Do not mutate CST nodes. Parse trees represent immutable source snapshots;
-source changes are compiled through `internal/rewrite`.
+source changes are compiled through `swlsp-rewrite`.
 
 ## Indexing and persistence
 
-Indexers implement `internal/indexer.Indexer`. Follow these rules:
+Indexers implement `swlsp_indexer::Indexer` (`crates/indexer/src/indexer.rs`).
+Follow these rules:
 
 - Parsing and expensive extraction should happen before the SQLite write
-  transaction. Implement `PreparingIndexer` when preparation is substantial.
-- `IndexPrepared` should persist prepared data and arrange post-commit
+  transaction. Implement `PreparingIndexer` (exposed through
+  `Indexer::as_preparing`) when preparation is substantial.
+- `index_prepared` should persist prepared data and arrange post-commit
   publication; it should not repeat parsing or expensive inference.
 - Save and remove records per source path so file changes and deletions cannot
   leave stale rows.
-- Use the shared `ParsedFile.Mutation()` and namespaced repositories. Do not
-  open an unrelated feature database.
+- Use the shared `ParsedFile::mutation()` and namespaced repositories
+  (`DataIndexer`). Do not open an unrelated feature database.
 - Keep publication deterministic. Sort results where repository iteration or
   maps could otherwise leak nondeterministic ordering to LSP clients.
 - Protect mutable published state with the existing synchronization pattern
-  and run race tests after lifecycle or concurrency changes.
-- Bump `internal/indexer.IndexVersion` whenever persisted structure or
-  extraction semantics makes existing caches incompatible. Update its test in
-  the same change.
+  and add concurrency tests after lifecycle or concurrency changes.
+- Bump `swlsp_indexer::INDEX_VERSION` (`crates/indexer/src/version.rs`)
+  whenever persisted structure or extraction semantics makes existing caches
+  incompatible. Update its test in the same change.
 - Consider the cold-index, cached-start, disk-size, and request-latency cost of
   every new indexed field. Do not load an entire catalog into memory when a
   targeted SQLite lookup is sufficient.
 
-Use `SHOPWARE_LSP_CACHE_DIR` in tests and diagnostics instead of touching a
-developer's normal workspace cache.
+Use `SHOPWARE_LSP_CACHE_DIR` (`swlsp_app::CACHE_DIR_ENV`) in tests and
+diagnostics instead of touching a developer's normal workspace cache.
 
 ## LSP providers
 
-Provider interfaces live in `internal/lsp`; implementations live in the
-feature subpackages. A normal new provider change should:
+Provider traits live in `crates/lsp/src/providers.rs`; implementations live in
+the `crates/lsp-<feature>` crates. A normal new provider change should:
 
 1. depend on domain indexes/services through its constructor;
 2. return quickly for unsupported languages or contexts;
-3. honor `context.Context` cancellation in non-trivial loops;
-4. use `uriutil` for file URI conversion;
+3. honor `Context::is_cancelled` in non-trivial loops;
+4. use `swlsp-uriutil` for file URI conversion;
 5. use the current `SyntaxContext` rather than reparsing when it is available;
 6. return deterministic, deduplicated results with exact ranges;
-7. be constructed and registered in `internal/app/providers.go`;
+7. be constructed and registered in `crates/app/src/providers*.rs`;
 8. be gated by the appropriate feature and domain configuration;
 9. have focused provider tests plus a server-level test when protocol routing
    or document lifecycle matters.
@@ -274,20 +264,22 @@ code-action rediscovery pass.
 
 1. Define stable diagnostic and inspection IDs. IDs are configuration and API
    contracts; do not rename them casually.
-2. Analyze a `TextDocument` and report byte-oriented `lsp.Problem` values.
+2. Analyze a `TextDocument` and report byte-oriented `swlsp_lsp::Problem`
+   values.
 3. Declare every possible problem in an `InspectionDefinition`, including its
    default severity and whether it is disabled by default.
 4. Put serializable context in the problem payload.
 5. Bind exact quick-fix IDs and payloads when reporting the problem.
-6. Implement deterministic edits as `RewriteQuickFix` values using
-   `rewrite.Builder` and `rewrite.WorkspacePlan`.
+6. Implement deterministic edits as `RewriteQuickFix` implementations using
+   `swlsp_rewrite::Builder` and `swlsp_rewrite::WorkspacePlan`.
 7. Use `CommandQuickFix` only when editor interaction, snippets, or another
    command-only workflow is genuinely required. MCP can apply workspace edits
    but cannot execute editor-only commands.
 8. Prefer lazy fixes for non-trivial or cross-file rewrites so element handles
    can reject stale document versions.
-9. Register the inspection in `internal/app/inspections.go` and map it to a
-   domain in `inspectionDomain` when needed.
+9. Register the inspection in `crates/app/src/inspections.rs` and map it to a
+   domain in `inspection_domain` (`crates/lsp/src/configuration.rs`) when
+   needed.
 10. Test the diagnostic, fix presentation, generated edit, stale-state
     behavior, configuration override, and MCP/CLI path when externally useful.
 
@@ -300,7 +292,7 @@ validate and apply it consistently.
 
 - Keep parsing, binding, semantic storage, name resolution, and type inference
   as separate stages.
-- Prefer the shared `php/types` representation and semantic snapshots over
+- Prefer the shared `swlsp-php-types` representation and semantic snapshots over
   feature-specific type strings.
 - Resolve aliases, inheritance, interfaces, traits, PHPDoc, generics, and
   nullability through the central resolver/inference APIs.
@@ -309,12 +301,13 @@ validate and apply it consistently.
 - Changes to compact persisted PHP graph data require persistence and restart
   tests and may require an index-version bump.
 - Generated runtime stubs come from phpstorm-stubs through
-  `cmd/generate_phpstorm_stubs`; do not hand-maintain a competing builtin
-  catalog.
+  `crates/php-stubs-generate` (`generate-phpstorm-stubs`), which writes
+  `crates/php-stubs/data/phpstorm-stubs.msgpack`; do not hand-maintain a
+  competing builtin catalog.
 
 ## Shopware version-aware features
 
-Use `internal/shopware.VersionResolver` and the configured target version.
+Use `swlsp_shopware::VersionResolver` and the configured target version.
 Version-aware diagnostics should clearly define their version interval, remain
 safe when the installed version is unknown, and include tests on both sides of
 each boundary. Prefer reusable analyzers and rewrite utilities over copying one
@@ -325,11 +318,11 @@ Rector rule verbatim into each inspection.
 When adding a feature, domain, inspection, or rule, check all applicable
 surfaces:
 
-- `internal/projectconfig` defaults, catalog, validation, merging, and
+- `crates/projectconfig` defaults, catalog, validation, merging, and
   structural fingerprint;
-- `internal/projectconfig/schema.json`;
-- inspection-to-domain routing in `internal/lsp/configuration.go`;
-- provider/inspection gating in `internal/app`;
+- `crates/projectconfig/schema.json`;
+- inspection-to-domain routing in `crates/lsp/src/configuration.rs`;
+- provider/inspection gating in `crates/app`;
 - VS Code configuration model/UI when users must control it locally;
 - root and nested configuration tests;
 - README examples for user-visible settings.
@@ -344,7 +337,8 @@ Keep `editors/vscode/src/extension.ts` as the composition entry point. Put
 commands, configuration models, executable discovery, MCP wiring, and complex
 webviews in their existing focused modules.
 
-- The extension is a client and UI layer; domain analysis belongs in Go.
+- The extension is a client and UI layer; domain analysis belongs in the
+  Rust server.
 - Launch one language-server and MCP definition per effective workspace
   folder. For overlapping supported roots, the outermost root owns its
   descendants; an enabled child may run when its parent is inactive.
@@ -361,6 +355,10 @@ webviews in their existing focused modules.
 CLI positions and MCP positions are one-based; LSP protocol positions are
 zero-based UTF-16. Keep conversion at the adapter boundary.
 
+The CLI uses GNU-style flags (`--root DIR`, `--json`, `-v`), declared with
+`usage-rs` in `crates/cli/src/args.rs`; help and parse errors are generated
+from those declarations. MCP lives in `crates/cli/src/mcp`.
+
 - Feature CLI commands should call the production LSP session rather than
   feature packages directly.
 - Read-only commands must not mutate workspace files.
@@ -373,15 +371,21 @@ zero-based UTF-16. Keep conversion at the adapter boundary.
 
 ## Testing strategy
 
-Use `testify/require` for prerequisites and fatal assertions and
-`testify/assert` for independent comparisons. Prefer `t.TempDir()` and close
-indexes with `t.Cleanup`:
+Tests are plain `#[test]` functions, usually in a `tests.rs` file or `tests/`
+module next to the code (`#[cfg(test)] mod tests;`). Use `assert_eq!` for
+comparisons, `unwrap()`/`expect("context")` for prerequisites, and
+`tempfile::tempdir()` for filesystem fixtures; keep the `TempDir` alive for the
+whole test and close stores explicitly:
 
-```go
-func TestFeature(t *testing.T) {
-    index, err := NewIndex(filepath.Join(t.TempDir(), "cache"))
-    require.NoError(t, err)
-    t.Cleanup(func() { require.NoError(t, index.Close()) })
+```rust
+#[test]
+fn saves_and_reads_values() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = Store::open(directory.path().join("indexes.db")).unwrap();
+    let values = DataIndexer::<i64>::in_store(&store, "numbers").unwrap();
+    values.save_item("/a", "key", &42).unwrap();
+    assert_eq!(values.get_values("key").unwrap(), [42]);
+    store.close().unwrap();
 }
 ```
 
@@ -397,26 +401,30 @@ boundary the unit test cannot cover:
 Tests should not require network access. External checkouts are read-only
 fixtures and must never be modified by tests.
 
-Real-world tests use the `integration` build tag and default to
-`~/Developer/sw-trunk`; override it with `SHOPWARE_LSP_REAL_WORLD_ROOT`:
+The real-world suite in `crates/app/src/tests/real_world` sits behind the
+`integration` feature of `swlsp-app` and defaults to `~/Developer/sw-trunk`;
+override it with `SHOPWARE_LSP_REAL_WORLD_ROOT`:
 
 ```bash
 SHOPWARE_LSP_REAL_WORLD_ROOT=/path/to/sw-trunk \
-  go test -tags=integration ./internal/app \
-  -run '^TestShopwareTrunkIndexing$' -count=1 -v
+  cargo test --release -p swlsp-app --features integration --lib \
+  -- --exact tests::real_world::indexing_main::shopware_trunk_indexing --nocapture
 ```
 
 Real-world fixtures move independently. If an unrelated assertion fails,
 confirm it on the baseline revision before changing production code or
 weakening the assertion.
 
-For a cold/warm indexing resource profile:
+For a cold/warm indexing resource profile, run `shopware_trunk_indexing_profile`
+(`crates/app/src/tests/real_world/index_profile.rs`) the same way. Its
+`SHOPWARE_LSP_PROFILE_*` environment variables select the cache directory
+(`SHOPWARE_LSP_PROFILE_CACHE_DIR`), worker count, and optional semantic-storage,
+reverse-reference and atom measurements:
 
 ```bash
-go test -c -tags=integration ./internal/app \
-  -o /tmp/shopware-lsp-index-profile.test
-/usr/bin/time -l /tmp/shopware-lsp-index-profile.test \
-  -test.run '^TestShopwareTrunkIndexingProfile$' -test.count=1 -test.v
+SHOPWARE_LSP_PROFILE_CACHE_DIR=/tmp/swlsp-profile \
+  cargo test --release -p swlsp-app --features integration --lib \
+  shopware_trunk_indexing_profile -- --nocapture
 ```
 
 Use isolated cache directories and reverse run order when comparing revisions;
@@ -425,16 +433,17 @@ a regression.
 
 ## Code quality and change discipline
 
-- Run `gofmt` on changed Go files and keep `golangci-lint` clean.
-- Wrap errors with useful operation context and `%w`; keep reusable error text
-  lowercase.
-- Avoid panics in request/index paths. Return errors or tolerant empty results
-  where editor-time degradation is preferable.
+- Run `cargo fmt` and keep `cargo clippy --all-targets -- -D warnings` clean.
+- Add operation context to errors (keep the source error as the cause); keep
+  reusable error text lowercase.
+- Avoid panics (`unwrap`, indexing, `expect`) in request/index paths. Return
+  errors or tolerant empty results where editor-time degradation is
+  preferable.
 - Keep hot loops allocation-aware, but prefer clear measured improvements over
   speculative complexity.
 - Preserve existing uncommitted work. Inspect `git status` and relevant diffs
   before editing; never discard unrelated changes.
-- Do not modify `vendor`, `node_modules`, generated release outputs, or a
+- Do not modify `target`, `node_modules`, generated release outputs, or a
   user's external Shopware/plugin checkout unless explicitly requested.
 - Update documentation when behavior, commands, configuration, or user-facing
   defaults change.
@@ -453,7 +462,8 @@ Before handing off a change, confirm that:
 - diagnostics and actions respect configuration and domain toggles;
 - user-visible edits are represented as validated workspace edits;
 - focused regression tests pass;
-- full Go, race, lint, and VS Code checks were run as appropriate;
+- `make rust-check`, and the VS Code and Zed checks, were run as
+  appropriate;
 - index or request-time performance was measured for potentially expensive
   changes;
 - any skipped check or pre-existing fixture failure is reported precisely.

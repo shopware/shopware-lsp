@@ -1,28 +1,28 @@
 # PHP semantic engine
 
-The PHP engine is a native Go pipeline. It does not depend on tree-sitter, a
+The PHP engine is a native Rust pipeline. It does not depend on tree-sitter, a
 PHP subprocess, or an LSP-specific syntax representation. Its main design
 constraint is that syntax, semantic state, and transport remain replaceable
 independently.
 
 ## Pipeline
 
-1. `internal/parser/php` lexes and parses source into a lossless immutable CST.
+1. `swlsp-parser-php` (`crates/parser-php`) lexes and parses source into a lossless immutable CST.
    Every source byte belongs to a token, including trivia and malformed input.
-2. `internal/php/binder` creates declarations, lexical scopes, imports,
+2. `swlsp-php-binder` creates declarations, lexical scopes, imports,
    references, PHPDoc metadata, templates, promoted properties, and local
    symbols. Binding is file-local and deterministic.
-3. `internal/php/semantic` publishes immutable document and workspace
+3. `swlsp-php-semantic` publishes immutable document and workspace
    generations. A namespaced SQLite repository persists documents; open files
    are overlaid without mutating the indexed generation.
-4. `internal/php/resolver` resolves names, generic inheritance, members, and
+4. `swlsp-php-resolver` resolves names, generic inheritance, members, and
    call signatures. Class templates are invariant by default and honor
    explicit covariance or contravariance.
-5. `internal/php/inference` evaluates expressions and control flow. A bounded
+5. `swlsp-php-inference` evaluates expressions and control flow. A bounded
    fixed-point pass makes inferred returns available to calls in the same
    document. Framework extensions may refine call results without coupling
    the core engine to Shopware or Symfony.
-6. `internal/lsp/phpsemantic` adapts the semantic graph to completion, hover,
+6. `swlsp-lsp-phpsemantic` adapts the semantic graph to completion, hover,
    definition, references, signature help, rename, and diagnostics.
 
 The workspace index contains stable symbol IDs rather than CST pointers.
@@ -32,7 +32,7 @@ against the overlay generation, so navigation never mixes source versions.
 
 ## Type model
 
-`internal/php/types.Type` is an immutable algebra with canonical
+`swlsp_php_types::Type` (`crates/php-types/src/ty.rs`) is an immutable algebra with canonical
 serialization. It represents:
 
 - scalar, `mixed`, `never`, `void`, `null`, and literal types;
@@ -42,14 +42,14 @@ serialization. It represents:
 - callables with named, optional, variadic, and by-reference parameters;
 - `class-string`, templates, bounds, defaults, and declared variance.
 
-`types.Relations` owns subtype, assignability, join, narrowing, and exclusion
+`Relations` (`crates/php-types/src/relations.rs`) owns subtype, assignability, join, narrowing, and exclusion
 rules. Workspace hierarchy details are supplied through small interfaces, so
-the type package has no dependency on the index or parser.
+the type crate has no dependency on the index or parser.
 
 ## Project and runtime model
 
-`internal/php/project` reads the root Composer metadata, dependency autoload
-metadata, and the configured PHP platform version. `internal/php/stubs`
+`swlsp-php-project` reads the root Composer metadata, dependency autoload
+metadata, and the configured PHP platform version. `swlsp-php-stubs`
 publishes a version-aware internal semantic document generated from a pinned
 JetBrains phpstorm-stubs revision. The generator parses the selected upstream
 extensions with the same native lossless PHP frontend used for project source,
@@ -93,9 +93,10 @@ classes providing the relevant PHP magic fallback.
   lexer/parser tests, and query helpers.
 - Add ordinary runtime declarations upstream or update the pinned generated
   catalog; add only generic/inference refinements to the stubs overlay.
-- Add domain call inference by implementing `inference.Extension` and
-  registering it in `internal/app`.
-- Add a semantic consumer against `PHPIndex.SemanticSnapshot`; do not retain
+- Add domain call inference by implementing the `Extension` trait
+  (`crates/php-inference/src/extensions/mod.rs`) and registering it in
+  `swlsp-app`.
+- Add a semantic consumer against `PhpIndex::semantic_snapshot`; do not retain
   CST nodes across document versions.
 
 Every new syntax feature needs a lossless parser test. Type changes need
@@ -105,8 +106,8 @@ and a delayed-index-order test. LSP features should be tested through a real
 
 ## Performance guardrails
 
-Benchmarks live in `internal/php/benchmark_test.go` and separately measure
-parsing, binding, analysis, and indexed lookup. The parser and binder are
+Benchmarks live in `crates/bench/benches/php.rs` and separately measure
+parsing, binding, and semantic analysis. The parser and binder are
 linear in source size. Member lookup uses per-container indexes; class lookup
 uses normalized-name indexes. Fixed-point inference overlays only changed
 symbol values and shares immutable indexes.
@@ -114,9 +115,8 @@ symbol values and shares immutable indexes.
 Run:
 
 ```bash
-go test ./internal/php -run '^$' -bench . -benchmem
-go test ./internal/parser/php/parser -run '^$' \
-  -fuzz FuzzPHPParserLossless -fuzztime=10s
+cargo bench -p swlsp-bench --bench php
+cargo test -p swlsp-parser-php
 ```
 
 The next useful depth improvements are extension-aware runtime catalog

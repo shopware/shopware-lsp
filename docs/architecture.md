@@ -14,7 +14,7 @@ first, then follow the links into the subsystem documents.
 - [Non-negotiable invariants](#non-negotiable-invariants)
 - [Process model](#process-model)
 - [Layers and dependency direction](#layers-and-dependency-direction)
-- [Package inventory](#package-inventory)
+- [Crate inventory](#crate-inventory)
 - [Lifecycle: from process start to a served request](#lifecycle-from-process-start-to-a-served-request)
 - [The three data sources](#the-three-data-sources)
 - [Concurrency model](#concurrency-model)
@@ -32,23 +32,18 @@ projects — completion, go-to-definition, hover, diagnostics, quick fixes,
 refactoring, symbols, code lenses, and more — across PHP, Twig, XML, YAML,
 JSON, JavaScript/TypeScript, SCSS, and Vue.
 
-The shipped server is built from `crates/` (`swlsp-cli` produces the
-`shopware-lsp` executable). It is a crate-for-package port of the original Go
-implementation under `main.go` and `internal/`, which this document describes
-by its Go package names; each `internal/<name>` package has a matching
-`swlsp-<name>` crate with the same structure and invariants. The Go tree is no
-longer released. It stays buildable and tested as the reference oracle:
-differential harnesses such as `scripts/compare-cst.sh` run both
-implementations over real corpora and diff their output, and
-`crates/PORTING.md` records the conventions, intentional differences, and
-status of each port.
+The server is a Cargo workspace under `crates/`: one `swlsp-<name>` crate per
+subsystem in `crates/<name>`, and `swlsp-cli` produces the `shopware-lsp`
+executable. It was ported from an earlier Go implementation;
+`crates/PORTING.md` records the conventions and the intentional behavior
+differences from that implementation.
 
 The same binary is three frontends over one engine:
 
 | Frontend | Entry | Transport |
 | --- | --- | --- |
 | Language server | `shopware-lsp` (no command) or `shopware-lsp serve` | JSON-RPC over stdin/stdout |
-| CLI | `shopware-lsp check`, `definition`, `rename`, … | In-process LSP session over an internal socket pair |
+| CLI | `shopware-lsp check`, `definition`, `rename`, … | In-process LSP session over OS pipes |
 | MCP server | `shopware-lsp mcp` | MCP over stdio, backed by the same session |
 
 The CLI and MCP paths are *not* a second implementation. They start the real
@@ -77,15 +72,15 @@ change, not a bug fix.
 2. **One analysis path.** Editor, CLI, and MCP share the workspace,
    configuration, indexes, diagnostics, providers, and rewrite engine.
 3. **One parser stack.** All languages use the native lossless CST under
-   `internal/parser`. No tree-sitter, no second parser, no regex-based
+   `swlsp-syntax` and the `crates/parser-<language>` crates. No tree-sitter, no second parser, no regex-based
    "parsing" in consumers.
 4. **Byte offsets internally, UTF-16 only at the protocol boundary.** CST
    ranges are byte offsets into an exact source snapshot. Conversion happens in
-   `internal/lsp`, nowhere else.
+   `swlsp-lsp` (and `swlsp-lsp-protocol`), nowhere else.
 5. **Parsing is total and lossless.** Incomplete editor input still produces a
    usable tree that reproduces the source exactly. Syntax errors are data.
 6. **Trees are immutable.** Nothing mutates a CST. Source changes are compiled
-   to byte edits through `internal/rewrite`.
+   to byte edits through `swlsp-rewrite`.
 7. **One namespaced SQLite store per workspace.** No feature opens its own
    unrelated database.
 8. **One filesystem event source.** `FileScanner` owns watching. Feature
@@ -99,25 +94,25 @@ change, not a bug fix.
                        ┌──────────────────────────────┐
    editor / CLI / MCP  │  one OS process per workspace │
    ───────────────────►│                               │
-                       │  main.go                      │
-                       │    └─ internal/cli            │  command dispatch, flags
-                       │         └─ internal/lsp.Server │  JSON-RPC, documents
-                       │              └─ internal/app   │  composition root
-                       │                   ├─ indexes   │  domain packages
-                       │                   ├─ providers │  internal/lsp/<feature>
-                       │                   └─ store     │  one SQLite file
+                       │  crates/cli (main.rs)         │
+                       │    └─ swlsp_cli::Runner       │  command dispatch, flags
+                       │         └─ swlsp_lsp::Server  │  JSON-RPC, documents
+                       │              └─ swlsp-app     │  composition root
+                       │                   ├─ indexes  │  domain crates
+                       │                   ├─ providers│  crates/lsp-<feature>
+                       │                   └─ store    │  one SQLite file
                        └──────────────────────────────┘
                                      │
                        ~/.cache/shopware-lsp/<root hash>/
                             indexes.db  file_scanner.db  index_version  …
 ```
 
-`main.go` is 40 lines: it applies the runtime memory policy
-(`internal/runtimeconfig`), installs a signal-cancelled context, and hands
-`os.Args` to `internal/cli`.
+`crates/cli/src/main.rs` is short: it installs an interrupt handler that
+cancels the run, selects mimalloc as the allocator on musl builds, and hands
+the arguments to `swlsp_cli::Runner`.
 
 The cache directory is derived from the workspace root
-(`internal/app/cache.go`), using SHA-256 of the normalized absolute root. This
+(`crates/app/src/cache.rs`), using SHA-256 of the normalized absolute root. This
 avoids collisions between distinct paths and bounds cache directory name length.
 Existing caches under separator-substituted names are left untouched; the first
 start with the new identity performs a cold index. Set
@@ -130,69 +125,65 @@ Dependencies point **downward** only. A lower layer never imports a higher one.
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│  Frontends            internal/cli  ·  editors/vscode/           │
+│  Frontends            crates/cli  ·  editors/vscode  ·  editors/zed │
 ├────────────────────────────────────────────────────────────────┤
-│  Composition          internal/app                             │
-│                       workspace.go   → constructs indexes      │
-│                       providers*.go  → registers providers     │
-│                       inspections.go → registers inspections   │
+│  Composition          crates/app                               │
+│                       workspace.rs    → constructs indexes     │
+│                       providers*.rs   → registers providers    │
+│                       inspections.rs  → registers inspections  │
 ├────────────────────────────────────────────────────────────────┤
-│  Protocol             internal/lsp                             │
+│  Protocol             crates/lsp, crates/lsp-protocol          │
 │                       server, documents, capabilities,         │
 │                       diagnostics infrastructure, protocol DTOs │
-│                       internal/lsp/<feature>  → providers      │
+│                       crates/lsp-<feature>  → providers        │
 ├────────────────────────────────────────────────────────────────┤
-│  Domain               internal/symfony  internal/twig          │
-│                       internal/php      internal/admin         │
-│                       internal/doctrine internal/snippet  …    │
+│  Domain               crates/symfony  crates/twig              │
+│                       crates/php      crates/admin             │
+│                       crates/doctrine crates/snippet  …        │
 │                       (indexes + framework intelligence)        │
 ├────────────────────────────────────────────────────────────────┤
-│  Infrastructure       internal/indexer   internal/rewrite      │
-│                       internal/language  internal/projectconfig │
+│  Infrastructure       crates/indexer   crates/rewrite          │
+│                       crates/language  crates/projectconfig    │
 ├────────────────────────────────────────────────────────────────┤
-│  Syntax               internal/parser/cst  · parsekit          │
-│                       internal/parser/<language>/…             │
-│                       internal/parser/bytescan                  │
+│  Syntax               crates/syntax                            │
+│                       crates/parser-<language>                 │
 └────────────────────────────────────────────────────────────────┘
 ```
 
 Two rules follow from this and are worth stating explicitly:
 
-- **`internal/app` is the only place that knows the whole system.** It is a
+- **`swlsp-app` is the only place that knows the whole system.** It is a
   composition root: it constructs, wires, and registers. It contains no
   analysis logic. If you find yourself adding a `switch` over domains inside a
   provider, the wiring probably belongs in `app`.
-- **Domain packages do not import `internal/lsp`.** They expose plain Go APIs
+- **Domain crates do not depend on `swlsp-lsp`.** They expose plain Rust APIs
   over their indexes. The adapters that turn those into protocol responses live
-  in `internal/lsp/<feature>` and are wired in `internal/app/providers*.go`.
-  (Analyzers in `internal/lsp/diagnostics` are the deliberate exception: they
-  sit in the LSP layer precisely because they produce `lsp.Problem` values.)
+  in `crates/lsp-<feature>` and are wired in `crates/app/src/providers*.rs`.
+  (Analyzers in `swlsp-lsp-diagnostics` are the deliberate exception: they
+  sit in the LSP layer precisely because they produce `Problem` values.)
 
-## Package inventory
+## Crate inventory
 
-Sizes are indicative of where the mass is, not a quality signal.
+Crate names below drop the `swlsp-` prefix; each lives in `crates/<name>`.
 
 ### Syntax layer
 
-| Package | What it does |
+| Crate | What it does |
 | --- | --- |
-| `parser/cst` | Language-neutral lossless tree, `Kind` registry, `TextRange`, `LineIndex`, `Builder`, slab pools |
-| `parser/parsekit` | Language-neutral event/marker parser, trivia-skipping cursor, recovery, diagnostics, the sink |
-| `parser/bytescan` | Allocation-free byte scans with optional SIMD |
-| `parser/php`, `twig`, `yaml`, `xml`, `json`, `javascript`, `scss`, `vue`, `xpath` | One frontend each: `lexer` / `parser` / `syntax` / `query` |
-| `language` | Extension → frontend registry (`ParsePath`) |
+| `syntax` | Language-neutral lossless tree (rowan green trees), `Kind` registry, byte `TextRange`, `LineIndex`, the event/marker `Parser` with recovery and diagnostics |
+| `parser-php`, `parser-twig`, `parser-yaml`, `parser-xml`, `parser-json`, `parser-js`, `parser-scss`, `parser-vue`, `parser-xpath` | One frontend each: `lexer` / `parser` / `syntax` / `query` modules |
+| `language` | Extension → frontend registry |
 
 See [`parser-architecture.md`](parser-architecture.md).
 
 ### Infrastructure
 
-| Package | What it does |
+| Crate | What it does |
 | --- | --- |
 | `indexer` | `FileScanner`, coordinated `Mutation`s, `DataIndexer` repositories, cache versioning, workspace-symbol FTS, filesystem watchers, PHAR sources |
 | `rewrite` | Validated immutable source edits, `ElementHandle`, `WorkspacePlan` |
 | `projectconfig` | Committed and editor configuration, domains, diagnostic policy, JSON schema, structural fingerprint |
 | `projectdetect` | Is this root a Shopware or Symfony project? |
-| `runtimeconfig` | Process-wide GC / memory policy |
 | `phar` | Reads `.phar` archives without invoking PHP |
 | `uriutil`, `pathmatch`, `textutil` | URI conversion, glob matching, small text transforms |
 
@@ -201,48 +192,49 @@ See [`indexing.md`](indexing.md) and
 
 ### PHP engine
 
-| Package | What it does |
+| Crate | What it does |
 | --- | --- |
-| `php` | Project model, `PHPIndex`, name resolution, embedded-language detection |
-| `php/binder` | Declarations, scopes, imports, references, PHPDoc — file-local and deterministic |
-| `php/semantic` | Immutable document and workspace generations, persisted graph, open-file overlays |
-| `php/resolver` | Names, inheritance, members, call signatures, generics |
-| `php/inference` | Expression and control-flow evaluation, bounded fixed point, framework extensions |
-| `php/types` | The immutable type algebra and relation rules |
-| `php/stubs` | Version-aware runtime catalog generated from pinned phpstorm-stubs |
-| `php/phpdoc`, `php/literal`, `php/languagelevel`, `php/suppression`, `php/rewrite`, `php/project`, `php/phpstormmeta` | Supporting stages |
+| `php` | Project model, `PhpIndex`, name resolution, embedded-language detection |
+| `php-binder` | Declarations, scopes, imports, references, PHPDoc — file-local and deterministic |
+| `php-semantic` | Immutable document and workspace generations, persisted graph, open-file overlays |
+| `php-resolver` | Names, inheritance, members, call signatures, generics |
+| `php-inference` | Expression and control-flow evaluation, bounded fixed point, framework extensions |
+| `php-types` | The immutable type algebra and relation rules |
+| `php-stubs` | Version-aware runtime catalog generated from pinned phpstorm-stubs (by `php-stubs-generate`) |
+| `php-phpdoc`, `php-literal`, `php-languagelevel`, `php-suppression`, `php-rewrite`, `php-imports`, `php-project`, `php-phpstormmeta`, `php-refactoring` | Supporting stages |
 
 See [`php-semantic-engine.md`](php-semantic-engine.md).
 
 ### Domain indexes
 
 Each of these owns one or more namespaced repositories and exposes lookup APIs.
-They are registered as `indexer.Indexer` implementations in
-`internal/app/workspace.go`.
+They are registered as `swlsp_indexer::Indexer` implementations in
+`crates/app/src/workspace.rs`.
 
-| Package | Domain |
+| Crate | Domain |
 | --- | --- |
 | `symfony` | Service container, routes, route usage, DI aliases |
 | `doctrine` | DBAL references and custom type registrations, using Shopware DAL schemas |
 | `twig` | Templates, blocks, extends/include graph, versioning |
+| `admin-twigmigration` | Administration Twig template migration |
 | `twigcomponent` | Twig component catalog |
 | `admin` | Shopware Administration components, TypeScript declarations, Vue contracts |
 | `snippet`, `translation` | Storefront/admin snippets and Symfony translations |
 | `theme`, `style`, `asset` | Theme config and icons, SCSS classes, public assets and Encore entries |
 | `feature`, `systemconfig`, `extension` | Feature flags, system config, extension metadata |
 | `console`, `event`, `messenger`, `serializer`, `environment`, `symfonyconfig`, `httpclient`, `validation` | Symfony subsystems |
-| `shopware`, `shopware/dal`, `shopware/entityschema`, `appscript` | Shopware version resolution, DAL, entity schemas, app scripts |
+| `shopware`, `shopware-dal`, `shopware-entityschema`, `appscript` | Shopware version resolution, DAL, entity schemas, app scripts |
 
 ### Protocol and features
 
-| Package | What it does |
+| Crate | What it does |
 | --- | --- |
 | `lsp` | JSON-RPC server, method dispatch, document manager, capabilities, inspection/quick-fix infrastructure, protocol conversion |
-| `lsp/protocol` | Wire DTOs. No parser or domain state |
-| `lsp/completion`, `definition`, `hover`, `reference`, `codelens`, `codeaction`, `symbol`, `semantic`, `signature`, `inlay`, `folding`, `selection`, `highlight`, `linkedediting`, `documentlink`, `color`, `callhierarchy`, `refactor`, `scaffold` | Provider implementations |
-| `lsp/diagnostics` | Analyzers producing `lsp.Problem` values |
-| `lsp/inspections` | Inspection declarations binding analyzers to codes and fixes |
-| `lsp/phpsemantic`, `lsp/phpanalysis` | Adapters from the PHP semantic graph to LSP features |
+| `lsp-protocol` | Wire DTOs on top of `lsp-types`. No parser or domain state |
+| `lsp-completion`, `-definition`, `-hover`, `-reference`, `-codelens`, `-codeaction`, `-symbol`, `-semantic`, `-signature`, `-inlay`, `-folding`, `-formatting`, `-selection`, `-highlight`, `-linkedediting`, `-documentlink`, `-color`, `-callhierarchy`, `-refactor`, `-scaffold`, `-commands`, `-analytics` | Provider implementations |
+| `lsp-diagnostics` | Analyzers producing `Problem` values |
+| `lsp-inspections` | Inspection declarations binding analyzers to codes and fixes |
+| `lsp-phpsemantic`, `lsp-phpanalysis` | Adapters from the PHP semantic graph to LSP features |
 
 See [`lsp-server.md`](lsp-server.md) and
 [`diagnostics-pipeline.md`](diagnostics-pipeline.md).
@@ -255,16 +247,16 @@ See [`lsp-server.md`](lsp-server.md) and
 (`crates/cli/src/args.rs`: global flags such as `--root`, `--json`,
 `--allow-unsupported-project` and the profiling flags, accepted before or after
 the command) and dispatches a command. With no command it runs the server on
-stdin/stdout. The Go oracle's `main.go` keeps Go-style single-dash flags.
+stdin/stdout.
 
 ### 2. `initialize`
 
-`lsp.Server.initialize` (`internal/lsp/workspace.go`) does, in order:
+`Server::initialize` (`crates/lsp/src/workspace.rs`) does, in order:
 
 1. Resolve the workspace root from the `initialize` params.
 2. Configure client integration from `initializationOptions.shopwareClient` —
    protocol version, presentation profile, supported client commands.
-3. **Project detection.** Unless explicitly allowed, `projectdetect.Detect`
+3. **Project detection.** Unless explicitly allowed, `swlsp-projectdetect`
    must find Shopware Composer metadata, an app manifest,
    `symfony/framework-bundle`, `config/bundles.php`, or a committed
    `.config/shopware/lsp.yaml`. An unsupported root makes the server return an
@@ -275,43 +267,44 @@ stdin/stdout. The Go oracle's `main.go` keeps Go-style single-dash flags.
 5. Record client capabilities that change behavior — notably
    `codeAction.resolveSupport` for lazy quick fixes.
 6. **Build the workspace** through the injected `WorkspaceFactory`, which in
-   production is `app.NewWorkspace`.
-7. Return `serverCapabilities()`, computed from *what was actually registered*
+   production is `swlsp_app::workspace_factory()` (building a `Workspace`).
+7. Return `server_capabilities()`, computed from *what was actually registered*
    crossed with the effective feature and domain configuration. A domain that
    is off does not advertise its capability.
 
-### 3. `app.NewWorkspace` — the composition root
+### 3. `Workspace::new` — the composition root
 
-`internal/app/workspace.go` is one long, explicit function. It:
+`crates/app/src/workspace.rs` builds the workspace in one long, explicit
+function (`build`). It:
 
 1. Resolves the cache directory.
 2. Runs two cache migrations, either of which forces a full reindex:
-   - `CheckAndMigrateCache` compares the stored `index_version` against
-     `indexer.IndexVersion`;
-   - `CheckAndMigrateConfiguration` compares the stored fingerprint against
-     `configuration.StructuralFingerprint()`. This matters because file hashes
+   - `check_and_migrate_cache` compares the stored `index_version` against
+     `swlsp_indexer::INDEX_VERSION`;
+   - `check_and_migrate_configuration` compares the stored fingerprint against
+     `structural_fingerprint()`. This matters because file hashes
      are shared by all indexers — re-enabling a disabled indexer must not skip
      files that changed while it was off.
-3. Opens the single `indexer.Store` (`indexes.db`) and the workspace-symbol
+3. Opens the single `Store` (`indexes.db`) and the workspace-symbol
    catalog.
 4. Creates the `FileScanner` (`file_scanner.db`).
 5. Constructs each domain index, in dependency order, injecting the
-   dependencies each one needs (`serviceIndex.SetPHPIndex(phpIndex)`,
-   `twigIndex.SetDependencies(phpIndex, serviceIndex)`, …) and registering PHP
-   type extensions (`inference.FakerTypes`, Shopware, Symfony, event).
+   dependencies each one needs (`services.set_php_index(…)`,
+   `twig.set_dependencies(…)`, …) and registering PHP type extensions
+   (`swlsp_php_inference::FakerTypes`, Shopware, Symfony, event).
 6. Resolves the Shopware target version.
 7. Registers each index with the scanner **if its domain is enabled**
-   (`domainForIndexer(idx.ID())` → domain name → configuration lookup).
-8. Calls `registerFeatures(server, root, workspaceServices{…})`, which fans out
-   to `providers_completion.go`, `providers_definition.go`, `providers_hover.go`,
-   … and `inspections.go`.
+   (`domain_for_indexer(index.id())` → domain name → configuration lookup).
+8. Calls `providers::register_features`, which fans out to
+   `providers_completion.rs`, `providers_definition.rs`, `providers_hover.rs`,
+   … and `inspections.rs`.
 
-`Close` tears down in reverse construction order: scanner, then indexers
+`close_workspace` tears down in reverse construction order: scanner, then indexers
 back-to-front, then the store.
 
 ### 4. `initialized` — indexing starts
 
-`handleInitialized` schedules a background job that runs `indexAll` and then
+`handle_initialized` schedules a background job that runs `index_all` and then
 starts the filesystem watcher. A CLI-mode client only reaches the watcher when it
 sets `initializationOptions.watchFiles`, as the MCP server does. Indexing failure
 is reported to the client via a `shopware/indexingFailed` notification but does
@@ -321,7 +314,7 @@ not kill the server; features degrade to whatever is indexed.
 
 - Editor edits update the document manager and schedule debounced diagnostics.
 - Filesystem changes reach `FileScanner` through the watcher, are debounced
-  200 ms, and become `IndexFiles` / `RemoveFiles` calls.
+  200 ms, and become indexing and removal calls on the scanner.
 - Requests are served from indexes plus the current open document.
 
 Generated Symfony container and route catalogs use supplemental scanner indexers.
@@ -340,29 +333,23 @@ which one you need is most of the design work.
 
 | Source | Owner | Freshness | Use for |
 | --- | --- | --- | --- |
-| **Open document snapshot** | `lsp.DocumentManager` | Current unsaved editor buffer | Anything about the file the cursor is in: position context, ranges, local analysis |
-| **Workspace index** | `indexer.Store` repositories | Last committed scan | Cross-file lookups: "which service has this id", "which template defines this block" |
+| **Open document snapshot** | `DocumentManager` (`swlsp-lsp`) | Current unsaved editor buffer | Anything about the file the cursor is in: position context, ranges, local analysis |
+| **Workspace index** | `swlsp_indexer::Store` repositories | Last committed scan | Cross-file lookups: "which service has this id", "which template defines this block" |
 | **On-disk source** | filesystem | Whatever is saved | Rarely, and only through an index or a deliberate one-off read |
 
 The precedence rule is: **an open document always wins over the index.** An
 unsaved edit must be visible to the feature operating on that file. Where a
 domain index needs to see unsaved editor state — the Administration component
 registry, for example — it does so through a narrow
-`lsp.DocumentObserver` overlay (`RegisterDocumentObserver`), not by writing
-editor buffers into the persistent generation:
-
-```go
-server.RegisterDocumentObserver(lsp.DocumentObserver{
-    DidOpenOrChange: func(document *lsp.TextDocument) { /* overlay */ },
-    DidClose:        func(uri string) { /* drop overlay */ },
-})
-```
+`DocumentObserver` overlay (`Server::register_document_observer`), not by
+writing editor buffers into the persistent generation. An observer carries
+callbacks for open/change and close (see `crates/lsp/src/document.rs`).
 
 Observers are replayed for already-open documents when they register, which
 makes workspace initialization order irrelevant.
 
-`internal/extension.ConfigIndex` stores full shopware-cli extension configuration
-from the native YAML CST in the shared store. `GetConfig(extensionRoot)` selects
+`swlsp_extension::ConfigIndex` stores full shopware-cli extension configuration
+from the native YAML CST in the shared store. `get_config(extension_root)` selects
 `.config/shopware-extension.yml`, `.shopware-extension.yml`, or
 `.shopware-extension.yaml` in that order, querying only those indexed paths.
 Editor overlays preserve that precedence and refresh dependent Composer
@@ -373,7 +360,7 @@ diagnostics; closing a config restores the current disk snapshot.
 Four distinct concurrency regimes, each with different rules.
 
 **1. Normal requests and document updates stay ordered.** A bounded queue and
-one worker in `request_dispatcher.go` serialize normal handlers. The transport
+one worker in `crates/lsp/src/transport.rs` serialize normal handlers. The transport
 reader handles `$/cancelRequest` immediately, cancelling the context of a
 running or queued request by ID. Disconnect cancels active work before teardown.
 CLI pull diagnostics retain their background execution so `check` can analyze
@@ -384,20 +371,18 @@ debounced 150 ms, superseded (and cancelled) by the next edit. See
 [`diagnostics-pipeline.md`](diagnostics-pipeline.md#scheduling-debouncing-and-caching).
 
 **3. Indexing is a parallel fan-out with a serialized writer.** The scanner
-runs `min(NumCPU-based default, len(files))` workers. Each worker reads,
+runs `min(configured workers, number of files)` workers. Each worker reads,
 hashes, parses, and lets every `PreparingIndexer` do read-only extraction
 concurrently. Persistence funnels through a single-writer gate on the store, so
 exactly one SQLite write transaction is open at a time. See
 [`indexing.md`](indexing.md#the-indexing-run).
 
-**4. Background lifecycle work** goes through `Server.startBackground`, which
-refuses new work once closing has begun and tracks everything in a
-`sync.WaitGroup` so shutdown is clean.
+**4. Background lifecycle work** goes through `Server::start_background`,
+which refuses new work once closing has begun and counts running jobs so
+shutdown can wait for them.
 
 Shared mutable state to be careful with:
 
-- Pooled parser and CST buffers (`parsekit`, `cst`) are process-global and
-  mutex-guarded. Anything touching them needs `go test -race`.
 - Domain indexes publish immutable generations and swap a pointer. Readers take
   the pointer once; they never see a half-updated catalog.
 - `TextDocument` is an immutable snapshot. Never mutate one; publish a new one.
@@ -406,7 +391,7 @@ Shared mutable state to be careful with:
 
 Configuration is layered, in increasing precedence:
 
-1. built-in defaults (`projectconfig.Default()`);
+1. built-in defaults (`swlsp-projectconfig`);
 2. workspace `.config/shopware/lsp.yaml`;
 3. nested extension `.config/shopware/lsp.yaml` files, applying to files below
    that extension — **diagnostics-only**, with path patterns relative to the
@@ -426,7 +411,7 @@ Unknown settings and unknown diagnostic IDs **fail validation** rather than
 being ignored — silent typos in configuration are worse than a startup error.
 
 Structural settings (domains, indexing, PHP extensions, target versions) feed
-`StructuralFingerprint()`. Changing one invalidates the whole workspace cache
+`structural_fingerprint()`. Changing one invalidates the whole workspace cache
 on next start, because the set of things that were indexed changed.
 
 ## A worked example, end to end
@@ -435,94 +420,97 @@ Feature flag completion. It touches the parser, an index, and a provider, and
 crosses four languages — a good map of the whole system.
 
 **1. Parse.** `config/services/feature.yaml` is a YAML file, so
-`language.Registry.ParsePath` picks the YAML frontend and produces a lossless
+the `swlsp-language` registry picks the YAML frontend and produces a lossless
 CST.
 
-**2. Index.** `feature.FeatureIndexer` implements `indexer.Indexer`:
+**2. Index.** `swlsp_feature::FeatureIndexer` implements `Indexer`:
 
-```go
-// internal/feature/indexer.go
-func (i *FeatureIndexer) Index(file *indexer.ParsedFile) error {
-    if !strings.HasSuffix(path, ".yaml") && !strings.HasSuffix(path, ".yml") {
-        return nil                                    // cheap rejection first
+```rust
+// crates/feature/src/indexer.rs
+fn index(&self, file: &ParsedFile) -> Result<()> {
+    let path = file.path();
+    if !path.ends_with(".yaml") && !path.ends_with(".yml") {
+        return Ok(()); // cheap rejection first
     }
-    if !strings.Contains(strings.ToLower(path), "feature") {
-        return nil
+    if !path.to_lowercase().contains("feature") {
+        return Ok(());
     }
-    features, err := ParseFeatureTree(file.SyntaxTree(), file.LineIndex(), path)
+    let features = match file.syntax_tree() {
+        Some(tree) => parse_feature_tree(tree, file.line_index(), path),
+        // ...
+    };
     // ...
-    return i.featureIndex.BatchSaveItemsIn(file.Mutation(), batchSave)
+    self.features
+        .batch_save_items_in(file.mutation(), [(path, items)])
+        .context("saving features")
 }
 ```
 
 Note three habits: reject non-candidates before touching the tree; take the
 tree from `ParsedFile` (already parsed once, shared by every indexer); persist
-through the coordinated `file.Mutation()`.
+through the coordinated `file.mutation()`.
 
-**3. Extract.** `feature.ParseFeatureTree` uses the YAML query package rather
-than walking children by index:
+**3. Extract.** `swlsp_feature::parse_feature_tree` uses the YAML `query`
+module rather than walking children by index:
 
-```go
-// internal/feature/feature.go
-for _, pair := range yamlquery.Nodes(tree.Root, yamlsyntax.YamlPair) {
-    if yamlquery.ScalarValue(yamlquery.PairKey(pair)) != "name" {
-        continue
+```rust
+// crates/feature/src/lib.rs
+for pair in tree.root().descendants().filter(|node| node.kind() == YAML_PAIR) {
+    if query::pair_key(&pair).is_none_or(|key| query::scalar_value(&key) != "name") {
+        continue;
     }
-    value := yamlquery.PairValue(pair)
-    if value == nil || value.Kind() != yamlsyntax.YamlScalar || yamlquery.IsNull(value) {
-        continue
+    let Some(value) = query::pair_value(&pair) else { continue };
+    if value.kind() != YAML_SCALAR || query::is_null(&value) {
+        continue;
     }
-    line, _ := lineIndex.Position(value.RangeTrimmedTrivia().Start)
-    features = append(features, Feature{Name: yamlquery.ScalarValue(value), File: filePath, Line: int(line) + 1})
+    let (line, _) = line_index.position(value.range_trimmed_trivia().start().into());
+    // push Feature { name, file, line: line + 1 }
 }
 ```
 
-**4. Serve.** `completion.FeatureCompletionProvider` answers in four languages
-by asking each language's query package the same question:
+**4. Serve.** `FeatureCompletionProvider` (`swlsp-lsp-completion`) answers in
+four languages by asking each language's query module the same question:
 
-```go
-// internal/lsp/completion/feature_completion.go
-switch filepath.Ext(params.TextDocument.URI) {
-case ".twig":
-    matches = params.Node != nil && twigquery.StringInFunction(params.Node, "feature")
-case ".scss":
-    matches = params.Node != nil && scssquery.StringInFunction(params.Node, "feature")
-case ".php":
-    matches = params.Node != nil && phpquery.StringInCall(params.Node, 0, "Feature::isActive")
-case ".js", ".ts":
-    matches = params.Node != nil && jsquery.StringInCall(params.Node, 0,
-        "Feature.isActive", "Shopware.Feature.isActive")
-}
-if matches {
-    features, _ := p.featureIndex.GetAllFeatures()
-    // → []protocol.CompletionItem
-}
+```rust
+// crates/lsp-completion/src/domain/feature.rs
+let matches = match swlsp_uriutil::filepath::ext(&request.params.text_document.uri) {
+    ".twig" => swlsp_parser_twig::query::string_in_function(node, &["feature"]),
+    ".scss" => swlsp_parser_scss::query::string_in_function(node, &["feature"]),
+    ".php" => swlsp_parser_php::query::string_in_call(node, 0, &["Feature::isActive"]),
+    ".js" | ".ts" => swlsp_parser_js::query::string_in_call(
+        node,
+        0,
+        &["Feature.isActive", "Shopware.Feature.isActive"],
+    ),
+    _ => false,
+};
+// matches → self.index.all_features() → Vec<CompletionItem>
 ```
 
-`params.Node` is the CST node under the cursor, already resolved by
+`request.node` is the CST node under the cursor, already resolved by
 `SyntaxContext`. The provider does no parsing and no scanning.
 
-**5. Register.** In `internal/app/providers_completion.go`, constructed with
+**5. Register.** In `crates/app/src/providers_completion.rs`, constructed with
 its index and registered on the server. That is the only place the wiring
 exists.
 
-The whole feature is ~110 lines of production code across three files, because
-every layer it needs already exists.
+The whole feature is a small amount of production code across three files,
+because every layer it needs already exists.
 
 ## Where does my change go?
 
 | I want to… | Go to | Also read |
 | --- | --- | --- |
-| Support new syntax in an existing language | `internal/parser/<lang>/{lexer,parser,syntax}` | [parser](parser-architecture.md) |
-| Add a whole new language | `internal/parser/<lang>/…` + `internal/language/builtin.go` | [parser: adding a language](parser-architecture.md#adding-a-language) |
-| Ask a new question about a tree | `internal/parser/<lang>/query` | [parser: querying](parser-architecture.md#querying-nodes) |
-| Index a new kind of file or field | the domain package + `internal/app/workspace.go` | [indexing](indexing.md) |
-| Add completion / definition / hover / … | `internal/lsp/<feature>` + `internal/app/providers_*.go` | [lsp server](lsp-server.md) |
-| Add a diagnostic | `internal/lsp/diagnostics` + `internal/lsp/inspections` + `internal/app/inspections.go` | [diagnostics](diagnostics-pipeline.md) |
-| Add a quick fix or refactoring | `internal/rewrite`, `internal/lsp/codeaction`, `internal/lsp/refactor` | [refactoring](refactoring-engine.md) |
-| Change PHP type or inference behavior | `internal/php/{types,resolver,inference}` | [php engine](php-semantic-engine.md) |
-| Add a setting, domain, or rule | `internal/projectconfig` (+ schema, + gating, + VS Code model) | [reference](reference.md#project-configuration) |
-| Add a CLI command | `internal/cli` | — |
+| Support new syntax in an existing language | `crates/parser-<lang>/src/{lexer,parser,syntax}.rs` | [parser](parser-architecture.md) |
+| Add a whole new language | a new `crates/parser-<lang>` + `crates/language/src/lib.rs` | [parser: adding a language](parser-architecture.md#adding-a-language) |
+| Ask a new question about a tree | `crates/parser-<lang>/src/query` | [parser: querying](parser-architecture.md#querying-nodes) |
+| Index a new kind of file or field | the domain crate + `crates/app/src/workspace.rs` | [indexing](indexing.md) |
+| Add completion / definition / hover / … | `crates/lsp-<feature>` + `crates/app/src/providers_*.rs` | [lsp server](lsp-server.md) |
+| Add a diagnostic | `crates/lsp-diagnostics` + `crates/lsp-inspections` + `crates/app/src/inspections.rs` | [diagnostics](diagnostics-pipeline.md) |
+| Add a quick fix or refactoring | `crates/rewrite`, `crates/lsp-codeaction`, `crates/lsp-refactor` | [refactoring](refactoring-engine.md) |
+| Change PHP type or inference behavior | `crates/php-types`, `crates/php-resolver`, `crates/php-inference` | [php engine](php-semantic-engine.md) |
+| Add a setting, domain, or rule | `crates/projectconfig` (+ schema, + gating, + VS Code model) | [reference](reference.md#project-configuration) |
+| Add a CLI command | `crates/cli` (`src/args.rs` declares commands and flags) | — |
 | Change the editor client | `editors/vscode/src` | [phpstorm integration](phpstorm-integration.md) |
 
 Two anti-patterns worth naming, because they are the ones newcomers reach for:
@@ -540,61 +528,45 @@ higher-level test for the boundary a unit test cannot cover.
 
 | Layer | Test | Asserts |
 | --- | --- | --- |
-| Parser | `internal/parser/<lang>/parser` | Losslessness (`Root.Text() == source`), recovery on incomplete input, `DebugTree` shape |
-| Index | the domain package | Extraction, update, removal, persistence across restart |
-| Query | `internal/parser/<lang>/query` | Structural questions, including negative cases |
-| Provider / analyzer | `internal/lsp/<feature>` | Domain behavior from a source string |
-| Server | `internal/lsp`, `internal/app` | Routing, UTF-16 positions, document lifecycle, lazy fixes |
-| Adapter | `internal/cli`, `editors/vscode` | One-based positions, diff previews, MCP shapes |
+| Parser | `crates/parser-<lang>` tests | Losslessness (root text == source), recovery on incomplete input, debug-tree shape |
+| Index | the domain crate | Extraction, update, removal, persistence across restart |
+| Query | `crates/parser-<lang>/src/query` tests | Structural questions, including negative cases |
+| Provider / analyzer | `crates/lsp-<feature>` | Domain behavior from a source string |
+| Server | `crates/lsp`, `crates/app` | Routing, UTF-16 positions, document lifecycle, lazy fixes |
+| Adapter | `crates/cli`, `editors/vscode`, `editors/zed` | One-based positions, diff previews, MCP shapes |
 
-Conventions:
-
-```go
-func TestFeature(t *testing.T) {
-    index, err := NewIndex(filepath.Join(t.TempDir(), "cache"))
-    require.NoError(t, err)
-    t.Cleanup(func() { require.NoError(t, index.Close()) })
-}
-```
-
-`require` for prerequisites, `assert` for independent comparisons, `t.TempDir()`
-for cache directories, `t.Cleanup` for closing indexes. No network access. Set
-`SHOPWARE_LSP_CACHE_DIR` rather than touching a real cache.
+Conventions: plain `#[test]` functions in a `tests` module or `src/tests/`,
+`assert_eq!`/`assert!` for comparisons, `tempfile::tempdir()` for cache
+directories (kept alive for the test's duration), and explicit `close()` of
+indexes where the test checks persistence. No network access. Pass an explicit
+cache directory (for example `Workspace::new_in`) rather than touching a real
+cache.
 
 Commands:
 
 ```bash
-make rust-check                           # Rust server: fmt, clippy, tests
-cargo build --locked --release -p swlsp-cli
-go build ./...                            # Go reference oracle
-go test ./...
-go test -race ./internal/...             # required for pooling/lifecycle changes
-golangci-lint run
-make check                                # Rust, Go oracle, VS Code and Zed validation
-GOEXPERIMENT=simd go test ./internal/parser/...
+cargo test -p swlsp-twig                 # one crate while iterating
+make rust-check                           # fmt, clippy, tests, integration-suite compile
+make build                                # release build of swlsp-cli
+make check                                # Rust, VS Code and Zed validation
 ```
 
 Opt-in real-world tests run against a Shopware checkout behind the
-`integration` build tag:
+`integration` feature of `swlsp-app`:
 
 ```bash
 SHOPWARE_LSP_REAL_WORLD_ROOT=/path/to/sw-trunk \
-  go test -tags=integration ./internal/app -run '^TestShopwareTrunkIndexing$' -count=1 -v
+  cargo test --release -p swlsp-app --features integration --lib -- \
+  --exact tests::real_world::indexing_main::shopware_trunk_indexing
 ```
 
 Real-world fixtures move independently of this repository. If an unrelated
 assertion fails, confirm it on the baseline revision before changing production
 code.
 
-Two coarse regression guards, both intentionally loose:
-
-- `internal/architecture/maintainability_test.go` caps production Go files at
-  2,500 lines (generated files exempt).
-- `.golangci.yml` rejects new functions with `gocognit` complexity above 65.
-
-Treat both as ceilings that force a conversation about responsibilities, not as
-metrics to optimize. Grammar dispatch is legitimately branch-heavy; see
-[`maintainability.md`](maintainability.md).
+Clippy runs with `-D warnings`. Size and complexity are reviewed by
+responsibility rather than enforced by a metric; grammar dispatch is
+legitimately branch-heavy. See [`maintainability.md`](maintainability.md).
 
 ## Performance guardrails
 
@@ -604,16 +576,16 @@ files. The costs that matter, and where they are controlled:
 | Cost | Controlled by |
 | --- | --- |
 | Cold index wall time | Scanner worker fan-out, `PreparingIndexer` moving work out of the write transaction, cheap path/content rejection before parsing |
-| Cold index peak RSS | Bounded parser/CST slab pools, `ReleaseTransientBuffers` at batch boundaries, `debug.FreeOSMemory()` after large batches |
-| Warm start time | Persisted compact index values, `VisitAllValues` streaming instead of materializing catalogs, FTS symbol catalog read directly |
+| Cold index peak RSS | Per-file memoized analysis released right after preparation, mimalloc on musl builds, interned PHP graph identifiers |
+| Warm start time | Persisted compact index values, `visit_all_values` streaming instead of materializing catalogs, FTS symbol catalog read directly |
 | Disk size | MessagePack-encoded values, per-path rows, index-version invalidation instead of migrations |
-| Request latency | Indexes answer lookups; documents are parsed once per snapshot; `MemoizedAnalysis` shares derived analysis across features |
+| Request latency | Indexes answer lookups; documents are parsed once per snapshot; `TextDocument::memoized_analysis` shares derived analysis across features |
 
 Measurement entry points:
 
 ```bash
-go test -bench=BenchmarkNativeParsers ./internal/parser
-go test ./internal/php -run '^$' -bench . -benchmem
+cargo bench -p swlsp-bench                # parser and PHP benchmarks (CodSpeed in CI)
+scripts/bench/lsp_bench.py --server target/release/shopware-lsp --root ~/shopware --out out.json
 SHOPWARE_LSP_TRACE_DIAGNOSTICS=1 shopware-lsp
 shopware-lsp --root /path/to/project stats
 ```

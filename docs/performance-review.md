@@ -1,14 +1,16 @@
 # Performance review — 2026-09-06
 
-This pass profiled five production operations through existing portable Go
-benchmarks, then optimized measured work in PHP suppression detection, Twig
-component diagnostics, and entity field assembly. The baseline includes the
-uncommitted maintainability refactors on top of `7b2b748`; comparing directly
-with that commit would also measure those refactors.
+This pass predates the Rust port: it profiled five production operations of
+the former Go implementation through its benchmarks, then optimized measured
+work in PHP suppression detection, Twig component diagnostics, and entity field
+assembly. The Rust crates were ported from the optimized code
+(`swlsp-php-suppression`, `swlsp-lsp-diagnostics`,
+`swlsp-shopware-entityschema`), so the algorithms described below still apply;
+the timings are Go measurements and are kept as history.
 
 ## Workloads and attribution
 
-Linux amd64, AMD EPYC-Genoa, Go 1.27.0, CGO enabled, default GOMAXPROCS 16.
+Linux amd64, AMD EPYC-Genoa, Go 1.27.0, default GOMAXPROCS 16.
 Each initial CPU/allocation profile ran separately for a two-second benchmark
 window. These initial timings include profiling overhead and are observations,
 not before/after comparisons. CPU percentages include runtime/GC samples;
@@ -16,10 +18,10 @@ allocation percentages refer to sampled allocated bytes, not retained heap.
 
 | Operation | Fixture | Initial time | Bytes / allocations per operation | Profile finding |
 | --- | --- | ---: | ---: | --- |
-| PHP semantic analysis | `internal/php/testdata/01.php`, parsed/bound once; analysis includes its defensive document clone | 58.4 µs | 9,704 / 82 | Suppression-marker prefilter: 36.8% of CPU samples |
+| PHP semantic analysis | `01.php` (now `crates/bench/data/01.php`), parsed/bound once; analysis includes its defensive document clone | 58.4 µs | 9,704 / 82 | Suppression-marker prefilter: 36.8% of CPU samples |
 | Twig component diagnostics | Ten repeated missing components and invalid blocks, 20 problems | 110.8 µs | 36,026 / 403 | CST traversal: 36.1% of CPU; repeated `Blocks` calls: 12.4% of allocated bytes cumulatively |
 | Legacy code-action validation | One edit in an open YAML document with 500 comment lines | 154.7 µs | 57,768 / 57 | Edited-source parsing: 45.7% of CPU; source digest: 22.2% of allocated bytes cumulatively |
-| Scanner file-state query | 4,096 indexed paths, combined state/stale-file query | 4.79 ms | 553,861 / 24,116 | SQLite row iteration: 64.6% of CPU; CGO calls: 43.7% |
+| Scanner file-state query | 4,096 indexed paths, combined state/stale-file query | 4.79 ms | 553,861 / 24,116 | SQLite row iteration: 64.6% of CPU; C calls into SQLite: 43.7% |
 | Entity definition import | ID plus 20 foreign-key/association pairs, 21 resulting fields | 852.9 µs | 228,703 / 581 | Field-result slice growth: 43.5% of allocated bytes; PHP parsing: 26.7% of CPU |
 
 The scanner already uses the combined query. Redesigning its storage protocol
@@ -59,7 +61,7 @@ case-fold comparison remains in place at candidate starts. The post-change
 profile attributes 7.4% of CPU samples to the prefilter, down from 36.8%.
 
 Case-variant regression tests exercise actual suppression behavior. A fuzz
-oracle compares candidate detection with the original byte-window algorithm,
+test compared candidate detection with the original byte-window algorithm,
 including malformed bytes, truncated markers, Unicode, and mixed case. A
 15-second run with four workers completed 519,619 comparisons without a mismatch.
 
@@ -86,51 +88,35 @@ difference is small relative to sample variation; the allocation reduction is
 the stronger result. The returned field slice has capacity 21 for associations
 and 41 for scalar fields in both variants. This measures the returned slice,
 not process RSS. The scalar-field benchmark and `field-cap` metric were compiled
-into both variants; a Go build overlay restored the baseline importer while
+into both variants; a build overlay restored the baseline importer while
 keeping the benchmark code identical.
 
-## Reproducing the profiles
+## Reproducing measurements on the Rust server
 
-Run from the repository root with the Go toolchain from `go.mod` (these profile the Go oracle). Benchmark fixtures own
-their temporary indexes; no external checkout is needed.
+The Go profiling commands no longer apply. For the Rust server:
 
-```bash
-profile_dir=$(mktemp -d)
-while read -r name package benchmark; do
-  go test "$package" -run '^$' -bench "^${benchmark}$" \
-    -benchtime=2s -count=1 -benchmem \
-    -o "$profile_dir/$name.test" \
-    -cpuprofile="$profile_dir/$name.cpu" \
-    -memprofile="$profile_dir/$name.mem"
-  go tool pprof -top -cum "$profile_dir/$name.test" "$profile_dir/$name.cpu"
-  go tool pprof -top -sample_index=alloc_space \
-    "$profile_dir/$name.test" "$profile_dir/$name.mem"
-done <<'TASKS'
-php ./internal/php BenchmarkSemanticAnalysis
-diagnostics ./internal/lsp/diagnostics BenchmarkTwigComponentDiagnostics
-actions ./internal/lsp BenchmarkLegacyActionValidation
-scanner ./internal/indexer BenchmarkFileScannerScanFileStates/combined
-import ./internal/shopware/entityschema BenchmarkImportDefinitionAssociations
-TASKS
-```
+- `crates/bench` holds the CodSpeed suite (`codspeed-criterion-compat`):
+  parser throughput and PHP parsing, binding, and semantic analysis on
+  `crates/bench/data/01.php`. Run it locally with `cargo bench -p swlsp-bench`,
+  or with `cargo codspeed build -p swlsp-bench && cargo codspeed run -p swlsp-bench`
+  as CI does.
+- `scripts/bench/lsp_bench.py` drives a server binary over stdio with a fixed
+  request mix on a real checkout and records index time, RSS, and per-request
+  latency; `scripts/bench/compare.py` diffs two runs.
+- The real-world index profile is
+  `crates/app/src/tests/real_world/index_profile.rs`
+  (`shopware_trunk_indexing_profile`).
 
-For timing comparisons, build each variant once with `go test -c`, then run
-its executable with `-test.run='^$'`, `-test.bench`, `-test.benchtime=500ms`,
-and `-test.benchmem`, alternating variants. Execute the PHP binary from
-`internal/php` so its relative fixture path resolves. Keep profiling and
-validation jobs out of the timed comparison.
+For timing comparisons, build each variant once, run them sequentially and in
+alternating order, and keep profiling and validation jobs out of the timed
+comparison.
 
 This review does not measure full-workspace cold/warm indexing, RSS, or an LSP
-transport round trip. The default real-world fixture at
-`/home/shyim/Developer/sw-trunk` is absent; integration compilation alone cannot
-establish those costs.
+transport round trip.
 
 ## Validation
 
-The full Go suite, full internal race suite, golangci-lint, and compilation of
-all integration-tagged packages passed. After the importer optimization, the
-full Go suite and integration compilation passed again, with race checks for
-entityschema, scaffold, app, and CLI. The final empty-result ordering adjustment
-passed the entityschema suite, its race tests, and lint. The suppression fuzz
-run and alternating benchmark comparisons are described above. No VS Code or
-protocol changes were made; client checks were not run.
+At the time, the full Go suite, its race suite, its linter, and compilation of
+the integration packages passed, and the suppression fuzz run and alternating
+benchmark comparisons described above were completed. No VS Code or protocol
+changes were made.

@@ -273,7 +273,8 @@ are measured bottlenecks. SQLite remains the storage and crash-recovery layer.
 
 ## Validation
 
-The August 2026 roadmap pass is verified by `go test ./...`, focused race
+The August 2026 roadmap pass ran against the former Go implementation (since
+replaced by the Rust server in `crates/`) and was verified by `go test ./...`, focused race
 coverage for the PHP, semantic LSP, and application composition packages,
 `golangci-lint run`, the VS Code TypeScript build, and byte-for-byte repeated
 stub generation from the pinned JetBrains revision. The sole unchecked item is

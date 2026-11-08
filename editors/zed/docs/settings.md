@@ -36,7 +36,7 @@ equivalent of the VS Code extension's `yamlValidation`:
       "settings": {
         "yaml": {
           "schemas": {
-            "https://raw.githubusercontent.com/shopware/shopware-lsp/main/internal/projectconfig/schema.json": [
+            "https://raw.githubusercontent.com/shopware/shopware-lsp/main/crates/projectconfig/schema.json": [
               ".config/shopware/lsp.yaml"
             ]
           }

@@ -49,7 +49,7 @@ Each of these, with screenshots and the caveats that matter, is in
 - Optional: **fzf**, which the task scripts use for nicer pickers. Without it
   they fall back to a numbered prompt.
 
-No PHP, Go or Node needed. The language server is a prebuilt binary the
+No PHP, Rust or Node needed. The language server is a prebuilt binary the
 extension downloads.
 
 ## Install

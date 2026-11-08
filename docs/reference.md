@@ -50,8 +50,8 @@ Positions are one-based `file:line:column` values. Structured feature commands
 emit JSON. `check` and `stats` default to readable text; pass the global `--json` flag
 for machine-readable output. Global flags work before or after the command,
 and `shopware-lsp help <command>` (or `<command> --help`) lists every flag.
-Flags are GNU-style (`--root DIR`, `--root=DIR`, `-w`); the Go-style
-single-dash spelling of earlier releases (`-root`) is rejected with a hint. `check` recursively
+Flags are GNU-style (`--root DIR`, `--root=DIR`, `-w`); the single-dash
+spelling of earlier releases (`-root`) is rejected with a hint. `check` recursively
 expands directory targets and accepts multiple, overlapping files or
 directories. It uses up to four diagnostic workers by default; pass
 `--workers 1` for serial analysis or another positive limit for a particular
@@ -1376,23 +1376,25 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
 ### Architecture
 
 The executable is a small composition root. The LSP `initialize` request
-selects the workspace; only then does `internal/app` construct the scanner,
+selects the workspace; only then does `swlsp-app` (`crates/app`) construct the scanner,
 shared index store, domain indexes, and feature providers. One server process
 supports one workspace root. Multi-root clients should start one process per
 workspace.
 
-Language parsing is registered centrally in `internal/language`. PHP,
-Twig/HTML, XML, YAML, JSON, JavaScript/TypeScript, SCSS, and embedded XPath use
-the native lossless CST frontends in `internal/parser`; protocol DTOs do not contain parser-specific
-state. A file is parsed once and the immutable syntax context is shared across
+Language parsing is registered centrally in `swlsp-language`. PHP,
+Twig/HTML, XML, YAML, JSON, JavaScript/TypeScript, SCSS, Vue, and embedded
+XPath use the native lossless CST frontends in the `crates/parser-*` crates,
+built on the shared `swlsp-syntax` tree; protocol DTOs do not contain
+parser-specific state. A file is parsed once and the immutable syntax context is shared across
 indexers and LSP providers.
 
 Workspace index data lives in one namespaced SQLite store. File replacement,
 deletion, and force-clear operations are transactional across repositories;
 file fingerprints are committed only after all indexers succeed. Filesystem
-changes have one source of truth: `fsnotify` on Linux/Windows and native
-FSEvents on macOS. FSEvents avoids kqueue's one-descriptor-per-file cost on
-large Shopware workspaces. All workspace resources are closed by the
+changes have one source of truth: the scanner's watcher, built on the `notify`
+crate (inotify on Linux, `ReadDirectoryChangesW` on Windows, and native
+FSEvents on macOS, which avoids kqueue's one-descriptor-per-file cost on large
+Shopware workspaces). All workspace resources are closed by the
 application lifecycle.
 
 The contributor-facing architecture documentation is indexed in
@@ -1414,15 +1416,14 @@ is tracked in [`symfony-plugin-roadmap.md`](symfony-plugin-roadmap.md).
   clippy and rustfmt) and rustup installs it on first use
 - A C compiler (SQLite is compiled into the binary through `rusqlite`)
 - Node.js 24 for VSCode extension development
-- Go 1.27 with CGO only for the Go reference oracle (`main.go`, `internal/`),
-  which is kept for differential testing and is not released
 
 Common tasks live in the `Makefile`:
 
 ```bash
 make build        # target/release/shopware-lsp
-make rust-check   # cargo fmt --check, clippy -D warnings, cargo test
-make check        # Rust, Go oracle, VS Code and Zed validation
+make rust-check   # cargo fmt --check, clippy -D warnings, cargo test,
+                  # and compilation of the real-world integration suite
+make check        # Rust, VS Code and Zed validation
 ```
 
 Release binaries are compiled natively per target in CI
@@ -1471,55 +1472,39 @@ Run the tests with:
 cargo test --locked --workspace
 ```
 
-The Go oracle keeps its own suite (`go test ./...`). Its parser has a Go 1.27
-SIMD implementation for delimiter, control byte, line-start, and ASCII-run
-scans; run the oracle's parser tests with SIMD enabled using:
+Parser and PHP-engine benchmarks live in `crates/bench` and run in CI through
+CodSpeed:
 
 ```bash
-GOEXPERIMENT=simd go test ./internal/parser/...
+cargo bench -p swlsp-bench
 ```
 
-The parser, lexer, byte-scan, and line-index benchmarks can be compared with
-and without `GOEXPERIMENT=simd`:
-
-```bash
-go test ./internal/parser ./internal/parser/bytescan ./internal/parser/cst \
-  -run '^$' -bench . -benchmem
-GOEXPERIMENT=simd go test \
-  ./internal/parser ./internal/parser/bytescan ./internal/parser/cst \
-  -run '^$' -bench . -benchmem
-```
-
-Or run tests with race condition detection:
-
-```bash
-go test -race ./...
-```
-
-The production indexing composition also has an opt-in real-world test. It
-uses `~/Developer/sw-trunk` by default, or a checkout selected through
-`SHOPWARE_LSP_REAL_WORLD_ROOT`, and reports cold indexing, warm no-op, cache
-restore, class count, heap measurements, and first/p50/p95 end-to-end JSON-RPC
+The production indexing composition also has an opt-in real-world suite in
+`crates/app/src/tests/real_world`, behind the `integration` feature of
+`swlsp-app`. It uses `~/Developer/sw-trunk` by default, or a checkout selected
+through `SHOPWARE_LSP_REAL_WORLD_ROOT`, and reports cold indexing, warm no-op,
+cache restore, class count, memory, and first/p50/p95 end-to-end JSON-RPC
 latency for hover, definition, references, code-action, diagnostic,
 document-link, and document-symbol requests. The latency census executes
 through an in-memory LSP transport with the production provider composition
 and enforces broad interactive budgets:
 
 ```bash
-go test -tags=integration ./internal/app \
-  -run '^TestShopwareTrunkIndexing$' -count=1 -v
+SHOPWARE_LSP_REAL_WORLD_ROOT=/path/to/sw-trunk \
+  cargo test --release -p swlsp-app --features integration --lib \
+  tests::real_world::indexing_main::shopware_trunk_indexing -- --exact --nocapture
 ```
 
 The same request census can run independently of the broader moving-fixture
 feature assertions:
 
 ```bash
-go test -tags=integration ./internal/app \
-  -run '^TestShopwareTrunkRequestLatency$' -count=1 -v
+cargo test --release -p swlsp-app --features integration --lib \
+  shopware_trunk_request_latency -- --nocapture
 ```
 
-The integration build tag keeps ordinary tests and CI independent of a
-developer-local Shopware checkout.
+The feature keeps ordinary tests and CI independent of a developer-local
+Shopware checkout; `make rust-test-integration-compile` only compiles it.
 
 Set `SHOPWARE_LSP_TRACE_DIAGNOSTICS=1` when launching the server to log the
 elapsed time and finding count of every inspection plus normalization and
@@ -1534,9 +1519,10 @@ The real-world integration benchmark uses 21 request samples by default. Set
 `SHOPWARE_LSP_LATENCY_SAMPLES` to a value of at least 2 for a shorter profiling
 run; the first request is reported separately and excluded from p50/p95.
 
-One representative August 2026 run against a 60,811-file `sw-trunk` checkout
-reported the following warm request latency after indexing. These are local
-reference measurements rather than portable timing guarantees:
+One representative August 2026 run of the former Go server against a
+60,811-file `sw-trunk` checkout reported the following warm request latency
+after indexing. These are local reference measurements rather than portable
+timing guarantees:
 
 | LSP request | p50 | p95 |
 |---|---:|---:|
@@ -1563,16 +1549,20 @@ Runtime declarations are generated from a pinned
 [JetBrains phpstorm-stubs](https://github.com/JetBrains/phpstorm-stubs)
 checkout. The server embeds the compact generated catalog and does not parse
 the upstream PHP files at startup. Hand-written declarations in
-`internal/php/stubs/stubs.go` are a semantic overlay for generics and inference
+`crates/php-stubs/src/overlay.rs` are a semantic overlay for generics and inference
 contracts that are intentionally more precise than native signatures.
 
 To update the catalog, check out the revision recorded in
-`internal/php/stubs/phpstorm-stubs.lock.json` and run:
+`crates/php-stubs/data/phpstorm-stubs.lock.json` and run from the repository
+root:
 
 ```bash
-go run ./cmd/generate_phpstorm_stubs -source /path/to/phpstorm-stubs
-go test ./internal/php/stubs/...
+cargo run --release -p swlsp-php-stubs-generate --bin generate-phpstorm-stubs -- \
+  -source /path/to/phpstorm-stubs
+cargo test -p swlsp-php-stubs -p swlsp-php-stubs-generate
 ```
+
+The generator writes `crates/php-stubs/data/phpstorm-stubs.msgpack`.
 
 Change the locked revision deliberately in the same commit as the generated
 catalog. Generation verifies the checkout revision and is byte-for-byte
@@ -1597,7 +1587,7 @@ in CI. VS Code user and workspace settings are local overrides; explicit CLI
 flags such as `check --severity` and `check --fail-on` take final precedence.
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/shopware/shopware-lsp/main/internal/projectconfig/schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/shopware/shopware-lsp/main/crates/projectconfig/schema.json
 version: 1
 php:
   extensions: [redis]
@@ -1684,762 +1674,56 @@ invalid. Its command-line severity flags override the `check` defaults from the
 file; use `--fail-on off` to explicitly suppress the configured failure threshold
 for one invocation.
 
-For a resource-only measurement without the feature assertions, build the
-profiling harness once and run the binary through the operating-system resource
-counter:
+For a resource-only measurement without the feature assertions, run the
+index profile harness
+(`crates/app/src/tests/real_world/index_profile.rs`) through the operating
+system's resource counter:
 
 ```bash
-go test -c -tags=integration ./internal/app \
-  -o /tmp/shopware-lsp-index-profile.test
-/usr/bin/time -l /tmp/shopware-lsp-index-profile.test \
-  -test.run '^TestShopwareTrunkIndexingProfile$' -test.count=1 -test.v
+SHOPWARE_LSP_REAL_WORLD_ROOT=/path/to/sw-trunk /usr/bin/time -v \
+  cargo test --release -p swlsp-app --features integration --lib \
+  shopware_trunk_indexing_profile -- --nocapture
 ```
 
-The profile reports construction, cold and warm scan time, retained Go heap,
-current and peak RSS, cumulative allocations, GC activity, and cache size.
-Set `SHOPWARE_LSP_HEAP_PROFILE=/tmp/shopware-lsp-live-heap.pprof` to capture
-the live post-index heap for `go tool pprof`. Set
-`SHOPWARE_LSP_PROFILE_REVERSE_REFERENCES=1` to additionally report the one-time
-cost of constructing the lazy PHP reverse-reference index. Set
+Build the test binary first (`cargo test --no-run ...`) so compilation does not
+count toward the measured resources. The profile reports construction, cold
+and warm scan time, current and peak RSS, and cache size. Set
+`SHOPWARE_LSP_PROFILE_CACHE_DIR` to keep the cache in a chosen directory,
+`SHOPWARE_LSP_PROFILE_REVERSE_REFERENCES=1` to additionally report the
+one-time cost of constructing the lazy PHP reverse-reference index, and
 `SHOPWARE_LSP_PROFILE_SEMANTIC_STORAGE=1` to report compact PHP graph
-cardinality, or set `SHOPWARE_LSP_PROFILE_SEMANTIC_DOCUMENT` to an indexed PHP
-path to measure the on-demand reconstruction of one detailed semantic document.
-`SHOPWARE_LSP_PROFILE_WORKERS` overrides indexing concurrency for comparative
-resource measurements. The production scanner defaults to at most four
-workers; callers can still override that balance when throughput matters more
-than peak memory.
+cardinality. `SHOPWARE_LSP_PROFILE_WORKERS` overrides indexing concurrency for
+comparative resource measurements. The production scanner defaults to at most
+four workers.
 
-One representative July 2026 run on a 16-core Apple development machine
-indexed the current 52,440-file `sw-trunk` checkout with its compiled Symfony
-cache present. These are diagnostic reference numbers, not timing assertions:
+For end-to-end comparisons of two server binaries, `scripts/bench/lsp_bench.py`
+drives a server over stdio with a fixed request mix on a real checkout and
+records index time, RSS, per-request latency, and a response hash;
+`scripts/bench/compare.py` diffs two runs. Run the servers one after the
+other, never concurrently, and use isolated cache directories.
 
-| Measurement | Empty cache | Cached restart |
-|---|---:|---:|
-| Workspace construction | 0.13 s | 1.28 s |
-| Index/no-op scan | 6.12 s | 0.26 s |
-| Warm no-op scan | 0.27 s | 0.23 s |
-| Retained Go heap | 134.6 MiB | 135.8 MiB |
-| Retained RSS | 547.7 MiB | 315.6 MiB |
-| Peak RSS | 555.8 MiB | 316.6 MiB |
-| Go allocation volume | 5.14 GiB | 475.1 MiB |
-| Process CPU (user + system) | 21.1 s | 3.5 s |
-| On-disk cache | 185.0 MiB before close | 164.8 MiB |
+On a Shopware checkout, the November 2026 run of that benchmark measured the
+Rust server at 21.5 s cold index, 333 MiB RSS after indexing, and 759 MiB
+peak, against 54.8 s, 696 MiB, and 1,012 MiB for the former Go server; the
+full request mix took 125.7 s against 265.7 s. These are local reference
+numbers, not timing guarantees.
 
-An earlier concurrency census showed that reducing indexing concurrency only
-modestly changes the memory high-water mark on this corpus. Fewer simultaneous
-parser slabs lower cumulative allocation, but the live semantic graph and Go's
-GC/heap pacing dominate RSS; a single worker is not reliably lower than two
-because collection timing also matters. The main effect is therefore longer
-wall time:
-
-| Workers | Cold index | Process CPU | Peak RSS | Go allocation |
-|---:|---:|---:|---:|---:|
-| 4 (default) | 10.56 s | 32.9 s | 830 MiB | 5.9 GiB |
-| 2 | 14.59 s | 32.0 s | 800 MiB | 5.8 GiB |
-| 1 | 25.76 s | 32.0 s | 817 MiB | 5.7 GiB |
-
-The measurements in this section were taken with the former Go server, which
-is now kept only as the reference oracle. The shipped Rust server has no
-garbage collector, ignores `GOMEMLIMIT`, and the VS Code
-`shopwareLSP.memoryLimitMiB` setting is deprecated.
-
-Go's soft memory limit provides an optional peak-memory/CPU tradeoff. The
-following earlier consecutive empty-cache runs used the same binary and
-checkout. They remain useful as a relative limit comparison; the default row
-predates the allocation improvements reflected in the table above:
-
-| `GOMEMLIMIT` | Cold index | Process CPU | Peak RSS | Retained RSS | GC cycles |
-|---|---:|---:|---:|---:|---:|
-| Runtime default | 16.85 s | 44.1 s | 1,080 MiB | 996 MiB | 83 |
-| 768 MiB | 15.66 s | 45.4 s | 878 MiB | 823 MiB | 90 |
-| 640 MiB | 16.01 s | 49.4 s | 819 MiB | 778 MiB | 114 |
-| 512 MiB | 20.04 s | 127.7 s | 739 MiB | 702 MiB | 427 |
-
-The VS Code client exposes this as `shopwareLSP.memoryLimitMiB`; other clients
-can set `GOMEMLIMIT` in the server environment. The limit is soft and should
-remain comfortably above a workspace's live heap. Wall time varies with
-filesystem cache and machine load; process CPU and memory are the more useful
-comparisons in this table.
-
-The server now selects `GOGC=75` when neither `GOGC` nor `GOMEMLIMIT` is
-present in its environment. Explicit runtime settings are never overwritten.
-On the later 61,032-file source-only checkout, this balanced default removed
-about 93 MiB of peak and retained RSS compared with Go's `GOGC=100` default,
-with a 0.02-second cold-index difference. A 512 MiB soft limit is the useful
-low-memory knee on this corpus; tighter limits spend disproportionate CPU on
-collection:
-
-| Runtime policy | Cold index | Process CPU | Peak RSS | Retained RSS | GC cycles |
-|---|---:|---:|---:|---:|---:|
-| `GOGC=100` | 9.07 s | 31.0 s | 807 MiB | 805 MiB | 47 |
-| Server default (`GOGC=75`) | 9.09 s | 32.4 s | 714 MiB | 713 MiB | 62 |
-| `GOGC=50` | 9.05 s | 34.4 s | 665 MiB | 657 MiB | 98 |
-| `GOMEMLIMIT=512MiB` | 9.09 s | 35.7 s | 651 MiB | 650 MiB | 75 |
-| `GOMEMLIMIT=448MiB` | 10.51 s | 60.8 s | 612 MiB | 611 MiB | 197 |
-| `GOMEMLIMIT=384MiB` | 12.73 s | 98.1 s | 563 MiB | 562 MiB | 399 |
-
-The VS Code `memoryLimitMiB` setting is therefore an opt-in low-memory mode.
-Leaving it at zero uses the server's balanced GC target; `512` is a reasonable
-starting point for a machine where another roughly 60 MiB RSS reduction is
-worth additional indexing CPU.
-
-On an earlier 61,033-file source-only profile, the cumulative work before the
-shared symbol-string compaction had reduced cold indexing from 93.9 to about
-9.0 seconds, retained heap from 1.6 GiB to 178.3 MiB, peak RSS from about
-3.25 GiB to about 687 MiB, cache size from 2.2 GiB to 219.1 MiB, and cached
-construction from 16.8 to about 2.15 seconds. That historical source-only
-profile should not be compared directly with the compiled-cache corpus in the
-current table. Detailed PHP
-semantic documents are reconstructed from source only when an editor feature
-requests a closed file; the persistent cache retains their compact workspace
-graphs instead. CST nodes share the source pointer stored by their root, keeping
-each node to 32 bytes without changing the public parent or text APIs.
-Tokens pack their 32-bit start with a 15-bit common length and an explicit
-token flag, reducing the token record from 24 to 16 bytes. Ranges of 32,767
-bytes or more retain their full public range in a rare root-owned side table;
-that table occupied only about 0.5 MiB across the reference corpus. This saves
-roughly 390 MiB of cold allocation without a measurable CPU regression.
-Direct-child capacity exists only while building; the uncommon sibling lookup
-is recovered from the compact parent child list on demand. PHP
-lexer buffers use a corpus-measured one-token-per-four-source-byte reservation;
-the opt-in `TestShopwareTrunkParserBufferProfile` integration test reports
-token, event, node, and marker utilization when retuning the frontend.
-Scanner-owned syntax trees return their cleared node, token, and child slabs at
-the end of each persistence batch. Preparation batches now stop at either 50
-files or 128 KiB of source, so tiny files still share an efficient SQLite
-transaction while a generated container cannot keep dozens of unrelated trees
-alive. Three best-fit CST pools retain at most 4 MiB each, reject individual
-slabs above 2 MiB, and are emptied after every scanner run; editor/request trees
-keep ordinary immutable garbage-collected lifetime.
-On the reference cold index this reduced allocation from 8.29 to 7.15 GB
-(about 1.1 GiB), lowered GC work and retired instructions, and kept CPU flat
-while peak RSS moved from about 839 to 832 MiB. The bounded lexer-token and
-parser-event pools also select the smallest sufficient idle buffer instead of
-an arbitrary one. Token buffers are cleared before pooling so they cannot
-retain source strings. Medium generated files may reuse storage, but aggregate
-token and event storage is capped at 8 MiB per pool and the extreme
-generated-file outliers are discarded. Against the immediately preceding
-50-file/6-MiB-CST-pool build, the current 43,708-file checkout allocates 3.8
-instead of 4.3 GiB (about 423 MiB less) and executes about 250 instead of 254
-billion retired instructions. Process CPU remains about 21 seconds; cold wall
-time moves from 6.12 to 6.28 seconds. Strictly flushing before a source-weight
-overflow keeps the measured 565 MiB peak inside the baseline's 564-591 MiB
-run-to-run range. Parsed-file line
-indexes remain lazy during cold scanning. Exact PHP route and Twig extension
-candidate guards run before requesting one, while indexers that actually need
-line/column conversion still share the same file-lifetime instance. This
-removed roughly 45-95 MiB, about 545,000 allocations, and around eight billion
-retired instructions on consecutive reference runs. Twig PHP-access indexing
-prepares `@var` and `{% types %}` declarations once per immutable document
-resolver instead of rescanning the entire comment/tag set for every attribute
-access. This removed another 120-150 MiB, about 760,000 allocations, and around
-eight billion retired instructions; the annotation path fell from roughly
-140 MiB to 2.5 MiB in the sampled allocation profile. The PHP type graph
-similarly stores immutable arguments and cached text in compact exact-length
-pointer views. Named/literal kinds use one string slot for their
-semantic value while composite kinds reuse it for cached canonical text. A
-GC-visible tagged payload stores either the exact argument view or the
-callable/shape details record because those representations are mutually
-exclusive. This reduces every type node from 48 to 32 bytes and removed about
-60 MiB of cold allocation on the reference checkout with flat allocation count
-and CPU. Multi-value type folds use an eight-member inline union accumulator
-and materialize only the final immutable type. Array literals, inferred return
-types, shape projections, and helper folds therefore no longer allocate and
-render a succession of immediately discarded union nodes. Two consecutive
-reference runs removed another 70-100 MiB of cold allocation and about 110,000
-mallocs with flat process CPU and the same retained heap. Scalar literal facts
-are derived directly from their lossless syntax nodes instead of occupying the
-per-file type-fact table;
-`Document.TypeOf` still reports their exact literal type, source, and range.
-The immutable types for `""`, `0`, and `1` are canonical singletons; the
-integration-only `TestShopwareTrunkLiteralProfile` reports scalar frequency
-without introducing an unbounded runtime interner.
-PHPDoc parsing streams normalized logical lines instead of materializing a
-one-use line slice, and creates assistant-tag maps only when a `#Tag` is
-present. Together these changes removed about 18 MiB and 260,000 allocations
-from the reference cold index without changing its CPU or retained heap.
-Console commands, Twig globals, and Symfony service configuration keep the
-small set of paths currently represented in their repositories in memory.
-Candidate rejection therefore does not issue three to five SQLite existence
-queries for every ordinary PHP file. The sets load from the persistent cache
-at startup and publish mutation changes only after commit. On the reference
-cold index this removed about 175 MiB, 3.9 million allocations, 16 billion
-retired instructions, and roughly 2.5 seconds of process CPU.
-Native declaration reference binding classifies scalar and composite builtin
-names directly instead of constructing a full semantic type merely to discard
-it. Besides preventing the broad `object` type from becoming a bogus
-`App\object` class reference, this removed about 2.8 million tiny allocations
-and four to five billion retired instructions; consecutive total-allocation
-measurements ranged from flat to about 60 MiB lower.
-Native type trees are also traversed directly rather than materialized into a
-temporary query slice. Each class type is now recorded exactly once; simple
-types were previously emitted twice. On the reference checkout this removed
-about 1.1 million allocations, 53 MiB of cold allocation, 3.4 MiB of retained
-heap, and about 1 MiB of persisted duplicate reference data.
-Stored syntax type facts use lossless 64-bit start/length/kind keys, with a
-full-identity overflow path for unusually large ranges. Ordinary assignment
-facts keep only the type because their confidence, source, and empty reason are
-implicit. Workspace projections borrow immutable semantic values until their
-database transaction commits, then one batch-wide detacher copies and
-canonicalizes them; failed transactions never enter that pool. The binder's
-structural census also reserves the final member-reference slots and a
-per-file non-literal fact estimate, avoiding repeated slice and map growth
-after type inference.
-Function, closure, and synthetic PHPDoc parameters use exact-length storage,
-while stable symbol-ID builders reserve only the named or anonymous branch they
-actually encode. `foreach` target variables are counted and visited in place,
-including destructuring, and inference reads only the key/value targets rather
-than scanning the iterable and loop body. These changes remove roughly another
-half-million binder allocations plus about 92,000 inference allocations, and
-also prevent a one-value `foreach` from accidentally replacing the iterable's
-flow type with its key type.
-Retained PHP signatures keep their parameter slice inline while templates,
-throws, and literal/constant-return metadata share one optional side record;
-on the reference checkout only 34,516 of 125,598 signatures need that record.
-Their 88-byte parameter records derive the effective type from the native or
-PHPDoc type and retain an explicit fallback only for the three exceptions in
-208,392 parameters. Assistant tags use the same optional record and occur on
-only 92 parameters. A versioned positional cache encoding avoids reflective
-per-parameter work while continuing to decode the former public-struct map.
-Published snapshots answer per-file symbol queries from the immutable
-document graph directly instead of retaining a second 39,416-entry path map
-and another copy of all 314,038 symbol IDs.
-Every compact workspace symbol also borrows the one path owned by its enclosing
-document instead of retaining another string header. This keeps the core symbol
-record at 160 bytes and saves about 2.2 MiB of live heap on the reference
-checkout. The direct cache decoder consumes the former 20-field wire layout,
-discards its redundant serialized path, and binds the document-owned pointer;
-cached restore therefore remains compatible while also avoiding about 65 MiB
-of transient allocation compared with the former reflective symbol decode.
-Raw-DEFLATE cache restore reuses its dictionary, bounded reader, buffered
-reader, and MessagePack decoder across documents, then releases that short-lived
-state when startup completes. On the reference checkout this removes the
-1.23 GiB of per-document DEFLATE dictionaries and the repeated decoder buffers:
-cached allocation volume fell from 3.0 to 1.3 GiB, GC cycles from 49 to 23, and
-process CPU from about 7.7 to 6.1 seconds without changing retained heap or the
-cache format.
-That decoder also owns a restore-scoped parsed-type cache. The reference graph
-contains 2,271,440 serialized type slots but only 43,792 distinct canonical
-types, so each immutable type is now parsed once across the restore rather than
-once per occurrence. The cache is cleared with the decompressor after startup
-and does not become process-global state. This further reduced cached
-allocation from 1.3 to 1.2 GiB, removed about 2.84 million allocations, lowered
-GC cycles from 23 to 21, and cut retired instructions by roughly 11%; cached
-construction fell from about 3.0 to 2.6 seconds while the existing wire format
-remained compatible.
-Bulk repository restore reads the outer MessagePack value through
-`sql.RawBytes`, whose lifetime is restricted to one synchronous visitor call.
-The PHP repository decodes its two-field envelope with bounds checks and
-borrows the compressed payload until DEFLATE finishes, rather than copying it
-once in `database/sql` and again in the generic MessagePack decoder. The
-existing SQLite and graph formats remain unchanged. This removed another
-roughly 146 MiB of cached allocation and lowered GC cycles from 21 to 18;
-cached allocation volume is now about 1.1 GiB.
-The repository row count now also sizes the temporary maps used by cache
-restore. A storage census of the reference checkout found 2,947,594 interned
-string slots but only 700,249 distinct strings, and 2,271,440 type slots but
-only 43,792 distinct types. Reserving the document map exactly, the string map
-at 18 entries per document, and the type map at five entries per four documents
-replaced roughly 82 MiB of incremental map growth with one 43 MiB allocation.
-That saved about 43 MiB of cached allocation, reduced GC cycles from 18 to 13,
-and retired about 3% fewer instructions. The maps remain restore-scoped and
-are released after publication, so retained heap and the cache format do not
-change; underestimated hints only allow ordinary map growth.
-The compact graph decoder now shares those same temporary maps instead of
-first allocating a distinct Go string and parsed type for every wire value.
-It reads string bytes through one reusable scratch buffer, probes the
-already-reserved string map without allocating on hits, and allocates only the
-roughly 700,000 distinct retained strings. Reference/value arrays and
-signature, hierarchy, and metadata records are decoded directly into their
-final slices instead of passing through reflection and intermediate wire
-objects. Existing MessagePack and compression bytes remain compatible.
-Against the reserved-map baseline, cached allocation fell from 1.05 GiB to
-845 MiB, allocations from 11.87 million to 6.24 million, and GC cycles from 13
-to 11; cached construction fell to about 2.45 seconds and retired instructions
-by roughly another 6%, while retained heap stayed at 266 MiB. Declared
-collection and string lengths are bounded before allocation so a corrupt cache
-cannot turn a short payload into an unbounded allocation request.
-No-op discovery now checks excluded path components in place instead of
-splitting every relative path. The asset supplemental index also precomputes
-its public/web roots and uses component-boundary prefix checks instead of
-rebuilding roots and calling `filepath.Rel` for every candidate (and a second
-time for accepted public files). Both predicates allocate zero bytes for clean
-paths while retaining sibling-prefix, relative-root, case-insensitive dynamic
-directory, and bundle-resource behavior. This removed another roughly 59 MiB
-from a cached run and brought representative no-op scans to 0.68–0.75 seconds.
-Workspace discovery now uses a bounded four-worker pure-Go directory traversal
-and sorts its concurrent results before publication. Scanner-owned paths bypass
-the redundant public-call filtering pass; stale paths and persisted
-size/mtime rows are matched against that sorted list with linear merges.
-`sql.RawBytes` comparisons avoid materializing a second copy of every stored
-path, while an aligned state slice replaces the former 60,000-entry lookup
-map. On the reference checkout these changes reduce cached allocation by
-another roughly 43 MiB and bring representative no-op scans to 0.33–0.39
-seconds without increasing retained heap.
-The frequently used `ClassSymbols` API likewise filters lightweight immutable
-views before materialization, preallocates the exact public result, and sorts
-ordinary ASCII PHP names without lowercase copies. On the reference snapshot,
-one call fell from about 91 MiB of allocation to 10 MiB; that query happens
-after the resource harness takes its table measurements and therefore is not
-included in the table above.
-Snapshot publication now builds the final unique-symbol table first and indexes
-only the winning declaration for each stable ID. Class, function, constant, and
-member indexes store one primary ID inline and allocate an alternatives slice
-only for a real normalized-name collision. On the reference checkout, 314,038
-declarations collapse to 184,188 winning IDs; 272,629 former member-index
-entries collapse to 158,452 names plus only 2,543 distinct alternatives.
-Exact per-container capacities are derived from the winning symbols before the
-immutable indexes are filled. The discarded original-to-lowercase construction
-map and hierarchy-only normalization pass are gone; uncommon runtime spellings
-continue to use the shared lazy concurrent cache. Together these publication
-changes removed about 67 MiB from cached allocation, more than 1.4 million
-allocations, and about 7 MiB of retained heap while also preventing stale
-lookup keys from shadowed duplicate declarations.
-Class, function, constant, and named-member lookups now walk the compact
-overlay/base indexes directly. They deduplicate the usually one-element result
-in place and materialize the final view slice once instead of constructing an
-ID slice, a deduplication map, and a second view slice. Consecutive reference
-runs removed about 3.25 million allocations, roughly 120 MiB of allocation,
-and nearly three billion retired instructions with flat process CPU and no
-change to lookup ordering or duplicate-declaration behavior.
-Hot binder, inference, and member-resolution paths now consume those indexes
-through non-materializing visitors. The visitor deduplicates the usual small
-overlay/base result in four inline ID slots and allocates a map only for an
-unusually ambiguous name. On the 60,472-file reference corpus, this removed
-another roughly 1.60 million allocations with retained heap and process CPU
-effectively flat.
-Linked PHP references store a unique target directly in `Resolved` and reserve
-the `Candidates` slice for genuine ambiguity. Local binding likewise keeps the
-first matching symbol inline and allocates the slice only when a second match
-appears; definition providers merge both representations when exposing
-targets. A later consecutive A/B run on the 61,032-file source checkout, with
-its generated Symfony cache absent in both runs, removed about 907,000 mallocs,
-1.6 MiB of retained heap, and 2.1 billion retired instructions while leaving
-CPU flat to slightly improved and trimming several MiB from the cache.
-Member-property and class-constant inference now collects its final
-`types.Type` values directly instead of first materializing private
-`(symbol ID, type)` records and copying them into a second slice. Union and
-intersection receivers retain ID-based deduplication without imposing that
-storage on ordinary object receivers. A focused generic-property lookup fell
-from 552 bytes and seven allocations to 528 bytes and six allocations; the
-61,032-file corpus consistently performed about 203,000 fewer mallocs with
-flat retained heap and process CPU.
-Fixed-kind member traversals no longer prefix property names with `$` merely
-to distinguish them from methods that cannot occur in that traversal. Mixed
-`All` lookups retain the discriminator. The focused property lookup falls
-again to 520 bytes and five allocations, and consecutive corpus runs remove
-about 356,000–358,000 mallocs with flat-to-lower CPU and retained heap.
-Member-ID resolution exposes matching method, property, constant, and enum-case
-visitors while preserving the existing slice-returning APIs. PHP linking and
-abstract-method validation consume the visitors directly, and `Reference`
-keeps the first target inline while traversal is still in progress instead of
-allocating a singleton ID slice. A focused named-method lookup takes about
-111 ns with zero allocation through the visitor versus 130 ns, 16 bytes, and
-one allocation through the compatibility API. Consecutive real-corpus runs
-removed another roughly 476,000 mallocs and 0.2–0.5 billion retired
-instructions with flat retained heap and slightly lower process CPU.
-Each PHP semantic analysis now owns a small environment-handle arena. Its first
-two copy-on-write frames are inline, and additional stable handles come from
-geometrically growing blocks capped at 128 entries; handles are never recycled
-while an analysis can still reference them. This preserves branch isolation
-and ordinary environment alias semantics while amortizing heap objects. The
-focused semantic benchmark removes two allocations with flat latency and only
-48 extra transient bytes, while consecutive real-corpus runs remove about
-896,000 mallocs with the same 240.3 MiB retained heap and CPU/instruction
-counts within roughly 0.2%.
-Recursive call inference now allocates argument records from an
-analysis-local bump arena: four records are inline, ordinary overflow uses
-eight-entry blocks, and unusually large calls retain exact allocations.
-Returned slices are capacity-limited so downstream code cannot overwrite the
-next arena region. The representative semantic benchmark falls from 10,448
-bytes and 74 allocations to 10,040 bytes and 61 allocations. Paired corpus
-runs remove about 475,000 mallocs and roughly 30 MiB of allocation volume with
-flat process CPU and retained heap.
-PHP query consumers that only need to walk syntax nodes no longer materialize
-temporary result slices. Namespace discovery stops after its first match, name
-resolution visits imports in source order, and inference builds its
-exact-capacity function index directly during traversal. The representative
-semantic benchmark removes another allocation, while paired 61,032-file corpus
-runs remove about 127,000 mallocs and 18 MiB of allocation traffic with the
-same 240.3 MiB retained heap and flat-to-slightly-lower CPU and retired
-instructions.
-Function-parameter queries now also expose a zero-allocation direct-child
-iterator while preserving the slice API for random-access callers. Binding
-uses its exact count to allocate the retained signature once, and closure
-inference fills its exact-capacity callable parameter list directly. Paired
-corpus runs remove another 130,000–131,000 mallocs with unchanged retained heap,
-CPU, and retired instructions.
-The shared CST now provides a value cursor for direct child nodes alongside its
-range-over-function API. Hot JSON, YAML, JavaScript, and typed Twig accessors
-use the cursor, and exact property lookups scan the children directly instead
-of materializing a sibling collection. The cursor is allocation-free in the
-focused test; paired corpus runs remove about 1.69 million mallocs and 23–26 MiB
-of allocation traffic with unchanged 240.3 MiB retained heap and flat CPU and
-retired instructions.
-The matching direct-token cursor is likewise allocation-free. Twig typed
-accessors, YAML scalar lookup, and PHP modifier lookup use it in their hot
-paths, removing another roughly 824,000 corpus mallocs; total allocation volume,
-retained heap, CPU, and retired instructions remain effectively flat.
-DBAL type-registration candidate screening uses an allocation-free ASCII
-automaton; ORM/ODM candidate extraction has been removed.
-PHP name contexts now allocate class, function, and constant import maps lazily
-by kind. When the first map of a kind is created, the binder republishes its
-header to scopes already created in the same namespace block; sibling namespace
-blocks remain isolated. Escaped empty-context construction falls from 144
-bytes and three allocations to zero, and the real corpus performs about
-536,000 fewer mallocs with flat retained heap and CPU. Import-free resolution
-also skips lowercase alias construction entirely. A local-class lookup falls
-from roughly 66 ns, 40 bytes, and two allocations to 32 ns, 24 bytes, and one
-allocation, removing another 27,000–30,000 corpus mallocs.
-Resolved function and constant candidates also have a two-name inline value
-and non-materializing visitors while the existing slice APIs remain intact.
-Inference and interactive lookups consume the visitor; binder references still
-materialize their persistent qualified-name list. An import-free function
-lookup drops from about 54 ns, 64 bytes, and two allocations to 40 ns, 32
-bytes, and one allocation, and the real corpus performs about 187,000 fewer
-mallocs with unchanged resolution and fallback order.
-Retained reference records pack their two value counts into bytes and combine
-the target kind with the two reference flags, reducing the record from 32 to
-28 bytes without changing the MessagePack layout. The reference corpus uses a
-maximum qualified count of two and candidate count of one; new pathological
-inputs are bounded to 255 values. This saved another 5.4 MiB of retained heap.
-The document-local string and receiver tables are already bounded below
-2^21 entries, so the next layout stores both counts, the name kind, target
-kind, and flags in the otherwise unused upper index bits. The wire layout and
-full 32-bit value offset remain unchanged, while 1,321,490 current-corpus
-records fall from 28 to 24 bytes and remove another 5.4 MiB of live heap.
-Boundary and MessagePack round-trip tests cover every packed field.
-The restore decoder stores newly interned immutable strings in 64 KiB arena
-chunks rather than making roughly 700,000 separate backing allocations. The
-strings remain ordinary immutable Go strings and the arena builder is released
-after publication. CPU profiles remain effectively flat, while cached restore
-uses about 724,000 fewer allocations, 4 MiB less retained heap, and materially
-less reserved heap/RSS.
-Cold scanner batches now use the same immutable arena ownership for canonical
-workspace strings. Cross-document interning and ordinary string APIs are
-unchanged, but the 61,032-file run performs about 719,000 fewer mallocs and
-retains roughly 4.6 MiB less live heap with flat process CPU.
-Retained symbols now keep one owning-document pointer and three one-based
-side-table indexes packed into a `uint64`, replacing separate signature,
-hierarchy, and metadata pointers. The 21-bit indexes cover the bounded
-per-document wire format, and decoding stages the old pointer-shaped data only
-until it can publish exact immutable tables. This reduces each of the 314,038
-symbol cores from 160 to 144 bytes and removes another 5.1 MiB from the
-real-world oracle's retained heap. Cold indexing, warm scans, and the
-1.86-second cached restore remain flat.
-The optional symbol side records now use immutable pointer-and-length views
-instead of retaining a full three-word Go slice header for every possible
-collection. The corpus census found that 63,782 of 80,098 metadata records are
-documentation-only, only 1,735 hierarchy type entries exist across 26,237
-hierarchies, and 34,516 signatures carry any of their four extra collections.
-Metadata cores fall from 64 to 24 bytes with a 24-byte extras record only for
-attributes or constant arrays; hierarchies fall from 144 to 40 bytes with a
-32-byte type record only when needed; and signature extras fall from 96 to
-48 bytes. Parameter source ranges similarly store one absolute offset and
-bounded deltas in 16 rather than 24 bytes, with an exact full-range fallback;
-all 208,392 parameters in the reference checkout use the compact form. The
-wire/cache format and public slices remain unchanged, and strict `checkptr`
-tests cover the immutable views. Together these layouts lower the focused
-retained heap from 225.3 to 216.1 MiB and the full feature oracle from 297.8 to
-288.7 MiB. A 61,033-file run remains at 8.87 seconds cold, 318 milliseconds
-warm, and 1.83 seconds for a cached restart.
-Published PHP snapshots now store member names in sorted per-container spans
-with contiguous symbol-pointer values instead of retaining a nested Go map for
-every class-like declaration. Single-document analysis overlays keep their
-small mutable maps, so replacement and fixed-point behavior are unchanged.
-The reference census contains 20,242 member containers, 158,452 distinct
-names, and only 2,542 names with alternates; 15,554 containers have eight or
-fewer names. The immutable index is built directly in document precedence
-order and discards no intermediate map tree. Typical named visits remain
-allocation-free at roughly 32–36 ns, while enumerating a 64-member class falls
-from about 9.4 µs, 4 allocations, and 4,648 bytes to 1.26 µs, 1 allocation, and
-1,152 bytes. The real checkout performs about 53,000 fewer cold-index mallocs,
-retains 209.2 rather than 216.1 MiB in the focused harness, and retains 281.7
-rather than 288.7 MiB in the full feature oracle. Its latest cold, warm, and
-cached runs complete in 8.90 seconds, 358 milliseconds, and 1.89 seconds.
-The semantic store and its current published snapshot now share one immutable
-path-to-document map instead of retaining identical 39,416-entry maps. Every
-replace/remove operation clones before its first write, so older lock-free
-readers keep their exact generation; bulk batches reserve the destination map
-once, while a one-file update uses Go's optimized map clone. On a synthetic
-10,000-document workspace a one-file replacement improves from roughly
-1.88 to 1.60 milliseconds with the same allocations. The real checkout removes
-another 1.7 MiB from both harnesses, reaching 207.6 MiB focused and 280.0 MiB
-with the full feature catalog. Its cold, warm, and cached passes remain flat at
-8.80 seconds, 300 milliseconds, and 1.82 seconds.
-Symbol source locations now retain one absolute start and five 16-bit deltas
-instead of three complete ranges. Missing selection/body ranges use a reserved
-delta, while declarations with larger spans keep an exact document-local
-fallback. The trunk census found 313,878 compact symbols and only 160
-fallbacks among 314,038 declarations. This reduces the symbol core from 144 to
-136 bytes, keeps the cache wire format unchanged, and lowers retained heap to
-204.7 MiB in the focused harness and 277.3 MiB in the full oracle. Compact
-`Range` access remains allocation-free at roughly 1.6 ns; the latest cold,
-warm, and cached passes complete in 8.80 seconds, 302 milliseconds, and
-1.81 seconds.
-Retained PHP references likewise combine their document-local value offset and
-source-range length into one 32-bit word. A reserved length selects an exact
-sparse fallback containing the original range and offset. All 1,321,490
-references in the trunk fit the inline form: the longest range is 86 bytes and
-the largest per-document value offset is 2,451. The record therefore falls
-from 24 to 20 bytes and removes a further 5.3 MiB, reaching 199.4 MiB in the
-focused harness and 271.9 MiB with the full feature catalog. Reading both
-values remains allocation-free at roughly 1.07 ns. The unchanged cache wire
-format restores in 1.78 seconds, while cold and warm passes remain flat at
-8.77 seconds and 306 milliseconds.
-Batch-published and cache-restored PHP documents now share one immutable
-reference-string header table while retaining compact per-document `uint32`
-IDs. The wire format still writes each document's local list, and standalone
-incremental updates keep their cheaper local table. The trunk's 1,047,627
-document-local entries collapse to 176,518 shared headers; lookup remains
-allocation-free at roughly 1.14 ns instead of 1.07 ns. This removes another
-9.7 MiB from the focused harness and 9.8 MiB from the full catalog, reaching
-189.7 MiB and 262.1 MiB respectively. A cached process retains 190.9 MiB and
-constructs in 1.87 seconds; cold and warm scans remain at 8.80 seconds and
-303 milliseconds.
-Parameter symbol IDs are now reconstructed from the owning declaration ID and
-parameter name instead of retaining a string header and backing string for
-every signature entry. The trunk census derives 206,254 of 208,392 IDs; the
-remaining 2,138 noncanonical IDs use an exact optional fallback. This reduces
-the parameter core from 80 to 64 bytes and also removes the canonical ID
-strings from the workspace interner, lowering focused retained heap from 189.7
-to 178.3 MiB and the full feature oracle from 262.1 to 250.8 MiB. Parameter
-wire layout v2 omits derivable IDs while its decoder continues to accept v1
-and legacy map records, including mixed-version parameter arrays. The reference
-cache is 1.8 MiB smaller and a cached process retains 179.5 MiB. Reconstructing
-an ID on demand takes roughly 64 ns, 32 bytes, and one allocation; an exact
-fallback remains allocation-free at roughly 1.1 ns. Cached retired instructions
-remain effectively flat at about 48 billion; the latest cold, warm, and cached
-construction passes complete in 9.04 seconds, 390 milliseconds, and 2.15
-seconds.
-Published symbols now keep document-local `uint32` indexes for name,
-fully-qualified name, and container instead of three retained string headers.
-Cold batches and cache restores remap those indexes directly into shared
-canonical tables; standalone incremental documents retain a small local table.
-The symbol core falls from 136 to 104 bytes. The current 43,708-file checkout
-stores 186,339 declarations. Symbol and reference indexes use the same
-canonical header table: 285,756 symbol and 177,116 reference values collapse
-to 379,560 retained headers, eliminating 83,312 duplicates. Canonical data
-pointers key the construction-only index, so unification removes about 34 MiB
-of matched cold allocation and 10 MiB from cached restore versus maintaining
-two maps. The immutable 184,814-entry ID lookup likewise stores only symbol
-pointers in a seeded open-addressed table, because every target symbol already
-owns the corresponding ID; later declarations still replace earlier duplicate
-IDs exactly. The current focused harness retains 128.8 MiB, the full feature
-oracle 188.9 MiB, and a cached restart 128.4 MiB. Cached construction remains
-at about 1.36 seconds with effectively flat process CPU, and the cache wire
-format is unchanged. Symbol-string reads take roughly 0.91 ns. Average
-symbol-ID hits take about 14 ns instead of 10 ns for a Go map, while misses
-take about 5 ns; both remain allocation-free.
-Raw-DEFLATE reads use the API-compatible lower-allocation decoder from
-`klauspost/compress`, while writes deliberately retain Go's standard encoder
-so existing compression output, cold-index behavior, and the versioned cache
-format remain stable. Reusing that decoder across rows removes about 42 MiB of
-per-block Huffman-table allocation and nearly one million allocations from the
-reference cached restart. The restore-scoped canonical-string lookup is also a
-seeded open-addressed table with one string header per slot instead of a
-`map[string]string` with two. Its capacity hint is bounded and allocated only
-when the first value arrives. The same table backs cold batch detachment; the
-scanner supplies its filtered paths so PHP sizes it from actual `.php`
-candidates without penalizing a warm no-op batch. Together these changes lower
-cached allocation from 666 MiB to about 601 MiB, cached construction from about
-2.5 to 2.2 seconds, and cold allocation by roughly another 49 MiB without
-changing the 250 MiB retained cached heap.
-Generic repository writes now borrow one bounded MessagePack encoder buffer
-across sequential SQLite inserts instead of growing a fresh `bytes.Buffer` for
-every value. Buffers larger than 1 MiB are discarded, and all idle buffers are
-released at the scanner batch boundary. The encoded bytes and database schema
-are unchanged. On the reference cold index this removed about 221 MiB of
-allocation (8.3 to 8.1 GiB) while retired instructions and CPU remained flat;
-cached restarts do not rewrite values and are therefore unchanged.
-The bounded pool now keeps the encoder and its small wrapper together with that
-buffer instead of allocating a new wrapper for every repository/file batch.
-Oversized entries still discard the complete unit, and the batch boundary still
-drains every idle encoder. Paired 61,032-file runs remove about 534,000 mallocs
-and 23 MiB of allocation traffic with unchanged retained heap and effectively
-flat CPU and retired instructions.
-Per-document reference packers assign stable indexes in their temporary
-uniqueness maps and materialize exact string and receiver-type tables once
-packing is complete. They no longer build provisional reserved slices, grow
-them, and copy them again during compaction. The reference corpus packs
-1,427,786 records and 1,263,408 qualified/candidate values into 1,047,843
-document-local string slots and 321,549 type slots. This removed about 41 MiB
-of cold allocation (8.1 to 8.0 GiB) with flat CPU, retained heap, cache format,
-and cached-restart cost.
-The binder's existing structural census now also reserves its scope slice,
-removing about 31 MiB of repeated growth without another syntax-tree walk.
-Scope declaration indexes use compact insertion-ordered name/ID lists, which
-naturally represent duplicate normalized names without a map bucket and
-per-name alternatives slice for every non-empty scope. Across the two
-scope-index layout steps this removes about 74 MiB and roughly 715,000
-allocations while preserving lookup order and clone isolation.
-Reference reservations use 90% of the syntax-derived upper bound while
-retaining the complete 4,096-entry reservation for generated-file outliers.
-The integration-only binder capacity census covers more than 37,000 PHP
-documents and verifies the resulting growth frequency before that ratio is
-changed. Top-level declarations, class members, trait names, property
-variables, constant-array items, attributes, and body declarations are also
-visited directly instead of first materializing one-use node slices. Against
-the immediately preceding weighted-batch build, these binder changes removed
-about 61 MiB of cold allocation with flat process CPU and retained heap; RSS
-remained inside its normal run-to-run range. Semantic results, cache encoding,
-and query APIs are unchanged.
-Generic repository rows now own their source path directly alongside
-namespace, key, and value. The previous `data`/`files` join was strictly
-one-to-one on the reference cache (127,327 rows in each table), so it doubled
-every insert/delete and retained three association indexes without expressing
-additional semantics. The flattened schema removes the second statement and
-`LastInsertId` round trip, cuts cold allocation by about 124 MiB and 4.6
-million allocations, reduces retired instructions by 5.1%, and lowers the
-checkpointed cache from 246 to 223 MiB. Cold indexing improved from about 14.1
-to 12.1 seconds in the measured run while cached allocation remained flat.
-The disposable cache version is bumped, and standalone legacy databases are
-detected by schema shape and rebuilt automatically.
-Repository-independent route lookup ordering now ranks exact reverse-path
-matches before partial matches, source declarations before generated catalogs,
-and remaining ties by stable route fields. This keeps navigation results
-deterministic across SQLite query plans and concurrent indexing completion.
-Line indexes start from a bounded source-size estimate instead of growing from
-one entry, and PHP type-alias maps remain unallocated until first use.
-Parsed-file memoization checks its shared result before allocating
-first-computation synchronization. Semantic member queries reserve their known
-result cardinality, while document overlays census their already-built symbol
-slice before constructing member and global indexes. Together these small
-hot-path changes removed about 47 MiB and 520,000 allocations from the
-reference cold index with effectively flat retired instructions and no
-retained-heap change.
-Per-document inference snapshots keep their one replacement path inline, use
-32-bit indexes into the already-owned symbol slice, and omit reference storage
-for declaration-only overlays instead of allocating general workspace maps.
-The PHP
-reverse-reference index is built on first use instead of startup; on this
-checkout that lookup took 0.56 seconds and added 27 MiB of retained heap. Peak
-RSS is particularly sensitive to operating-system allocation and GC timing;
-retained Go heap and cumulative Go allocation are the more repeatable memory
-metrics.
-
-Transient PHP references now keep their unique target in `Resolved` and move
-qualified-name and genuinely ambiguous target collections behind one lazy
-side record. The common record is 64 rather than 112 bytes. Flow-environment
-keys borrow variable tokens and already-normalized member expressions directly;
-only internal whitespace or nullsafe access needs a normalized copy. On the
-same 44,288-file checkout this key change reduced cold allocation by about
-145 MiB and 3.90 million allocations, with process CPU falling by roughly
-0.55 seconds.
-
-All built-in type-fact reasons now use compact byte codes and round-trip to
-their original analytics strings. The real-world census contains 2.82 million
-non-literal facts: 33.8% use the type-only assignment table and the remainder
-use the annotated compact table, so reservations follow the same one-third /
-two-thirds split. This moved roughly 953,000 flow facts out of the heavyweight
-detailed map; a paired 45,214-file run removed about 71 MiB of allocation and
-retired roughly 1% fewer instructions. JSON recovery sets are immutable grammar
-tables rather than per-property slices, removing another 407,000 allocations.
-Case-folded import probes, path classifiers, Twig sort comparisons, and
-framework type-extension method gates avoid temporary lowercase strings in
-their ASCII hot paths while retaining Unicode fallbacks.
-
-First-class-callable detection and route metadata now enumerate PHP arguments
-through the allocation-free CST iterator. Native type parsing only allocates a
-union or intersection collection after seeing the corresponding operator.
-PHP/JavaScript name compaction shares a borrowed fast path, and commented PHP
-expressions reserve their final builder once. Twig PHP-context discovery walks
-matching nodes directly instead of materializing recursive result slices.
-Finally, scanner fingerprints are written in 128-row SQLite statements instead
-of one statement execution per file. Paired 52,059-file runs removed about
-1.87 million mallocs and 43 MiB of cumulative Go allocation across this group;
-the fingerprint batching alone removed 17 MiB of allocation and roughly
-1.47 billion retired instructions. Incremental file removal now uses the same
-bounded batching for repository rows and scanner fingerprints, shares prepared
-statements and path arguments across namespaces, and skips insert setup for
-delete-only replacements. A 46-repository, 512-path removal benchmark dropped
-from about 48.0 ms, 6.78 MiB, and 235,534 allocations to 3.1 ms, 1.05 MiB, and
-1,700 allocations. Twig-context and PHP route-usage
-candidate gates share a fixed-pattern ASCII automaton as well, replacing one
-source scan per keyword with one scan per feature. The worst-case Twig gate
-benchmark fell from roughly 13.6 ms to 0.27 ms for a 114 KiB source string;
-paired full-corpus runs retired 3.2–5.0 billion fewer instructions. PHP
-workspace graphs now use the pooled Klauspost best-speed DEFLATE encoder (the
-same implementation already used for decoding), removing roughly another
-5 billion instructions. Its 23,542 compressed graph payloads grew by only
-690,818 bytes, or 1.7%, while retained heap and cached restore time stayed
-flat; a standard-library decoder compatibility test protects the raw-DEFLATE
-cache format.
-
-PHP array inference now keeps the field-index map lazy for small shapes and
-transfers completed field storage into immutable types instead of copying it
-again. The focused small-shape collector fell from about 350 ns, 736 bytes, and
-six allocations to about 212 ns, 480 bytes, and four allocations; a paired full
-index removed 58.8 MiB of cumulative allocation. Implicit list literals bypass
-shape collection entirely, while keyed literals reserve the exact number of
-candidate fields and spread arrays skip candidates they cannot preserve. A
-controlled one-worker corpus comparison removed another 35.3 MiB and roughly
-313,000 allocations with flat wall time. Allocation-free indexed accessors for
-immutable type arguments, callable parameters, and shape fields now cover
-read-only inference, resolution, Twig, analytics, and semantic-graph traversal.
-The field/parameter portion removed a further 3.7 MiB and about 62,000
-allocations; the broader argument traversal was neutral at full-corpus scale.
-
-Canonical PHP type rendering now reserves its final output once and writes
-literal and generic children directly, avoiding temporary child strings. The
-focused eight-field shape benchmark fell from about 341 ns, 968 bytes, and nine
-allocations to about 260 ns, 576 bytes, and four allocations. PHP use
-declarations likewise scan fields and top-level imports without temporary
-slices, and the binder/name resolver consume imports through an allocation-free
-visitor. Together these changes removed 78.4 MiB of cumulative allocation and
-1.38 million allocations in a controlled one-worker 52,059-file comparison;
-retained heap stayed flat.
-
-Parsed files now keep their common single derived analysis inline and allocate
-a small overflow map only if a second component uses a distinct memoization
-key. Concurrent callers for the same key still share one computation, and the
-scanner clears all derived analysis at the end of the preparation phase. The
-single-key lifecycle benchmark fell from about 220 ns, 712 bytes, and six
-allocations to 84 ns, 320 bytes, and two allocations. A controlled one-worker
-52,059-file comparison removed 5.4 MiB of cumulative allocation and about
-76,800 allocations; retained heap stayed flat.
-
-JavaScript call-name queries now borrow the exact CST source slice when the
-callee contains no trivia and reserve one compact token buffer only for the
-uncommon commented or spaced expression. Identifier lookup uses the direct
-token cursor, and indexed argument lookup no longer materializes the complete
-argument slice. The representative call-name benchmark fell from roughly
-520--580 ns, 136 bytes, and seven allocations to 33--39 ns with no allocation;
-identifier and indexed-argument lookup are likewise allocation-free. On the
-38,960-file Shopware checkout this removed about 15.6 million mallocs and
-279 MiB of cumulative allocation. Retained heap stayed at 231.7 MiB and normal
-cold indexing remained approximately 29 seconds.
-
-PHP special-type resolution now preserves immutable type subgraphs that do not
-contain `self`, `static`, or another context-dependent child instead of cloning
-the complete graph. Recent class and receiver types are reused within one
-document analysis without a workspace-global cache. Resolving a representative
-ordinary composite type fell from 602--811 ns, 232 bytes, and seven allocations
-to 26 ns with no allocation. On the same 38,960-file checkout these changes
-removed another 1.64 million mallocs and 40.1 MiB of cumulative allocation;
-retained heap stayed near 230 MiB and cold indexing remained approximately
-29 seconds.
-
-The latest empty-cache resource run covered a growing 52,440-file checkout:
-6.12 seconds cold, 267 milliseconds warm, 134.6 MiB retained Go heap,
-547.7 MiB retained RSS, 555.8 MiB maximum RSS, 5.14 GiB cumulative Go
-allocation, and 21.1 seconds of process CPU. Of the 505.6 MiB Go heap
-reservation, 271.4 MiB was in use, 191.6 MiB had already been released to the
-operating system, and only 42.6 MiB was idle but resident; the remaining
-process RSS is therefore not simply unreclaimed Go heap. Bounding each
-explicitly configured SQLite page cache at 8 MiB reduced retained and peak RSS
-by about 46 MiB on an identical corpus, with effectively unchanged CPU and
-retired instructions. The assertion-heavy oracle indexed the same 52,440 files
-in 6.05 seconds, retained 203.4 MiB with the complete feature catalog, and
-restored its cache in 1.27 seconds.
+The Rust server has no garbage collector: it ignores `GOMEMLIMIT` and `GOGC`,
+and the VS Code `shopwareLSP.memoryLimitMiB` setting is deprecated. Earlier
+memory and allocation tuning notes for the Go server remain in the Git
+history of this file.
 
 ### CI/CD
 
 This project uses GitHub Actions for continuous integration:
 
-- Tests are run on every push and pull request
-- Code linting is performed using golangci-lint
-- Builds are created for verification
+- Tests (`cargo test` on Linux, macOS, and Windows, plus the VS Code and Zed
+  suites) run on every push and pull request
+- Formatting and linting use `cargo fmt --check` and
+  `cargo clippy -D warnings`; the third-party notices must be up to date
+- The real-world integration suite is compiled and the release server is
+  built for verification
+- CodSpeed tracks the `crates/bench` benchmarks
 
 ## License
 
