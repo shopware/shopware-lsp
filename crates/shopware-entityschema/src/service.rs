@@ -5,9 +5,9 @@ use swlsp_parser_php::query as phpquery;
 use swlsp_parser_xml::query as xmlquery;
 use swlsp_parser_yaml::query as yamlquery;
 
-use crate::gopath;
 use crate::model::*;
 use crate::util::*;
+use swlsp_uriutil::filepath;
 
 /// Registers a definition while preserving the surrounding configuration
 /// file. Callers pass an empty source and the target path for a new file.
@@ -40,7 +40,7 @@ pub fn patch_tagged_service_configuration(
     if source.contains(class_name) && source.contains(tag) {
         return Ok(source.to_owned());
     }
-    let result = match go_to_lower(gopath::ext(path)).as_str() {
+    let result = match go_to_lower(filepath::ext(path)).as_str() {
         ".xml" => {
             if source.trim().is_empty() {
                 format!(
@@ -100,7 +100,7 @@ pub fn patch_tagged_service_configuration(
         _ => {
             return Err(errorf!(
                 "unsupported service configuration {}",
-                gopath::base(path)
+                filepath::base(path)
             ));
         }
     };
@@ -139,7 +139,7 @@ pub fn remove_service_configuration(path: &str, source: &str, class_name: &str) 
             u32::from(range.end()) as usize,
         )
     };
-    match go_to_lower(gopath::ext(path)).as_str() {
+    match go_to_lower(filepath::ext(path)).as_str() {
         ".xml" => {
             let parsed = swlsp_parser_xml::parse(source);
             if !parsed.errors.is_empty() {
@@ -182,7 +182,7 @@ pub fn remove_service_configuration(path: &str, source: &str, class_name: &str) 
         _ => {
             return Err(errorf!(
                 "unsupported service configuration {}",
-                gopath::base(path)
+                filepath::base(path)
             ));
         }
     }

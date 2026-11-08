@@ -16,9 +16,9 @@ use crate::context::{
     ImportMemo, IndexedClassDeclaration, ScannedDefinition,
     scan_indexed_plugin_schema_with_enricher,
 };
-use crate::gopath;
 use crate::model::*;
 use crate::source_index::SourceIndex;
+use swlsp_uriutil::filepath;
 
 pub const ERR_INDEX_NOT_READY: &str =
     "entity schema index is not ready; wait for workspace indexing to finish";
@@ -122,12 +122,12 @@ impl IndexedCatalog {
         {
             return Err(errorf!("{ERR_INDEX_NOT_READY}"));
         }
-        let root = gopath::clean(plugin_root);
+        let root = filepath::clean(plugin_root);
         let candidates = self.candidates();
         let mut declarations = Vec::new();
         let mut source_by_path: HashMap<String, String> = HashMap::new();
         for candidate in candidates.iter() {
-            if !gopath::within_directory(&root, &candidate.path) {
+            if !crate::context::within_directory(&root, &candidate.path) {
                 continue;
             }
             let mut declaration = IndexedClassDeclaration {

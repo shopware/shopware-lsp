@@ -78,7 +78,22 @@ impl HoverProvider for RouteHoverProvider {
         if routes.is_empty() {
             return Ok(None);
         }
-        swlsp_gosort::sort_slice(&mut routes, |left, right| left.file_path < right.file_path);
+        routes.sort_unstable_by(|left, right| {
+            (
+                &left.file_path,
+                left.line,
+                &left.name,
+                &left.path,
+                &left.controller,
+            )
+                .cmp(&(
+                    &right.file_path,
+                    right.line,
+                    &right.name,
+                    &right.path,
+                    &right.controller,
+                ))
+        });
 
         let title = if html_url {
             "Symfony route URL"

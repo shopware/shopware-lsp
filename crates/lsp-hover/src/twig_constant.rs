@@ -74,7 +74,13 @@ impl HoverProvider for TwigConstantHoverProvider {
             .into_iter()
             .map(|symbol| (php.constant_symbol_name(&symbol), symbol))
             .collect();
-        swlsp_gosort::sort_slice(&mut named, |left, right| left.0 < right.0);
+        named.sort_unstable_by(|(left_name, left), (right_name, right)| {
+            (left_name, &left.path, left.range.start()).cmp(&(
+                right_name,
+                &right.path,
+                right.range.start(),
+            ))
+        });
         let mut markdown = String::new();
         for (index, (name, symbol)) in named.iter().enumerate() {
             if index != 0 {

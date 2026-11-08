@@ -8,7 +8,6 @@ publish.workspace = true
 [dependencies]
 swlsp-textutil = { path = "../textutil" }
 swlsp-syntax.workspace = true
-swlsp-gosort = { path = "../gosort" }
 swlsp-console = { path = "../console" }
 swlsp-language = { path = "../language" }
 swlsp-lsp = { path = "../lsp" }

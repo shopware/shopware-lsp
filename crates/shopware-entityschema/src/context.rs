@@ -7,7 +7,6 @@ use std::io::ErrorKind;
 use serde::{Deserialize, Serialize};
 use swlsp_parser_php::query as phpquery;
 
-use crate::gopath;
 use crate::import::{
     ParsedSource, Resolver, attach_translation, import_bulk_extension_parsed,
     import_definition_parsed, import_extension_parsed, import_translation_parsed,
@@ -15,6 +14,7 @@ use crate::import::{
 use crate::model::*;
 use crate::snapshot::SNAPSHOT_RELATIVE_DIRECTORY;
 use crate::util::*;
+use swlsp_uriutil::filepath;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -66,12 +66,18 @@ struct ComposerExtra {
 
 fn absolute(path: &str) -> String {
     if path.starts_with('/') {
-        return gopath::clean(path);
+        return filepath::clean(path);
     }
     let current = std::env::current_dir()
         .map(|current| current.to_string_lossy().into_owned())
         .unwrap_or_default();
-    gopath::join(&[&current, path])
+    filepath::join(&[current.as_str(), path])
+}
+
+/// Whether `candidate` is `root` or below it (lexically).
+pub(crate) fn within_directory(root: &str, candidate: &str) -> bool {
+    filepath::rel(root, candidate)
+        .is_ok_and(|relative| relative != ".." && !relative.starts_with("../"))
 }
 
 /// Locates the nearest Composer package without escaping the workspace.
@@ -82,14 +88,14 @@ pub fn find_plugin_context(
     let workspace_root = absolute(workspace_root);
     let selected_directory = absolute(selected_directory);
     let mut root = selected_directory.clone();
-    while gopath::within_directory(&workspace_root, &root) {
-        let composer_path = gopath::join(&[&root, "composer.json"]);
+    while within_directory(&workspace_root, &root) {
+        let composer_path = filepath::join(&[&root, "composer.json"]);
         match std::fs::read(&composer_path) {
             Ok(content) => return parse_plugin_context(&root, &selected_directory, &content),
             Err(error) if error.kind() == ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
         }
-        let parent = gopath::dir(&root);
+        let parent = filepath::dir(&root);
         if parent == root {
             break;
         }
@@ -139,24 +145,24 @@ fn parse_plugin_context(root: &str, selected: &str, content: &[u8]) -> Result<Pl
         for relative in paths {
             mappings.push((
                 trim_backslash(namespace).to_owned(),
-                gopath::join(&[root, &relative]),
+                filepath::join(&[root, &relative]),
             ));
         }
     }
     mappings.sort_by_key(|mapping| std::cmp::Reverse(mapping.1.len()));
     let selected_mapping = mappings
         .iter()
-        .find(|(_, mapping_root)| gopath::within_directory(mapping_root, selected))
+        .find(|(_, mapping_root)| within_directory(mapping_root, selected))
         .or_else(|| {
             mappings
                 .iter()
-                .find(|(_, mapping_root)| gopath::base(mapping_root) == "src")
+                .find(|(_, mapping_root)| filepath::base(mapping_root) == "src")
         });
     let Some((base_namespace, source_root)) = selected_mapping else {
         return Err(errorf!("plugin has no usable PSR-4 source mapping"));
     };
     let mut namespace = base_namespace.clone();
-    if let Some(relative) = gopath::rel(source_root, selected)
+    if let Ok(relative) = filepath::rel(source_root, selected)
         && relative != "."
         && !relative.starts_with("..")
     {
@@ -175,7 +181,7 @@ fn parse_plugin_context(root: &str, selected: &str, content: &[u8]) -> Result<Pl
             .get("shopware/core")
             .cloned()
             .unwrap_or_default(),
-        snapshot_directory: gopath::join(&[root, SNAPSHOT_RELATIVE_DIRECTORY]),
+        snapshot_directory: filepath::join(&[root, SNAPSHOT_RELATIVE_DIRECTORY]),
         ..PluginContext::default()
     };
     for name in [
@@ -184,7 +190,7 @@ fn parse_plugin_context(root: &str, selected: &str, content: &[u8]) -> Result<Pl
         "services.php",
         "services.xml",
     ] {
-        let path = gopath::join(&[source_root, "Resources", "config", name]);
+        let path = filepath::join(&[source_root, "Resources", "config", name]);
         if std::fs::metadata(&path).is_ok_and(|metadata| !metadata.is_dir()) {
             context.service_uris.push(path);
         }
@@ -218,7 +224,7 @@ fn walk_php_files(directory: &str, files: &mut Vec<String>) -> std::io::Result<(
         .collect::<std::io::Result<_>>()?;
     entries.sort_by(|left, right| left.0.cmp(&right.0));
     for (name, file_type) in entries {
-        let path = gopath::join(&[directory, &name]);
+        let path = filepath::join(&[directory, &name]);
         if file_type.is_dir() {
             if matches!(
                 name.as_str(),
@@ -227,7 +233,7 @@ fn walk_php_files(directory: &str, files: &mut Vec<String>) -> std::io::Result<(
                 continue;
             }
             walk_php_files(&path, files)?;
-        } else if gopath::ext(&path) == ".php" {
+        } else if filepath::ext(&path) == ".php" {
             files.push(path);
         }
     }
@@ -240,7 +246,7 @@ pub fn scan_plugin_schema_with_lookup(
     plugin_root: &str,
     external: Option<RelationLookup>,
 ) -> Result<(Schema, Vec<ScannedDefinition>)> {
-    let source_root = gopath::join(&[plugin_root, "src"]);
+    let source_root = filepath::join(&[plugin_root, "src"]);
     let mut files = Vec::new();
     match std::fs::metadata(&source_root) {
         Err(error) if error.kind() == ErrorKind::NotFound => {
@@ -329,10 +335,10 @@ pub(crate) fn scan_indexed_plugin_schema_with_enricher(
         .filter(|candidate| {
             !candidate.path.is_empty()
                 && !candidate.class.is_empty()
-                && gopath::within_directory(plugin_root, &candidate.path)
+                && within_directory(plugin_root, &candidate.path)
         })
         .map(|candidate| ClassBasedDeclaration {
-            path: gopath::clean(&candidate.path),
+            path: filepath::clean(&candidate.path),
             source: candidate.source.clone(),
             class: trim_backslash(&candidate.class).to_owned(),
             parents: candidate.parents.clone(),
@@ -591,12 +597,12 @@ fn attach_scanned_translations(
             continue;
         }
         translation.spec.definition_uri = declaration.path.clone();
-        let directory = gopath::dir(&declaration.path);
-        translation.spec.entity_uri = gopath::join(&[
+        let directory = filepath::dir(&declaration.path);
+        translation.spec.entity_uri = filepath::join(&[
             &directory,
             &format!("{}.php", short_class(&translation.spec.entity_class)),
         ]);
-        translation.spec.collection_uri = gopath::join(&[
+        translation.spec.collection_uri = filepath::join(&[
             &directory,
             &format!("{}.php", short_class(&translation.spec.collection_class)),
         ]);

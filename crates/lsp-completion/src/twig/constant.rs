@@ -10,8 +10,7 @@ use swlsp_php_semantic::{Flags, Symbol, SymbolKind, Visibility};
 use swlsp_twig::{ConstantCompletionContext, PhpAccessResolver, TwigIndexer};
 
 use super::{lower_ext, markdown};
-use crate::common::{go_to_lower, protocol_range, text_edit};
-use swlsp_gosort::sort_slice;
+use crate::common::{compare_completion_items, go_to_lower, protocol_range, text_edit};
 
 pub struct TwigConstantCompletionProvider {
     php_index: Option<PhpIndex>,
@@ -227,11 +226,11 @@ fn sort_twig_constant_items(items: &mut Vec<protocol::CompletionItem>) {
         .collect();
     // Go compares with EqualFold first; full case folding and lowercase
     // equality agree for these identifiers.
-    sort_slice(&mut keyed, |left, right| {
-        if left.0 != right.0 {
-            return left.0 < right.0;
-        }
-        left.1 < right.1
+    keyed.sort_unstable_by(|left, right| {
+        left.0
+            .cmp(&right.0)
+            .then_with(|| left.1.cmp(&right.1))
+            .then_with(|| compare_completion_items(&left.2, &right.2))
     });
     *items = keyed.into_iter().map(|(_, _, item)| item).collect();
 }

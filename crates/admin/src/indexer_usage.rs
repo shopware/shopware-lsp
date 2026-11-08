@@ -4,7 +4,7 @@
 use crate::*;
 
 fn is_twig_path(path: &str) -> bool {
-    gopath::ext(path).eq_ignore_ascii_case(".twig")
+    filepath::ext(path).eq_ignore_ascii_case(".twig")
 }
 
 fn is_component_contract_kind(kind: AdminSymbolKind) -> bool {
@@ -102,7 +102,7 @@ impl AdminComponentIndexer {
                 let Some(source) = component.symbol_source(target.kind, &target.name) else {
                     continue;
                 };
-                if gopath::clean(&source) != gopath::clean(&target.owner) {
+                if filepath::clean(&source) != filepath::clean(&target.owner) {
                     continue;
                 }
                 for set in self.get_usages(target.kind, &local.name, &target.name)? {
@@ -437,7 +437,7 @@ impl AdminComponentIndexer {
         };
         Ok(component
             .symbol_source(target.kind, &target.name)
-            .is_some_and(|source| gopath::clean(&source) == gopath::clean(&target.owner)))
+            .is_some_and(|source| filepath::clean(&source) == filepath::clean(&target.owner)))
     }
 
     pub fn get_components_exposing_symbol(
@@ -447,7 +447,7 @@ impl AdminComponentIndexer {
         if !is_component_contract_kind(target.kind) {
             return Ok(Vec::new());
         }
-        let owner = gopath::clean(&target.owner);
+        let owner = filepath::clean(&target.owner);
         let mut result = Vec::new();
         for name in self.get_all_component_names()? {
             let Some(component) = self.effective_component(&name, &mut HashSet::new())? else {
@@ -455,7 +455,7 @@ impl AdminComponentIndexer {
             };
             let exposes = component
                 .symbol_source(target.kind, &target.name)
-                .is_some_and(|source| gopath::clean(&source) == owner);
+                .is_some_and(|source| filepath::clean(&source) == owner);
             if exposes {
                 result.push(std::sync::Arc::unwrap_or_clone(component));
             }
@@ -750,7 +750,7 @@ pub(crate) fn component_model_binding_matches_target(
     }
     component
         .symbol_source(target.kind, &target.name)
-        .is_some_and(|source| gopath::clean(&source) == gopath::clean(&target.owner))
+        .is_some_and(|source| filepath::clean(&source) == filepath::clean(&target.owner))
 }
 
 pub(crate) fn unique_admin_usage_sets(values: Vec<AdminUsageSet>) -> Vec<AdminUsageSet> {

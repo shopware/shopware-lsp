@@ -158,7 +158,7 @@ impl CompletionProvider for PhpAttributeCompletionProvider {
                 ..Default::default()
             });
         }
-        swlsp_gosort::sort_slice(&mut items, |left, right| left.label < right.label);
+        items.sort_unstable_by(crate::common::compare_completion_items);
         items
     }
 

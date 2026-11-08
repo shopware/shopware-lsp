@@ -8,7 +8,6 @@ publish.workspace = true
 [dependencies]
 swlsp-syntax.workspace = true
 swlsp-parser-php = { path = "../parser-php" }
-swlsp-gosort = { path = "../gosort" }
 swlsp-indexer = { path = "../indexer" }
 swlsp-php-binder = { path = "../php-binder" }
 swlsp-php-inference = { path = "../php-inference" }
@@ -20,6 +19,7 @@ swlsp-php-stubs = { path = "../php-stubs" }
 swlsp-php-types = { path = "../php-types" }
 swlsp-textutil = { path = "../textutil" }
 flate2 = "1"
+lru = "0.16"
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]

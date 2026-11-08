@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::gojson::{self, null_if_empty, nullable};
-use crate::gopath;
 use crate::model::*;
+use swlsp_uriutil::filepath;
 
 pub const SNAPSHOT_FORMAT_VERSION: i64 = 2;
 pub const SNAPSHOT_RELATIVE_DIRECTORY: &str = "src/Resources/shopware-lsp/schema";
@@ -130,7 +130,7 @@ pub struct SnapshotFile {
 }
 
 pub fn read_snapshots(plugin_root: &str) -> Result<Vec<SnapshotFile>> {
-    let directory = gopath::join(&[plugin_root, SNAPSHOT_RELATIVE_DIRECTORY]);
+    let directory = filepath::join(&[plugin_root, SNAPSHOT_RELATIVE_DIRECTORY]);
     let entries = match std::fs::read_dir(&directory) {
         Ok(entries) => entries,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
@@ -143,7 +143,7 @@ pub fn read_snapshots(plugin_root: &str) -> Result<Vec<SnapshotFile>> {
         if entry.file_type()?.is_dir() || !name.ends_with(".snapshot.json") {
             continue;
         }
-        let path = gopath::join(&[&directory, &name]);
+        let path = filepath::join(&[&directory, &name]);
         let content = std::fs::read(&path)?;
         let snapshot =
             parse_snapshot(&content).map_err(|error| errorf!("parse {path}: {error}"))?;

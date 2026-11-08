@@ -514,16 +514,16 @@ pub(crate) fn admin_type_import_candidates(file_path: &str, import_path: &str) -
         return Vec::new();
     }
     let base = if import_path.starts_with("src/") {
-        let normalized = gopath::to_slash(file_path);
+        let normalized = filepath::to_slash(file_path);
         let marker = "/Resources/app/administration/";
         let Some(position) = normalized.find(marker) else {
             return Vec::new();
         };
-        gopath::join2(&normalized[..position + marker.len()], import_path)
+        filepath::join(&[&normalized[..position + marker.len()], import_path])
     } else {
-        gopath::join2(&gopath::dir(file_path), import_path)
+        filepath::join(&[&filepath::dir(file_path), import_path])
     };
-    let base = gopath::clean(&base);
+    let base = filepath::clean(&base);
     if base.ends_with(".ts")
         || base.ends_with(".d.ts")
         || base.ends_with(".js")
@@ -536,10 +536,10 @@ pub(crate) fn admin_type_import_candidates(file_path: &str, import_path: &str) -
         format!("{base}.d.ts"),
         format!("{base}.js"),
         format!("{base}.vue"),
-        gopath::join2(&base, "index.ts"),
-        gopath::join2(&base, "index.d.ts"),
-        gopath::join2(&base, "index.js"),
-        gopath::join2(&base, "index.vue"),
+        filepath::join(&[&base, "index.ts"]),
+        filepath::join(&[&base, "index.d.ts"]),
+        filepath::join(&[&base, "index.js"]),
+        filepath::join(&[&base, "index.vue"]),
     ]
 }
 
@@ -615,7 +615,7 @@ pub(crate) fn admin_type_file_overlays(files: &[AdminTypeFile]) -> HashMap<Strin
         if file.file_path.is_empty() {
             continue;
         }
-        result.insert(gopath::clean(&file.file_path), file.clone());
+        result.insert(filepath::clean(&file.file_path), file.clone());
     }
     result
 }
@@ -669,7 +669,7 @@ impl AdminComponentIndexer {
         }
         let key = format!(
             "{}\x00events\x00{}\x00{}",
-            gopath::clean(context_path),
+            filepath::clean(context_path),
             name,
             arguments.join("\x00")
         );
@@ -1249,7 +1249,7 @@ impl AdminComponentIndexer {
         }
         let values = self
             .type_index
-            .get_values_by_path_view(&gopath::clean(file_path))?;
+            .get_values_by_path_view(&filepath::clean(file_path))?;
         Ok((!values.is_empty()).then_some(AdminTypeFileRef::Stored(values)))
     }
 
@@ -1258,7 +1258,7 @@ impl AdminComponentIndexer {
         file_path: &str,
         live_files: &'a HashMap<String, AdminTypeFile>,
     ) -> IndexResult<Option<AdminTypeFileRef<'a>>> {
-        let cleaned = gopath::clean(file_path);
+        let cleaned = filepath::clean(file_path);
         if let Some(file) = live_files.get(&cleaned) {
             return Ok(Some(AdminTypeFileRef::Live(file)));
         }
@@ -1282,7 +1282,7 @@ impl AdminComponentIndexer {
         let mut shadowed = vec![false; stored.len()];
         let mut seen = HashSet::with_capacity(stored.len());
         for (index, file) in stored.iter().enumerate() {
-            let path = gopath::clean(&file.file_path);
+            let path = filepath::clean(&file.file_path);
             if live_files.contains_key(&path) {
                 shadowed[index] = true;
                 continue;

@@ -459,7 +459,7 @@ impl VueComponentMember {
         }
         format!(
             "{}\x00{}\x00{}:{}\x00{}",
-            gopath::clean(&self.file_path),
+            filepath::clean(&self.file_path),
             self.kind.as_str(),
             self.name_range.start_line,
             self.name_range.start_character,

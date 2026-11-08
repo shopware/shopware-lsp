@@ -14,7 +14,6 @@ use swlsp_syntax::{LineIndex, SyntaxNodeExt, TextRange};
 
 use super::util::{kind, request_offset};
 use crate::common::{go_to_lower, php_context, protocol_range, text_edit};
-use swlsp_gosort::sort_slice;
 
 pub struct RouteCompletionProvider {
     routes: Arc<RouteIndexer>,
@@ -418,19 +417,31 @@ fn twig_path_expression(reference: &TwigHtmlRouteReference, route: &Route) -> St
     result
 }
 
-/// Routes of `view` in Go `sort.Slice` order, by name or by (path, name).
+/// Routes of `view` by name or by (path, name); routes declared more than
+/// once fall back to their declaration site.
 fn sorted_routes(view: &[Route], by_path: bool) -> Vec<&Route> {
     let mut routes: Vec<&Route> = view.iter().collect();
-    if by_path {
-        sort_slice(&mut routes, |left, right| {
-            if left.path == right.path {
-                left.name < right.name
-            } else {
-                left.path < right.path
-            }
-        });
-    } else {
-        sort_slice(&mut routes, |left, right| left.name < right.name);
-    }
+    routes.sort_unstable_by(|left, right| {
+        let primary = if by_path {
+            left.path
+                .cmp(&right.path)
+                .then_with(|| left.name.cmp(&right.name))
+        } else {
+            left.name.cmp(&right.name)
+        };
+        primary.then_with(|| compare_route_origin(left, right))
+    });
     routes
+}
+
+/// Orders two routes that tie on their displayed key by declaration site.
+fn compare_route_origin(left: &Route, right: &Route) -> std::cmp::Ordering {
+    left.file_path
+        .cmp(&right.file_path)
+        .then_with(|| left.line.cmp(&right.line))
+        .then_with(|| left.name.cmp(&right.name))
+        .then_with(|| left.path.cmp(&right.path))
+        .then_with(|| left.controller.cmp(&right.controller))
+        .then_with(|| left.methods.cmp(&right.methods))
+        .then_with(|| left.name_constant.cmp(&right.name_constant))
 }

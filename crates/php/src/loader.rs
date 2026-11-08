@@ -7,8 +7,10 @@
 //! requests for one path share a single load.
 
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 
+use lru::LruCache;
 use swlsp_indexer::DataIndexer;
 use swlsp_php_semantic::{LoadError, WorkspaceGraph, WorkspaceGraphDecoder, WorkspaceGraphLoader};
 
@@ -25,12 +27,22 @@ struct PendingLoad {
     generation: u64,
 }
 
-#[derive(Default)]
 struct LoaderState {
-    entries: HashMap<String, (Arc<WorkspaceGraph>, u64)>,
-    clock: u64,
+    entries: LruCache<String, Arc<WorkspaceGraph>>,
     loading: HashMap<String, Arc<PendingLoad>>,
     generation: u64,
+}
+
+impl Default for LoaderState {
+    fn default() -> Self {
+        const CAPACITY: NonZeroUsize = NonZeroUsize::new(WORKSPACE_GRAPH_DETAIL_CACHE_SIZE)
+            .expect("detail cache size is non-zero");
+        LoaderState {
+            entries: LruCache::new(CAPACITY),
+            loading: HashMap::new(),
+            generation: 0,
+        }
+    }
 }
 
 pub(crate) struct WorkspaceGraphRepositoryLoader {
@@ -85,19 +97,23 @@ impl WorkspaceGraphRepositoryLoader {
 
     /// Drops a cached graph after its file changed.
     pub(crate) fn forget(&self, path: &str) {
-        lock(&self.state).entries.remove(path);
+        lock(&self.state).entries.pop(path);
     }
 
     /// Drops every cached graph and invalidates loads still in flight.
     pub(crate) fn clear(&self) {
         let mut state = lock(&self.state);
         state.generation += 1;
-        state.entries = HashMap::new();
+        state.entries.clear();
     }
 
     #[cfg(test)]
     pub(crate) fn cached_paths(&self) -> Vec<String> {
-        let mut paths: Vec<String> = lock(&self.state).entries.keys().cloned().collect();
+        let mut paths: Vec<String> = lock(&self.state)
+            .entries
+            .iter()
+            .map(|(path, _)| path.clone())
+            .collect();
         paths.sort();
         paths
     }
@@ -107,10 +123,7 @@ impl WorkspaceGraphLoader for WorkspaceGraphRepositoryLoader {
     fn load_workspace_graph(&self, path: &str) -> LoadResult {
         let pending = {
             let mut state = lock(&self.state);
-            state.clock += 1;
-            let clock = state.clock;
-            if let Some((graph, used)) = state.entries.get_mut(path) {
-                *used = clock;
+            if let Some(graph) = state.entries.get(path) {
                 return Ok(graph.clone());
             }
             if let Some(pending) = state.loading.get(path) {
@@ -147,20 +160,7 @@ impl WorkspaceGraphLoader for WorkspaceGraphRepositoryLoader {
             if let Ok(graph) = &result
                 && pending.generation == state.generation
             {
-                state.clock += 1;
-                let clock = state.clock;
-                state
-                    .entries
-                    .insert(path.to_owned(), (graph.clone(), clock));
-                if state.entries.len() > WORKSPACE_GRAPH_DETAIL_CACHE_SIZE
-                    && let Some(oldest) = state
-                        .entries
-                        .iter()
-                        .min_by_key(|(_, (_, used))| *used)
-                        .map(|(path, _)| path.clone())
-                {
-                    state.entries.remove(&oldest);
-                }
+                state.entries.put(path.to_owned(), graph.clone());
             }
         }
         *lock(&pending.result) = Some(result.clone());

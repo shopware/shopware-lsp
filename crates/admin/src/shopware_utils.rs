@@ -612,7 +612,7 @@ impl AdminComponentIndexer {
         if !is_admin_type_identifier(parts[0]) {
             return Ok((shape_of(value), context_path.to_owned(), true));
         }
-        let key = format!("{}\x00utility\x00{}", gopath::clean(context_path), value);
+        let key = format!("{}\x00utility\x00{}", filepath::clean(context_path), value);
         if seen.contains(&key) {
             return Ok((shape_of(value), context_path.to_owned(), false));
         }

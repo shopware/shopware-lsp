@@ -77,7 +77,7 @@ impl AdminComponentIndexer {
             !live.is_empty()
                 && live
                     .iter()
-                    .any(|(path, _)| *path == gopath::clean(component_file))
+                    .any(|(path, _)| *path == filepath::clean(component_file))
         };
         {
             let mut cache = self

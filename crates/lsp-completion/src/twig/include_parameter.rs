@@ -12,7 +12,6 @@ use swlsp_twig::TwigIndexer;
 
 use super::{markdown, request_offset};
 use crate::common::go_to_lower;
-use swlsp_gosort::sort_slice;
 
 pub struct TwigIncludeParameterCompletionProvider {
     twig_index: Option<Arc<TwigIndexer>>,
@@ -70,16 +69,18 @@ impl TwigIncludeParameterCompletionProvider {
                 candidate.php_file = variable.file;
             }
         }
-        // Go sorts map values by lowercase name only; visiting names in byte
-        // order first keeps case variants deterministic.
-        let mut keyed: Vec<(String, IncludeParameterCandidate)> = candidates.into_iter().collect();
-        keyed.sort_by(|left, right| left.0.cmp(&right.0));
-        let mut keyed: Vec<(String, IncludeParameterCandidate)> = keyed
+        // By lowercase name; the (unique) map key orders case variants.
+        let mut keyed: Vec<(String, String, IncludeParameterCandidate)> = candidates
             .into_iter()
-            .map(|(_, candidate)| (go_to_lower(&candidate.name), candidate))
+            .map(|(name, candidate)| (go_to_lower(&candidate.name), name, candidate))
             .collect();
-        sort_slice(&mut keyed, |left, right| left.0 < right.0);
-        keyed.into_iter().map(|(_, candidate)| candidate).collect()
+        keyed.sort_unstable_by(|left, right| {
+            left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1))
+        });
+        keyed
+            .into_iter()
+            .map(|(_, _, candidate)| candidate)
+            .collect()
     }
 }
 

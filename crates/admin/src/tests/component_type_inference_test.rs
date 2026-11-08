@@ -24,13 +24,13 @@ fn effective_component_infers_legacy_javascript_return_chains() {
     );
     index_source(
         &idx,
-        &gopath::join2(&admin_root, "app/composables/use-context.ts"),
+        &filepath::join(&[&admin_root, "app/composables/use-context.ts"]),
         r#"export interface ContextState {
     app: { environment: null | string };
     api: { languageId: null | string };
 }"#,
     );
-    let schema_path = gopath::join2(&admin_root, "entity-schema-definition.d.ts");
+    let schema_path = filepath::join(&[&admin_root, "entity-schema-definition.d.ts"]);
     index_source(
         &idx,
         &schema_path,
@@ -49,7 +49,7 @@ declare namespace EntitySchema {
 }
 "#,
     );
-    let store_path = gopath::join2(&admin_root, "app/store/marketing.store.ts");
+    let store_path = filepath::join(&[&admin_root, "app/store/marketing.store.ts"]);
     let store_source = r#"
 type MarketingState = {
     activeCampaign: Entity<'promotion'> | null;
@@ -74,8 +74,8 @@ Shopware.Store.register({
     let active_campaign = stores[0].member("activeCampaign").expect("activeCampaign");
     assert_eq!(active_campaign.type_, "Entity<'promotion'> | null");
 
-    let definition_path = gopath::join2(&admin_root, "component/sw-legacy/index.js");
-    let template_path = gopath::join2(&admin_root, "component/sw-legacy/sw-legacy.html.twig");
+    let definition_path = filepath::join(&[&admin_root, "component/sw-legacy/index.js"]);
+    let template_path = filepath::join(&[&admin_root, "component/sw-legacy/sw-legacy.html.twig"]);
     let source = r#"
 	export default {
 	    props: {
@@ -355,7 +355,7 @@ fn effective_component_refines_empty_array_from_literal_writes() {
         root_dir.path(),
         "src/Administration/Resources/app/administration/src/component/view/index.js",
     );
-    let template_path = gopath::join2(&gopath::dir(&definition_path), "view.html.twig");
+    let template_path = filepath::join(&[&filepath::dir(&definition_path), "view.html.twig"]);
     let code = r#"export default {
 	data() { return { items: [] }; },
 	methods: {

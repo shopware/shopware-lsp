@@ -12,7 +12,6 @@ mod definition_metadata;
 mod diff;
 mod field_modification;
 pub mod gojson;
-mod gopath;
 mod import;
 mod indexed_catalog;
 mod model;

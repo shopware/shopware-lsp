@@ -23,32 +23,14 @@ pub fn admin_nearby_suggestions<S: AsRef<str>>(input: &str, candidates: &[S]) ->
     swlsp_suggestion::similar(input, &nearby)
 }
 
-/// Go `boundedAdminEditDistance`: Levenshtein distance over runes, or
-/// `limit + 1` once it exceeds `limit`.
+/// Go `boundedAdminEditDistance`: Levenshtein distance over chars, capped at
+/// `limit + 1`. Pairs whose lengths alone differ by more than `limit` skip
+/// the distance computation.
 pub fn bounded_admin_edit_distance(left: &str, right: &str, limit: usize) -> usize {
-    let left: Vec<char> = left.chars().collect();
-    let right: Vec<char> = right.chars().collect();
-    if left.len().abs_diff(right.len()) > limit {
+    if left.chars().count().abs_diff(right.chars().count()) > limit {
         return limit + 1;
     }
-    let mut previous: Vec<usize> = (0..=right.len()).collect();
-    for (left_index, left_char) in left.iter().enumerate() {
-        let mut current = vec![0; right.len() + 1];
-        current[0] = left_index + 1;
-        let mut row_minimum = current[0];
-        for (right_index, right_char) in right.iter().enumerate() {
-            let cost = usize::from(left_char != right_char);
-            current[right_index + 1] = (current[right_index] + 1)
-                .min(previous[right_index + 1] + 1)
-                .min(previous[right_index] + cost);
-            row_minimum = row_minimum.min(current[right_index + 1]);
-        }
-        if row_minimum > limit {
-            return limit + 1;
-        }
-        previous = current;
-    }
-    previous[right.len()]
+    strsim::levenshtein(left, right).min(limit + 1)
 }
 
 /// Go `javaScriptStringContentRange`: the trimmed range of a JavaScript

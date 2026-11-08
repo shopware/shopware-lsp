@@ -36,6 +36,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "allocator-api2"
+version = "0.2.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
+
+[[package]]
 name = "anes"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -660,6 +666,17 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
+dependencies = [
+ "allocator-api2",
+ "equivalent",
+ "foldhash 0.2.0",
+]
+
+[[package]]
+name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
@@ -983,6 +1000,15 @@ name = "log"
 version = "0.4.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
+
+[[package]]
+name = "lru"
+version = "0.16.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f66e8d5d03f609abc3a39e6f08e4164ebf1447a732906d39eb9b99b7919ef39"
+dependencies = [
+ "hashbrown 0.16.1",
+]
 
 [[package]]
 name = "lsp-server"
@@ -1691,6 +1717,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "strsim"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
+
+[[package]]
 name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1974,10 +2006,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "swlsp-gosort"
-version = "0.1.0"
-
-[[package]]
 name = "swlsp-httpclient"
 version = "0.1.0"
 dependencies = [
@@ -2221,7 +2249,6 @@ dependencies = [
  "swlsp-event",
  "swlsp-extension",
  "swlsp-feature",
- "swlsp-gosort",
  "swlsp-httpclient",
  "swlsp-indexer",
  "swlsp-language",
@@ -2315,6 +2342,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "strsim",
  "swlsp-admin",
  "swlsp-admin-twigmigration",
  "swlsp-appscript",
@@ -2436,7 +2464,6 @@ dependencies = [
  "swlsp-environment",
  "swlsp-event",
  "swlsp-extension",
- "swlsp-gosort",
  "swlsp-httpclient",
  "swlsp-indexer",
  "swlsp-language",
@@ -2659,7 +2686,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "swlsp-console",
- "swlsp-gosort",
  "swlsp-indexer",
  "swlsp-language",
  "swlsp-lsp",
@@ -2862,9 +2888,9 @@ name = "swlsp-php"
 version = "0.1.0"
 dependencies = [
  "flate2",
+ "lru",
  "rmp-serde",
  "serde",
- "swlsp-gosort",
  "swlsp-indexer",
  "swlsp-parser-php",
  "swlsp-php-binder",
@@ -3172,6 +3198,7 @@ dependencies = [
  "swlsp-php-types",
  "swlsp-rewrite",
  "swlsp-syntax",
+ "swlsp-uriutil",
  "tempfile",
 ]
 

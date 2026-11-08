@@ -7,7 +7,6 @@ publish.workspace = true
 
 [dependencies]
 swlsp-syntax.workspace = true
-swlsp-gosort = { path = "../gosort" }
 swlsp-admin = { path = "../admin" }
 swlsp-asset = { path = "../asset" }
 swlsp-console = { path = "../console" }

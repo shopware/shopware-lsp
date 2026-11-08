@@ -177,7 +177,14 @@ impl CompletionProvider for ControllerCompletionProvider {
             .chain(self.service_candidates(ctx, php))
             .map(|candidate| (go_to_lower(&candidate.label), candidate))
             .collect();
-        swlsp_gosort::sort_slice(&mut candidates, |left, right| left.0 < right.0);
+        // Case variants of one label are deduplicated below; the exact label
+        // and detail decide which one survives.
+        candidates.sort_unstable_by(|(left_key, left), (right_key, right)| {
+            left_key
+                .cmp(right_key)
+                .then_with(|| left.label.cmp(&right.label))
+                .then_with(|| left.detail.cmp(&right.detail))
+        });
 
         let edit_range = request
             .line_index()

@@ -381,7 +381,10 @@ fn resolve_twig_vue_component_entity_member_and_nested_entity_loop() {
         root_dir.path(),
         "Resources/app/administration/src/component",
     );
-    let schema_path = format!("{}/entity-schema-definition.d.ts", gopath::dir(&admin_root));
+    let schema_path = format!(
+        "{}/entity-schema-definition.d.ts",
+        filepath::dir(&admin_root)
+    );
     index_source(
         &index,
         &schema_path,

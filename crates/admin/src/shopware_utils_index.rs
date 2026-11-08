@@ -181,12 +181,12 @@ pub(crate) fn shopware_utility_variable_type(variable: &SyntaxNode) -> String {
 }
 
 pub(crate) fn is_shopware_utility_source(file_path: &str) -> bool {
-    let normalized = gopath::to_slash(&gopath::clean(file_path));
+    let normalized = filepath::to_slash(&filepath::clean(file_path));
     normalized.contains("/core/service/utils/") || is_shopware_utility_service(&normalized)
 }
 
 pub(crate) fn is_shopware_utility_service(file_path: &str) -> bool {
-    let normalized = gopath::to_slash(&gopath::clean(file_path));
+    let normalized = filepath::to_slash(&filepath::clean(file_path));
     normalized.ends_with("/core/service/util.service.ts")
         || normalized.ends_with("/core/service/util.service.js")
 }

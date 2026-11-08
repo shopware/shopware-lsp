@@ -984,7 +984,7 @@ pub(crate) fn script_setup_component_import(binding: &str, import_path: &str) ->
     if import_path.is_empty() || !first.is_ascii_uppercase() {
         return false;
     }
-    let ext = gopath::ext(import_path).to_lowercase();
+    let ext = filepath::ext(import_path).to_lowercase();
     ext == ".vue" || (ext.is_empty() && import_path != "vue")
 }
 

@@ -768,9 +768,9 @@ pub(crate) fn resolve_import_path(registration_file: &str, import_path: &str) ->
             return import_path.to_owned();
         };
         let admin_root = &registration_file[..admin_index + ADMIN_ROOT.len()];
-        gopath::join2(admin_root, import_path)
+        filepath::join(&[admin_root, import_path])
     } else if import_path.starts_with("./") || import_path.starts_with("../") {
-        gopath::join2(&gopath::dir(registration_file), import_path)
+        filepath::join(&[&filepath::dir(registration_file), import_path])
     } else {
         return import_path.to_owned();
     };
@@ -786,14 +786,14 @@ pub(crate) fn resolve_js_file(base_path: &str) -> String {
         format!("{base_path}.js"),
         format!("{base_path}.ts"),
         format!("{base_path}.vue"),
-        gopath::join2(base_path, "index.js"),
-        gopath::join2(base_path, "index.ts"),
-        gopath::join2(base_path, "index.vue"),
+        filepath::join(&[base_path, "index.js"]),
+        filepath::join(&[base_path, "index.ts"]),
+        filepath::join(&[base_path, "index.vue"]),
     ];
     for candidate in candidates {
         if std::fs::metadata(&candidate).is_ok() {
             return candidate;
         }
     }
-    gopath::join2(base_path, "index.js")
+    filepath::join(&[base_path, "index.js"])
 }

@@ -48,7 +48,7 @@ impl AdminComponentIndexer {
                 &owned_index
             }
         };
-        if gopath::ext(file_path).eq_ignore_ascii_case(".twig") {
+        if filepath::ext(file_path).eq_ignore_ascii_case(".twig") {
             return self.component_for_live_twig_document(file_path, root, source, line_index);
         }
         if !is_vue_component_path(file_path) {
@@ -101,7 +101,7 @@ impl AdminComponentIndexer {
         if file_path.is_empty() {
             return false;
         }
-        let file_path = gopath::clean(file_path);
+        let file_path = filepath::clean(file_path);
         let live = read_lock(&self.live);
         live.vue_documents.contains_key(&file_path)
             || live.legacy_documents.contains_key(&file_path)
@@ -122,7 +122,7 @@ impl AdminComponentIndexer {
         if file_path.is_empty() || !is_administration_source_path(file_path) {
             return;
         }
-        let file_path = gopath::clean(file_path);
+        let file_path = filepath::clean(file_path);
         let owned_index;
         let line_index = match line_index {
             Some(index) => index,
@@ -131,7 +131,7 @@ impl AdminComponentIndexer {
                 &owned_index
             }
         };
-        match gopath::ext(&file_path).to_lowercase().as_str() {
+        match filepath::ext(&file_path).to_lowercase().as_str() {
             ".ts" => {
                 let type_file = parse_admin_type_file(&file_path, source, Some(line_index));
                 let legacy =
@@ -205,7 +205,7 @@ impl AdminComponentIndexer {
         if file_path.is_empty() {
             return;
         }
-        let file_path = gopath::clean(file_path);
+        let file_path = filepath::clean(file_path);
         let removed = {
             let mut live = write_lock(&self.live);
             let mut removed = live.vue_documents.remove(&file_path).is_some();
@@ -253,7 +253,7 @@ impl AdminComponentIndexer {
         if definition.template_path.is_empty() {
             return;
         }
-        let path = gopath::clean(&definition.template_path);
+        let path = filepath::clean(&definition.template_path);
         let live = read_lock(&self.live);
         let Some(template) = live.twig_templates.get(&path) else {
             return;
@@ -271,7 +271,7 @@ impl AdminComponentIndexer {
         if file_path.is_empty() {
             return Ok((None, false));
         }
-        let path = gopath::clean(file_path);
+        let path = filepath::clean(file_path);
         let document = {
             let live = read_lock(&self.live);
             match live.legacy_documents.get(&path) {
@@ -305,7 +305,7 @@ impl AdminComponentIndexer {
         if file_path.is_empty() {
             return false;
         }
-        let path = gopath::clean(file_path);
+        let path = filepath::clean(file_path);
         let normalized = normalize_definition_path(&path);
         let live = read_lock(&self.live);
         live.legacy_documents.contains_key(&path)
@@ -325,7 +325,7 @@ impl AdminComponentIndexer {
         if live.legacy_documents.is_empty() {
             return (None, false);
         }
-        let path = gopath::clean(file_path);
+        let path = filepath::clean(file_path);
         let document = match live.legacy_documents.get(&path) {
             Some(document) => Some(document),
             None => {
@@ -413,7 +413,7 @@ impl AdminComponentIndexer {
         }
         let mut result = Vec::with_capacity(persisted.len() + documents.len());
         for component in persisted.iter() {
-            if documents.contains_key(&gopath::clean(&component.file_path)) {
+            if documents.contains_key(&filepath::clean(&component.file_path)) {
                 continue;
             }
             if name.is_empty() || component.name == name {
@@ -464,7 +464,7 @@ impl AdminComponentIndexer {
         if file_path.is_empty() {
             return Ok(None);
         }
-        let file_path = gopath::clean(file_path);
+        let file_path = filepath::clean(file_path);
         let (definition, type_file) = {
             let live = read_lock(&self.live);
             let Some(definition) = live.vue_documents.get(&file_path) else {
@@ -494,7 +494,7 @@ impl AdminComponentIndexer {
                 .into_iter()
                 .any(|candidate| {
                     !candidate.is_empty()
-                        && live.vue_documents.contains_key(&gopath::clean(candidate))
+                        && live.vue_documents.contains_key(&filepath::clean(candidate))
                 })
         };
         if !overlaid {
@@ -546,7 +546,7 @@ impl AdminComponentIndexer {
         let mut result: HashMap<String, AdminTypeFile> = read_lock(&self.live).type_files.clone();
         for file in request_files {
             if !file.file_path.is_empty() {
-                result.insert(gopath::clean(&file.file_path), file.clone());
+                result.insert(filepath::clean(&file.file_path), file.clone());
             }
         }
         result
@@ -590,7 +590,7 @@ pub(crate) fn parse_live_legacy_document(
     }
     let mut definition = parse_component_definition_with_line_index(root, line_index);
     set_definition_file_path(&mut definition, file_path);
-    if !definition.template_path.is_empty() && !gopath::is_abs(&definition.template_path) {
+    if !definition.template_path.is_empty() && !filepath::is_abs(&definition.template_path) {
         definition.template_path = resolve_template_path(file_path, &definition.template_path);
     }
     if !definition.template_path.is_empty()
@@ -700,11 +700,11 @@ pub(crate) fn overlay_live_legacy_values<T: Clone>(
     }
     let replaced: HashSet<String> = documents
         .iter()
-        .map(|document| gopath::clean(&document.path))
+        .map(|document| filepath::clean(&document.path))
         .collect();
     let mut result = Vec::with_capacity(persisted.len() + documents.len());
     for value in persisted {
-        if replaced.contains(&gopath::clean(file_path(&value))) {
+        if replaced.contains(&filepath::clean(file_path(&value))) {
             continue;
         }
         if accepts(&value) {
@@ -722,7 +722,7 @@ pub(crate) fn overlay_live_legacy_values<T: Clone>(
 }
 
 pub(crate) fn is_vue_component_path(file_path: &str) -> bool {
-    gopath::ext(file_path) == ".vue"
+    filepath::ext(file_path) == ".vue"
 }
 
 /// Removes everything the persisted definition of `file_path` contributed,

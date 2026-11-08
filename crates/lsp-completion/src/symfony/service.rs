@@ -559,7 +559,11 @@ impl ServiceCompletionProvider {
             .into_iter()
             .map(|entry| (go_to_lower(&entry.label), entry))
             .collect();
-        swlsp_gosort::sort_slice(&mut keyed, |left, right| left.0 < right.0);
+        keyed.sort_unstable_by(|left, right| {
+            left.0
+                .cmp(&right.0)
+                .then_with(|| crate::common::compare_completion_items(&left.1, &right.1))
+        });
         Some(keyed.into_iter().map(|(_, entry)| entry).collect())
     }
 

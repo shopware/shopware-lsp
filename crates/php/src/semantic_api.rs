@@ -6,7 +6,6 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use swlsp_gosort::sort_slice;
 use swlsp_indexer::ParsedFile;
 use swlsp_php_binder::Binder;
 use swlsp_php_inference::{Analyzer, link_members_owned};
@@ -172,8 +171,10 @@ impl PhpIndex {
             .map(|member| member.symbol)
             .filter(|symbol| kinds.contains(&symbol.kind))
             .collect();
-        sort_slice(&mut result, |left, right| {
-            compare_fold(&left.name, &right.name) == Ordering::Less
+        result.sort_unstable_by(|left, right| {
+            compare_fold(&left.name, &right.name)
+                .then_with(|| left.name.cmp(&right.name))
+                .then_with(|| compare_declaration(left, right))
         });
         result
     }
@@ -210,11 +211,10 @@ impl PhpIndex {
             })
             .map(|symbol| (constant_display_name(&snapshot, &symbol), symbol))
             .collect();
-        sort_slice(&mut result, |(left_name, left), (right_name, right)| {
-            if left_name != right_name {
-                return compare_fold(left_name, right_name) == Ordering::Less;
-            }
-            left.path < right.path
+        result.sort_unstable_by(|(left_name, left), (right_name, right)| {
+            compare_fold(left_name, right_name)
+                .then_with(|| left_name.cmp(right_name))
+                .then_with(|| compare_declaration(left, right))
         });
         result.into_iter().map(|(_, symbol)| symbol).collect()
     }
@@ -261,13 +261,14 @@ impl PhpIndex {
                     || flags.has(Flags::SYNTHETIC) && !flags.has(Flags::CLASS_ALIAS))
             })
             .collect();
-        // Go `sort.Slice`: declarations with the same name in the same file
-        // (e.g. an interface and its `class_alias`) keep Go's order.
-        sort_slice(&mut views, |left, right| {
-            if left.fully_qualified() == right.fully_qualified() {
-                return left.path() < right.path();
-            }
-            compare_fold(left.fully_qualified(), right.fully_qualified()) == Ordering::Less
+        // Declarations with the same name in the same file (e.g. an
+        // interface and its `class_alias`) are ordered by position, then ID.
+        views.sort_unstable_by(|left, right| {
+            compare_fold(left.fully_qualified(), right.fully_qualified())
+                .then_with(|| left.fully_qualified().cmp(right.fully_qualified()))
+                .then_with(|| left.path().cmp(right.path()))
+                .then_with(|| left.range().start().cmp(&right.range().start()))
+                .then_with(|| left.id().cmp(right.id()))
         });
         let symbols: Vec<Symbol> = views.iter().map(|view| view.materialize()).collect();
         let mut seen = HashSet::with_capacity(symbols.len());
@@ -320,6 +321,15 @@ fn constant_display_name(snapshot: &Snapshot, symbol: &Symbol) -> String {
 /// Case-insensitive name order: ASCII folds byte-wise; any non-ASCII byte in
 /// the common prefix compares the Unicode-lowercased strings (Go
 /// `compareFold`).
+/// Orders two declarations that tie on their displayed name by source
+/// position, then by their stable ID.
+fn compare_declaration(left: &Symbol, right: &Symbol) -> Ordering {
+    left.path
+        .cmp(&right.path)
+        .then_with(|| left.range.start().cmp(&right.range.start()))
+        .then_with(|| left.id.cmp(&right.id))
+}
+
 pub fn compare_fold(left: &str, right: &str) -> Ordering {
     let (left_bytes, right_bytes) = (left.as_bytes(), right.as_bytes());
     for (&left_byte, &right_byte) in left_bytes.iter().zip(right_bytes) {

@@ -14,9 +14,9 @@ use swlsp_indexer::{
 use swlsp_parser_php::query as phpquery;
 use swlsp_syntax::SyntaxNode;
 
-use crate::gopath;
 use crate::model::short_class;
 use crate::util::{qualify, trim_backslash};
+use swlsp_uriutil::filepath;
 
 pub const SOURCE_INDEX_ID: &str = "shopware.entity_schema.sources";
 
@@ -72,11 +72,11 @@ impl SourceIndex {
         if path.is_empty() {
             return Ok(None);
         }
-        let path = gopath::clean(path);
+        let path = filepath::clean(path);
         let documents = self.documents.get_values(&path)?;
         Ok(documents
             .into_iter()
-            .find(|document| gopath::clean(&document.path) == path)
+            .find(|document| filepath::clean(&document.path) == path)
             .map(|document| document.source))
     }
 }

@@ -1,5 +1,7 @@
 //! Helpers shared by several completion providers.
 
+use std::cmp::Ordering;
+
 use swlsp_lsp::SyntaxContext;
 use swlsp_lsp_protocol as protocol;
 use swlsp_php::{PhpContext, PhpIndex};
@@ -26,8 +28,10 @@ pub fn go_lower_rune(c: char) -> char {
     }
 }
 
-/// Go `sortCompletionItems`: `slices.SortFunc` by lowercase label (not
-/// stable; uses Go's pdqsort so equal labels keep Go's order).
+/// Go `sortCompletionItems`: orders by lowercase label. Labels equal up to
+/// case ("error"/"Error") or identical are ordered by
+/// [`compare_completion_items`], so the result does not depend on the
+/// provider's input order.
 pub fn sort_completion_items(items: &mut [protocol::CompletionItem]) {
     if items.len() < 2 {
         return;
@@ -36,14 +40,35 @@ pub fn sort_completion_items(items: &mut [protocol::CompletionItem]) {
         .iter_mut()
         .map(|item| (go_to_lower(&item.label), std::mem::take(item)))
         .collect();
-    // Labels equal up to case ("error"/"Error") are ordered by the label
-    // itself, so the result does not depend on the provider's input order.
-    swlsp_gosort::sort_slice(&mut keyed, |left, right| {
-        left.0 < right.0 || (left.0 == right.0 && left.1.label < right.1.label)
+    keyed.sort_unstable_by(|left, right| {
+        left.0
+            .cmp(&right.0)
+            .then_with(|| compare_completion_items(&left.1, &right.1))
     });
     for (slot, (_, item)) in items.iter_mut().zip(keyed) {
         *slot = item;
     }
+}
+
+/// A tie-break between completion items whose primary sort key is equal:
+/// label, then detail, edit text, insert text, filter text and sort text.
+/// Items equal on all of these render the same in a completion list.
+pub fn compare_completion_items(
+    left: &protocol::CompletionItem,
+    right: &protocol::CompletionItem,
+) -> Ordering {
+    fn edit_text(item: &protocol::CompletionItem) -> &str {
+        item.text_edit
+            .as_ref()
+            .map_or("", |edit| edit.new_text.as_str())
+    }
+    left.label
+        .cmp(&right.label)
+        .then_with(|| left.detail.cmp(&right.detail))
+        .then_with(|| edit_text(left).cmp(edit_text(right)))
+        .then_with(|| left.insert_text.cmp(&right.insert_text))
+        .then_with(|| left.filter_text.cmp(&right.filter_text))
+        .then_with(|| left.sort_text.cmp(&right.sort_text))
 }
 
 /// A byte range converted to an LSP UTF-16 range (Go

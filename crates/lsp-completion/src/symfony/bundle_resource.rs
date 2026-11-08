@@ -108,9 +108,9 @@ impl CompletionProvider for BundleResourceCompletionProvider {
                 edit_range,
             );
         }
-        // Labels can repeat (a bundle label equal to a local path); Go's
-        // sort.Slice is not stable, so keep its exact algorithm.
-        swlsp_gosort::sort_slice(&mut items, |left, right| left.label < right.label);
+        // Labels can repeat (a bundle label equal to a local path); detail
+        // and edit text settle such ties independently of input order.
+        items.sort_unstable_by(crate::common::compare_completion_items);
         items
     }
 

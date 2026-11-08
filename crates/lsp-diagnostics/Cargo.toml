@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 swlsp-syntax.workspace = true
+strsim = "0.11"
 swlsp-admin = { path = "../admin" }
 swlsp-admin-twigmigration = { path = "../admin-twigmigration" }
 swlsp-appscript = { path = "../appscript" }

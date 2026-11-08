@@ -575,13 +575,13 @@ pub(crate) fn local_component_target_names(local: &VueLocalComponent) -> Vec<Str
         .unwrap_or(&local.symbol);
     append(camel_to_kebab(symbol));
     if !local.import_path.is_empty() && local.import_path != METEOR_PACKAGE_PATH {
-        let base = gopath::base(
+        let base = filepath::base(
             local
                 .import_path
                 .strip_suffix('/')
                 .unwrap_or(&local.import_path),
         );
-        let ext = gopath::ext(&base);
+        let ext = filepath::ext(&base);
         let base = base.strip_suffix(ext).unwrap_or(&base);
         if base != "index" {
             append(camel_to_kebab(base));
@@ -593,7 +593,7 @@ pub(crate) fn local_component_target_names(local: &VueLocalComponent) -> Vec<Str
 pub(crate) fn local_component_definition_candidates(local: &VueLocalComponent) -> Vec<String> {
     let mut result: Vec<String> = Vec::new();
     let mut append = |path: &str| {
-        let path = gopath::clean(path);
+        let path = filepath::clean(path);
         if path == "." || path.is_empty() {
             return;
         }

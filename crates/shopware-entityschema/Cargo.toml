@@ -20,6 +20,7 @@ swlsp-php-rewrite = { path = "../php-rewrite" }
 swlsp-php-semantic = { path = "../php-semantic" }
 swlsp-php-types = { path = "../php-types" }
 swlsp-rewrite = { path = "../rewrite" }
+swlsp-uriutil = { path = "../uriutil" }
 regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -743,11 +743,21 @@ impl PhpIndex {
                     .filter(|variable| variable.name == name),
             );
         }
-        swlsp_gosort::sort_slice(&mut result, |left, right| {
-            if left.file == right.file {
-                return left.range.start < right.range.start;
-            }
-            left.file < right.file
+        result.sort_unstable_by(|left, right| {
+            (
+                &left.file,
+                left.range.start,
+                left.range.end,
+                &left.template,
+                &left.ty,
+            )
+                .cmp(&(
+                    &right.file,
+                    right.range.start,
+                    right.range.end,
+                    &right.template,
+                    &right.ty,
+                ))
         });
         Ok(result)
     }

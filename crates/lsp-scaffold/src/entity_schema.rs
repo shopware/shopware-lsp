@@ -474,9 +474,13 @@ impl Provider {
             }
             results.push(target);
         }
-        // Go sorts with the unstable sort.Slice; equal names keep its order.
-        swlsp_gosort::sort_slice(&mut results, |left, right| {
-            left.entity_name < right.entity_name
+        // An entity name defined twice is ordered by definition class, then file.
+        results.sort_unstable_by(|left, right| {
+            (&left.entity_name, &left.definition_class, &left.file_uri).cmp(&(
+                &right.entity_name,
+                &right.definition_class,
+                &right.file_uri,
+            ))
         });
         Ok(results)
     }

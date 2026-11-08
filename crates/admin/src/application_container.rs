@@ -226,7 +226,7 @@ impl AdminComponentIndexer {
         let mut declarations = 0;
         let mut seen_declarations = HashSet::new();
         for file in &files {
-            let path = gopath::clean(&file.file_path);
+            let path = filepath::clean(&file.file_path);
             if path == "." {
                 continue;
             }

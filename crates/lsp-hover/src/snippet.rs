@@ -70,7 +70,9 @@ impl SnippetHoverProvider {
         if snippets.is_empty() {
             return None;
         }
-        swlsp_gosort::sort_slice(&mut snippets, |left, right| left.file < right.file);
+        snippets.sort_unstable_by(|left, right| {
+            (&left.file, left.line, &left.text).cmp(&(&right.file, right.line, &right.text))
+        });
         let mut markdown = format!("**Snippet**: `{snippet_key}`\n\n");
         markdown.push_str("**Translations**:\n\n");
         for snippet in &snippets {

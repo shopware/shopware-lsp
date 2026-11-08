@@ -24,11 +24,19 @@ impl DalHoverProvider {
         if definitions.is_empty() {
             return Ok(None);
         }
-        swlsp_gosort::sort_slice(&mut definitions, |left, right| {
-            if left.class != right.class {
-                return left.class < right.class;
-            }
-            left.file < right.file
+        definitions.sort_unstable_by(|left, right| {
+            (
+                &left.class,
+                &left.file,
+                left.line,
+                &left.fully_qualified_class,
+            )
+                .cmp(&(
+                    &right.class,
+                    &right.file,
+                    right.line,
+                    &right.fully_qualified_class,
+                ))
         });
         let sections: Vec<String> = definitions
             .iter()
@@ -87,11 +95,21 @@ impl HoverProvider for DalHoverProvider {
         if fields.is_empty() {
             return Ok(None);
         }
-        swlsp_gosort::sort_slice(&mut fields, |left, right| {
-            if left.entity != right.entity {
-                return left.entity < right.entity;
-            }
-            left.field.type_ < right.field.type_
+        fields.sort_unstable_by(|left, right| {
+            (
+                &left.entity,
+                &left.field.type_,
+                &left.file,
+                left.field.line,
+                &left.class,
+            )
+                .cmp(&(
+                    &right.entity,
+                    &right.field.type_,
+                    &right.file,
+                    right.field.line,
+                    &right.class,
+                ))
         });
         let kind = if association { "association" } else { "field" };
         let mut markdown = format!("**Shopware DAL {kind}** `{name}`");

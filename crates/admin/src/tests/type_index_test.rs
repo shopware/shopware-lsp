@@ -132,7 +132,7 @@ fn admin_type_index_resolves_local_imported_inherited_and_generic_shapes() {
     );
     let idx = new_indexer(&root.path().join("cache"));
 
-    let types_path = gopath::join2(&admin_root, "component/row.types.ts");
+    let types_path = filepath::join(&[&admin_root, "component/row.types.ts"]);
     index_source(
         &idx,
         &types_path,
@@ -143,7 +143,7 @@ export interface External<T> {
 }
 "#,
     );
-    let component_path = gopath::join2(&admin_root, "component/index.ts");
+    let component_path = filepath::join(&[&admin_root, "component/index.ts"]);
     index_source(
         &idx,
         &component_path,
@@ -211,7 +211,7 @@ fn admin_type_index_resolves_shopware_entity_schema_and_collection() {
     );
     let idx = new_indexer(&root.path().join("cache"));
 
-    let schema_path = gopath::join2(&admin_root, "entity-schema-definition.d.ts");
+    let schema_path = filepath::join(&[&admin_root, "entity-schema-definition.d.ts"]);
     index_source(
         &idx,
         &schema_path,
@@ -229,7 +229,7 @@ declare namespace EntitySchema {
 }
 "#,
     );
-    let augmentation_path = gopath::join2(&admin_root, "plugin/entity-extension.d.ts");
+    let augmentation_path = filepath::join(&[&admin_root, "plugin/entity-extension.d.ts"]);
     index_source(
         &idx,
         &augmentation_path,
@@ -240,7 +240,7 @@ declare namespace EntitySchema {
 "#,
     );
 
-    let component_path = gopath::join2(&admin_root, "component/index.ts");
+    let component_path = filepath::join(&[&admin_root, "component/index.ts"]);
     let shape = idx
         .resolve_vue_type("Entity<'product'>", &component_path, &[])
         .expect("shape");

@@ -209,7 +209,7 @@ impl VueTypeResolver<'_> {
         };
         let key = format!(
             "{}\x00{}\x00{}",
-            gopath::clean(&self.context_path),
+            filepath::clean(&self.context_path),
             name,
             arguments.join("\x00")
         );

@@ -331,7 +331,7 @@ fn admin_imported_setup_store_resolves_independently() {
     let admin_root = admin_src(root.path());
     let store_path = path_string(&admin_root, "app/store/session.store.ts");
     let factory_path = path_string(&admin_root, "app/composables/use-session.ts");
-    std::fs::create_dir_all(gopath::dir(&store_path)).unwrap();
+    std::fs::create_dir_all(filepath::dir(&store_path)).unwrap();
     write_file(std::path::Path::new(&factory_path), "");
 
     let store_source = "

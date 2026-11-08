@@ -489,5 +489,5 @@ pub fn resolve_template_path(definition_path: &str, template_import: &str) -> St
     if template_import.is_empty() {
         return String::new();
     }
-    gopath::join2(&gopath::dir(definition_path), template_import)
+    filepath::join(&[&filepath::dir(definition_path), template_import])
 }

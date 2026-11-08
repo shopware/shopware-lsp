@@ -335,7 +335,10 @@ fn polyfill_sharing_a_stub_id_resolves_like_go() {
 /// declared under the same name in the same file keep Go's (unstable) order.
 /// Expected IDs recorded from the Go implementation.
 #[test]
-fn class_catalog_breaks_same_name_ties_like_go() {
+fn class_catalog_breaks_same_name_ties_by_position() {
+    // Declarations of one name (an interface and its `class_alias`) are
+    // ordered by path, source position and ID, the same way for every name
+    // and independently of indexing order.
     const COMPATIBILITY: &str = r#"<?php declare(strict_types=1);
 
 namespace Nette\Utils;
@@ -363,8 +366,8 @@ if (false) {
 }
 "#;
     const EXPECTED: &[&str] = &[
-        "1:nette\\localization\\itranslator",
         "2:nette\\localization\\itranslator",
+        "1:nette\\localization\\itranslator",
         "1:nette\\utils\\i00",
         "1:nette\\utils\\i01",
         "1:nette\\utils\\i02",

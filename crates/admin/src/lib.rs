@@ -97,7 +97,7 @@ mod definition_parser_registration;
 mod definition_parser_setup;
 mod dynamic_component;
 mod dynamic_component_resolution;
-mod gopath;
+use swlsp_uriutil::filepath;
 mod indexer;
 mod indexer_catalog;
 mod indexer_components;

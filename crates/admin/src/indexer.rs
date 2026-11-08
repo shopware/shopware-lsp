@@ -568,7 +568,7 @@ impl AdminComponentIndexer {
         set_definition_file_path(&mut definition, file_path);
         if !definition.template_path.is_empty() {
             let mut template_abs_path = definition.template_path.clone();
-            if !gopath::is_abs(&template_abs_path) {
+            if !filepath::is_abs(&template_abs_path) {
                 template_abs_path = resolve_template_path(file_path, &definition.template_path);
                 definition.template_path = template_abs_path.clone();
             }
@@ -869,7 +869,7 @@ impl swlsp_indexer::SupplementalPathIndexer for AdminComponentIndexer {
         let Some(relative) = meteor_package_relative_path(directory) else {
             return false;
         };
-        let relative = gopath::to_slash(&relative);
+        let relative = filepath::to_slash(&relative);
         relative.is_empty()
             || relative == "@shopware-ag"
             || relative == METEOR_PACKAGE_PATH
@@ -932,7 +932,7 @@ pub(crate) fn vue_script_type_source(
 }
 
 pub(crate) fn is_administration_source_path(file_path: &str) -> bool {
-    let mut normalized = gopath::to_slash(&gopath::clean(file_path));
+    let mut normalized = filepath::to_slash(&filepath::clean(file_path));
     if !normalized.starts_with('/') {
         normalized.insert(0, '/');
     }
@@ -940,7 +940,7 @@ pub(crate) fn is_administration_source_path(file_path: &str) -> bool {
 }
 
 pub(crate) fn meteor_package_relative_path(file_path: &str) -> Option<String> {
-    let normalized = gopath::to_slash(&gopath::clean(file_path));
+    let normalized = filepath::to_slash(&filepath::clean(file_path));
     const MARKER: &str = "/Resources/app/administration/node_modules/";
     match normalized.find(MARKER) {
         Some(position) => Some(
@@ -958,21 +958,21 @@ pub(crate) fn is_meteor_declaration_path(file_path: &str) -> bool {
     let Some(relative) = meteor_package_relative_path(file_path) else {
         return false;
     };
-    let normalized = gopath::to_slash(&relative);
+    let normalized = filepath::to_slash(&relative);
     if !normalized.starts_with(&format!("{METEOR_PACKAGE_PATH}/dist/esm/")) {
         return false;
     }
-    let base = gopath::base(&normalized);
+    let base = filepath::base(&normalized);
     base.starts_with("Mt") && base.ends_with(".d.ts")
 }
 
 /// `/path/mt-card/index.ts` -> `mt-card`; `/path/sw-button.js` -> `sw-button`.
 pub(crate) fn derive_component_name_from_path(file_path: &str) -> String {
-    let base = gopath::base(file_path);
+    let base = filepath::base(file_path);
     if base == "index.js" || base == "index.ts" || base == "index.vue" {
-        return gopath::base(&gopath::dir(file_path));
+        return filepath::base(&filepath::dir(file_path));
     }
-    let ext = gopath::ext(&base);
+    let ext = filepath::ext(&base);
     base.strip_suffix(ext).unwrap_or(&base).to_owned()
 }
 
@@ -1039,7 +1039,7 @@ pub(crate) fn append_unique_values(values: &mut Vec<String>, additions: &[String
 
 /// A normalized key for a definition file: no extension, no `/index`.
 pub(crate) fn normalize_definition_path(file_path: &str) -> String {
-    let ext = gopath::ext(file_path);
+    let ext = filepath::ext(file_path);
     let normalized = file_path.strip_suffix(ext).unwrap_or(file_path);
     normalized
         .strip_suffix("/index")
