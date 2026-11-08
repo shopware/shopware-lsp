@@ -1,0 +1,21 @@
+[package]
+name = "swlsp-shopware-dal"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swlsp-syntax.workspace = true
+rowan = { workspace = true, features = ["serde1"] }
+swlsp-indexer = { path = "../indexer" }
+swlsp-parser-js = { path = "../parser-js" }
+swlsp-parser-php = { path = "../parser-php" }
+swlsp-parser-twig = { path = "../parser-twig" }
+swlsp-php-resolver = { path = "../php-resolver" }
+swlsp-php-types = { path = "../php-types" }
+serde = { version = "1", features = ["derive"] }
+regex = "1"
+
+[dev-dependencies]
+tempfile = "3"

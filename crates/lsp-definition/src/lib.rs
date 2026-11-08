@@ -1,0 +1,72 @@
+//! Go-to-definition providers (port of Go `internal/lsp/definition`).
+
+mod common;
+mod php_common;
+mod twig_common;
+
+mod admin;
+mod asset;
+mod console;
+mod console_helper;
+mod container_constant;
+mod controller;
+mod dal;
+mod doctrine;
+mod environment;
+mod event;
+mod feature;
+mod http_client;
+mod live_component_event;
+mod messenger;
+mod route;
+mod serializer;
+mod service;
+mod snippet;
+mod style_class;
+mod symfony_config;
+mod systemconfig;
+mod theme;
+mod translation;
+mod twig;
+mod twig_component;
+mod twig_constant;
+mod twig_enum;
+mod twig_include_parameter;
+mod twig_macro;
+mod twig_render_block;
+mod validation;
+
+pub use admin::*;
+pub use asset::*;
+pub use console::*;
+pub use console_helper::*;
+pub use container_constant::*;
+pub use controller::*;
+pub use dal::*;
+pub use doctrine::*;
+pub use environment::*;
+pub use event::*;
+pub use feature::*;
+pub use http_client::*;
+pub use live_component_event::*;
+pub use messenger::*;
+pub use route::*;
+pub use serializer::*;
+pub use service::*;
+pub use snippet::*;
+pub use style_class::*;
+pub use symfony_config::*;
+pub use systemconfig::*;
+pub use theme::*;
+pub use translation::*;
+pub use twig::*;
+pub use twig_component::*;
+pub use twig_constant::*;
+pub use twig_enum::*;
+pub use twig_include_parameter::*;
+pub use twig_macro::*;
+pub use twig_render_block::*;
+pub use validation::*;
+
+#[cfg(test)]
+mod tests;

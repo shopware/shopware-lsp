@@ -1,0 +1,15 @@
+[package]
+name = "swlsp-php-project"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swlsp-syntax.workspace = true
+swlsp-parser-php = { path = "../parser-php" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,27 @@
+[package]
+name = "swlsp-lsp-analytics"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swlsp-syntax.workspace = true
+swlsp-lsp = { path = "../lsp" }
+swlsp-parser-twig = { path = "../parser-twig" }
+swlsp-pathmatch = { path = "../pathmatch" }
+swlsp-php = { path = "../php" }
+swlsp-php-semantic = { path = "../php-semantic" }
+swlsp-php-types = { path = "../php-types" }
+swlsp-symfony = { path = "../symfony" }
+swlsp-twig = { path = "../twig" }
+swlsp-twigcomponent = { path = "../twigcomponent" }
+swlsp-uriutil = { path = "../uriutil" }
+flate2 = "1"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+swlsp-indexer = { path = "../indexer" }
+tempfile = "3"

@@ -1,0 +1,47 @@
+[package]
+name = "swlsp-cli"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# `-profile.cpu` writes a pprof CPU profile (read it with `go tool pprof`).
+# Without the feature the flag only creates an empty file, as before.
+cpu-profile = ["dep:pprof"]
+
+[[bin]]
+name = "shopware-lsp"
+path = "src/main.rs"
+
+[dependencies]
+swlsp-syntax.workspace = true
+swlsp-app = { path = "../app" }
+swlsp-lsp = { path = "../lsp" }
+swlsp-lsp-protocol = { path = "../lsp-protocol" }
+swlsp-indexer = { path = "../indexer" }
+swlsp-integration = { path = "../integration" }
+swlsp-language = { path = "../language" }
+swlsp-projectconfig = { path = "../projectconfig" }
+swlsp-projectdetect = { path = "../projectdetect" }
+swlsp-lsp-scaffold = { path = "../lsp-scaffold" }
+swlsp-shopware-entityschema = { path = "../shopware-entityschema" }
+swlsp-uriutil = { path = "../uriutil" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value"] }
+crossbeam-channel = "0.5"
+regex = "1"
+log = { version = "0.4", features = ["std"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+pprof = { version = "0.15", default-features = false, features = ["prost-codec"], optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,16 @@
+[package]
+name = "swlsp-systemconfig"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swlsp-syntax.workspace = true
+swlsp-indexer = { path = "../indexer" }
+swlsp-parser-xml = { path = "../parser-xml" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"

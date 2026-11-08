@@ -1,0 +1,33 @@
+[package]
+name = "swlsp-bench"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "CodSpeed benchmarks for the Rust server's hot paths (mirrors the Go oracle's suite)."
+
+[lib]
+path = "src/lib.rs"
+
+[dev-dependencies]
+criterion = { package = "codspeed-criterion-compat", version = "6" }
+swlsp-parser-js = { path = "../parser-js" }
+swlsp-parser-json = { path = "../parser-json" }
+swlsp-parser-php = { path = "../parser-php" }
+swlsp-parser-scss = { path = "../parser-scss" }
+swlsp-parser-twig = { path = "../parser-twig" }
+swlsp-parser-vue = { path = "../parser-vue" }
+swlsp-parser-xml = { path = "../parser-xml" }
+swlsp-parser-xpath = { path = "../parser-xpath" }
+swlsp-parser-yaml = { path = "../parser-yaml" }
+swlsp-php-binder = { path = "../php-binder" }
+swlsp-php-inference = { path = "../php-inference" }
+swlsp-php-semantic = { path = "../php-semantic" }
+
+[[bench]]
+name = "parsers"
+harness = false
+
+[[bench]]
+name = "php"
+harness = false

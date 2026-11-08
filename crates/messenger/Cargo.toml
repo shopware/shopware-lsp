@@ -1,0 +1,22 @@
+[package]
+name = "swlsp-messenger"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swlsp-syntax.workspace = true
+rowan = { workspace = true, features = ["serde1"] }
+swlsp-indexer = { path = "../indexer" }
+swlsp-parser-php = { path = "../parser-php" }
+swlsp-parser-xml = { path = "../parser-xml" }
+swlsp-parser-yaml = { path = "../parser-yaml" }
+swlsp-php = { path = "../php" }
+swlsp-php-resolver = { path = "../php-resolver" }
+swlsp-php-semantic = { path = "../php-semantic" }
+swlsp-php-types = { path = "../php-types" }
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3"

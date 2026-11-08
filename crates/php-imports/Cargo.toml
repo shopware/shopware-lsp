@@ -1,0 +1,19 @@
+[package]
+name = "swlsp-php-imports"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swlsp-syntax.workspace = true
+swlsp-parser-php = { path = "../parser-php" }
+swlsp-php-phpdoc = { path = "../php-phpdoc" }
+swlsp-php-resolver = { path = "../php-resolver" }
+swlsp-php-semantic = { path = "../php-semantic" }
+swlsp-php-types = { path = "../php-types" }
+swlsp-rewrite = { path = "../rewrite" }
+rustc-hash = "2"
+
+[dev-dependencies]
+swlsp-php-binder = { path = "../php-binder" }

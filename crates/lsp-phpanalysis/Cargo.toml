@@ -1,0 +1,21 @@
+[package]
+name = "swlsp-lsp-phpanalysis"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swlsp-syntax.workspace = true
+swlsp-language = { path = "../language" }
+swlsp-lsp = { path = "../lsp" }
+swlsp-parser-php = { path = "../parser-php" }
+swlsp-php = { path = "../php" }
+swlsp-php-imports = { path = "../php-imports" }
+swlsp-php-semantic = { path = "../php-semantic" }
+swlsp-php-suppression = { path = "../php-suppression" }
+swlsp-uriutil = { path = "../uriutil" }
+
+[dev-dependencies]
+swlsp-indexer = { path = "../indexer" }
+tempfile = "3"

@@ -1,0 +1,32 @@
+[package]
+name = "swlsp-lsp-scaffold"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swlsp-textutil = { path = "../textutil" }
+swlsp-syntax.workspace = true
+swlsp-gosort = { path = "../gosort" }
+swlsp-console = { path = "../console" }
+swlsp-language = { path = "../language" }
+swlsp-lsp = { path = "../lsp" }
+swlsp-lsp-protocol = { path = "../lsp-protocol" }
+swlsp-parser-php = { path = "../parser-php" }
+swlsp-parser-xml = { path = "../parser-xml" }
+swlsp-parser-yaml = { path = "../parser-yaml" }
+swlsp-php = { path = "../php" }
+swlsp-php-project = { path = "../php-project" }
+swlsp-php-semantic = { path = "../php-semantic" }
+swlsp-rewrite = { path = "../rewrite" }
+swlsp-shopware-dal = { path = "../shopware-dal" }
+swlsp-shopware-entityschema = { path = "../shopware-entityschema" }
+swlsp-uriutil = { path = "../uriutil" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[dev-dependencies]
+swlsp-indexer = { path = "../indexer" }
+tempfile = "3"

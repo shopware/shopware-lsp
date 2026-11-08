@@ -1,0 +1,27 @@
+[package]
+name = "swlsp-php-stubs-generate"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "generate-phpstorm-stubs"
+path = "src/bin/generate-phpstorm-stubs.rs"
+
+[dependencies]
+swlsp-syntax.workspace = true
+swlsp-parser-php = { path = "../parser-php" }
+swlsp-php-binder = { path = "../php-binder" }
+swlsp-php-phpstormmeta = { path = "../php-phpstormmeta" }
+swlsp-php-project = { path = "../php-project" }
+swlsp-php-resolver = { path = "../php-resolver" }
+swlsp-php-semantic = { path = "../php-semantic" }
+swlsp-php-stubs = { path = "../php-stubs" }
+swlsp-php-types = { path = "../php-types" }
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"

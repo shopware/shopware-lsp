@@ -1,0 +1,23 @@
+[package]
+name = "swlsp-lsp-documentlink"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swlsp-syntax.workspace = true
+swlsp-language = { path = "../language" }
+swlsp-lsp = { path = "../lsp" }
+swlsp-lsp-protocol = { path = "../lsp-protocol" }
+swlsp-parser-php = { path = "../parser-php" }
+swlsp-parser-yaml = { path = "../parser-yaml" }
+swlsp-php = { path = "../php" }
+swlsp-symfony = { path = "../symfony" }
+swlsp-symfonyconfig = { path = "../symfonyconfig" }
+swlsp-twig = { path = "../twig" }
+swlsp-uriutil = { path = "../uriutil" }
+
+[dev-dependencies]
+swlsp-indexer = { path = "../indexer" }
+tempfile = "3"

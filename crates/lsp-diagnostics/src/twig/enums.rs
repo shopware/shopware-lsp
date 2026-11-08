@@ -1,0 +1,93 @@
+//! Go `twig_enum_diagnostics.go`.
+
+use std::sync::Arc;
+
+use serde_json::{Map, Value};
+use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_lsp_protocol as protocol;
+use swlsp_php::PhpIndex;
+use swlsp_php_semantic::SymbolKind;
+
+use super::{lower_ext, strings_value};
+use crate::ProblemAnalyzer;
+
+const MISSING_TWIG_ENUM_CODE: &str = "twig.enum.missing";
+const INVALID_TWIG_ENUM_CODE: &str = "twig.enum.invalid";
+
+/// Go `TwigEnumAnalyzer`.
+pub struct TwigEnumAnalyzer {
+    php_index: Option<PhpIndex>,
+}
+
+impl TwigEnumAnalyzer {
+    pub fn new(php_index: Option<PhpIndex>) -> Self {
+        Self { php_index }
+    }
+}
+
+impl ProblemAnalyzer for TwigEnumAnalyzer {
+    fn analyze(
+        &self,
+        ctx: &Context,
+        document: &Arc<TextDocument>,
+    ) -> Result<Vec<Problem>, BoxError> {
+        let (Some(php_index), Some(root)) = (&self.php_index, document.root()) else {
+            return Ok(Vec::new());
+        };
+        if lower_ext(&document.uri) != ".twig" {
+            return Ok(Vec::new());
+        }
+        let mut enum_names: Option<Vec<String>> = None;
+        let mut result = Vec::new();
+        for reference in swlsp_twig::enum_references(&root) {
+            if ctx.is_cancelled() {
+                return Ok(Vec::new());
+            }
+            match php_index.find_class(&reference.name) {
+                None => {
+                    let names = enum_names.get_or_insert_with(|| enum_names_of(php_index));
+                    let suggestions: Vec<String> =
+                        swlsp_suggestion::similar(&reference.name, names)
+                            .iter()
+                            .map(|value| swlsp_twig::escape_twig_class_name(value))
+                            .collect();
+                    let mut payload = Map::new();
+                    payload.insert("suggestions".into(), strings_value(suggestions));
+                    result.push(Problem {
+                        id: MISSING_TWIG_ENUM_CODE.into(),
+                        range: reference.range,
+                        message: format!("PHP enum '{}' not found", reference.name),
+                        severity: Some(protocol::DiagnosticSeverity::WARNING),
+                        source: "twig".into(),
+                        payload: Some(Value::Object(payload)),
+                        ..Problem::default()
+                    });
+                }
+                Some(symbol) if symbol.kind != SymbolKind::Enum => {
+                    result.push(Problem {
+                        id: INVALID_TWIG_ENUM_CODE.into(),
+                        range: reference.range,
+                        message: format!("PHP class '{}' is not an enum", reference.name),
+                        severity: Some(protocol::DiagnosticSeverity::WARNING),
+                        source: "twig".into(),
+                        ..Problem::default()
+                    });
+                }
+                Some(_) => {}
+            }
+        }
+        Ok(result)
+    }
+}
+
+fn enum_names_of(index: &PhpIndex) -> Vec<String> {
+    index
+        .class_symbols_view()
+        .iter()
+        .filter(|symbol| symbol.kind == SymbolKind::Enum)
+        .map(|symbol| {
+            let name: &str = &symbol.fully_qualified;
+            name.strip_prefix('\\').unwrap_or(name).to_owned()
+        })
+        .collect()
+}

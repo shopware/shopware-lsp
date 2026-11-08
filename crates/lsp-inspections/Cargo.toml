@@ -1,0 +1,46 @@
+[package]
+name = "swlsp-lsp-inspections"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swlsp-textutil = { path = "../textutil" }
+swlsp-syntax.workspace = true
+swlsp-lsp-diagnostics = { path = "../lsp-diagnostics" }
+swlsp-admin = { path = "../admin" }
+swlsp-admin-twigmigration = { path = "../admin-twigmigration" }
+swlsp-appscript = { path = "../appscript" }
+swlsp-event = { path = "../event" }
+swlsp-extension = { path = "../extension" }
+swlsp-indexer = { path = "../indexer" }
+swlsp-language = { path = "../language" }
+swlsp-lsp = { path = "../lsp" }
+swlsp-lsp-phpanalysis = { path = "../lsp-phpanalysis" }
+swlsp-lsp-protocol = { path = "../lsp-protocol" }
+swlsp-parser-js = { path = "../parser-js" }
+swlsp-parser-php = { path = "../parser-php" }
+swlsp-parser-twig = { path = "../parser-twig" }
+swlsp-parser-xml = { path = "../parser-xml" }
+swlsp-parser-yaml = { path = "../parser-yaml" }
+swlsp-php = { path = "../php" }
+swlsp-php-imports = { path = "../php-imports" }
+swlsp-php-rewrite = { path = "../php-rewrite" }
+swlsp-php-semantic = { path = "../php-semantic" }
+swlsp-php-types = { path = "../php-types" }
+swlsp-rewrite = { path = "../rewrite" }
+swlsp-shopware = { path = "../shopware" }
+swlsp-shopware-dal = { path = "../shopware-dal" }
+swlsp-snippet = { path = "../snippet" }
+swlsp-style = { path = "../style" }
+swlsp-symfony = { path = "../symfony" }
+swlsp-translation = { path = "../translation" }
+swlsp-twig = { path = "../twig" }
+swlsp-uriutil = { path = "../uriutil" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+
+[dev-dependencies]
+tempfile = "3"

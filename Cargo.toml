@@ -1,0 +1,49 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+exclude = ["editors/zed"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+publish = false
+rust-version = "1.98"
+
+[workspace.dependencies]
+rowan = "0.16"
+inventory = "0.3"
+swlsp-syntax = { path = "crates/syntax" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+debug = "line-tables-only"
+
+# Shipped binaries (`.github/workflows/build-binaries.yml`): release
+# optimizations without debug info or symbols. Use `release` locally to keep
+# line tables for profiles and backtraces.
+[profile.dist]
+inherits = "release"
+debug = false
+strip = "symbols"
+lto = "fat"
+
+# Debug builds (`cargo build`/`cargo test`). Line tables keep file:line in
+# backtraces; full debug info made every test binary link hundreds of MiB of
+# DWARF (27 GB target/debug, 33 s to relink after a core-crate edit).
+# Attach a debugger-friendly build with
+# `--config 'profile.dev.debug="full"'` when needed.
+[profile.dev]
+debug = "line-tables-only"
+
+# Dependencies are optimized (tests run against fast parsers, SQLite and
+# serde) and carry no debug info.
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
+
+# The bundled SQLite amalgamation is one 250k-line C file compiled on the
+# critical path of every clean build; -O1 builds it in 14 s instead of 38 s
+# with no measurable effect on test run time. Release builds use -O3 as before.
+[profile.dev.package.libsqlite3-sys]
+opt-level = 1

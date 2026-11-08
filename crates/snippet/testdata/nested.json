@@ -1,0 +1,8 @@
+{
+    "foo": {
+        "name": "title",
+        "foo": {
+            "name": "title"
+        }
+    }
+}

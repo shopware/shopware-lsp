@@ -1,0 +1,95 @@
+[package]
+name = "swlsp-app"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Provider crates that were still being ported when the composition root was
+# written are optional. Every feature is on by default; turning one off
+# removes exactly the registrations that depend on that crate.
+[features]
+default = ["symbol", "reference", "highlight", "definition", "codelens", "completion", "diagnostics", "hover"]
+symbol = ["dep:swlsp-lsp-symbol"]
+reference = ["dep:swlsp-lsp-reference"]
+highlight = ["dep:swlsp-lsp-highlight"]
+definition = ["dep:swlsp-lsp-definition"]
+codelens = ["dep:swlsp-lsp-codelens"]
+completion = ["dep:swlsp-lsp-completion"]
+diagnostics = ["dep:swlsp-lsp-diagnostics", "dep:swlsp-lsp-inspections"]
+hover = ["dep:swlsp-lsp-hover"]
+# Opt-in real-world suite (Go build tag `integration`); needs a Shopware
+# checkout at SHOPWARE_LSP_REAL_WORLD_ROOT or ~/Developer/sw-trunk.
+integration = []
+
+[dependencies]
+swlsp-syntax.workspace = true
+swlsp-admin = { path = "../admin" }
+swlsp-appscript = { path = "../appscript" }
+swlsp-asset = { path = "../asset" }
+swlsp-console = { path = "../console" }
+swlsp-doctrine = { path = "../doctrine" }
+swlsp-environment = { path = "../environment" }
+swlsp-event = { path = "../event" }
+swlsp-extension = { path = "../extension" }
+swlsp-feature = { path = "../feature" }
+swlsp-indexer = { path = "../indexer" }
+swlsp-integration = { path = "../integration" }
+swlsp-language = { path = "../language" }
+swlsp-lsp = { path = "../lsp" }
+swlsp-lsp-protocol = { path = "../lsp-protocol" }
+swlsp-lsp-analytics = { path = "../lsp-analytics" }
+swlsp-lsp-callhierarchy = { path = "../lsp-callhierarchy" }
+swlsp-lsp-codeaction = { path = "../lsp-codeaction" }
+swlsp-lsp-color = { path = "../lsp-color" }
+swlsp-lsp-commands = { path = "../lsp-commands" }
+swlsp-lsp-documentlink = { path = "../lsp-documentlink" }
+swlsp-lsp-folding = { path = "../lsp-folding" }
+swlsp-lsp-formatting = { path = "../lsp-formatting" }
+swlsp-lsp-inlay = { path = "../lsp-inlay" }
+swlsp-lsp-linkedediting = { path = "../lsp-linkedediting" }
+swlsp-lsp-phpanalysis = { path = "../lsp-phpanalysis" }
+swlsp-lsp-phpsemantic = { path = "../lsp-phpsemantic" }
+swlsp-lsp-refactor = { path = "../lsp-refactor" }
+swlsp-lsp-scaffold = { path = "../lsp-scaffold" }
+swlsp-lsp-selection = { path = "../lsp-selection" }
+swlsp-lsp-semantic = { path = "../lsp-semantic" }
+swlsp-lsp-signature = { path = "../lsp-signature" }
+swlsp-lsp-symbol = { path = "../lsp-symbol", optional = true }
+swlsp-lsp-reference = { path = "../lsp-reference", optional = true }
+swlsp-lsp-highlight = { path = "../lsp-highlight", optional = true }
+swlsp-lsp-definition = { path = "../lsp-definition", optional = true }
+swlsp-lsp-codelens = { path = "../lsp-codelens", optional = true }
+swlsp-lsp-completion = { path = "../lsp-completion", optional = true }
+swlsp-lsp-diagnostics = { path = "../lsp-diagnostics", optional = true }
+swlsp-lsp-inspections = { path = "../lsp-inspections", optional = true }
+swlsp-lsp-hover = { path = "../lsp-hover", optional = true }
+swlsp-messenger = { path = "../messenger" }
+swlsp-php = { path = "../php" }
+swlsp-php-inference = { path = "../php-inference" }
+swlsp-projectconfig = { path = "../projectconfig" }
+swlsp-serializer = { path = "../serializer" }
+swlsp-shopware = { path = "../shopware" }
+swlsp-shopware-dal = { path = "../shopware-dal" }
+swlsp-shopware-entityschema = { path = "../shopware-entityschema" }
+swlsp-snippet = { path = "../snippet" }
+swlsp-style = { path = "../style" }
+swlsp-symfony = { path = "../symfony" }
+swlsp-symfonyconfig = { path = "../symfonyconfig" }
+swlsp-systemconfig = { path = "../systemconfig" }
+swlsp-theme = { path = "../theme" }
+swlsp-translation = { path = "../translation" }
+swlsp-twig = { path = "../twig" }
+swlsp-twigcomponent = { path = "../twigcomponent" }
+swlsp-uriutil = { path = "../uriutil" }
+serde_json = "1"
+sha2 = "0.10"
+log = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
+serde = { version = "1", features = ["derive"] }
+swlsp-parser-twig = { path = "../parser-twig" }
+swlsp-php-semantic = { path = "../php-semantic" }
+swlsp-rewrite = { path = "../rewrite" }
+swlsp-httpclient = { path = "../httpclient" }

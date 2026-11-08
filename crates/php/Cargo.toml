@@ -1,0 +1,27 @@
+[package]
+name = "swlsp-php"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swlsp-syntax.workspace = true
+swlsp-parser-php = { path = "../parser-php" }
+swlsp-gosort = { path = "../gosort" }
+swlsp-indexer = { path = "../indexer" }
+swlsp-php-binder = { path = "../php-binder" }
+swlsp-php-inference = { path = "../php-inference" }
+swlsp-php-phpstormmeta = { path = "../php-phpstormmeta" }
+swlsp-php-project = { path = "../php-project" }
+swlsp-php-resolver = { path = "../php-resolver" }
+swlsp-php-semantic = { path = "../php-semantic" }
+swlsp-php-stubs = { path = "../php-stubs" }
+swlsp-php-types = { path = "../php-types" }
+swlsp-textutil = { path = "../textutil" }
+flate2 = "1"
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3"
+rmp-serde = "1.3"
