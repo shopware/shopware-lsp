@@ -1407,29 +1407,33 @@ is tracked in [`symfony-plugin-roadmap.md`](symfony-plugin-roadmap.md).
 
 ### Requirements
 
-- Go 1.27.0 or higher
-- A C compiler with CGO enabled (the index uses native SQLite)
+- Rust via rustup; `rust-toolchain.toml` pins the toolchain (1.98.0, with
+  clippy and rustfmt) and rustup installs it on first use
+- A C compiler (SQLite is compiled into the binary through `rusqlite`)
 - Node.js 24 for VSCode extension development
-- Docker for cross-compiling release binaries
+- Go 1.27 with CGO only for the Go reference oracle (`main.go`, `internal/`),
+  which is kept for differential testing and is not released
 
-The repository includes a `mise.toml` for reproducible tool versions and
-common development tasks:
-
-```bash
-mise install
-mise run setup
-mise run check
-```
-
-Run `mise tasks` to list the individual backend and VSCode extension tasks.
-`mise run release` uses the pinned GoReleaser cross-build container to create
-platform-specific VSIX packages and `SHA256SUMS` in `out/`. It keeps CGO
-enabled for every server binary and covers macOS, Linux, Alpine, and Windows.
-Pass `--pre-release` through mise to mark every VSIX as a VSCode pre-release:
+Common tasks live in the `Makefile`:
 
 ```bash
-mise run release -- --pre-release
+make build        # target/release/shopware-lsp
+make rust-check   # cargo fmt --check, clippy -D warnings, cargo test
+make check        # Rust, Go oracle, VS Code and Zed validation
 ```
+
+Release binaries are compiled natively per target in CI
+(`.github/workflows/build-binaries.yml`) for macOS, Linux (static, also used
+for Alpine), and Windows, then packaged by GoReleaser and
+`scripts/build-vsix-release.mjs`. `make release` builds the host binary and
+packages only the host VSIX plus `SHA256SUMS` into `out/`; pass
+`--pre-release` to the script to mark it as a VSCode pre-release:
+
+```bash
+node scripts/build-vsix-release.mjs --local --pre-release
+```
+
+See [RELEASING.md](../RELEASING.md) for the full pipeline.
 
 The VSCode Marketplace and Open VSX only accept numeric `major.minor.patch`
 extension versions; semver pre-release identifiers such as `0.3.0-rc.1` are
@@ -1450,26 +1454,26 @@ attaches the packages to the stable GitHub release, and publishes through the
 ### Building
 
 ```bash
-go build
+cargo build --locked --release -p swlsp-cli
 ```
+
+Set `SHOPWARE_LSP_VERSION=<version>` to embed a version; otherwise the binary
+reports `dev`.
 
 ### Testing
 
 Run the tests with:
 
 ```bash
-go test ./...
+cargo test --locked --workspace
 ```
 
-The parser has a Go 1.27 SIMD implementation for delimiter, control byte,
-line-start, and ASCII-run scans. Published amd64 and arm64 release binaries
-enable it; amd64 releases require the x86-64-v3 instruction baseline. Normal
-Darwin arm64 releases target ARMv8.4 with cryptographic extensions. Normal
-local builds use the scalar fallback. Run the same parser tests with SIMD
-enabled using:
+The Go oracle keeps its own suite (`go test ./...`). Its parser has a Go 1.27
+SIMD implementation for delimiter, control byte, line-start, and ASCII-run
+scans; run the oracle's parser tests with SIMD enabled using:
 
 ```bash
-mise run test:simd
+GOEXPERIMENT=simd go test ./internal/parser/...
 ```
 
 The parser, lexer, byte-scan, and line-index benchmarks can be compared with
@@ -1730,6 +1734,11 @@ wall time:
 | 4 (default) | 10.56 s | 32.9 s | 830 MiB | 5.9 GiB |
 | 2 | 14.59 s | 32.0 s | 800 MiB | 5.8 GiB |
 | 1 | 25.76 s | 32.0 s | 817 MiB | 5.7 GiB |
+
+The measurements in this section were taken with the former Go server, which
+is now kept only as the reference oracle. The shipped Rust server has no
+garbage collector, ignores `GOMEMLIMIT`, and the VS Code
+`shopwareLSP.memoryLimitMiB` setting is deprecated.
 
 Go's soft memory limit provides an optional peak-memory/CPU tradeoff. The
 following earlier consecutive empty-cache runs used the same binary and

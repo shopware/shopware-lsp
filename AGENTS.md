@@ -10,8 +10,15 @@ with [`docs/architecture.md`](docs/architecture.md).
 ## Product and architectural invariants
 
 Shopware LSP provides completion, navigation, hover, diagnostics, refactoring,
-symbols, and other IDE features for Shopware and Symfony projects. The backend
-is written in Go; the VS Code client is TypeScript.
+symbols, and other IDE features for Shopware and Symfony projects. The shipped
+backend is written in Rust (`crates/`, binary `shopware-lsp` from
+`crates/cli`); the VS Code client is TypeScript. The original Go
+implementation (`main.go`, `internal/`) stays in the tree as the reference
+oracle for differential testing (see `crates/PORTING.md` and
+`scripts/compare-cst.sh`). It must keep building and passing its CI job, but
+it no longer produces release artifacts. Package names below such as
+`internal/parser` name the Go original; each has a `swlsp-<name>` crate in
+`crates/<name>` that follows the same rules.
 
 Keep these invariants intact:
 
@@ -28,9 +35,10 @@ Keep these invariants intact:
   from UTF-16 positions only at the LSP boundary.
 - Parsers must tolerate incomplete editor input and return a usable, lossless
   tree. Syntax errors are data, not a reason to discard the tree.
-- Workspace data is stored in one namespaced SQLite store. CGO is currently
-  required by `github.com/mattn/go-sqlite3`; do not assume release builds can
-  use `CGO_ENABLED=0`.
+- Workspace data is stored in one namespaced SQLite store. The Rust server
+  bundles SQLite through `rusqlite`'s `bundled` feature (a C compiler is
+  needed, no system library). The Go oracle still requires CGO for
+  `github.com/mattn/go-sqlite3`.
 - `fsnotify` through `FileScanner` is the only source of filesystem index
   events. Do not add independent watchers in feature packages.
 - Request-time features must query existing indexes or the current open
@@ -38,24 +46,32 @@ Keep these invariants intact:
 
 ## Toolchain and common commands
 
-`mise.toml` is the local toolchain source of truth. It currently pins Go,
-Node.js, golangci-lint, and VSIX tooling and sets `CGO_ENABLED=1`.
-The Zed client's Rust toolchain and WASM target are pinned separately in
-`editors/zed/rust-toolchain.toml` for compatibility with Zed's rustup build.
+`rust-toolchain.toml` pins the Rust toolchain (rustup installs it on first
+use; keep it in step with `rust-version` in `Cargo.toml`). `go.mod` pins Go for
+the oracle, and CI pins Node.js 24 and golangci-lint. The `Makefile` holds the
+common tasks. The Zed client's Rust toolchain and WASM target are pinned
+separately in `editors/zed/rust-toolchain.toml` for compatibility with Zed's
+rustup build.
 
 ```bash
-# Initial setup
-mise install
-mise run setup
+# Shipped Rust server
+make build                       # cargo build --locked --release -p swlsp-cli
+cargo test -p swlsp-twig         # one crate while iterating
+make rust-test                   # cargo test --locked --workspace (no doc-tests)
+make rust-clippy                 # cargo clippy --workspace --all-targets -D warnings
+make rust-fmt-check              # cargo fmt --all --check
+make rust-test-integration-compile  # compile/lint the opt-in real-world suite
 
-# Backend
-go build ./...
-go test ./...
-go test ./internal/php/... -count=1
+# Go reference oracle
+make go-build                    # go build ./...
+make go-test                     # go test ./...
 go test ./internal/twig -run '^TestName$' -count=1
-go test -race ./internal/...
+make go-test-race                # go test -race ./internal/...
 go test -bench=. -run '^$' ./internal/parser/...
-golangci-lint run
+make go-lint                     # golangci-lint run
+scripts/compare-cst.sh <lang> <corpus> <ext>...   # differential CST check
+scripts/bench/lsp_bench.py --server BIN --root ~/shopware --out OUT.json
+scripts/bench/compare.py GO.json RS.json           # end-to-end Go vs Rust
 
 # VS Code extension
 npm --prefix editors/vscode ci
@@ -66,20 +82,26 @@ npm --prefix editors/vscode run test:entity-designer
 npm --prefix editors/vscode run test:mcp
 
 # Zed extension (requires rustup and Python 3)
-mise run zed:check
-mise run zed:test
-mise run zed:build
-mise run zed:contracts
+make zed-check
+make zed-test
+make zed-build
+make zed-contracts               # builds the Rust server, checks LSP/MCP contracts
 
 # Full local validation
-mise run check
+make check
 ```
+
+Set `SHOPWARE_LSP_VERSION=<version>` when building to embed a version (the
+binary reports `dev` otherwise). Release binaries are built natively per
+target by `.github/workflows/build-binaries.yml` and packaged by GoReleaser
+(`.goreleaser.yaml`, archives/packages/checksums/Homebrew) and
+`scripts/build-vsix-release.mjs` (VSIX); see `RELEASING.md`.
 
 Benchmarks written with the `testing` package run in CI through CodSpeed
 (`.github/workflows/codspeed.yml`, walltime instrument, one job on a two-vCPU
 RunsOn `m8g.large` Spot runner, `-benchtime=1s`). Only packages that define
-benchmarks are built. `mise run bench` reproduces that locally once the
-`codspeed` CLI is installed.
+benchmarks are built. These are still the Go oracle's benchmarks; the Rust
+crates have no CodSpeed suite yet.
 
 Every benchmark case costs about a second of CI time on every run, so
 benchmarks are for tracking production code paths. Keep A/B comparisons
@@ -87,7 +109,7 @@ against rejected or test-only alternatives, and wide size sweeps, out of the
 committed suite: use them locally while tuning, then keep one representative
 case (or a short and a long input).
 
-`mise run check` also compiles the opt-in real-world integration suite without
+`make check` also compiles the Go opt-in real-world integration suite without
 running it. Production Go files are capped at 2,500 lines by
 `internal/architecture/maintainability_test.go`, and `.golangci.yml` rejects
 new functions with cognitive complexity above 65. Treat these as coarse
@@ -95,9 +117,16 @@ regression ceilings: refactor by responsibility instead of formatting code to
 satisfy a number, and tighten thresholds only after the lower baseline has
 focused correctness coverage.
 
+Debug builds keep line tables only (`[profile.dev]` in `Cargo.toml`); pass
+`--config 'profile.dev.debug="full"'` for a debugger session. Crates have no
+doc-tests, so `make rust-test` skips rustdoc; use `cargo test --doc` if you add
+one. Standalone repositories (`DataIndexer::repository` without a workspace
+store, as in most tests) share one `repositories.db` per directory.
+
 Prefer targeted tests while iterating, then run validation proportional to the
-change. `go test ./...`, relevant race tests, and `golangci-lint run` are the
-normal backend pre-handoff checks. Run the VS Code checks when protocol shape,
+change. `make rust-check` (fmt, clippy, tests) is the normal backend
+pre-handoff check; when the Go oracle changes, also run `go test ./...`,
+relevant race tests, and `golangci-lint run`. Run the VS Code checks when protocol shape,
 configuration, commands, server startup, MCP wiring, or extension code changes.
 
 Use `npm ci`, not `npm install`, unless intentionally changing dependencies and
@@ -107,7 +136,9 @@ the lockfile.
 
 | Path | Responsibility |
 |---|---|
-| `main.go` | Process entry point; applies runtime policy and delegates to the CLI |
+| `crates/cli` | Shipped `shopware-lsp` binary: CLI, `serve`, MCP (port of `main.go` + `internal/cli`) |
+| `crates/<name>` | Rust port of each Go subsystem as `swlsp-<name>`; status and conventions in `crates/PORTING.md` |
+| `main.go` | Go oracle entry point; applies runtime policy and delegates to the CLI |
 | `internal/cli` | `serve`, `check`, `index`, feature commands, profiling, and MCP transport |
 | `internal/app` | Workspace construction, ownership, indexer wiring, inspections, and provider registration |
 | `internal/lsp` | JSON-RPC/LSP server, document lifecycle, protocol conversion, inspection and quick-fix infrastructure |
@@ -124,7 +155,7 @@ the lockfile.
 | `internal/projectconfig` | Root/extension configuration, validation, domains, diagnostics policy, and JSON schema |
 | `editors/vscode/src` | Thin VS Code client, command UI, configuration UI, generators, and MCP registration |
 | `editors/zed` | Rust/WASM Zed client, MCP configuration, terminal task adapters, and contract tests |
-| `scripts` | Release and packaging helpers |
+| `scripts` | Release and packaging helpers (`scripts/release/`), `compare-cst.sh` oracle diff, `bench/` end-to-end LSP benchmark |
 | `third_party/phpstorm-stubs` | Pinned source metadata for generated PHP runtime stubs |
 
 Avoid fixed provider counts in documentation or tests; provider registration

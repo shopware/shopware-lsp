@@ -79,45 +79,27 @@ The existing `Test` and `Build` checks aggregate their prerequisites and fail
 if any prerequisite fails, is cancelled, or is skipped. CodSpeed runs only
 benchmarks; ordinary tests are covered by the test workflow.
 
-### Using mise
+### Using make
 
-This repository includes a `mise.toml` file for managing the recommended Go
-and golangci-lint versions and for providing convenient development tasks.
-
-After installing mise, set up the project tools with:
-
-```sh
-mise install
-```
-
-You can then run the complete local check suite with:
+The `Makefile` collects the common tasks. The Rust toolchain comes from
+`rust-toolchain.toml` (rustup installs it automatically); Go, Node.js 24 and
+golangci-lint are only needed for the Go oracle and the editor clients.
 
 ```sh
-mise run check
+make check            # Rust, Go oracle, VS Code and Zed validation
+make build            # Build target/release/shopware-lsp
+make rust-check       # cargo fmt --check, clippy -D warnings, cargo test
+make rust-fmt         # Format Rust sources
+make go-test          # Go oracle tests
+make go-lint          # golangci-lint on the Go oracle
 ```
-
-Individual tasks are also available:
-
-```sh
-mise run format       # Format Go source files
-mise run format-check # Check Go formatting (gofmt and gci) without changing files
-mise run build        # Build the shopware-lsp binary
-mise run test         # Run the network-isolated test suite (Linux/macOS only)
-mise run test-unit    # Run Go tests without the sandbox wrapper (works everywhere)
-mise run vet          # Run go vet
-mise run lint         # Run golangci-lint
-```
-
-For machine-specific settings, create `mise.local.toml`. This file is ignored
-by Git and should not contain secrets that belong in a dedicated secret
-manager.
 
 ### Running your build in an editor
 
 Build the binary and point your LSP client at it instead of the released one:
 
 ```sh
-mise run build
+make build   # then use target/release/shopware-lsp
 ```
 
 Server logs go to the client's LSP output channel — the VS Code "Shopware Language Server" channel, or `:LspLog` in Neovim.

@@ -91,7 +91,7 @@ keeping the benchmark code identical.
 
 ## Reproducing the profiles
 
-Run from the repository root with the mise toolchain. Benchmark fixtures own
+Run from the repository root with the Go toolchain from `go.mod` (these profile the Go oracle). Benchmark fixtures own
 their temporary indexes; no external checkout is needed.
 
 ```bash

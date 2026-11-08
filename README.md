@@ -198,10 +198,9 @@ See the [project configuration reference](docs/reference.md#project-configuratio
 and the bundled [JSON schema](internal/projectconfig/schema.json) for every
 option.
 
-Large workspaces can set `shopwareLSP.memoryLimitMiB` to trade indexing CPU for
-a lower soft memory limit. The default `0` uses the server's balanced runtime
-policy; `512` MiB is a practical opt-in starting point when memory pressure is
-more important than indexing speed.
+The server is a native Rust binary without a garbage collector, so it needs no
+memory tuning. `shopwareLSP.memoryLimitMiB` only tuned the former Go server's
+`GOMEMLIMIT` and is now deprecated and ignored.
 
 ## Command line and CI
 
@@ -273,13 +272,24 @@ Architecture, for contributors:
 
 ## Contributing
 
-The repository pins Go, Node.js, golangci-lint, and VSIX tooling in
-`mise.toml`.
+The language server is written in Rust (`crates/`); `rust-toolchain.toml`
+pins the toolchain and rustup installs it on first use. SQLite is bundled, so a
+C compiler is the only other build requirement. The original Go implementation
+(`main.go`, `internal/`) stays in the tree as a reference oracle for
+differential testing and is no longer shipped.
+
+Build from source:
 
 ```bash
-mise install
-mise run setup
-mise run check
+cargo build --locked --release -p swlsp-cli   # target/release/shopware-lsp
+SHOPWARE_LSP_VERSION=1.2.3 cargo build --locked --release -p swlsp-cli  # embed a version
+```
+
+Validate everything (Rust, the Go oracle, VS Code and Zed clients; needs Go,
+Node.js 24 and golangci-lint for the non-Rust parts):
+
+```bash
+make check
 ```
 
 Read [AGENTS.md](AGENTS.md) for the architecture, contributor workflow, and

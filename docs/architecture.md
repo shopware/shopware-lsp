@@ -27,10 +27,21 @@ first, then follow the links into the subsystem documents.
 
 ## What the server is
 
-A single Go binary that provides IDE intelligence for Shopware and Symfony
+A single Rust binary that provides IDE intelligence for Shopware and Symfony
 projects — completion, go-to-definition, hover, diagnostics, quick fixes,
 refactoring, symbols, code lenses, and more — across PHP, Twig, XML, YAML,
 JSON, JavaScript/TypeScript, SCSS, and Vue.
+
+The shipped server is built from `crates/` (`swlsp-cli` produces the
+`shopware-lsp` executable). It is a crate-for-package port of the original Go
+implementation under `main.go` and `internal/`, which this document describes
+by its Go package names; each `internal/<name>` package has a matching
+`swlsp-<name>` crate with the same structure and invariants. The Go tree is no
+longer released. It stays buildable and tested as the reference oracle:
+differential harnesses such as `scripts/compare-cst.sh` run both
+implementations over real corpora and diff their output, and
+`crates/PORTING.md` records the conventions, intentional differences, and
+status of each port.
 
 The same binary is three frontends over one engine:
 
@@ -48,12 +59,12 @@ registered once.
 
 A thin TypeScript VS Code client lives in `editors/vscode/`. It discovers the
 binary, launches one server per workspace folder, and provides configuration and
-generator UI. All analysis lives in Go.
+generator UI. All analysis lives in the server.
 
 The Rust/WASM Zed client lives alongside it in `editors/zed/`. It starts the
 same language server and MCP transport, normalizes editor configuration, and
 provides terminal task adapters for generators that need interactive input.
-Its contract tests exercise the local Go binary and sibling VS Code manifest.
+Its contract tests exercise the locally built server and sibling VS Code manifest.
 
 ## Non-negotiable invariants
 
@@ -551,11 +562,13 @@ for cache directories, `t.Cleanup` for closing indexes. No network access. Set
 Commands:
 
 ```bash
-go build ./...
+make rust-check                           # Rust server: fmt, clippy, tests
+cargo build --locked --release -p swlsp-cli
+go build ./...                            # Go reference oracle
 go test ./...
 go test -race ./internal/...             # required for pooling/lifecycle changes
 golangci-lint run
-mise run check                            # backend + VS Code validation
+make check                                # Rust, Go oracle, VS Code and Zed validation
 GOEXPERIMENT=simd go test ./internal/parser/...
 ```
 

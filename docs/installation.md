@@ -93,7 +93,31 @@ Download a server archive from
 [GitHub Releases](https://github.com/shopware/shopware-lsp/releases), place the
 `shopware-lsp` executable on your `PATH`, and configure your editor to start it
 over stdin/stdout. Running the binary without a subcommand starts the language
-server.
+server. Archives (`shopware-lsp_<version>_<os>_<arch>.zip`) exist for macOS
+(amd64, arm64), Linux (amd64, arm64, arm) and Windows (amd64), with
+`checksums.txt` alongside; Linux also has `.deb`, `.rpm` and `.apk` packages.
+The Linux binaries are statically linked and also run on Alpine.
+
+The server is a single self-contained Rust executable: no runtime, PHP, or
+system SQLite is required. Earlier releases shipped a Go build whose
+`GOMEMLIMIT` and `shopwareLSP.memoryLimitMiB` tuning no longer applies.
+
+### Building from source
+
+Install Rust with [rustup](https://rustup.rs) (the repository's
+`rust-toolchain.toml` selects the pinned version) and a C compiler, then run:
+
+```bash
+git clone https://github.com/shopware/shopware-lsp.git
+cd shopware-lsp
+cargo build --locked --release -p swlsp-cli
+./target/release/shopware-lsp version
+```
+
+Set `SHOPWARE_LSP_VERSION=<version>` during the build to embed a version
+string; otherwise the binary reports `dev`. The VS Code extension finds a
+development build at `target/release/shopware-lsp` automatically when it runs
+from `editors/vscode` in this repository.
 
 See [custom commands](custom-commands.md) for custom protocol commands and a
 Neovim example.
