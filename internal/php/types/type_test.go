@@ -7,6 +7,7 @@ import (
 	"testing"
 	"unsafe"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vmihailenco/msgpack/v5"
 )
@@ -1116,4 +1117,49 @@ func TestParseNativeDoesNotGuessTemplates(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ObjectKind, value.Kind())
 	require.Equal(t, "T", value.Name())
+}
+
+func TestPersistedNestedUncachedCompositesRoundTrip(t *testing.T) {
+	t.Parallel()
+	template := Template("T")
+	cases := []Type{
+		List(Callable(nil, template)),
+		List(Callable([]CallableParameter{{Type: Int()}}, List(template))),
+		Nullable(Callable(nil, Int())),
+		List(ArrayShape(nil, false)),
+		List(ArrayShape(nil, true)),
+		List(ObjectShape(nil, false)),
+		Nullable(ArrayShape(nil, false)),
+		ArrayShape([]ShapeField{
+			{Name: "a", Type: Int()},
+			{Name: "b", Type: ArrayShape(nil, false), Optional: true},
+			{Name: "c", Type: Callable(nil, template)},
+		}, false),
+		Union(
+			ArrayShape([]ShapeField{
+				{Name: "a", Type: Int()},
+				{Name: "b", Type: String(), Optional: true},
+			}, false),
+			Callable(nil, String()),
+			Null(),
+		),
+		Named("Collection", ArrayShape(nil, false), Callable(nil, Void())),
+	}
+	for _, original := range cases {
+		encoded := original.PersistedString()
+		assert.NotContains(t, encoded, "array-shape")
+		assert.NotContains(t, encoded, "object-shape")
+		restored, err := ParsePersisted(encoded)
+		require.NoError(t, err, encoded)
+		assert.True(t, original.Equal(restored), "%q restored as %q", encoded, restored.String())
+		assert.Equal(t, original.String(), restored.String())
+	}
+}
+
+func TestNestedUncachedCompositesRenderFully(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "list<callable():int>", List(Callable(nil, Int())).String())
+	assert.Equal(t, "list<array{}>", List(ArrayShape(nil, false)).String())
+	assert.Equal(t, "list<object{...}>", List(ObjectShape(nil, true)).String())
+	assert.False(t, List(Callable(nil, Int())).Equal(List(Callable(nil, String()))))
 }

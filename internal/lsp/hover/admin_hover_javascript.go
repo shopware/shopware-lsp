@@ -117,22 +117,14 @@ func (p *AdminHoverProvider) jsHover(_ context.Context, params *lsp.HoverRequest
 
 	// Build markdown content for the hover
 	markdown := p.buildHoverContent(components)
+	nameRange, hasRange := jsStringContentRange(node)
 
 	return &protocol.Hover{
 		Contents: protocol.MarkupContent{
 			Kind:  protocol.Markdown,
 			Value: markdown,
 		},
-		Range: &protocol.Range{
-			Start: protocol.Position{
-				Line:      params.Position.Line,
-				Character: params.Position.Character,
-			},
-			End: protocol.Position{
-				Line:      params.Position.Line,
-				Character: params.Position.Character + len(componentName),
-			},
-		},
+		Range: requestByteRange(params, nameRange, hasRange),
 	}, nil
 }
 

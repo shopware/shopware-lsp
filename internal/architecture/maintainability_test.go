@@ -70,7 +70,7 @@ func repositoryRoot(t *testing.T) string {
 
 func ignoredRepositoryDirectory(name string) bool {
 	switch name {
-	case ".git", "dist", "node_modules", "out", "third_party":
+	case ".git", "dist", "node_modules", "out", "target", "third_party":
 		return true
 	default:
 		return false

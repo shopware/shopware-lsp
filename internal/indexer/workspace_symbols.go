@@ -633,7 +633,7 @@ func (catalog *WorkspaceSymbolCatalog) QueryWithOptions(
 		if domainPredicate != "" {
 			statement += " WHERE " + domainPredicate
 		}
-		statement += " ORDER BY s.priority DESC, s.name LIMIT ?"
+		statement += " ORDER BY s.priority DESC, s.name, s.owner_path, s.file_path, s.start_line, s.start_character, s.id LIMIT ?"
 		arguments := append(domainArguments, candidateLimit)
 		rows, err = catalog.db.QueryContext(
 			ctx,
@@ -653,7 +653,7 @@ func (catalog *WorkspaceSymbolCatalog) QueryWithOptions(
 			statement += " AND " + domainPredicate
 			arguments = append(arguments, domainArguments...)
 		}
-		statement += " ORDER BY s.priority DESC, s.name LIMIT ?"
+		statement += " ORDER BY s.priority DESC, s.name, s.owner_path, s.file_path, s.start_line, s.start_character, s.id LIMIT ?"
 		arguments = append(arguments, candidateLimit)
 		rows, err = catalog.db.QueryContext(
 			ctx,

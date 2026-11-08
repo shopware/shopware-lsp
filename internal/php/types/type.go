@@ -1380,6 +1380,10 @@ func renderedLengthHint(value Type) int {
 		// values may grow the builder once more but do not pay for a speculative
 		// render merely to obtain an exact length.
 		return len(value.Name()) + 2
+	case ArrayShapeKind:
+		return len("array{}")
+	case ObjectShapeKind:
+		return len("object{}")
 	default:
 		return len(value.Kind().String())
 	}
@@ -1425,8 +1429,14 @@ func writeRenderedType(builder *strings.Builder, value Type) {
 		var scratch [64]byte
 		quoted := strconv.AppendQuote(scratch[:0], value.Name())
 		_, _ = builder.Write(quoted)
-	default:
+	case UnknownKind, ErrorKind, NeverKind, MixedKind, VoidKind, NullKind,
+		BoolKind, TrueKind, FalseKind, IntKind, FloatKind, StringKind,
+		ResourceKind, ArrayKeyKind:
 		builder.WriteString(value.Kind().String())
+	default:
+		// Uncached composites (`callable():T`, `array{}`, uncached unions)
+		// must render in full; their kind name would not parse back.
+		builder.WriteString(value.render())
 	}
 }
 

@@ -149,16 +149,7 @@ func (p *AdminHoverProvider) twigHover(_ context.Context, params *lsp.HoverReque
 			Kind:  protocol.Markdown,
 			Value: markdown,
 		},
-		Range: &protocol.Range{
-			Start: protocol.Position{
-				Line:      params.Position.Line,
-				Character: params.Position.Character,
-			},
-			End: protocol.Position{
-				Line:      params.Position.Line,
-				Character: params.Position.Character + len(componentName),
-			},
-		},
+		Range: requestByteRange(params, params.Token.Range(), true),
 	}, nil
 }
 

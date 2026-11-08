@@ -56,7 +56,7 @@ func (p *IconProvider) GetIconPacks() []string {
 	iconPacksMap := make(map[string]bool)
 
 	for _, ext := range extensions {
-		iconPath := filepath.Join(ext.Path, "Resources", "app", "storefront", "dist", "assets", "icon")
+		iconPath := filepath.Join(extensionResourceRoot(ext.Path), "Resources", "app", "storefront", "dist", "assets", "icon")
 
 		if _, err := os.Stat(iconPath); os.IsNotExist(err) {
 			continue
@@ -88,7 +88,7 @@ func (p *IconProvider) GetIcons(pack string) []string {
 	var icons []string
 
 	for _, ext := range extensions {
-		iconPackPath := filepath.Join(ext.Path, "Resources", "app", "storefront", "dist", "assets", "icon", pack)
+		iconPackPath := filepath.Join(extensionResourceRoot(ext.Path), "Resources", "app", "storefront", "dist", "assets", "icon", pack)
 
 		if _, err := os.Stat(iconPackPath); os.IsNotExist(err) {
 			continue
@@ -126,7 +126,7 @@ func (p *IconProvider) GetIcon(pack, icon string) string {
 	extensions := p.getExtensions()
 
 	for _, ext := range extensions {
-		iconFilePath := filepath.Join(ext.Path, "Resources", "app", "storefront", "dist", "assets", "icon", pack, icon+".svg")
+		iconFilePath := filepath.Join(extensionResourceRoot(ext.Path), "Resources", "app", "storefront", "dist", "assets", "icon", pack, icon+".svg")
 
 		if _, err := os.Stat(iconFilePath); err == nil {
 			return iconFilePath
@@ -134,4 +134,14 @@ func (p *IconProvider) GetIcon(pack, icon string) string {
 	}
 
 	return ""
+}
+
+// extensionResourceRoot is the directory holding an extension's Resources
+// folder. Bundle extensions point at their class file, whose directory is the
+// bundle root.
+func extensionResourceRoot(path string) string {
+	if strings.EqualFold(filepath.Ext(path), ".php") {
+		return filepath.Dir(path)
+	}
+	return path
 }

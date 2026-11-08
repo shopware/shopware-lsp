@@ -59,7 +59,9 @@ func (p *TwigHoverProvider) GetHover(ctx context.Context, params *lsp.HoverReque
 
 	// Check if hovering over sw_icon
 	if twigquery.StringInTag(params.Node, "sw_icon") {
-		iconName := twigquery.StringValue(twigquery.LiteralStringAt(params.Node))
+		iconLiteral := twigquery.LiteralStringAt(params.Node)
+		iconName := twigquery.StringValue(iconLiteral)
+		iconRange, hasIconRange := twigStringContentRange(iconLiteral)
 
 		// Extract icon configuration from parent node
 		cfg := twigquery.HashStringMap(params.Node)
@@ -115,16 +117,7 @@ func (p *TwigHoverProvider) GetHover(ctx context.Context, params *lsp.HoverReque
 					Kind:  protocol.Markdown,
 					Value: markdownContent,
 				},
-				Range: &protocol.Range{
-					Start: protocol.Position{
-						Line:      params.Position.Line,
-						Character: params.Position.Character,
-					},
-					End: protocol.Position{
-						Line:      params.Position.Line,
-						Character: params.Position.Character + len(iconName),
-					},
-				},
+				Range: requestByteRange(params, iconRange, hasIconRange),
 			}, documentation), nil
 		}
 	}

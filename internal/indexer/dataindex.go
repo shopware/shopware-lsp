@@ -337,7 +337,7 @@ func (idx *DataIndexer[T]) GetValuesView(key string) ([]T, error) {
 		return items, nil
 	}
 
-	rows, err := idx.db.Query("SELECT value FROM data WHERE namespace = ? AND key = ?", idx.namespace, key)
+	rows, err := idx.db.Query("SELECT value FROM data INDEXED BY idx_data_namespace_key WHERE namespace = ? AND key = ? ORDER BY file_path, rowid", idx.namespace, key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query data: %w", err)
 	}
@@ -385,7 +385,7 @@ func (idx *DataIndexer[T]) GetAllValuesView() ([]T, error) {
 		return idx.allCache, nil
 	}
 
-	rows, err := idx.db.Query("SELECT value FROM data WHERE namespace = ?", idx.namespace)
+	rows, err := idx.db.Query("SELECT value FROM data WHERE namespace = ? ORDER BY file_path, rowid", idx.namespace)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query data: %w", err)
 	}

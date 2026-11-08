@@ -9,6 +9,7 @@ import (
 
 	"github.com/shopware/shopware-lsp/internal/lsp"
 	"github.com/shopware/shopware-lsp/internal/lsp/protocol"
+	"github.com/shopware/shopware-lsp/internal/parser/cst"
 	jsquery "github.com/shopware/shopware-lsp/internal/parser/javascript/query"
 	phpquery "github.com/shopware/shopware-lsp/internal/parser/php/query"
 	twigquery "github.com/shopware/shopware-lsp/internal/parser/twig/query"
@@ -60,19 +61,21 @@ func (p *SnippetHoverProvider) twigHover(_ context.Context, params *lsp.HoverReq
 			params.Root,
 			offset,
 		); found && reference.Key != "" {
-			return p.createHoverForSnippet(reference.Key, params, true)
+			return p.createHoverForSnippet(reference.Key, reference.Range, true, params, true)
 		}
 	}
 	// Check for frontend snippet pattern: {{ 'key'|trans }}
 	if twigquery.StringInFilter(params.Node, "trans") {
-		snippetKey := twigquery.StringValue(twigquery.LiteralStringAt(params.Node))
-		return p.createHoverForSnippet(snippetKey, params, false)
+		literal := twigquery.LiteralStringAt(params.Node)
+		keyRange, hasRange := twigStringContentRange(literal)
+		return p.createHoverForSnippet(twigquery.StringValue(literal), keyRange, hasRange, params, false)
 	}
 
 	// Check for admin snippet pattern: {{ $tc('key') }} or {{ $t('key') }}
 	if twigquery.StringInFunction(params.Node, "$tc", "$t") {
-		snippetKey := twigquery.StringValue(twigquery.LiteralStringAt(params.Node))
-		return p.createHoverForSnippet(snippetKey, params, true)
+		literal := twigquery.LiteralStringAt(params.Node)
+		keyRange, hasRange := twigStringContentRange(literal)
+		return p.createHoverForSnippet(twigquery.StringValue(literal), keyRange, hasRange, params, true)
 	}
 
 	return nil, nil
@@ -81,7 +84,10 @@ func (p *SnippetHoverProvider) twigHover(_ context.Context, params *lsp.HoverReq
 func (p *SnippetHoverProvider) phpHover(_ context.Context, params *lsp.HoverRequest) (*protocol.Hover, error) {
 	if phpquery.StringInCall(params.Node, 0, "trans") {
 		snippetKey := phpquery.StringValue(params.Node)
-		return p.createHoverForSnippet(snippetKey, params, false)
+		stringNode := phpquery.StringAt(params.Node)
+		return p.createHoverForSnippet(
+			snippetKey, phpquery.StringContentRange(stringNode), stringNode != nil, params, false,
+		)
 	}
 	return nil, nil
 }
@@ -89,12 +95,19 @@ func (p *SnippetHoverProvider) phpHover(_ context.Context, params *lsp.HoverRequ
 func (p *SnippetHoverProvider) jsHover(_ context.Context, params *lsp.HoverRequest) (*protocol.Hover, error) {
 	if snippet.AdminJavaScriptStringReference(params.Node) {
 		snippetKey := jsquery.StringValue(params.Node)
-		return p.createHoverForSnippet(snippetKey, params, true)
+		keyRange, hasRange := jsStringContentRange(params.Node)
+		return p.createHoverForSnippet(snippetKey, keyRange, hasRange, params, true)
 	}
 	return nil, nil
 }
 
-func (p *SnippetHoverProvider) createHoverForSnippet(snippetKey string, params *lsp.HoverRequest, isAdmin bool) (*protocol.Hover, error) {
+func (p *SnippetHoverProvider) createHoverForSnippet(
+	snippetKey string,
+	keyRange cst.TextRange,
+	hasRange bool,
+	params *lsp.HoverRequest,
+	isAdmin bool,
+) (*protocol.Hover, error) {
 	var snippets []snippet.Snippet
 	var err error
 
@@ -138,16 +151,7 @@ func (p *SnippetHoverProvider) createHoverForSnippet(snippetKey string, params *
 			Kind:  protocol.Markdown,
 			Value: markdownContent.String(),
 		},
-		Range: &protocol.Range{
-			Start: protocol.Position{
-				Line:      params.Position.Line,
-				Character: params.Position.Character,
-			},
-			End: protocol.Position{
-				Line:      params.Position.Line,
-				Character: params.Position.Character + len(snippetKey),
-			},
-		},
+		Range: requestByteRange(params, keyRange, hasRange),
 	}, nil
 }
 
