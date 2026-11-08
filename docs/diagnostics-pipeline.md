@@ -740,16 +740,16 @@ The `check` command runs the same inspections outside an editor, which is the
 fastest way to see what a real workspace produces:
 
 ```bash
-shopware-lsp -root /path/to/project check src tests
-shopware-lsp -root /path/to/project check -fail-on error src/Controller.php
-shopware-lsp -root /path/to/project -json check src
+shopware-lsp --root /path/to/project check src tests
+shopware-lsp --root /path/to/project check --fail-on error src/Controller.php
+shopware-lsp --root /path/to/project --json check src
 ```
 
 `codeaction` exercises the fix path, previewing a unified diff unless `-w` is
 passed:
 
 ```bash
-shopware-lsp -root /path/to/project codeaction -kind quickfix src/Controller.php:24:18
+shopware-lsp --root /path/to/project codeaction --kind quickfix src/Controller.php:24:18
 ```
 
 ### Tracing

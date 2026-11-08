@@ -120,7 +120,7 @@ Confirm which server produced a diagnostic by asking this one directly. It
 takes the editor out of the loop:
 
 ```bash
-shopware-lsp -root . check -severity hint path/to/template.html.twig
+shopware-lsp --root . check --severity hint path/to/template.html.twig
 ```
 
 Anything the CLI does not report came from the other server.
@@ -179,7 +179,7 @@ diagnostics:
 `check` takes a directory, which is a quick way to find systematic problems:
 
 ```bash
-shopware-lsp -root . -json check src/ > /tmp/check.json
+shopware-lsp --root . --json check src/ > /tmp/check.json
 ```
 
 Aggregate by the `code` field rather than reading it. A rule firing in the

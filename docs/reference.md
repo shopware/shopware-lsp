@@ -21,20 +21,20 @@ the terminal:
 ```bash
 shopware-lsp help
 shopware-lsp version
-shopware-lsp -root /path/to/project -json project-info
-shopware-lsp -root /path/to/project index
-shopware-lsp -root /path/to/project index -force
-shopware-lsp -root /path/to/project stats
-shopware-lsp -root /path/to/project check src tests
-shopware-lsp -root /path/to/project check -fail-on error src/Controller.php
-shopware-lsp -root /path/to/project definition src/Controller.php:24:18
-shopware-lsp -root /path/to/project references src/Controller.php:24:18
-shopware-lsp -root /path/to/project workspace-symbol customer.detail
-shopware-lsp -root /path/to/project workspace-symbol --fresh customer.detail
-shopware-lsp -root /path/to/project codeaction -kind quickfix src/Controller.php:24:18
-shopware-lsp -root /path/to/project codeaction -kind refactor.extract -end-line 30 -end-column 1 src/Controller.php:24:1
-shopware-lsp -root /path/to/project rename -d src/Controller.php:24:18 NewName
-shopware-lsp -root /path/to/project mcp
+shopware-lsp --root /path/to/project --json project-info
+shopware-lsp --root /path/to/project index
+shopware-lsp --root /path/to/project index --force
+shopware-lsp --root /path/to/project stats
+shopware-lsp --root /path/to/project check src tests
+shopware-lsp --root /path/to/project check --fail-on error src/Controller.php
+shopware-lsp --root /path/to/project definition src/Controller.php:24:18
+shopware-lsp --root /path/to/project references src/Controller.php:24:18
+shopware-lsp --root /path/to/project workspace-symbol customer.detail
+shopware-lsp --root /path/to/project workspace-symbol --fresh customer.detail
+shopware-lsp --root /path/to/project codeaction --kind quickfix src/Controller.php:24:18
+shopware-lsp --root /path/to/project codeaction --kind refactor.extract --end-line 30 --end-column 1 src/Controller.php:24:1
+shopware-lsp --root /path/to/project rename -d src/Controller.php:24:18 NewName
+shopware-lsp --root /path/to/project mcp
 ```
 
 Workspace commands run only for detected Shopware or Symfony roots. Detection
@@ -43,16 +43,19 @@ manifest files, `symfony/framework-bundle` or `config/bundles.php`, and the
 committed `.config/shopware/lsp.yaml` opt-in. Use `project-info` to see
 the detected kind and its evidence without creating a workspace cache. For an
 unusual but intentional root, either add the project configuration or pass the
-global `-allow-unsupported-project` flag before the command. The same guard is
+global `--allow-unsupported-project` flag. The same guard is
 enforced by the language-server and MCP entry points.
 
 Positions are one-based `file:line:column` values. Structured feature commands
-emit JSON. `check` and `stats` default to readable text; put the global `-json`
-flag before the command for machine-readable output. `check` recursively
+emit JSON. `check` and `stats` default to readable text; pass the global `--json` flag
+for machine-readable output. Global flags work before or after the command,
+and `shopware-lsp help <command>` (or `<command> --help`) lists every flag.
+Flags are GNU-style (`--root DIR`, `--root=DIR`, `-w`); the Go-style
+single-dash spelling of earlier releases (`-root`) is rejected with a hint. `check` recursively
 expands directory targets and accepts multiple, overlapping files or
 directories. It uses up to four diagnostic workers by default; pass
-`-workers 1` for serial analysis or another positive limit for a particular
-machine. `codeaction -exec` and `rename` preview a unified diff unless `-w` is
+`--workers 1` for serial analysis or another positive limit for a particular
+machine. `codeaction --exec` and `rename` preview a unified diff unless `-w` is
 supplied, so commands do not modify source files by default.
 
 `workspace-symbol` normally reads the populated SQLite FTS catalog directly,
@@ -70,10 +73,10 @@ selection ranges, linked editing, colors, code actions, and rename. Use
 generator requests, or `shopware-lsp request` as a generic JSON-RPC escape
 hatch.
 
-Operational flags include `-profile.cpu`, `-profile.mem`, and
-`-profile.trace`. `serve` additionally supports `-logfile`, `-rpc.trace`, a
-runtime profiling endpoint through `-debug`, and a single-client TCP or Unix
-socket through `-listen`.
+Operational flags include `--profile-cpu`, `--profile-mem`, and
+`--profile-trace`. `serve` additionally supports `--logfile`, `--rpc-trace`, a
+runtime profiling endpoint through `--debug`, and a single-client TCP or Unix
+socket through `--listen`.
 
 ### MCP server
 
@@ -86,7 +89,7 @@ example, an MCP client configuration can launch one server per workspace:
   "mcpServers": {
     "shopware": {
       "command": "/absolute/path/to/shopware-lsp",
-      "args": ["-root", "/absolute/path/to/project", "mcp"]
+      "args": ["--root", "/absolute/path/to/project", "mcp"]
     }
   }
 }
@@ -452,7 +455,7 @@ Both actions add numeric suffixes to avoid name collisions; use ordinary
 rename afterward to choose another name. Edits preserve comments, indentation,
 literal contents, line endings and the current document version. LSP, CLI and
 MCP share the same analysis and validated rewrite plans. CLI `codeaction`
-accepts `-end-line` and `-end-column`; MCP code-action tools accept `endLine`
+accepts `--end-line` and `--end-column`; MCP code-action tools accept `endLine`
 and `endColumn`. Endpoints are exclusive, one-based UTF-16 positions; omitted
 endpoints retain caret behavior. List actions first and use their exact titles
 when applying through MCP.
@@ -1591,7 +1594,7 @@ Shopware LSP reads the committed project configuration from
 `.config/shopware/lsp.yaml`. The same configuration is used by editor
 sessions and CLI commands, so diagnostic policy does not need to be duplicated
 in CI. VS Code user and workspace settings are local overrides; explicit CLI
-flags such as `check -severity` and `check -fail-on` take final precedence.
+flags such as `check --severity` and `check --fail-on` take final precedence.
 
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/shopware/shopware-lsp/main/internal/projectconfig/schema.json
@@ -1678,7 +1681,7 @@ extension, or workspace.
 For CI, `shopware-lsp config` validates and prints the effective configuration.
 `shopware-lsp check` fails before indexing when the committed configuration is
 invalid. Its command-line severity flags override the `check` defaults from the
-file; use `-fail-on off` to explicitly suppress the configured failure threshold
+file; use `--fail-on off` to explicitly suppress the configured failure threshold
 for one invocation.
 
 For a resource-only measurement without the feature assertions, build the

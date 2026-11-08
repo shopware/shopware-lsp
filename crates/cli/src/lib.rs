@@ -7,12 +7,12 @@
 //! and MCP share one analysis path. CLI and MCP positions are one-based and
 //! converted at this boundary.
 
+mod args;
 mod config_order;
 mod difflib;
 mod edit;
 mod features_read;
 mod features_write;
-pub mod goflag;
 pub mod gofmt;
 pub mod gojson;
 mod logger;
@@ -30,7 +30,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 
-use crate::goflag::FlagSet;
+use crate::args::{Command, ShopwareLsp};
 use crate::gojson::write_json;
 use crate::ordered::Node;
 
@@ -214,15 +214,12 @@ impl Write for Buffer {
 
 pub type Input = Box<dyn Read + Send>;
 
-type CommandFn = fn(&Runner, &[String]) -> Result<(), CliError>;
-
+/// One command as `api-json` describes it, generated from the CLI spec.
 #[derive(Clone, Serialize)]
 pub struct CommandDefinition {
     pub name: &'static str,
     pub summary: &'static str,
-    pub usage: &'static str,
-    #[serde(skip)]
-    run: CommandFn,
+    pub usage: String,
 }
 
 /// The command-line runner (Go `cli.Runner`).
@@ -285,64 +282,37 @@ impl Runner {
         install_logger();
         set_log_sink(LogSink::Writer(err_out.clone()));
 
-        let mut global = FlagSet::new("shopware-lsp");
-        global.string(
-            "root",
-            "",
-            "workspace root (defaults to the current directory)",
-        );
-        global.bool("json", false, "emit machine-readable JSON where supported");
-        global.bool("v", false, "verbose progress output");
-        global.bool(
-            "allow-unsupported-project",
-            false,
-            "allow workspace commands outside detected Shopware or Symfony projects",
-        );
-        // Conventional stdio-server flags appended by language clients.
-        global.bool("stdio", false, "use standard input/output transport");
-        global.int("clientProcessId", 0, "parent language-client process ID");
-        global.bool("h", false, "show help");
-        global.bool("help", false, "show help");
-        global.string("profile.cpu", "", "write a CPU profile to this file");
-        global.string(
-            "profile.mem",
-            "",
-            "create this file (heap profiles need an external tool such as heaptrack)",
-        );
-        global.string(
-            "profile.trace",
-            "",
-            "create this file (Go runtime traces have no Rust equivalent)",
-        );
-        let mut err_writer = err_out.clone();
-        if let Err(error) = global.parse(args, &mut err_writer) {
-            return Err(CliError::usage(error.0));
+        let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
+        let cli = match ShopwareLsp::parse_from(&argv) {
+            Ok(cli) => cli,
+            Err(usage_rs::Error::Help { cmd, long }) => {
+                let help =
+                    usage_rs::help::render(ShopwareLsp::spec(), cmd, long).unwrap_or_default();
+                return self.write_text(&help);
+            }
+            Err(error) => {
+                let message = usage_rs::render_failure_plain(ShopwareLsp::spec(), &argv, &error);
+                return Err(CliError::usage(message.trim_end()));
+            }
+        };
+        self.root = cli.root.clone().unwrap_or_default();
+        self.json = cli.json;
+        self.verbose = cli.verbose;
+        self.allow_unsupported_project = cli.allow_unsupported_project;
+        if cli.version {
+            return run_version(self);
         }
-        self.root = global.get_string("root");
-        self.json = global.get_bool("json");
-        self.verbose = global.get_bool("v");
-        self.allow_unsupported_project = global.get_bool("allow-unsupported-project");
-        let show_help = global.get_bool("h") || global.get_bool("help");
+        let mut err_writer = err_out.clone();
         let profiles = Profiles::start(
-            &global.get_string("profile.cpu"),
-            &global.get_string("profile.trace"),
-            &global.get_string("profile.mem"),
+            cli.profile_cpu.as_deref().unwrap_or_default(),
+            cli.profile_trace.as_deref().unwrap_or_default(),
+            cli.profile_mem.as_deref().unwrap_or_default(),
             &mut err_writer,
         )?;
-
-        let mut rest: Vec<String> = global.args().to_vec();
-        let mut name = "serve".to_owned();
-        if !rest.is_empty() {
-            name = rest.remove(0);
-        }
-        if show_help {
-            name = "help".into();
-            rest.clear();
-        }
-        if name == "-h" || name == "--help" {
-            name = "help".into();
-        }
-        let result = self.dispatch(&name, &rest);
+        let command = cli
+            .command
+            .unwrap_or(Command::Serve(args::Serve::default()));
+        let result = self.dispatch(command);
         match profiles.stop() {
             Ok(()) => result,
             Err(profile_error) => {
@@ -360,18 +330,68 @@ impl Runner {
         }
     }
 
-    fn dispatch(&self, name: &str, rest: &[String]) -> Result<(), CliError> {
-        let commands = commands();
-        let Some(command) = commands.iter().find(|command| command.name == name) else {
-            return Err(CliError::usage(format!(
-                "unknown command {}; run 'shopware-lsp help'",
-                gofmt::go_quote(name)
-            )));
-        };
+    fn dispatch(&self, command: Command) -> Result<(), CliError> {
+        let name = command.name();
         if name != "serve" && !self.verbose {
             set_log_sink(LogSink::Discard);
         }
-        match (command.run)(self, rest) {
+        let one = |value: String| vec![value];
+        let result = match command {
+            Command::Serve(serve) => serve::run_serve(self, &serve),
+            Command::Mcp => mcp::run_mcp(self),
+            Command::Version => run_version(self),
+            Command::ApiJson => run_api_json(self),
+            Command::Licenses => run_licenses(self),
+            Command::Config => run_config(self),
+            Command::ProjectInfo => project_info::run_project_info(self),
+            Command::Index(index) => workspace_commands::run_index(self, index.force),
+            Command::Stats => workspace_commands::run_stats(self),
+            Command::Check(check) => workspace_commands::run_check(self, &check),
+            Command::Completion(at) => features_read::run_completion(self, &one(at.position)),
+            Command::Definition(at) => features_read::run_definition(self, &one(at.position)),
+            Command::Implementation(at) => {
+                features_read::run_implementation(self, &one(at.position))
+            }
+            Command::References(at) => features_read::run_references(self, &one(at.position)),
+            Command::Hover(at) => features_read::run_hover(self, &one(at.position)),
+            Command::Signature(at) => features_read::run_signature(self, &one(at.position)),
+            Command::CallHierarchy(at) => {
+                features_read::run_call_hierarchy(self, &one(at.position))
+            }
+            Command::TypeHierarchy(at) => {
+                features_read::run_type_hierarchy(self, &one(at.position))
+            }
+            Command::Symbols(file) => features_read::run_symbols(self, &one(file.file)),
+            Command::WorkspaceSymbol(query) => {
+                features_read::run_workspace_symbols(self, query.fresh, &query.query)
+            }
+            Command::Highlights(at) => features_read::run_highlights(self, &one(at.position)),
+            Command::FoldingRanges(file) => {
+                features_read::run_folding_ranges(self, &one(file.file))
+            }
+            Command::Links(file) => features_read::run_links(self, &one(file.file)),
+            Command::Semtok(file) => features_read::run_semantic_tokens(self, &one(file.file)),
+            Command::InlayHints(file) => features_read::run_inlay_hints(self, &one(file.file)),
+            Command::Codelens(file) => features_read::run_code_lens(self, &one(file.file)),
+            Command::SelectionRanges(at) => {
+                features_read::run_selection_ranges(self, &one(at.position))
+            }
+            Command::LinkedEditing(at) => {
+                features_read::run_linked_editing(self, &one(at.position))
+            }
+            Command::Colors(file) => features_read::run_colors(self, &one(file.file)),
+            Command::Codeaction(action) => features_write::run_code_action(self, &action),
+            Command::Rename(rename) => features_write::run_rename(self, &rename),
+            Command::Execute(execute) => features_write::run_execute(
+                self,
+                execute.method.as_deref(),
+                execute.arguments.as_deref(),
+            ),
+            Command::Request(request) => {
+                features_write::run_request(self, &request.method, request.params.as_deref())
+            }
+        };
+        match result {
             Ok(()) => Ok(()),
             Err(error) if error.exit => Err(error),
             Err(error) => Err(error.wrap(name)),
@@ -462,225 +482,31 @@ impl Runner {
     }
 }
 
+/// The commands `api-json` reports, in name order, generated from the CLI
+/// declaration so they cannot drift from what the parser accepts.
 pub fn commands() -> Vec<CommandDefinition> {
-    macro_rules! command {
-        ($name:expr, $summary:expr, $usage:expr, $run:expr) => {
-            CommandDefinition {
-                name: $name,
-                summary: $summary,
-                usage: $usage,
-                run: $run,
-            }
-        };
-    }
-    vec![
-        command!(
-            "serve",
-            "run the Shopware language server",
-            "serve [server-flags]",
-            serve::run_serve
-        ),
-        command!("mcp", "run the Shopware MCP server", "mcp", mcp::run_mcp),
-        command!(
-            "version",
-            "print version information",
-            "version",
-            run_version
-        ),
-        command!("help", "print command usage", "help [command]", run_help),
-        command!(
-            "api-json",
-            "print the supported CLI and language API",
-            "api-json",
-            run_api_json
-        ),
-        command!(
-            "licenses",
-            "print license and third-party notices",
-            "licenses",
-            run_licenses
-        ),
-        command!(
-            "config",
-            "validate and print the effective project configuration",
-            "config",
-            run_config
-        ),
-        command!(
-            "project-info",
-            "detect the workspace project type",
-            "project-info",
-            project_info::run_project_info
-        ),
-        command!(
-            "index",
-            "build or refresh the workspace index",
-            "index [-force]",
-            workspace_commands::run_index
-        ),
-        command!(
-            "stats",
-            "print indexing, workspace, cache, and memory statistics",
-            "stats",
-            workspace_commands::run_stats
-        ),
-        command!(
-            "check",
-            "show diagnostics for files and directories",
-            "check [-severity level] [-fail-on level] [-workers count] <file-or-directory>...",
-            workspace_commands::run_check
-        ),
-        command!(
-            "completion",
-            "show completion items at a position",
-            "completion <file[:line[:column]]>",
-            features_read::run_completion
-        ),
-        command!(
-            "definition",
-            "show definitions at a position",
-            "definition <file[:line[:column]]>",
-            features_read::run_definition
-        ),
-        command!(
-            "implementation",
-            "show implementations at a position",
-            "implementation <file[:line[:column]]>",
-            features_read::run_implementation
-        ),
-        command!(
-            "references",
-            "show references at a position",
-            "references <file[:line[:column]]>",
-            features_read::run_references
-        ),
-        command!(
-            "hover",
-            "show hover information at a position",
-            "hover <file[:line[:column]]>",
-            features_read::run_hover
-        ),
-        command!(
-            "signature",
-            "show signature help at a position",
-            "signature <file[:line[:column]]>",
-            features_read::run_signature
-        ),
-        command!(
-            "call-hierarchy",
-            "show incoming and outgoing calls",
-            "call-hierarchy <file[:line[:column]]>",
-            features_read::run_call_hierarchy
-        ),
-        command!(
-            "type-hierarchy",
-            "show supertypes and subtypes",
-            "type-hierarchy <file[:line[:column]]>",
-            features_read::run_type_hierarchy
-        ),
-        command!(
-            "symbols",
-            "show a document outline",
-            "symbols <file>",
-            features_read::run_symbols
-        ),
-        command!(
-            "workspace-symbol",
-            "search workspace symbols",
-            "workspace-symbol [--fresh] <query>",
-            features_read::run_workspace_symbols
-        ),
-        command!(
-            "highlights",
-            "show document highlights at a position",
-            "highlights <file[:line[:column]]>",
-            features_read::run_highlights
-        ),
-        command!(
-            "folding-ranges",
-            "show folding ranges for a document",
-            "folding-ranges <file>",
-            features_read::run_folding_ranges
-        ),
-        command!(
-            "links",
-            "show document links",
-            "links <file>",
-            features_read::run_links
-        ),
-        command!(
-            "semtok",
-            "show semantic tokens",
-            "semtok <file>",
-            features_read::run_semantic_tokens
-        ),
-        command!(
-            "inlay-hints",
-            "show inlay hints",
-            "inlay-hints <file>",
-            features_read::run_inlay_hints
-        ),
-        command!(
-            "codelens",
-            "show code lenses",
-            "codelens <file>",
-            features_read::run_code_lens
-        ),
-        command!(
-            "selection-ranges",
-            "show expandable selection ranges",
-            "selection-ranges <file[:line[:column]]>",
-            features_read::run_selection_ranges
-        ),
-        command!(
-            "linked-editing",
-            "show linked editing ranges",
-            "linked-editing <file[:line[:column]]>",
-            features_read::run_linked_editing
-        ),
-        command!(
-            "colors",
-            "show document colors",
-            "colors <file>",
-            features_read::run_colors
-        ),
-        command!(
-            "codeaction",
-            "list or apply code actions",
-            "codeaction [-kind kind] [-title regexp] [-exec] [-w|-d] <position>",
-            features_write::run_code_action
-        ),
-        command!(
-            "rename",
-            "preview or apply a rename",
-            "rename [-w|-d] <position> <new-name>",
-            features_write::run_rename
-        ),
-        command!(
-            "execute",
-            "execute a Shopware custom command",
-            "execute <method> [json-arguments]",
-            features_write::run_execute
-        ),
-        command!(
-            "request",
-            "send an arbitrary LSP request",
-            "request <method> [json-params]",
-            features_write::run_request
-        ),
-    ]
-}
-
-fn sorted_commands() -> Vec<CommandDefinition> {
-    let mut commands = commands();
+    let mut commands: Vec<CommandDefinition> = ShopwareLsp::spec()
+        .root
+        .subcommands
+        .iter()
+        .filter(|meta| !meta.hide)
+        .map(|meta| CommandDefinition {
+            name: meta.cmd.name,
+            summary: meta.about.unwrap_or_default(),
+            usage: usage_rs::help::usage_line(&[meta.cmd.name], meta),
+        })
+        .collect();
+    // `help` is generated by the parser rather than declared.
+    commands.push(CommandDefinition {
+        name: "help",
+        summary: "Print this message or the help of the given command",
+        usage: "help [COMMAND]".into(),
+    });
     commands.sort_by(|left, right| left.name.cmp(right.name));
     commands
 }
 
-fn run_config(runner: &Runner, args: &[String]) -> Result<(), CliError> {
-    if !args.is_empty() {
-        return Err(CliError::usage("config takes no arguments"));
-    }
+fn run_config(runner: &Runner) -> Result<(), CliError> {
     let session = runner.connect_without_index()?;
     let configuration = session.configuration.clone();
     let _ = session.close();
@@ -695,55 +521,7 @@ fn run_config(runner: &Runner, args: &[String]) -> Result<(), CliError> {
     ]))
 }
 
-fn run_help(runner: &Runner, args: &[String]) -> Result<(), CliError> {
-    let commands = sorted_commands();
-    if let Some(topic) = args.first() {
-        let Some(command) = commands.iter().find(|command| command.name == topic) else {
-            return Err(CliError::exit(
-                2,
-                format!("unknown help topic {}", gofmt::go_quote(topic)),
-            ));
-        };
-        return runner.write_text(&format!(
-            "{}\n\nUsage:\n  shopware-lsp [global-flags] {}\n",
-            command.summary, command.usage
-        ));
-    }
-    let mut lines: Vec<String> = vec![
-        "Shopware LSP provides editor features and command-line project analysis.".into(),
-        String::new(),
-        "Usage:".into(),
-        "  shopware-lsp [global-flags] [command] [command-flags]".into(),
-        String::new(),
-        "Commands:".into(),
-    ];
-    for command in &commands {
-        lines.push(format!("  {:<18} {}", command.name, command.summary));
-    }
-    lines.extend(
-        [
-            "",
-            "Global flags:",
-            "  -root PATH          workspace root (default: current directory)",
-            "  -json               machine-readable output",
-            "  -v                  verbose progress output",
-            "  -allow-unsupported-project",
-            "                       allow workspace commands for an unknown project type",
-            "  -profile.cpu FILE   write CPU profile",
-            "  -profile.mem FILE   write heap profile",
-            "  -profile.trace FILE write runtime trace",
-            "",
-            "With no command, the stdio language server is started.",
-        ]
-        .map(str::to_owned),
-    );
-    runner.write_text(&format!("{}\n", lines.join("\n")))
-}
-
-fn run_version(runner: &Runner, args: &[String]) -> Result<(), CliError> {
-    if !args.is_empty() {
-        return Err(CliError::usage("version takes no arguments"));
-    }
+fn run_version(runner: &Runner) -> Result<(), CliError> {
     if runner.json {
         // Go map[string]string: sorted keys.
         return runner.write_json(&serde_json::json!({
@@ -791,10 +569,7 @@ const LSP_METHODS: &[&str] = &[
     "workspace/didChangeConfiguration",
 ];
 
-fn run_api_json(runner: &Runner, args: &[String]) -> Result<(), CliError> {
-    if !args.is_empty() {
-        return Err(CliError::usage("api-json takes no arguments"));
-    }
+fn run_api_json(runner: &Runner) -> Result<(), CliError> {
     let mut languages = std::collections::BTreeMap::<String, Vec<String>>::new();
     let mut extensions: Vec<(String, swlsp_language::LanguageId)> = Vec::new();
     for language in swlsp_language::LanguageId::ALL {
@@ -822,7 +597,7 @@ fn run_api_json(runner: &Runner, args: &[String]) -> Result<(), CliError> {
         version: &'a str,
     }
     runner.write_json(&Api {
-        commands: sorted_commands(),
+        commands: commands(),
         custom_command_discovery: "shopware-lsp execute",
         languages,
         lsp_methods: LSP_METHODS,
@@ -831,10 +606,7 @@ fn run_api_json(runner: &Runner, args: &[String]) -> Result<(), CliError> {
     })
 }
 
-fn run_licenses(runner: &Runner, args: &[String]) -> Result<(), CliError> {
-    if !args.is_empty() {
-        return Err(CliError::usage("licenses takes no arguments"));
-    }
+fn run_licenses(runner: &Runner) -> Result<(), CliError> {
     let mut output = format!("{}\n", runner.options.license.trim());
     if !runner.options.third_party_notices.trim().is_empty() {
         output.push_str("\n--- Third-party notices ---\n\n");
@@ -845,7 +617,7 @@ fn run_licenses(runner: &Runner, args: &[String]) -> Result<(), CliError> {
 }
 
 /// Profile flags. Go writes pprof CPU/heap profiles and runtime traces.
-/// With the `cpu-profile` feature on Unix, `-profile.cpu` samples the process
+/// With the `cpu-profile` feature on Unix, `--profile-cpu` samples the process
 /// with `SIGPROF` and writes a pprof protobuf; otherwise, and for the heap and
 /// trace flags, the files are created (reporting the same creation errors)
 /// and left empty.
@@ -868,20 +640,20 @@ impl Profiles {
         if !memory.is_empty() {
             let _ = writeln!(
                 err_out,
-                "-profile.mem: heap profiles are not supported; {memory} stays empty (use heaptrack or valgrind --tool=massif)"
+                "--profile-mem: heap profiles are not supported; {memory} stays empty (use heaptrack or valgrind --tool=massif)"
             );
         }
         if !trace.is_empty() {
             let _ = writeln!(
                 err_out,
-                "-profile.trace: runtime traces are not supported; {trace} stays empty"
+                "--profile-trace: runtime traces are not supported; {trace} stays empty"
             );
         }
         #[cfg(not(all(unix, feature = "cpu-profile")))]
         if !cpu.is_empty() {
             let _ = writeln!(
                 err_out,
-                "-profile.cpu: this build has no CPU profiler; {cpu} stays empty (build with --features cpu-profile)"
+                "--profile-cpu: this build has no CPU profiler; {cpu} stays empty (build with --features cpu-profile)"
             );
         }
         if !cpu.is_empty() {

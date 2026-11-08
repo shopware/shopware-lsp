@@ -7,11 +7,11 @@ use regex::Regex;
 use serde_json::{Value, json};
 use swlsp_lsp_protocol::{CodeAction, DiagnosticResult, WorkspaceEdit};
 
+use crate::args::{Codeaction, Rename};
 use crate::edit::{EditMode, apply_workspace_edit};
-use crate::goflag::FlagSet;
 use crate::gofmt::go_quote;
 use crate::session::{position_params, text_document_params};
-use crate::target::{code_action_selection, parse_position_target, require_one_argument};
+use crate::target::{code_action_selection, parse_position_target};
 use crate::{CliError, Runner};
 
 pub(crate) fn matches_code_action_kind(actual: &str, requested: &str) -> bool {
@@ -26,29 +26,9 @@ pub(crate) fn action_kind(action: &CodeAction) -> String {
         .unwrap_or_default()
 }
 
-pub(crate) fn run_code_action(runner: &Runner, args: &[String]) -> Result<(), CliError> {
-    let mut flags = FlagSet::new("codeaction");
-    flags.int("end-line", 0, "one-based exclusive selection end line");
-    flags.int(
-        "end-column",
-        0,
-        "one-based UTF-16 exclusive selection end column",
-    );
-    flags.string("kind", "", "filter by hierarchical code-action kind");
-    flags.string(
-        "title",
-        "",
-        "regular expression matched against action titles",
-    );
-    flags.bool("exec", false, "execute the first matching action");
-    flags.bool("w", false, "write resulting edits");
-    flags.bool("d", false, "print resulting edits as a unified diff");
-    let mut err_out = runner.err_out.clone();
-    flags
-        .parse(args, &mut err_out)
-        .map_err(|error| CliError::usage(error.0))?;
-    let value = require_one_argument(flags.args(), "codeaction expects one file position")?;
-    let title_pattern = flags.get_string("title");
+pub(crate) fn run_code_action(runner: &Runner, flags: &Codeaction) -> Result<(), CliError> {
+    let value = flags.position.clone();
+    let title_pattern = flags.title.clone().unwrap_or_default();
     let title_matcher = if title_pattern.is_empty() {
         None
     } else {
@@ -60,10 +40,10 @@ pub(crate) fn run_code_action(runner: &Runner, args: &[String]) -> Result<(), Cl
     let target = parse_position_target(&value)?;
     let selection = code_action_selection(
         target.position,
-        flags.get_int("end-line"),
-        flags.get_int("end-column"),
+        flags.end_line.unwrap_or_default(),
+        flags.end_column.unwrap_or_default(),
     )?;
-    let kind = flags.get_string("kind");
+    let kind = flags.kind.clone().unwrap_or_default();
     let session = runner.connect()?;
     let document = session.open_document(&target.path)?;
     let diagnostics: Option<DiagnosticResult> = session.call(
@@ -91,7 +71,7 @@ pub(crate) fn run_code_action(runner: &Runner, args: &[String]) -> Result<(), Cl
             })
             .collect()
     });
-    if !flags.get_bool("exec") {
+    if !flags.exec {
         return runner.write_json(&filtered);
     }
     let Some(mut action) = filtered.and_then(|actions| actions.into_iter().next()) else {
@@ -124,8 +104,8 @@ pub(crate) fn run_code_action(runner: &Runner, args: &[String]) -> Result<(), Cl
             &mut out,
             Some(edit),
             EditMode {
-                write: flags.get_bool("w"),
-                diff: flags.get_bool("d"),
+                write: flags.edits.write,
+                diff: flags.edits.diff,
             },
         );
     }
@@ -142,24 +122,12 @@ pub(crate) fn run_code_action(runner: &Runner, args: &[String]) -> Result<(), Cl
     )))
 }
 
-pub(crate) fn run_rename(runner: &Runner, args: &[String]) -> Result<(), CliError> {
-    let mut flags = FlagSet::new("rename");
-    flags.bool("w", false, "write resulting edits");
-    flags.bool("d", false, "print resulting edits as a unified diff");
-    let mut err_out = runner.err_out.clone();
-    flags
-        .parse(args, &mut err_out)
-        .map_err(|error| CliError::usage(error.0))?;
-    if flags.args().len() != 2 {
-        return Err(CliError::usage(
-            "rename expects a file position and a new name",
-        ));
-    }
-    let target = parse_position_target(&flags.args()[0])?;
+pub(crate) fn run_rename(runner: &Runner, flags: &Rename) -> Result<(), CliError> {
+    let target = parse_position_target(&flags.position)?;
     let session = runner.connect()?;
     let document = session.open_document(&target.path)?;
     let mut params = position_params(&document.uri, target.position);
-    params["newName"] = json!(flags.args()[1]);
+    params["newName"] = json!(flags.new_name);
     let edit: Option<WorkspaceEdit> = session.call("textDocument/rename", params)?;
     let Some(edit) = edit else {
         return Err(CliError::fail("the selected symbol cannot be renamed"));
@@ -169,46 +137,44 @@ pub(crate) fn run_rename(runner: &Runner, args: &[String]) -> Result<(), CliErro
         &mut out,
         Some(&edit),
         EditMode {
-            write: flags.get_bool("w"),
-            diff: flags.get_bool("d"),
+            write: flags.edits.write,
+            diff: flags.edits.diff,
         },
     )
 }
 
-pub(crate) fn run_execute(runner: &Runner, args: &[String]) -> Result<(), CliError> {
+pub(crate) fn run_execute(
+    runner: &Runner,
+    method: Option<&str>,
+    arguments: Option<&str>,
+) -> Result<(), CliError> {
     let session = runner.connect()?;
-    if args.is_empty() {
+    let Some(method) = method else {
         let commands: Option<Vec<String>> = session.call("shopware/commands", json!({}))?;
         let _ = session.close();
         return runner.write_json(&commands);
-    }
-    if args.len() > 2 {
-        return Err(CliError::usage(
-            "execute expects a method and one optional JSON argument",
-        ));
-    }
-    let params = parse_json_argument(runner, &args[1..])?;
-    let result: Value = session.call(&args[0], params)?;
+    };
+    let params = parse_json_argument(runner, arguments)?;
+    let result: Value = session.call(method, params)?;
     let _ = session.close();
     runner.write_json(&result)
 }
 
-pub(crate) fn run_request(runner: &Runner, args: &[String]) -> Result<(), CliError> {
-    if args.is_empty() || args.len() > 2 {
-        return Err(CliError::usage(
-            "request expects a method and one optional JSON parameter",
-        ));
-    }
-    let params = parse_json_argument(runner, &args[1..])?;
+pub(crate) fn run_request(
+    runner: &Runner,
+    method: &str,
+    params: Option<&str>,
+) -> Result<(), CliError> {
+    let params = parse_json_argument(runner, params)?;
     let session = runner.connect()?;
-    let result: Value = session.call(&args[0], params)?;
+    let result: Value = session.call(method, params)?;
     let _ = session.close();
     runner.write_json(&result)
 }
 
 /// Go `parseJSONArgument`: inline JSON, `-` for stdin or `@file`.
-fn parse_json_argument(runner: &Runner, args: &[String]) -> Result<Value, CliError> {
-    let Some(argument) = args.first() else {
+fn parse_json_argument(runner: &Runner, argument: Option<&str>) -> Result<Value, CliError> {
+    let Some(argument) = argument else {
         return Ok(json!({}));
     };
     let content = if argument == "-" {
@@ -230,9 +196,4 @@ fn parse_json_argument(runner: &Runner, args: &[String]) -> Result<Value, CliErr
     };
     serde_json::from_slice(&content)
         .map_err(|error| CliError::fail(format!("parse JSON argument: {error}")))
-}
-
-#[allow(dead_code)]
-fn _require(args: &[String]) -> Result<String, CliError> {
-    require_one_argument(args, "")
 }

@@ -251,9 +251,11 @@ See [`lsp-server.md`](lsp-server.md) and
 
 ### 1. Process start
 
-`main.go` → `cli.Runner.Run` parses global flags (`-root`, `-json`,
-`-allow-unsupported-project`, profiling flags) and dispatches a command. With no
-command it runs the server on stdin/stdout.
+`main` → `Runner::run` (`crates/cli`) parses the command line with `usage-rs`
+(`crates/cli/src/args.rs`: global flags such as `--root`, `--json`,
+`--allow-unsupported-project` and the profiling flags, accepted before or after
+the command) and dispatches a command. With no command it runs the server on
+stdin/stdout. The Go oracle's `main.go` keeps Go-style single-dash flags.
 
 ### 2. `initialize`
 
@@ -613,7 +615,7 @@ Measurement entry points:
 go test -bench=BenchmarkNativeParsers ./internal/parser
 go test ./internal/php -run '^$' -bench . -benchmem
 SHOPWARE_LSP_TRACE_DIAGNOSTICS=1 shopware-lsp
-shopware-lsp -root /path/to/project stats
+shopware-lsp --root /path/to/project stats
 ```
 
 When comparing revisions, use isolated cache directories and reverse the run

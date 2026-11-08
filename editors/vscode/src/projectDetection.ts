@@ -110,7 +110,7 @@ function executeProjectInfo(serverPath: string, workspaceRoot: string): Promise<
   return new Promise((resolve, reject) => {
     execFile(
       serverPath,
-      ['-root', workspaceRoot, '-json', 'project-info'],
+      ['--root', workspaceRoot, '--json', 'project-info'],
       {timeout: 5000, maxBuffer: 1024 * 1024, windowsHide: true},
       (error, stdout, stderr) => {
         if (!error) {

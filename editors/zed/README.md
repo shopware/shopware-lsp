@@ -154,16 +154,16 @@ The same binary runs headlessly, so the diagnostics you see while typing can
 also gate a pull request — for a project or for a single plugin:
 
 ```bash
-shopware-lsp -root . check -severity warning -fail-on warning src/
+shopware-lsp --root . check --severity warning --fail-on warning src/
 ```
 
 It prints `path:line:col: severity: message [rule]` and exits non-zero when
-anything at or above `-fail-on` is reported.
+anything at or above `--fail-on` is reported.
 
 Three things that are easy to get wrong:
 
-- **`-fail-on` alone does nothing** if the severity floor excludes the
-  diagnostics you care about. `-severity` filters first, so `-fail-on hint`
+- **`--fail-on` alone does nothing** if the severity floor excludes the
+  diagnostics you care about. `--severity` filters first, so `--fail-on hint`
   reports nothing while the floor is `warning`. Set both.
 - **`check` needs a path.** A bare `check` errors rather than scanning the
   project; pass `src/`, `custom/plugins/YourPlugin`, or `.`.

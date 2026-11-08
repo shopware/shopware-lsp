@@ -120,7 +120,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const serverOptions: ServerOptions = {
       command: serverPath,
       args: allowUnsupportedProject
-        ? ['-allow-unsupported-project', 'serve']
+        ? ['--allow-unsupported-project', 'serve']
         : ['serve'],
       transport: TransportKind.stdio,
     };

@@ -10,44 +10,26 @@ use std::time::{Duration, Instant};
 
 use crossbeam_channel::bounded;
 
-use crate::goflag::FlagSet;
-use crate::gofmt::{format_duration, path_error};
+use crate::args::Serve;
+use crate::gofmt::{format_duration, parse_duration, path_error};
 use crate::logger::{LogSink, set_log_sink};
 use crate::{CliError, Output, Runner};
 
 const POLL: Duration = Duration::from_millis(25);
 
-pub(crate) fn run_serve(runner: &Runner, args: &[String]) -> Result<(), CliError> {
-    let mut flags = FlagSet::new("serve");
-    flags.string(
-        "listen",
-        "",
-        "TCP address or unix;<path> for one remote client",
-    );
-    flags.duration(
-        "listen.timeout",
-        Duration::ZERO,
-        "timeout waiting for a remote client",
-    );
-    flags.string("logfile", "", "write server logs to this file");
-    flags.string(
-        "debug",
-        "",
-        "serve runtime profiling endpoints on this address",
-    );
-    flags.bool("rpc.trace", false, "write raw JSON-RPC traffic to stderr");
-    // Editors may append transport flags after the explicit subcommand.
-    flags.bool("stdio", false, "use standard input/output transport");
-    flags.int("clientProcessId", 0, "parent language-client process ID");
-    let mut err_out = runner.err_out.clone();
-    flags
-        .parse(args, &mut err_out)
-        .map_err(|error| CliError::usage(error.0))?;
-    if !flags.args().is_empty() {
-        return Err(CliError::usage("serve takes no positional arguments"));
-    }
-    let log_file = flags.get_string("logfile");
-    if !log_file.is_empty() {
+pub(crate) fn run_serve(runner: &Runner, flags: &Serve) -> Result<(), CliError> {
+    let timeout = match flags.listen_timeout.as_deref() {
+        None => Duration::ZERO,
+        Some(value) => match parse_duration(value) {
+            Some(nanos) if nanos >= 0 => Duration::from_nanos(nanos as u64),
+            _ => {
+                return Err(CliError::usage(format!(
+                    "invalid --listen-timeout {value:?}: expected a duration such as 30s"
+                )));
+            }
+        },
+    };
+    if let Some(log_file) = flags.logfile.as_deref() {
         let mut options = std::fs::OpenOptions::new();
         options.create(true).append(true);
         #[cfg(unix)]
@@ -55,31 +37,28 @@ pub(crate) fn run_serve(runner: &Runner, args: &[String]) -> Result<(), CliError
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o644);
         }
-        let file = options.open(&log_file).map_err(|error| {
+        let file = options.open(log_file).map_err(|error| {
             CliError::fail(format!(
                 "open log file: {}",
-                path_error("open", &log_file, &error)
+                path_error("open", log_file, &error)
             ))
         })?;
         set_log_sink(LogSink::File(file));
     }
     log::info!("Shopware LSP version: {}", runner.version());
-    let debug_address = flags.get_string("debug");
-    if !debug_address.is_empty() {
-        start_debug_server(&debug_address)?;
+    if let Some(debug_address) = flags.debug.as_deref() {
+        start_debug_server(debug_address)?;
     }
-    let rpc_trace = flags.get_bool("rpc.trace");
-    let listen = flags.get_string("listen");
-    if listen.is_empty() {
+    let rpc_trace = flags.rpc_trace;
+    let Some(listen) = flags.listen.as_deref() else {
         let input = runner.take_input();
         let output = runner.out.clone();
         return serve_streams(runner, input, Box::new(output), rpc_trace, None);
-    }
+    };
 
-    let (network, address) = parse_listen_address(&listen);
+    let (network, address) = parse_listen_address(listen);
     let listener = Listener::bind(network, &address)
         .map_err(|error| CliError::fail(format!("listen on {listen}: {error}")))?;
-    let timeout = flags.get_duration("listen.timeout");
     if runner.verbose {
         runner.write_err(&format!("Listening on {network};{address}\n"))?;
     }

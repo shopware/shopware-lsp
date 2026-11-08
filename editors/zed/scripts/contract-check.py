@@ -120,7 +120,7 @@ def fixture_project(workdir):
 def check_project_detection(binary, root):
     print("\nproject detection")
     result = subprocess.run(
-        [binary, "-root", root, "project-info"],
+        [binary, "--root", root, "project-info"],
         capture_output=True,
         text=True,
         timeout=120,
@@ -257,16 +257,16 @@ def check_client_negotiation(binary, root):
 def check_mcp(binary, root):
     print("\nMCP server")
     rejected = subprocess.run(
-        [binary, "mcp", "-root", root], capture_output=True, text=True, timeout=120
+        [binary, "-root", root, "mcp"], capture_output=True, text=True, timeout=120
     )
     check(
-        "global flags must precede the subcommand",
-        "takes no arguments" in (rejected.stdout + rejected.stderr),
-        "mcp_args() relies on this ordering",
+        "Go-style single-dash flags are rejected",
+        rejected.returncode == 2 and "'--root'" in rejected.stderr,
+        "clients must pass GNU-style flags such as --root",
     )
 
     process = subprocess.Popen(
-        [binary, "-root", root, "mcp"],
+        [binary, "--root", root, "mcp"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -309,7 +309,7 @@ def check_mcp(binary, root):
         if 2 in seen:
             break
 
-    if not check("`-root ... mcp` starts an MCP server", 1 in seen):
+    if not check("`--root ... mcp` starts an MCP server", 1 in seen):
         process.kill()
         return
     if not check("responds to tools/list", 2 in seen):

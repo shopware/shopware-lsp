@@ -2,10 +2,7 @@
 
 use crate::{CliError, Runner};
 
-pub(crate) fn run_project_info(runner: &Runner, args: &[String]) -> Result<(), CliError> {
-    if !args.is_empty() {
-        return Err(CliError::usage("project-info takes no arguments"));
-    }
+pub(crate) fn run_project_info(runner: &Runner) -> Result<(), CliError> {
     let root = runner.workspace_root()?;
     let result =
         swlsp_projectdetect::detect(&root).map_err(|error| CliError::fail(error.to_string()))?;
@@ -38,7 +35,7 @@ impl Runner {
             return Ok(());
         }
         Err(CliError::fail(format!(
-            "unsupported project root {root}: no Shopware or Symfony project markers found; add {} or pass -allow-unsupported-project",
+            "unsupported project root {root}: no Shopware or Symfony project markers found; add {} or pass --allow-unsupported-project",
             swlsp_projectconfig::PROJECT_RELATIVE_PATH
         )))
     }

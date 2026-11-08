@@ -4,12 +4,12 @@ use super::common::{path, run, temp_dir, write};
 
 fn check(root: &str, target: &str) -> String {
     let run = run(&[
-        "-root",
+        "--root",
         root,
-        "-allow-unsupported-project",
-        "-json",
+        "--allow-unsupported-project",
+        "--json",
         "check",
-        "-fail-on",
+        "--fail-on",
         "off",
         target,
     ]);

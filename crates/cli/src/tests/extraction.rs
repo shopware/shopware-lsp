@@ -14,19 +14,19 @@ fn cli_extract_function_selection_preview() {
     write(&file, source);
     let target = format!("{file}:3:1");
     let run = run(&[
-        "-root",
+        "--root",
         root.path().to_str().unwrap(),
-        "-allow-unsupported-project",
+        "--allow-unsupported-project",
         "codeaction",
-        "-end-line",
+        "--end-line",
         "4",
-        "-end-column",
+        "--end-column",
         "9",
-        "-kind",
+        "--kind",
         "refactor.extract",
-        "-title",
+        "--title",
         "^Extract function 'extractedFunction'$",
-        "-exec",
+        "--exec",
         "-d",
         &target,
     ]);

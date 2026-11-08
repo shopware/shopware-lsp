@@ -44,7 +44,7 @@
       //
       // "command": {
       //   "path": "/Users/you/.local/bin/shopware-lsp",
-      //   "args": ["-root", "/path/to/shopware", "mcp"]
+      //   "args": ["--root", "/path/to/shopware", "mcp"]
       // }
     }
   },

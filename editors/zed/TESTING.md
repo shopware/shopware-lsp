@@ -23,7 +23,7 @@ Covered today:
 | `target_for` (errors) | Unsupported platforms must fail loudly and name the `binary.path` escape hatch, not silently pick a wrong build. |
 | `binary_path_for` | Encodes the `extension/` prefix inside the vsix, plus the `.exe` suffix on Windows. |
 | `parse_latest_release` | Payload shape, and that each failure says which field was missing. |
-| `mcp_args` | Argument order. `mcp -root x` is rejected by the binary; only `-root x mcp` works. |
+| `mcp_args` | The exact argv: `--root x mcp`. The binary accepts global flags on either side of the command but rejects Go-style `-root`. |
 | `is_superseded_download` | Pruning deletes 31 MB directories. It must not match a binary someone dropped in the work dir. |
 
 These were mutation-checked: breaking the linux-x64 mapping, reversing the MCP
@@ -157,7 +157,7 @@ Checks:
   [#59](https://github.com/shopware/shopware-lsp/pull/59) regression that stops
   Zed from initializing at all
 - `mcp` rejects trailing global flags, so `mcp_args` ordering stays correct
-- `-root ... mcp` speaks MCP and lists `shopware_*` tools
+- `--root ... mcp` speaks MCP and lists `shopware_*` tools
 
 The normal CI job builds this checkout's server and uses `--offline` to check
 LSP, MCP, and project detection without network access. From the repository
@@ -230,7 +230,7 @@ server. Re-run `zed: install dev extension` first.
       every completion was being discarded client-side, so a working hover
       says nothing about completion. Cross-check against the server's own CLI,
       which takes the editor out of the loop:
-      `shopware-lsp -root <project> completion <file>:<line>:<col>`, with the
+      `shopware-lsp --root <project> completion <file>:<line>:<col>`, with the
       cursor inside the string of `Feature::isActive('')`. If that returns
       items and Zed shows none, the response is being rejected, not missed --
       `~/Library/Logs/Zed/Zed.log` names the field. Confirmed 2026-09-09, but
@@ -295,7 +295,7 @@ server. Re-run `zed: install dev extension` first.
          never answers an MCP `initialize`, failing with a 30s timeout and no
          useful error. It also makes the process indistinguishable from the
          language server in `ps`, which defeats this check. Pass
-         `args: ["-root", "<project>", "mcp"]`, with `mcp` last.
+         `args: ["--root", "<project>", "mcp"]`, with `mcp` last.
 
       Distinguish the two lanes by parent process: the language server's
       parent is `zed`, an agent's MCP server is parented by the agent.
@@ -310,7 +310,7 @@ server. Re-run `zed: install dev extension` first.
       set, the MCP server targets that root. Confirmed 2026-09-09, and read it
       from Zed rather than inferred: the `--mcp-config` Zed hands the agent
       (visible in `ps` on the agent process) carried
-      `args: ["-root", "<project>", "mcp"]`.
+      `args: ["--root", "<project>", "mcp"]`.
 
       Tested with a *single*-root workspace opened on an unrelated Rust repo,
       which is stronger than the multi-root case for this mechanism: with no

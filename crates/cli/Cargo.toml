@@ -35,6 +35,9 @@ serde_json = { version = "1", features = ["raw_value"] }
 crossbeam-channel = "0.5"
 regex = "1"
 log = { version = "0.4", features = ["std"] }
+# Command-line parsing (src/args.rs). Only plain help and diagnostics: the CLI
+# declares no flatten_help/HelpAll actions and ships no completions yet.
+usage-rs = { version = "7.3.0", default-features = false, features = ["help", "diagnostics"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

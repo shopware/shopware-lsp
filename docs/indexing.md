@@ -271,7 +271,7 @@ return true, content, info, err
 Size plus nanosecond mtime, not a content hash. Hashing every file on every
 start would mean reading the entire workspace; stat is a metadata read. The
 trade-off is that a modification preserving both size and mtime is missed —
-acceptable, because the fallback is an explicit `index -force` or a version bump.
+acceptable, because the fallback is an explicit `index --force` or a version bump.
 
 `IndexAll` additionally collects **stale** paths: entries in `file_hashes` that
 discovery did not produce. Those files were deleted while the server was not
@@ -353,7 +353,7 @@ that lifecycle boundary.
 
 **Worker count.** `defaultIndexWorkerCount` is `min(max(NumCPU, 1), 4)` —
 capped deliberately, because the bottleneck is the serialized writer, not the
-CPU. `SetWorkerCount(n)` overrides it (the CLI's `check -workers` uses the same
+CPU. `SetWorkerCount(n)` overrides it (the CLI's `check --workers` uses the same
 idea for diagnostics).
 
 ## Transactions and the single-writer gate
@@ -735,10 +735,10 @@ Specific rules that come up repeatedly:
 ### Inspecting a real workspace
 
 ```bash
-shopware-lsp -root /path/to/project index          # build or refresh
-shopware-lsp -root /path/to/project index -force   # clear hashes and rebuild
-shopware-lsp -root /path/to/project stats          # tracked files, cache size, memory
-shopware-lsp -root /path/to/project -json stats
+shopware-lsp --root /path/to/project index          # build or refresh
+shopware-lsp --root /path/to/project index --force   # clear hashes and rebuild
+shopware-lsp --root /path/to/project stats          # tracked files, cache size, memory
+shopware-lsp --root /path/to/project --json stats
 ```
 
 Persistent indexing skips source files larger than `indexing.maxFileSizeMiB`

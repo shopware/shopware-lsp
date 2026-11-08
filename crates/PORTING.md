@@ -285,13 +285,23 @@ deviations.
   `preserve_order` was rejected because it would also change iteration order
   for every parsed `Value` map in the workspace. Typed protocol structs
   already serialize in field order.
-- `-profile.cpu` writes a pprof CPU profile (read with `go tool pprof`) when
+- Intentional break: the CLI no longer mirrors Go's `flag` package. It is
+  declared with `usage-rs` (`crates/cli/src/args.rs`): GNU-style flags
+  (`--root DIR`, `--json`, `-v`, `-w`/`-d`), global flags on either side of
+  the command, generated help (`help <command>`, `--help`) and clap-style
+  errors with exit code 2. Renamed: `-profile.cpu|mem|trace` →
+  `--profile-cpu|mem|trace`, `serve -rpc.trace` → `--rpc-trace`,
+  `-listen.timeout` → `--listen-timeout`. Go-style `-root` is rejected with a
+  hint. The VS Code and Zed clients pass the new spelling; language clients
+  still append `--stdio --clientProcessId=<pid>`. The Go oracle keeps its own
+  flags. `api-json` builds its command list from the same declaration.
+- `--profile-cpu` writes a pprof CPU profile (read with `go tool pprof`) when
   built with `--features cpu-profile` on Unix (`SHOPWARE_LSP_PROFILE_HZ` sets
-  the rate). `-profile.mem` and `-profile.trace` create their files for
+  the rate). `--profile-mem` and `--profile-trace` create their files for
   script compatibility and print on stderr that they stay empty (Go's heap
   profile and runtime trace have no Rust equivalent; use heaptrack or
-  massif); so does `-profile.cpu` in builds without the feature.
-  `serve -debug` answers 501 instead of pprof.
+  massif); so does `--profile-cpu` in builds without the feature.
+  `serve --debug` answers 501 instead of pprof.
 - Fixed: `colors` (and any float) matched Go only after serde_json's
   `float_roundtrip` feature; the default parser was one ulp off for values
   such as 54/255 read back from JSON.

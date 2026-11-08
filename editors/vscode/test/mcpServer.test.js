@@ -19,7 +19,7 @@ test('builds a workspace-scoped MCP stdio process', () => {
   assert.deepEqual(definition, {
     label: 'Shopware LSP',
     command: '/extension/shopware-lsp',
-    args: ['-root', '/workspace/shopware', 'mcp'],
+    args: ['--root', '/workspace/shopware', 'mcp'],
     cwd: '/workspace/shopware',
     env: {},
     version: '0.2.0',
@@ -61,7 +61,7 @@ test('passes the unsupported-project override before the MCP command', () => {
     allowUnsupportedProject: true,
   });
   assert.deepEqual(definition.args, [
-    '-root', '/workspace/library', '-allow-unsupported-project', 'mcp',
+    '--root', '/workspace/library', '--allow-unsupported-project', 'mcp',
   ]);
 });
 

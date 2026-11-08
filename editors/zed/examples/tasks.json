@@ -182,7 +182,7 @@
       "$ZED_WORKTREE_ROOT/.zed/sw-action.py",
       "run",
       "--",
-      "-root",
+      "--root",
       "$ZED_WORKTREE_ROOT",
       "check",
       "$ZED_FILE"

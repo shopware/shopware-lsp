@@ -103,12 +103,7 @@ impl<'a> McpRuntime<'a> {
     }
 }
 
-pub(crate) fn run_mcp(runner: &Runner, args: &[String]) -> Result<(), CliError> {
-    if !args.is_empty() {
-        return Err(CliError::usage(
-            "mcp takes no arguments; use -root before the command",
-        ));
-    }
+pub(crate) fn run_mcp(runner: &Runner) -> Result<(), CliError> {
     let root = runner.workspace_root()?;
     runner.require_supported_project(&root)?;
     let editor_configuration = mcp_editor_configuration()?;

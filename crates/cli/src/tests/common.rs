@@ -155,7 +155,7 @@ impl McpClient {
             });
             runner.run(
                 &Cancel::new(),
-                &args(&["-root", &root, "-allow-unsupported-project", "mcp"]),
+                &args(&["--root", &root, "--allow-unsupported-project", "mcp"]),
                 Box::new(reader),
                 output,
                 Buffer::new().output(),

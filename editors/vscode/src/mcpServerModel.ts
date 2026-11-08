@@ -22,8 +22,8 @@ export function createMcpProcessDefinition(options: McpProcessOptions): McpProce
     Object.keys(options.editorConfiguration).length > 0) {
     env.SHOPWARE_LSP_EDITOR_CONFIGURATION = JSON.stringify(options.editorConfiguration);
   }
-  const args = ['-root', options.workspaceRoot];
-  if (options.allowUnsupportedProject) args.push('-allow-unsupported-project');
+  const args = ['--root', options.workspaceRoot];
+  if (options.allowUnsupportedProject) args.push('--allow-unsupported-project');
   args.push('mcp');
   return {
     label: options.label,

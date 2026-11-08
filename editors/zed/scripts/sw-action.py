@@ -71,7 +71,7 @@ def resolve_class(binary, root, path):
     back as kind 3 with classes as kind 5 children.
     """
     result = subprocess.run(
-        [binary, "-root", root, "-json", "symbols", path],
+        [binary, "--root", root, "--json", "symbols", path],
         capture_output=True,
         text=True,
     )
@@ -183,7 +183,7 @@ def server_binary():
 
 def execute(binary, root, method, payload):
     result = subprocess.run(
-        [binary, "-root", root, "execute", method, json.dumps(payload)],
+        [binary, "--root", root, "execute", method, json.dumps(payload)],
         capture_output=True,
         text=True,
     )
@@ -1109,7 +1109,7 @@ version: 1
 def run_config(args, binary):
     """Show the effective configuration and where it comes from."""
     result = subprocess.run(
-        [binary, "-root", args.root, "config"],
+        [binary, "--root", args.root, "config"],
         capture_output=True,
         text=True,
     )
@@ -1133,7 +1133,7 @@ def run_config(args, binary):
 def run_config_open(args, binary):
     """Open the project configuration, creating a valid stub when absent."""
     result = subprocess.run(
-        [binary, "-root", args.root, "config"], capture_output=True, text=True
+        [binary, "--root", args.root, "config"], capture_output=True, text=True
     )
     path = ""
     try:
@@ -1164,7 +1164,7 @@ def run_reindex(args, binary):
         print("would run: shopware-lsp index -force")
         return
     result = subprocess.run(
-        [binary, "-root", args.root, "index", "-force"],
+        [binary, "--root", args.root, "index", "--force"],
         capture_output=True,
         text=True,
     )

@@ -87,7 +87,7 @@ fn parse_latest_release(target: &str, body: &[u8]) -> Result<(String, String)> {
 /// `mcp -root ...` with "mcp takes no arguments".
 fn mcp_args(root: Option<&str>) -> Vec<String> {
     match root {
-        Some(root) => vec!["-root".into(), root.into(), "mcp".into()],
+        Some(root) => vec!["--root".into(), root.into(), "mcp".into()],
         None => vec!["mcp".into()],
     }
 }
@@ -769,7 +769,7 @@ mod tests {
         // use -root before the command".
         assert_eq!(
             mcp_args(Some("/srv/shop")),
-            vec!["-root", "/srv/shop", "mcp"]
+            vec!["--root", "/srv/shop", "mcp"]
         );
     }
 
@@ -965,14 +965,14 @@ mod tests {
     fn language_server_plan_covers_the_whole_hook() {
         let facts = LanguageServerFacts {
             configured_binary: None,
-            arguments: vec!["-rpc.trace".into()],
+            arguments: vec!["--rpc-trace".into()],
             on_path: Some("/usr/local/bin/shopware-lsp".into()),
             shell_env: vec![("PATH".into(), "/usr/bin".into())],
         };
         let plan = plan_language_server(facts, None);
 
         assert_eq!(plan.binary.as_deref(), Some("/usr/local/bin/shopware-lsp"));
-        assert_eq!(plan.args, vec!["-rpc.trace".to_string()]);
+        assert_eq!(plan.args, vec!["--rpc-trace".to_string()]);
         // The shell environment is preserved; the deprecated Go memory limit
         // is not turned into GOMEMLIMIT for the Rust server.
         assert_eq!(plan.env, vec![("PATH".to_string(), "/usr/bin".to_string())]);
@@ -999,7 +999,7 @@ mod tests {
         );
 
         assert_eq!(plan.binary.as_deref(), Some("/usr/local/bin/shopware-lsp"));
-        assert_eq!(plan.args, vec!["-root", "/srv/shop", "mcp"]);
+        assert_eq!(plan.args, vec!["--root", "/srv/shop", "mcp"]);
         assert_eq!(
             plan.env,
             vec![(

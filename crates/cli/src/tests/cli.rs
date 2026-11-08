@@ -86,7 +86,7 @@ fn remote_serve_stops_while_waiting_for_a_client() {
     let run = run_with(
         test_options(),
         &cancel,
-        &["serve", "-listen", "127.0.0.1:0"],
+        &["serve", "--listen", "127.0.0.1:0"],
     );
     let error = run.result.expect_err("cancelled serve must fail");
     assert!(error.canceled, "{error:?}");
@@ -95,13 +95,17 @@ fn remote_serve_stops_while_waiting_for_a_client() {
 #[test]
 fn profile_write_failure_is_returned() {
     let directory = temp_dir();
-    let run = run(&["-profile.mem", directory.path().to_str().unwrap(), "help"]);
+    let run = run(&[
+        "--profile-mem",
+        directory.path().to_str().unwrap(),
+        "version",
+    ]);
     assert_err_contains(&run, "write profile");
 }
 
 #[test]
 fn api_json_describes_commands_and_languages() {
-    let output = run_ok(&["-json", "api-json"]);
+    let output = run_ok(&["--json", "api-json"]);
     let result: Value = serde_json::from_str(&output).unwrap();
     let names: Vec<&str> = result["commands"]
         .as_array()
@@ -112,6 +116,7 @@ fn api_json_describes_commands_and_languages() {
     assert!(names.len() >= 30);
     assert!(names.contains(&"mcp"));
     assert!(names.contains(&"project-info"));
+    assert!(names.contains(&"help"));
     let php: Vec<&str> = result["languages"]["php"]
         .as_array()
         .unwrap()
@@ -141,7 +146,7 @@ fn project_info_reports_unknown_without_creating_workspace_cache() {
             run_unlocked(
                 test_options(),
                 &Cancel::new(),
-                &["-root", &root_path, "-json", "project-info"],
+                &["--root", &root_path, "--json", "project-info"],
             )
         },
     );
@@ -166,17 +171,17 @@ fn workspace_command_rejects_unknown_project_unless_explicitly_allowed() {
             let rejected = run_unlocked(
                 test_options(),
                 &Cancel::new(),
-                &["-root", &root_path, "-json", "check", &file],
+                &["--root", &root_path, "--json", "check", &file],
             );
             let empty = directory_is_empty(cache_root.path());
             let allowed = run_unlocked(
                 test_options(),
                 &Cancel::new(),
                 &[
-                    "-root",
+                    "--root",
                     &root_path,
-                    "-json",
-                    "-allow-unsupported-project",
+                    "--json",
+                    "--allow-unsupported-project",
                     "check",
                     &file,
                 ],
@@ -423,10 +428,10 @@ fn check_empty_directory_returns_an_empty_json_array() {
     let root = temp_dir();
     write(&path(root.path(), "README.md"), "unsupported");
     let output = run_ok(&[
-        "-root",
+        "--root",
         root.path().to_str().unwrap(),
-        "-allow-unsupported-project",
-        "-json",
+        "--allow-unsupported-project",
+        "--json",
         "check",
         root.path().to_str().unwrap(),
     ]);
@@ -437,7 +442,7 @@ fn check_empty_directory_returns_an_empty_json_array() {
 #[test]
 fn check_rejects_invalid_worker_count() {
     let root = temp_dir();
-    let run = run(&["check", "-workers", "0", root.path().to_str().unwrap()]);
+    let run = run(&["check", "--workers", "0", root.path().to_str().unwrap()]);
     assert_err_contains(&run, "workers must be at least 1");
 }
 
@@ -452,7 +457,7 @@ fn config_command_prints_effective_project_configuration() {
         "check": {"severity": "information", "failOn": "error"}
     }"#,
     );
-    let output = run_ok(&["-root", root.path().to_str().unwrap(), "-json", "config"]);
+    let output = run_ok(&["--root", root.path().to_str().unwrap(), "--json", "config"]);
     let result: Value = serde_json::from_str(&output).unwrap();
     assert_eq!(result["effective"]["features"]["hover"], false);
     assert_eq!(result["effective"]["check"]["severity"], "information");
@@ -472,8 +477,8 @@ fn check_uses_project_failure_policy_and_explicit_flag_wins() {
     }"#,
     );
     let root_path = root.path().to_str().unwrap();
-    assert_err_contains(&run(&["-root", root_path, "check", &php]), "fail-on error");
-    let off = run(&["-root", root_path, "check", "-fail-on", "off", &php]);
+    assert_err_contains(&run(&["--root", root_path, "check", &php]), "fail-on error");
+    let off = run(&["--root", root_path, "check", "--fail-on", "off", &php]);
     assert!(off.result.is_ok(), "{:?} {}", off.result, off.err);
 }
 
@@ -486,7 +491,7 @@ fn cli_rejects_invalid_project_configuration_before_checking() {
     );
     let root_path = root.path().to_str().unwrap();
     assert_err_contains(
-        &run(&["-root", root_path, "check", root_path]),
+        &run(&["--root", root_path, "check", root_path]),
         "unknown diagnostic rule",
     );
 }
@@ -501,9 +506,9 @@ fn cli_rejects_invalid_nested_extension_configuration() {
     write(&config, r#"{"version":1,"domains":{"php":false}}"#);
     let root_path = root.path().to_str().unwrap();
     let run = run(&[
-        "-root",
+        "--root",
         root_path,
-        "-allow-unsupported-project",
+        "--allow-unsupported-project",
         "check",
         root_path,
     ]);
@@ -525,10 +530,10 @@ fn workspace_cli_index_check_and_execute_use_production_lsp() {
     }
     let run_json = |args: &[&str]| -> Value {
         let mut full = vec![
-            "-root",
+            "--root",
             root_path.as_str(),
-            "-allow-unsupported-project",
-            "-json",
+            "--allow-unsupported-project",
+            "--json",
         ];
         full.extend_from_slice(args);
         let output = run_ok(&full);
@@ -537,7 +542,7 @@ fn workspace_cli_index_check_and_execute_use_production_lsp() {
 
     assert_eq!(run_json(&["index"])["index"]["trackedFiles"], 5);
     let src = path(root.path(), "src");
-    let diagnostics = run_json(&["check", "-workers", "4", &src]);
+    let diagnostics = run_json(&["check", "--workers", "4", &src]);
     assert!(diagnostics.is_array() || diagnostics.is_null());
 
     let commands = run_json(&["execute"]);
@@ -585,13 +590,13 @@ fn workspace_cli_index_check_and_execute_use_production_lsp() {
     );
     let extensions = run_json(&["execute", "shopware/extension/all"]);
     assert!(extensions.is_array() || extensions.is_null());
-    assert_eq!(run_json(&["index", "-force"])["forced"], true);
+    assert_eq!(run_json(&["index", "--force"])["forced"], true);
 
     let preview = run_ok(&[
-        "-root",
+        "--root",
         &root_path,
-        "-allow-unsupported-project",
-        "-json",
+        "--allow-unsupported-project",
+        "--json",
         "rename",
         &position,
         "RenamedController",
@@ -603,10 +608,10 @@ fn workspace_cli_index_check_and_execute_use_production_lsp() {
             .contains("FixtureController")
     );
     run_ok(&[
-        "-root",
+        "--root",
         &root_path,
-        "-allow-unsupported-project",
-        "-json",
+        "--allow-unsupported-project",
+        "--json",
         "rename",
         "-w",
         &position,
@@ -653,9 +658,9 @@ fn workspace_symbol_uses_populated_catalog_without_session() {
     // The fast path answers from the catalog: no session, so no index runs
     // and the fixture file (which does not exist) is never needed.
     let output = run_ok(&[
-        "-root",
+        "--root",
         &root_path,
-        "-allow-unsupported-project",
+        "--allow-unsupported-project",
         "workspace-symbol",
         "CachedFixture",
     ]);
@@ -671,9 +676,9 @@ fn unsupported_profiles_are_created_and_reported() {
     let memory = directory.path().join("heap.pprof");
     let trace = directory.path().join("trace.out");
     let run = run(&[
-        "-profile.mem",
+        "--profile-mem",
         memory.to_str().unwrap(),
-        "-profile.trace",
+        "--profile-trace",
         trace.to_str().unwrap(),
         "version",
     ]);
@@ -681,14 +686,70 @@ fn unsupported_profiles_are_created_and_reported() {
     assert!(memory.exists() && trace.exists());
     assert!(
         run.err
-            .contains("-profile.mem: heap profiles are not supported"),
+            .contains("--profile-mem: heap profiles are not supported"),
         "{}",
         run.err
     );
     assert!(
         run.err
-            .contains("-profile.trace: runtime traces are not supported"),
+            .contains("--profile-trace: runtime traces are not supported"),
         "{}",
         run.err
     );
+}
+
+#[test]
+fn help_goes_to_stdout_and_succeeds() {
+    let output = run_ok(&["--help"]);
+    assert!(output.contains("Usage: shopware-lsp"), "{output}");
+    assert!(output.contains("workspace-symbol"));
+    let check = run_ok(&["help", "check"]);
+    assert!(check.contains("--fail-on <LEVEL>"), "{check}");
+    assert!(run_ok(&["check", "-h"]).contains("Usage: shopware-lsp check"));
+}
+
+#[test]
+fn global_flags_are_accepted_after_the_command() {
+    let output = run_ok(&["version", "--json"]);
+    let version: Value = serde_json::from_str(&output).unwrap();
+    assert_eq!(version["version"], "test");
+    assert_eq!(run_ok(&["-V"]), "shopware-lsp test\n");
+}
+
+#[test]
+fn go_style_single_dash_flags_are_rejected_with_a_hint() {
+    let run = run(&["-root", "/tmp", "project-info"]);
+    let error = run.result.unwrap_err();
+    assert_eq!(error.code, 2);
+    assert!(
+        error.message.contains("unexpected argument '-root'"),
+        "{}",
+        error.message
+    );
+    assert!(error.message.contains("'--root'"), "{}", error.message);
+}
+
+#[test]
+fn unknown_commands_are_usage_errors() {
+    let error = run(&["bogus"]).result.unwrap_err();
+    assert_eq!(error.code, 2);
+    assert!(
+        error.message.contains("unrecognized subcommand 'bogus'"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn language_client_transport_flags_parse_for_the_default_server() {
+    // Editors start `shopware-lsp [serve] --stdio --clientProcessId=<pid>`.
+    for argv in [
+        &["--stdio", "--clientProcessId=4242"][..],
+        &["serve", "--stdio", "--clientProcessId", "7"][..],
+    ] {
+        let argv: Vec<&std::ffi::OsStr> = argv.iter().map(std::ffi::OsStr::new).collect();
+        let cli = crate::args::ShopwareLsp::parse_from(&argv).unwrap();
+        assert!(cli.stdio);
+        assert!(cli.client_process_id.is_some());
+    }
 }

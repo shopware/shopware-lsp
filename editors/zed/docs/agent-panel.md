@@ -34,7 +34,7 @@ To force a specific binary, set `command` -- **and set `args` with it**:
     "shopware-lsp": {
       "command": {
         "path": "/Users/you/.local/bin/shopware-lsp",
-        "args": ["-root", "/path/to/shopware", "mcp"]
+        "args": ["--root", "/path/to/shopware", "mcp"]
       }
     }
   }
@@ -51,7 +51,7 @@ the server rejects trailing global flags.
 
 For the same reason, `command` and the `root` setting below are mutually
 exclusive: pinning `command` makes `settings.root` dead config, and the root
-has to be passed as `-root` in `args`.
+has to be passed as `--root` in `args`.
 
 `shopware-lsp mcp` refuses to start outside a Shopware or Symfony project, and
 Zed's `Project` handle exposes worktree IDs but no paths, so the root is taken

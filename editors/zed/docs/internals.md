@@ -115,8 +115,8 @@ and are reachable from the CLI in the meantime:
 
 ```bash
 shopware-lsp execute                                   # list commands
-shopware-lsp -root . execute shopware/extension/all
-shopware-lsp -root . codeaction -kind source.organizeImports -exec -d FILE:1:1
+shopware-lsp --root . execute shopware/extension/all
+shopware-lsp --root . codeaction --kind source.organizeImports --exec -d FILE:1:1
 ```
 
 The shared server supplies standard edits and supports lazy code-action

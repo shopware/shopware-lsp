@@ -168,24 +168,17 @@ pub(crate) fn run_symbols(runner: &Runner, args: &[String]) -> Result<(), CliErr
     runner.write_json(&result)
 }
 
-pub(crate) fn run_workspace_symbols(runner: &Runner, args: &[String]) -> Result<(), CliError> {
-    let mut args = args;
-    let mut fresh = false;
-    if args.first().is_some_and(|first| first == "--fresh") {
-        fresh = true;
-        args = &args[1..];
-    }
-    if args.len() != 1 {
-        return Err(CliError::usage(
-            "workspace-symbol expects [--fresh] <query>",
-        ));
-    }
-    if !fresh && let Some(result) = cached_workspace_symbols(runner, &args[0])? {
+pub(crate) fn run_workspace_symbols(
+    runner: &Runner,
+    fresh: bool,
+    query: &str,
+) -> Result<(), CliError> {
+    if !fresh && let Some(result) = cached_workspace_symbols(runner, query)? {
         return runner.write_json(&result);
     }
     let session = runner.connect()?;
     let result: Option<Vec<SymbolInformation>> =
-        session.call("workspace/symbol", json!({"query": args[0]}))?;
+        session.call("workspace/symbol", json!({"query": query}))?;
     let _ = session.close();
     runner.write_json(&result)
 }

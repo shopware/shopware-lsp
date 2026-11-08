@@ -10,7 +10,7 @@ use serde_json::json;
 use swlsp_indexer::{PathExclusions, VendorPackages, is_scanned_path, should_skip_relative_path};
 use swlsp_uriutil::filepath;
 
-use crate::goflag::FlagSet;
+use crate::args::Check;
 use crate::gofmt::{format_duration, format_float_v, path_error, round_duration};
 use crate::session::{DiagnosticOutput, diagnostic_severity_value};
 use crate::{Cancel, CliError, Runner};
@@ -52,19 +52,7 @@ fn seconds_duration(seconds: f64) -> String {
     format_duration(round_duration((seconds * 1e9) as i64, 1_000_000))
 }
 
-pub(crate) fn run_index(runner: &Runner, args: &[String]) -> Result<(), CliError> {
-    let mut flags = FlagSet::new("index");
-    flags.bool("force", false, "clear file hashes and rebuild all indexes");
-    let mut err_out = runner.err_out.clone();
-    flags
-        .parse(args, &mut err_out)
-        .map_err(|error| CliError::usage(error.0))?;
-    if !flags.args().is_empty() {
-        return Err(CliError::usage(
-            "index takes no positional arguments; use -root before the command",
-        ));
-    }
-    let force = flags.get_bool("force");
+pub(crate) fn run_index(runner: &Runner, force: bool) -> Result<(), CliError> {
     let session = runner.connect()?;
     let mut result = session.initial_index;
     if force {
@@ -161,10 +149,7 @@ fn memory_stats() -> MemoryStats {
     }
 }
 
-pub(crate) fn run_stats(runner: &Runner, args: &[String]) -> Result<(), CliError> {
-    if !args.is_empty() {
-        return Err(CliError::usage("stats takes no arguments"));
-    }
+pub(crate) fn run_stats(runner: &Runner) -> Result<(), CliError> {
     let session = runner.connect()?;
     let scanner: ScannerStats = session
         .call::<Option<ScannerStats>>("shopware/index/stats", json!({}))?
@@ -307,36 +292,11 @@ fn display_workspace_path(root: &str, path: &str) -> String {
     }
 }
 
-pub(crate) fn run_check(runner: &Runner, args: &[String]) -> Result<(), CliError> {
-    let mut flags = FlagSet::new("check");
-    flags.string(
-        "severity",
-        "",
-        "minimum severity: hint, info, warning, error (defaults to project configuration)",
-    );
-    flags.string(
-        "fail-on",
-        "",
-        "exit unsuccessfully when this severity or higher is reported (defaults to project configuration)",
-    );
+pub(crate) fn run_check(runner: &Runner, flags: &Check) -> Result<(), CliError> {
     let parallelism = std::thread::available_parallelism()
         .map(|count| count.get())
         .unwrap_or(1);
-    flags.int(
-        "workers",
-        parallelism.min(4) as i64,
-        "maximum concurrent diagnostic requests",
-    );
-    let mut err_out = runner.err_out.clone();
-    flags
-        .parse(args, &mut err_out)
-        .map_err(|error| CliError::usage(error.0))?;
-    if flags.args().is_empty() {
-        return Err(CliError::usage(
-            "check expects at least one file or directory",
-        ));
-    }
-    let workers = flags.get_int("workers");
+    let workers = flags.workers.unwrap_or(parallelism.min(4) as i64);
     if workers < 1 {
         return Err(CliError::usage("check workers must be at least 1"));
     }
@@ -344,15 +304,15 @@ pub(crate) fn run_check(runner: &Runner, args: &[String]) -> Result<(), CliError
     let paths = resolve_check_files_with_exclusions(
         &runner.cancel,
         &session.root,
-        flags.args(),
+        &flags.paths,
         &session.configuration.exclude,
     )?;
-    let mut effective_severity = flags.get_string("severity");
+    let mut effective_severity = flags.severity.clone().unwrap_or_default();
     if effective_severity.is_empty() {
         effective_severity = session.configuration.severity.clone();
     }
     let cutoff = diagnostic_severity(&effective_severity)?;
-    let mut effective_fail_on = flags.get_string("fail-on");
+    let mut effective_fail_on = flags.fail_on.clone().unwrap_or_default();
     if effective_fail_on.is_empty() {
         effective_fail_on = session.configuration.fail_on.clone();
     }
