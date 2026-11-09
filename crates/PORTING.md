@@ -195,7 +195,7 @@ Ports proceed bottom-up; a wave starts when the crates it depends on exist.
 | php types, phpdoc, suppression | `swlsp-php-types`, `swlsp-php-phpdoc`, `swlsp-php-suppression` | done; identical to Go on 264k docblocks, 224k type inputs, 150k type-relation pairs |
 | small infra + projectconfig + protocol | `swlsp-uriutil`, `swlsp-pathmatch`, `swlsp-textutil`, `swlsp-suggestion`, `swlsp-phar`, `swlsp-projectconfig`, `swlsp-projectdetect`, `swlsp-lsp-protocol` | done; config fingerprint and default JSON byte-identical to Go |
 | indexer, rewrite | `swlsp-indexer`, `swlsp-rewrite` | done (91 + 13 tests) |
-| lsp core | `swlsp-lsp` | done (100 tests); `lsp-server` transport, one ordered worker like Go |
+| lsp core | `swlsp-lsp` | done (100 tests); `tower-lsp-server` transport on Tokio, one ordered worker like Go |
 | php refactoring | `swlsp-php-refactoring` | done; identical edits on 806k extraction probes |
 | php literal, project, languagelevel, semantic | `swlsp-php-literal`, `swlsp-php-project`, `swlsp-php-languagelevel`, `swlsp-php-semantic` | done; 2.07M semantic facts identical to Go on 53,578 files; graph ~10% (full) / ~5% (warm cache) smaller than Go |
 | php resolver, imports, rewrite | `swlsp-php-resolver`, `swlsp-php-imports`, `swlsp-php-rewrite` | done; names (2M lines), members/signatures (62M lines), imports and rewrites identical to Go on the corpus |

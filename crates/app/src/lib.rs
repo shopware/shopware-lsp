@@ -74,6 +74,17 @@ impl Application {
         self.server.start(input, output)
     }
 
+    /// [`Application::run`] on the caller's Tokio runtime; serving also ends
+    /// when `stop` completes.
+    pub async fn serve(
+        &self,
+        input: swlsp_lsp::async_io::Input,
+        output: swlsp_lsp::async_io::Output,
+        stop: impl std::future::Future<Output = ()>,
+    ) -> Result<(), String> {
+        self.server.serve(input, output, stop).await
+    }
+
     pub fn close(&self) -> Result<(), String> {
         self.server.close_all()
     }

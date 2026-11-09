@@ -18,6 +18,9 @@ name = "shopware-lsp"
 path = "src/main.rs"
 
 [dependencies]
+tokio.workspace = true
+tokio-util.workspace = true
+rmcp.workspace = true
 swlsp-syntax.workspace = true
 swlsp-app = { path = "../app" }
 swlsp-lsp = { path = "../lsp" }

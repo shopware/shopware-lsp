@@ -12,8 +12,7 @@ use swlsp_lsp_protocol::{
 };
 use swlsp_uriutil::filepath;
 
-use super::{McpRuntime, output, scaffold};
-use crate::CliError;
+use super::{McpRuntime, ToolCall, output, scaffold};
 use crate::edit::{EditMode, apply_workspace_edit};
 use crate::features_write::{action_kind, matches_code_action_kind};
 use crate::session::{
@@ -23,6 +22,7 @@ use crate::target::code_action_selection;
 use crate::workspace_commands::{
     code_text, diagnostic_severity, resolve_check_files_with_exclusions, severity_label,
 };
+use crate::{Cancel, CliError};
 
 const DEFAULT_DIAGNOSTIC_LIMIT: i64 = 200;
 const MAXIMUM_DIAGNOSTIC_LIMIT: i64 = 1000;
@@ -34,10 +34,12 @@ pub(crate) fn decode<T: DeserializeOwned>(arguments: Value) -> Result<T, CliErro
 }
 
 pub(crate) fn dispatch(
-    runtime: &McpRuntime<'_>,
+    runtime: &McpRuntime,
     name: &str,
     arguments: Value,
+    cancel: &Cancel,
 ) -> Result<Value, CliError> {
+    let runtime = &ToolCall::new(runtime, cancel);
     match name {
         "shopware_diagnostics" => output(&diagnostics(runtime, decode(arguments)?)?),
         "shopware_code_actions" => output(&code_actions(runtime, decode(arguments)?)?),
@@ -248,7 +250,7 @@ pub(crate) fn bounded_limit(
 }
 
 fn diagnostics(
-    runtime: &McpRuntime<'_>,
+    runtime: &ToolCall<'_>,
     input: DiagnosticsInput,
 ) -> Result<DiagnosticsOutput, CliError> {
     let target = runtime.resolve_path(&input.path)?;
@@ -265,7 +267,7 @@ fn diagnostics(
         }
         let cutoff = diagnostic_severity(&severity)?;
         let paths = resolve_check_files_with_exclusions(
-            &session.cancel,
+            &session.cancel(),
             &runtime.root,
             std::slice::from_ref(&target),
             &session.configuration.exclude,
@@ -293,7 +295,7 @@ fn diagnostics(
 }
 
 fn code_actions(
-    runtime: &McpRuntime<'_>,
+    runtime: &ToolCall<'_>,
     input: CodeActionsInput,
 ) -> Result<CodeActionsOutput, CliError> {
     let (path, position) = runtime.position(&input.path, input.line, input.column)?;
@@ -330,7 +332,7 @@ fn code_actions(
 }
 
 fn apply_code_action(
-    runtime: &McpRuntime<'_>,
+    runtime: &ToolCall<'_>,
     input: ApplyCodeActionInput,
 ) -> Result<ApplyCodeActionOutput, CliError> {
     if input.title.trim().is_empty() {
@@ -410,7 +412,7 @@ fn apply_code_action(
     })
 }
 
-fn hover(runtime: &McpRuntime<'_>, input: PositionInput) -> Result<HoverOutput, CliError> {
+fn hover(runtime: &ToolCall<'_>, input: PositionInput) -> Result<HoverOutput, CliError> {
     let (path, position) = runtime.position(&input.path, input.line, input.column)?;
     runtime.with_session(|session| {
         with_document(session, &path, |document| {
@@ -435,7 +437,7 @@ fn hover(runtime: &McpRuntime<'_>, input: PositionInput) -> Result<HoverOutput, 
 }
 
 fn locations(
-    runtime: &McpRuntime<'_>,
+    runtime: &ToolCall<'_>,
     input: PositionInput,
     method: &str,
     include_declaration: bool,
@@ -462,7 +464,7 @@ fn locations(
 }
 
 fn workspace_symbols(
-    runtime: &McpRuntime<'_>,
+    runtime: &ToolCall<'_>,
     input: WorkspaceSymbolsInput,
 ) -> Result<WorkspaceSymbolsOutput, CliError> {
     if input.query.trim().is_empty() {
@@ -601,7 +603,7 @@ pub(crate) fn to_mcp_range(range: Range) -> McpRange {
     }
 }
 
-impl McpRuntime<'_> {
+impl McpRuntime {
     /// Go `position`: a workspace path plus a one-based position.
     pub(crate) fn position(
         &self,

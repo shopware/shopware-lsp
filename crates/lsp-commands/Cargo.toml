@@ -17,7 +17,11 @@ swlsp-twig = { path = "../twig" }
 swlsp-uriutil = { path = "../uriutil" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-ureq = "2.12"
+# Blocking HTTP with rustls on ring and the bundled Mozilla roots: no CMake
+# for aws-lc-rs in release builds, and no dependency on a system trust store.
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
 
 [dev-dependencies]
 swlsp-indexer = { path = "../indexer" }

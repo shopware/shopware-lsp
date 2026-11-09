@@ -13,6 +13,14 @@ rust-version = "1.98"
 rowan = "0.16"
 inventory = "0.3"
 swlsp-syntax = { path = "crates/syntax" }
+# Async I/O edges (docs/tokio-migration.md): the analysis core stays
+# synchronous.
+tokio = { version = "1.54", features = ["rt-multi-thread", "io-std", "io-util", "net", "sync", "time", "macros"] }
+tokio-util = { version = "0.7.20", features = ["rt", "io-util"] }
+rmcp = { version = "3.9", default-features = false, features = ["server"] }
+tower-lsp-server = "0.23"
+tower = { version = "0.5", default-features = false }
+futures = { version = "0.3", default-features = false, features = ["std"] }
 
 [profile.release]
 lto = "thin"

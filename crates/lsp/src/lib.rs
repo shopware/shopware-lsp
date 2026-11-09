@@ -5,17 +5,18 @@
 //!
 //! # Transport
 //!
-//! Framing and message types come from rust-analyzer's `lsp-server` crate,
-//! driven by plain OS threads and crossbeam channels instead of an async
-//! runtime. That keeps the Go server's semantics exact and cheap: one reader
-//! thread handles `$/cancelRequest` and routes responses, one worker executes
-//! requests and document notifications strictly in arrival order (so a
-//! `didChange` can never race a completion), cancellation is a token checked
-//! cooperatively by providers, and diagnostics/indexing run on
-//! lifecycle-managed background threads. `tower-lsp-server` was not chosen:
-//! it requires tokio, dispatches handlers concurrently, and its request
-//! cancellation drops futures rather than signalling the synchronous,
-//! CPU-bound analysis code this server runs.
+//! Framing and message types come from `tower-lsp-server`, driven by a small
+//! Tokio runtime at the I/O edge while analysis stays synchronous. The
+//! transport calls a raw `tower::Service` once per incoming message in
+//! arrival order; the service handles `$/cancelRequest` itself and enqueues
+//! everything else onto one worker thread that executes requests and
+//! document notifications strictly in arrival order (so a `didChange` can
+//! never race a completion). Cancellation is a token checked cooperatively by
+//! providers, not a dropped future, and diagnostics/indexing run on
+//! lifecycle-managed background threads. The typed `LanguageServer` trait is
+//! not used: it would deserialize into its own types and drop fields those
+//! types do not model. Blocking streams (stdio, sockets, in-process pipes)
+//! reach the runtime through [`async_io`].
 //!
 //! # Positions
 //!
@@ -23,6 +24,7 @@
 //! conversion happens only at the protocol boundary through the snapshot's
 //! [`swlsp_syntax::LineIndex`].
 
+pub mod async_io;
 mod capabilities;
 mod client;
 mod code_action;

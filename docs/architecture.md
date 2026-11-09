@@ -43,7 +43,7 @@ The same binary is three frontends over one engine:
 | Frontend | Entry | Transport |
 | --- | --- | --- |
 | Language server | `shopware-lsp` (no command) or `shopware-lsp serve` | JSON-RPC over stdin/stdout |
-| CLI | `shopware-lsp check`, `definition`, `rename`, … | In-process LSP session over OS pipes |
+| CLI | `shopware-lsp check`, `definition`, `rename`, … | In-process LSP session over an in-memory stream |
 | MCP server | `shopware-lsp mcp` | MCP over stdio, backed by the same session |
 
 The CLI and MCP paths are *not* a second implementation. They start the real

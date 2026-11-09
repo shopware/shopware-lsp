@@ -494,11 +494,39 @@ impl Server {
         self.register_commands();
         let handler: Arc<dyn Handler> = Arc::new(self.clone());
         let server = self.clone();
-        transport::serve(input, output, handler, move |conn| {
+        transport::serve_blocking(input, output, handler, move |conn| {
             *write(&server.connection) = Some(conn.clone());
         });
         *write(&self.connection) = None;
         self.close_all()
+    }
+
+    /// [`Server::start`] on the caller's Tokio runtime, for async or
+    /// blocking streams. Serving also ends when `stop` completes.
+    pub async fn serve(
+        &self,
+        input: crate::async_io::Input,
+        output: crate::async_io::Output,
+        stop: impl std::future::Future<Output = ()>,
+    ) -> Result<(), String> {
+        self.register_commands();
+        let handler: Arc<dyn Handler> = Arc::new(self.clone());
+        let server = self.clone();
+        transport::serve(
+            input,
+            output,
+            handler,
+            move |conn| {
+                *write(&server.connection) = Some(conn.clone());
+            },
+            stop,
+        )
+        .await;
+        *write(&self.connection) = None;
+        let server = self.clone();
+        tokio::task::spawn_blocking(move || server.close_all())
+            .await
+            .map_err(|error| format!("close the server: {error}"))?
     }
 
     pub(crate) fn connection(&self) -> Option<Arc<Connection>> {

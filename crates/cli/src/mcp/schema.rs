@@ -1,37 +1,34 @@
 //! Tool definitions and input validation.
 //!
-//! `tools.json` is the exact `tools` array Go's MCP SDK advertises (schemas
-//! inferred from the Go input/output structs by `jsonschema-go`); it is
-//! embedded so `tools/list` is byte-identical. The validator implements the
-//! keywords those schemas use (`type`, `properties`, `required`,
-//! `additionalProperties`, `items`) with `jsonschema-go`'s error text.
+//! `tools.json` holds the advertised `tools` array: names, descriptions and
+//! input and output schemas. The validator implements the keywords those
+//! schemas use (`type`, `properties`, `required`, `additionalProperties`,
+//! `items`).
 
 use std::sync::OnceLock;
 
+use rmcp::model::Tool;
 use serde_json::Value;
-use serde_json::value::RawValue;
 
 const TOOLS_JSON: &str = include_str!("tools.json");
 
 pub struct ToolDefinition {
     pub name: String,
-    pub raw: Box<RawValue>,
+    pub tool: Tool,
     pub input_schema: Value,
 }
 
 pub fn tool_definitions() -> &'static [ToolDefinition] {
     static TOOLS: OnceLock<Vec<ToolDefinition>> = OnceLock::new();
     TOOLS.get_or_init(|| {
-        let raw: Vec<Box<RawValue>> =
+        let tools: Vec<Value> =
             serde_json::from_str(TOOLS_JSON).expect("embedded MCP tools are valid JSON");
-        raw.into_iter()
-            .map(|raw| {
-                let value: Value = serde_json::from_str(raw.get()).expect("tool is valid JSON");
-                ToolDefinition {
-                    name: value["name"].as_str().unwrap_or_default().to_owned(),
-                    input_schema: value["inputSchema"].clone(),
-                    raw,
-                }
+        tools
+            .into_iter()
+            .map(|value| ToolDefinition {
+                name: value["name"].as_str().unwrap_or_default().to_owned(),
+                input_schema: value["inputSchema"].clone(),
+                tool: serde_json::from_value(value).expect("embedded MCP tool is valid"),
             })
             .collect()
     })

@@ -283,27 +283,53 @@ fn github_content(relative: &str, version: &str) -> Result<String, String> {
     let url = format!(
         "https://raw.githubusercontent.com/shopware/shopware/{version}/src/Storefront/{relative}"
     );
-    let agent = ureq::AgentBuilder::new()
-        .timeout(std::time::Duration::from_secs(30))
-        .build();
-    let response = match agent.get(&url).call() {
-        Ok(response) => response,
-        Err(ureq::Error::Status(status, _)) => {
-            return Err(format!(
-                "GitHub returned status {status} for version {version}"
-            ));
-        }
-        Err(error) => return Err(format!("failed to fetch from GitHub: {error}")),
-    };
-    if response.status() != 200 {
+    let client = http_client()?;
+    let response = client
+        .get(&url)
+        .send()
+        .map_err(|error| format!("failed to fetch from GitHub: {}", error_chain(&error)))?;
+    let status = response.status();
+    if status != reqwest::StatusCode::OK {
         return Err(format!(
             "GitHub returned status {} for version {version}",
-            response.status()
+            status.as_u16()
         ));
     }
     response
-        .into_string()
-        .map_err(|error| format!("failed to read GitHub response: {error}"))
+        .text()
+        .map_err(|error| format!("failed to read GitHub response: {}", error_chain(&error)))
+}
+
+/// A blocking client with a 30 second timeout that trusts the bundled
+/// Mozilla roots. Must not be built or dropped on an async task.
+fn http_client() -> Result<reqwest::blocking::Client, String> {
+    let roots = rustls::RootCertStore {
+        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+    };
+    let tls = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .map_err(|error| format!("configure TLS: {error}"))?
+    .with_root_certificates(roots)
+    .with_no_client_auth();
+    reqwest::blocking::Client::builder()
+        .use_preconfigured_tls(tls)
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|error| format!("create HTTP client: {}", error_chain(&error)))
+}
+
+/// `error` with its causes, as reqwest's own message omits them.
+fn error_chain(error: &dyn std::error::Error) -> String {
+    let mut message = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        message.push_str(": ");
+        message.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    message
 }
 
 #[cfg(test)]

@@ -1,12 +1,14 @@
 //! The CLI's production LSP session (Go `session.go`): an in-process
-//! [`swlsp_app::Application`] served over OS pipes and driven through a
-//! small JSON-RPC client, exactly as an editor would drive it.
+//! [`swlsp_app::Application`] served over an in-memory stream on a small
+//! Tokio runtime of the session, and driven through a JSON-RPC client,
+//! exactly as an editor would drive it. Client calls block the calling
+//! thread; a cancelled call sends `$/cancelRequest`, so the server stops
+//! the work too.
 
 use std::collections::HashMap;
-use std::io::{self, BufRead, BufReader, Read, Write};
+use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
@@ -14,11 +16,16 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use serde_json::{Value, json};
+use swlsp_lsp::async_io::{FrameSender, Input, Output as StreamOutput};
 use swlsp_lsp_protocol::{Diagnostic, DiagnosticRelatedInformation, DiagnosticResult, Position};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader};
 
 use crate::{Cancel, CliError, Output};
 
 const POLL: Duration = Duration::from_millis(25);
+
+/// Buffer of the in-memory stream between the client and the server.
+const STREAM_CAPACITY: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct IndexingResult {
@@ -94,8 +101,8 @@ struct RemoteError {
 type Reply = Result<String, String>;
 
 /// A JSON-RPC client over one framed byte stream.
-struct RpcClient {
-    writer: Mutex<Option<Box<dyn Write + Send>>>,
+pub(crate) struct RpcClient {
+    writer: Mutex<Option<FrameSender>>,
     next_id: AtomicI64,
     pending: Mutex<HashMap<i64, Sender<Reply>>>,
     closed: AtomicBool,
@@ -108,23 +115,32 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 impl RpcClient {
+    /// A client writing its messages to `frames`.
+    pub(crate) fn new(frames: FrameSender) -> Self {
+        Self {
+            writer: Mutex::new(Some(frames)),
+            next_id: AtomicI64::new(1),
+            pending: Mutex::new(HashMap::new()),
+            closed: AtomicBool::new(false),
+        }
+    }
+
     fn send(&self, message: &Value) -> Result<(), String> {
         let body = serde_json::to_vec(message).map_err(|error| error.to_string())?;
-        let mut writer = lock(&self.writer);
-        let Some(writer) = writer.as_mut() else {
-            return Err("jsonrpc2: connection is closed".into());
-        };
-        let result = write!(writer, "Content-Length: {}\r\n\r\n", body.len())
-            .and_then(|()| writer.write_all(&body))
-            .and_then(|()| writer.flush());
-        result.map_err(|_| "jsonrpc2: connection is closed".to_owned())
+        let mut frame = format!("Content-Length: {}\r\n\r\n", body.len()).into_bytes();
+        frame.extend_from_slice(&body);
+        let writer = lock(&self.writer);
+        match writer.as_ref() {
+            Some(writer) if writer.send(frame) => Ok(()),
+            _ => Err("jsonrpc2: connection is closed".into()),
+        }
     }
 
     fn notify(&self, method: &str, params: Value) -> Result<(), String> {
         self.send(&json!({"jsonrpc": "2.0", "method": method, "params": params}))
     }
 
-    fn call(
+    pub(crate) fn call(
         &self,
         method: &str,
         params: Value,
@@ -150,6 +166,8 @@ impl RpcClient {
         loop {
             if cancel.is_cancelled() {
                 lock(&self.pending).remove(&id);
+                // Stops the work on the server; its answer is ignored.
+                let _ = self.notify("$/cancelRequest", json!({"id": id}));
                 return Err("context canceled".into());
             }
             if let Some(deadline) = deadline
@@ -168,7 +186,7 @@ impl RpcClient {
         }
     }
 
-    fn close(&self) {
+    pub(crate) fn close(&self) {
         self.closed.store(true, Ordering::Release);
         *lock(&self.writer) = None;
         lock(&self.pending).clear();
@@ -176,12 +194,12 @@ impl RpcClient {
 }
 
 /// Reads one `Content-Length` framed message; `None` at end of stream.
-fn read_message(reader: &mut impl BufRead) -> io::Result<Option<String>> {
+async fn read_message(reader: &mut (impl AsyncBufRead + Unpin)) -> io::Result<Option<String>> {
     let mut length: Option<usize> = None;
     let mut line = String::new();
     loop {
         line.clear();
-        if reader.read_line(&mut line)? == 0 {
+        if reader.read_line(&mut line).await? == 0 {
             return Ok(None);
         }
         let trimmed = line.trim_end_matches(['\r', '\n']);
@@ -198,7 +216,7 @@ fn read_message(reader: &mut impl BufRead) -> io::Result<Option<String>> {
         }
     }
     let mut body = vec![0; length.unwrap_or(0)];
-    reader.read_exact(&mut body)?;
+    reader.read_exact(&mut body).await?;
     Ok(Some(String::from_utf8_lossy(&body).into_owned()))
 }
 
@@ -222,11 +240,16 @@ pub struct CliDocument {
 pub struct CliSession {
     application: Arc<swlsp_app::Application>,
     client: Arc<RpcClient>,
-    server: Mutex<Option<JoinHandle<Result<(), String>>>>,
     server_done: Receiver<Result<(), String>>,
     server_error: Mutex<Option<Result<(), String>>>,
+    /// Ends serving when the server does not stop on `exit`.
+    stop: Cancel,
     index_events: Receiver<IndexEvent>,
-    pub cancel: Cancel,
+    /// Cancels requests; replaced for the duration of [`CliSession::with_cancel`].
+    cancel: Mutex<Cancel>,
+    /// Runs the server and the client's reader and writer. Declared last, so
+    /// it is dropped after everything that uses it.
+    executor: Option<tokio::runtime::Runtime>,
     pub root: String,
     pub capabilities: Value,
     pub configuration: Configuration,
@@ -236,10 +259,16 @@ pub struct CliSession {
 
 impl CliSession {
     pub fn new(cancel: &Cancel, options: SessionOptions) -> Result<CliSession, CliError> {
-        let (server_reader, client_writer) =
-            io::pipe().map_err(|error| CliError::fail(format!("create LSP pipe: {error}")))?;
-        let (client_reader, server_writer) =
-            io::pipe().map_err(|error| CliError::fail(format!("create LSP pipe: {error}")))?;
+        let executor = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .thread_name("cli-lsp")
+            .enable_all()
+            .build()
+            .map_err(|error| CliError::fail(format!("start LSP session runtime: {error}")))?;
+        let _entered = executor.enter();
+        let (client_stream, server_stream) = tokio::io::duplex(STREAM_CAPACITY);
+        let (server_reader, server_writer) = tokio::io::split(server_stream);
+        let (client_reader, client_writer) = tokio::io::split(client_stream);
         let application = Arc::new(swlsp_app::Application::with_options(
             &options.version,
             swlsp_app::Options {
@@ -247,42 +276,48 @@ impl CliSession {
             },
         ));
         let (done_sender, server_done) = bounded(1);
-        let server_application = application.clone();
-        let server = thread::Builder::new()
-            .name("cli-lsp-server".into())
-            .spawn(move || {
-                let result = server_application.run(server_reader, server_writer);
-                let _ = done_sender.send(result.clone());
-                result
-            })
-            .map_err(|error| CliError::fail(format!("start language server: {error}")))?;
-        let client = Arc::new(RpcClient {
-            writer: Mutex::new(Some(Box::new(client_writer))),
-            next_id: AtomicI64::new(1),
-            pending: Mutex::new(HashMap::new()),
-            closed: AtomicBool::new(false),
-        });
+        let stop = Cancel::new();
+        {
+            let application = application.clone();
+            let stop = stop.clone();
+            executor.spawn(async move {
+                let result = application
+                    .serve(
+                        Input::Async(Box::new(server_reader)),
+                        StreamOutput::Async(Box::new(server_writer)),
+                        stop.cancelled(),
+                    )
+                    .await;
+                let _ = done_sender.send(result);
+            });
+        }
+        let (frames, _written) =
+            swlsp_lsp::async_io::spawn_output(StreamOutput::Async(Box::new(client_writer)))
+                .map_err(|error| CliError::fail(format!("start LSP client: {error}")))?;
+        let client = Arc::new(RpcClient::new(frames));
         let (index_sender, index_events) = unbounded();
-        spawn_reader(
+        executor.spawn(read_server_messages(
             client.clone(),
             client_reader,
             index_sender,
             options.err_out.clone(),
-        );
+        ));
+        drop(_entered);
 
         let mut session = CliSession {
             application,
             client,
-            server: Mutex::new(Some(server)),
             server_done,
             server_error: Mutex::new(None),
+            stop,
             index_events,
-            cancel: cancel.clone(),
+            cancel: Mutex::new(cancel.clone()),
             root: options.root.clone(),
             capabilities: Value::Null,
             configuration: Configuration::default(),
             initial_index: IndexingResult::default(),
             close_result: Mutex::new(None),
+            executor: Some(executor),
         };
         let root_uri = swlsp_uriutil::file_uri(&options.root);
         let mut initialization_options = json!({
@@ -347,6 +382,28 @@ impl CliSession {
         Ok(session)
     }
 
+    /// The cancellation of this session's requests.
+    pub fn cancel(&self) -> Cancel {
+        lock(&self.cancel).clone()
+    }
+
+    /// Runs `operation` with requests cancelled by `cancel` instead of the
+    /// session's own token (one MCP tool call). A cancelled request is
+    /// cancelled on the server too.
+    pub fn with_cancel<T>(&self, cancel: &Cancel, operation: impl FnOnce() -> T) -> T {
+        struct Restore<'a>(&'a Mutex<Cancel>, Option<Cancel>);
+        impl Drop for Restore<'_> {
+            fn drop(&mut self) {
+                if let Some(previous) = self.1.take() {
+                    *lock(self.0) = previous;
+                }
+            }
+        }
+        let previous = std::mem::replace(&mut *lock(&self.cancel), cancel.clone());
+        let _restore = Restore(&self.cancel, Some(previous));
+        operation()
+    }
+
     /// Waits for `shopware/indexingCompleted`.
     pub fn wait_for_index(&self) -> Result<IndexingResult, CliError> {
         loop {
@@ -367,7 +424,7 @@ impl CliSession {
                     });
                 },
                 default(POLL) => {
-                    if self.cancel.is_cancelled() {
+                    if self.cancel().is_cancelled() {
                         return Err(CliError::canceled());
                     }
                 }
@@ -378,7 +435,7 @@ impl CliSession {
     /// Sends a request; errors are `method: cause` like Go `session.call`.
     pub fn call_raw(&self, method: &str, params: Value) -> Result<String, CliError> {
         self.client
-            .call(method, params, &self.cancel, None)
+            .call(method, params, &self.cancel(), None)
             .map_err(|error| CliError::fail(format!("{method}: {error}")))
     }
 
@@ -508,14 +565,12 @@ impl CliSession {
         match server_result {
             Some(Err(error)) => errors.push(error),
             Some(Ok(())) => {}
-            None => errors.push("language server did not stop".into()),
+            None => {
+                self.stop.cancel();
+                errors.push("language server did not stop".into());
+            }
         }
         self.client.close();
-        if let Some(handle) = lock(&self.server).take()
-            && handle.is_finished()
-        {
-            let _ = handle.join();
-        }
         let _ = &self.application;
         let outcome = if errors.is_empty() {
             Ok(())
@@ -530,6 +585,10 @@ impl CliSession {
 impl Drop for CliSession {
     fn drop(&mut self) {
         let _ = self.close();
+        // Tasks still blocked on the stream end with the runtime.
+        if let Some(executor) = self.executor.take() {
+            executor.shutdown_background();
+        }
     }
 }
 
@@ -539,59 +598,59 @@ fn language_for(path: &str) -> Option<swlsp_language::LanguageId> {
     swlsp_language::LanguageId::from_path(&format!("x.{extension}"))
 }
 
-fn spawn_reader(
+/// Reads the server's messages: answers waiting calls, records indexing
+/// events and answers server requests.
+async fn read_server_messages(
     client: Arc<RpcClient>,
-    reader: io::PipeReader,
+    reader: tokio::io::ReadHalf<tokio::io::DuplexStream>,
     index_events: Sender<IndexEvent>,
     err_out: Option<Output>,
 ) {
-    let _ = thread::Builder::new()
-        .name("cli-lsp-client".into())
-        .spawn(move || {
-            let mut reader = BufReader::new(reader);
-            while let Ok(Some(text)) = read_message(&mut reader) {
-                let Ok(message) = serde_json::from_str::<Incoming>(&text) else {
+    let mut reader = BufReader::new(reader);
+    while let Ok(Some(text)) = read_message(&mut reader).await {
+        let Ok(message) = serde_json::from_str::<Incoming>(&text) else {
+            continue;
+        };
+        match (&message.method, &message.id) {
+            (None, Some(id)) => {
+                let Some(id) = id.as_i64() else { continue };
+                let Some(sender) = lock(&client.pending).remove(&id) else {
                     continue;
                 };
-                match (&message.method, &message.id) {
-                    (None, Some(id)) => {
-                        let Some(id) = id.as_i64() else { continue };
-                        let Some(sender) = lock(&client.pending).remove(&id) else {
-                            continue;
-                        };
-                        let reply = match message.error {
-                            Some(error) => Err(format!(
-                                "jsonrpc2: code {} message: {}",
-                                error.code, error.message
-                            )),
-                            None => Ok(message
-                                .result
-                                .map(|raw| raw.get().to_owned())
-                                .unwrap_or_else(|| "null".into())),
-                        };
-                        let _ = sender.send(reply);
-                    }
-                    (Some(method), id) => {
-                        let result = handle_server_message(
-                            method,
-                            message.params.as_deref(),
-                            &index_events,
-                            err_out.as_ref(),
-                        );
-                        if let Some(id) = id {
-                            let response = match result {
-                                Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
-                                Err(error) => json!({"jsonrpc": "2.0", "id": id, "error": {"code": 0, "message": error}}),
-                            };
-                            let _ = client.send(&response);
+                let reply = match message.error {
+                    Some(error) => Err(format!(
+                        "jsonrpc2: code {} message: {}",
+                        error.code, error.message
+                    )),
+                    None => Ok(message
+                        .result
+                        .map(|raw| raw.get().to_owned())
+                        .unwrap_or_else(|| "null".into())),
+                };
+                let _ = sender.send(reply);
+            }
+            (Some(method), id) => {
+                let result = handle_server_message(
+                    method,
+                    message.params.as_deref(),
+                    &index_events,
+                    err_out.as_ref(),
+                );
+                if let Some(id) = id {
+                    let response = match result {
+                        Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
+                        Err(error) => {
+                            json!({"jsonrpc": "2.0", "id": id, "error": {"code": 0, "message": error}})
                         }
-                    }
-                    (None, None) => {}
+                    };
+                    let _ = client.send(&response);
                 }
             }
-            client.closed.store(true, Ordering::Release);
-            lock(&client.pending).clear();
-        });
+            (None, None) => {}
+        }
+    }
+    client.closed.store(true, Ordering::Release);
+    lock(&client.pending).clear();
 }
 
 fn handle_server_message(
@@ -666,6 +725,3 @@ pub fn text_document_params(uri: &str) -> Value {
 pub fn position_params(uri: &str, position: Position) -> Value {
     json!({"textDocument": {"uri": uri}, "position": position})
 }
-
-#[allow(dead_code)]
-fn _assert_read(_: &dyn Read) {}

@@ -662,6 +662,8 @@ fn workspace_symbol_uses_populated_catalog_without_session() {
         CancelToken, Store, WORKSPACE_SYMBOL_PRIORITY_PHP_TYPE, WorkspaceSymbol,
         WorkspaceSymbolCatalog, WorkspaceSymbolDocument, WorkspaceSymbolKind,
     };
+    // The cache folder comes from the environment, which other tests change.
+    let _guard = ENV_LOCK.read().unwrap_or_else(|p| p.into_inner());
     let root = temp_dir();
     let root_path = root.path().to_str().unwrap().to_owned();
     let cache_dir = swlsp_app::project_cache_folder(&root_path).unwrap();
@@ -689,14 +691,19 @@ fn workspace_symbol_uses_populated_catalog_without_session() {
 
     // The fast path answers from the catalog: no session, so no index runs
     // and the fixture file (which does not exist) is never needed.
-    let output = run_ok(&[
-        "--root",
-        &root_path,
-        "--allow-unsupported-project",
-        "workspace-symbol",
-        "CachedFixture",
-    ]);
-    let result: Value = serde_json::from_str(&output).unwrap();
+    let run = run_unlocked(
+        test_options(),
+        &Cancel::new(),
+        &[
+            "--root",
+            &root_path,
+            "--allow-unsupported-project",
+            "workspace-symbol",
+            "CachedFixture",
+        ],
+    );
+    assert!(run.result.is_ok(), "{}", run.err);
+    let result: Value = serde_json::from_str(&run.out).unwrap();
     let symbols = result.as_array().unwrap();
     assert_eq!(symbols.len(), 1);
     assert_eq!(symbols[0]["name"], "CachedFixture");

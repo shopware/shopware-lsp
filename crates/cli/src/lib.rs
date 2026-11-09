@@ -20,10 +20,10 @@ mod target;
 mod workspace_commands;
 
 use std::io::{self, Read, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
+use tokio_util::sync::CancellationToken;
 
 use crate::args::{Command, ShopwareLsp};
 
@@ -41,21 +41,37 @@ pub struct Options {
     pub third_party_notices: String,
 }
 
-/// A cancellation flag shared by a command and its session (Go context).
+/// Cancellation shared by a command and its session (Go context). Children
+/// are cancelled with their parent, and async code can wait for it.
 #[derive(Debug, Clone, Default)]
-pub struct Cancel(Arc<AtomicBool>);
+pub struct Cancel(CancellationToken);
 
 impl Cancel {
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// A token cancelled by its own `cancel` or by this one's.
+    pub fn child(&self) -> Self {
+        Self(self.0.child_token())
+    }
+
     pub fn cancel(&self) {
-        self.0.store(true, Ordering::Release);
+        self.0.cancel();
     }
 
     pub fn is_cancelled(&self) -> bool {
-        self.0.load(Ordering::Acquire)
+        self.0.is_cancelled()
+    }
+
+    /// Completes once cancelled.
+    pub async fn cancelled(&self) {
+        self.0.cancelled().await;
+    }
+
+    /// The underlying token, for APIs that take one.
+    pub fn token(&self) -> &CancellationToken {
+        &self.0
     }
 }
 

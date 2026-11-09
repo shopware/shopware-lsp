@@ -5,4 +5,6 @@ mod common;
 mod extraction;
 mod mcp;
 mod php;
+mod serve;
+mod session;
 mod store_compliance;

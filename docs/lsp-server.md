@@ -29,7 +29,7 @@ system-wide picture see [`architecture.md`](architecture.md).
 ## Transport and dispatch
 
 `Server::start(input, output)` registers the command providers' methods, then
-serves JSON-RPC over the `lsp-server` crate's message framing until the client
+serves JSON-RPC over `tower-lsp-server`'s message framing until the client
 disconnects or sends `exit`, and finally closes the server:
 
 ```rust
@@ -48,12 +48,19 @@ pub fn start(&self, input: impl Read + Send + 'static, output: impl Write + Send
 }
 ```
 
-**Normal requests and document notifications execute in order.** A bounded
-crossbeam queue (`crates/lsp/src/transport.rs`) separates the transport reader
-from the single handler worker. The reader handles `$/cancelRequest` directly,
-so a long-running provider can observe cancellation of its `Context` while later document notifications remain ordered. Cancelled
-requests return LSP error `-32800`; disconnect cancels the dispatcher before
-workspace teardown.
+**Normal requests and document notifications execute in order.**
+`tower-lsp-server` reads and writes the stream on a two-thread Tokio runtime
+and calls a raw `tower::Service` (`crates/lsp/src/transport.rs`) once per
+message, in arrival order. The service enqueues each message synchronously
+onto a crossbeam queue drained by the single handler worker, and answers with
+a future that resolves when the worker has run the request. It handles
+`$/cancelRequest` directly, so a long-running provider can observe
+cancellation of its `Context` while later document notifications remain
+ordered. Cancelled requests return LSP error `-32800`; the end of input
+cancels the dispatcher before workspace teardown, and the worker still
+answers requests that were queued. Analysis code never sees the runtime:
+handlers stay synchronous, and blocking stdio, socket, and pipe streams are
+bridged to Tokio by `crates/lsp/src/async_io.rs`.
 
 CLI pull diagnostics may execute in lifecycle-managed background jobs. Their
 request contexts remain registered until completion, and shutdown cancels them.
@@ -648,7 +655,7 @@ result or write after a close.
 ## The CLI and MCP frontends
 
 `crates/cli` builds a real in-process LSP session (`crates/cli/src/session.rs`)
-served over OS pipes: the same `swlsp_app::Application`, the same server, the
+served over an in-memory Tokio stream: the same `swlsp_app::Application`, the same server, the
 same providers. Feature commands are LSP requests, and their output is the protocol
 response rendered as text or JSON.
 
@@ -659,6 +666,13 @@ Consequences that are easy to get wrong:
 - **Read-only commands must not mutate workspace files.** `codeaction` and
   `rename` preview a unified diff and write only with an explicit `-w`/`--write`.
 - **MCP tools must validate every path against the workspace root.**
+- **MCP is served by the official Rust SDK (`rmcp`) over stdio**
+  (`crates/cli/src/mcp/mod.rs`). Tool definitions and input schemas come from
+  `crates/cli/src/mcp/tools.json`; arguments are validated against them before
+  a tool runs on a blocking thread against the shared `CliSession`. Each call
+  has its own cancellation (`ToolCall`), cancelled by the client's
+  `notifications/cancelled` or the CLI; a cancelled session request sends
+  `$/cancelRequest`, so the analysis stops on the server too.
 - **`workspace-symbol` keeps its fast direct FTS path** unless `--fresh` is
   requested; do not make it restore semantic graphs by default.
 - **CLI mode changes behavior in a few places** (`initializationOptions.cliMode`):

@@ -6,6 +6,11 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+tokio.workspace = true
+tokio-util.workspace = true
+tower-lsp-server.workspace = true
+tower.workspace = true
+futures.workspace = true
 swlsp-syntax.workspace = true
 swlsp-language = { path = "../language" }
 swlsp-lsp-protocol = { path = "../lsp-protocol" }
@@ -16,7 +21,6 @@ swlsp-uriutil = { path = "../uriutil" }
 swlsp-indexer = { path = "../indexer" }
 swlsp-rewrite = { path = "../rewrite" }
 swlsp-parser-vue = { path = "../parser-vue" }
-lsp-server = "0.7"
 crossbeam-channel = "0.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -24,6 +28,8 @@ sha2 = "0.10"
 log = "0.4"
 
 [dev-dependencies]
+# The test client speaks JSON-RPC to the server through its own framing.
+lsp-server = "0.7"
 tempfile = "3"
 swlsp-parser-js = { path = "../parser-js" }
 swlsp-parser-json = { path = "../parser-json" }

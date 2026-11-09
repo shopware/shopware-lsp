@@ -10,7 +10,10 @@
 # add copyleft or unknown licenses without review. The less common ones:
 # - CDLA-Permissive-2.0: webpki-roots (Mozilla's CA certificate data);
 # - CC0-1.0: notify;
-# - bzip2-1.0.6: libbz2-rs-sys (BSD-style; altered versions must be marked).
+# - bzip2-1.0.6: libbz2-rs-sys (BSD-style; altered versions must be marked);
+# - BSL-1.0: xxhash-rust (Boost; permissive, no notice required in binaries);
+# - MIT-0: borrow-or-share, via tower-lsp-server (MIT without the notice
+#   requirement).
 accepted = [
     "MIT",
     "Apache-2.0",
@@ -23,6 +26,8 @@ accepted = [
     "CDLA-Permissive-2.0",
     "CC0-1.0",
     "bzip2-1.0.6",
+    "BSL-1.0",
+    "MIT-0",
 ]
 targets = [
     "x86_64-unknown-linux-musl",

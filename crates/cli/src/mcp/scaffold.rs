@@ -21,13 +21,13 @@ use swlsp_shopware_entityschema::{
 };
 
 use super::tools::{bounded_limit, decode};
-use super::{McpRuntime, output};
+use super::{McpRuntime, ToolCall, output};
 use crate::CliError;
 use crate::edit::{EditMode, apply_workspace_edit};
 use crate::session::CliSession;
 
 pub(crate) fn dispatch(
-    runtime: &McpRuntime<'_>,
+    runtime: &ToolCall<'_>,
     name: &str,
     arguments: Value,
 ) -> Result<Value, CliError> {
@@ -289,10 +289,7 @@ fn call_command<Request: Serialize, Response: serde::de::DeserializeOwned + Defa
         .map_err(|error| CliError::fail(format!("{command}: {}", error.message)))
 }
 
-fn scaffold_tool(
-    runtime: &McpRuntime<'_>,
-    input: ScaffoldInput,
-) -> Result<ScaffoldOutput, CliError> {
+fn scaffold_tool(runtime: &ToolCall<'_>, input: ScaffoldInput) -> Result<ScaffoldOutput, CliError> {
     let family = input.family.trim().to_lowercase();
     if family != "shopware" && family != "symfony" {
         return Err(CliError::fail("family must be shopware or symfony"));
@@ -377,7 +374,7 @@ fn create_file_workspace_edit(uri: &str, content: &str) -> WorkspaceEdit {
 }
 
 fn apply_mcp_workspace_edit(
-    runtime: &McpRuntime<'_>,
+    runtime: &McpRuntime,
     edit: Option<&WorkspaceEdit>,
     write: bool,
 ) -> Result<(Vec<String>, String), CliError> {
@@ -394,7 +391,7 @@ fn apply_mcp_workspace_edit(
 }
 
 fn bootstrap_response(
-    runtime: &McpRuntime<'_>,
+    runtime: &ToolCall<'_>,
     directory: &str,
 ) -> Result<EntitySchemaBootstrapResponse, CliError> {
     let directory_uri = runtime.input_uri(directory, true)?;
@@ -441,7 +438,7 @@ fn compact_bootstrap(input: EntitySchemaBootstrapResponse) -> BootstrapOutput {
 }
 
 fn field_types(
-    runtime: &McpRuntime<'_>,
+    runtime: &ToolCall<'_>,
     input: FieldTypesInput,
 ) -> Result<FieldTypesOutput, CliError> {
     let limit = bounded_limit(input.limit, 100, 200, "limit")? as usize;
@@ -650,7 +647,7 @@ fn field_type_usage(field_type: &EntitySchemaFieldType) -> &'static str {
     }
 }
 
-fn search(runtime: &McpRuntime<'_>, input: SearchInput) -> Result<SearchOutput, CliError> {
+fn search(runtime: &ToolCall<'_>, input: SearchInput) -> Result<SearchOutput, CliError> {
     let limit = bounded_limit(input.limit, 50, 200, "limit")?;
     let mut results: Option<Vec<EntitySchemaRelationTarget>> = runtime.with_session(|session| {
         let params = serde_json::to_value(EntitySchemaSearchRequest {
@@ -677,7 +674,7 @@ fn search(runtime: &McpRuntime<'_>, input: SearchInput) -> Result<SearchOutput, 
     Ok(SearchOutput { results })
 }
 
-fn load(runtime: &McpRuntime<'_>, input: LoadInput) -> Result<EntitySpec, CliError> {
+fn load(runtime: &ToolCall<'_>, input: LoadInput) -> Result<EntitySpec, CliError> {
     let file_uri = runtime.input_uri(&input.path, false)?;
     if input.definition_class.trim().is_empty()
         && input.entity_name.trim().is_empty()
@@ -704,7 +701,7 @@ fn load(runtime: &McpRuntime<'_>, input: LoadInput) -> Result<EntitySpec, CliErr
     Ok(spec)
 }
 
-fn preview(runtime: &McpRuntime<'_>, input: PreviewInput) -> Result<PreviewOutput, CliError> {
+fn preview(runtime: &ToolCall<'_>, input: PreviewInput) -> Result<PreviewOutput, CliError> {
     let request = runtime.preview_request(input.spec, input.decisions, input.drift_decision)?;
     let response: EntitySchemaPreviewResponse = runtime.with_session(|session| {
         call_command(session, scaffold::ENTITY_SCHEMA_PREVIEW_COMMAND, &request)
@@ -712,7 +709,7 @@ fn preview(runtime: &McpRuntime<'_>, input: PreviewInput) -> Result<PreviewOutpu
     Ok(runtime.preview_output(response))
 }
 
-fn apply(runtime: &McpRuntime<'_>, input: ApplyInput) -> Result<WriteOutput, CliError> {
+fn apply(runtime: &ToolCall<'_>, input: ApplyInput) -> Result<WriteOutput, CliError> {
     if input.revision.trim().is_empty() {
         return Err(CliError::fail("revision is required"));
     }
@@ -729,7 +726,7 @@ fn apply(runtime: &McpRuntime<'_>, input: ApplyInput) -> Result<WriteOutput, Cli
     })
 }
 
-fn reconcile(runtime: &McpRuntime<'_>, input: ReconcileInput) -> Result<WriteOutput, CliError> {
+fn reconcile(runtime: &ToolCall<'_>, input: ReconcileInput) -> Result<WriteOutput, CliError> {
     let directory_uri = runtime.input_uri(&input.directory, true)?;
     runtime.with_session(|session| {
         let response: EntitySchemaApplyResponse = call_command(
@@ -821,7 +818,7 @@ pub(crate) fn compact_diff(diff: &es::SchemaDiff) -> DiffSummary {
     result
 }
 
-impl McpRuntime<'_> {
+impl McpRuntime {
     /// Go `inputURI`: a validated workspace path as a file URI.
     fn input_uri(&self, value: &str, required: bool) -> Result<String, CliError> {
         if value.trim().is_empty() {

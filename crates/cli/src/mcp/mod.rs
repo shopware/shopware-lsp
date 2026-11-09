@@ -1,26 +1,35 @@
-//! The stdio MCP server (Go `mcp.go` on `github.com/modelcontextprotocol/
-//! go-sdk`). The JSON-RPC layer is hand-rolled because the tool names,
-//! schemas, results and error texts must be identical to the Go SDK's:
-//! newline-delimited JSON, `initialize` version negotiation, the
-//! initialization gate, input validation against the advertised schemas and
-//! tool results with sorted structured content plus a text fallback.
+//! The stdio MCP server on the official Rust SDK (`rmcp`).
+//!
+//! `rmcp` owns the protocol: framing, version negotiation, the
+//! initialization gate, cancellation and pagination. This module supplies
+//! the tools: their definitions come from `tools.json`, filtered by the
+//! configuration's MCP tool switches, so the handler lists and dispatches
+//! them by hand instead of through `rmcp`'s macros. Arguments are validated
+//! against the advertised input schemas before a tool runs; tools run on a
+//! blocking thread against the shared, lazily indexed `CliSession`.
 
 pub(crate) mod scaffold;
 mod schema;
 mod tools;
 
-use std::io::{BufReader, Read, Write};
-use std::sync::Mutex;
+use std::io::Read;
+use std::sync::{Arc, Mutex};
 
+use rmcp::model::{
+    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
+    ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig,
+};
+use rmcp::service::RequestContext;
+use rmcp::{ErrorData, RoleServer, ServerHandler, ServiceExt};
 use serde::Serialize;
-use serde_json::value::RawValue;
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
+use swlsp_lsp::async_io::{self, FrameWriter, Input, Output as StreamOutput};
 use swlsp_projectconfig::{Effective, Partial};
 
 use crate::session::{CliSession, SessionOptions};
-use crate::{CliError, Output, Runner};
+use crate::{Cancel, CliError, Output, Runner};
 
-pub(crate) use schema::tool_definitions;
+pub(crate) use schema::{ToolDefinition, tool_definitions};
 
 pub(crate) const INSTRUCTIONS: &str = "Use Shopware MCP generators instead of manually creating supported files. \
 For plugin/artifact requests always use shopware_scaffold with family=\"shopware\", kind=\"plugin\" for plugins. \
@@ -36,29 +45,70 @@ An explicit create/edit request permits non-destructive apply after a clean prev
 
 const EDITOR_CONFIGURATION_ENV: &str = "SHOPWARE_LSP_EDITOR_CONFIGURATION";
 
-/// The workspace-scoped MCP runtime (Go `mcpRuntime`). The production
-/// session is created on the first tool call that needs it and serialized
-/// by `session`.
-pub(crate) struct McpRuntime<'a> {
-    pub runner: &'a Runner,
+/// The workspace-scoped MCP runtime. The production session is created on
+/// the first tool call that needs it and serialized by `session`.
+pub(crate) struct McpRuntime {
     pub root: String,
     pub editor_configuration: Option<Partial>,
     pub configuration: Effective,
-    session: Mutex<Option<CliSession>>,
+    cancel: Cancel,
+    version: String,
+    err_out: Output,
+    allow_unsupported_project: bool,
+    session: Mutex<Option<McpSession>>,
 }
 
-impl<'a> McpRuntime<'a> {
+/// One tool call: the runtime and the call's cancellation, which every
+/// session request of the call uses. Other runtime members are reached
+/// through `Deref`.
+pub(crate) struct ToolCall<'a> {
+    runtime: &'a McpRuntime,
+    cancel: &'a Cancel,
+}
+
+impl<'a> ToolCall<'a> {
+    pub fn new(runtime: &'a McpRuntime, cancel: &'a Cancel) -> Self {
+        Self { runtime, cancel }
+    }
+
+    /// [`McpRuntime::with_session`] with this call's cancellation.
+    pub fn with_session<T>(
+        &self,
+        operation: impl FnOnce(&CliSession) -> Result<T, CliError>,
+    ) -> Result<T, CliError> {
+        self.runtime.with_session(self.cancel, operation)
+    }
+}
+
+impl std::ops::Deref for ToolCall<'_> {
+    type Target = McpRuntime;
+
+    fn deref(&self) -> &McpRuntime {
+        self.runtime
+    }
+}
+
+/// The shared session and whether its first index completed.
+struct McpSession {
+    session: CliSession,
+    indexed: bool,
+}
+
+impl McpRuntime {
     pub fn new(
-        runner: &'a Runner,
+        runner: &Runner,
         root: String,
         editor_configuration: Option<Partial>,
         configuration: Effective,
     ) -> Self {
         Self {
-            runner,
             root,
             editor_configuration,
             configuration,
+            cancel: runner.cancel.clone(),
+            version: runner.version().to_owned(),
+            err_out: runner.err_out.clone(),
+            allow_unsupported_project: runner.allow_unsupported_project,
             session: Mutex::new(None),
         }
     }
@@ -67,36 +117,51 @@ impl<'a> McpRuntime<'a> {
         self.configuration.mcp_tool_enabled(name)
     }
 
-    /// Runs `operation` on the shared, indexed session (Go `withMCPSession`).
+    /// Runs `operation` on the shared, indexed session (Go `withMCPSession`),
+    /// with its requests cancelled by `cancel` (the tool call's token). A
+    /// cancelled wait for the first index keeps the session, so the next
+    /// call resumes waiting.
     pub fn with_session<T>(
         &self,
+        cancel: &Cancel,
         operation: impl FnOnce(&CliSession) -> Result<T, CliError>,
     ) -> Result<T, CliError> {
         let mut guard = self.session.lock().unwrap_or_else(|p| p.into_inner());
         if guard.is_none() {
-            let mut session = CliSession::new(
-                &self.runner.cancel,
+            let session = CliSession::new(
+                &self.cancel,
                 SessionOptions {
                     root: self.root.clone(),
-                    version: self.runner.version().to_owned(),
-                    err_out: Some(self.runner.err_out.clone()),
+                    version: self.version.clone(),
+                    err_out: Some(self.err_out.clone()),
                     start_index: true,
-                    allow_unsupported_project: self.runner.allow_unsupported_project,
+                    allow_unsupported_project: self.allow_unsupported_project,
                     watch_files: true,
                     editor_configuration: self.editor_configuration.clone(),
                 },
             )?;
-            let result = session.wait_for_index()?;
-            session.initial_index = result;
-            *guard = Some(session);
+            *guard = Some(McpSession {
+                session,
+                indexed: false,
+            });
         }
-        operation(guard.as_ref().expect("session was created"))
+        let Some(state) = guard.as_mut() else {
+            return Err(CliError::fail("language server session is unavailable"));
+        };
+        if !state.indexed {
+            state.session.initial_index = state
+                .session
+                .with_cancel(cancel, || state.session.wait_for_index())?;
+            state.indexed = true;
+        }
+        let session = &state.session;
+        session.with_cancel(cancel, || operation(session))
     }
 
     pub fn close(&self) -> Result<(), CliError> {
         let mut guard = self.session.lock().unwrap_or_else(|p| p.into_inner());
         match guard.take() {
-            Some(session) => session.close(),
+            Some(state) => state.session.close(),
             None => Ok(()),
         }
     }
@@ -107,8 +172,25 @@ pub(crate) fn run_mcp(runner: &Runner) -> Result<(), CliError> {
     runner.require_supported_project(&root)?;
     let editor_configuration = mcp_editor_configuration()?;
     let configuration = mcp_configuration(&root, editor_configuration.as_ref())?;
-    let runtime = McpRuntime::new(runner, root, editor_configuration, configuration);
-    let result = serve(&runtime, runner.take_input(), runner.out.clone());
+    let runtime = Arc::new(McpRuntime::new(
+        runner,
+        root,
+        editor_configuration,
+        configuration,
+    ));
+    let result = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_name("mcp")
+        .build()
+        .map_err(|error| error.to_string())
+        .and_then(|executor| {
+            executor.block_on(serve(
+                runtime.clone(),
+                runner.take_input(),
+                runner.out.clone(),
+                runner.cancel.clone(),
+            ))
+        });
     if let Err(error) = runtime.close()
         && runner.verbose
     {
@@ -230,448 +312,130 @@ fn reject_unknown_configuration_fields(value: &Value) -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
-// JSON-RPC
+// Server
 
-#[derive(Clone)]
-struct Writer(Output);
-
-impl Writer {
-    fn respond(&self, id: &Value, result: Result<Value, RpcError>) {
-        #[derive(Serialize)]
-        struct Response<'a> {
-            jsonrpc: &'static str,
-            id: &'a Value,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            result: Option<Box<RawValue>>,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            error: Option<RpcError>,
-        }
-        let (result, error) = match result {
-            Ok(result) => (
-                Some(
-                    RawValue::from_string(encode_result(&result))
-                        .unwrap_or_else(|_| RawValue::NULL.to_owned()),
-                ),
-                None,
-            ),
-            Err(error) => (None, Some(error)),
-        };
-        let mut line = to_json(&Response {
-            jsonrpc: "2.0",
-            id,
-            result,
-            error,
-        });
-        line.push('\n');
-        let mut output = self.0.clone();
-        let _ = output.write_all(line.as_bytes());
-    }
-}
-
-/// Compact JSON text of `value`.
-fn to_json<T: Serialize + ?Sized>(value: &T) -> String {
-    serde_json::to_string(value).unwrap_or_else(|_| "null".into())
-}
-
-/// Results are pre-encoded where Go's struct field order matters; such
-/// values travel as `{"$raw": "<json>"}`.
-fn encode_result(result: &Value) -> String {
-    if let Some(raw) = result.get(RAW_KEY).and_then(Value::as_str)
-        && result.as_object().is_some_and(|map| map.len() == 1)
-    {
-        return raw.to_owned();
-    }
-    to_json(result)
-}
-
-const RAW_KEY: &str = "\u{0}raw";
-
-fn raw_result(text: String) -> Value {
-    json!({ RAW_KEY: text })
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct RpcError {
-    code: i64,
-    message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    data: Option<Value>,
-}
-
-impl RpcError {
-    fn new(code: i64, message: impl Into<String>) -> Self {
-        Self {
-            code,
-            message: message.into(),
-            data: None,
-        }
-    }
-}
-
-const INVALID_REQUEST: i64 = -32600;
-const METHOD_NOT_FOUND: i64 = -32601;
-const INVALID_PARAMS: i64 = -32602;
-
-struct State {
-    initialized: bool,
-    initialized_notification: bool,
-    client_version: String,
-}
-
-/// Serves MCP until end of input (Go `server.Run` on an `IOTransport`).
-fn serve(
-    runtime: &McpRuntime<'_>,
+/// Serves MCP on `input` and `output` until the client disconnects or the
+/// CLI is cancelled.
+async fn serve(
+    runtime: Arc<McpRuntime>,
     input: Box<dyn Read + Send>,
     output: Output,
+    cancel: Cancel,
 ) -> Result<(), String> {
-    let writer = Writer(output);
-    let state = Mutex::new(State {
-        initialized: false,
-        initialized_notification: false,
-        client_version: String::new(),
-    });
-    let reader = BufReader::new(input);
-    let stream = serde_json::Deserializer::from_reader(reader).into_iter::<Value>();
-    std::thread::scope(|scope| {
-        for message in stream {
-            let message = message.map_err(|error| error.to_string())?;
-            let Value::Object(message) = message else {
-                if message.is_array() {
-                    let version = state
-                        .lock()
-                        .unwrap_or_else(|p| p.into_inner())
-                        .client_version
-                        .clone();
-                    return Err(format!(
-                        "JSON-RPC batching is not supported in 2025-06-18 and later (request version: {version})"
-                    ));
-                }
-                return Err("invalid message".into());
-            };
-            let tag = message.get("jsonrpc").and_then(Value::as_str).unwrap_or("");
-            if tag != "2.0" {
-                return Err(format!(
-                    "invalid message version tag {:?}; expected \"2.0\"",
-                    tag
-                ));
-            }
-            let Some(method) = message
-                .get("method")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-            else {
-                // Responses to server-initiated calls: none are sent.
-                continue;
-            };
-            let id = message.get("id").and_then(normalize_id);
-            let params = message.get("params").cloned();
-            let call = id.is_some();
-            // Initialization and notifications are synchronous; other calls
-            // run concurrently like Go's async handlers.
-            if method == "initialize" || !call {
-                let result = handle(runtime, &state, &method, params, call);
-                if let Some(id) = &id {
-                    writer.respond(id, result);
-                }
-                continue;
-            }
-            let writer = writer.clone();
-            let state = &state;
-            scope.spawn(move || {
-                let result = handle(runtime, state, &method, params, call);
-                if let Some(id) = &id {
-                    writer.respond(id, result);
-                }
-            });
-        }
-        Ok(())
-    })
-}
-
-/// Go jsonrpc2 IDs are int64 or string; fractional numbers truncate.
-fn normalize_id(id: &Value) -> Option<Value> {
-    match id {
-        Value::Number(number) => {
-            if let Some(value) = number.as_i64() {
-                Some(json!(value))
-            } else {
-                number.as_f64().map(|value| json!(value as i64))
-            }
-        }
-        Value::String(value) => Some(json!(value)),
-        _ => None,
-    }
-}
-
-/// Method flags of Go's `serverMethodInfos`.
-struct MethodInfo {
-    notification: bool,
-    missing_params_ok: bool,
-    params_type: &'static str,
-}
-
-fn method_info(method: &str) -> Option<MethodInfo> {
-    let info = |notification, missing_params_ok, params_type| MethodInfo {
-        notification,
-        missing_params_ok,
-        params_type,
+    let (reader, frames, output_done) = async_io::connect(
+        Input::Blocking(input),
+        StreamOutput::Blocking(Box::new(output)),
+    )
+    .map_err(|error| error.to_string())?;
+    let stop = cancel.child();
+    let result = match (McpServer { runtime })
+        .serve_with_ct((reader, FrameWriter::new(frames)), stop.token().clone())
+        .await
+    {
+        Ok(service) => service
+            .waiting()
+            .await
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        // The client went away before initializing.
+        Err(error) => Err(error.to_string()),
     };
-    Some(match method {
-        "completion/complete" => info(false, false, "CompleteParams"),
-        "initialize" => info(false, false, "InitializeParams"),
-        "ping" => info(false, true, "PingParams"),
-        "prompts/list" => info(false, true, "ListPromptsParams"),
-        "prompts/get" => info(false, false, "GetPromptParams"),
-        "tools/list" => info(false, true, "ListToolsParams"),
-        "tools/call" => info(false, false, "CallToolParamsRaw"),
-        "resources/list" => info(false, true, "ListResourcesParams"),
-        "resources/templates/list" => info(false, true, "ListResourceTemplatesParams"),
-        "resources/read" => info(false, false, "ReadResourceParams"),
-        "logging/setLevel" => info(false, false, "SetLoggingLevelParams"),
-        "notifications/cancelled" => info(true, true, "CancelledParams"),
-        "notifications/initialized" => info(true, true, "InitializedParams"),
-        "notifications/roots/list_changed" => info(true, true, "RootsListChangedParams"),
-        "notifications/progress" => info(true, false, "ProgressNotificationParams"),
-        _ => return None,
-    })
+    stop.cancel();
+    output_done.wait().await;
+    result
 }
 
-fn handle(
-    runtime: &McpRuntime<'_>,
-    state: &Mutex<State>,
-    method: &str,
-    params: Option<Value>,
-    call: bool,
-) -> Result<Value, RpcError> {
-    let initialized = state.lock().unwrap_or_else(|p| p.into_inner()).initialized;
-    let gated = !matches!(
-        method,
-        "initialize"
-            | "ping"
-            | "notifications/initialized"
-            | "notifications/roots/list_changed"
-            | "logging/setLevel"
-            | "resources/subscribe"
-            | "resources/unsubscribe"
-    );
-    if gated && !initialized {
-        return Err(RpcError::new(
-            0,
-            format!(
-                "method {:?} is invalid during session initialization",
-                method
-            ),
-        ));
+/// The MCP request handler.
+#[derive(Clone)]
+struct McpServer {
+    runtime: Arc<McpRuntime>,
+}
+
+impl McpServer {
+    fn enabled_tools(&self) -> impl Iterator<Item = &'static ToolDefinition> + '_ {
+        tool_definitions()
+            .iter()
+            .filter(|tool| self.runtime.tool_enabled(&tool.name))
     }
-    let Some(info) = method_info(method) else {
-        return Err(RpcError::new(
-            METHOD_NOT_FOUND,
-            format!("method not found: {:?}", method),
-        ));
-    };
-    if info.notification && call {
-        return Err(RpcError::new(
-            INVALID_REQUEST,
-            format!("invalid request: unexpected id for {:?}", method),
-        ));
-    }
-    if !info.missing_params_ok && params.is_none() {
-        return Err(RpcError::new(
-            INVALID_REQUEST,
-            "invalid request: missing required \"params\"",
-        ));
-    }
-    let params = match params {
-        None | Some(Value::Null) => None,
-        Some(Value::Object(map)) => Some(map),
-        Some(other) => {
-            let raw = to_json(&other);
-            return Err(RpcError::new(
-                INVALID_PARAMS,
-                format!(
-                    "handling '{method}': invalid params: unmarshaling {:?} into a *mcp.{}: json: cannot unmarshal {:?} into Go value of type mcp.{}",
-                    raw, info.params_type, raw, info.params_type
-                ),
-            ));
-        }
-    };
-    if !info.missing_params_ok && params.is_none() {
-        let message = if method == "initialize" {
-            format!("handling '{method}': missing required \"params\"")
+}
+
+impl ServerHandler for McpServer {
+    fn get_info(&self) -> ServerConfig {
+        let capabilities = if self.enabled_tools().next().is_some() {
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_tool_list_changed()
+                .build()
         } else {
-            format!("handling '{method}': invalid request: missing required \"params\"")
+            ServerCapabilities::default()
         };
-        let code = if method == "initialize" {
-            0
-        } else {
-            INVALID_REQUEST
-        };
-        return Err(RpcError::new(code, message));
-    }
-    let params = params.unwrap_or_default();
-    match method {
-        "initialize" => {
-            let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-            if state.initialized {
-                return Err(RpcError::new(0, "duplicate \"initialize\" received"));
-            }
-            state.initialized = true;
-            let requested = params
-                .get("protocolVersion")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_owned();
-            state.client_version = requested.clone();
-            Ok(raw_result(initialize_result(runtime, &requested)))
-        }
-        "notifications/initialized" => {
-            let mut state = state.lock().unwrap_or_else(|p| p.into_inner());
-            state.initialized_notification = true;
-            Ok(Value::Null)
-        }
-        "ping" | "logging/setLevel" => Ok(json!({})),
-        "tools/list" => {
-            if params
-                .get("cursor")
-                .and_then(Value::as_str)
-                .is_some_and(|cursor| !cursor.is_empty())
-            {
-                return Err(RpcError::new(INVALID_PARAMS, "invalid params"));
-            }
-            Ok(raw_result(tools_list(runtime)))
-        }
-        "resources/list" => Ok(raw_result(
-            "{\"ttlMs\":0,\"cacheScope\":\"public\",\"resources\":[]}".into(),
-        )),
-        "resources/templates/list" => Ok(raw_result(
-            "{\"ttlMs\":0,\"cacheScope\":\"public\",\"resourceTemplates\":[]}".into(),
-        )),
-        "prompts/list" => Ok(raw_result(
-            "{\"ttlMs\":0,\"cacheScope\":\"public\",\"prompts\":[]}".into(),
-        )),
-        "prompts/get" => Err(RpcError::new(
-            INVALID_PARAMS,
-            format!(
-                "unknown prompt {:?}",
-                params.get("name").and_then(Value::as_str).unwrap_or("")
-            ),
-        )),
-        "resources/read" => Err(RpcError {
-            code: INVALID_PARAMS,
-            message: "Resource not found".into(),
-            data: Some(json!({"uri": params.get("uri").and_then(Value::as_str).unwrap_or("")})),
-        }),
-        "completion/complete" => {
-            if !params.contains_key("ref") {
-                return Err(RpcError::new(
-                    INVALID_PARAMS,
-                    "invalid params: missing required 'ref' field",
-                ));
-            }
-            Err(RpcError::new(
-                METHOD_NOT_FOUND,
-                format!("method not found: {:?}", method),
+        ServerConfig::new(capabilities)
+            .with_server_info(Implementation::new(
+                "shopware-lsp",
+                self.runtime.version.clone(),
             ))
-        }
-        "tools/call" => {
-            let client_version = state
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .client_version
-                .clone();
-            call_tool(runtime, &params, &client_version)
-        }
-        _ => Ok(Value::Null),
+            .with_instructions(INSTRUCTIONS)
     }
-}
 
-fn initialize_result(runtime: &McpRuntime<'_>, requested: &str) -> String {
-    const SUPPORTED: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
-    let version = if SUPPORTED.contains(&requested) {
-        requested
-    } else {
-        "2025-11-25"
-    };
-    let has_tools = tool_definitions()
-        .iter()
-        .any(|tool| runtime.tool_enabled(&tool.name));
-    let capabilities = if has_tools {
-        "{\"tools\":{\"listChanged\":true}}"
-    } else {
-        "{}"
-    };
-    format!(
-        "{{\"capabilities\":{capabilities},\"instructions\":{},\"protocolVersion\":{},\"serverInfo\":{{\"name\":\"shopware-lsp\",\"version\":{}}}}}",
-        to_json(INSTRUCTIONS),
-        to_json(version),
-        to_json(runtime.runner.version())
-    )
-}
-
-fn tools_list(runtime: &McpRuntime<'_>) -> String {
-    let tools: Vec<&str> = tool_definitions()
-        .iter()
-        .filter(|tool| runtime.tool_enabled(&tool.name))
-        .map(|tool| tool.raw.get())
-        .collect();
-    format!(
-        "{{\"ttlMs\":0,\"cacheScope\":\"public\",\"tools\":[{}]}}",
-        tools.join(",")
-    )
-}
-
-fn call_tool(
-    runtime: &McpRuntime<'_>,
-    params: &Map<String, Value>,
-    client_version: &str,
-) -> Result<Value, RpcError> {
-    let name = params.get("name").and_then(Value::as_str).unwrap_or("");
-    let Some(definition) = tool_definitions()
-        .iter()
-        .find(|tool| tool.name == name && runtime.tool_enabled(&tool.name))
-    else {
-        return Err(RpcError::new(
-            INVALID_PARAMS,
-            format!("unknown tool {:?}", name),
-        ));
-    };
-    let result_type = if client_version >= "2026-07-28" {
-        ",\"resultType\":\"complete\""
-    } else {
-        ""
-    };
-    let error_result = |message: &str| {
-        raw_result(format!(
-            "{{\"content\":[{{\"type\":\"text\",\"text\":{}}}],\"isError\":true{result_type}}}",
-            to_json(message)
+    async fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, ErrorData> {
+        Ok(ListToolsResult::with_all_items(
+            self.enabled_tools().map(|tool| tool.tool.clone()).collect(),
         ))
-    };
-    // Validate input and apply defaults (Go `applySchema`).
-    let arguments = match params.get("arguments") {
-        None | Some(Value::Null) => Value::Object(Map::new()),
-        Some(Value::Object(map)) => Value::Object(map.clone()),
-        Some(other) => {
-            let raw = to_json(other);
-            return Ok(error_result(&format!(
-                "validating \"arguments\": unmarshaling arguments: json: cannot unmarshal {:?} into Go value of type map[string]interface {{}}",
-                raw
-            )));
-        }
-    };
-    if let Err(error) = schema::validate(&arguments, &definition.input_schema) {
-        return Ok(error_result(&format!("validating \"arguments\": {error}")));
     }
-    let arguments = normalize_arguments(arguments);
-    match tools::dispatch(runtime, name, arguments) {
-        Ok(output) => {
-            let structured = to_json(&output);
-            Ok(raw_result(format!(
-                "{{\"content\":[{{\"type\":\"text\",\"text\":{}}}],\"structuredContent\":{structured}{result_type}}}",
-                to_json(&structured)
-            )))
+
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, ErrorData> {
+        let name = request.name.to_string();
+        let Some(definition) = self.enabled_tools().find(|tool| tool.name == name) else {
+            return Err(ErrorData::invalid_params(
+                format!("unknown tool {name:?}"),
+                None,
+            ));
+        };
+        let arguments = Value::Object(request.arguments.unwrap_or_default());
+        if let Err(error) = schema::validate(&arguments, &definition.input_schema) {
+            return Ok(tool_error(format!("invalid arguments: {error}")));
         }
-        Err(error) => Ok(error_result(&error.message)),
+        let arguments = normalize_arguments(arguments);
+        // Cancelled by the client (`notifications/cancelled`) or the CLI; the
+        // running analysis is cancelled on the language server too.
+        let cancel = self.runtime.cancel.child();
+        let runtime = self.runtime.clone();
+        let call_cancel = cancel.clone();
+        let mut call = tokio::task::spawn_blocking(move || {
+            tools::dispatch(&runtime, &name, arguments, &call_cancel)
+        });
+        let outcome = tokio::select! {
+            outcome = &mut call => outcome,
+            () = context.ct.cancelled() => {
+                cancel.cancel();
+                call.await
+            }
+        };
+        Ok(match outcome {
+            Ok(Ok(output)) => {
+                let text = serde_json::to_string(&output).unwrap_or_else(|_| "null".into());
+                let mut result = CallToolResult::success(vec![ContentBlock::text(text)]);
+                result.structured_content = Some(output);
+                result.into()
+            }
+            Ok(Err(error)) => tool_error(error.message),
+            Err(error) => tool_error(format!("tool failed: {error}")),
+        })
     }
+}
+
+/// A tool error the caller can read (protocol errors are often hidden from
+/// the model).
+fn tool_error(message: impl Into<String>) -> CallToolResponse {
+    CallToolResult::error(vec![ContentBlock::text(message.into())]).into()
 }
 
 /// Prepares validated arguments for typed decoding the way Go's decoder
