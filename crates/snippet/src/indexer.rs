@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::Arc;
 
 use swlsp_indexer::{
-    DataIndexer, Error, Indexer, Mutation, ParsedFile, Result, Store, TransactionalClearer,
-    TransactionalRemover,
+    DataIndexer, Error, Indexer, Mutation, ParsedFile, Prepared, PreparingIndexer, Result, Store,
+    TransactionalClearer, TransactionalRemover,
 };
 use swlsp_language::LanguageId;
 
@@ -21,6 +21,12 @@ pub struct SnippetIndexer {
 }
 
 impl SnippetIndexer {
+    /// Advanced after every committed change to this index; inspections
+    /// declare it as an input (`ProblemAnalyzer::input_revision`).
+    pub fn revision(&self) -> u64 {
+        self.frontend.revision() + self.admin.revision()
+    }
+
     pub fn new(config_dir: impl AsRef<Path>, store: Option<&Store>) -> Result<Self> {
         let dir = config_dir.as_ref();
         let frontend =
@@ -70,19 +76,16 @@ impl SnippetIndexer {
         snippets_with_text(&self.admin)
     }
 
-    fn index_into(&self, repository: &DataIndexer<Snippet>, file: &ParsedFile) -> Result<()> {
-        let path = file.path();
-        // Only JSON trees can contain snippet objects; other languages under a
-        // snippet directory (legacy PHP snippet files) persist an empty set
-        // without being parsed.
-        let snippets = match file.language() {
-            Some(LanguageId::Json) => match file.syntax_tree() {
-                Some(tree) => parse_snippet_tree(tree, file.line_index(), path),
-                None => Default::default(),
-            },
-            _ => Default::default(),
+    /// Stores extracted snippets in the repository of their target.
+    fn persist(&self, file: &ParsedFile, prepared: &PreparedSnippets) -> Result<()> {
+        let Some((target, snippets)) = &prepared.0 else {
+            return Ok(());
         };
-        repository.batch_save_items_in(file.mutation(), [(path, &snippets)])
+        let repository = match target {
+            SnippetTarget::Frontend => &self.frontend,
+            SnippetTarget::Admin => &self.admin,
+        };
+        repository.batch_save_items_in(file.mutation(), [(file.path(), snippets)])
     }
 
     fn split_paths(paths: &[String]) -> (Vec<&str>, Vec<&str>) {
@@ -106,6 +109,42 @@ impl SnippetIndexer {
             self.admin.batch_delete_by_file_paths_in(mutation, &admin),
         )
     }
+}
+
+/// The repository a snippet file belongs to.
+#[derive(Clone, Copy)]
+enum SnippetTarget {
+    Frontend,
+    Admin,
+}
+
+/// Snippets extracted from one file; `None` leaves the file alone.
+struct PreparedSnippets(Option<(SnippetTarget, BTreeMap<String, Snippet>)>);
+
+/// Parses one snippet file without writing anything.
+fn extract_snippets(file: &ParsedFile) -> PreparedSnippets {
+    let path = file.path();
+    if path.contains("/_fixtures/") {
+        return PreparedSnippets(None);
+    }
+    let target = if path.contains(STOREFRONT_SNIPPETS) {
+        SnippetTarget::Frontend
+    } else if is_admin_snippet_file(path) {
+        SnippetTarget::Admin
+    } else {
+        return PreparedSnippets(None);
+    };
+    // Only JSON trees can contain snippet objects; other languages under a
+    // snippet directory (legacy PHP snippet files) persist an empty set
+    // without being parsed.
+    let snippets = match file.language() {
+        Some(LanguageId::Json) => match file.syntax_tree() {
+            Some(tree) => parse_snippet_tree(tree, file.line_index(), path),
+            None => BTreeMap::new(),
+        },
+        _ => BTreeMap::new(),
+    };
+    PreparedSnippets(Some((target, snippets)))
 }
 
 /// Whether `path` is an Administration snippet file: a `.json` file directly
@@ -152,17 +191,7 @@ impl Indexer for SnippetIndexer {
     }
 
     fn index(&self, file: &ParsedFile) -> Result<()> {
-        let path = file.path();
-        if path.contains("/_fixtures/") {
-            return Ok(());
-        }
-        if path.contains(STOREFRONT_SNIPPETS) {
-            return self.index_into(&self.frontend, file);
-        }
-        if is_admin_snippet_file(path) {
-            return self.index_into(&self.admin, file);
-        }
-        Ok(())
+        self.persist(file, &extract_snippets(file))
     }
 
     fn removed_files(&self, paths: &[String]) -> Result<()> {
@@ -177,12 +206,29 @@ impl Indexer for SnippetIndexer {
         join(self.frontend.clear(), self.admin.clear())
     }
 
+    fn as_preparing(&self) -> Option<&dyn PreparingIndexer> {
+        Some(self)
+    }
+
     fn as_transactional_remover(&self) -> Option<&dyn TransactionalRemover> {
         Some(self)
     }
 
     fn as_transactional_clearer(&self) -> Option<&dyn TransactionalClearer> {
         Some(self)
+    }
+}
+
+impl PreparingIndexer for SnippetIndexer {
+    fn prepare(&self, file: &ParsedFile) -> Result<Option<Prepared>> {
+        Ok(Some(Box::new(extract_snippets(file))))
+    }
+
+    fn index_prepared(&self, file: &ParsedFile, prepared: Option<&Prepared>) -> Result<()> {
+        match prepared.and_then(|value| value.downcast_ref::<PreparedSnippets>()) {
+            Some(prepared) => self.persist(file, prepared),
+            None => self.index(file),
+        }
     }
 }
 
@@ -198,6 +244,12 @@ impl TransactionalClearer for SnippetIndexer {
             self.frontend.clear_in(Some(mutation)),
             self.admin.clear_in(Some(mutation)),
         )
+    }
+}
+
+impl swlsp_indexer::Revisioned for SnippetIndexer {
+    fn revision(&self) -> u64 {
+        SnippetIndexer::revision(self)
     }
 }
 
@@ -302,5 +354,42 @@ mod tests {
         );
         assert!(indexer.all_admin_snippets().unwrap().is_empty());
         indexer.close().unwrap();
+    }
+
+    #[test]
+    fn prepared_indexing_matches_direct_indexing() {
+        let dir = tempfile::tempdir().unwrap();
+        let direct = SnippetIndexer::new(dir.path().join("direct"), None).unwrap();
+        let prepared = SnippetIndexer::new(dir.path().join("prepared"), None).unwrap();
+        let files = [
+            (
+                "/p/src/Resources/snippet/en_GB/storefront.en-GB.json",
+                r#"{"general": {"title": "Title"}}"#,
+            ),
+            (
+                "/p/src/Resources/app/administration/src/snippet/de-DE.json",
+                r#"{"sw-demo": {"label": "Bezeichnung"}}"#,
+            ),
+        ];
+        for (path, source) in files {
+            direct
+                .index(&ParsedFile::new(path, source.as_bytes().to_vec()))
+                .unwrap();
+            let file = ParsedFile::new(path, source.as_bytes().to_vec());
+            let data = prepared.prepare(&file).unwrap();
+            prepared.index_prepared(&file, data.as_ref()).unwrap();
+        }
+        assert_eq!(direct.all_frontend_snippets().unwrap().len(), 1);
+        assert_eq!(direct.all_admin_snippets().unwrap().len(), 1);
+        assert_eq!(
+            prepared.all_frontend_snippets().unwrap(),
+            direct.all_frontend_snippets().unwrap()
+        );
+        assert_eq!(
+            prepared.all_admin_snippets().unwrap(),
+            direct.all_admin_snippets().unwrap()
+        );
+        direct.close().unwrap();
+        prepared.close().unwrap();
     }
 }

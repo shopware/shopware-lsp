@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use swlsp_indexer::{
-    DataIndexer, Indexer, Mutation, ParsedFile, Result, Store, TransactionalClearer,
-    TransactionalRemover,
+    DataIndexer, Indexer, Mutation, ParsedFile, Prepared, PreparingIndexer, Result, Store,
+    TransactionalClearer, TransactionalRemover,
 };
 use swlsp_php::PhpIndex;
 use swlsp_php_semantic::{Flags, Symbol, SymbolKind};
@@ -49,6 +49,18 @@ struct ServicesByTypeCache {
 
 type PathKinds = Arc<RwLock<HashMap<String, u8>>>;
 
+/// Records grouped per source path, keyed within each path.
+type PathWrites<T> = Vec<(String, Vec<(String, T)>)>;
+
+/// Service configuration parsed ahead of the write transaction.
+struct PreparedServices {
+    services: Vec<Service>,
+    parameters: Vec<Parameter>,
+    service_write: PathWrites<Service>,
+    parameter_write: PathWrites<Parameter>,
+    prototype_write: PathWrites<ServicePrototype>,
+}
+
 /// Maintains an index of service IDs from XML, YAML, and PHP configurator
 /// files.
 pub struct ServiceIndex {
@@ -73,6 +85,17 @@ impl std::fmt::Debug for ServiceIndex {
 }
 
 impl ServiceIndex {
+    /// Advanced after every change to the indexed services, parameters,
+    /// prototypes or the compiled container catalog; inspections declare it
+    /// as an input (`ProblemAnalyzer::input_revision`).
+    pub fn revision(&self) -> u64 {
+        self.services.revision()
+            + self.parameters.revision()
+            + self.prototypes.revision()
+            + self.container.revision()
+            + self.prototype_revision.load(Ordering::SeqCst)
+    }
+
     /// Opens the service repositories in `store`, or in owned databases
     /// under `config_dir` when no workspace store is given.
     pub fn new(
@@ -207,10 +230,12 @@ impl ServiceIndex {
         }
     }
 
-    fn index_file(&self, file: &ParsedFile) -> Result<()> {
+    /// Parses the file's services, parameters, and prototypes without
+    /// writing anything; `None` for files the service index ignores.
+    fn extract(&self, file: &ParsedFile) -> Option<PreparedServices> {
         let path = file.path();
         if path.contains("var/cache") {
-            return Ok(());
+            return None;
         }
         let (services, parameters, prototypes) = match file.extension() {
             ".xml" => crate::xml_services::parse_xml_service_config_tree(
@@ -226,35 +251,30 @@ impl ServiceIndex {
             ".php" => {
                 if !is_php_service_config_candidate(file.source()) {
                     if !self.has_indexed_path(path) {
-                        return Ok(());
+                        return None;
                     }
                     (Vec::new(), Vec::new(), Vec::new())
                 } else {
-                    let Some(tree) = file.syntax_tree() else {
-                        return Ok(());
-                    };
+                    let tree = file.syntax_tree()?;
                     let config = crate::php_service_config(path, &tree.root(), file.line_index());
                     (config.services, config.parameters, config.prototypes)
                 }
             }
-            _ => return Ok(()),
+            _ => return None,
         };
 
         // Go keys maps by path → id; one entry per id with the last value.
-        let mut service_write: Vec<(String, Vec<(String, Service)>)> =
-            vec![(path.to_owned(), Vec::new())];
+        let mut service_write: PathWrites<Service> = vec![(path.to_owned(), Vec::new())];
         for service in &services {
             let bucket = bucket(&mut service_write, &service.path);
             upsert(bucket, service.id.clone(), service.clone());
         }
-        let mut parameter_write: Vec<(String, Vec<(String, Parameter)>)> =
-            vec![(path.to_owned(), Vec::new())];
+        let mut parameter_write: PathWrites<Parameter> = vec![(path.to_owned(), Vec::new())];
         for parameter in &parameters {
             let bucket = bucket(&mut parameter_write, &parameter.path);
             upsert(bucket, parameter.name.clone(), parameter.clone());
         }
-        let mut prototype_write: Vec<(String, Vec<(String, ServicePrototype)>)> =
-            vec![(path.to_owned(), Vec::new())];
+        let mut prototype_write: PathWrites<ServicePrototype> = vec![(path.to_owned(), Vec::new())];
         for prototype in prototypes {
             let key = format!(
                 "{}:{}:{}",
@@ -262,7 +282,35 @@ impl ServiceIndex {
             );
             upsert(&mut prototype_write[0].1, key, prototype);
         }
+        Some(PreparedServices {
+            services,
+            parameters,
+            service_write,
+            parameter_write,
+            prototype_write,
+        })
+    }
 
+    /// Writes prepared service configuration for `file` and publishes its
+    /// indexed path kinds after commit.
+    fn persist(&self, file: &ParsedFile, prepared: Option<&PreparedServices>) -> Result<()> {
+        let Some(PreparedServices {
+            services,
+            parameters,
+            service_write,
+            parameter_write,
+            prototype_write,
+        }) = prepared
+        else {
+            return Ok(());
+        };
+
+        // Every indexer sees every file; one without service data, now or
+        // before, changes nothing and must not invalidate derived caches.
+        let changed = self.has_indexed_path(file.path())
+            || service_write.iter().any(|(_, items)| !items.is_empty())
+            || parameter_write.iter().any(|(_, items)| !items.is_empty())
+            || prototype_write.iter().any(|(_, items)| !items.is_empty());
         let mutation = file.mutation();
         self.parameters.batch_save_items_in(
             mutation,
@@ -300,13 +348,13 @@ impl ServiceIndex {
                 state.present |= kind;
             }
         };
-        for (path, items) in &service_write {
+        for (path, items) in service_write {
             add(path, PATH_SERVICES, !items.is_empty());
         }
-        for (path, items) in &parameter_write {
+        for (path, items) in parameter_write {
             add(path, PATH_PARAMETERS, !items.is_empty());
         }
-        for (path, items) in &prototype_write {
+        for (path, items) in prototype_write {
             add(path, PATH_PROTOTYPES, !items.is_empty());
         }
         self.publish_paths(mutation, move |paths| {
@@ -321,12 +369,15 @@ impl ServiceIndex {
                 }
             }
         })?;
-        add_service_workspace_symbols(file, &services, &parameters);
-        self.bump();
+        add_service_workspace_symbols(file, services, parameters);
+        if changed {
+            self.bump();
+        }
         Ok(())
     }
 
     fn remove(&self, paths: &[String], mutation: Option<&Mutation>) -> Result<()> {
+        let changed = paths.iter().any(|path| self.has_indexed_path(path));
         let results = [
             self.services.batch_delete_by_file_paths_in(mutation, paths),
             self.parameters
@@ -343,7 +394,9 @@ impl ServiceIndex {
                 indexed.remove(path);
             }
         })?;
-        self.bump();
+        if changed {
+            self.bump();
+        }
         Ok(())
     }
 
@@ -807,10 +860,7 @@ fn service_definitions_by_id<'a>(definitions: &[&'a Service]) -> HashMap<String,
     by_id
 }
 
-fn bucket<'a, T>(
-    write: &'a mut Vec<(String, Vec<(String, T)>)>,
-    path: &str,
-) -> &'a mut Vec<(String, T)> {
+fn bucket<'a, T>(write: &'a mut PathWrites<T>, path: &str) -> &'a mut Vec<(String, T)> {
     let index = match write.iter().position(|(existing, _)| existing == path) {
         Some(index) => index,
         None => {
@@ -914,7 +964,7 @@ impl Indexer for ServiceIndex {
     }
 
     fn index(&self, file: &ParsedFile) -> Result<()> {
-        self.index_file(file)
+        self.persist(file, self.extract(file).as_ref())
     }
 
     fn removed_files(&self, paths: &[String]) -> Result<()> {
@@ -937,12 +987,29 @@ impl Indexer for ServiceIndex {
         self.clear_all(None)
     }
 
+    fn as_preparing(&self) -> Option<&dyn PreparingIndexer> {
+        Some(self)
+    }
+
     fn as_transactional_remover(&self) -> Option<&dyn TransactionalRemover> {
         Some(self)
     }
 
     fn as_transactional_clearer(&self) -> Option<&dyn TransactionalClearer> {
         Some(self)
+    }
+}
+
+impl PreparingIndexer for ServiceIndex {
+    fn prepare(&self, file: &ParsedFile) -> Result<Option<Prepared>> {
+        Ok(Some(Box::new(self.extract(file))))
+    }
+
+    fn index_prepared(&self, file: &ParsedFile, prepared: Option<&Prepared>) -> Result<()> {
+        match prepared.and_then(|value| value.downcast_ref::<Option<PreparedServices>>()) {
+            Some(prepared) => self.persist(file, prepared.as_ref()),
+            None => self.index(file),
+        }
     }
 }
 
@@ -972,5 +1039,11 @@ impl ServiceIndex {
             self.container.clone(),
             store,
         )
+    }
+}
+
+impl swlsp_indexer::Revisioned for ServiceIndex {
+    fn revision(&self) -> u64 {
+        ServiceIndex::revision(self)
     }
 }

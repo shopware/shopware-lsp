@@ -213,6 +213,42 @@ impl TwigIndexer {
         read(&self.dependencies).services.clone()
     }
 
+    /// Advanced after every committed change to the indexed templates,
+    /// blocks, callables, references and usages, and after every change of
+    /// the PHP and service indexes globals and PHP usages resolve through;
+    /// inspections declare it as an input (`ProblemAnalyzer::input_revision`).
+    pub fn revision(&self) -> u64 {
+        let own = [
+            self.files.revision(),
+            self.blocks.revision(),
+            self.block_hashes.revision(),
+            self.functions.revision(),
+            self.filters.revision(),
+            self.tests.revision(),
+            self.operators.revision(),
+            self.tags.revision(),
+            self.macros.revision(),
+            self.macro_usages.revision(),
+            self.template_variables.revision(),
+            self.globals.revision(),
+            self.template_references.revision(),
+            self.constant_usages.revision(),
+            self.php_usages.revision(),
+            self.extension_usages.revision(),
+        ]
+        .iter()
+        .sum::<u64>();
+        let dependencies = read(&self.dependencies);
+        own + dependencies
+            .php
+            .as_ref()
+            .map_or(0, |php| php.revision() + php.analysis_revision())
+            + dependencies
+                .services
+                .as_ref()
+                .map_or(0, |services| services.revision())
+    }
+
     // --- preparation ---
 
     fn prepare_file(&self, file: &ParsedFile) -> Option<PreparedFile> {
@@ -1442,5 +1478,11 @@ impl TransactionalRemover for TwigIndexer {
 impl TransactionalClearer for TwigIndexer {
     fn clear_in(&self, mutation: &Mutation) -> Result<()> {
         self.clear_all(Some(mutation))
+    }
+}
+
+impl swlsp_indexer::Revisioned for TwigIndexer {
+    fn revision(&self) -> u64 {
+        TwigIndexer::revision(self)
     }
 }

@@ -19,12 +19,12 @@ fn twig_render_block_diagnostics_report_typos_only_on_abstract_controller() {
         &join("templates/base.html.twig"),
         "{% block content %}{% endblock %}\n{% block sidebar %}{% endblock %}",
     );
-    let source = r#"<?php
+    let fixture = r#"<?php
 namespace App;
 class Controller extends \Symfony\Bundle\FrameworkBundle\Controller\AbstractController {
     public function page(): void {
         $this->renderBlock('base.html.twig', 'content');
-        $this->renderBlock('base.html.twig', 'contnet');
+        $this->renderBlock('base.html.twig', '{|twig.template.block.missing:contnet|}');
     }
 }
 class Unrelated {
@@ -33,13 +33,12 @@ class Unrelated {
     }
 }"#;
     let path = join("src/Controller.php");
-    index_file(&php, &path, source);
-    let result = analyze(
+    index_file(&php, &path, &plain(fixture));
+    let (_, result) = check_problems(
         &TwigRenderBlockAnalyzer::new(Some(twig), Some(php)),
-        &doc(&swlsp_uriutil::file_uri(&path), source),
+        &swlsp_uriutil::file_uri(&path),
+        fixture,
     );
-    assert_eq!(result.len(), 1, "{result:?}");
-    assert_eq!(result[0].id.as_str(), "twig.template.block.missing");
     assert!(result[0].message.contains("contnet"));
     assert!(suggestions(&result[0]).contains(&"content".to_owned()));
 }

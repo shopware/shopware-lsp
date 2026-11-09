@@ -46,6 +46,12 @@ pub struct Index {
 }
 
 impl Index {
+    /// Advanced after every committed change to this index; inspections
+    /// declare it as an input (`ProblemAnalyzer::input_revision`).
+    pub fn revision(&self) -> u64 {
+        self.records.revision()
+    }
+
     pub fn new(config_dir: impl AsRef<Path>, store: Option<&Store>) -> Result<Self> {
         let records = DataIndexer::repository(
             config_dir.as_ref().join("serializer.db"),
@@ -221,5 +227,11 @@ mod range_serde {
             return Err(serde::de::Error::custom("invalid text range"));
         }
         Ok(TextRange::new(start.into(), end.into()))
+    }
+}
+
+impl swlsp_indexer::Revisioned for Index {
+    fn revision(&self) -> u64 {
+        Index::revision(self)
     }
 }

@@ -3,8 +3,6 @@ use swlsp_indexer::Indexer;
 use super::*;
 use crate::twig::TemplateAnalyzer;
 
-const MISSING: &str = "twig.template.missing";
-
 struct Fixture {
     analyzer: TemplateAnalyzer,
     _dirs: Vec<tempfile::TempDir>,
@@ -40,15 +38,11 @@ fn fixture() -> Fixture {
 #[test]
 fn template_diagnostics_for_twig() {
     let fixture = fixture();
-    let document = doc(
+    check_problems(
+        &fixture.analyzer,
         "file:///project/templates/page.html.twig",
-        "{% extends 'base.html.twig' %}\n{% use '@MyBundle/card.html.twig' %}\n{% include 'missing.html.twig' %}\n{{ source('also-missing.html.twig') }}",
+        "{% extends 'base.html.twig' %}\n{% use '@MyBundle/card.html.twig' %}\n{% include '{|twig.template.missing:missing.html.twig|}' %}\n{{ source('{|twig.template.missing:also-missing.html.twig|}') }}",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 2);
-    for problem in &result {
-        assert_eq!(problem.id.as_str(), MISSING);
-    }
 }
 
 #[test]
@@ -65,89 +59,43 @@ fn template_diagnostics_for_shopware_bundle_namespaces() {
         "app",
     );
     let analyzer = TemplateAnalyzer::new(Some(index.clone()), None);
-    let cases: &[(&str, bool)] = &[
-        (
-            r#"{% sw_include "@SwagCmsExtensions/storefront/card.html.twig" %}"#,
-            false,
-        ),
-        (
-            r#"{% sw_extends "@SwagCmsExtensions/storefront/card.html.twig" %}"#,
-            false,
-        ),
-        (
-            r#"{% sw_extends {template: "@SwagCmsExtensions/storefront/card.html.twig", scopes: ['default']} %}"#,
-            false,
-        ),
-        (
-            r#"{% sw_include "@UnknownBundle/storefront/card.html.twig" %}"#,
-            false,
-        ),
-        (r#"{% sw_include "storefront/card.html.twig" %}"#, false),
-        (
-            r#"{% sw_include "@SwagCmsExtensions/" ~ "storefront/card.html.twig" %}"#,
-            false,
-        ),
-        (
-            r#"{% sw_include ["missing.html.twig", "@SwagCmsExtensions/storefront/card.html.twig"] %}"#,
-            false,
-        ),
-        (
-            r#"{% sw_include "@SwagCmsExtensions/storefront/missing.html.twig" %}"#,
-            true,
-        ),
-        (
-            r#"{% sw_include "@SwagCmsExtensions/app-only.html.twig" %}"#,
-            true,
-        ),
-        (r#"{% sw_include "app-only.html.twig" %}"#, false),
-        (
-            r#"{% include "@SwagCmsExtensions/storefront/card.html.twig" %}"#,
-            true,
-        ),
-        (
-            r#"{% extends "@SwagCmsExtensions/storefront/card.html.twig" %}"#,
-            true,
-        ),
-        (
-            r#"{{ include("@SwagCmsExtensions/storefront/card.html.twig") }}"#,
-            true,
-        ),
-        (
-            r#"{% sw_include include("@SwagCmsExtensions/storefront/card.html.twig") %}"#,
-            true,
-        ),
-        (
-            r#"{% include "@swagcmsextensions/storefront/card.html.twig" %}"#,
-            false,
-        ),
+    let cases = [
+        r#"{% sw_include "@SwagCmsExtensions/storefront/card.html.twig" %}"#,
+        r#"{% sw_extends "@SwagCmsExtensions/storefront/card.html.twig" %}"#,
+        r#"{% sw_extends {template: "@SwagCmsExtensions/storefront/card.html.twig", scopes: ['default']} %}"#,
+        r#"{% sw_include "@UnknownBundle/storefront/card.html.twig" %}"#,
+        r#"{% sw_include "storefront/card.html.twig" %}"#,
+        r#"{% sw_include "@SwagCmsExtensions/" ~ "storefront/card.html.twig" %}"#,
+        r#"{% sw_include ["missing.html.twig", "@SwagCmsExtensions/storefront/card.html.twig"] %}"#,
+        r#"{% sw_include "{|twig.template.missing:@SwagCmsExtensions/storefront/missing.html.twig|}" %}"#,
+        r#"{% sw_include "{|twig.template.missing:@SwagCmsExtensions/app-only.html.twig|}" %}"#,
+        r#"{% sw_include "app-only.html.twig" %}"#,
+        r#"{% include "{|twig.template.missing:@SwagCmsExtensions/storefront/card.html.twig|}" %}"#,
+        r#"{% extends "{|twig.template.missing:@SwagCmsExtensions/storefront/card.html.twig|}" %}"#,
+        r#"{{ include("{|twig.template.missing:@SwagCmsExtensions/storefront/card.html.twig|}") }}"#,
+        r#"{% sw_include include("{|twig.template.missing:@SwagCmsExtensions/storefront/card.html.twig|}") %}"#,
+        r#"{% include "@swagcmsextensions/storefront/card.html.twig" %}"#,
     ];
-    for (source, missing) in cases {
-        let document = doc("file:///project/page.html.twig", source);
-        let problems = analyze(&analyzer, &document);
-        if *missing {
-            assert_eq!(problems.len(), 1, "{source}");
-            assert_eq!(problems[0].id.as_str(), MISSING);
+    for fixture in cases {
+        let (document, problems) =
+            check_problems(&analyzer, "file:///project/page.html.twig", fixture);
+        for problem in &problems {
             // Diagnostics still report the spelling and range in the document.
             assert_eq!(
-                range_text(&document, problems[0].range),
-                payload_str(&problems[0], "templateName"),
-                "{source}"
+                range_text(&document, problem.range),
+                payload_str(problem, "templateName"),
+                "{fixture}"
             );
-        } else {
-            assert!(problems.is_empty(), "{source}: {problems:?}");
         }
     }
 
     index.removed_files(&[path.to_owned()]).unwrap();
-    let problems = analyze(
+    check_problems_v(
         &analyzer,
-        &doc_v(
-            "file:///project/page.html.twig",
-            r#"{% sw_include "@SwagCmsExtensions/storefront/card.html.twig" %}"#,
-            2,
-        ),
+        "file:///project/page.html.twig",
+        r#"{% sw_include "{|twig.template.missing:@SwagCmsExtensions/storefront/card.html.twig|}" %}"#,
+        2,
     );
-    assert_eq!(problems.len(), 1);
 }
 
 #[test]
@@ -173,12 +121,11 @@ fn template_diagnostics_resolve_storefront_dist_templates() {
         "ping",
     );
     let analyzer = TemplateAnalyzer::new(Some(index), None);
-    let document = doc(
+    let (_, result) = check_problems(
+        &analyzer,
         "file:///project/src/Storefront/Resources/views/storefront/layout/breadcrumb.html.twig",
-        "{% set icon = source('@Storefront/assets/icon/solid/arrow-medium-right.svg') %}\n{% include '@Storefront/storefront/fragment.html.twig' %}\n{{ source('@Storefront/assets/icon/missing.svg') }}\n{% include 'ping.twig' %}",
+        "{% set icon = source('@Storefront/assets/icon/solid/arrow-medium-right.svg') %}\n{% include '@Storefront/storefront/fragment.html.twig' %}\n{{ source('{|twig.template.missing:@Storefront/assets/icon/missing.svg|}') }}\n{% include '{|twig.template.missing:ping.twig|}' %}",
     );
-    let result = analyze(&analyzer, &document);
-    assert_eq!(result.len(), 2);
     assert_eq!(
         result[0].message,
         "Template '@Storefront/assets/icon/missing.svg' not found"
@@ -193,20 +140,19 @@ fn template_diagnostics_resolve_storefront_dist_templates() {
 #[test]
 fn template_diagnostics_for_twig_template_expressions() {
     let fixture = fixture();
-    let document = doc(
+    let (_, result) = check_problems(
+        &fixture.analyzer,
         "file:///project/templates/page.html.twig",
         "{% include '@Storefront/storefront/section/cms-section-' ~ section.type ~ '.html.twig' %}
 {% include 'ignored-by-tag.html.twig' ignore missing %}
 {{ include('ignored-by-function.html.twig', ignore_missing: true) }}
 {{ source('ignored-source.html.twig', true) }}
 {% include ['missing-fallback.html.twig', 'base.html.twig'] %}
-{% include ['missing-one.html.twig', 'missing-two.html.twig'] %}
+{% include {|twig.template.missing:['missing-one.html.twig', 'missing-two.html.twig']|} %}
 {% include 'base' ~ '.html.twig' %}
-{% include 'missing/' ~ 'card.html.twig' %}
-{% form_theme form with ['base.html.twig', 'missing-theme.html.twig'] %}",
+{% include {|twig.template.missing:'missing/' ~ 'card.html.twig'|} %}
+{% form_theme form with ['base.html.twig', '{|twig.template.missing:missing-theme.html.twig|}'] %}",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 3);
     assert_eq!(
         result[0].message,
         "None of the fallback templates were found: 'missing-one.html.twig', 'missing-two.html.twig'"
@@ -220,10 +166,6 @@ fn template_diagnostics_for_twig_template_expressions() {
         "Template 'missing/card.html.twig' not found"
     );
     assert_eq!(
-        range_text(&document, result[1].range),
-        "'missing/' ~ 'card.html.twig'"
-    );
-    assert_eq!(
         result[2].message,
         "Template 'missing-theme.html.twig' not found"
     );
@@ -232,77 +174,67 @@ fn template_diagnostics_for_twig_template_expressions() {
 #[test]
 fn template_diagnostics_for_typed_php_render() {
     let fixture = fixture();
-    let document = doc(
+    let (_, result) = check_problems(
+        &fixture.analyzer,
         "file:///project/Controller.php",
         "<?php
 namespace App;
 class Controller extends \\Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController {
     public function page(): void {
         $this->render('base.html.twig');
-        $this->render('missing.html.twig');
+        $this->render('{|twig.template.missing:missing.html.twig|}');
     }
 }",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
     assert_eq!(result[0].message, "Template 'missing.html.twig' not found");
 }
 
 #[test]
 fn template_diagnostics_include_typo_suggestions() {
     let fixture = fixture();
-    let document = doc(
+    let (_, result) = check_problems(
+        &fixture.analyzer,
         "file:///project/templates/page.html.twig",
-        "{% extends 'bsae.html.twig' %}",
+        "{% extends '{|twig.template.missing:bsae.html.twig|}' %}",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
     assert!(suggestions(&result[0]).contains(&"base.html.twig".to_owned()));
-    assert_eq!(range_text(&document, result[0].range), "bsae.html.twig");
 }
 
 #[test]
 fn template_diagnostics_validate_php_doc_assistant_references() {
     let fixture = fixture();
-    let document = doc(
+    let (_, result) = check_problems(
+        &fixture.analyzer,
         "file:///project/src/Usage.php",
-        "<?php\nresolve_template('bsae.html.twig');\nresolve_template('base.html.twig');\n",
+        "<?php\nresolve_template('{|twig.template.missing:bsae.html.twig|}');\nresolve_template('base.html.twig');\n",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id.as_str(), MISSING);
-    assert_eq!(range_text(&document, result[0].range), "bsae.html.twig");
     assert!(suggestions(&result[0]).contains(&"base.html.twig".to_owned()));
 }
 
 #[test]
 fn template_diagnostics_for_attribute_and_annotation_declarations() {
     let fixture = fixture();
-    let document = doc(
+    check_problems(
+        &fixture.analyzer,
         "file:///project/src/ArticleController.php",
         "<?php
 namespace App\\Controller;
 use Symfony\\Bridge\\Twig\\Attribute\\Template;
 class ArticleController {
-    #[Template('attribute-missing.html.twig')]
+    #[Template('{|twig.template.missing:attribute-missing.html.twig|}')]
     public function attribute(): array { return []; }
 
     /** @Template(template=\"annotation-missing.html.twig\") */
     public function annotation(): array { return []; }
 }",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
-    assert_eq!(
-        range_text(&document, result[0].range),
-        "attribute-missing.html.twig"
-    );
 }
 
 #[test]
 fn template_diagnostics_ignore_generic_template_tags() {
     let fixture = fixture();
-    let document = doc(
+    check_problems(
+        &fixture.analyzer,
         "file:///project/src/Collection.php",
         "<?php
 /** @template TElement */
@@ -318,19 +250,19 @@ class Collection {
     public function values(): array { return []; }
 }",
     );
-    assert!(analyze(&fixture.analyzer, &document).is_empty());
 }
 
 #[test]
 fn template_diagnostics_guess_empty_controller_declarations() {
     let fixture = fixture();
-    let document = doc(
+    let (_, result) = check_problems(
+        &fixture.analyzer,
         "file:///project/src/Admin/ProductController.php",
         "<?php
 namespace App\\Controller\\Admin;
 use Symfony\\Bridge\\Twig\\Attribute\\Template;
 class ProductController {
-    #[Template]
+    #[{|twig.template.missing:Template|}]
     public function listAction(): array { return []; }
 
     /** @Template() */
@@ -345,9 +277,6 @@ class ProductController {
     public function bodyString(): string { return '@Template'; }
 }",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
-    assert_eq!(range_text(&document, result[0].range), "Template");
     assert_eq!(
         payload_str(&result[0], "templateName"),
         "admin/product/list.html.twig"

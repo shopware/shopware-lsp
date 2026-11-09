@@ -5,7 +5,6 @@ use std::sync::Arc;
 use serde_json::json;
 use swlsp_extension::{CONFIG_LOCATIONS, ConfigIndex};
 use swlsp_indexer::{Indexer, ParsedFile};
-use swlsp_language::LanguageId;
 use swlsp_lsp::Server;
 use swlsp_lsp_diagnostics::{ShopwareStoreComposerAnalyzer, StoreComplianceResolver};
 
@@ -37,18 +36,8 @@ fn extension_config_overlay(location: &str) {
     let registrar = Registrar::new(&server);
     register_extension_config_document_observer(&registrar, &compliance);
     let resolver: Arc<dyn StoreComplianceResolver> = compliance.clone();
-    registrar.inspection(swlsp_lsp_inspections::new_analyzer_inspection(
-        "shopware.store_composer",
-        &[LanguageId::Json],
-        "shopware-lsp",
-        &[
-            "shopware.store.label",
-            "shopware.store.description",
-            "shopware.store.manufacturer-link",
-            "shopware.store.support-link",
-            "shopware.store.require-core",
-        ],
-        vec![Arc::new(ShopwareStoreComposerAnalyzer::new(Some(resolver)))],
+    registrar.inspection(swlsp_lsp_inspections::analyzer_inspection(
+        ShopwareStoreComposerAnalyzer::new(Some(resolver)),
     ));
     let client = TestClient::start(&server);
     // A standalone plugin at the workspace root must support the same opt-in.

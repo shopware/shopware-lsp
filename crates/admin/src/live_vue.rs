@@ -137,7 +137,7 @@ impl AdminComponentIndexer {
                 let legacy =
                     root.map(|root| parse_live_legacy_document(&file_path, root, line_index));
                 {
-                    let mut live = write_lock(&self.live);
+                    let mut live = self.live_mut();
                     live.type_files.insert(file_path.clone(), type_file);
                     if let Some(legacy) = legacy {
                         live.legacy_documents
@@ -153,7 +153,7 @@ impl AdminComponentIndexer {
                 };
                 let legacy = parse_live_legacy_document(&file_path, root, line_index);
                 {
-                    let mut live = write_lock(&self.live);
+                    let mut live = self.live_mut();
                     live.legacy_documents
                         .insert(file_path.clone(), Arc::new(legacy));
                     live.legacy_generation += 1;
@@ -166,7 +166,7 @@ impl AdminComponentIndexer {
                 };
                 let mut template = parse_template_tree(root, source, line_index);
                 set_template_source_paths(&mut template, &file_path);
-                write_lock(&self.live)
+                self.live_mut()
                     .twig_templates
                     .insert(file_path.clone(), template);
                 self.invalidate_template_component_cache();
@@ -178,7 +178,7 @@ impl AdminComponentIndexer {
                 let runtime = parse_live_runtime_document(&file_path, root, line_index);
                 let parsed = parse_live_vue_definition(&file_path, root, source, line_index);
                 {
-                    let mut live = write_lock(&self.live);
+                    let mut live = self.live_mut();
                     live.runtime_documents
                         .insert(file_path.clone(), Arc::new(runtime));
                     match parsed {
@@ -207,7 +207,7 @@ impl AdminComponentIndexer {
         }
         let file_path = filepath::clean(file_path);
         let removed = {
-            let mut live = write_lock(&self.live);
+            let mut live = self.live_mut();
             let mut removed = live.vue_documents.remove(&file_path).is_some();
             if live.legacy_documents.remove(&file_path).is_some() {
                 live.legacy_generation += 1;

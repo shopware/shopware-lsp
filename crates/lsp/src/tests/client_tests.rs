@@ -100,7 +100,10 @@ struct ProfileSuppressedInspection;
 impl Inspection for ProfileSuppressedInspection {
     fn definition(&self) -> InspectionDefinition {
         InspectionDefinition {
-            id: "php.semantic".into(),
+            id: "test.language".into(),
+            description: "Test inspection.",
+            domain: "",
+            scope: InspectionScope::Language,
             languages: vec![LanguageId::Yaml],
             problems: vec![ProblemDefinition {
                 id: "php.parse".into(),
@@ -146,7 +149,7 @@ fn framework_profile_keeps_suppressed_inspection_registered() {
         server
             .registry()
             .inspections
-            .inspection("php.semantic")
+            .inspection("test.language")
             .is_some()
     );
     let document = Arc::new(TextDocument::new("file:///fixture.yaml", "value: bad\n", 1));

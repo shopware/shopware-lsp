@@ -5,7 +5,10 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use swlsp_lsp::{BoxError, Context, DiagnosticId, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{
+    BoxError, Context, DiagnosticId, InspectionScope, InspectionSpec, Problem, TextDocument,
+};
 use swlsp_lsp_protocol::DiagnosticSeverity;
 use swlsp_php::{
     EmbeddedLanguage, EmbeddedPhpString, PhpIndex, embedded_css_selectors, embedded_json_literals,
@@ -14,7 +17,7 @@ use swlsp_php::{
 use swlsp_php_types::go_to_lower;
 use swlsp_syntax::{SyntaxNode, TextRange, TextSize};
 
-use crate::ProblemAnalyzer;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 pub const INVALID_EMBEDDED_CSS_CODE: &str = "symfony.php.embedded_css.invalid";
 pub const INVALID_EMBEDDED_JSON_CODE: &str = "symfony.php.embedded_json.invalid";
@@ -159,7 +162,27 @@ impl EmbeddedLanguageAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for EmbeddedLanguageAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "symfony.embedded_language",
+        description: "Invalid CSS selectors, JSON and XPath expressions in PHP string arguments that expect them.",
+        domain: "symfony",
+        scope: InspectionScope::Language,
+        languages: &[LanguageId::Php],
+        source: "symfony",
+        codes: &[
+            INVALID_EMBEDDED_CSS_CODE,
+            INVALID_EMBEDDED_JSON_CODE,
+            INVALID_EMBEDDED_XPATH_CODE,
+        ],
+    };
+}
+
 impl ProblemAnalyzer for EmbeddedLanguageAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.php_index))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

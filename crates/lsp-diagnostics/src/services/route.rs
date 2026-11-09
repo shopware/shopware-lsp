@@ -41,6 +41,14 @@ impl RouteAnalyzer {
 }
 
 impl ProblemAnalyzer for RouteAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(
+            crate::inputs(&self.route_index)
+                + crate::inputs(&self.service_index)
+                + crate::inputs(&self.php_index),
+        )
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

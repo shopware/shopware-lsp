@@ -165,3 +165,77 @@ fn normalize_route_search_path_cases() {
     assert_eq!(normalize_route_search_path("foo:bar"), "foo:bar");
     assert_eq!(normalize_route_search_path("/a b"), "/a%20b");
 }
+
+#[test]
+fn scanner_prepared_indexing_matches_direct_indexing() {
+    let root = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let files = [
+        (
+            "config/routes.yaml",
+            "product.show:\n    path: /product/{id}\n    controller: App\\Controller\\ProductController::show\ncontrollers:\n    resource: ../src/Controller/\n    type: attribute\n",
+        ),
+        (
+            "config/routes.xml",
+            "<routes>\n    <route id=\"blog.list\" path=\"/blog\" controller=\"App\\Controller\\BlogController::list\"/>\n    <import resource=\"../src/Admin/\" type=\"attribute\"/>\n</routes>\n",
+        ),
+        (
+            "src/Controller/HomeController.php",
+            "<?php\nnamespace App\\Controller;\nuse Symfony\\Component\\Routing\\Attribute\\Route;\nfinal class HomeController\n{\n    #[Route('/home', name: 'home')]\n    public function index() {}\n}\n",
+        ),
+    ];
+    let mut paths = Vec::new();
+    for (relative, source) in files {
+        let path = root.path().join(relative);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, source).unwrap();
+        paths.push((path.to_str().unwrap().to_owned(), source));
+    }
+
+    let store = swlsp_indexer::Store::open(cache.path().join("indexes.db")).unwrap();
+    let scanned =
+        std::sync::Arc::new(RouteIndexer::new(cache.path().join("scanned"), Some(&store)).unwrap());
+    let mut scanner = swlsp_indexer::FileScanner::new(
+        root.path().to_str().unwrap(),
+        cache.path().join("scanner.db"),
+        Some(store.clone()),
+    )
+    .unwrap();
+    scanner.add_indexer(scanned.clone());
+    scanner
+        .index_all(&swlsp_indexer::CancelToken::new())
+        .unwrap();
+    scanner.close().unwrap();
+
+    let direct = RouteIndexer::new(cache.path().join("direct"), None).unwrap();
+    for (path, source) in &paths {
+        direct
+            .index(&ParsedFile::new(path.as_str(), source.as_bytes().to_vec()))
+            .unwrap();
+    }
+
+    let mut scanned_routes = scanned.get_routes().unwrap();
+    let mut direct_routes = direct.get_routes().unwrap();
+    sort_routes(&mut scanned_routes);
+    sort_routes(&mut direct_routes);
+    assert_eq!(scanned_routes.len(), 3, "{scanned_routes:#?}");
+    assert_eq!(scanned_routes, direct_routes);
+
+    let resource_key = |import: &RouteResourceImport| {
+        (
+            import.file_path.clone(),
+            u32::from(import.range.start()),
+            import.path.clone(),
+        )
+    };
+    let mut scanned_imports = scanned.get_route_resource_imports().unwrap();
+    let mut direct_imports = direct.get_route_resource_imports().unwrap();
+    scanned_imports.sort_by_key(resource_key);
+    direct_imports.sort_by_key(resource_key);
+    assert_eq!(scanned_imports.len(), 2, "{scanned_imports:#?}");
+    assert_eq!(scanned_imports, direct_imports);
+
+    direct.close().unwrap();
+    scanned.close().unwrap();
+    store.close().unwrap();
+}

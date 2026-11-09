@@ -11,22 +11,18 @@ fn twig_enum_diagnostics_validate_existence_and_enum_kind() {
         &root.path().join("src/Types.php").to_string_lossy(),
         "<?php\nnamespace App;\nenum OrderStatus { case Open; }\nclass NotAnEnum {}",
     );
-    let source = "{{ enum('App\\\\OrderStatus') }}\n{{ enum_cases('App\\\\OrderStatu') }}\n{{ enum('App\\\\NotAnEnum') }}";
-    let document = doc(
+    let (_, diagnostics) = check_problems(
+        &TwigEnumAnalyzer::new(Some(php)),
         &swlsp_uriutil::file_uri(
             &root
                 .path()
                 .join("templates/order.html.twig")
                 .to_string_lossy(),
         ),
-        source,
+        "{{ enum('App\\\\OrderStatus') }}\n{{ enum_cases('{|twig.enum.missing:App\\\\OrderStatu|}') }}\n{{ enum('{|twig.enum.invalid:App\\\\NotAnEnum|}') }}",
     );
-    let diagnostics = analyze(&TwigEnumAnalyzer::new(Some(php)), &document);
-    assert_eq!(diagnostics.len(), 2, "{diagnostics:?}");
-    assert_eq!(diagnostics[0].id.as_str(), "twig.enum.missing");
     assert!(diagnostics[0].message.contains("OrderStatu"));
     assert!(suggestions(&diagnostics[0]).contains(&"App\\\\OrderStatus".to_owned()));
-    assert_eq!(diagnostics[1].id.as_str(), "twig.enum.invalid");
     assert!(diagnostics[1].message.contains("not an enum"));
 }
 
@@ -39,13 +35,11 @@ fn twig_macro_diagnostics_report_unknown_imported_macro() {
         "/project/templates/macros/forms.html.twig",
         "{% macro input(name) %}{% endmacro %}",
     );
-    let document = doc(
+    let (_, diagnostics) = check_problems(
+        &TwigMacroAnalyzer::new(Some(index)),
         "file:///project/templates/page.html.twig",
-        "{% import 'macros/forms.html.twig' as forms %}\n{{ forms.inpt('email') }}\n{{ forms.input('name') }}\n",
+        "{% import 'macros/forms.html.twig' as forms %}\n{{ forms.{|twig.macro.missing:inpt|}('email') }}\n{{ forms.input('name') }}\n",
     );
-    let diagnostics = analyze(&TwigMacroAnalyzer::new(Some(index)), &document);
-    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
-    assert_eq!(diagnostics[0].id.as_str(), "twig.macro.missing");
     assert!(diagnostics[0].message.contains("inpt"));
     assert!(suggestions(&diagnostics[0]).contains(&"input".to_owned()));
 }
@@ -54,9 +48,9 @@ fn twig_macro_diagnostics_report_unknown_imported_macro() {
 fn twig_macro_diagnostics_overlay_unsaved_self_macros() {
     let dir = tempdir();
     let index = twig_index(dir.path());
-    let document = doc(
+    check_problems(
+        &TwigMacroAnalyzer::new(Some(index)),
         "file:///project/templates/page.html.twig",
         "{% import _self as local %}\n{{ local.helper() }}\n{% macro helper() %}{% endmacro %}\n",
     );
-    assert!(analyze(&TwigMacroAnalyzer::new(Some(index)), &document).is_empty());
 }

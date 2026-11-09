@@ -9,7 +9,7 @@ use crate::error::{Error, Result, ResultExt};
 /// The current version of persisted index contents. Bump it whenever a schema
 /// change or extraction-semantics change requires existing workspace caches
 /// to be rebuilt. Kept in step with Go `IndexVersion`.
-pub const INDEX_VERSION: u32 = 180;
+pub const INDEX_VERSION: u32 = 181;
 
 /// The Rust implementation encodes repository values differently from Go
 /// (MessagePack field names follow the Rust types). The version file carries
@@ -111,8 +111,8 @@ mod tests {
     #[test]
     fn index_version_matches_go() {
         // Kept in step with Go `IndexVersion` (internal/indexer/version_test.go).
-        assert_eq!(INDEX_VERSION, 180);
-        assert_eq!(index_version_marker(), "180-rs");
+        assert_eq!(INDEX_VERSION, 181);
+        assert_eq!(index_version_marker(), "181-rs");
     }
 
     #[test]

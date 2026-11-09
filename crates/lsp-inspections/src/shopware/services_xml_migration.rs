@@ -6,8 +6,8 @@ use std::sync::Arc;
 use swlsp_language::LanguageId;
 use swlsp_lsp::{
     BoxError, Context, DiagnosticId, DocumentSnapshot, FixContext, FixId, FixPresentation,
-    FixResolution, Inspection, InspectionDefinition, ProblemDefinition, QuickFix, RewriteQuickFix,
-    bind_fix,
+    FixResolution, Inspection, InspectionDefinition, InspectionScope, ProblemDefinition, QuickFix,
+    RewriteQuickFix, bind_fix,
 };
 use swlsp_lsp_diagnostics::{
     SERVICES_XML_DEPRECATED_CODE, ServicesXmlDeprecationAnalyzer, ServicesXmlDeprecationPayload,
@@ -25,6 +25,9 @@ pub fn new_services_xml_migration() -> Arc<dyn Inspection> {
     Arc::new(BoundInspection {
         definition: InspectionDefinition {
             id: "symfony.services_xml_migration".to_owned(),
+            description: "XML service configuration, deprecated in favor of YAML or PHP, with an automated conversion.",
+            domain: "symfony.services",
+            scope: InspectionScope::Framework,
             languages: vec![LanguageId::Xml],
             problems: vec![ProblemDefinition {
                 id: DiagnosticId::from(SERVICES_XML_DEPRECATED_CODE),

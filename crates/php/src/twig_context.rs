@@ -641,7 +641,7 @@ impl PhpIndex {
         if template.is_empty() {
             return Ok(Vec::new());
         }
-        let revision = self.semantic_snapshot().revision;
+        let revision = self.analysis_revision();
         {
             let mut cache = lock(&self.inner.twig_cache);
             if cache.revision != revision {

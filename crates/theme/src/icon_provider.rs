@@ -1,17 +1,31 @@
 use std::collections::BTreeSet;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use swlsp_extension::{ExtensionIndexer, ShopwareExtension, ShopwareExtensionType};
 use swlsp_uriutil::filepath;
 
 const ICON_DIRECTORY: [&str; 6] = ["Resources", "app", "storefront", "dist", "assets", "icon"];
 
+/// How often [`IconProvider::revision`] re-lists the icon directories, which
+/// live outside the scanner.
+const RECHECK_INTERVAL: Duration = Duration::from_millis(500);
+
+#[derive(Default)]
+struct IconRevision {
+    checked_at: Option<Instant>,
+    fingerprint: u64,
+    revision: u64,
+}
+
 /// Lists Storefront icon packs and icons of indexed extensions and the
 /// Shopware Storefront itself.
 pub struct IconProvider {
     project_root: String,
     extension_indexer: Arc<ExtensionIndexer>,
+    tracked: Mutex<IconRevision>,
 }
 
 impl IconProvider {
@@ -19,7 +33,52 @@ impl IconProvider {
         Self {
             project_root: project_root.into(),
             extension_indexer,
+            tracked: Mutex::default(),
         }
+    }
+
+    /// Advances whenever the icon packs or icons change: the indexed
+    /// extensions, and the icon files themselves, which are re-listed at most
+    /// every [`RECHECK_INTERVAL`] because the scanner does not see them.
+    pub fn revision(&self) -> u64 {
+        let extensions = swlsp_indexer::Revisioned::revision(&self.extension_indexer);
+        let mut tracked = self.tracked.lock().unwrap_or_else(PoisonError::into_inner);
+        if tracked
+            .checked_at
+            .is_none_or(|checked_at| checked_at.elapsed() >= RECHECK_INTERVAL)
+        {
+            tracked.checked_at = Some(Instant::now());
+            let fingerprint = self.fingerprint();
+            if fingerprint != tracked.fingerprint {
+                tracked.fingerprint = fingerprint;
+                tracked.revision += 1;
+            }
+        }
+        extensions + tracked.revision
+    }
+
+    /// A hash of every extension's icon directory listing.
+    fn fingerprint(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        for extension in self.extensions() {
+            let directory = Self::icon_directory(&extension, &[]);
+            directory.hash(&mut hasher);
+            let Ok(packs) = std::fs::read_dir(&directory) else {
+                continue;
+            };
+            let mut packs: Vec<_> = packs.flatten().map(|entry| entry.path()).collect();
+            packs.sort();
+            for pack in packs {
+                pack.hash(&mut hasher);
+                let Ok(icons) = std::fs::read_dir(&pack) else {
+                    continue;
+                };
+                let mut icons: Vec<_> = icons.flatten().map(|entry| entry.file_name()).collect();
+                icons.sort();
+                icons.hash(&mut hasher);
+            }
+        }
+        hasher.finish()
     }
 
     fn extensions(&self) -> Vec<ShopwareExtension> {
@@ -164,5 +223,28 @@ mod tests {
         assert_eq!(provider.icon("default", "missing"), "");
         use swlsp_indexer::Indexer;
         indexer.close().unwrap();
+    }
+
+    #[test]
+    fn revision_follows_icon_files_and_extensions() {
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_string_lossy().into_owned();
+        let icons =
+            format!("{root}/src/Storefront/Resources/app/storefront/dist/assets/icon/default");
+        std::fs::create_dir_all(&icons).unwrap();
+        std::fs::write(format!("{icons}/arrow.svg"), "<svg/>").unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let indexer = Arc::new(ExtensionIndexer::new(cache.path(), None).unwrap());
+        let provider = IconProvider::new(root, indexer);
+
+        let first = provider.revision();
+        std::thread::sleep(RECHECK_INTERVAL + Duration::from_millis(50));
+        assert_eq!(provider.revision(), first, "unchanged icons");
+
+        std::fs::write(format!("{icons}/star.svg"), "<svg/>").unwrap();
+        // Within the interval the directories are not listed again.
+        assert_eq!(provider.revision(), first);
+        std::thread::sleep(RECHECK_INTERVAL + Duration::from_millis(50));
+        assert_ne!(provider.revision(), first, "added icon");
     }
 }

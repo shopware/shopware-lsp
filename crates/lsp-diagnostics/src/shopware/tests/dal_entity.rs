@@ -5,9 +5,8 @@ use swlsp_indexer::{Indexer, ParsedFile};
 use swlsp_shopware_dal as dal;
 use tempfile::TempDir;
 
-use super::analyze;
 use crate::shopware::*;
-use crate::test_support::{diagnostics_document, document};
+use crate::test_support::check_problems;
 
 pub(crate) fn dal_entity_index() -> (TempDir, Arc<dal::Index>) {
     let dir = tempfile::tempdir().unwrap();
@@ -33,22 +32,17 @@ class ProductDefinition extends EntityDefinition
 #[test]
 fn dal_entity_analyzer_reports_only_close_static_misspellings() {
     let (_dir, index) = dal_entity_index();
-    let source = "
-Shopware.Service('repositoryFactory').create('prodcut');
+    let (_, problems) = check_problems(
+        &DalEntityAnalyzer::new(Some(index)),
+        "file:///project/src/Resources/app/administration/consumer.ts",
+        "
+Shopware.Service('repositoryFactory').create('{|shopware.dal.entity-not-found:prodcut|}');
 Shopware.EntityDefinition.get('runtime_custom_entity');
 Shopware.EntityDefinition.has('prodcut');
-Shopware.EntityDefinition.get(dynamicName);";
-    let document = diagnostics_document(
-        "file:///project/src/Resources/app/administration/consumer.ts",
-        source,
+Shopware.EntityDefinition.get(dynamicName);",
     );
-    let problems = analyze(&DalEntityAnalyzer::new(Some(index)), &document);
-    assert_eq!(problems.len(), 1);
-    let problem = &problems[0];
-    assert_eq!(problem.id.as_str(), "shopware.dal.entity-not-found");
-    assert_eq!(&source[problem.range], "prodcut");
     assert_eq!(
-        problem.payload.as_ref().unwrap()["suggestions"],
+        problems[0].payload.as_ref().unwrap()["suggestions"],
         json!(["product"])
     );
 }
@@ -56,18 +50,12 @@ Shopware.EntityDefinition.get(dynamicName);";
 #[test]
 fn dal_entity_analyzer_handles_embedded_vue_script() {
     let (_dir, index) = dal_entity_index();
-    let source = r#"<template><div title="prodcut" /></template>
-<script setup lang="ts">
-const definition = Shopware.EntityDefinition.get('prodcut');
-</script>"#;
-    let document = document(
+    check_problems(
+        &DalEntityAnalyzer::new(Some(index)),
         "file:///project/src/Resources/app/administration/Card.vue",
-        source,
-    );
-    let problems = analyze(&DalEntityAnalyzer::new(Some(index)), &document);
-    assert_eq!(problems.len(), 1);
-    assert_eq!(
-        usize::from(problems[0].range.start()),
-        source.rfind("prodcut").unwrap()
+        r#"<template><div title="prodcut" /></template>
+<script setup lang="ts">
+const definition = Shopware.EntityDefinition.get('{|shopware.dal.entity-not-found:prodcut|}');
+</script>"#,
     );
 }

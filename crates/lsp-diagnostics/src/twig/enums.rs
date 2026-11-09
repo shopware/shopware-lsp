@@ -3,13 +3,14 @@
 use std::sync::Arc;
 
 use serde_json::{Map, Value};
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_lsp_protocol as protocol;
 use swlsp_php::PhpIndex;
 use swlsp_php_semantic::SymbolKind;
 
 use super::{lower_ext, strings_value};
-use crate::ProblemAnalyzer;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 const MISSING_TWIG_ENUM_CODE: &str = "twig.enum.missing";
 const INVALID_TWIG_ENUM_CODE: &str = "twig.enum.invalid";
@@ -25,7 +26,23 @@ impl TwigEnumAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for TwigEnumAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "twig.enum",
+        description: "Twig `enum()` calls naming classes that are not enums, or cases that do not exist.",
+        domain: "twig",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Twig],
+        source: "twig",
+        codes: &[INVALID_TWIG_ENUM_CODE, MISSING_TWIG_ENUM_CODE],
+    };
+}
+
 impl ProblemAnalyzer for TwigEnumAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.php_index))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

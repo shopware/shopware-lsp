@@ -27,6 +27,7 @@ swlsp-pathmatch = { path = "../pathmatch" }
 swlsp-textutil = { path = "../textutil" }
 swlsp-uriutil = { path = "../uriutil" }
 swlsp-admin-twigmigration = { path = "../admin-twigmigration" }
+memchr = "2"
 serde = { version = "1", features = ["derive"] }
 regex = "1"
 log = "0.4"

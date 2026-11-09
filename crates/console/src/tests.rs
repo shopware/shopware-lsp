@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use swlsp_indexer::{Indexer, ParsedFile};
+use swlsp_indexer::{Indexer, ParsedFile, PreparingIndexer};
 use swlsp_lsp::{Context, TextDocument};
 use swlsp_php::PhpIndex;
 use swlsp_syntax::{SyntaxNodeExt, TextSize};
@@ -285,6 +285,34 @@ fn indexing_publishes_command_workspace_symbols() {
     let commands = index.get_command("app:sym").unwrap();
     assert_eq!(commands[0].description, "Does things");
     index.close().unwrap();
+}
+
+#[test]
+fn prepared_indexing_matches_direct_indexing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = "/project/src/Command.php";
+    let source = "<?php\n#[AsCommand(name: 'app:dup', description: 'First')]\nclass First {}\n#[AsCommand(name: 'app:dup', description: 'Second')]\nclass Second {}\n#[AsCommand(name: 'app:other')]\nclass Other {}\n";
+    let direct = open(&dir.path().join("direct"));
+    index_source(&direct, path, source);
+    let prepared = open(&dir.path().join("prepared"));
+    let file = ParsedFile::new(path, source.as_bytes().to_vec());
+    let data = prepared.prepare(&file).unwrap();
+    prepared.index_prepared(&file, data.as_ref()).unwrap();
+
+    let commands = direct.get_commands().unwrap();
+    assert_eq!(commands.len(), 2);
+    assert_eq!(prepared.get_commands().unwrap(), commands);
+    assert_eq!(
+        prepared.get_command("app:dup").unwrap()[0].description,
+        "Second"
+    );
+
+    let cleared = ParsedFile::new(path, b"<?php return 1;".to_vec());
+    let data = prepared.prepare(&cleared).unwrap();
+    prepared.index_prepared(&cleared, data.as_ref()).unwrap();
+    assert!(prepared.get_commands().unwrap().is_empty());
+    direct.close().unwrap();
+    prepared.close().unwrap();
 }
 
 #[test]

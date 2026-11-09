@@ -3,6 +3,7 @@
 //! cache files are admitted; cache pools and generated container classes
 //! remain excluded.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -20,7 +21,7 @@ use crate::container_catalog::ContainerCatalog;
 use crate::model::{ContainerTwigComponent, ContainerTwigGlobal, Parameter, Route, Service};
 use crate::twig_components::parse_xml_twig_components_tree;
 use crate::twig_globals::parse_xml_twig_globals_tree;
-use crate::util::{base_name, dir_path, join_path};
+use crate::util::{base_name, clean_path, dir_path, join_path};
 use crate::xml_services::parse_xml_services_tree;
 
 /// One persisted compiled catalog file.
@@ -47,7 +48,11 @@ struct Shared {
 }
 
 pub struct CompiledCatalogIndex {
-    root: String,
+    /// `<root>/var` and `<root>/app`, cleaned.
+    bases: [String; 2],
+    /// `<root>/var/cache` and `<root>/app/cache`, cleaned. Precomputed: the
+    /// scanner asks about every workspace path that no language claims.
+    caches: [String; 2],
     id: String,
     repository: DataIndexer<CompiledCatalogRecord>,
     shared: Arc<Shared>,
@@ -116,7 +121,8 @@ impl CompiledCatalogIndex {
                 .unwrap_or_else(PoisonError::into_inner),
         );
         Ok(Self {
-            root: root.to_owned(),
+            bases: ["var", "app"].map(|parent| join_path(&[root, parent])),
+            caches: ["var", "app"].map(|parent| join_path(&[root, parent, "cache"])),
             id: id.to_owned(),
             repository,
             shared,
@@ -127,27 +133,30 @@ impl CompiledCatalogIndex {
         matches!(self.shared.target, Target::Container(_))
     }
 
-    fn should_enter(&self, path: &str) -> bool {
-        for parent in ["var", "app"] {
-            let base = join_path(&[&self.root, parent]);
-            let cache = join_path(&[&base, "cache"]);
-            if path == base || path == cache || dir_path(path) == cache {
-                return true;
-            }
-        }
-        false
+    fn is_cache(&self, path: &str) -> bool {
+        self.caches.iter().any(|cache| cache == path)
     }
 
+    /// `var`, `app`, their `cache` directories and the directories directly
+    /// below those caches.
+    fn should_enter(&self, path: &str) -> bool {
+        let path = clean_cow(path);
+        self.bases.iter().any(|base| *base == path)
+            || self.is_cache(&path)
+            || self.is_cache(&dir_path(&path))
+    }
+
+    /// Compiled catalogs live in a directory directly below a cache
+    /// (`var/cache/<env>/<file>`).
     fn should_index(&self, path: &str) -> bool {
-        if !self.should_enter(&dir_path(path)) {
+        let path = clean_cow(path);
+        let Some(directory) = parent(&path) else {
+            return false;
+        };
+        if !parent(directory).is_some_and(|cache| self.is_cache(cache)) {
             return false;
         }
-        let parent = dir_path(&dir_path(path));
-        if parent != join_path(&[&self.root, "var", "cache"])
-            && parent != join_path(&[&self.root, "app", "cache"])
-        {
-            return false;
-        }
+        let path = path.as_ref();
         if self.is_container() {
             return base_name(path) == "Shopware_Core_KernelDevDebugContainer.xml";
         }
@@ -363,5 +372,29 @@ impl TransactionalRemover for CompiledCatalogIndex {
 impl TransactionalClearer for CompiledCatalogIndex {
     fn clear_in(&self, mutation: &Mutation) -> Result<()> {
         self.clear_records(Some(mutation))
+    }
+}
+
+/// `path` cleaned, borrowed when already clean (scanner paths are).
+fn clean_cow(path: &str) -> Cow<'_, str> {
+    let clean = path.starts_with('/')
+        && (path.len() == 1 || !path.ends_with('/'))
+        && !path
+            .split('/')
+            .skip(1)
+            .any(|part| part.is_empty() || part == "." || part == "..");
+    if clean || path == "/" {
+        Cow::Borrowed(path)
+    } else {
+        Cow::Owned(clean_path(path))
+    }
+}
+
+/// The parent of a clean absolute path, without allocating.
+fn parent(path: &str) -> Option<&str> {
+    match path.rfind('/') {
+        Some(0) if path.len() > 1 => Some("/"),
+        Some(0) | None => None,
+        Some(index) => Some(&path[..index]),
     }
 }

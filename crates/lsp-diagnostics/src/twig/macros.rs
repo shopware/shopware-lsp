@@ -3,14 +3,15 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_lsp_protocol as protocol;
 use swlsp_php_types::go_to_lower;
 use swlsp_twig::{Macro, MacroReference, MacroReferenceRole, TwigIndexer};
 
 use super::component::suggestions_payload;
 use super::{lower_ext, uri_path};
-use crate::ProblemAnalyzer;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 const MISSING_TWIG_MACRO_CODE: &str = "twig.macro.missing";
 
@@ -25,7 +26,23 @@ impl TwigMacroAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for TwigMacroAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "twig.macro",
+        description: "Macro calls naming macros the imported template does not define.",
+        domain: "twig",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Twig],
+        source: "twig",
+        codes: &[MISSING_TWIG_MACRO_CODE],
+    };
+}
+
 impl ProblemAnalyzer for TwigMacroAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.index))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

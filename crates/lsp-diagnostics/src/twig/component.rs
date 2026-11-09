@@ -4,7 +4,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use serde_json::{Map, Value};
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_lsp_protocol as protocol;
 use swlsp_parser_twig::ast::{AstNode, HtmlTag, TwigBlock};
 use swlsp_parser_twig::query as twigquery;
@@ -14,7 +15,7 @@ use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
 use swlsp_twigcomponent::{Index, LiveAction};
 
 use super::{contains_fold, live_argument_attribute_segment, nil_strings, uri_path};
-use crate::ProblemAnalyzer;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 const MISSING_TWIG_COMPONENT_CODE: &str = "twig.component.missing";
 const MISSING_COMPONENT_BLOCK_CODE: &str = "twig.component.block.missing";
@@ -40,7 +41,30 @@ pub(crate) fn suggestions_payload(suggestions: Vec<String>) -> Option<Value> {
     Some(Value::Object(payload))
 }
 
+impl DeclaredAnalyzer for TwigComponentAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "twig.component",
+        description: "Twig component usages naming unknown components, blocks, live actions or arguments, and mixed component syntax.",
+        domain: "symfony.twigComponents",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Twig],
+        source: "twig",
+        codes: &[
+            MISSING_COMPONENT_BLOCK_CODE,
+            MISSING_LIVE_ACTION_CODE,
+            MISSING_LIVE_ARGUMENT_CODE,
+            MISSING_TWIG_COMPONENT_CODE,
+            MIXED_COMPONENT_SYNTAX_CODE,
+            COMPONENT_SELF_IMPORT_CODE,
+        ],
+    };
+}
+
 impl ProblemAnalyzer for TwigComponentAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.index))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

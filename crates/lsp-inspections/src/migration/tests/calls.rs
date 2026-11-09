@@ -13,26 +13,25 @@ fn context_metadata_state_migration_quick_fix() {
         "/project/vendor/Context.php",
         "<?php\nnamespace Shopware\\Core\\Framework;\nclass Context {}",
     );
-    let document = document(
+    check_only_migration_fix(
+        &migration(&index, 5),
         "file:///project/src/ContextMigration.php",
         r#"<?php
 use Shopware\Core\Framework\Context;
 function migrate(Context $context): void
 {
-    $context->addExtension(EntityIndexerRegistry::USE_INDEXING_QUEUE, new ArrayEntity());
+    $context->{|shopware.migration.context_metadata.state:addExtension|}(EntityIndexerRegistry::USE_INDEXING_QUEUE, new ArrayEntity());
+}
+"#,
+        CONTEXT_METADATA_STATE_FIX_ID,
+        r#"<?php
+use Shopware\Core\Framework\Context;
+function migrate(Context $context): void
+{
+    $context->addState(EntityIndexerRegistry::USE_INDEXING_QUEUE);
 }
 "#,
     );
-    let updated = apply_only_migration_fix(
-        &migration(&index, 5),
-        &document,
-        CONTEXT_METADATA_STATE_FIX_ID,
-    );
-    assert!(
-        updated.contains("$context->addState(EntityIndexerRegistry::USE_INDEXING_QUEUE);"),
-        "{updated}"
-    );
-    assert!(!updated.contains("new ArrayEntity()"));
 }
 
 #[test]
@@ -42,13 +41,21 @@ fn faker_property_migration_quick_fix() {
         "/project/vendor/Generator.php",
         "<?php\nnamespace Faker;\nclass Generator {}",
     );
-    let document = document(
+    check_only_migration_fix(
+        &migration(&index, 5),
         "file:///project/src/FakerMigration.php",
-        "<?php\nuse Faker\\Generator;\nfunction migrate(Generator $faker): int\n{\n    return $faker->randomDigit;\n}\n",
+        "<?php\nuse Faker\\Generator;\nfunction migrate(Generator $faker): int\n{\n    return $faker->{|shopware.migration.faker.property_call:randomDigit|};\n}\n",
+        FAKER_PROPERTY_CALL_FIX_ID,
+        "<?php\nuse Faker\\Generator;\nfunction migrate(Generator $faker): int\n{\n    return $faker->randomDigit();\n}\n",
     );
-    let updated =
-        apply_only_migration_fix(&migration(&index, 5), &document, FAKER_PROPERTY_CALL_FIX_ID);
-    assert!(updated.contains("return $faker->randomDigit();"));
+}
+
+/// A product stream migration source with `builder` as the builder
+/// parameter and `body` as the function body.
+fn product_stream_source(builder: &str, body: &str) -> String {
+    "<?php\nuse Shopware\\Core\\Content\\ProductStream\\Service\\ProductStreamBuilderInterface;\nfunction migrate(BUILDER, object $criteria, string $streamId, object $context): void\n{\n    BODY\n}\n"
+        .replace("BUILDER", builder)
+        .replace("BODY", body)
 }
 
 #[test]
@@ -58,31 +65,26 @@ fn product_stream_migration_quick_fixes() {
         "/project/vendor/ProductStreamBuilderInterface.php",
         PRODUCT_STREAM_INTERFACE,
     );
-    for (name, body, expected, removed) in [
+    for (before, after) in [
         (
-            "assignment followed by addFilter",
-            "$filters = $builder->buildFilters($streamId, $context);\n    $criteria->addFilter(...$filters);",
+            "$filters = $builder->{|shopware.migration.product_stream.enrich_criteria:buildFilters|}($streamId, $context);\n    $criteria->addFilter(...$filters);",
             "$builder->enrichCriteria($criteria, $streamId, $context);",
-            "$filters =",
         ),
         (
-            "inline addFilter",
-            "$criteria->addFilter(...$builder->buildFilters($streamId, $context));",
+            "$criteria->addFilter(...$builder->{|shopware.migration.product_stream.enrich_criteria:buildFilters|}($streamId, $context));",
             "$builder->enrichCriteria($criteria, $streamId, $context);",
-            "addFilter",
         ),
     ] {
-        let source = format!(
-            "<?php\nuse Shopware\\Core\\Content\\ProductStream\\Service\\ProductStreamBuilderInterface;\nfunction migrate(ProductStreamBuilderInterface $builder, object $criteria, string $streamId, object $context): void\n{{\n    {body}\n}}\n"
-        );
-        let document = document("file:///project/src/ProductStreamMigration.php", &source);
-        let updated = apply_migration_fix_by_id(
+        check_migration_fix_by_id(
             &migration(&index, 8),
-            &document,
+            "file:///project/src/ProductStreamMigration.php",
+            &product_stream_source(
+                "{|shopware.migration.declaration.interface_to_abstract:ProductStreamBuilderInterface $builder|}",
+                before,
+            ),
             PRODUCT_STREAM_ENRICH_CRITERIA_FIX_ID,
+            &product_stream_source("ProductStreamBuilderInterface $builder", after),
         );
-        assert!(updated.contains(expected), "{name}: {updated}");
-        assert!(!updated.contains(removed), "{name}: {updated}");
     }
 }
 
@@ -93,28 +95,21 @@ fn product_stream_manual_migration_adds_rector_todo() {
         "/project/vendor/ProductStreamBuilderInterface.php",
         PRODUCT_STREAM_INTERFACE,
     );
-    let document = document(
-        "file:///project/src/ProductStreamMigration.php",
-        "<?php\nuse Shopware\\Core\\Content\\ProductStream\\Service\\ProductStreamBuilderInterface;\nfunction migrate(ProductStreamBuilderInterface $builder, string $streamId, object $context): array\n{\n    return $builder->buildFilters($streamId, $context);\n}\n",
-    );
+    let uri = "file:///project/src/ProductStreamMigration.php";
     let inspection = migration(&index, 8);
-    let updated = apply_migration_fix_by_id(
+    check_migration_fix_by_id(
         &inspection,
-        &document,
+        uri,
+        "<?php\nuse Shopware\\Core\\Content\\ProductStream\\Service\\ProductStreamBuilderInterface;\nfunction migrate({|shopware.migration.declaration.interface_to_abstract:ProductStreamBuilderInterface $builder|}, string $streamId, object $context): array\n{\n    return $builder->{|shopware.migration.product_stream.enrich_criteria:buildFilters|}($streamId, $context);\n}\n",
         PRODUCT_STREAM_ENRICH_CRITERIA_FIX_ID,
+        "<?php\nuse Shopware\\Core\\Content\\ProductStream\\Service\\ProductStreamBuilderInterface;\nfunction migrate(ProductStreamBuilderInterface $builder, string $streamId, object $context): array\n{\n    // TODO: Replace buildFilters() call with AbstractProductStreamBuilder::enrichCriteria() - please check manually\n    return $builder->buildFilters($streamId, $context);\n}\n",
     );
-    assert!(updated.contains("    // TODO: Replace buildFilters() call with AbstractProductStreamBuilder::enrichCriteria() - please check manually\n    return $builder->buildFilters"), "{updated}");
 
-    let updated_document = Arc::new(TextDocument::new(
-        document.uri.clone(),
-        &updated,
-        document.version + 1,
-    ));
-    let problems = inspect(inspection.as_ref(), &updated_document);
-    let product_stream: Vec<_> = problems
-        .iter()
-        .filter(|problem| problem.id.0 == "shopware.migration.product_stream.enrich_criteria")
-        .collect();
-    assert_eq!(product_stream.len(), 1);
-    assert!(product_stream[0].fixes.is_empty());
+    // The TODO keeps the problem but no longer offers the fix.
+    let (_, problems) = check_diagnostics(
+        inspection.as_ref(),
+        uri,
+        "<?php\nuse Shopware\\Core\\Content\\ProductStream\\Service\\ProductStreamBuilderInterface;\nfunction migrate({|shopware.migration.declaration.interface_to_abstract:ProductStreamBuilderInterface $builder|}, string $streamId, object $context): array\n{\n    // TODO: Replace buildFilters() call with AbstractProductStreamBuilder::enrichCriteria() - please check manually\n    return $builder->{|shopware.migration.product_stream.enrich_criteria:buildFilters|}($streamId, $context);\n}\n",
+    );
+    assert!(problems[1].fixes.is_empty());
 }

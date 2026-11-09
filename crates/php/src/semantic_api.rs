@@ -40,9 +40,17 @@ impl PhpIndex {
         self.inner.semantic_store.collect_atoms()
     }
 
+    /// The current generation without on-demand return inference: what
+    /// indexing analyzes against, so preparing a file never analyzes other
+    /// files and persists only what it was given.
+    pub(crate) fn indexing_snapshot(&self) -> Arc<Snapshot> {
+        self.semantic_snapshot().without_return_inference()
+    }
+
     /// Binds, links and analyzes an unsaved document against a workspace
     /// generation that contains the document's own declarations. `source`
-    /// is the complete text of the tree `root` belongs to.
+    /// is the complete text of the tree `root` belongs to. Return types
+    /// inferred in other files are those of the current generation.
     pub fn analyze_document(
         &self,
         path: &str,
@@ -50,15 +58,27 @@ impl PhpIndex {
         root: &SyntaxNode,
         source: &str,
     ) -> Document {
+        self.analyze_against(&self.semantic_snapshot(), path, version, root, source)
+    }
+
+    /// [`PhpIndex::analyze_document`] against the generation `base`.
+    pub(crate) fn analyze_against(
+        &self,
+        base: &Arc<Snapshot>,
+        path: &str,
+        version: i64,
+        root: &SyntaxNode,
+        source: &str,
+    ) -> Document {
         let mut document = Binder::new().bind_node(path, version, Some(root), source);
-        let base = Path::new(path)
+        let file_name = Path::new(path)
             .file_name()
             .map(|name| name.to_string_lossy())
             .unwrap_or_default();
-        if swlsp_php_types::equal_fold(&base, ".phpstorm.meta.php") {
+        if swlsp_php_types::equal_fold(&file_name, ".phpstorm.meta.php") {
             document.call_contracts = swlsp_php_phpstormmeta::parse(root);
         }
-        let snapshot = self.semantic_snapshot().with_declarations(&document);
+        let snapshot = base.with_declarations(&document);
         document.workspace_revision = snapshot.revision;
         let document = swlsp_php_binder::link_owned(document, &snapshot);
         let document = Analyzer::new(Some(snapshot.clone()), self.type_extensions())
@@ -73,11 +93,18 @@ impl PhpIndex {
 
     /// The fully linked document shared by every indexer preparing the same
     /// immutable file. The scanner releases it before persistence, so
-    /// semantic documents never become long-lived index state.
+    /// semantic documents never become long-lived index state. It is
+    /// analyzed against [`PhpIndex::indexing_snapshot`].
     pub fn analyze_parsed_file(&self, file: &ParsedFile) -> Arc<Document> {
         let key = self.identity();
         file.memoized(key, || match file.syntax_tree() {
-            Some(tree) => self.analyze_tree(file.path(), 0, tree),
+            Some(tree) => self.analyze_against(
+                &self.indexing_snapshot(),
+                file.path(),
+                0,
+                &tree.root(),
+                tree.source(),
+            ),
             None => Document {
                 path: file.path().into(),
                 ..Document::default()

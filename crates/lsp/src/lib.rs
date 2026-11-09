@@ -26,23 +26,28 @@
 mod capabilities;
 mod client;
 mod code_action;
+mod comment_suppression;
 mod configuration;
 mod context;
 mod diagnostics;
 mod document;
 mod features;
+mod fix_all;
+pub mod fixture;
 mod inspection;
 mod providers;
 mod server;
 mod transport;
 mod vue_context;
 mod workspace;
+mod workspace_diagnostics;
 
 pub use client::{CLIENT_PROTOCOL_VERSION, PresentationProfile};
 pub use code_action::{
     DocumentError, WorkspaceEditHost, add_document_replacement, is_stale_error,
     resolve_optional_document,
 };
+pub use comment_suppression::comment_suppression_reader;
 pub use configuration::{
     ConfigurationCatalog, ConfigurationDiagnostic, ConfigurationInspection, ConfigurationIssue,
     ConfigurationReloadResult,
@@ -50,15 +55,16 @@ pub use configuration::{
 pub use context::{
     BoxError, CancellationToken, Cancelled, Context, RpcError, codes, is_cancellation,
 };
-pub use diagnostics::{DIAGNOSTICS_DEBOUNCE, protocol_range, text_range};
+pub use diagnostics::{DIAGNOSTICS_DEBOUNCE, InspectionAudit, protocol_range, text_range};
 pub use document::{
     DidClose, DidOpenOrChange, DocumentManager, DocumentObserver, SyntaxContext, TextDocument,
     parse_path,
 };
 pub use inspection::{
     BoundFix, CommandQuickFix, DiagnosticId, DocumentResolver, DocumentSnapshot, FixContext, FixId,
-    FixPresentation, FixResolution, Inspection, InspectionDefinition, Problem, ProblemDefinition,
-    ProblemReporter, QuickFix, RewriteQuickFix, bind_fix,
+    FixPresentation, FixResolution, Inspection, InspectionDefinition, InspectionScope,
+    InspectionSpec, Problem, ProblemDefinition, ProblemReporter, QuickFix, RewriteQuickFix,
+    SuppressionReader, Suppressions, bind_fix,
 };
 pub use providers::*;
 pub use server::{Server, WeakServer};

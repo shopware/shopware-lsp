@@ -167,6 +167,40 @@ impl VersioningService {
             .find(|hash| same_path(&hash.absolute_path, path)))
     }
 
+    /// A revision of what the versioning of the template at `path` reads:
+    /// the Twig index (templates, block hashes, and the PHP project's
+    /// Composer metadata through it) and the `composer.json` files the
+    /// version lookup of `path` walks, stamped by size and modification time.
+    /// Upstream templates' own `composer.json` files are not stamped: they
+    /// live in installed packages, which change only with a Composer install
+    /// that also changes the project metadata.
+    pub fn inputs_revision(&self, path: &str) -> u64 {
+        use std::hash::{DefaultHasher, Hash, Hasher};
+        let index = self
+            .index
+            .as_ref()
+            .map_or(0, swlsp_indexer::Revisioned::revision);
+        let path = clean(path);
+        let search_root = package_search_root(&self.root, &path);
+        let mut hasher = DefaultHasher::new();
+        let mut directory = dir(&path);
+        while path_inside(&search_root, &directory) {
+            let composer = format!("{directory}/composer.json");
+            if let Ok(metadata) = std::fs::metadata(&composer) {
+                composer.hash(&mut hasher);
+                metadata.len().hash(&mut hasher);
+                metadata.modified().ok().hash(&mut hasher);
+                break;
+            }
+            let parent = dir(&directory);
+            if same_path(&directory, &search_root) || parent == directory {
+                break;
+            }
+            directory = parent;
+        }
+        index.wrapping_add(hasher.finish())
+    }
+
     /// The installed version of the package owning `path`: Composer
     /// metadata first, then the nearest `composer.json` version, then the
     /// fallback for Storefront templates.

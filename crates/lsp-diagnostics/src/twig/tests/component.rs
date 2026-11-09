@@ -33,18 +33,13 @@ fn twig_component_diagnostics_missing_and_mixed_syntax() {
         &s(&root.path().join("templates/components/Alert.html.twig")),
         "{% block content %}{% endblock %}",
     );
-    let document = doc(
+    let (_, values) = check_problems(
+        &TwigComponentAnalyzer::new(Some(components)),
         "file:///project/templates/page.html.twig",
-        "<twig:Alret />\n<twig:Alert>\n  <twig:block name=\"contnt\">Hi</twig:block>\n  {% block content %}Hi{% endblock %}\n</twig:Alert>",
+        "<twig:{|twig.component.missing:Alret|} />\n<twig:Alert>\n  <twig:block name=\"{|twig.component.block.missing:contnt|}\">Hi</twig:block>\n  {% block {|twig.component.mixed_syntax:content|} %}Hi{% endblock %}\n</twig:Alert>",
     );
-    let values = analyze(&TwigComponentAnalyzer::new(Some(components)), &document);
-    assert_eq!(values.len(), 3, "{values:?}");
-    assert_eq!(values[0].id.as_str(), "twig.component.missing");
     assert!(has_suggestion(&values[0], "Alert"));
-    assert_eq!(values[1].id.as_str(), "twig.component.block.missing");
     assert!(has_suggestion(&values[1], "content"));
-    assert_eq!(values[2].id.as_str(), "twig.component.mixed_syntax");
-    assert_eq!(range_text(&document, values[2].range), "content");
 }
 
 #[test]
@@ -58,22 +53,19 @@ fn twig_component_diagnostics_reject_self_macro_imports() {
         &s(&root.path().join("templates/components/Alert.html.twig")),
         "Alert",
     );
-    let document = doc(
+    let (_, values) = check_problems(
+        &TwigComponentAnalyzer::new(Some(components)),
         "file:///project/templates/page.html.twig",
         "{% from _self import outside %}
 <twig:Alert>
-  {% from _self import html_component %}
+  {% from {|twig.component.self_macro_import:_self|} import html_component %}
   {% from 'macros.html.twig' import valid %}
 </twig:Alert>
 {% component 'Alert' %}
-  {% from _self import twig_component %}
+  {% from {|twig.component.self_macro_import:_self|} import twig_component %}
 {% endcomponent %}",
     );
-    let values = analyze(&TwigComponentAnalyzer::new(Some(components)), &document);
-    assert_eq!(values.len(), 2, "{values:?}");
     for value in &values {
-        assert_eq!(value.id.as_str(), "twig.component.self_macro_import");
-        assert_eq!(range_text(&document, value.range), "_self");
         assert!(value.message.contains("full template path"));
     }
 }
@@ -101,22 +93,17 @@ fn twig_component_diagnostics_report_missing_live_action() {
     index_file(&php, &class_path, CART_CLASS);
     index_file(components.as_ref(), &class_path, CART_CLASS);
     let template_path = s(&root.path().join("templates/components/Cart.html.twig"));
-    let source = "{{ live_action('save') }}
-<button data-live-action-param=\"debounce(300)|svae\">Typo</button>
-<button data-live-action-param=\"save\" data-live-itme-id-param=\"42\">Argument typo</button>
+    let fixture = "{{ live_action('save') }}
+<button data-live-action-param=\"debounce(300)|{|twig.component.live_action.missing:svae|}\">Typo</button>
+<button data-live-action-param=\"save\" data-live-{|twig.component.live_argument.missing:itme-id|}-param=\"42\">Argument typo</button>
 <button data-live-action-param=\"{{ dynamicAction }}\">Dynamic</button>";
-    index_file(twig.as_ref(), &template_path, source);
-    let document = doc(&format!("file://{template_path}"), source);
-    let values = analyze(&TwigComponentAnalyzer::new(Some(components)), &document);
-    assert_eq!(values.len(), 2, "{values:?}");
-    assert_eq!(values[0].id.as_str(), "twig.component.live_action.missing");
-    assert_eq!(range_text(&document, values[0].range), "svae");
-    assert!(has_suggestion(&values[0], "save"));
-    assert_eq!(
-        values[1].id.as_str(),
-        "twig.component.live_argument.missing"
+    index_file(twig.as_ref(), &template_path, &plain(fixture));
+    let (_, values) = check_problems(
+        &TwigComponentAnalyzer::new(Some(components)),
+        &format!("file://{template_path}"),
+        fixture,
     );
-    assert_eq!(range_text(&document, values[1].range), "itme-id");
+    assert!(has_suggestion(&values[0], "save"));
     assert!(has_suggestion(&values[1], "item-id"));
 }
 
@@ -201,8 +188,8 @@ fn twig_component_block_lookups_refresh_between_analyses() {
         "{% block content %}{% endblock %}",
     );
     let path = s(&root.path().join("templates/components/Alert.html.twig"));
-    let source = "<twig:Alert><twig:block name=\"content\"/></twig:Alert><twig:Alert><twig:block name=\"content\"/></twig:Alert><twig:Notice><twig:block name=\"content\"/></twig:Notice>";
-    let document = doc("file:///project/page.twig", source);
+    let missing = "<twig:Alert><twig:block name=\"{|twig.component.block.missing:content|}\"/></twig:Alert><twig:Alert><twig:block name=\"{|twig.component.block.missing:content|}\"/></twig:Alert><twig:Notice><twig:block name=\"content\"/></twig:Notice>";
+    let found = plain(missing);
     let analyzer = TwigComponentAnalyzer::new(Some(components));
     for template in [
         "no blocks",
@@ -210,17 +197,12 @@ fn twig_component_block_lookups_refresh_between_analyses() {
         "{% block footer %}{% endblock %}",
     ] {
         index_file(twig.as_ref(), &path, template);
-        let problems = analyze(&analyzer, &document);
-        if template.contains("block content") {
-            assert!(problems.is_empty(), "{problems:?}");
-            continue;
-        }
-        assert_eq!(problems.len(), 2, "{template}: {problems:?}");
-        for problem in &problems {
-            assert_eq!(problem.id.as_str(), "twig.component.block.missing");
-            assert_eq!(range_text(&document, problem.range), "content");
-        }
-        assert_ne!(problems[0].range, problems[1].range);
+        let fixture = if template.contains("block content") {
+            found.as_str()
+        } else {
+            missing
+        };
+        check_problems(&analyzer, "file:///project/page.twig", fixture);
     }
 }
 
@@ -249,43 +231,29 @@ final class Cart {
     let provider = LiveComponentEventAnalyzer::new(Some(components));
 
     let php_path = s(&root.path().join("src/Emitter.php"));
-    let php_document = doc(
+    let (_, values) = check_problems(
+        &provider,
         &swlsp_uriutil::file_uri(&php_path),
         "<?php class Emitter {
     public function save(string $dynamic): void {
-        $this->emit('prodcutAdded');
-        $this->emit('productAdded', ['prodcutId' => 42]);
+        $this->emit('{|twig.component.live_event.missing:prodcutAdded|}');
+        $this->emit('productAdded', ['{|twig.component.live_event_argument.missing:prodcutId|}' => 42]);
         $this->emit($dynamic);
     }
 }",
     );
-    let values = analyze(&provider, &php_document);
-    assert_eq!(values.len(), 2, "{values:?}");
-    assert_eq!(values[0].id.as_str(), "twig.component.live_event.missing");
-    assert_eq!(range_text(&php_document, values[0].range), "prodcutAdded");
     assert!(has_suggestion(&values[0], "productAdded"));
-    assert_eq!(
-        values[1].id.as_str(),
-        "twig.component.live_event_argument.missing"
-    );
-    assert_eq!(range_text(&php_document, values[1].range), "prodcutId");
     assert!(has_suggestion(&values[1], "productId"));
 
     let twig_path = s(&root.path().join("templates/Cart.html.twig"));
-    let twig_document = doc(
+    let (_, values) = check_problems(
+        &provider,
         &swlsp_uriutil::file_uri(&twig_path),
         "<button
     data-action=\"click->live#emit\"
     data-live-event-param=\"productAdded\"
-    data-live-prodcut-id-param=\"42\"
+    data-live-{|twig.component.live_event_argument.missing:prodcut-id|}-param=\"42\"
 ></button>",
     );
-    let values = analyze(&provider, &twig_document);
-    assert_eq!(values.len(), 1, "{values:?}");
-    assert_eq!(
-        values[0].id.as_str(),
-        "twig.component.live_event_argument.missing"
-    );
-    assert_eq!(range_text(&twig_document, values[0].range), "prodcut-id");
     assert!(has_suggestion(&values[0], "product-id"));
 }

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use swlsp_event::Index;
 use swlsp_language::LanguageId;
-use swlsp_lsp::{Inspection, InspectionDefinition, bind_fix};
+use swlsp_lsp::{Inspection, InspectionDefinition, InspectionScope, bind_fix};
 use swlsp_lsp_diagnostics::EventAnalyzer;
 use swlsp_lsp_protocol::DiagnosticSeverity;
 use swlsp_php::PhpIndex;
@@ -31,6 +31,9 @@ pub fn new_event(
     Arc::new(BoundInspection {
         definition: InspectionDefinition {
             id: "symfony.event".to_owned(),
+            description: "Dispatched events nobody listens to, and listener methods that do not exist.",
+            domain: "symfony.events",
+            scope: InspectionScope::Framework,
             languages: vec![LanguageId::Php, LanguageId::Xml, LanguageId::Yaml],
             problems: vec![
                 definition(

@@ -9,15 +9,11 @@ mod scss_variable_tests;
 mod serializer_tests;
 mod validation_tests;
 
-use std::sync::Arc;
-
 use serde_json::Value;
 use swlsp_indexer::{Indexer, ParsedFile};
-use swlsp_lsp::{Context, Problem, TextDocument};
+use swlsp_lsp::Problem;
 use swlsp_php::PhpIndex;
 use tempfile::TempDir;
-
-use crate::ProblemAnalyzer;
 
 pub(super) fn tempdir() -> TempDir {
     tempfile::tempdir().unwrap()
@@ -35,13 +31,6 @@ pub(super) fn index_file(indexer: &dyn Indexer, path: &str, source: &str) {
         .unwrap();
 }
 
-pub(super) fn analyze(
-    analyzer: &dyn ProblemAnalyzer,
-    document: &Arc<TextDocument>,
-) -> Vec<Problem> {
-    analyzer.analyze(&Context::background(), document).unwrap()
-}
-
 /// The `suggestions` payload entries.
 pub(super) fn suggestions(problem: &Problem) -> Vec<String> {
     match problem
@@ -55,11 +44,4 @@ pub(super) fn suggestions(problem: &Problem) -> Vec<String> {
             .collect(),
         _ => Vec::new(),
     }
-}
-
-pub(super) fn start_line(document: &TextDocument, problem: &Problem) -> u32 {
-    document
-        .line_index()
-        .position_utf16(problem.range.start().into())
-        .0
 }

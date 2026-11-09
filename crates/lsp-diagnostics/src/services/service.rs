@@ -5,7 +5,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use serde_json::json;
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_lsp_phpanalysis::State;
 use swlsp_lsp_protocol as protocol;
 use swlsp_parser_php::query as phpquery;
@@ -21,8 +22,8 @@ use swlsp_symfony::{Parameter, PhpConfigReferenceKind, Service, ServiceIndex};
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
 
 use super::{deprecated_tags, lower_ext, problem, similar_value};
-use crate::ProblemAnalyzer;
 use crate::common::value_node_text_range;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 const MISSING_SERVICE_CODE: &str = "symfony.service.missing";
 const MISSING_PARAMETER_CODE: &str = "symfony.parameter.missing";
@@ -51,7 +52,29 @@ impl ServiceAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for ServiceAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "symfony.service",
+        description: "References to services, parameters and classes that do not exist or are deprecated.",
+        domain: "symfony.services",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Php, LanguageId::Xml, LanguageId::Yaml],
+        source: "symfony",
+        codes: &[
+            DEPRECATED_CLASS_CODE,
+            MISSING_CLASS_CODE,
+            MISSING_PARAMETER_CODE,
+            DEPRECATED_SERVICE_CODE,
+            MISSING_SERVICE_CODE,
+        ],
+    };
+}
+
 impl ProblemAnalyzer for ServiceAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.service_index) + crate::inputs(&self.php_index))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

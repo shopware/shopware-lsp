@@ -3,8 +3,8 @@ use std::path::Path;
 use std::sync::{Arc, PoisonError, RwLock};
 
 use swlsp_indexer::{
-    DataIndexer, Indexer, Mutation, ParsedFile, Result, Store, TransactionalClearer,
-    TransactionalRemover,
+    DataIndexer, Indexer, Mutation, ParsedFile, Prepared, PreparingIndexer, Result, Store,
+    TransactionalClearer, TransactionalRemover,
 };
 use swlsp_php::PhpIndex;
 use swlsp_php_types::{Kind as TypeKind, Type, equal_fold, go_to_lower};
@@ -13,6 +13,9 @@ use crate::model::{Message, Occurrence, OccurrenceKind};
 use crate::parser::{parse_php, parse_xml, parse_yaml};
 
 type PathSet = Arc<RwLock<HashSet<String>>>;
+
+/// Keyed occurrences extracted from one file; `None` leaves the file alone.
+struct PreparedOccurrences(Option<Vec<(String, Occurrence)>>);
 
 /// Indexes Messenger handlers and dispatches.
 ///
@@ -156,31 +159,18 @@ impl Index {
         }
     }
 
-    fn remove_paths(&self, paths: &[String], mutation: Option<&Mutation>) -> Result<()> {
-        let paths = paths.to_vec();
-        self.publish(mutation, move |set| {
-            for path in &paths {
-                set.remove(path);
-            }
-        })
-    }
-}
-
-impl Indexer for Index {
-    fn id(&self) -> &str {
-        "symfony.messenger"
-    }
-
-    fn index(&self, file: &ParsedFile) -> Result<()> {
+    /// Parses one file's occurrences without writing anything. `None` means
+    /// the file is neither a candidate nor previously indexed.
+    fn extract(&self, file: &ParsedFile) -> PreparedOccurrences {
         let path = file.path();
         if !messenger_candidate(file) && !self.has_path(path) {
-            return Ok(());
+            return PreparedOccurrences(None);
         }
         let occurrences = match file.extension() {
             ".php" => parse_php(file, self.php_index().as_ref()),
             ".yaml" | ".yml" => parse_yaml(file),
             ".xml" => parse_xml(file),
-            _ => return Ok(()),
+            _ => return PreparedOccurrences(None),
         };
         // Go keys a map by occurrence; equal keys keep the last value.
         let mut items: Vec<(String, Occurrence)> = Vec::with_capacity(occurrences.len());
@@ -196,6 +186,15 @@ impl Indexer for Index {
                 }
             }
         }
+        PreparedOccurrences(Some(items))
+    }
+
+    /// Stores extracted occurrences and publishes the path membership.
+    fn persist(&self, file: &ParsedFile, prepared: &PreparedOccurrences) -> Result<()> {
+        let Some(items) = &prepared.0 else {
+            return Ok(());
+        };
+        let path = file.path();
         let present = !items.is_empty();
         self.records.batch_save_items_in(
             file.mutation(),
@@ -216,6 +215,26 @@ impl Indexer for Index {
         })
     }
 
+    fn remove_paths(&self, paths: &[String], mutation: Option<&Mutation>) -> Result<()> {
+        let paths = paths.to_vec();
+        self.publish(mutation, move |set| {
+            for path in &paths {
+                set.remove(path);
+            }
+        })
+    }
+}
+
+impl Indexer for Index {
+    fn id(&self) -> &str {
+        "symfony.messenger"
+    }
+
+    fn index(&self, file: &ParsedFile) -> Result<()> {
+        let prepared = self.extract(file);
+        self.persist(file, &prepared)
+    }
+
     fn removed_files(&self, paths: &[String]) -> Result<()> {
         self.records.batch_delete_by_file_paths(paths)?;
         self.remove_paths(paths, None)
@@ -230,12 +249,29 @@ impl Indexer for Index {
         self.publish(None, HashSet::clear)
     }
 
+    fn as_preparing(&self) -> Option<&dyn PreparingIndexer> {
+        Some(self)
+    }
+
     fn as_transactional_remover(&self) -> Option<&dyn TransactionalRemover> {
         Some(self)
     }
 
     fn as_transactional_clearer(&self) -> Option<&dyn TransactionalClearer> {
         Some(self)
+    }
+}
+
+impl PreparingIndexer for Index {
+    fn prepare(&self, file: &ParsedFile) -> Result<Option<Prepared>> {
+        Ok(Some(Box::new(self.extract(file))))
+    }
+
+    fn index_prepared(&self, file: &ParsedFile, prepared: Option<&Prepared>) -> Result<()> {
+        match prepared.and_then(|value| value.downcast_ref::<PreparedOccurrences>()) {
+            Some(prepared) => self.persist(file, prepared),
+            None => self.index(file),
+        }
     }
 }
 

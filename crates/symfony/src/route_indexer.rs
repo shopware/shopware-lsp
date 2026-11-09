@@ -6,8 +6,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use swlsp_indexer::{
-    DataIndexer, Indexer, Mutation, ParsedFile, Result, Store, TransactionalClearer,
-    TransactionalRemover,
+    DataIndexer, Indexer, Mutation, ParsedFile, Prepared, PreparingIndexer, Result, Store,
+    TransactionalClearer, TransactionalRemover,
 };
 use swlsp_syntax::TextRange;
 
@@ -53,6 +53,17 @@ impl std::fmt::Debug for RouteIndexer {
 }
 
 impl RouteIndexer {
+    /// Advanced after every change to the source routes, route resource
+    /// imports or the compiled route catalog.
+    pub fn revision(&self) -> u64 {
+        self.routes.revision()
+            + self.resource_imports.revision()
+            + self
+                .compiled_routes
+                .as_ref()
+                .map_or(0, |compiled| compiled.revision())
+    }
+
     /// Opens the route repositories without a compiled route catalog.
     pub fn new(config_dir: impl AsRef<Path>, store: Option<&Store>) -> Result<Self> {
         let config_dir = config_dir.as_ref();
@@ -140,6 +151,17 @@ impl RouteIndexer {
             routes: routes.clone(),
         });
         Ok(routes)
+    }
+
+    /// Routes declared in indexed source files, without the compiled
+    /// catalog and without resolving class-constant names.
+    pub fn source_routes_view(&self) -> Result<Arc<[Route]>> {
+        self.routes.get_all_values_view()
+    }
+
+    /// Advanced after every committed change to the source routes.
+    pub fn source_revision(&self) -> u64 {
+        self.routes.revision()
     }
 
     /// The first route whose controller is `name` (Go
@@ -281,11 +303,58 @@ impl RouteIndexer {
         Ok(result)
     }
 
-    fn save_routes(
+    /// Parses the file's routes and routing imports without writing
+    /// anything; `None` for files the route index ignores.
+    fn extract(&self, file: &ParsedFile) -> Option<PreparedRoutes> {
+        let (routes, key) = match file.extension() {
+            ".yml" | ".yaml" => (
+                parse_yaml_routes_tree(file.path(), file.syntax_tree(), file.line_index()),
+                RouteKey::Name,
+            ),
+            ".xml" => (
+                parse_xml_routes_tree(file.path(), file.syntax_tree(), file.line_index()),
+                RouteKey::Name,
+            ),
+            ".php" => {
+                let routes = if contains_fold_ascii(file.source().as_bytes(), "route") {
+                    parse_php_routes_tree(file.path(), file.syntax_tree(), Some(file.line_index()))
+                } else {
+                    Vec::new()
+                };
+                (routes, RouteKey::NameOrConstant)
+            }
+            _ => return None,
+        };
+        Some(PreparedRoutes {
+            routes,
+            key,
+            resources: extract_route_resources(file),
+        })
+    }
+
+    /// Writes prepared routes and routing imports for `file`.
+    fn persist(&self, file: &ParsedFile, prepared: Option<&PreparedRoutes>) -> Result<()> {
+        let Some(prepared) = prepared else {
+            return Ok(());
+        };
+        self.save_routes(file, &prepared.routes, |route| prepared.key.of(route))?;
+        self.resource_imports.batch_save_items_in(
+            file.mutation(),
+            [(
+                file.path(),
+                prepared
+                    .resources
+                    .iter()
+                    .map(|(key, import)| (key.as_str(), import)),
+            )],
+        )
+    }
+
+    fn save_routes<'r>(
         &self,
         file: &ParsedFile,
-        routes: &[Route],
-        key: impl Fn(&Route) -> &str,
+        routes: &'r [Route],
+        key: impl Fn(&'r Route) -> &'r str,
     ) -> Result<()> {
         let path = file.path();
         // Go keys a path → key map; the last route of a key wins.
@@ -323,35 +392,6 @@ impl RouteIndexer {
                     items.iter().map(|(key, route)| (key.as_str(), *route)),
                 )
             }),
-        )?;
-        self.index_route_resources(file)
-    }
-
-    fn index_route_resources(&self, file: &ParsedFile) -> Result<()> {
-        let mut resources: Vec<(String, RouteResourceImport)> = Vec::new();
-        if let Some(tree) = file.syntax_tree() {
-            for reference in route_resource_references(&tree.root()) {
-                let key = range_key(reference.range);
-                let import = RouteResourceImport {
-                    path: reference.path,
-                    loader: reference.loader,
-                    namespace: reference.namespace,
-                    file_path: file.path().to_owned(),
-                    range: reference.range,
-                    nested: reference.nested,
-                };
-                match resources.iter_mut().find(|(existing, _)| *existing == key) {
-                    Some(entry) => entry.1 = import,
-                    None => resources.push((key, import)),
-                }
-            }
-        }
-        self.resource_imports.batch_save_items_in(
-            file.mutation(),
-            [(
-                file.path(),
-                resources.iter().map(|(key, import)| (key.as_str(), import)),
-            )],
         )
     }
 
@@ -370,6 +410,69 @@ impl RouteIndexer {
     }
 }
 
+/// Routes and routing imports parsed ahead of the write transaction.
+struct PreparedRoutes {
+    routes: Vec<Route>,
+    key: RouteKey,
+    /// Routing imports keyed by range; the last import of a key wins.
+    resources: Vec<(String, RouteResourceImport)>,
+}
+
+/// The repository key of a route.
+#[derive(Clone, Copy)]
+enum RouteKey {
+    Name,
+    /// A constant-named route has no literal name yet; key it by the
+    /// reference so it survives indexing.
+    NameOrConstant,
+}
+
+impl RouteKey {
+    fn of(self, route: &Route) -> &str {
+        match self {
+            Self::NameOrConstant if route.name.is_empty() => &route.name_constant,
+            Self::Name | Self::NameOrConstant => &route.name,
+        }
+    }
+}
+
+fn extract_route_resources(file: &ParsedFile) -> Vec<(String, RouteResourceImport)> {
+    let mut resources: Vec<(String, RouteResourceImport)> = Vec::new();
+    if may_import_route_resources(file)
+        && let Some(tree) = file.syntax_tree()
+    {
+        for reference in route_resource_references(&tree.root()) {
+            let key = range_key(reference.range);
+            let import = RouteResourceImport {
+                path: reference.path,
+                loader: reference.loader,
+                namespace: reference.namespace,
+                file_path: file.path().to_owned(),
+                range: reference.range,
+                nested: reference.nested,
+            };
+            match resources.iter_mut().find(|(existing, _)| *existing == key) {
+                Some(entry) => entry.1 = import,
+                None => resources.push((key, import)),
+            }
+        }
+    }
+    resources
+}
+
+/// A cheap superset of the files [`route_resource_references`] can match:
+/// PHP imports need a parameter typed as the routing configurator, whose
+/// short class name appears in any spelling of that type; YAML and XML
+/// imports need a `resource` key or attribute. Walking every string of every
+/// PHP file otherwise dominates the serialized index phase.
+fn may_import_route_resources(file: &ParsedFile) -> bool {
+    let source = file.source().as_bytes();
+    match file.extension() {
+        ".php" => contains_fold_ascii(source, "routingconfigurator"),
+        _ => contains_fold_ascii(source, "resource"),
+    }
+}
+
 /// Go `cst.TextRange.String`: `start..end`.
 pub(crate) fn range_key(range: TextRange) -> String {
     format!("{}..{}", u32::from(range.start()), u32::from(range.end()))
@@ -381,35 +484,7 @@ impl Indexer for RouteIndexer {
     }
 
     fn index(&self, file: &ParsedFile) -> Result<()> {
-        match file.extension() {
-            ".yml" | ".yaml" => {
-                let routes =
-                    parse_yaml_routes_tree(file.path(), file.syntax_tree(), file.line_index());
-                self.save_routes(file, &routes, |route| &route.name)
-            }
-            ".xml" => {
-                let routes =
-                    parse_xml_routes_tree(file.path(), file.syntax_tree(), file.line_index());
-                self.save_routes(file, &routes, |route| &route.name)
-            }
-            ".php" => {
-                let routes = if contains_fold_ascii(file.source().as_bytes(), "route") {
-                    parse_php_routes_tree(file.path(), file.syntax_tree(), Some(file.line_index()))
-                } else {
-                    Vec::new()
-                };
-                // A constant-named route has no literal name yet; key it by
-                // the reference so it survives indexing.
-                self.save_routes(file, &routes, |route| {
-                    if route.name.is_empty() {
-                        &route.name_constant
-                    } else {
-                        &route.name
-                    }
-                })
-            }
-            _ => Ok(()),
-        }
+        self.persist(file, self.extract(file).as_ref())
     }
 
     fn removed_files(&self, paths: &[String]) -> Result<()> {
@@ -426,12 +501,29 @@ impl Indexer for RouteIndexer {
         self.clear_all(None)
     }
 
+    fn as_preparing(&self) -> Option<&dyn PreparingIndexer> {
+        Some(self)
+    }
+
     fn as_transactional_remover(&self) -> Option<&dyn TransactionalRemover> {
         Some(self)
     }
 
     fn as_transactional_clearer(&self) -> Option<&dyn TransactionalClearer> {
         Some(self)
+    }
+}
+
+impl PreparingIndexer for RouteIndexer {
+    fn prepare(&self, file: &ParsedFile) -> Result<Option<Prepared>> {
+        Ok(Some(Box::new(self.extract(file))))
+    }
+
+    fn index_prepared(&self, file: &ParsedFile, prepared: Option<&Prepared>) -> Result<()> {
+        match prepared.and_then(|value| value.downcast_ref::<Option<PreparedRoutes>>()) {
+            Some(prepared) => self.persist(file, prepared.as_ref()),
+            None => self.index(file),
+        }
     }
 }
 
@@ -695,3 +787,9 @@ fn is_route_placeholder_path_byte(value: u8) -> bool {
 #[cfg(test)]
 #[path = "tests_routes/route_indexer.rs"]
 pub(crate) mod tests;
+
+impl swlsp_indexer::Revisioned for RouteIndexer {
+    fn revision(&self) -> u64 {
+        RouteIndexer::revision(self)
+    }
+}

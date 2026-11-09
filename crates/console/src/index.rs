@@ -3,9 +3,9 @@ use std::path::Path;
 use std::sync::{Arc, PoisonError, RwLock};
 
 use swlsp_indexer::{
-    DataIndexer, Indexer, Mutation, ParsedFile, Result, Store, TransactionalClearer,
-    TransactionalRemover, WORKSPACE_SYMBOL_PRIORITY_FRAMEWORK, WorkspaceSymbol,
-    WorkspaceSymbolKind, WorkspaceSymbolRange,
+    DataIndexer, Indexer, Mutation, ParsedFile, Prepared, PreparingIndexer, Result, Store,
+    TransactionalClearer, TransactionalRemover, WORKSPACE_SYMBOL_PRIORITY_FRAMEWORK,
+    WorkspaceSymbol, WorkspaceSymbolKind, WorkspaceSymbolRange,
 };
 
 use crate::model::{Command, Input, InputKind};
@@ -13,12 +13,30 @@ use crate::parser::{is_php_command_candidate, parse_php_commands_tree, parse_xml
 
 type PathSet = Arc<RwLock<HashSet<String>>>;
 
+/// Commands extracted from one file; `None` leaves the file alone.
+struct PreparedCommands(Option<ExtractedCommands>);
+
+struct ExtractedCommands {
+    /// Every parsed command, in source order.
+    commands: Vec<Command>,
+    /// Indexes into `commands` that are stored, one per name (last wins),
+    /// in first-occurrence order.
+    stored: Vec<usize>,
+    symbols: Vec<WorkspaceSymbol>,
+}
+
 pub struct Index {
     commands: DataIndexer<Command>,
     paths: PathSet,
 }
 
 impl Index {
+    /// Advanced after every committed change to this index; inspections
+    /// declare it as an input (`ProblemAnalyzer::input_revision`).
+    pub fn revision(&self) -> u64 {
+        self.commands.revision()
+    }
+
     pub fn new(config_dir: impl AsRef<Path>, store: Option<&Store>) -> Result<Self> {
         let commands = DataIndexer::repository(
             config_dir.as_ref().join("console.db"),
@@ -111,6 +129,68 @@ impl Index {
         }
     }
 
+    /// Parses one file's commands without writing anything. `None` means
+    /// the file is neither a candidate nor previously indexed.
+    fn extract(&self, file: &ParsedFile) -> PreparedCommands {
+        let path = file.path();
+        let commands = match file.extension() {
+            ".php" if is_php_command_candidate(file.source()) => {
+                parse_php_commands_tree(path, file.syntax_tree())
+            }
+            ".xml" if file.source().contains("console.command") => parse_xml_commands(file),
+            ".php" | ".xml" if self.has_path(path) => Vec::new(),
+            _ => return PreparedCommands(None),
+        };
+
+        // Go keys a map by command name; equal names keep the last command.
+        let mut stored: Vec<usize> = Vec::with_capacity(commands.len());
+        let mut positions: HashMap<&str, usize> = HashMap::with_capacity(commands.len());
+        for (index, command) in commands.iter().enumerate() {
+            if command.name.is_empty() {
+                continue;
+            }
+            match positions.get(command.name.as_str()) {
+                Some(&position) => stored[position] = index,
+                None => {
+                    positions.insert(&command.name, stored.len());
+                    stored.push(index);
+                }
+            }
+        }
+        let symbols = command_workspace_symbols(file, &commands);
+        PreparedCommands(Some(ExtractedCommands {
+            commands,
+            stored,
+            symbols,
+        }))
+    }
+
+    /// Stores extracted commands and their workspace symbols and publishes
+    /// the path membership.
+    fn persist(&self, file: &ParsedFile, prepared: &PreparedCommands) -> Result<()> {
+        let Some(extracted) = &prepared.0 else {
+            return Ok(());
+        };
+        let path = file.path();
+        let items = extracted
+            .stored
+            .iter()
+            .filter_map(|&index| extracted.commands.get(index))
+            .map(|command| (command.name.as_str(), command));
+        let present = !extracted.stored.is_empty();
+        self.commands
+            .batch_save_items_in(file.mutation(), [(path, items)])?;
+        file.add_workspace_symbols(extracted.symbols.iter().cloned());
+        let path = path.to_owned();
+        self.publish(file.mutation(), move |set| {
+            if present {
+                set.insert(path);
+            } else {
+                set.remove(&path);
+            }
+        })
+    }
+
     fn remove_paths(&self, paths: &[String], mutation: Option<&Mutation>) -> Result<()> {
         let paths = paths.to_vec();
         self.publish(mutation, move |set| {
@@ -127,40 +207,8 @@ impl Indexer for Index {
     }
 
     fn index(&self, file: &ParsedFile) -> Result<()> {
-        let path = file.path();
-        let commands = match file.extension() {
-            ".php" if is_php_command_candidate(file.source()) => {
-                parse_php_commands_tree(path, file.syntax_tree())
-            }
-            ".xml" if file.source().contains("console.command") => parse_xml_commands(file),
-            ".php" | ".xml" if self.has_path(path) => Vec::new(),
-            _ => return Ok(()),
-        };
-
-        // Go keys a map by command name; equal names keep the last command.
-        let mut items: Vec<(&str, &Command)> = Vec::with_capacity(commands.len());
-        let mut positions: HashMap<&str, usize> = HashMap::with_capacity(commands.len());
-        for command in commands.iter().filter(|command| !command.name.is_empty()) {
-            match positions.get(command.name.as_str()) {
-                Some(&position) => items[position].1 = command,
-                None => {
-                    positions.insert(&command.name, items.len());
-                    items.push((&command.name, command));
-                }
-            }
-        }
-        let present = !items.is_empty();
-        self.commands
-            .batch_save_items_in(file.mutation(), [(path, items.iter().copied())])?;
-        add_command_workspace_symbols(file, &commands);
-        let path = path.to_owned();
-        self.publish(file.mutation(), move |set| {
-            if present {
-                set.insert(path);
-            } else {
-                set.remove(&path);
-            }
-        })
+        let prepared = self.extract(file);
+        self.persist(file, &prepared)
     }
 
     fn removed_files(&self, paths: &[String]) -> Result<()> {
@@ -177,12 +225,29 @@ impl Indexer for Index {
         self.publish(None, HashSet::clear)
     }
 
+    fn as_preparing(&self) -> Option<&dyn PreparingIndexer> {
+        Some(self)
+    }
+
     fn as_transactional_remover(&self) -> Option<&dyn TransactionalRemover> {
         Some(self)
     }
 
     fn as_transactional_clearer(&self) -> Option<&dyn TransactionalClearer> {
         Some(self)
+    }
+}
+
+impl PreparingIndexer for Index {
+    fn prepare(&self, file: &ParsedFile) -> Result<Option<Prepared>> {
+        Ok(Some(Box::new(self.extract(file))))
+    }
+
+    fn index_prepared(&self, file: &ParsedFile, prepared: Option<&Prepared>) -> Result<()> {
+        match prepared.and_then(|value| value.downcast_ref::<PreparedCommands>()) {
+            Some(prepared) => self.persist(file, prepared),
+            None => self.index(file),
+        }
     }
 }
 
@@ -201,8 +266,8 @@ impl TransactionalClearer for Index {
     }
 }
 
-fn add_command_workspace_symbols(file: &ParsedFile, commands: &[Command]) {
-    let symbols: Vec<WorkspaceSymbol> = commands
+fn command_workspace_symbols(file: &ParsedFile, commands: &[Command]) -> Vec<WorkspaceSymbol> {
+    commands
         .iter()
         .filter(|command| !command.name.is_empty() && !command.file.is_empty())
         .map(|command| {
@@ -222,6 +287,11 @@ fn add_command_workspace_symbols(file: &ParsedFile, commands: &[Command]) {
                 range: WorkspaceSymbolRange::from_text(file, command.range),
             }
         })
-        .collect();
-    file.add_workspace_symbols(symbols);
+        .collect()
+}
+
+impl swlsp_indexer::Revisioned for Index {
+    fn revision(&self) -> u64 {
+        Index::revision(self)
+    }
 }

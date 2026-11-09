@@ -212,6 +212,19 @@ impl TransactionalClearer for ExtensionIndexer {
     }
 }
 
+/// Advanced by every committed change to the indexed extensions and by the
+/// PHP index their classes resolve through.
+impl swlsp_indexer::Revisioned for ExtensionIndexer {
+    fn revision(&self) -> u64 {
+        let php = self
+            .php_index
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        self.repository.revision() + swlsp_indexer::Revisioned::revision(&php)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

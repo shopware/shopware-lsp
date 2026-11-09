@@ -28,8 +28,11 @@ pub struct AdminComponentIndexer {
     pub(crate) template_cache: RwLock<TemplateComponentCache>,
     /// Effective components by name (Go `effectiveCache` + epoch).
     pub(crate) effective_cache: RwLock<EffectiveComponentCache>,
-    /// Open-document overlays (Go `liveDocumentMu` + maps).
+    /// Open-document overlays (Go `liveDocumentMu` + maps). Write through
+    /// [`Self::live_mut`], which advances `live_revision`.
     pub(crate) live: RwLock<LiveDocuments>,
+    /// Advanced by every change to the open-document overlays.
+    pub(crate) live_revision: std::sync::atomic::AtomicU64,
     /// The persisted catalog merged with open legacy documents, keyed by the
     /// persisted view and the legacy-document generation it was built from.
     pub(crate) merged_components: std::sync::Mutex<Option<MergedComponents>>,
@@ -81,6 +84,14 @@ pub(crate) struct LiveDocuments {
 }
 
 impl AdminComponentIndexer {
+    /// Write access to the open-document overlays; every write advances the
+    /// index revision.
+    pub(crate) fn live_mut(&self) -> std::sync::RwLockWriteGuard<'_, LiveDocuments> {
+        self.live_revision
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        crate::indexer_components::write_lock(&self.live)
+    }
+
     /// Opens the repositories inside `store`, or isolated databases below
     /// `config_dir` when no store is given (Go `NewAdminComponentIndexer`).
     pub fn new(config_dir: &str, store: Option<&Store>) -> IndexResult<Self> {
@@ -126,6 +137,7 @@ impl AdminComponentIndexer {
             template_cache: RwLock::default(),
             effective_cache: RwLock::default(),
             live: RwLock::default(),
+            live_revision: std::sync::atomic::AtomicU64::new(0),
             merged_components: std::sync::Mutex::default(),
             definition_paths: std::sync::Mutex::default(),
         })
@@ -1045,4 +1057,31 @@ pub(crate) fn normalize_definition_path(file_path: &str) -> String {
         .strip_suffix("/index")
         .unwrap_or(normalized)
         .to_owned()
+}
+
+/// Advanced by every committed change to the Administration repositories and
+/// by every change to the open-document overlays.
+impl swlsp_indexer::Revisioned for AdminComponentIndexer {
+    fn revision(&self) -> u64 {
+        [
+            self.component_index.revision(),
+            self.definition_index.revision(),
+            self.mixin_index.revision(),
+            self.directive_index.revision(),
+            self.filter_index.revision(),
+            self.cms_index.revision(),
+            self.module_index.revision(),
+            self.service_index.revision(),
+            self.store_index.revision(),
+            self.store_factory_index.revision(),
+            self.privilege_index.revision(),
+            self.usage_index.revision(),
+            self.type_index.revision(),
+        ]
+        .iter()
+        .sum::<u64>()
+            + self
+                .live_revision
+                .load(std::sync::atomic::Ordering::Acquire)
+    }
 }

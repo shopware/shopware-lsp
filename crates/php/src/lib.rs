@@ -13,7 +13,7 @@
 //! - Go passes request state through `context.Context`; Rust passes an
 //!   explicit [`PhpContext`].
 //! - The persisted graph payload is `swlsp-php-semantic`'s binary codec
-//!   compressed with raw DEFLATE, inside the same `{format, payload}`
+//!   compressed as a size-prefixed LZ4 block, inside the same `{format, payload}`
 //!   envelope; Go's MessagePack graph formats are not readable (Rust and Go
 //!   caches are never shared).
 //! - Member listings sorted by case-insensitive name use a stable sort; Go's
@@ -25,8 +25,18 @@ mod context;
 mod embedded;
 mod loader;
 mod persistence;
+mod return_inference;
 mod semantic_api;
+mod settle;
 mod twig_context;
+
+/// The revision PHP analyses depend on: published PHP data, the project
+/// model and the data type extensions answer from.
+impl swlsp_indexer::Revisioned for PhpIndex {
+    fn revision(&self) -> u64 {
+        PhpIndex::revision(self) + self.analysis_revision()
+    }
+}
 
 #[cfg(test)]
 mod tests;
@@ -37,15 +47,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use swlsp_indexer::{
-    BatchIndexer, DataIndexer, Error, Indexer, Mutation, ParsedFile, Prepared, PreparingIndexer,
-    Result, Store, SupplementalPathIndexer, SupplementalSyntaxIndexer, TransactionalClearer,
-    TransactionalRemover, WorkspaceSymbol, WorkspaceSymbolContributor, WorkspaceSymbolKind,
-    WorkspaceSymbolPosition, WorkspaceSymbolRange,
+    BatchIndexer, CancelToken, DataIndexer, Error, Indexer, Mutation, ParsedFile, Prepared,
+    PreparingIndexer, Result, Store, SupplementalPathIndexer, SupplementalSyntaxIndexer,
+    TransactionalClearer, TransactionalRemover, WorkspaceSymbol, WorkspaceSymbolContributor,
+    WorkspaceSymbolKind, WorkspaceSymbolPosition, WorkspaceSymbolRange,
 };
 use swlsp_php_inference::{Builtins, Extension};
 use swlsp_php_project::Model;
 use swlsp_php_semantic::{
-    Store as SemanticStore, SymbolKind, WorkspaceGraph, WorkspaceGraphDetacher,
+    Document, Store as SemanticStore, SymbolKind, WorkspaceGraph, WorkspaceGraphDetacher,
     WorkspaceGraphLoader, WorkspaceRestoreCapacity,
 };
 
@@ -94,8 +104,17 @@ fn write<T>(lock: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
 #[derive(Default)]
 struct ProjectState {
     project: Option<Arc<Model>>,
-    supplemental_roots: Vec<String>,
-    supplemental_files: Vec<String>,
+    supplemental: Arc<SupplementalPaths>,
+}
+
+/// Composer source roots and files outside the default scan, cleaned once:
+/// the scanner asks about every directory and file it would otherwise skip.
+#[derive(Default)]
+struct SupplementalPaths {
+    roots: Vec<String>,
+    files: Vec<String>,
+    /// The directories of `files`.
+    file_directories: Vec<String>,
 }
 
 #[derive(Default)]
@@ -103,6 +122,12 @@ struct BatchState {
     depth: usize,
     pending: HashMap<String, WorkspaceGraph>,
     detacher: Option<WorkspaceGraphDetacher>,
+    /// Committed files of the running batch whose graphs carry return types
+    /// inferred against the pre-batch generation.
+    settle: Vec<settle::Candidate>,
+    /// Candidates of the last finished batch, taken by
+    /// [`BatchIndexer::settle_indexing_batch`].
+    settling: Vec<settle::Candidate>,
 }
 
 pub(crate) struct Inner {
@@ -141,6 +166,7 @@ struct PreparedPhpDocument {
     graph: Arc<Mutex<Option<WorkspaceGraph>>>,
     storage: PersistedWorkspaceGraph,
     twig_contexts: Vec<TwigTemplateContext>,
+    settle: Option<settle::Candidate>,
 }
 
 fn is_php_path(path: &str) -> bool {
@@ -148,6 +174,42 @@ fn is_php_path(path: &str) -> bool {
         .extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("php"))
+}
+
+/// Loads the Composer project model of `root` and the runtime stub
+/// document matching its PHP version and extensions.
+fn load_project<S: AsRef<str>>(
+    root: &Path,
+    enabled: &[S],
+    disabled: &[S],
+) -> Result<(ProjectState, Document)> {
+    let mut model = swlsp_php_project::load(root).map_err(Error::other)?;
+    model.configure_extensions(enabled, disabled);
+    let stub_extensions = model.stub_extensions();
+    model.loaded_extensions = Some(swlsp_php_stubs::selected_extensions(
+        &stub_extensions,
+        &[&model.disabled_extensions],
+    ));
+    let files: Vec<String> = model.files.iter().map(|file| clean_path(file)).collect();
+    let supplemental = SupplementalPaths {
+        roots: model
+            .source_roots()
+            .iter()
+            .map(|root| clean_path(root))
+            .collect(),
+        file_directories: files.iter().map(|file| parent_directory(file)).collect(),
+        files,
+    };
+    let stubs = swlsp_php_stubs::document_for_extensions(
+        model.php_version,
+        &stub_extensions,
+        &[&model.disabled_extensions],
+    );
+    let project = ProjectState {
+        project: Some(Arc::new(model)),
+        supplemental: Arc::new(supplemental),
+    };
+    Ok((project, stubs))
 }
 
 fn persist_error(error: PersistError) -> Error {
@@ -159,6 +221,28 @@ impl PhpIndex {
     /// `<config_dir>/php.db` when no workspace store is given, and restores
     /// every persisted graph as a lazily detailed summary.
     pub fn open(config_dir: impl AsRef<Path>, store: Option<&Store>) -> Result<PhpIndex> {
+        Self::open_with(config_dir, store, None)
+    }
+
+    /// Opens the index like [`PhpIndex::open`] and configures the Composer
+    /// project of `root` before restoring, so the persisted graphs and the
+    /// runtime stubs publish as one semantic generation instead of two.
+    pub fn open_project<S: AsRef<str>>(
+        config_dir: impl AsRef<Path>,
+        store: Option<&Store>,
+        root: &Path,
+        enabled_extensions: &[S],
+        disabled_extensions: &[S],
+    ) -> Result<PhpIndex> {
+        let (project, stubs) = load_project(root, enabled_extensions, disabled_extensions)?;
+        Self::open_with(config_dir, store, Some((project, stubs)))
+    }
+
+    fn open_with(
+        config_dir: impl AsRef<Path>,
+        store: Option<&Store>,
+        project: Option<(ProjectState, Document)>,
+    ) -> Result<PhpIndex> {
         let db_path = config_dir.as_ref().join("php.db");
         let (store, owned_store) = match store {
             Some(store) => (store.clone(), None),
@@ -174,8 +258,10 @@ impl PhpIndex {
             }
             error
         };
+        // Graph payloads are LZ4 blocks already.
         let workspace_graphs = DataIndexer::in_store(&store, WORKSPACE_GRAPH_NAMESPACE)
-            .map_err(|err| close_owned(err.context("create PHP workspace graph repository")))?;
+            .map_err(|err| close_owned(err.context("create PHP workspace graph repository")))?
+            .without_value_compression();
         let twig_contexts = DataIndexer::in_store(&store, TWIG_CONTEXT_NAMESPACE)
             .map_err(|err| close_owned(err.context("create PHP Twig context repository")))?;
         let workspace_graphs = Arc::new(workspace_graphs);
@@ -197,6 +283,11 @@ impl PhpIndex {
                 loader,
             }),
         };
+        index.inner.semantic_store.set_return_inference(Arc::new(
+            return_inference::IndexReturnInference {
+                inner: Arc::downgrade(&index.inner),
+            },
+        ));
         // Cached detail graphs pin the interner generation they were decoded
         // in; drop them when the semantic store collects so it can be freed.
         let loader = index.inner.loader.clone();
@@ -204,14 +295,21 @@ impl PhpIndex {
             .inner
             .semantic_store
             .on_atom_collection(move || loader.clear());
-        if let Err(error) = index.restore() {
+        let stubs = project.map(|(project, stubs)| {
+            *write(&index.inner.project) = project;
+            stubs
+        });
+        if let Err(error) = index.restore(stubs.as_slice()) {
             let _ = index.close();
             return Err(error);
+        }
+        if stubs.is_some() {
+            index.inner.revision.fetch_add(1, Ordering::SeqCst);
         }
         Ok(index)
     }
 
-    fn restore(&self) -> Result<()> {
+    fn restore(&self, documents: &[Document]) -> Result<()> {
         let inner = &self.inner;
         let count = inner
             .workspace_graphs
@@ -224,22 +322,23 @@ impl PhpIndex {
                 .div_ceil(WORKSPACE_RESTORE_TYPE_DENOMINATOR),
         };
         let loader: Arc<dyn WorkspaceGraphLoader> = inner.loader.clone();
-        let result =
-            inner
-                .semantic_store
-                .restore_workspace_graphs_decoded(capacity, |decoder, accept| {
-                    inner.workspace_graphs.visit_all_encoded_values(|encoded| {
-                        let persisted = decode_persisted_workspace_graph_borrowed(encoded)
-                            .map_err(persist_error)?;
-                        let graph = persisted
-                            .decode_summary(decoder, loader.clone())
-                            .map_err(persist_error)?;
-                        accept(graph);
-                        Ok(())
-                    })
-                });
+        let result = inner.semantic_store.restore_workspace_graphs_decoded_with(
+            capacity,
+            documents,
+            |decoder, accept| {
+                inner.workspace_graphs.visit_all_encoded_values(|encoded| {
+                    let persisted = decode_persisted_workspace_graph_borrowed(encoded)
+                        .map_err(persist_error)?;
+                    let graph = persisted
+                        .decode_summary(decoder, loader.clone())
+                        .map_err(persist_error)?;
+                    accept(graph);
+                    Ok(())
+                })
+            },
+        );
         // Restoration is the only high-volume decode phase; release the
-        // reusable DEFLATE state while the server is idle.
+        // pooled decompression buffer while the server is idle.
         persistence::release_codec_pool();
         result
             .map(|_| ())
@@ -258,30 +357,9 @@ impl PhpIndex {
         enabled: &[S],
         disabled: &[S],
     ) -> Result<()> {
-        let mut model = swlsp_php_project::load(root).map_err(Error::other)?;
-        model.configure_extensions(enabled, disabled);
-        let stub_extensions = model.stub_extensions();
-        model.loaded_extensions = Some(swlsp_php_stubs::selected_extensions(
-            &stub_extensions,
-            &[&model.disabled_extensions],
-        ));
-        let supplemental_roots = model
-            .source_roots()
-            .iter()
-            .map(|root| clean_path(root))
-            .collect();
-        let supplemental_files = model.files.iter().map(|file| clean_path(file)).collect();
-        let document = swlsp_php_stubs::document_for_extensions(
-            model.php_version,
-            &stub_extensions,
-            &[&model.disabled_extensions],
-        );
-        *write(&self.inner.project) = ProjectState {
-            project: Some(Arc::new(model)),
-            supplemental_roots,
-            supplemental_files,
-        };
-        self.inner.semantic_store.replace(&document);
+        let (project, stubs) = load_project(root, enabled, disabled)?;
+        *write(&self.inner.project) = project;
+        self.inner.semantic_store.replace(&stubs);
         self.inner.revision.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
@@ -307,6 +385,18 @@ impl PhpIndex {
         write(&self.inner.extensions).push(extension);
     }
 
+    /// The revision analyses of this index depend on: the published
+    /// semantic snapshot plus every registered type extension (the Symfony
+    /// extension answers from the service index). Memoize document analyses
+    /// under it, not under the snapshot revision alone.
+    pub fn analysis_revision(&self) -> u64 {
+        let extensions: u64 = read(&self.inner.extensions)
+            .iter()
+            .map(|extension| extension.revision())
+            .sum();
+        self.semantic_snapshot().revision + extensions
+    }
+
     pub(crate) fn type_extensions(&self) -> Vec<Arc<dyn Extension>> {
         let extensions = read(&self.inner.extensions);
         let mut result: Vec<Arc<dyn Extension>> = Vec::with_capacity(extensions.len() + 2);
@@ -325,13 +415,10 @@ impl PhpIndex {
             .is_subtype_of(class_name, target_name)
     }
 
-    fn supplemental_paths(&self) -> Option<(Vec<String>, Vec<String>)> {
+    fn supplemental_paths(&self) -> Option<Arc<SupplementalPaths>> {
         let state = read(&self.inner.project);
         state.project.as_ref()?;
-        Some((
-            state.supplemental_roots.clone(),
-            state.supplemental_files.clone(),
-        ))
+        Some(state.supplemental.clone())
     }
 
     fn prepare_document(&self, file: &ParsedFile) -> Result<Option<PreparedPhpDocument>> {
@@ -351,6 +438,7 @@ impl PhpIndex {
         let graph = WorkspaceGraph::project_borrowed(&document);
         let storage = encode_workspace_graph(&graph)
             .map_err(|err| Error::msg(format!("encode PHP workspace graph for {path}: {err}")))?;
+        let settle = settle::Candidate::of(path, file.content(), &storage, &document);
         let twig_contexts = match file.syntax_tree() {
             Some(tree) => twig_context::extract_twig_template_contexts(
                 path,
@@ -364,6 +452,7 @@ impl PhpIndex {
             graph: Arc::new(Mutex::new(Some(graph))),
             storage,
             twig_contexts,
+            settle,
         }))
     }
 
@@ -398,12 +487,13 @@ impl PhpIndex {
         )?;
         let inner = self.inner.clone();
         let graph = prepared.graph.clone();
+        let settle = prepared.settle.clone();
         let publish = move || {
             let Some(graph) = lock(&graph).take() else {
                 return;
             };
             inner.loader.forget(&path);
-            inner.publish_workspace_graph(graph);
+            inner.publish_workspace_graph(graph, settle);
             inner.revision.fetch_add(1, Ordering::SeqCst);
         };
         match mutation {
@@ -478,7 +568,11 @@ impl PhpIndex {
 }
 
 impl Inner {
-    fn publish_workspace_graph(&self, mut graph: WorkspaceGraph) {
+    fn publish_workspace_graph(
+        &self,
+        mut graph: WorkspaceGraph,
+        settle: Option<settle::Candidate>,
+    ) {
         {
             let mut batch = lock(&self.batch);
             if batch.depth > 0 {
@@ -486,6 +580,7 @@ impl Inner {
                     detacher.detach_owned(&mut graph);
                 }
                 batch.pending.insert(graph.path().to_owned(), graph);
+                batch.settle.extend(settle);
                 return;
             }
         }
@@ -634,8 +729,29 @@ fn clean_str(path: &str) -> String {
     clean_path(Path::new(path))
 }
 
-fn paths_overlap(left: &str, right: &str) -> bool {
-    path_within_root(left, right) || path_within_root(right, left)
+/// The directory of a clean path, `.` when it has none.
+fn parent_directory(path: &str) -> String {
+    match Path::new(path).parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_string_lossy().into_owned(),
+        _ => ".".to_owned(),
+    }
+}
+
+/// [`path_within_root`] for already clean paths, without allocating when
+/// both are absolute.
+fn clean_within(root: &str, path: &str) -> bool {
+    let separator = std::path::MAIN_SEPARATOR;
+    if root == path
+        || (path.len() > root.len()
+            && path.starts_with(root)
+            && (root.ends_with(separator) || path[root.len()..].starts_with(separator)))
+    {
+        return true;
+    }
+    if Path::new(root).is_absolute() && Path::new(path).is_absolute() {
+        return false;
+    }
+    path_within_root(root, path)
 }
 
 /// Whether `path` is `root` or below it (Go `pathWithinRoot`).
@@ -783,36 +899,28 @@ impl SupplementalPathIndexer for PhpIndex {
     /// Selectively reopens Composer source roots inside globally skipped
     /// directories such as `tests/`.
     fn should_enter_directory(&self, path: &str) -> bool {
-        let Some((roots, files)) = self.supplemental_paths() else {
+        let Some(supplemental) = self.supplemental_paths() else {
             return false;
         };
         let path = clean_str(path);
-        roots.iter().any(|root| paths_overlap(root, &path))
-            || files.iter().any(|file| {
-                let directory = Path::new(file).parent().map_or_else(
-                    || ".".to_owned(),
-                    |parent| {
-                        let parent = parent.to_string_lossy();
-                        if parent.is_empty() {
-                            ".".to_owned()
-                        } else {
-                            parent.into_owned()
-                        }
-                    },
-                );
-                paths_overlap(&directory, &path)
-            })
+        let overlaps = |root: &String| clean_within(root, &path) || clean_within(&path, root);
+        supplemental.roots.iter().any(overlaps)
+            || supplemental.file_directories.iter().any(overlaps)
     }
 
     fn should_index_path(&self, path: &str) -> bool {
         if !is_php_path(path) {
             return false;
         }
-        let Some((roots, files)) = self.supplemental_paths() else {
+        let Some(supplemental) = self.supplemental_paths() else {
             return false;
         };
         let path = clean_str(path);
-        roots.iter().any(|root| path_within_root(root, &path)) || files.contains(&path)
+        supplemental
+            .roots
+            .iter()
+            .any(|root| clean_within(root, &path))
+            || supplemental.files.contains(&path)
     }
 }
 
@@ -877,6 +985,8 @@ impl BatchIndexer for PhpIndex {
                 .filter(|path| is_php_path(path))
                 .count();
             batch.pending = HashMap::new();
+            batch.settle.clear();
+            batch.settling.clear();
             batch.detacher = Some(WorkspaceGraphDetacher::with_capacity(
                 php_files * WORKSPACE_RESTORE_STRINGS_PER_DOCUMENT,
             ));
@@ -886,6 +996,11 @@ impl BatchIndexer for PhpIndex {
 
     /// Publishes every committed PHP document of the batch in one
     /// generation. Nested batches are supported.
+    fn settle_indexing_batch(&self, cancel: &CancelToken, workers: usize) -> Result<()> {
+        let candidates = std::mem::take(&mut lock(&self.inner.batch).settling);
+        settle::settle(self, candidates, cancel, workers)
+    }
+
     fn end_indexing_batch(&self) -> Result<()> {
         let graphs: Vec<WorkspaceGraph> = {
             let mut batch = lock(&self.inner.batch);
@@ -899,6 +1014,13 @@ impl BatchIndexer for PhpIndex {
             if let Some(detacher) = batch.detacher.take() {
                 detacher.finish();
             }
+            let settle = std::mem::take(&mut batch.settle);
+            // One changed file was already analyzed against everything else.
+            batch.settling = if batch.pending.len() > 1 {
+                settle
+            } else {
+                Vec::new()
+            };
             std::mem::take(&mut batch.pending).into_values().collect()
         };
         // Compression is frequent during a scanner batch but rare while the

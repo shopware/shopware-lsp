@@ -42,75 +42,67 @@ Component.register('sw-button', {
     assert_eq!(components[0].props.len(), 3);
 
     let analyzer = fixture.analyzer();
-    let cases: &[(&str, usize, &[&str])] = &[
-        ("<sw-button></sw-button>", 2, &["label", "variant"]),
+    let cases: &[(&str, &[&str])] = &[
         (
-            r#"<sw-button label="Click me"></sw-button>"#,
-            1,
+            "<{|admin.component.missing-required-prop:{|admin.component.missing-required-prop:sw-button|}|}></sw-button>",
+            &["label", "variant"],
+        ),
+        (
+            r#"<{|admin.component.missing-required-prop:sw-button|} label="Click me"></sw-button>"#,
             &["variant"],
         ),
         (
             r#"<sw-button label="Click me" variant="primary"></sw-button>"#,
-            0,
             &[],
         ),
         (
             r#"<sw-button :label="buttonLabel" variant="primary"></sw-button>"#,
-            0,
             &[],
         ),
         (
             r#"<sw-button v-bind:label="buttonLabel" variant="primary"></sw-button>"#,
-            0,
             &[],
         ),
         (
             r#"<sw-button v-bind="{ label: buttonLabel, variant }"></sw-button>"#,
-            0,
             &[],
         ),
         (
-            r#"<sw-button v-bind="{ label: buttonLabel }"></sw-button>"#,
-            1,
+            r#"<{|admin.component.missing-required-prop:sw-button|} v-bind="{ label: buttonLabel }"></sw-button>"#,
             &["variant"],
         ),
         (
-            r#"<sw-button v-bind="{}"></sw-button>"#,
-            2,
+            r#"<{|admin.component.missing-required-prop:{|admin.component.missing-required-prop:sw-button|}|} v-bind="{}"></sw-button>"#,
             &["label", "variant"],
         ),
         (
             r#"<sw-button v-bind="filteredAttributes"></sw-button>"#,
-            0,
             &[],
         ),
         (
             r#"<sw-button v-bind="{ label, ...forwarded }"></sw-button>"#,
-            0,
             &[],
         ),
         (
             r#"<sw-button label="Click" variant="primary"></sw-button>"#,
-            0,
             &[],
         ),
-        (r#"<sw-butotn required-prop="value"></sw-butotn>"#, 1, &[]),
+        (
+            r#"<{|admin.component.not-found:sw-butotn|} required-prop="value"></sw-butotn>"#,
+            &[],
+        ),
         (
             r#"<plugin-unknown required-prop="value"></plugin-unknown>"#,
-            0,
             &[],
         ),
-        (r#"<div class="test"></div>"#, 0, &[]),
+        (r#"<div class="test"></div>"#, &[]),
     ];
-    for (markup, count, props) in cases {
-        let problems = analyze(
+    for (markup, props) in cases {
+        let problems = check(
             &analyzer,
-            &document(
-                "file:///project/src/Resources/app/administration/src/views/test.html.twig",
-                markup,
-            ),
+            "file:///project/src/Resources/app/administration/src/views/test.html.twig",
+            markup,
         );
-        assert_eq!(problems.len(), *count, "{markup}: {problems:?}");
         for expected in *props {
             assert!(
                 problems
@@ -130,15 +122,11 @@ fn admin_analyzer_unknown_shopware_component() {
         &format!("{admin_root}/component/sw-button/index.js"),
         "Shopware.Component.register('sw-button', {});",
     );
-    let problems = analyze(
+    let problems = check(
         &fixture.analyzer(),
-        &document(
-            &format!("file://{admin_root}/view.html.twig"),
-            "<sw-butotn></sw-butotn><plugin-widget></plugin-widget>",
-        ),
+        &format!("file://{admin_root}/view.html.twig"),
+        "<{|admin.component.not-found:sw-butotn|}></sw-butotn><plugin-widget></plugin-widget>",
     );
-    assert_eq!(problems.len(), 1);
-    assert_eq!(problems[0].id.0, "admin.component.not-found");
     assert!(problems[0].message.contains("sw-butotn"));
     assert!(suggestions(&problems[0]).contains(&"sw-button".to_owned()));
 }
@@ -146,14 +134,7 @@ fn admin_analyzer_unknown_shopware_component() {
 #[test]
 fn admin_analyzer_unknown_shopware_component_needs_indexed_catalog() {
     let fixture = Fixture::in_root();
-    let problems = analyze(
-        &fixture.analyzer(),
-        &document(
-            "file:///project/Resources/app/administration/src/view.html.twig",
-            "<sw-unknown></sw-unknown>",
-        ),
-    );
-    assert!(problems.is_empty());
+    check(&fixture.analyzer(), VIEW_URI, "<sw-unknown></sw-unknown>");
 }
 
 #[test]
@@ -172,15 +153,10 @@ export default Shopware.Component.wrapComponentConfig({
 });
 "#,
     );
-    let problems = analyze(
-        &fixture.analyzer(),
-        &document(
-            &format!("file://{template_path}"),
-            "<mt-card-original></mt-card-original><mt-other-original></mt-other-original>",
-        ),
+    let problems = fixture.check_path(
+        &template_path,
+        "<mt-card-original></mt-card-original><{|admin.component.not-found:mt-other-original|}></mt-other-original>",
     );
-    assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(problems[0].id.0, "admin.component.not-found");
     assert!(problems[0].message.contains("mt-other-original"));
 }
 
@@ -201,20 +177,17 @@ Component.register('mt-card', {
 "#,
     );
     let analyzer = fixture.analyzer();
-    for (markup, count) in [
-        (r#"<mt-card positionIdentifier="test"></mt-card>"#, 0),
-        (r#"<mt-card position-identifier="test"></mt-card>"#, 0),
-        (r#"<mt-card :position-identifier="myVar"></mt-card>"#, 0),
-        ("<mt-card></mt-card>", 1),
+    for markup in [
+        r#"<mt-card positionIdentifier="test"></mt-card>"#,
+        r#"<mt-card position-identifier="test"></mt-card>"#,
+        r#"<mt-card :position-identifier="myVar"></mt-card>"#,
+        "<{|admin.component.missing-required-prop:mt-card|}></mt-card>",
     ] {
-        let problems = analyze(
+        check(
             &analyzer,
-            &document(
-                "file:///project/src/Resources/app/administration/src/views/test.html.twig",
-                markup,
-            ),
+            "file:///project/src/Resources/app/administration/src/views/test.html.twig",
+            markup,
         );
-        assert_eq!(problems.len(), count, "{markup}");
     }
 }
 
@@ -230,12 +203,11 @@ fn admin_analyzer_inherited_required_prop() {
         &format!("{admin_root}/sw-child/index.js"),
         "Component.extend('sw-child', 'sw-parent', {\n    props: { childLabel: String },\n});",
     );
-    let problems = analyze(
+    let problems = check(
         &fixture.analyzer(),
-        &document(VIEW_URI, r#"<sw-child child-label="Child"></sw-child>"#),
+        VIEW_URI,
+        r#"<{|admin.component.missing-required-prop:sw-child|} child-label="Child"></sw-child>"#,
     );
-    assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(problems[0].id.0, "admin.component.missing-required-prop");
     assert_eq!(payload_str(&problems[0], "propName"), "parentLabel");
 }
 
@@ -247,19 +219,15 @@ fn admin_analyzer_static_prop_types() {
         "Component.register('sw-field', {\n    props: { count: Number, active: Boolean, label: String },\n\t\t});",
     );
     let analyzer = fixture.analyzer();
-    for (markup, count) in [
-        (r#"<sw-field count="5"></sw-field>"#, 1),
-        (r#"<sw-field :count="5"></sw-field>"#, 0),
-        ("<sw-field active></sw-field>", 0),
-        (r#"<sw-field active=""></sw-field>"#, 0),
-        (r#"<sw-field active="false"></sw-field>"#, 1),
-        (r#"<sw-field label="Name"></sw-field>"#, 0),
+    for markup in [
+        r#"<sw-field {|admin.component.static-prop-type:count="5"|}></sw-field>"#,
+        r#"<sw-field :count="5"></sw-field>"#,
+        "<sw-field active></sw-field>",
+        r#"<sw-field active=""></sw-field>"#,
+        r#"<sw-field {|admin.component.static-prop-type:active="false"|}></sw-field>"#,
+        r#"<sw-field label="Name"></sw-field>"#,
     ] {
-        let problems = analyze(&analyzer, &document(VIEW_URI, markup));
-        assert_eq!(problems.len(), count, "{markup}");
-        if count != 0 {
-            assert_eq!(problems[0].id.0, "admin.component.static-prop-type");
-        }
+        check(&analyzer, VIEW_URI, markup);
     }
 }
 
@@ -280,54 +248,44 @@ fn admin_analyzer_static_prop_allowed_values() {
         ],
     });
     let analyzer = fixture.analyzer();
-    for (name, markup, count) in [
-        ("allowed value", r#"<sw-label variant="primary" />"#, 0),
-        ("allowed empty value", r#"<sw-label variant="" />"#, 0),
+    for (name, markup) in [
+        ("allowed value", r#"<sw-label variant="primary" />"#),
+        ("allowed empty value", r#"<sw-label variant="" />"#),
         (
             "invalid options value",
-            r#"<sw-label variant="primry" />"#,
-            1,
+            r#"<sw-label variant="{|admin.component.invalid-prop-value:primry|}" />"#,
         ),
         (
             "invalid literal union value",
-            r#"<sw-label size="medium" />"#,
-            1,
+            r#"<sw-label size="{|admin.component.invalid-prop-value:medium|}" />"#,
         ),
         (
             "invalid empty literal union value",
-            r#"<sw-label size="" />"#,
-            1,
+            r#"<sw-label size="{|admin.component.invalid-prop-value:|}" />"#,
         ),
         (
             "invalid bound literal union value",
-            r#"<sw-label :size="'medium'" />"#,
-            1,
+            r#"<sw-label :size="'{|admin.component.invalid-prop-value:medium|}'" />"#,
         ),
         (
             "valid bound literal union value",
             r#"<sw-label :size="'small'" />"#,
-            0,
         ),
         (
             "invalid object-bound literal union value",
-            r#"<sw-label v-bind="{ size: 'medium' }" />"#,
-            1,
+            r#"<sw-label v-bind="{ size: '{|admin.component.invalid-prop-value:medium|}' }" />"#,
         ),
         (
             "bound value is runtime",
             r#"<sw-label :variant="selectedVariant" />"#,
-            0,
         ),
         (
             "partial union stays conservative",
             r#"<sw-label legacy="other" />"#,
-            0,
         ),
     ] {
-        let problems = analyze(&analyzer, &document(VIEW_URI, markup));
-        assert_eq!(problems.len(), count, "{name}: {problems:?}");
-        if count > 0 {
-            assert_eq!(problems[0].id.0, "admin.component.invalid-prop-value");
+        let problems = check(&analyzer, VIEW_URI, markup);
+        if !problems.is_empty() {
             let payload = problems[0].payload.as_ref().unwrap();
             assert!(
                 payload["allowedValues"]
@@ -435,38 +393,15 @@ fn admin_analyzer_dynamic_component_contracts() {
     assert_eq!(components.len(), 2);
 
     let analyzer = fixture.analyzer();
-    for (markup, id) in [
-        (
-            r#"<component :is="'sw-field'" />"#,
-            "admin.component.missing-required-prop",
-        ),
-        (
-            r#"<component :is="'sw-field'" title="Field" count="5" />"#,
-            "admin.component.static-prop-type",
-        ),
-        (
-            r#"<component :is="active ? 'sw-field' : 'sw-other'" />"#,
-            "admin.component.missing-required-prop",
-        ),
-        (
-            r#"<component :is="'sw-fiel'" />"#,
-            "admin.component.not-found",
-        ),
-        (
-            r#"<component :is="dynamicField" />"#,
-            "admin.component.missing-required-prop",
-        ),
-        (
-            r#"<router-view v-slot="{ Component }"><component :is="Component" /></router-view>"#,
-            "admin.component.missing-required-prop",
-        ),
+    for markup in [
+        r#"<component :is="'{|admin.component.missing-required-prop:sw-field|}'" />"#,
+        r#"<component :is="'sw-field'" title="Field" {|admin.component.static-prop-type:count="5"|} />"#,
+        r#"<component :is="active ? '{|admin.component.missing-required-prop:sw-field|}' : 'sw-other'" />"#,
+        r#"<component :is="'{|admin.component.not-found:sw-fiel|}'" />"#,
+        r#"<component :is="{|admin.component.missing-required-prop:dynamicField|}" />"#,
+        r#"<router-view v-slot="{ Component }"><component :is="{|admin.component.missing-required-prop:Component|}" /></router-view>"#,
     ] {
-        let problems = analyze(
-            &analyzer,
-            &document(&swlsp_uriutil::file_uri(template_path), markup),
-        );
-        assert_eq!(problems.len(), 1, "{markup}: {problems:?}");
-        assert_eq!(problems[0].id.0, id, "{markup}");
+        check(&analyzer, &swlsp_uriutil::file_uri(template_path), markup);
     }
 }
 
@@ -512,20 +447,25 @@ fn admin_analyzer_bound_prop_types() {
             ..VueComponentAssignment::default()
         }],
     });
-    let analyzer = fixture.analyzer();
     let cases: &[(&str, Option<(&str, &str)>)] = &[
         (
-            r#"<sw-field :count="'wrong'" />"#,
+            r#"<sw-field :count="{|admin.component.bound-prop-type:'wrong'|}" />"#,
             Some(("number", "string")),
         ),
         (
-            r#"<sw-field :active="title" />"#,
+            r#"<sw-field :active="{|admin.component.bound-prop-type:title|}" />"#,
             Some(("boolean", "string")),
         ),
-        (r#"<sw-field :rows="title" />"#, Some(("Row[]", "string"))),
-        (r#"<sw-field :config="rows" />"#, Some(("Config", "Row[]"))),
         (
-            r#"<sw-field :callback="count" />"#,
+            r#"<sw-field :rows="{|admin.component.bound-prop-type:title|}" />"#,
+            Some(("Row[]", "string")),
+        ),
+        (
+            r#"<sw-field :config="{|admin.component.bound-prop-type:rows|}" />"#,
+            Some(("Config", "Row[]")),
+        ),
+        (
+            r#"<sw-field :callback="{|admin.component.bound-prop-type:count|}" />"#,
             Some(("Function", "number")),
         ),
         (
@@ -537,7 +477,7 @@ fn admin_analyzer_bound_prop_types() {
             None,
         ),
         (
-            r#"<sw-field v-bind="{ count: title }" />"#,
+            r#"<sw-field v-bind="{ count: {|admin.component.bound-prop-type:title|} }" />"#,
             Some(("number", "string")),
         ),
         (r#"<sw-field v-bind="{ ...runtimeProps, count }" />"#, None),
@@ -546,22 +486,14 @@ fn admin_analyzer_bound_prop_types() {
         (r#"<sw-field :count="mutableValue" />"#, None),
     ];
     for (markup, expected) in cases {
-        let problems = analyze(
-            &analyzer,
-            &document(&format!("file://{template_path}"), markup),
-        );
-        match expected {
-            None => assert!(problems.is_empty(), "{markup}: {problems:?}"),
-            Some((expected, actual)) => {
-                assert_eq!(problems.len(), 1, "{markup}: {problems:?}");
-                assert_eq!(problems[0].id.0, "admin.component.bound-prop-type");
-                assert_eq!(
-                    payload_str(&problems[0], "expectedType"),
-                    *expected,
-                    "{markup}"
-                );
-                assert_eq!(payload_str(&problems[0], "actualType"), *actual, "{markup}");
-            }
+        let problems = fixture.check_path(&template_path, markup);
+        if let Some((expected, actual)) = expected {
+            assert_eq!(
+                payload_str(&problems[0], "expectedType"),
+                *expected,
+                "{markup}"
+            );
+            assert_eq!(payload_str(&problems[0], "actualType"), *actual, "{markup}");
         }
     }
 }
@@ -587,40 +519,38 @@ fn admin_analyzer_unknown_component_contract_attributes() {
         file_path: fixture.path("sw-secondary.ts"),
         props: vec![prop("secondary", "String", false)],
     });
-    let analyzer = fixture.analyzer();
-    type Expected<'a> = Option<(&'a str, &'a str, &'a str)>;
-    let cases: &[(&str, Expected)] = &[
+    let cases: &[(&str, Option<&str>)] = &[
         (
-            r#"<sw-field lable="Title" />"#,
-            Some(("admin.component.unknown-prop", "lable", "label")),
+            r#"<sw-field {|admin.component.unknown-prop:lable|}="Title" />"#,
+            Some("label"),
         ),
         (
-            r#"<sw-field :is-laoding.sync="ready" />"#,
-            Some(("admin.component.unknown-prop", "is-laoding", "is-loading")),
+            r#"<sw-field :{|admin.component.unknown-prop:is-laoding|}.sync="ready" />"#,
+            Some("is-loading"),
         ),
         (
-            r#"<sw-field v-bind:lable.prop="title" />"#,
-            Some(("admin.component.unknown-prop", "lable", "label")),
+            r#"<sw-field v-bind:{|admin.component.unknown-prop:lable|}.prop="title" />"#,
+            Some("label"),
         ),
         (
-            r#"<sw-field v-bind="{ lable: title }" />"#,
-            Some(("admin.component.unknown-prop", "lable", "label")),
+            r#"<sw-field v-bind="{ {|admin.component.unknown-prop:lable|}: title }" />"#,
+            Some("label"),
         ),
         (
-            r#"<sw-field v-bind="{ 'is-laoding': ready }" />"#,
-            Some(("admin.component.unknown-prop", "is-laoding", "is-loading")),
+            r#"<sw-field v-bind="{ '{|admin.component.unknown-prop:is-laoding|}': ready }" />"#,
+            Some("is-loading"),
         ),
         (
-            r#"<sw-field @item-clik.stop="select" />"#,
-            Some(("admin.component.unknown-event", "item-clik", "item-click")),
+            r#"<sw-field @{|admin.component.unknown-event:item-clik|}.stop="select" />"#,
+            Some("item-click"),
         ),
         (
-            r#"<sw-field v-on:itemClik.once="select" />"#,
-            Some(("admin.component.unknown-event", "itemClik", "item-click")),
+            r#"<sw-field v-on:{|admin.component.unknown-event:itemClik|}.once="select" />"#,
+            Some("item-click"),
         ),
         (
-            r#"<sw-field v-model:cheked.trim="checked" />"#,
-            Some(("admin.component.unknown-model", "cheked", "checked")),
+            r#"<sw-field v-model:{|admin.component.unknown-model:cheked|}.trim="checked" />"#,
+            Some("checked"),
         ),
         (r#"<sw-field v-model:checked.trim="checked" />"#, None),
         (
@@ -632,8 +562,8 @@ fn admin_analyzer_unknown_component_contract_attributes() {
             None,
         ),
         (
-            r#"<component :is="condition ? 'sw-field' : 'sw-secondary'" :lable="title" />"#,
-            Some(("admin.component.unknown-prop", "lable", "label")),
+            r#"<component :is="condition ? 'sw-field' : 'sw-secondary'" :{|admin.component.unknown-prop:lable|}="title" />"#,
+            Some("label"),
         ),
         (
             r#"<component :is="condition ? 'sw-field' : 'sw-secondary'" :label="title" />"#,
@@ -645,21 +575,12 @@ fn admin_analyzer_unknown_component_contract_attributes() {
         ),
     ];
     for (markup, expected) in cases {
-        let problems = analyze(
-            &analyzer,
-            &document(&format!("file://{template_path}"), markup),
-        );
-        match expected {
-            None => assert!(problems.is_empty(), "{markup}: {problems:?}"),
-            Some((code, range_text, suggestion)) => {
-                assert_eq!(problems.len(), 1, "{markup}: {problems:?}");
-                assert_eq!(problems[0].id.0, *code, "{markup}");
-                assert_eq!(slice(markup, problems[0].range), *range_text, "{markup}");
-                assert!(
-                    suggestions(&problems[0]).contains(&suggestion.to_string()),
-                    "{markup}"
-                );
-            }
+        let problems = fixture.check_path(&template_path, markup);
+        if let Some(suggestion) = expected {
+            assert!(
+                suggestions(&problems[0]).contains(&suggestion.to_string()),
+                "{markup}"
+            );
         }
     }
 }
@@ -679,17 +600,19 @@ fn admin_analyzer_unknown_component_slot_names() {
         file_path: fixture.path("sw-secondary.ts"),
         slots: vec![slot("actions", ""), slot("footer", "")],
     });
-    let analyzer = fixture.analyzer();
-    let cases: &[(&str, Option<(&str, &str)>)] = &[
+    let cases: &[(&str, Option<&str>)] = &[
         (
-            "<sw-card><template #heder>Title</template></sw-card>",
-            Some(("heder", "header")),
+            "<sw-card><template #{|admin.component.unknown-slot:heder|}>Title</template></sw-card>",
+            Some("header"),
         ),
         (
-            "<sw-card><template v-slot:actons.stop>Actions</template></sw-card>",
-            Some(("actons", "actions")),
+            "<sw-card><template v-slot:{|admin.component.unknown-slot:actons|}.stop>Actions</template></sw-card>",
+            Some("actions"),
         ),
-        ("<sw-card #heder>Title</sw-card>", Some(("heder", "header"))),
+        (
+            "<sw-card #{|admin.component.unknown-slot:heder|}>Title</sw-card>",
+            Some("header"),
+        ),
         (
             "<sw-card><template #header>Title</template><template #column-name>Cell</template></sw-card>",
             None,
@@ -699,8 +622,8 @@ fn admin_analyzer_unknown_component_slot_names() {
             None,
         ),
         (
-            r#"<component :is="condition ? 'sw-card' : 'sw-secondary'"><template #heder>Title</template></component>"#,
-            Some(("heder", "header")),
+            r#"<component :is="condition ? 'sw-card' : 'sw-secondary'"><template #{|admin.component.unknown-slot:heder|}>Title</template></component>"#,
+            Some("header"),
         ),
         (
             r#"<component :is="condition ? 'sw-card' : 'sw-secondary'"><template #header>Title</template></component>"#,
@@ -712,18 +635,9 @@ fn admin_analyzer_unknown_component_slot_names() {
         ),
     ];
     for (markup, expected) in cases {
-        let problems = analyze(
-            &analyzer,
-            &document(&format!("file://{template_path}"), markup),
-        );
-        match expected {
-            None => assert!(problems.is_empty(), "{markup}: {problems:?}"),
-            Some((range_text, suggestion)) => {
-                assert_eq!(problems.len(), 1, "{markup}: {problems:?}");
-                assert_eq!(problems[0].id.0, "admin.component.unknown-slot");
-                assert_eq!(slice(markup, problems[0].range), *range_text);
-                assert!(suggestions(&problems[0]).contains(&suggestion.to_string()));
-            }
+        let problems = fixture.check_path(&template_path, markup);
+        if let Some(suggestion) = expected {
+            assert!(suggestions(&problems[0]).contains(&suggestion.to_string()));
         }
     }
 }
@@ -762,42 +676,14 @@ fn admin_analyzer_model_bindings() {
         file_path: format!("{field_path}.partial"),
         props: vec![prop("element", "Object", true)],
     });
-    let analyzer = fixture.analyzer();
-    for (markup, id) in [
-        (
-            r#"<sw-field v-model="enabled" v-model:value="title" />"#,
-            "",
-        ),
-        (
-            r#"<component :is="'sw-partial-model'" v-model:element="title" />"#,
-            "",
-        ),
-        (
-            r#"<sw-field v-model="title" v-model:value="title" />"#,
-            "admin.component.model-type",
-        ),
-        (
-            r#"<sw-field v-model="enabled" v-model:value="enabled" />"#,
-            "admin.component.model-type",
-        ),
-        (
-            r#"<sw-field v-model="true" v-model:value="title" />"#,
-            "admin.component.model-not-assignable",
-        ),
-        (
-            r#"<sw-field v-model="getValue()" v-model:value="title" />"#,
-            "admin.component.model-not-assignable",
-        ),
+    for markup in [
+        r#"<sw-field v-model="enabled" v-model:value="title" />"#,
+        r#"<component :is="'sw-partial-model'" v-model:element="title" />"#,
+        r#"<sw-field v-model="{|admin.component.model-type:title|}" v-model:value="title" />"#,
+        r#"<sw-field v-model="enabled" v-model:value="{|admin.component.model-type:enabled|}" />"#,
+        r#"<sw-field v-model="{|admin.component.model-not-assignable:true|}" v-model:value="title" />"#,
+        r#"<sw-field v-model="{|admin.component.model-not-assignable:getValue()|}" v-model:value="title" />"#,
     ] {
-        let problems = analyze(
-            &analyzer,
-            &document(&format!("file://{template_path}"), markup),
-        );
-        if id.is_empty() {
-            assert!(problems.is_empty(), "{markup}: {problems:?}");
-        } else {
-            assert_eq!(problems.len(), 1, "{markup}: {problems:?}");
-            assert_eq!(problems[0].id.0, id, "{markup}");
-        }
+        fixture.check_path(&template_path, markup);
     }
 }

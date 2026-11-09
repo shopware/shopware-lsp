@@ -8,8 +8,8 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use swlsp_indexer::{
-    DataIndexer, Indexer, Mutation, ParsedFile, Result, Store, TransactionalClearer,
-    TransactionalRemover, WORKSPACE_SYMBOL_PRIORITY_FRAMEWORK,
+    DataIndexer, Indexer, Mutation, ParsedFile, Prepared, PreparingIndexer, Result, Store,
+    TransactionalClearer, TransactionalRemover, WORKSPACE_SYMBOL_PRIORITY_FRAMEWORK,
     WORKSPACE_SYMBOL_PRIORITY_FRAMEWORK_MEMBER, WorkspaceSymbol, WorkspaceSymbolKind,
     WorkspaceSymbolRange,
 };
@@ -78,6 +78,12 @@ pub struct Index {
 }
 
 impl Index {
+    /// Advanced after every committed change to this index; inspections
+    /// declare it as an input (`ProblemAnalyzer::input_revision`).
+    pub fn revision(&self) -> u64 {
+        self.definitions.revision()
+    }
+
     pub fn new(config_dir: impl AsRef<Path>, store: Option<&Store>) -> Result<Self> {
         let definitions = DataIndexer::repository(
             config_dir.as_ref().join("shopware_dal.db"),
@@ -150,52 +156,80 @@ impl Index {
     }
 }
 
+impl Index {
+    /// Stores extracted definitions and their workspace symbols.
+    fn persist(&self, file: &ParsedFile, prepared: &PreparedDefinitions) -> Result<()> {
+        let Some(extracted) = &prepared.0 else {
+            return Ok(());
+        };
+        // Saving an empty set clears records of a file that stopped defining
+        // entities.
+        self.definitions.batch_save_items_in(
+            file.mutation(),
+            [(
+                file.path(),
+                extracted
+                    .definitions
+                    .iter()
+                    .map(|definition| (definition.name.as_str(), definition)),
+            )],
+        )?;
+        if !extracted.symbols.is_empty() {
+            file.add_workspace_symbols(extracted.symbols.iter().cloned());
+        }
+        Ok(())
+    }
+}
+
+/// Definitions extracted from one file; `None` leaves the file alone.
+struct PreparedDefinitions(Option<ExtractedDefinitions>);
+
+struct ExtractedDefinitions {
+    definitions: Vec<Definition>,
+    symbols: Vec<WorkspaceSymbol>,
+}
+
+/// Parses one PHP file's entity definitions without writing anything.
+fn extract_definitions(file: &ParsedFile) -> PreparedDefinitions {
+    if file.extension() != ".php" {
+        return PreparedDefinitions(None);
+    }
+    let path = file.path();
+    let source = file.source();
+    let mut definitions: Vec<Definition> = Vec::new();
+    let candidate = source.contains("defineFields")
+        && (source.contains("ENTITY_NAME") || source.contains("getEntityName"));
+    if candidate && let Some(tree) = file.syntax_tree() {
+        let root = tree.root();
+        for class in phpquery::classes(&root) {
+            let Some(definition) = parse_definition(&class, &root, path, file.line_index()) else {
+                continue;
+            };
+            // A repeated entity name keeps the last definition (Go map).
+            match definitions
+                .iter_mut()
+                .find(|existing| existing.name == definition.name)
+            {
+                Some(existing) => *existing = definition,
+                None => definitions.push(definition),
+            }
+        }
+    }
+    let symbols = definition_workspace_symbols(file, &definitions);
+    PreparedDefinitions(Some(ExtractedDefinitions {
+        definitions,
+        symbols,
+    }))
+}
+
 impl Indexer for Index {
     fn id(&self) -> &str {
         "shopware.dal"
     }
 
     fn index(&self, file: &ParsedFile) -> Result<()> {
-        if file.extension() != ".php" {
-            return Ok(());
-        }
-        let path = file.path();
-        let source = file.source();
-        let mut definitions: Vec<Definition> = Vec::new();
-        let candidate = source.contains("defineFields")
-            && (source.contains("ENTITY_NAME") || source.contains("getEntityName"));
-        if candidate && let Some(tree) = file.syntax_tree() {
-            let root = tree.root();
-            for class in phpquery::classes(&root) {
-                let Some(definition) = parse_definition(&class, &root, path, file.line_index())
-                else {
-                    continue;
-                };
-                // A repeated entity name keeps the last definition (Go map).
-                match definitions
-                    .iter_mut()
-                    .find(|existing| existing.name == definition.name)
-                {
-                    Some(existing) => *existing = definition,
-                    None => definitions.push(definition),
-                }
-            }
-        }
-        // Saving an empty set clears records of a file that stopped defining
-        // entities.
-        self.definitions.batch_save_items_in(
-            file.mutation(),
-            [(
-                path,
-                definitions
-                    .iter()
-                    .map(|definition| (definition.name.as_str(), definition)),
-            )],
-        )?;
-        if !definitions.is_empty() {
-            add_definition_workspace_symbols(file, &definitions);
-        }
-        Ok(())
+        let prepared = extract_definitions(file);
+        self.persist(file, &prepared)
     }
 
     fn removed_files(&self, paths: &[String]) -> Result<()> {
@@ -210,12 +244,29 @@ impl Indexer for Index {
         self.definitions.clear()
     }
 
+    fn as_preparing(&self) -> Option<&dyn PreparingIndexer> {
+        Some(self)
+    }
+
     fn as_transactional_remover(&self) -> Option<&dyn TransactionalRemover> {
         Some(self)
     }
 
     fn as_transactional_clearer(&self) -> Option<&dyn TransactionalClearer> {
         Some(self)
+    }
+}
+
+impl PreparingIndexer for Index {
+    fn prepare(&self, file: &ParsedFile) -> Result<Option<Prepared>> {
+        Ok(Some(Box::new(extract_definitions(file))))
+    }
+
+    fn index_prepared(&self, file: &ParsedFile, prepared: Option<&Prepared>) -> Result<()> {
+        match prepared.and_then(|value| value.downcast_ref::<PreparedDefinitions>()) {
+            Some(prepared) => self.persist(file, prepared),
+            None => self.index(file),
+        }
     }
 }
 
@@ -517,7 +568,10 @@ impl ClassResolver {
     }
 }
 
-fn add_definition_workspace_symbols(file: &ParsedFile, definitions: &[Definition]) {
+fn definition_workspace_symbols(
+    file: &ParsedFile,
+    definitions: &[Definition],
+) -> Vec<WorkspaceSymbol> {
     let mut result = Vec::new();
     for definition in definitions {
         result.push(WorkspaceSymbol {
@@ -546,5 +600,11 @@ fn add_definition_workspace_symbols(file: &ParsedFile, definitions: &[Definition
             });
         }
     }
-    file.add_workspace_symbols(result);
+    result
+}
+
+impl swlsp_indexer::Revisioned for Index {
+    fn revision(&self) -> u64 {
+        Index::revision(self)
+    }
 }

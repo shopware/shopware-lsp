@@ -152,3 +152,38 @@ fn service_index_includes_compiled_container_parameters() {
     assert_eq!(globals[0].path, container_path);
     index.close().unwrap();
 }
+
+#[test]
+fn compiled_container_path_selection() {
+    let root_dir = tempfile::tempdir().unwrap();
+    let cache_dir = tempfile::tempdir().unwrap();
+    let root = root_dir.path().to_str().unwrap().to_owned();
+    let store = Store::open(cache_dir.path().join("indexes.db")).unwrap();
+    let services = ServiceIndex::new(&root, cache_dir.path(), Some(&store)).unwrap();
+    let generated = services
+        .compiled_container_index(cache_dir.path(), Some(&store))
+        .unwrap();
+    let container = "Shopware_Core_KernelDevDebugContainer.xml";
+    for (path, expected) in [
+        (format!("{root}/var/cache/dev/{container}"), true),
+        (format!("{root}/app/cache/prod/{container}"), true),
+        (format!("{root}//var/cache/./dev/{container}"), true),
+        (format!("{root}/var/cache/{container}"), false),
+        (format!("{root}/var/cache/dev/pools/{container}"), false),
+        (format!("{root}/var/cache/dev/Other.xml"), false),
+        (format!("{root}/other/cache/dev/{container}"), false),
+    ] {
+        assert_eq!(generated.should_index_path(&path), expected, "{path}");
+    }
+    for (path, expected) in [
+        (format!("{root}/var"), true),
+        (format!("{root}/app/cache"), true),
+        (format!("{root}/var/cache/dev/"), true),
+        (format!("{root}/var/log"), false),
+    ] {
+        assert_eq!(generated.should_enter_directory(&path), expected, "{path}");
+    }
+    generated.close().unwrap();
+    services.close().unwrap();
+    store.close().unwrap();
+}

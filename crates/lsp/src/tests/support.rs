@@ -46,6 +46,7 @@ pub fn file_uri(path: &Path) -> String {
 pub fn test_definition(id: &str, disabled_by_default: bool) -> InspectionDefinition {
     InspectionDefinition {
         id: id.into(),
+        description: "Test inspection.",
         languages: vec![LanguageId::Yaml],
         problems: vec![ProblemDefinition {
             id: id.into(),
@@ -53,6 +54,7 @@ pub fn test_definition(id: &str, disabled_by_default: bool) -> InspectionDefinit
             default_severity: protocol::DiagnosticSeverity::WARNING,
             disabled_by_default,
         }],
+        ..InspectionDefinition::default()
     }
 }
 

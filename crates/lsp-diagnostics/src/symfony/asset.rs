@@ -6,11 +6,12 @@ use swlsp_asset::{
     HtmlAssetType, Index, Kind, Reference, ReferenceKind, Resource, reference_range, references,
     validate_php_reference,
 };
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_php::{PhpContext, PhpIndex};
 
 use super::{lower_ext, symfony_warning};
-use crate::ProblemAnalyzer;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 pub const MISSING_ASSET_CODE: &str = "symfony.asset.missing";
 pub const MISSING_ASSET_PACKAGE_CODE: &str = "symfony.asset.package.missing";
@@ -29,7 +30,29 @@ impl AssetAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for AssetAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "symfony.asset",
+        description: "Asset paths, packages, Encore and Vite entries, and AssetMapper entrypoints that do not exist.",
+        domain: "symfony.assets",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Php, LanguageId::Twig],
+        source: "symfony",
+        codes: &[
+            MISSING_ASSET_CODE,
+            MISSING_ASSET_PACKAGE_CODE,
+            MISSING_IMPORTMAP_CODE,
+            MISSING_ENCORE_ENTRY_CODE,
+            MISSING_VITE_ENTRY_CODE,
+        ],
+    };
+}
+
 impl ProblemAnalyzer for AssetAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.index) + crate::inputs(&self.php_index))
+    }
+
     fn analyze(
         &self,
         _ctx: &Context,

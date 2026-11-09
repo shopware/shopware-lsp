@@ -3,7 +3,10 @@ use super::super::declarations::{
     ADDED_METHOD_PARAMETER_MIGRATIONS, INTERFACE_ABSTRACT_CLASS_MIGRATIONS,
     PARAMETER_TYPE_MIGRATIONS, RETURN_TYPE_MIGRATIONS,
 };
+use swlsp_lsp::Context;
+
 use super::*;
+use crate::ProblemAnalyzer;
 
 #[test]
 fn shopware_declaration_migration_tables_cover_rector_configuration() {
@@ -13,15 +16,28 @@ fn shopware_declaration_migration_tables_cover_rector_configuration() {
     assert_eq!(RETURN_TYPE_MIGRATIONS.len(), 5);
 }
 
+// Table coverage: each generated source must produce its rule's code. The
+// sources also trigger incidental migrations that vary per row (a renamed
+// owner type, for example), so these rows assert membership instead of exact
+// markup.
 fn assert_declaration_migration_diagnostic(
     index: &TestIndex,
     since: Since,
     source: &str,
     expected: &str,
 ) {
-    let document = document("file:///project/src/DeclarationMapping.php", source);
+    let document = Arc::new(TextDocument::new(
+        "file:///project/src/DeclarationMapping.php",
+        source,
+        1,
+    ));
     assert!(document.parse_errors().is_empty(), "{source}");
-    let problems = analyze(index, version(6, since.minor, since.patch), &document);
+    let problems = ShopwareMigrationAnalyzer::new(
+        Some(index.index.clone()),
+        version(6, since.minor, since.patch),
+    )
+    .analyze(&Context::background(), &document)
+    .expect("analyze");
     assert!(
         problems.iter().any(|problem| problem.id.0 == expected),
         "{source} did not produce {expected}"
@@ -100,81 +116,77 @@ fn shopware_declaration_migrations_are_versioned() {
     ] {
         index.add(path, source);
     }
-    let document = document(
-        "file:///project/src/Declarations.php",
-        r#"<?php
+    let fixture = r#"<?php
 use Shopware\Core\Checkout\Cart\CartPersisterInterface;
 use Shopware\Core\Framework\Adapter\Twig\TemplateIterator;
 use Shopware\Core\Framework\DataAbstractionLayer\Indexing\EntityIndexer;
 use Shopware\Elasticsearch\Framework\AbstractElasticsearchDefinition;
 use Shopware\Storefront\Framework\Captcha\AbstractCaptcha;
 
-class Persister implements CartPersisterInterface
+class {|shopware.migration.declaration.interface_to_abstract:Persister|} implements CartPersisterInterface
 {
-    private CartPersisterInterface $inner;
-    public function __construct(CartPersisterInterface $inner) {}
+    {|shopware.migration.declaration.interface_to_abstract:private CartPersisterInterface $inner;|}
+    public function __construct({|shopware.migration.declaration.interface_to_abstract:CartPersisterInterface $inner|}) {}
 }
 class Captcha extends AbstractCaptcha
 {
-    public function supports(string $type): bool { return true; }
+    {|shopware.migration.declaration.parameter.add:public function supports(string $type): bool { return true; }|}
 }
 class Indexer extends EntityIndexer
 {
-    public function iterate($offset): void {}
+    public function iterate({|shopware.migration.declaration.type:$offset|}): void {}
 }
 class Iterator extends TemplateIterator
 {
-    public function getIterator(): array { return []; }
+    {|shopware.migration.declaration.type:public function getIterator(): array { return []; }|}
 }
 class ElasticsearchDefinition extends AbstractElasticsearchDefinition
 {
-    public function buildTermQuery(): BoolQuery {}
+    {|shopware.migration.declaration.type:public function buildTermQuery(): BoolQuery {}|}
 }
-"#,
-    );
-    let problems = analyze(&index, version(6, 7, 0), &document);
-    assert_eq!(problems.len(), 7);
-    let code = "shopware.migration.declaration.interface_to_abstract";
-    assert_eq!(problems[0].id.0, code);
-    assert_eq!(payload(&problems[0]).kind, "interface-class");
-    assert_eq!(problems[1].id.0, code);
-    assert_eq!(payload(&problems[1]).kind, "interface-parameter");
-    assert_eq!(problems[2].id.0, code);
-    assert_eq!(payload(&problems[2]).kind, "interface-property");
+"#;
+    let uri = "file:///project/src/Declarations.php";
+    let (_, problems) = check(&index, version(6, 7, 0), uri, fixture);
+    let [class, property, parameter, add, offset, iterator, query] = problems.as_slice() else {
+        unreachable!()
+    };
+    assert_eq!(payload(class).kind, "interface-class");
+    assert_eq!(payload(parameter).kind, "interface-parameter");
+    assert_eq!(payload(property).kind, "interface-property");
+    assert_eq!(payload(add).argument_index, 1);
+    assert_eq!(payload(offset).replacement, "?array");
+    assert_eq!(payload(iterator).replacement, "\\Traversable");
     assert_eq!(
-        problems[3].id.0,
-        "shopware.migration.declaration.parameter.add"
-    );
-    assert_eq!(payload(&problems[3]).argument_index, 1);
-    assert_eq!(problems[4].id.0, "shopware.migration.declaration.type");
-    assert_eq!(payload(&problems[4]).replacement, "?array");
-    assert_eq!(problems[5].id.0, "shopware.migration.declaration.type");
-    assert_eq!(payload(&problems[5]).replacement, "\\Traversable");
-    assert_eq!(problems[6].id.0, "shopware.migration.declaration.type");
-    assert_eq!(
-        payload(&problems[6]).replacement,
+        payload(query).replacement,
         "\\OpenSearchDSL\\BuilderInterface"
     );
 
-    assert_eq!(analyze(&index, version(6, 6, 10), &document).len(), 6);
+    // The BoolQuery return type migration starts after 6.6.10.
+    let query_marked =
+        "{|shopware.migration.declaration.type:public function buildTermQuery(): BoolQuery {}|}";
+    check(
+        &index,
+        version(6, 6, 10),
+        uri,
+        &fixture.replace(
+            query_marked,
+            "public function buildTermQuery(): BoolQuery {}",
+        ),
+    );
 }
 
 #[test]
 fn interface_to_abstract_class_migration_covers_free_function_parameters() {
     let index = migration_test_php_index();
-    let document = document(
+    let (_, problems) = check(
+        &index,
+        version(6, 5, 0),
         "file:///project/src/Function.php",
         r#"<?php
 use Shopware\Core\Checkout\Cart\CartPersisterInterface;
 
-function persist(CartPersisterInterface $persister): void {}
+function persist({|shopware.migration.declaration.interface_to_abstract:CartPersisterInterface $persister|}): void {}
 "#,
-    );
-    let problems = analyze(&index, version(6, 5, 0), &document);
-    assert_eq!(problems.len(), 1);
-    assert_eq!(
-        problems[0].id.0,
-        "shopware.migration.declaration.interface_to_abstract"
     );
     assert_eq!(payload(&problems[0]).kind, "interface-parameter");
 }
@@ -182,14 +194,14 @@ function persist(CartPersisterInterface $persister): void {}
 #[test]
 fn interface_to_abstract_migration_avoids_replacing_existing_parent() {
     let index = migration_test_php_index();
-    let document = document(
+    let (_, problems) = check(
+        &index,
+        version(6, 5, 0),
         "file:///project/src/UnsafeParent.php",
         r#"<?php
 use Shopware\Core\Checkout\Cart\CartPersisterInterface;
-class Persister extends ExistingParent implements CartPersisterInterface {}
+class {|shopware.migration.declaration.interface_to_abstract:Persister|} extends ExistingParent implements CartPersisterInterface {}
 "#,
     );
-    let problems = analyze(&index, version(6, 5, 0), &document);
-    assert_eq!(problems.len(), 1);
     assert!(!payload(&problems[0]).safe);
 }

@@ -26,7 +26,7 @@ impl Server {
         if session.pull_diagnostics && has_inspections && diagnostics_enabled {
             capabilities.insert(
                 "diagnosticProvider".into(),
-                json!({"interFileDependencies": true, "workspaceDiagnostics": false}),
+                json!({"interFileDependencies": true, "workspaceDiagnostics": true}),
             );
         }
         if !registry.completion.is_empty() && self.feature_enabled("completion") {

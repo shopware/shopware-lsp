@@ -1358,3 +1358,15 @@ impl TransactionalClearer for Index {
         self.clear_all(Some(mutation))
     }
 }
+
+/// Advanced by every committed change to the component records and by the
+/// PHP, service and Twig indexes components resolve through.
+impl swlsp_indexer::Revisioned for Index {
+    fn revision(&self) -> u64 {
+        let dependencies = read(&self.dependencies);
+        self.records.revision()
+            + dependencies.php.revision()
+            + dependencies.services.revision()
+            + dependencies.twig.revision()
+    }
+}

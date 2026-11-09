@@ -2,7 +2,8 @@
 
 use std::sync::Arc;
 
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::PHP_STRING;
 use swlsp_php::PhpIndex;
@@ -12,8 +13,8 @@ use swlsp_validation::{
 };
 
 use super::symfony_warning;
-use crate::ProblemAnalyzer;
 use crate::common::value_node_text_range;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 pub const MISSING_CONSTRAINT_OPTION_CODE: &str = "symfony.validation.option.missing";
 
@@ -27,7 +28,23 @@ impl ValidationAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for ValidationAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "symfony.validation",
+        description: "Validation constraints using options the constraint does not accept.",
+        domain: "symfony.validation",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Php],
+        source: "symfony",
+        codes: &[MISSING_CONSTRAINT_OPTION_CODE],
+    };
+}
+
 impl ProblemAnalyzer for ValidationAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.php_index))
+    }
+
     fn analyze(
         &self,
         _ctx: &Context,

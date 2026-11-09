@@ -9,7 +9,7 @@ use swlsp_extension::ExtensionIndexer;
 use swlsp_language::LanguageId;
 use swlsp_lsp::{
     BoxError, Context, DiagnosticId, FixContext, FixId, FixPresentation, FixResolution, Inspection,
-    InspectionDefinition, ProblemDefinition, QuickFix, RewriteQuickFix, bind_fix,
+    InspectionDefinition, InspectionScope, ProblemDefinition, QuickFix, RewriteQuickFix, bind_fix,
 };
 use swlsp_lsp_diagnostics::AppScriptAnalyzer;
 use swlsp_lsp_protocol as protocol;
@@ -44,6 +44,9 @@ pub fn new_app_script(
     Arc::new(BoundInspection {
         definition: InspectionDefinition {
             id: "shopware.app_script".to_owned(),
+            description: "App scripts using a service the hook does not provide, or one the app lacks the permission for.",
+            domain: "shopware.appScripts",
+            scope: InspectionScope::Framework,
             languages: vec![LanguageId::Twig],
             problems: vec![
                 problem("app_script.permission-missing"),

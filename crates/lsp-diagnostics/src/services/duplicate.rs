@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde_json::json;
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_lsp_protocol::DiagnosticSeverity;
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::{PHP_ATTRIBUTE, PHP_STRING};
@@ -14,8 +15,8 @@ use swlsp_parser_yaml::query as yamlquery;
 use swlsp_syntax::SyntaxNode;
 
 use super::{lower_ext, problem};
-use crate::ProblemAnalyzer;
 use crate::common::value_node_text_range;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 const DUPLICATE_ROUTE_CODE: &str = "symfony.route.duplicate";
 const DUPLICATE_SERVICE_CODE: &str = "symfony.service.duplicate";
@@ -31,27 +32,43 @@ impl DuplicateAnalyzer {
     }
 }
 
-struct Definition {
-    kind: &'static str,
-    name: String,
-    node: SyntaxNode,
+/// A service, parameter or route name defined in a document.
+pub(crate) struct Definition {
+    pub kind: &'static str,
+    pub name: String,
+    pub node: SyntaxNode,
+}
+
+impl DeclaredAnalyzer for DuplicateAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "symfony.duplicate",
+        description: "Service, parameter or route names defined twice in the same file.",
+        domain: "symfony.services",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Php, LanguageId::Xml, LanguageId::Yaml],
+        source: "symfony",
+        codes: &[
+            DUPLICATE_PARAMETER_CODE,
+            DUPLICATE_ROUTE_CODE,
+            DUPLICATE_SERVICE_CODE,
+        ],
+    };
 }
 
 impl ProblemAnalyzer for DuplicateAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(0)
+    }
+
     fn analyze(
         &self,
         ctx: &Context,
         document: &Arc<TextDocument>,
     ) -> Result<Vec<Problem>, BoxError> {
-        let Some(root) = document.root() else {
+        let entries = definitions(document);
+        if entries.is_empty() {
             return Ok(Vec::new());
-        };
-        let entries = match lower_ext(&document.uri).as_str() {
-            ".yaml" | ".yml" => yaml_duplicate_definitions(&root),
-            ".xml" => xml_duplicate_definitions(&root),
-            ".php" => php_duplicate_route_definitions(&root),
-            _ => return Ok(Vec::new()),
-        };
+        }
         let mut counts: HashMap<(&str, &str), usize> = HashMap::new();
         for entry in &entries {
             *counts.entry((entry.kind, &entry.name)).or_default() += 1;
@@ -78,6 +95,20 @@ impl ProblemAnalyzer for DuplicateAnalyzer {
             result.push(problem);
         }
         Ok(result)
+    }
+}
+
+/// The service, parameter and route names `document` defines, in source
+/// order.
+pub(crate) fn definitions(document: &TextDocument) -> Vec<Definition> {
+    let Some(root) = document.root() else {
+        return Vec::new();
+    };
+    match lower_ext(&document.uri).as_str() {
+        ".yaml" | ".yml" => yaml_duplicate_definitions(&root),
+        ".xml" => xml_duplicate_definitions(&root),
+        ".php" => php_duplicate_route_definitions(&root),
+        _ => Vec::new(),
     }
 }
 

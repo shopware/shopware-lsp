@@ -17,6 +17,8 @@ crossbeam-channel = "0.5"
 ignore = "0.4"
 notify = "8"
 sha2 = "0.10"
+lz4_flex = "0.11"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
 log = "0.4"
 swlsp-pathmatch = { path = "../pathmatch" }
 swlsp-phar = { path = "../phar" }

@@ -1046,6 +1046,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lz4_flex"
+version = "0.11.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "373f5eceeeab7925e0c1098212f2fbc4d416adec9d35051a6ab251e824c1854a"
+dependencies = [
+ "twox-hash",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1815,7 +1824,11 @@ dependencies = [
  "swlsp-lsp-signature",
  "swlsp-lsp-symbol",
  "swlsp-messenger",
+ "swlsp-parser-js",
+ "swlsp-parser-scss",
  "swlsp-parser-twig",
+ "swlsp-parser-xml",
+ "swlsp-parser-yaml",
  "swlsp-php",
  "swlsp-php-inference",
  "swlsp-php-semantic",
@@ -1875,6 +1888,8 @@ name = "swlsp-bench"
 version = "0.1.0"
 dependencies = [
  "codspeed-criterion-compat",
+ "serde_json",
+ "swlsp-cli",
  "swlsp-parser-js",
  "swlsp-parser-json",
  "swlsp-parser-php",
@@ -1887,6 +1902,7 @@ dependencies = [
  "swlsp-php-binder",
  "swlsp-php-inference",
  "swlsp-php-semantic",
+ "tempfile",
 ]
 
 [[package]]
@@ -2035,6 +2051,7 @@ dependencies = [
  "filetime",
  "ignore",
  "log",
+ "lz4_flex",
  "notify",
  "rmp-serde",
  "rusqlite",
@@ -2047,6 +2064,7 @@ dependencies = [
  "swlsp-syntax",
  "tempfile",
  "thiserror",
+ "xxhash-rust",
 ]
 
 [[package]]
@@ -2380,7 +2398,6 @@ dependencies = [
  "swlsp-php-resolver",
  "swlsp-php-rewrite",
  "swlsp-php-semantic",
- "swlsp-php-suppression",
  "swlsp-php-types",
  "swlsp-rewrite",
  "swlsp-serializer",
@@ -2595,6 +2612,7 @@ dependencies = [
  "swlsp-parser-php",
  "swlsp-php",
  "swlsp-php-imports",
+ "swlsp-php-inference",
  "swlsp-php-semantic",
  "swlsp-php-suppression",
  "swlsp-syntax",
@@ -2896,8 +2914,8 @@ dependencies = [
 name = "swlsp-php"
 version = "0.1.0"
 dependencies = [
- "flate2",
  "lru",
+ "lz4_flex",
  "rmp-serde",
  "serde",
  "swlsp-indexer",
@@ -3248,6 +3266,7 @@ name = "swlsp-symfony"
 version = "0.1.0"
 dependencies = [
  "log",
+ "memchr",
  "regex",
  "rowan",
  "serde",
@@ -3525,6 +3544,12 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "twox-hash"
+version = "2.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86a801b3cea342a06d468c8710662aa29e5e05e4f5c0d62f00bbb7f2ad7941c2"
 
 [[package]]
 name = "typenum"
@@ -3845,6 +3870,12 @@ name = "writeable"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
+
+[[package]]
+name = "xxhash-rust"
+version = "0.8.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "550a2b930b62486a393c52d5c3b84bff264b28aa437ed64694d31e93b1757af7"
 
 [[package]]
 name = "yoke"

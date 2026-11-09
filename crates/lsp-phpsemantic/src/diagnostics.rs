@@ -4,7 +4,11 @@
 use std::collections::HashSet;
 
 use serde_json::json;
-use swlsp_lsp::{BoxError, Cancelled, Context, DiagnosticId, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{
+    BoxError, Cancelled, Context, DiagnosticId, InspectionScope, InspectionSpec, Problem,
+    TextDocument,
+};
 use swlsp_lsp_protocol::{DiagnosticSeverity, DiagnosticTag};
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::{
@@ -32,6 +36,17 @@ use crate::helpers::{
 
 /// The source of every problem this analyzer reports.
 pub const SOURCE: &str = "shopware-php";
+
+/// The `php.semantic` inspection: every diagnostic in [`DIAGNOSTIC_IDS`].
+pub const INSPECTION: InspectionSpec = InspectionSpec {
+    id: "php.semantic",
+    description: "Core PHP checks: undefined symbols, wrong argument counts and types, return types, visibility, inheritance and abstract-member rules, duplicate declarations, deprecations, and features or extensions the configured PHP version lacks.",
+    domain: "php",
+    scope: InspectionScope::Language,
+    languages: &[LanguageId::Php],
+    source: SOURCE,
+    codes: DIAGNOSTIC_IDS,
+};
 
 /// Every diagnostic ID the PHP semantic analyzer can report; the ownership
 /// catalog of the `php.semantic` inspection.

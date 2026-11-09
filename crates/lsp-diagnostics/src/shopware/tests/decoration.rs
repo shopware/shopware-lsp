@@ -1,7 +1,6 @@
-use super::analyze;
 use super::php_semantic::php_index_with;
 use crate::shopware::*;
-use crate::test_support::document;
+use crate::test_support::check_problems;
 
 #[test]
 fn shopware_decoration_analyzer_requires_decoration_abstraction() {
@@ -25,18 +24,16 @@ class ProductRoute extends AbstractProductRoute
 }",
         ),
     ]);
-    let document = document(
+    let (_, problems) = check_problems(
+        &ShopwareDecorationAnalyzer::new(Some(index)),
         "file:///project/src/Consumer.php",
         r"<?php
 namespace App;
 use Shopware\Core\Content\Product\SalesChannel\ProductRoute;
 class Consumer
 {
-    public function __construct(private ProductRoute $route) {}
+    public function __construct({|shopware.decoration.abstraction:private ProductRoute $route|}) {}
 }",
     );
-    let problems = analyze(&ShopwareDecorationAnalyzer::new(Some(index)), &document);
-    assert_eq!(problems.len(), 1);
-    assert_eq!(problems[0].id.as_str(), "shopware.decoration.abstraction");
     assert!(problems[0].message.contains("AbstractProductRoute"));
 }

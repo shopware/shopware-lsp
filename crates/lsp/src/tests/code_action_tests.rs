@@ -275,10 +275,10 @@ fn inspection_code_action_honors_context_only() {
 
 #[test]
 fn inspection_registration_rejects_invalid_definitions() {
-    struct Duplicate;
-    impl Inspection for Duplicate {
+    struct Defined(InspectionDefinition);
+    impl Inspection for Defined {
         fn definition(&self) -> InspectionDefinition {
-            TestInspection.definition()
+            self.0.clone()
         }
         fn inspect(
             &self,
@@ -294,10 +294,17 @@ fn inspection_registration_rejects_invalid_definitions() {
     }
     let server = Server::new(None, "", "test");
     server.register_inspection(Arc::new(TestInspection));
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        server.register_inspection(Arc::new(Duplicate));
-    }));
-    assert!(result.is_err());
+    let unknown_domain = InspectionDefinition {
+        domain: "unknown",
+        ..test_definition("test.unknown-domain", false)
+    };
+    for definition in [TestInspection.definition(), unknown_domain] {
+        let id = definition.id.clone();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            server.register_inspection(Arc::new(Defined(definition)));
+        }));
+        assert!(result.is_err(), "{id}");
+    }
     // A failed registration leaves the registry unchanged.
     assert_eq!(server.registry().inspections.by_id.len(), 1);
 }

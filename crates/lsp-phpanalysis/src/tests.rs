@@ -33,6 +33,40 @@ fn for_document_caches_per_workspace_revision() {
     index.close().unwrap();
 }
 
+/// A type extension whose data changes without a PHP index change, like
+/// the Symfony extension answering from the service index.
+struct VersionedExtension(std::sync::atomic::AtomicU64);
+
+impl swlsp_php_inference::Extension for VersionedExtension {
+    fn infer_call(
+        &self,
+        _: &swlsp_php_inference::CallContext<'_>,
+    ) -> Option<swlsp_php_semantic::TypeFact> {
+        None
+    }
+
+    fn revision(&self) -> u64 {
+        self.0.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+#[test]
+fn for_document_follows_type_extension_revisions() {
+    let (_dir, index) = open();
+    let extension = Arc::new(VersionedExtension(Default::default()));
+    index.register_type_extension(extension.clone());
+    let document = TextDocument::new("file:///project/src/Uses.php", "<?php $x = 1;", 1);
+    let first = for_document(&index, &document).unwrap().unwrap();
+    assert!(Arc::ptr_eq(
+        &first,
+        &for_document(&index, &document).unwrap().unwrap()
+    ));
+    extension.0.store(1, std::sync::atomic::Ordering::SeqCst);
+    let second = for_document(&index, &document).unwrap().unwrap();
+    assert!(!Arc::ptr_eq(&first, &second), "stale extension data");
+    index.close().unwrap();
+}
+
 #[test]
 fn for_document_shares_concurrent_analysis() {
     let (_dir, index) = open();
@@ -145,4 +179,23 @@ fn request_context_reuses_memoized_analysis() {
     };
     assert!(request_context(&index, &twig).is_none());
     index.close().unwrap();
+}
+
+#[test]
+fn suppression_reader_matches_framework_codes_by_identifier_and_wildcard() {
+    let source = "<?php\n\
+        // @phpstan-ignore symfony.service.missing\n\
+        $a = 1;\n\
+        // @phpstan-ignore-next-line\n\
+        $b = 2;\n\
+        $c = 3;\n";
+    let document = TextDocument::new("file:///project/src/Consumer.php", source, 1);
+    let suppressions = suppression_reader()(&document);
+    let at = |text: &str| TextSize::from(source.find(text).unwrap() as u32);
+    let missing = DiagnosticId::from("symfony.service.missing");
+    let other = DiagnosticId::from("symfony.class.missing");
+    assert!(suppressions.suppresses(at("$a"), &missing));
+    assert!(!suppressions.suppresses(at("$a"), &other));
+    assert!(suppressions.suppresses(at("$b"), &other));
+    assert!(!suppressions.suppresses(at("$c"), &missing));
 }

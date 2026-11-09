@@ -1,15 +1,8 @@
-use std::collections::HashMap;
-
 use swlsp_lsp_protocol::{DiagnosticSeverity, DiagnosticTag};
 
 use super::*;
 use crate::services::ServiceAnalyzer;
-
-const MISSING_SERVICE: &str = "symfony.service.missing";
-const MISSING_PARAMETER: &str = "symfony.parameter.missing";
-const MISSING_CLASS: &str = "symfony.class.missing";
-const DEPRECATED_SERVICE: &str = "symfony.service.deprecated";
-const DEPRECATED_CLASS: &str = "symfony.class.deprecated";
+use crate::test_support::check_problems;
 
 struct Fixture {
     _dir: tempfile::TempDir,
@@ -81,11 +74,11 @@ services:
     arguments:
       - '@app.existing'
       - '%app.existing%'
-      - '@app.missing'
-      - '%app.missing%'
+      - '@{|symfony.service.missing:app.missing|}'
+      - '%{|symfony.parameter.missing:app.missing|}%'
       - '@?app.optional'
   app.class_check:
-    class: App\Missing
+    class: {|symfony.class.missing:App\Missing|}
 ",
         ),
         (
@@ -96,29 +89,26 @@ services:
   <service id="local.service" class="App\Existing">
     <argument type="service" id="app.existing"/>
     <argument>%app.existing%</argument>
-    <argument type="service" id="app.missing"/>
-    <argument>%app.missing%</argument>
+    <argument type="service" id="{|symfony.service.missing:app.missing|}"/>
+    <argument>%{|symfony.parameter.missing:app.missing|}%</argument>
     <argument type="service" id="app.optional" on-invalid="ignore"/>
   </service>
   <alias id="local.alias" service="local.service"/>
-  <service id="class.check" class="App\Missing"/>
+  <service id="class.check" class="{|symfony.class.missing:App\Missing|}"/>
 </services>
 </container>"#,
         ),
     ];
     for (uri, source) in tests {
-        let result = analyze(&fixture.analyzer, &document(uri, source));
-        assert_codes(
-            &result,
-            &[MISSING_SERVICE, MISSING_PARAMETER, MISSING_CLASS],
-        );
+        check_problems(&fixture.analyzer, uri, source);
     }
 }
 
 #[test]
 fn service_diagnostics_for_php_attributes_and_typed_container() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/Example.php",
         r"<?php
 namespace App;
@@ -127,37 +117,23 @@ use Psr\Container\ContainerInterface;
 class Other { public function get(string $id): mixed {} }
 
 class Example {
-    #[\Symfony\Component\DependencyInjection\Attribute\Autowire(service: 'app.missing')]
-    #[\Symfony\Component\DependencyInjection\Attribute\Autowire(param: 'app.missing')]
-    #[\Symfony\Component\DependencyInjection\Attribute\AutowireServiceClosure('app.closure_missing')]
-    #[\Symfony\Component\DependencyInjection\Attribute\AutowireMethodOf(service: 'app.method_missing')]
-    #[\Symfony\Component\DependencyInjection\Attribute\AutowireCallable(service: 'app.callable_missing')]
+    #[\Symfony\Component\DependencyInjection\Attribute\Autowire(service: '{|symfony.service.missing:app.missing|}')]
+    #[\Symfony\Component\DependencyInjection\Attribute\Autowire(param: '{|symfony.parameter.missing:app.missing|}')]
+    #[\Symfony\Component\DependencyInjection\Attribute\AutowireServiceClosure('{|symfony.service.missing:app.closure_missing|}')]
+    #[\Symfony\Component\DependencyInjection\Attribute\AutowireMethodOf(service: '{|symfony.service.missing:app.method_missing|}')]
+    #[\Symfony\Component\DependencyInjection\Attribute\AutowireCallable(service: '{|symfony.service.missing:app.callable_missing|}')]
     #[\Symfony\Component\DependencyInjection\Attribute\AutowireLocator(
-        services: ['app.locator_missing', 'app.existing'],
-        exclude: 'app.exclude_missing',
+        services: ['{|symfony.service.missing:app.locator_missing|}', 'app.existing'],
+        exclude: '{|symfony.service.missing:app.exclude_missing|}',
     )]
     public function run(ContainerInterface $container, Other $other): void {
-        $container->get('app.missing');
+        $container->get('{|symfony.service.missing:app.missing|}');
         $container->get('app.existing');
         $other->get('ignored.missing');
     }
 }",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_codes(
-        &result,
-        &[
-            MISSING_SERVICE,
-            MISSING_SERVICE,
-            MISSING_SERVICE,
-            MISSING_SERVICE,
-            MISSING_SERVICE,
-            MISSING_SERVICE,
-            MISSING_SERVICE,
-            MISSING_PARAMETER,
-        ],
-    );
-    for problem in &result {
+    for problem in &problems {
         assert!(!problem.message.contains("ignored.missing"));
     }
 }
@@ -165,7 +141,8 @@ class Example {
 #[test]
 fn service_diagnostics_distinguish_parameter_bags_from_service_containers() {
     let fixture = fixture();
-    let document = document(
+    check_problems(
+        &fixture.analyzer,
         "file:///project/Example.php",
         r"<?php /* ContainerConfigurator */
 use Psr\Container\ContainerInterface;
@@ -179,111 +156,80 @@ function resolve(
     ContainerInterface $services,
     DIContainer $diContainer,
 ): void {
-    $parameters->get('app.service');
-    $containerBag->has('app.service');
-    $services->get('app.parameter');
-    $diContainer->getParameter('app.service');
+    $parameters->get('{|symfony.parameter.missing:app.service|}');
+    $containerBag->has('{|symfony.parameter.missing:app.service|}');
+    $services->get('{|symfony.service.missing:app.parameter|}');
+    $diContainer->getParameter('{|symfony.parameter.missing:app.service|}');
     $diContainer->hasParameter('app.parameter');
 }",
-    );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_codes(
-        &result,
-        &[
-            MISSING_PARAMETER,
-            MISSING_PARAMETER,
-            MISSING_SERVICE,
-            MISSING_PARAMETER,
-        ],
     );
 }
 
 #[test]
 fn service_diagnostics_for_php_array_references() {
     let fixture = fixture();
-    let document = document(
+    check_problems(
+        &fixture.analyzer,
         "file:///project/config/services.php",
         r"<?php
 return [
     'services' => [
         'app.consumer' => [
-            'class' => 'App\\MissingArrayClass',
-            'parent' => 'app.missing_parent',
+            'class' => {|symfony.class.missing:'App\\MissingArrayClass'|},
+            'parent' => '{|symfony.service.missing:app.missing_parent|}',
             'arguments' => [
-                '%app.missing_parameter%',
-                '@app.missing_service',
+                '%{|symfony.parameter.missing:app.missing_parameter|}%',
+                '@{|symfony.service.missing:app.missing_service|}',
             ],
             'calls' => [['configure', ['%app.existing%']]],
         ],
-        'app.alias' => '@app.missing_alias',
+        'app.alias' => '@{|symfony.service.missing:app.missing_alias|}',
     ],
 ];
 ",
-    );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_codes(
-        &result,
-        &[
-            MISSING_SERVICE,
-            MISSING_PARAMETER,
-            MISSING_SERVICE,
-            MISSING_CLASS,
-            MISSING_SERVICE,
-        ],
     );
 }
 
 #[test]
 fn service_diagnostics_include_typo_suggestions() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/services.yaml",
         r"services:
   app.consumer:
     arguments:
-      - '@app.existng'
-      - '%app.existng%'
+      - '@{|symfony.service.missing:app.existng|}'
+      - '%{|symfony.parameter.missing:app.existng|}%'
 ",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 2);
-    for problem in &result {
+    for problem in &problems {
         assert!(suggestions(problem).contains(&"app.existing".to_owned()));
-        assert_eq!(range_text(&document, problem.range), "app.existng");
     }
 }
 
 #[test]
 fn service_diagnostics_validate_phpdoc_assistant_references() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/AssistantUsage.php",
         r"<?php
 namespace App;
-resolve_service('app.existng');
-resolve_parameter('app.parametr');
-resolve_class('App\Exsting');
-resolve_interface('App\Existing');
+resolve_service('{|symfony.service.missing:app.existng|}');
+resolve_parameter('{|symfony.parameter.missing:app.parametr|}');
+resolve_class('{|symfony.class.missing:App\Exsting|}');
+resolve_interface('{|symfony.class.missing:App\Existing|}');
 resolve_class('App\Existing');
 resolve_interface('App\ExistingInterface');
 resolve_class_or_interface('App\ExistingInterface');
 ",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 4);
-    let by_text: HashMap<String, &Problem> = result
-        .iter()
-        .map(|problem| (range_text(&document, problem.range), problem))
-        .collect();
-    assert_eq!(by_text["app.existng"].id.as_str(), MISSING_SERVICE);
-    assert!(suggestions(by_text["app.existng"]).contains(&"app.existing".to_owned()));
-    assert_eq!(by_text["app.parametr"].id.as_str(), MISSING_PARAMETER);
-    assert!(suggestions(by_text["app.parametr"]).contains(&"app.parameter".to_owned()));
-    assert_eq!(by_text["App\\Exsting"].id.as_str(), MISSING_CLASS);
-    assert!(suggestions(by_text["App\\Exsting"]).contains(&"App\\Existing".to_owned()));
-    assert_eq!(by_text["App\\Existing"].id.as_str(), MISSING_CLASS);
-    assert!(by_text["App\\Existing"].message.contains("Interface"));
-    assert!(suggestions(by_text["App\\Existing"]).contains(&"App\\ExistingInterface".to_owned()));
+    assert!(suggestions(&problems[0]).contains(&"app.existing".to_owned()));
+    assert!(suggestions(&problems[1]).contains(&"app.parameter".to_owned()));
+    assert!(suggestions(&problems[2]).contains(&"App\\Existing".to_owned()));
+    assert!(problems[3].message.contains("Interface"));
+    assert!(suggestions(&problems[3]).contains(&"App\\ExistingInterface".to_owned()));
 }
 
 #[test]
@@ -294,24 +240,22 @@ fn service_diagnostics_mark_deprecated_services_and_classes() {
             "file:///project/services.yaml",
             r"services:
   app.consumer:
-    class: App\Legacy
+    class: {|symfony.class.deprecated:App\Legacy|}
     arguments:
-      - '@app.deprecated'
-      - '@?app.deprecated'
+      - '@{|symfony.class.deprecated:{|symfony.service.deprecated:app.deprecated|}|}'
+      - '@?{|symfony.class.deprecated:{|symfony.service.deprecated:app.deprecated|}|}'
       - '@?app.runtime_only'
 ",
-            5,
         ),
         (
             "file:///project/services.xml",
             r#"<container><services>
-<service id="app.consumer" class="App\Legacy">
-  <argument type="service" id="app.deprecated"/>
-  <argument type="service" id="app.deprecated" on-invalid="ignore"/>
+<service id="app.consumer" class="{|symfony.class.deprecated:App\Legacy|}">
+  <argument type="service" id="{|symfony.class.deprecated:{|symfony.service.deprecated:app.deprecated|}|}"/>
+  <argument type="service" id="{|symfony.class.deprecated:{|symfony.service.deprecated:app.deprecated|}|}" on-invalid="ignore"/>
   <argument type="service" id="app.runtime_only" on-invalid="ignore"/>
 </service>
 </services></container>"#,
-            5,
         ),
         (
             "file:///project/Consumer.php",
@@ -319,20 +263,17 @@ fn service_diagnostics_mark_deprecated_services_and_classes() {
 use Psr\Container\ContainerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 class Consumer {
-    #[Autowire(service: 'app.deprecated')]
+    #[Autowire(service: '{|symfony.class.deprecated:{|symfony.service.deprecated:app.deprecated|}|}')]
     public function __construct(private ContainerInterface $container) {}
     public function resolve(): mixed {
-        return $this->container->get('app.deprecated');
+        return $this->container->get('{|symfony.class.deprecated:{|symfony.service.deprecated:app.deprecated|}|}');
     }
 }",
-            4,
         ),
     ];
-    for (uri, source, count) in tests {
-        let result = analyze(&fixture.analyzer, &document(uri, source));
-        assert_eq!(result.len(), count, "{uri}");
-        for problem in &result {
-            assert!([DEPRECATED_SERVICE, DEPRECATED_CLASS].contains(&problem.id.as_str()));
+    for (uri, source) in tests {
+        let (_, problems) = check_problems(&fixture.analyzer, uri, source);
+        for problem in &problems {
             assert_eq!(problem.severity, Some(DiagnosticSeverity::HINT));
             assert_eq!(problem.tags, vec![DiagnosticTag::DEPRECATED]);
             assert!(!problem.message.contains("%service_id%"));

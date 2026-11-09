@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use swlsp_language::LanguageId;
 use swlsp_lsp::{
     BoxError, Context, FixContext, FixId, FixPresentation, FixResolution, Inspection,
-    InspectionDefinition, ProblemDefinition, QuickFix, RewriteQuickFix, bind_fix,
+    InspectionDefinition, InspectionScope, ProblemDefinition, QuickFix, RewriteQuickFix, bind_fix,
 };
 use swlsp_lsp_diagnostics::TranslationAnalyzer;
 use swlsp_lsp_protocol as protocol;
@@ -47,6 +47,9 @@ pub fn new_translation(
     Arc::new(BoundInspection {
         definition: InspectionDefinition {
             id: "symfony.translation".into(),
+            description: "Translation keys and domains no translation file defines, with a fix adding the key.",
+            domain: "symfony",
+            scope: InspectionScope::Framework,
             languages: vec![LanguageId::Php, LanguageId::Twig],
             problems: vec![
                 problem("symfony.translation.domain.missing"),

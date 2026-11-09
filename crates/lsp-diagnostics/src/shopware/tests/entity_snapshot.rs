@@ -6,9 +6,8 @@ use swlsp_php::PhpIndex;
 use swlsp_shopware_entityschema as entityschema;
 use swlsp_uriutil::file_uri;
 
-use super::{analyze, problem_ids};
 use crate::shopware::*;
-use crate::test_support::document;
+use crate::test_support::check_problems;
 
 fn path_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
@@ -37,13 +36,14 @@ fn entity_snapshot_analyzer_reports_changed_migration() {
     let content = entityschema::marshal_snapshot(&snapshot).unwrap();
     let path = directory.join("1.snapshot.json");
     std::fs::write(&path, &content).unwrap();
-    let document = document(
+    // The analyzer reports snapshot problems on the whole document.
+    check_problems(
+        &EntitySnapshotAnalyzer::new(None),
         &file_uri(&path_string(&path)),
-        std::str::from_utf8(&content).unwrap(),
-    );
-    let problems = analyze(&EntitySnapshotAnalyzer::new(None), &document);
-    assert!(
-        problem_ids(&problems).contains(&"shopware.entity_snapshot.migration_changed".to_owned())
+        &format!(
+            "{{|shopware.entity_snapshot.migration_changed:{}|}}",
+            std::str::from_utf8(&content).unwrap()
+        ),
     );
 }
 
@@ -146,15 +146,14 @@ final class UnindexedDefinition extends EntityDefinition {
     let path = directory.join("1.snapshot.json");
     std::fs::write(&path, &content).unwrap();
 
-    let document = document(
-        &file_uri(&path_string(&path)),
-        std::str::from_utf8(&content).unwrap(),
-    );
     let catalog = Arc::new(entityschema::IndexedCatalog::new(
         php_index,
         Some(source_index),
         None,
     ));
-    let problems = analyze(&EntitySnapshotAnalyzer::new(Some(catalog)), &document);
-    assert!(!problem_ids(&problems).contains(&"shopware.entity_snapshot.schema_drift".to_owned()));
+    check_problems(
+        &EntitySnapshotAnalyzer::new(Some(catalog)),
+        &file_uri(&path_string(&path)),
+        std::str::from_utf8(&content).unwrap(),
+    );
 }

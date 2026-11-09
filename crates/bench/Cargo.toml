@@ -23,6 +23,9 @@ swlsp-parser-yaml = { path = "../parser-yaml" }
 swlsp-php-binder = { path = "../php-binder" }
 swlsp-php-inference = { path = "../php-inference" }
 swlsp-php-semantic = { path = "../php-semantic" }
+swlsp-cli = { path = "../cli" }
+serde_json = "1"
+tempfile = "3"
 
 [[bench]]
 name = "parsers"
@@ -30,4 +33,8 @@ harness = false
 
 [[bench]]
 name = "php"
+harness = false
+
+[[bench]]
+name = "diagnostics"
 harness = false

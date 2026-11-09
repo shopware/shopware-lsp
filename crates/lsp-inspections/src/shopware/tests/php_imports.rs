@@ -6,44 +6,39 @@ use swlsp_php::PhpIndex;
 use swlsp_rewrite::HandleError;
 
 use crate::shopware::*;
-use crate::test_support::{document, fix_context, inspect, quick_fix_with_id, wire_range};
+use crate::test_support::{
+    check_diagnostics, check_fix, fix_context, quick_fix_with_id, wire_range,
+};
 
 #[test]
 fn unused_php_import_inspection_and_lazy_fix() {
     let dir = tempfile::tempdir().unwrap();
     let index = PhpIndex::open(dir.path(), None).unwrap();
     let inspection = new_php_imports(Some(index));
-    let source = "<?php /* 😀 */ use Vendor\\{Used, Unused as Alias}; new Used;";
-    let document = document("file:///workspace/live.php", source);
-    let problems = inspect(inspection.as_ref(), &document);
-    assert_eq!(problems.len(), 1);
+    let uri = "file:///workspace/live.php";
+    let fixture =
+        "<?php /* 😀 */ use Vendor\\{Used, {|php.unusedImport:Unused|} as Alias}; new Used;";
+    let (document, problems) = check_diagnostics(inspection.as_ref(), uri, fixture);
     let problem = &problems[0];
-    assert_eq!(problem.id.as_str(), "php.unusedImport");
     assert!(problem.tags.contains(&DiagnosticTag::UNNECESSARY));
-    assert_eq!(&source[problem.range], "Unused");
     assert_eq!(wire_range(&document, problem.range).start.character, 33);
-    assert_eq!(problem.fixes.len(), 1);
-    let fix = quick_fix_with_id(inspection.as_ref(), problem.fixes[0].id.as_str());
-    let mut context = fix_context(&document, problem, &problem.fixes[0], None);
-    let presentation = fix
-        .present(&Context::background(), &context)
-        .unwrap()
-        .expect("presented");
+    let fix_id = problem.fixes[0].id.as_str();
+    let presentation = check_fix(
+        inspection.as_ref(),
+        uri,
+        fixture,
+        fix_id,
+        "<?php /* 😀 */ use Vendor\\{Used}; new Used;",
+    );
     assert_eq!(presentation.resolution, FixResolution::Lazy);
     assert_eq!(presentation.title, "Remove unused import 'Alias'");
-    let plan = fix
-        .as_rewrite()
-        .unwrap()
-        .build(&Context::background(), &context)
-        .unwrap();
-    assert_eq!(plan.documents.len(), 1);
-    assert_eq!(
-        plan.documents[0].apply().unwrap(),
-        "<?php /* 😀 */ use Vendor\\{Used}; new Used;"
-    );
+
+    // The lazy fix rejects a document changed since the problem was reported.
+    let fix = quick_fix_with_id(inspection.as_ref(), fix_id);
+    let mut context = fix_context(&document, problem, &problem.fixes[0], None);
     context.document = Arc::new(TextDocument::new(
         document.uri.clone(),
-        &format!("{source} new Alias;"),
+        &format!("{} new Alias;", document.source()),
         2,
     ));
     let error = fix
@@ -69,10 +64,10 @@ fn unused_imports_suppression_and_incomplete_input() {
         "<?php use Vendor\\Unused; function incomplete(",
         "<?php use Vendor\\Unused; use Vendor\\",
     ] {
-        let problems = inspect(
+        check_diagnostics(
             new_php_imports(Some(index.clone())).as_ref(),
-            &document("file:///workspace/live.php", source),
+            "file:///workspace/live.php",
+            source,
         );
-        assert!(problems.is_empty(), "{source}");
     }
 }

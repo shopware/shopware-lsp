@@ -4,6 +4,13 @@ use super::super::{
 };
 use super::*;
 
+/// An entity search result migration source with `body` as the function
+/// body.
+fn entity_search_result_source(body: &str) -> String {
+    "<?php\nuse Shopware\\Core\\Framework\\DataAbstractionLayer\\Search\\EntitySearchResult;\nfunction migrate(EntitySearchResult $result): void { BODY }\n"
+        .replace("BODY", body)
+}
+
 #[test]
 fn entity_search_result_migration_quick_fixes() {
     let index = migration_inspection_php_index();
@@ -12,50 +19,40 @@ fn entity_search_result_migration_quick_fixes() {
         "<?php\nnamespace Shopware\\Core\\Framework\\DataAbstractionLayer\\Search;\nclass EntitySearchResult {}",
     );
     let inspection = migration(&index, 8);
-    for (name, body, expected) in [
+    for (before, after) in [
         (
-            "method call",
-            "$result->first();",
+            "$result->{|shopware.migration.entity_search_result.get_entities:first|}();",
             "$result->getEntities()->first();",
         ),
         (
-            "nullsafe method call",
-            "$result?->first();",
+            "$result?->{|shopware.migration.entity_search_result.get_entities:first|}();",
             "$result?->getEntities()->first();",
         ),
         (
-            "count function",
-            "count($result);",
+            "count({|shopware.migration.entity_search_result.get_entities:$result|});",
             "count($result->getEntities());",
         ),
         (
-            "foreach expression",
-            "foreach ($result as $entity) {}",
+            "foreach ({|shopware.migration.entity_search_result.get_entities:$result|} as $entity) {}",
             "foreach ($result->getEntities() as $entity) {}",
         ),
     ] {
-        let source = format!(
-            "<?php\nuse Shopware\\Core\\Framework\\DataAbstractionLayer\\Search\\EntitySearchResult;\nfunction migrate(EntitySearchResult $result): void {{ {body} }}\n"
+        let presentation = check_only_migration_fix(
+            &inspection,
+            "file:///project/src/Migrate.php",
+            &entity_search_result_source(before),
+            ENTITY_SEARCH_RESULT_GET_ENTITIES_FIX_ID,
+            &entity_search_result_source(after),
         );
-        let document = document("file:///project/src/Migrate.php", &source);
-        let problems = inspect(inspection.as_ref(), &document);
-        assert_eq!(problems.len(), 1, "{name}");
-        let problem = &problems[0];
-        assert_eq!(problem.fixes.len(), 1, "{name}");
-        let bound = &problem.fixes[0];
-        assert_eq!(bound.id.0, ENTITY_SEARCH_RESULT_GET_ENTITIES_FIX_ID);
-        let fix = quick_fix_with_id(inspection.as_ref(), &bound.id.0);
-        let context = fix_context(&document, problem, bound, None);
-        let presentation = fix.present(&ctx(), &context).unwrap().expect("visible");
         assert!(presentation.preferred);
-        let updated = apply_single(&fix, &context);
-        assert!(updated.contains(expected), "{name}: {updated}");
-        assert!(
-            TextDocument::new(document.uri.clone(), &updated, 2)
-                .parse_errors()
-                .is_empty()
-        );
     }
+}
+
+/// An entity extension source with `members` as the class body.
+fn entity_extension_source(class: &str, members: &str) -> String {
+    "<?php\nuse Shopware\\Core\\Framework\\DataAbstractionLayer\\EntityExtension;\nclass PRODUCT_EXTENSION extends EntityExtension\n{\nMEMBERS\n}\n"
+        .replace("MEMBERS", members)
+        .replace("PRODUCT_EXTENSION", class)
 }
 
 #[test]
@@ -65,42 +62,35 @@ fn entity_extension_migration_quick_fix() {
         "/project/vendor/EntityExtension.php",
         "<?php\nnamespace Shopware\\Core\\Framework\\DataAbstractionLayer;\nabstract class EntityExtension {}",
     );
-    for (name, minor, include_entity_name, keep_definition) in [
-        ("Shopware 6.6 adds compatible method", 6, false, true),
-        ("Shopware 6.7 replaces definition method", 7, false, false),
+    for (minor, before, after) in [
+        // Shopware 6.6 adds a compatible method.
         (
-            "Shopware 6.7 removes remaining legacy method",
+            6,
+            "    public function getDefinitionClass(): string { return ProductDefinition::class; }",
+            "    public function getDefinitionClass(): string { return ProductDefinition::class; }\n    public function getEntityName(): string\n    {\n        return ProductDefinition::ENTITY_NAME;\n    }",
+        ),
+        // Shopware 6.7 replaces the definition method.
+        (
             7,
-            true,
-            false,
+            "    public function getDefinitionClass(): string { return ProductDefinition::class; }",
+            "    public function getEntityName(): string\n    {\n        return ProductDefinition::ENTITY_NAME;\n    }",
+        ),
+        // Shopware 6.7 removes the remaining legacy method.
+        (
+            7,
+            "    public function getDefinitionClass(): string { return ProductDefinition::class; }\n    public function getEntityName(): string { return ProductDefinition::ENTITY_NAME; }",
+            "    public function getEntityName(): string { return ProductDefinition::ENTITY_NAME; }",
         ),
     ] {
-        let entity_name = if include_entity_name {
-            "\n    public function getEntityName(): string { return ProductDefinition::ENTITY_NAME; }"
-        } else {
-            ""
-        };
-        let source = format!(
-            "<?php\nuse Shopware\\Core\\Framework\\DataAbstractionLayer\\EntityExtension;\nclass ProductExtension extends EntityExtension\n{{\n    public function getDefinitionClass(): string {{ return ProductDefinition::class; }}{entity_name}\n}}\n"
-        );
-        let document = document("file:///project/src/Extension.php", &source);
-        let updated = apply_only_migration_fix(
+        check_only_migration_fix(
             &migration(&index, minor),
-            &document,
+            "file:///project/src/Extension.php",
+            &entity_extension_source(
+                "{|shopware.migration.entity_extension.entity_name:ProductExtension|}",
+                before,
+            ),
             ENTITY_EXTENSION_ENTITY_NAME_FIX_ID,
-        );
-        assert!(
-            updated.contains("public function getEntityName(): string"),
-            "{name}"
-        );
-        assert!(
-            updated.contains("return ProductDefinition::ENTITY_NAME;"),
-            "{name}"
-        );
-        assert_eq!(
-            updated.contains("getDefinitionClass"),
-            keep_definition,
-            "{name}: {updated}"
+            &entity_extension_source("ProductExtension", after),
         );
     }
 }
@@ -112,17 +102,22 @@ fn reverse_proxy_ban_all_migration_quick_fix() {
         "/project/vendor/AbstractReverseProxyGateway.php",
         "<?php\nnamespace Shopware\\Storefront\\Framework\\Cache\\ReverseProxy;\nabstract class AbstractReverseProxyGateway {}",
     );
-    let document = document(
-        "file:///project/src/Proxy.php",
-        "<?php\nuse Shopware\\Storefront\\Framework\\Cache\\ReverseProxy\\AbstractReverseProxyGateway;\nclass Proxy extends AbstractReverseProxyGateway {}\n",
-    );
-    let updated = apply_only_migration_fix(
+    check_only_migration_fix(
         &migration(&index, 5),
-        &document,
+        "file:///project/src/Proxy.php",
+        "<?php\nuse Shopware\\Storefront\\Framework\\Cache\\ReverseProxy\\AbstractReverseProxyGateway;\nclass {|shopware.migration.reverse_proxy.ban_all:Proxy|} extends AbstractReverseProxyGateway {}\n",
         REVERSE_PROXY_BAN_ALL_FIX_ID,
+        "<?php\nuse Shopware\\Storefront\\Framework\\Cache\\ReverseProxy\\AbstractReverseProxyGateway;\nclass Proxy extends AbstractReverseProxyGateway {\n    public function banAll(): void\n    {\n        $this->ban([]);\n    }\n}\n",
     );
-    assert!(updated.contains("public function banAll(): void"));
-    assert!(updated.contains("$this->ban([]);"));
+}
+
+/// A scheduled task handler source named `class`, with `parameters` as the
+/// constructor parameters and `parent` as the parent constructor call.
+fn scheduled_task_source(class: &str, parameters: &str, parent: &str) -> String {
+    "<?php\nuse Shopware\\Core\\Framework\\MessageQueue\\ScheduledTask\\ScheduledTaskHandler;\nclass CLASS extends ScheduledTaskHandler\n{\n    public function __construct(PARAMETERS)\n    {\n        PARENT;\n    }\n}\n"
+        .replace("CLASS", class)
+        .replace("PARAMETERS", parameters)
+        .replace("PARENT", parent)
 }
 
 #[test]
@@ -132,54 +127,52 @@ fn scheduled_task_logger_migration_quick_fix() {
         "/project/vendor/ScheduledTaskHandler.php",
         "<?php\nnamespace Shopware\\Core\\Framework\\MessageQueue\\ScheduledTask;\nabstract class ScheduledTaskHandler {}",
     );
-    for (name, parameters, expected, expect_import) in [
+    for (parameters, after_parameters, import) in [
+        // Adds the logger before optional parameters.
         (
-            "adds logger before optional parameters",
             "object $repository, bool $retry = false",
             "object $repository, LoggerInterface $exceptionLogger, bool $retry = false",
-            true,
+            "use Psr\\Log\\LoggerInterface;\n",
         ),
+        // Reuses an existing exception logger parameter.
         (
-            "reuses existing exception logger parameter",
             "object $repository, \\Psr\\Log\\LoggerInterface $exceptionLogger",
             "object $repository, \\Psr\\Log\\LoggerInterface $exceptionLogger",
-            false,
+            "",
         ),
     ] {
-        let source = format!(
-            "<?php\nuse Shopware\\Core\\Framework\\MessageQueue\\ScheduledTask\\ScheduledTaskHandler;\nclass Handler extends ScheduledTaskHandler\n{{\n    public function __construct({parameters})\n    {{\n        parent::__construct($repository);\n    }}\n}}\n"
-        );
-        let document = document("file:///project/src/Handler.php", &source);
-        let updated = apply_only_migration_fix(
+        let after = scheduled_task_source(
+            "Handler",
+            after_parameters,
+            "parent::__construct($repository, $exceptionLogger)",
+        )
+        .replacen("\nclass ", &format!("\n{import}class "), 1);
+        check_only_migration_fix(
             &migration(&index, 7),
-            &document,
+            "file:///project/src/Handler.php",
+            &scheduled_task_source(
+                "{|shopware.migration.scheduled_task.exception_logger:Handler|}",
+                parameters,
+                "parent::__construct($repository)",
+            ),
             SCHEDULED_TASK_LOGGER_FIX_ID,
+            &after,
         );
-        assert!(updated.contains(expected), "{name}: {updated}");
-        assert!(
-            updated.contains("parent::__construct($repository, $exceptionLogger);"),
-            "{name}"
-        );
-        if expect_import {
-            assert!(
-                updated.contains("use Psr\\Log\\LoggerInterface;"),
-                "{name}: {updated}"
-            );
-        }
     }
 }
 
 #[test]
 fn message_handler_subscriber_migration_quick_fix() {
     let index = migration_inspection_php_index();
-    let document = document(
+    check_only_migration_fix(
+        &migration(&index, 5),
         "file:///project/src/Handler.php",
         r#"<?php
 namespace App;
 
 use Shopware\Core\Framework\MessageQueue\Handler\AbstractMessageHandler;
 
-class Handler extends AbstractMessageHandler
+class {|shopware.migration.message_handler.subscriber:Handler|} extends AbstractMessageHandler
 {
     public static function getHandledMessages(): iterable
     {
@@ -191,113 +184,106 @@ class Handler extends AbstractMessageHandler
     }
 }
 "#,
-    );
-    let updated = apply_only_migration_fix(
-        &migration(&index, 5),
-        &document,
         super::super::message_handler::MESSAGE_HANDLER_SUBSCRIBER_FIX_ID,
+        r#"<?php
+namespace App;
+
+use Symfony\Component\Messenger\Handler\MessageSubscriberInterface;
+use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+
+#[AsMessageHandler]
+class Handler implements MessageSubscriberInterface
+{
+    public function __invoke(Message $message): void
+    {
+    }
+}
+"#,
     );
-    assert!(updated.contains("use Symfony\\Component\\Messenger\\Attribute\\AsMessageHandler;"));
-    assert!(
-        updated.contains("use Symfony\\Component\\Messenger\\Handler\\MessageSubscriberInterface;")
-    );
-    assert!(updated.contains("#[AsMessageHandler]"));
-    assert!(updated.contains("class Handler implements MessageSubscriberInterface"));
-    assert!(updated.contains("public function __invoke(Message $message): void"));
-    assert!(!updated.contains("extends AbstractMessageHandler"));
-    assert!(!updated.contains("getHandledMessages"));
-    assert!(!updated.contains("function handle"));
 }
 
 #[test]
 fn message_handler_subscriber_migration_quick_fix_without_handler_method() {
     let index = migration_inspection_php_index();
-    let document = document(
+    check_only_migration_fix(
+        &migration(&index, 5),
         "file:///project/src/AbstractHandler.php",
         r#"<?php
 namespace App;
 
 use Shopware\Core\Framework\MessageQueue\Handler\AbstractMessageHandler;
 
-abstract class Handler extends AbstractMessageHandler
+abstract class {|shopware.migration.message_handler.subscriber:Handler|} extends AbstractMessageHandler
+{
+}
+"#,
+        super::super::message_handler::MESSAGE_HANDLER_SUBSCRIBER_FIX_ID,
+        r#"<?php
+namespace App;
+
+use Symfony\Component\Messenger\Handler\MessageSubscriberInterface;
+use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+
+#[AsMessageHandler]
+abstract class Handler implements MessageSubscriberInterface
 {
 }
 "#,
     );
-    let updated = apply_only_migration_fix(
-        &migration(&index, 5),
-        &document,
-        super::super::message_handler::MESSAGE_HANDLER_SUBSCRIBER_FIX_ID,
-    );
-    assert!(updated.contains("#[AsMessageHandler]"));
-    assert!(updated.contains("abstract class Handler implements MessageSubscriberInterface"));
-    assert!(!updated.contains("extends AbstractMessageHandler"));
+}
+
+/// A controller source with `docblock` above its action.
+fn controller_source(docblock: &str) -> String {
+    "<?php\nclass Controller\n{\nDOCBLOCK\n    public function action(): void {}\n}\n"
+        .replace("DOCBLOCK", docblock)
 }
 
 #[test]
 fn shopware_route_annotation_migration_quick_fixes() {
     let index = migration_inspection_php_index();
-    for (name, docblock, expected, removed) in [
+    for (before, after) in [
         (
-            "captcha",
-            "    /**\n     * @Route(\"/contact\", defaults={\"XmlHttpRequest\"=true})\n     * @Captcha\n     */",
-            r#"@Route("/contact", defaults={"XmlHttpRequest"=true, "_captcha"=true})"#,
-            "@Captcha",
+            "    /**\n     * @Route(\"/contact\", defaults={\"XmlHttpRequest\"=true})\n     * {|shopware.migration.annotation.route_defaults:@Captcha|}\n     */",
+            "    /**\n     * @Route(\"/contact\", defaults={\"XmlHttpRequest\"=true, \"_captcha\"=true})\n     */",
         ),
         (
-            "login required",
-            "    /**\n     * @LoginRequired\n     * @Route(\"/account\")\n     */",
-            r#"@Route("/account", defaults={"_loginRequired"=true})"#,
-            "@LoginRequired",
+            "    /**\n     * {|shopware.migration.annotation.route_defaults:@LoginRequired|}\n     * @Route(\"/account\")\n     */",
+            "    /**\n     * @Route(\"/account\", defaults={\"_loginRequired\"=true})\n     */",
         ),
         (
-            "route scope without route",
-            "    /**\n     * @RouteScope(scopes={\"storefront\", \"api\"})\n     */",
-            r#"@Route(defaults={"_routeScope"={"storefront", "api"}})"#,
-            "@RouteScope",
+            "    /**\n     * {|shopware.migration.annotation.route_defaults:@RouteScope(scopes={\"storefront\", \"api\"})|}\n     */",
+            "    /**\n     * @Route(defaults={\"_routeScope\"={\"storefront\", \"api\"}})\n     */",
         ),
         (
-            "route scope with route",
-            "    /**\n     * @Route(\"/storefront\", methods={\"GET\"})\n     * @RouteScope(scopes={\"storefront\"})\n     */",
-            r#"@Route("/storefront", methods={"GET"}, defaults={"_routeScope"={"storefront"}})"#,
-            "@RouteScope",
+            "    /**\n     * @Route(\"/storefront\", methods={\"GET\"})\n     * {|shopware.migration.annotation.route_defaults:@RouteScope(scopes={\"storefront\"})|}\n     */",
+            "    /**\n     * @Route(\"/storefront\", methods={\"GET\"}, defaults={\"_routeScope\"={\"storefront\"}})\n     */",
         ),
     ] {
-        let source = format!(
-            "<?php\nclass Controller\n{{\n{docblock}\n    public function action(): void {{}}\n}}\n"
-        );
-        let document = document("file:///project/src/Controller.php", &source);
-        let updated = apply_only_migration_fix(
+        check_only_migration_fix(
             &migration(&index, 5),
-            &document,
+            "file:///project/src/Controller.php",
+            &controller_source(before),
             super::super::annotations::ROUTE_ANNOTATION_MIGRATION_FIX_ID,
+            &controller_source(after),
         );
-        assert!(updated.contains(expected), "{name}: {updated}");
-        assert!(!updated.contains(removed), "{name}: {updated}");
     }
 }
 
 #[test]
 fn shopware_criteria_inspection_moves_id_filter_to_constructor() {
     let inspection = super::super::new_shopware_criteria();
-    let document = document(
-        "file:///Criteria.php",
-        "<?php\nfunction load(string $id): void {\n    $criteria = new Criteria();\n    $criteria->addFilter(new EqualsFilter('id', $id));\n}\n",
+    let uri = "file:///Criteria.php";
+    let before = "<?php\nfunction load(string $id): void {\n    $criteria = new Criteria();\n    $criteria->addFilter(new EqualsFilter('{|shopware.criteria.id-filter:id|}', $id));\n}\n";
+    let (_, problems) = check_diagnostics(inspection.as_ref(), uri, before);
+    let presentation = check_fix(
+        inspection.as_ref(),
+        uri,
+        before,
+        problems[0].fixes[0].id.as_str(),
+        "<?php\nfunction load(string $id): void {\n    $criteria = new Criteria($id);\n}\n",
     );
-    let problems = inspect(inspection.as_ref(), &document);
-    assert_eq!(problems.len(), 1);
-    let bound = &problems[0].fixes[0];
-    let fix = quick_fix_with_id(inspection.as_ref(), &bound.id.0);
-    let context = fix_context(&document, &problems[0], bound, None);
-    let presentation = fix.present(&ctx(), &context).unwrap().expect("visible");
     assert_eq!(
         presentation.title,
         "Move ID constraint to Criteria constructor"
     );
-    let updated = apply_single(&fix, &context);
-    assert!(
-        updated.contains("$criteria = new Criteria($id);"),
-        "{updated}"
-    );
-    assert!(!updated.contains("EqualsFilter"), "{updated}");
 }

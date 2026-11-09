@@ -29,6 +29,10 @@ impl AdminI18nDeprecationAnalyzer {
 }
 
 impl ProblemAnalyzer for AdminI18nDeprecationAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(0)
+    }
+
     fn analyze(
         &self,
         _ctx: &Context,

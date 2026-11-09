@@ -3,14 +3,17 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use swlsp_lsp::{BoxError, Context, DiagnosticId, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{
+    BoxError, Context, DiagnosticId, InspectionScope, InspectionSpec, Problem, TextDocument,
+};
 use swlsp_lsp_protocol::DiagnosticSeverity;
 use swlsp_shopware_entityschema as entityschema;
 use swlsp_syntax::{TextRange, TextSize};
 use swlsp_uriutil::filepath;
 
 use super::util::go_dir;
-use crate::ProblemAnalyzer;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 /// Go `EntitySnapshotAnalyzer`: validates committed entity schema
 /// snapshots, their history graph, referenced migrations and schema drift.
@@ -27,7 +30,46 @@ impl EntitySnapshotAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for EntitySnapshotAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "shopware.entity_snapshot",
+        description: "Entity schema snapshots that no longer match the entity definitions or their migrations.",
+        domain: "shopware.entitySchema",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Json],
+        source: "shopware-lsp",
+        codes: &[
+            "shopware.entity_snapshot.invalid",
+            "shopware.entity_snapshot.graph",
+            "shopware.entity_snapshot.parent_missing",
+            "shopware.entity_snapshot.reconcile",
+            "shopware.entity_snapshot.migration_missing",
+            "shopware.entity_snapshot.migration_changed",
+            "shopware.entity_snapshot.schema_drift",
+        ],
+    };
+}
+
 impl ProblemAnalyzer for EntitySnapshotAnalyzer {
+    fn input_revision(&self, document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        // Only entity snapshots are checked, against the entity catalog, the
+        // other snapshots of the plugin (read from disk, stamped here) and
+        // the referenced migrations (PHP files the catalog's PHP index sees
+        // change).
+        if !document.uri.to_lowercase().ends_with(".snapshot.json") {
+            return Some(0);
+        }
+        // Without the indexed catalog the schema is scanned from disk.
+        let entities = self.entities.as_ref()?;
+        let path = swlsp_uriutil::path(&document.uri).ok()?;
+        let plugin_root = snapshot_plugin_root(&path)?;
+        Some(
+            entities
+                .revision()
+                .wrapping_add(snapshot_directory_stamp(&plugin_root)),
+        )
+    }
+
     fn analyze(
         &self,
         ctx: &Context,
@@ -193,4 +235,23 @@ fn snapshot_plugin_root(path: &str) -> Option<String> {
         return None;
     }
     Some(go_dir(&src))
+}
+
+/// A hash of the plugin's snapshot files by name, size and modification time.
+fn snapshot_directory_stamp(plugin_root: &str) -> u64 {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    let directory = filepath::join(&[plugin_root, entityschema::SNAPSHOT_RELATIVE_DIRECTORY]);
+    if let Ok(entries) = std::fs::read_dir(&directory) {
+        let mut stamps: Vec<_> = entries
+            .flatten()
+            .filter_map(|entry| {
+                let metadata = entry.metadata().ok()?;
+                Some((entry.file_name(), metadata.len(), metadata.modified().ok()))
+            })
+            .collect();
+        stamps.sort();
+        stamps.hash(&mut hasher);
+    }
+    hasher.finish()
 }

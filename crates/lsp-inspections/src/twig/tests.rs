@@ -21,11 +21,13 @@ use swlsp_twig::{TwigIndexer, VersioningService};
 
 use super::translation::{AddTranslationFix, AddTranslationPayload};
 use super::versioning::{
-    TWIG_PARENT_DELEGATION_FIX_ID, TWIG_VERSION_COMMENT_FIX_ID, TwigParentDelegationFix,
-    TwigVersionCommentFix,
+    TWIG_BLOCK_DIFF_FIX_ID, TWIG_PARENT_DELEGATION_FIX_ID, TWIG_VERSION_COMMENT_FIX_ID,
+    TwigParentDelegationFix, TwigVersionCommentFix,
 };
 use super::{new_template, new_twig_versioning};
-use crate::test_support::{StaticDocumentResolver, fix_context, inspect, quick_fix_with_id};
+use crate::test_support::{
+    StaticDocumentResolver, check_diagnostics, fix_context, quick_fix_with_id,
+};
 
 fn s(path: &Path) -> String {
     path.to_string_lossy().into_owned()
@@ -147,16 +149,10 @@ fn twig_versioning_inspection_declares_opt_in_missing_rule_and_bound_actions() {
     );
     assert!(!redundant.disabled_by_default);
 
-    let document = Arc::new(TextDocument::new(
-        swlsp_uriutil::file_uri(&s(&root.path().join(PLUGIN))),
-        "{% sw_extends '@Storefront/storefront/page/example.html.twig' %}\n{% block content %}local{% endblock %}",
-        1,
-    ));
-    let problems = inspect(inspection.as_ref(), &document);
-    assert_eq!(problems.len(), 1);
-    assert_eq!(
-        problems[0].id.as_str(),
-        TWIG_VERSIONING_COMMENT_MISSING_CODE
+    let (_, problems) = check_diagnostics(
+        inspection.as_ref(),
+        &swlsp_uriutil::file_uri(&s(&root.path().join(PLUGIN))),
+        "{% sw_extends '@Storefront/storefront/page/example.html.twig' %}\n{% block {|twig.versioning.comment_missing:content|} %}local{% endblock %}",
     );
     assert_eq!(problems[0].fixes.len(), 1);
     assert_eq!(
@@ -170,14 +166,11 @@ fn twig_versioning_inspection_binds_parent_delegation_fix() {
     let block = "{% block content %}same{% endblock %}";
     let (root, service) = versioning_fixture(block, "");
     let inspection = new_twig_versioning(Some(service));
-    let document = Arc::new(TextDocument::new(
-        swlsp_uriutil::file_uri(&s(&root.path().join(PLUGIN))),
-        &format!("{{% sw_extends '@Storefront/storefront/page/example.html.twig' %}}\n{block}"),
-        1,
-    ));
-    let problems = inspect(inspection.as_ref(), &document);
-    assert_eq!(problems.len(), 1);
-    assert_eq!(problems[0].id.as_str(), TWIG_BLOCK_REDUNDANT_OVERRIDE_CODE);
+    let (_, problems) = check_diagnostics(
+        inspection.as_ref(),
+        &swlsp_uriutil::file_uri(&s(&root.path().join(PLUGIN))),
+        "{% sw_extends '@Storefront/storefront/page/example.html.twig' %}\n{% block {|twig.block.redundant_override:content|} %}same{% endblock %}",
+    );
     assert_eq!(problems[0].fixes.len(), 1);
     assert_eq!(
         problems[0].fixes[0].id.as_str(),
@@ -316,16 +309,13 @@ fn template_inspection_creates_a_validated_file_plan() {
     let root = tempfile::tempdir().unwrap();
     let cache = tempfile::tempdir().unwrap();
     let twig = Arc::new(TwigIndexer::new(cache.path().join("twig-index"), None).unwrap());
-    let document = Arc::new(TextDocument::new(
-        swlsp_uriutil::file_uri(&s(&root.path().join("templates/page.html.twig"))),
-        "{% include 'missing/card.html.twig' %}\n",
-        1,
-    ));
     let inspection = new_template(&s(root.path()), Some(twig), None);
-    let problems = inspect(inspection.as_ref(), &document);
-    assert_eq!(problems.len(), 1);
+    let (document, problems) = check_diagnostics(
+        inspection.as_ref(),
+        &swlsp_uriutil::file_uri(&s(&root.path().join("templates/page.html.twig"))),
+        "{% include '{|twig.template.missing:missing/card.html.twig|}' %}\n",
+    );
     let problem = &problems[0];
-    assert_eq!(problem.id.as_str(), "twig.template.missing");
     assert_eq!(problem.fixes.len(), 1);
     assert_eq!(problem.fixes[0].id.as_str(), "create-template");
 
@@ -350,4 +340,33 @@ fn template_inspection_creates_a_validated_file_plan() {
             .join("templates/missing/card.html.twig")
             .exists()
     );
+}
+
+#[test]
+fn twig_versioning_inspection_reports_outdated_comment() {
+    let (root, service) = versioning_fixture("{% block content %}upstream{% endblock %}", "6.7.2");
+    let inspection = new_twig_versioning(Some(service));
+    let (_, problems) = check_diagnostics(
+        inspection.as_ref(),
+        &swlsp_uriutil::file_uri(&s(&root.path().join(PLUGIN))),
+        "{% sw_extends '@Storefront/storefront/page/example.html.twig' %}\n{|twig.versioning.outdated:{# shopware-block: deadbeef@6.6.0.0 #}|}\n{% block content %}local{% endblock %}",
+    );
+    let payload: TwigVersioningPayload =
+        serde_json::from_value(problems[0].payload.clone().unwrap()).unwrap();
+    assert_eq!(
+        payload,
+        TwigVersioningPayload {
+            block_name: "content".into(),
+            has_comment: true,
+            core_diff: true,
+            recorded_version: "6.6.0.0".into(),
+            upstream_path: s(&root.path().join(UPSTREAM)),
+        }
+    );
+    let fixes: Vec<&str> = problems[0]
+        .fixes
+        .iter()
+        .map(|bound| bound.id.as_str())
+        .collect();
+    assert_eq!(fixes, [TWIG_VERSION_COMMENT_FIX_ID, TWIG_BLOCK_DIFF_FIX_ID]);
 }

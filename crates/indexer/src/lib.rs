@@ -16,9 +16,11 @@ mod parsed_file;
 mod path_exclusions;
 mod paths;
 mod phar_sources;
+mod revisioned;
 mod scanner;
 mod scanner_index;
 mod store;
+mod value_codec;
 mod vendor_packages;
 mod version;
 mod watcher;
@@ -34,6 +36,7 @@ pub use indexer::{
 };
 pub use parsed_file::ParsedFile;
 pub use path_exclusions::PathExclusions;
+pub use revisioned::Revisioned;
 pub use scanner::{
     DEFAULT_MAX_FILE_SIZE_BYTES, FileScanner, FileScannerStats, FileSizeStats,
     MAXIMUM_SOURCE_FILE_BYTES, SkippedFileStats, should_skip_relative_path,

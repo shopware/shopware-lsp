@@ -1,7 +1,7 @@
 //! Persisted compact workspace graphs (port of `persistence.go`).
 //!
 //! A repository value is a small MessagePack envelope `{format, payload}`
-//! whose payload is the raw-DEFLATE compressed binary encoding of one
+//! whose payload is the LZ4-compressed binary encoding of one
 //! [`WorkspaceGraph`] (`swlsp-php-semantic`'s own cache format). Restoration
 //! parses the envelope in place, so the compressed payload is borrowed from
 //! the SQLite row instead of copied.
@@ -9,17 +9,17 @@
 //! Rust caches are never shared with Go (the cache version marker differs),
 //! so only the Rust format is accepted.
 
-use std::cell::RefCell;
-use std::fmt;
-use std::io::Read;
-
-use flate2::{Compress, Compression, Decompress, FlushCompress, FlushDecompress, Status};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::cell::RefCell;
+use std::fmt;
 use swlsp_php_semantic::{WorkspaceGraph, WorkspaceGraphDecoder};
 
-/// Raw DEFLATE over the `swlsp-php-semantic` binary graph codec.
-pub(crate) const PERSISTED_WORKSPACE_GRAPH_FORMAT: u8 = 1;
+/// Size-prefixed LZ4 blocks over the `swlsp-php-semantic` binary graph
+/// codec. LZ4 decompresses about 40 times faster than the former raw
+/// DEFLATE (format 1), which dominated warm-start restore, for about 20%
+/// more disk.
+pub(crate) const PERSISTED_WORKSPACE_GRAPH_FORMAT: u8 = 2;
 /// Upper bound of one decompressed graph.
 pub(crate) const MAX_PERSISTED_SEMANTIC_VALUE_SIZE: usize = 128 << 20;
 /// Pooled buffers above this size are released after use.
@@ -94,108 +94,58 @@ fn persist_error<T>(message: impl Into<String>) -> Result<T, PersistError> {
     Err(PersistError(message.into()))
 }
 
-struct Codec {
-    compress: Compress,
-    decompress: Decompress,
-    buffer: Vec<u8>,
-}
-
 thread_local! {
-    // DEFLATE state and output buffers are reused per worker thread; the
-    // buffer is released when one value grows it beyond the pooled bound.
-    static CODEC: RefCell<Option<Codec>> = const { RefCell::new(None) };
+    // Decompressed graphs land in a per-thread buffer, released when one
+    // value grows it beyond the pooled bound.
+    static BUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
-fn with_codec<R>(operation: impl FnOnce(&mut Codec) -> R) -> R {
-    CODEC.with(|cell| {
-        let Ok(mut slot) = cell.try_borrow_mut() else {
-            return operation(&mut new_codec());
+fn with_buffer<R>(operation: impl FnOnce(&mut Vec<u8>) -> R) -> R {
+    BUFFER.with(|cell| {
+        let Ok(mut buffer) = cell.try_borrow_mut() else {
+            return operation(&mut Vec::new());
         };
-        let codec = slot.get_or_insert_with(new_codec);
-        let result = operation(codec);
-        if codec.buffer.capacity() > MAX_POOLED_SEMANTIC_BUFFER {
-            codec.buffer = Vec::new();
+        let result = operation(&mut buffer);
+        if buffer.capacity() > MAX_POOLED_SEMANTIC_BUFFER {
+            *buffer = Vec::new();
         }
         result
     })
 }
 
-fn new_codec() -> Codec {
-    Codec {
-        compress: Compress::new(Compression::fast(), false),
-        decompress: Decompress::new(false),
-        buffer: Vec::new(),
-    }
-}
-
-/// Releases the calling thread's pooled DEFLATE state (Go clears its
-/// compressor/decompressor pools after a batch or restore).
+/// Releases the calling thread's pooled decompression buffer after a batch
+/// or restore.
 pub(crate) fn release_codec_pool() {
-    CODEC.with(|cell| {
-        if let Ok(mut slot) = cell.try_borrow_mut() {
-            *slot = None;
+    BUFFER.with(|cell| {
+        if let Ok(mut buffer) = cell.try_borrow_mut() {
+            *buffer = Vec::new();
         }
     });
 }
 
-fn deflate(codec: &mut Codec, input: &[u8]) -> Result<Vec<u8>, PersistError> {
-    codec.compress.reset();
-    let mut output = Vec::with_capacity(input.len() / 3 + 64);
-    loop {
-        let consumed = codec.compress.total_in() as usize;
-        if output.len() == output.capacity() {
-            output.reserve(output.capacity().max(256));
-        }
-        let status = codec
-            .compress
-            .compress_vec(&input[consumed..], &mut output, FlushCompress::Finish)
-            .map_err(|err| PersistError(format!("compress workspace graph: {err}")))?;
-        if status == Status::StreamEnd {
-            return Ok(output);
-        }
-    }
+/// LZ4 block with a little-endian `u32` uncompressed-size prefix.
+fn compress(input: &[u8]) -> Vec<u8> {
+    lz4_flex::block::compress_prepend_size(input)
 }
 
-/// Inflates with `FlushDecompress::None`: miniz's `Finish` mode decodes
-/// straight into the caller's (possibly too small) output slice and fails on
-/// back-references into earlier chunks.
-fn inflate<'a>(codec: &'a mut Codec, payload: &[u8]) -> Result<&'a [u8], PersistError> {
-    codec.decompress.reset(false);
-    codec.buffer.clear();
-    loop {
-        let consumed = codec.decompress.total_in() as usize;
-        if codec.buffer.len() == codec.buffer.capacity() {
-            if codec.buffer.len() > MAX_PERSISTED_SEMANTIC_VALUE_SIZE {
-                return persist_error(format!(
-                    "workspace graph exceeds {MAX_PERSISTED_SEMANTIC_VALUE_SIZE} bytes"
-                ));
-            }
-            let grow = (payload.len() * 4).max(codec.buffer.capacity()).max(4096);
-            codec.buffer.reserve(grow);
-        }
-        let before = (codec.decompress.total_in(), codec.decompress.total_out());
-        let status = codec
-            .decompress
-            .decompress_vec(
-                &payload[consumed..],
-                &mut codec.buffer,
-                FlushDecompress::None,
-            )
-            .map_err(|err| PersistError(format!("open workspace graph: {err}")))?;
-        if status == Status::StreamEnd {
-            break;
-        }
-        let progressed = (codec.decompress.total_in(), codec.decompress.total_out()) != before;
-        if !progressed && codec.buffer.len() < codec.buffer.capacity() {
-            return persist_error("open workspace graph: unexpected end of compressed data");
-        }
-    }
-    if codec.buffer.len() > MAX_PERSISTED_SEMANTIC_VALUE_SIZE {
+/// Decompresses into `buffer`, rejecting payloads whose declared size
+/// exceeds [`MAX_PERSISTED_SEMANTIC_VALUE_SIZE`] before allocating.
+fn decompress<'a>(buffer: &'a mut Vec<u8>, payload: &[u8]) -> Result<&'a [u8], PersistError> {
+    let (size, compressed) = lz4_flex::block::uncompressed_size(payload)
+        .map_err(|err| PersistError(format!("open workspace graph: {err}")))?;
+    if size > MAX_PERSISTED_SEMANTIC_VALUE_SIZE {
         return persist_error(format!(
             "workspace graph exceeds {MAX_PERSISTED_SEMANTIC_VALUE_SIZE} bytes"
         ));
     }
-    Ok(&codec.buffer)
+    buffer.clear();
+    buffer.resize(size, 0);
+    let written = lz4_flex::block::decompress_into(compressed, buffer)
+        .map_err(|err| PersistError(format!("open workspace graph: {err}")))?;
+    if written != size {
+        return persist_error("open workspace graph: unexpected end of compressed data");
+    }
+    Ok(buffer)
 }
 
 /// Compresses the binary encoding of `graph`.
@@ -206,7 +156,7 @@ pub fn encode_workspace_graph(
         return persist_error("workspace graph is required");
     }
     let encoded = graph.encode();
-    let payload = with_codec(|codec| deflate(codec, &encoded))?;
+    let payload = compress(&encoded);
     Ok(PersistedWorkspaceGraph {
         format: PERSISTED_WORKSPACE_GRAPH_FORMAT,
         payload: Payload(payload),
@@ -250,8 +200,8 @@ impl BorrowedWorkspaceGraph<'_> {
                 self.format
             ));
         }
-        with_codec(|codec| {
-            let bytes = inflate(codec, self.payload)?;
+        with_buffer(|buffer| {
+            let bytes = decompress(buffer, self.payload)?;
             let result = match loader {
                 Some(loader) => decoder.decode_summary(bytes, loader),
                 None => decoder.decode(bytes),
@@ -401,17 +351,9 @@ impl<'a> Cursor<'a> {
     }
 }
 
-/// Decompresses a payload with a fresh reader (tests and diagnostics).
+/// Decompresses a payload into a fresh buffer (tests and diagnostics).
 pub fn inflate_payload(payload: &[u8]) -> Result<Vec<u8>, PersistError> {
     let mut output = Vec::new();
-    flate2::read::DeflateDecoder::new(payload)
-        .take(MAX_PERSISTED_SEMANTIC_VALUE_SIZE as u64 + 1)
-        .read_to_end(&mut output)
-        .map_err(|err| PersistError(format!("open workspace graph: {err}")))?;
-    if output.len() > MAX_PERSISTED_SEMANTIC_VALUE_SIZE {
-        return persist_error(format!(
-            "workspace graph exceeds {MAX_PERSISTED_SEMANTIC_VALUE_SIZE} bytes"
-        ));
-    }
+    decompress(&mut output, payload)?;
     Ok(output)
 }

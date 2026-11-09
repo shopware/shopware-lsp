@@ -273,10 +273,19 @@ pub(crate) fn numeric_index(value: &str) -> i32 {
 /// Go `containsFoldASCIIBytes`: ASCII case-insensitive substring search.
 pub(crate) fn contains_fold_ascii(content: &[u8], needle: &str) -> bool {
     let needle = needle.as_bytes();
-    if needle.is_empty() {
+    let Some((&first, _)) = needle.split_first() else {
         return true;
-    }
-    content
-        .windows(needle.len())
-        .any(|window| window.eq_ignore_ascii_case(needle))
+    };
+    // Candidate starts are found with a vectorized search for either case
+    // of the first byte; indexers prefilter every PHP file with this.
+    memchr::memchr2_iter(
+        first.to_ascii_lowercase(),
+        first.to_ascii_uppercase(),
+        content,
+    )
+    .any(|start| {
+        content
+            .get(start..start + needle.len())
+            .is_some_and(|window| window.eq_ignore_ascii_case(needle))
+    })
 }

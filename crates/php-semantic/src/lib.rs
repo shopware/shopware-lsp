@@ -31,6 +31,7 @@ mod canon;
 mod codec;
 mod document;
 mod hierarchy;
+mod lazy_returns;
 mod packed;
 mod references;
 mod relations;
@@ -59,6 +60,7 @@ pub use document::{
     ReferenceTargets, Scope, ScopeId, ScopeKind, TypeFact, TypeFactProfileStats, TypeSource,
     node_identity, profile_type_facts,
 };
+pub use lazy_returns::ReturnInference;
 pub use snapshot::{ReferenceLocation, Snapshot};
 pub use stats::WorkspaceStorageStats;
 pub use store::{Store, WorkspaceRestoreCapacity};

@@ -112,6 +112,18 @@ impl IndexedCatalog {
         candidates
     }
 
+    /// Advances whenever [`Self::scan`] may answer differently: the PHP index
+    /// (with its type extensions), the entity sources and readiness, which
+    /// can flip back (doubling keeps the pairs distinct).
+    pub fn revision(&self) -> u64 {
+        use swlsp_indexer::Revisioned;
+        let ready = match &self.readiness {
+            Some(readiness) => readiness.ready().unwrap_or(false),
+            None => true,
+        };
+        (self.php.revision() + self.sources.revision()) * 2 + u64::from(ready)
+    }
+
     pub fn scan(
         &self,
         plugin_root: &str,

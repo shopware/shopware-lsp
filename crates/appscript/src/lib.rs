@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use swlsp_indexer::{
-    DataIndexer, Error, Indexer, Mutation, ParsedFile, Result, Store, TransactionalClearer,
-    TransactionalRemover,
+    DataIndexer, Error, Indexer, Mutation, ParsedFile, Prepared, PreparingIndexer, Result, Store,
+    TransactionalClearer, TransactionalRemover,
 };
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::{PHP_MEMBER_ACCESS, PHP_SCOPED_ACCESS, PHP_STRING};
@@ -125,20 +125,104 @@ impl Index {
         Ok(result)
     }
 
-    fn save(
-        &self,
-        file: &ParsedFile,
-        hooks: &[(String, Hook)],
-        facades: &[(String, Facade)],
-    ) -> Result<()> {
+    /// Stores extracted hooks and facades.
+    fn persist(&self, file: &ParsedFile, prepared: &PreparedScripts) -> Result<()> {
+        let Some(extracted) = &prepared.0 else {
+            return Ok(());
+        };
         let path = file.path();
-        let hooks = hooks.iter().map(|(key, hook)| (key.as_str(), hook));
+        let hooks = extracted
+            .hooks
+            .iter()
+            .map(|(key, hook)| (key.as_str(), hook));
         self.hooks
             .batch_save_items_in(file.mutation(), [(path, hooks)])?;
-        let facades = facades.iter().map(|(key, facade)| (key.as_str(), facade));
+        let facades = extracted
+            .facades
+            .iter()
+            .map(|(key, facade)| (key.as_str(), facade));
         self.facades
             .batch_save_items_in(file.mutation(), [(path, facades)])
     }
+}
+
+/// Hooks and facades extracted from one file; `None` leaves the file alone.
+struct PreparedScripts(Option<ExtractedScripts>);
+
+#[derive(Default)]
+struct ExtractedScripts {
+    hooks: Vec<(String, Hook)>,
+    facades: Vec<(String, Facade)>,
+}
+
+/// Parses one PHP file's hooks and facades without writing anything.
+fn extract_scripts(file: &ParsedFile) -> PreparedScripts {
+    if file.extension() != ".php" {
+        return PreparedScripts(None);
+    }
+    let source = file.source();
+    if !source.contains("Hook") && !source.contains("Facade") {
+        return PreparedScripts(Some(ExtractedScripts::default()));
+    }
+    let Some(tree) = file.syntax_tree() else {
+        return PreparedScripts(None);
+    };
+    let mut hooks = Vec::new();
+    let mut facades = Vec::new();
+    for class in query::classes(&tree.root()) {
+        let class_name = query::class_name(&class);
+        if class_name.is_empty() {
+            continue;
+        }
+        let (line, _) = file
+            .line_index()
+            .position(class.range_trimmed_trivia().start().into());
+        let line = line + 1;
+        if (class_name.ends_with("HookFactory") || class_name.ends_with("FacadeFactory"))
+            && let Some(name) = method_literal(&class, "getName")
+        {
+            let facade = Facade {
+                name,
+                class: class_name.clone(),
+                file: file.path().to_owned(),
+                line,
+                default: class_name == "AclFacadeHookFactory",
+            };
+            upsert(&mut facades, class_name.clone(), facade);
+        }
+        if !class_name.ends_with("Hook") {
+            continue;
+        }
+        let mut hook = Hook {
+            class: class_name.clone(),
+            file: file.path().to_owned(),
+            line,
+            ..Hook::default()
+        };
+        if let Some(parent) = query::class_extends(&class).first() {
+            hook.parent = short_class(parent).to_owned();
+        }
+        hook.name = method_literal(&class, "getName")
+            .or_else(|| hook_name_constant(tree.node_text(&class)).map(str::to_owned))
+            .unwrap_or_default();
+        for method in query::methods(&class) {
+            if query::method_name(&method) != "getServiceIds" {
+                continue;
+            }
+            let mut seen = HashSet::new();
+            for access in method
+                .descendants()
+                .filter(|node| matches!(node.kind(), PHP_SCOPED_ACCESS | PHP_MEMBER_ACCESS))
+            {
+                let factory = short_class(&query::class_constant_name(&access)).to_owned();
+                if !factory.is_empty() && seen.insert(factory.clone()) {
+                    hook.service_factories.push(factory);
+                }
+            }
+        }
+        upsert(&mut hooks, class_name, hook);
+    }
+    PreparedScripts(Some(ExtractedScripts { hooks, facades }))
 }
 
 /// Inserts or replaces `key`, keeping first-insertion order (Go map semantics
@@ -156,72 +240,7 @@ impl Indexer for Index {
     }
 
     fn index(&self, file: &ParsedFile) -> Result<()> {
-        if file.extension() != ".php" {
-            return Ok(());
-        }
-        let source = file.source();
-        if !source.contains("Hook") && !source.contains("Facade") {
-            return self.save(file, &[], &[]);
-        }
-        let Some(tree) = file.syntax_tree() else {
-            return Ok(());
-        };
-        let mut hooks = Vec::new();
-        let mut facades = Vec::new();
-        for class in query::classes(&tree.root()) {
-            let class_name = query::class_name(&class);
-            if class_name.is_empty() {
-                continue;
-            }
-            let (line, _) = file
-                .line_index()
-                .position(class.range_trimmed_trivia().start().into());
-            let line = line + 1;
-            if (class_name.ends_with("HookFactory") || class_name.ends_with("FacadeFactory"))
-                && let Some(name) = method_literal(&class, "getName")
-            {
-                let facade = Facade {
-                    name,
-                    class: class_name.clone(),
-                    file: file.path().to_owned(),
-                    line,
-                    default: class_name == "AclFacadeHookFactory",
-                };
-                upsert(&mut facades, class_name.clone(), facade);
-            }
-            if !class_name.ends_with("Hook") {
-                continue;
-            }
-            let mut hook = Hook {
-                class: class_name.clone(),
-                file: file.path().to_owned(),
-                line,
-                ..Hook::default()
-            };
-            if let Some(parent) = query::class_extends(&class).first() {
-                hook.parent = short_class(parent).to_owned();
-            }
-            hook.name = method_literal(&class, "getName")
-                .or_else(|| hook_name_constant(tree.node_text(&class)).map(str::to_owned))
-                .unwrap_or_default();
-            for method in query::methods(&class) {
-                if query::method_name(&method) != "getServiceIds" {
-                    continue;
-                }
-                let mut seen = HashSet::new();
-                for access in method
-                    .descendants()
-                    .filter(|node| matches!(node.kind(), PHP_SCOPED_ACCESS | PHP_MEMBER_ACCESS))
-                {
-                    let factory = short_class(&query::class_constant_name(&access)).to_owned();
-                    if !factory.is_empty() && seen.insert(factory.clone()) {
-                        hook.service_factories.push(factory);
-                    }
-                }
-            }
-            upsert(&mut hooks, class_name, hook);
-        }
-        self.save(file, &hooks, &facades)
+        self.persist(file, &extract_scripts(file))
     }
 
     fn removed_files(&self, paths: &[String]) -> Result<()> {
@@ -239,12 +258,29 @@ impl Indexer for Index {
         join(self.hooks.clear(), self.facades.clear())
     }
 
+    fn as_preparing(&self) -> Option<&dyn PreparingIndexer> {
+        Some(self)
+    }
+
     fn as_transactional_remover(&self) -> Option<&dyn TransactionalRemover> {
         Some(self)
     }
 
     fn as_transactional_clearer(&self) -> Option<&dyn TransactionalClearer> {
         Some(self)
+    }
+}
+
+impl PreparingIndexer for Index {
+    fn prepare(&self, file: &ParsedFile) -> Result<Option<Prepared>> {
+        Ok(Some(Box::new(extract_scripts(file))))
+    }
+
+    fn index_prepared(&self, file: &ParsedFile, prepared: Option<&Prepared>) -> Result<()> {
+        match prepared.and_then(|value| value.downcast_ref::<PreparedScripts>()) {
+            Some(prepared) => self.persist(file, prepared),
+            None => self.index(file),
+        }
     }
 }
 
@@ -338,6 +374,13 @@ fn hook_name_constant(text: &str) -> Option<&str> {
     None
 }
 
+/// Advanced by every committed change to the indexed hooks and facades.
+impl swlsp_indexer::Revisioned for Index {
+    fn revision(&self) -> u64 {
+        self.hooks.revision() + self.facades.revision()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -377,6 +420,34 @@ mod tests {
 
         assert!(!index.services_for_hook("unknown").unwrap().found);
         index.close().unwrap();
+    }
+
+    #[test]
+    fn prepared_indexing_matches_direct_indexing() {
+        let dir = tempfile::tempdir().unwrap();
+        let direct = Index::new(dir.path().join("direct"), None).unwrap();
+        let prepared = Index::new(dir.path().join("prepared"), None).unwrap();
+        let path = "/src/PageHooks.php";
+        let source = "<?php\nclass RepositoryFacadeHookFactory extends HookServiceFactory {\n    public function getName(): string { return 'repository'; }\n}\nclass PageLoadedHook extends Hook {\n    public const HOOK_NAME = 'page-loaded';\n    public static function getServiceIds(): array { return [RepositoryFacadeHookFactory::class]; }\n}";
+        direct
+            .index(&ParsedFile::new(path, source.as_bytes().to_vec()))
+            .unwrap();
+        let file = ParsedFile::new(path, source.as_bytes().to_vec());
+        let data = prepared.prepare(&file).unwrap();
+        prepared.index_prepared(&file, data.as_ref()).unwrap();
+
+        assert_eq!(direct.hooks().unwrap().len(), 1);
+        assert_eq!(direct.facades().unwrap().len(), 1);
+        assert_eq!(prepared.hooks().unwrap(), direct.hooks().unwrap());
+        assert_eq!(prepared.facades().unwrap(), direct.facades().unwrap());
+
+        let cleared = ParsedFile::new(path, b"<?php class Other {}".to_vec());
+        let data = prepared.prepare(&cleared).unwrap();
+        prepared.index_prepared(&cleared, data.as_ref()).unwrap();
+        assert!(prepared.hooks().unwrap().is_empty());
+        assert!(prepared.facades().unwrap().is_empty());
+        direct.close().unwrap();
+        prepared.close().unwrap();
     }
 
     #[test]

@@ -50,7 +50,7 @@ be.
 ```
 $SHOPWARE_LSP_CACHE_DIR (or the user cache dir)/shopware-lsp/<sha256 of root>/
 ├── indexes.db                  the single namespaced store (SQLite, WAL)
-├── file_scanner.db             file_hashes: path → size, mtime
+├── file_scanner.db             file_hashes: path → size, mtime, content hash
 ├── index_version               "<INDEX_VERSION>-rs"; compared against swlsp_indexer::INDEX_VERSION
 ├── configuration_fingerprint   structural configuration hash
 └── phar/                       extracted PHAR sources
@@ -63,31 +63,51 @@ aliasing or path-length problems.
 `indexes.db` holds one wide table plus the workspace-symbol catalog:
 
 ```sql
+CREATE TABLE paths (id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE);
+CREATE TABLE namespaces (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
 CREATE TABLE data (
-    namespace TEXT NOT NULL,
-    file_path TEXT NOT NULL,
+    namespace INTEGER NOT NULL,   -- xxh3 of the namespace name
+    path_id   INTEGER NOT NULL,   -- paths.id
     key       TEXT NOT NULL,
     value     BLOB NOT NULL
 );
 CREATE INDEX idx_data_namespace_key  ON data(namespace, key);
-CREATE INDEX idx_data_namespace_path ON data(namespace, file_path);
+CREATE INDEX idx_data_namespace_path ON data(namespace, path_id);
 ```
 
 Every repository is a `(namespace, key) → value` map where each row remembers
-the `file_path` it came from. That single design decision buys three
+the source path it came from. That single design decision buys three
 properties:
 
 - **Lookup by key** is one indexed query, regardless of how many namespaces
   exist.
-- **File replacement** is `DELETE WHERE namespace = ? AND file_path = ?`
+- **File replacement** is `DELETE WHERE namespace = ? AND path_id = ?`
   followed by inserts — a changed file cannot leave stale rows behind.
 - **Adding a repository** needs no DDL. A new domain picks a namespace string
   and starts writing.
 
+Paths and namespaces are **interned as integers**, the way IntelliJ's VFS file
+ids and rust-analyzer's `FileId` identify files. An absolute path is stored
+once in `paths`; rows and both secondary indexes carry an 8-byte id instead of
+a ~100-byte string, which shrank the database and the pages each commit
+rewrites. `MutationConnection::path_id` resolves (and creates) ids, cached per
+transaction; reads join `paths` and still order by the path text, so results
+stay deterministic regardless of id assignment order. A namespace id is the
+xxh3 hash of its name (`namespaces` maps it back for inspection), so
+repositories need no lookup. `Store::close` drops paths no row references any
+more.
+
 Values are serde types encoded as MessagePack with field names
 (`rmp_serde::encode::write_named`, so `#[serde(default)]` fields stay
 compatible), through a per-thread reusable buffer to keep cold-index
-allocation bounded.
+allocation bounded. Values of 256 bytes or more are stored **LZ4-compressed**
+when that is smaller (`crates/indexer/src/value_codec.rs`): `0xc1` (a byte
+MessagePack never uses), the uncompressed length, then one LZ4 block. Named
+MessagePack repeats every field name in every value, so this more than halves
+the repository values of a Shopware checkout; decoding is transparent to every
+read API. A repository whose values are already compressed opts out with
+`without_value_compression()` (the PHP workspace graphs, which are LZ4 blocks
+of their own binary codec).
 
 Pragmas set at open time (`crates/indexer/src/store.rs`):
 
@@ -276,8 +296,8 @@ pass, and it makes indexing order deterministic.
 
 ## Change detection
 
-`file_scanner.db` stores `path → (size, mtime)`. The scanner's `file_change`
-compares the file's metadata against the stored pair:
+`file_scanner.db` stores `path → (size, mtime, hash)`. The scanner's
+`file_change` compares the file's metadata against the stored pair:
 
 ```rust
 // crates/indexer/src/scanner_index.rs
@@ -290,10 +310,18 @@ if stored == Some(meta) {
 let content = std::fs::read(path)?;
 ```
 
-Size plus nanosecond mtime, not a content hash. Hashing every file on every
-start would mean reading the entire workspace; stat is a metadata read. The
-trade-off is that a modification preserving both size and mtime is missed —
-acceptable, because the fallback is an explicit `index --force` or a version bump.
+Size plus nanosecond mtime decide whether a file is read at all: hashing every
+file on every start would mean reading the entire workspace, while stat is a
+metadata read. A modification preserving both size and mtime is missed —
+acceptable, because the fallback is an explicit `index --force` or a version
+bump.
+
+When the metadata differs, the content decides, as with clangd's shard digests
+and rust-analyzer's VFS: the stored xxh3 **content hash** is compared with the
+hash of the bytes just read, and an equal hash only refreshes the tracked
+state (`Change::Touched`) — no parse, no indexer. A `git checkout` round trip,
+`touch`, a re-extracted dependency or a container volume that resets mtimes no
+longer forces a reindex of every affected file.
 
 `index_all` additionally collects **stale** paths: entries in `file_hashes` that
 discovery did not produce. Those files were deleted while the server was not
@@ -357,8 +385,8 @@ if !errors.is_empty() {
     if batch.len() > 1 && !self.cancel.is_cancelled() {
         let middle = batch.len() / 2;
         let (left, right) = batch.split_at_mut(middle);
-        self.index_with_store(left, successful);
-        self.index_with_store(right, successful);
+        self.index_with_store(left);
+        self.index_with_store(right);
         return;
     }
     self.record_error(Error::join(errors).expect("errors are not empty"));
@@ -369,10 +397,23 @@ if !errors.is_empty() {
 So one pathological file does not cost 49 healthy files their index entries; the
 recursion isolates it and everything else commits.
 
+**Group commit.** Batches run as *grouped* mutations
+(`Store::begin_grouped_mutation`): each is a SAVEPOINT of one longer
+transaction that commits every eight batches and when the run ends
+(`Store::commit_grouped`). Every commit appends each B-tree page it dirtied to
+the WAL, and consecutive batches dirty the same index pages, so committing
+each 50-file batch wrote several times the final database size. A failing
+batch rolls back to its savepoint without losing the batches before it. Cache
+invalidation and `after_commit` callbacks of grouped mutations wait for the real
+commit, and so do the batch's file states, which are handed over by an
+`after_commit` callback. Any non-grouped mutation first commits a pending
+group, so standalone writes stay durable when they return.
+
 **Cancellation.** The producer, the workers, and `index_with_store` all check
-the `CancelToken`. A cancelled batch is rolled back. File states are still
-published on the cancelled path, but only for batches whose mutation already
-committed, so nothing is recorded as indexed that was not fully committed.
+the `CancelToken`. A cancelled batch is rolled back; batches that already
+succeeded are committed. File states are still published on the cancelled
+path, but only for batches whose mutation committed, so nothing is recorded as
+indexed that was not fully committed.
 
 **Memory reclamation.** Prepared values and parse trees live only for their
 batch. After the run, `index_files` drops the per-thread MessagePack encode
@@ -461,9 +502,11 @@ contributes none keeps its old rows. A path must appear at most once.
 | `get_all_values()` / `get_all_values_view()` | Whole namespace, owned / viewed |
 | `get_values_by_path(path)` / `get_values_by_path_view(path)` | Everything one file contributed |
 | `visit_all_values(visitor)` | Streams decoded values without retaining them in the repository cache |
-| `visit_all_encoded_values(visitor)` | Streams raw MessagePack — no decode, no row copy |
+| `visit_all_encoded_values(visitor)` | Streams MessagePack bytes (decompressed when stored compressed) without decoding |
 | `count_all_values()` | Row count, for reserving a final in-memory representation |
 | `get_all_keys()`, `get_all_keys_by_path(path)`, `get_all_file_paths()` | Key/path enumeration |
+| `get_all_file_paths_view()` | Cached sorted path list (`Arc<[String]>`) |
+| `revision()` | Counter advanced after every committed write that changed rows; key derived data by it |
 | `has_any_key_except_fold(exclusions)` | Existence check without materializing the key catalog |
 
 The `_view` and `visit_` variants exist for a specific reason: cloning a large
@@ -475,6 +518,13 @@ representation.
 
 `get_all_file_paths()` deserves a mention: loading it once lets an indexer skip a
 SQLite lookup for every file rejected by a cheap content check.
+
+Data *derived* from a repository (a grouped catalog, resolved names) is not
+covered by these caches. Do not rebuild it per document or per problem on a
+request path: memoize it under `revision()` (plus `PhpIndex::revision()` when
+the derivation consults the PHP index), read before deriving so a change
+committed meanwhile advances past the memo. `swlsp_event::Index::events_view`
+is the reference implementation.
 
 ## Deletion and clearing
 
@@ -503,6 +553,9 @@ would be quadratic. `BatchIndexer` solves it:
 pub trait BatchIndexer: Send + Sync {
     fn begin_indexing_batch(&self, candidate_files: &[String]);
     fn end_indexing_batch(&self) -> Result<()>;
+    fn settle_indexing_batch(&self, cancel: &CancelToken, workers: usize) -> Result<()> {
+        Ok(())
+    }
 }
 ```
 
@@ -510,9 +563,43 @@ pub trait BatchIndexer: Send + Sync {
   it for allocation hints only.
 - `end_indexing_batch` is called for **every** begin — including when the run
   is cancelled or a file fails. Treat it as a guard, not a success callback.
+- `settle_indexing_batch` runs after every batch indexer ended a successful,
+  uncancelled run, before update listeners are notified.
 
 The pattern is: accumulate committed file updates during the run, then publish
 one new immutable generation in `end_indexing_batch`.
+
+### Settling cross-file results
+
+Every file of a run is prepared against the generation published *before* the
+run. Anything prepared data derives from other files of the same run is
+therefore missing: during a cold index nothing else is visible yet, while a
+later single-file reindex sees the whole workspace. Without a correction the
+persisted result would depend on how a file was last indexed.
+
+The PHP index has such data: a function or method without a declared return
+type gets one inferred from its `return` statements, and those can call into
+other files. The analyzer reports which declarations it inferred, and
+`PhpIndex` records those files during the run (`crates/php/src/settle.rs`).
+`settle_indexing_batch` then analyzes them again against the complete
+generation, on the scanner's worker count, and persists and publishes the
+graphs that changed. Later passes revisit only files that call a function or
+method name whose inferred return type the previous pass changed, so chains
+of inferred functions converge (at most four passes). A file whose content
+changed since the run is skipped; the watcher reindexes it. A run with a
+single PHP file is not settled: it already saw every other file.
+
+On a Shopware checkout the first pass re-analyzes about 1,700 files and
+changes about 1,550 of them; the second changes about 20, the third none.
+Settling adds about 2 s to a cold index.
+
+Settling makes a run agree with a later reindex of the same files. It does
+not track dependents across runs: editing a file does not refresh the
+*stored* return types other files inferred from it. Requests do not rely on
+those: a published generation recomputes inferred return types on demand
+(see [on-demand return types](php-semantic-engine.md#on-demand-inferred-return-types)).
+Indexing analyzes against `PhpIndex::indexing_snapshot`, which uses the
+stored types, so preparing a file never analyzes other files.
 
 ## Workspace symbols
 
@@ -530,7 +617,8 @@ pub trait WorkspaceSymbolContributor: Send + Sync {
 An indexer that already computed a prepared value returns its declarations from
 it — no second parse. An indexer can also push symbols mid-pass with
 `file.add_workspace_symbols(...)`. Both sets are persisted in the same file
-transaction as the domain data.
+transaction as the domain data. Symbol rows reference their owning file by
+interned path id (`owner_id`, see [storage layout](#storage-layout)).
 
 Two mechanics matter:
 

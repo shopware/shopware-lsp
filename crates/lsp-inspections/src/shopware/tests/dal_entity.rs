@@ -3,9 +3,10 @@ use std::sync::Arc;
 use swlsp_indexer::{Indexer, ParsedFile};
 use swlsp_shopware_dal::Index as DalIndex;
 
-use crate::SUGGESTION_FIX_ID;
-use crate::shopware::*;
-use crate::test_support::{apply_single, document, fix_context, inspect, quick_fix_with_id};
+use swlsp_lsp_diagnostics::DalEntityAnalyzer;
+
+use crate::test_support::{apply_single, check_diagnostics, fix_context, quick_fix_with_id};
+use crate::{SUGGESTION_FIX_ID, analyzer_inspection};
 
 #[test]
 fn dal_entity_inspection_builds_typo_replacement() {
@@ -26,15 +27,13 @@ class ProductDefinition extends EntityDefinition
             .to_vec(),
         ))
         .unwrap();
-    let document = document(
+    let inspection = analyzer_inspection(DalEntityAnalyzer::new(Some(Arc::new(index))));
+    let (document, problems) = check_diagnostics(
+        inspection.as_ref(),
         "file:///project/src/Resources/app/administration/consumer.ts",
-        "Shopware.EntityDefinition.get('prodcut');",
+        "Shopware.EntityDefinition.get('{|shopware.dal.entity-not-found:prodcut|}');",
     );
-    let inspection = new_dal_entity(Some(Arc::new(index)));
-    let problems = inspect(inspection.as_ref(), &document);
-    assert_eq!(problems.len(), 1);
     let problem = &problems[0];
-    assert_eq!(problem.id.as_str(), "shopware.dal.entity-not-found");
     assert!(!problem.fixes.is_empty());
     let mut updated = String::new();
     for bound in &problem.fixes {

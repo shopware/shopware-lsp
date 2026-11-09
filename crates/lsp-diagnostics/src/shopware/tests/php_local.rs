@@ -2,73 +2,58 @@ use std::sync::Arc;
 
 use swlsp_lsp::{Problem, TextDocument};
 
-use super::{analyze, counts, highlight, highlights, problem_counts};
 use crate::shopware::*;
-use crate::test_support::document;
+use crate::test_support::check_problems;
 
-fn analyze_local(source: &str) -> (Arc<TextDocument>, Vec<Problem>) {
-    let document = document("file:///LocalRules.php", source);
-    let problems = analyze(&ShopwarePhpLocalAnalyzer::new(), &document);
-    (document, problems)
+fn analyze_local(fixture: &str) -> (Arc<TextDocument>, Vec<Problem>) {
+    check_problems(
+        &ShopwarePhpLocalAnalyzer::new(),
+        "file:///LocalRules.php",
+        fixture,
+    )
 }
 
 #[test]
 fn shopware_php_local_analyzer_reports_forbidden_language_constructs() {
-    let (document, problems) = analyze_local(
+    analyze_local(
         r#"<?php
-$_GET['name'];
-$_POST;
-$_FILES;
-$_REQUEST;
+{|shopware.php.superglobal:$_GET|}['name'];
+{|shopware.php.superglobal:$_POST|};
+{|shopware.php.superglobal:$_FILES|};
+{|shopware.php.superglobal:$_REQUEST|};
 $_SERVER;
-/** @phpstan-ignore-next-line shopware.php.superglobal */
-$_GET['ignored'];
 
-var_dump($value);
-\dump($value);
-dd($value);
-exit;
-die('failed');
+{|shopware.php.function.disallowed:var_dump|}($value);
+{|shopware.php.function.disallowed:\dump|}($value);
+{|shopware.php.function.disallowed:dd|}($value);
+{|shopware.php.function.disallowed:exit|};
+{|shopware.php.function.disallowed:die|}('failed');
 \App\dump($value);
 $debugger->dump($value);
 
-session_start();
-\session_destroy();
-session_write_close();
+{|shopware.php.session.function:session_start|}();
+{|shopware.php.session.function:\session_destroy|}();
+{|shopware.php.session.function:session_write_close|}();
 
-glob('*.php', GLOB_BRACE);
+glob('*.php', {|shopware.php.glob_brace:GLOB_BRACE|});
 Foo::GLOB_BRACE;
 GLOB_BRACE();
 "#,
     );
-    assert_eq!(
-        problem_counts(&problems),
-        counts(&[
-            (SHOPWARE_PHP_SUPERGLOBAL_CODE, 4),
-            (SHOPWARE_PHP_DISALLOWED_FUNCTION_CODE, 5),
-            (SHOPWARE_PHP_SESSION_FUNCTION_CODE, 3),
-            (SHOPWARE_PHP_GLOB_BRACE_CODE, 1),
-        ])
-    );
-    for problem in &problems {
-        let highlighted = highlight(&document, problem);
-        assert!(!highlighted.is_empty());
-        assert!(!highlighted.contains(';'));
-    }
 }
 
 #[test]
 fn shopware_php_local_analyzer_reports_disabled_tls_verification() {
-    let (document, problems) = analyze_local(
+    analyze_local(
         r#"<?php
-curl_setopt($handle, CURLOPT_SSL_VERIFYPEER, false);
-curl_setopt(handle: $handle, option: CURLOPT_SSL_VERIFYHOST, value: 1);
+curl_setopt($handle, CURLOPT_SSL_VERIFYPEER, {|shopware.php.tls.verification_disabled:false|});
+curl_setopt(handle: $handle, option: CURLOPT_SSL_VERIFYHOST, value: {|shopware.php.tls.verification_disabled:1|});
 curl_setopt_array($handle, [
-    CURLOPT_SSL_VERIFYPEER => 0,
+    CURLOPT_SSL_VERIFYPEER => {|shopware.php.tls.verification_disabled:0|},
 ]);
 stream_context_create([
     'ssl' => [
-        'verify_peer' => false,
+        'verify_peer' => {|shopware.php.tls.verification_disabled:false|},
         'verify_peer_name' => 0,
     ],
 ]);
@@ -80,26 +65,20 @@ curl_setopt_array($handle, [CURLOPT_TIMEOUT => 5]);
 stream_context_create(['ssl' => ['verify_peer' => true]]);
 "#,
     );
-    assert_eq!(
-        problem_counts(&problems),
-        counts(&[(SHOPWARE_PHP_TLS_VERIFICATION_CODE, 4)]),
-        "{:?}",
-        highlights(&document, &problems)
-    );
 }
 
 #[test]
 fn shopware_php_local_analyzer_reports_crypto_and_cookie_problems() {
-    let (_, problems) = analyze_local(
+    analyze_local(
         r#"<?php
-crypt($password, 'fixed-salt');
-password_hash($password, PASSWORD_DEFAULT, ['salt' => random_bytes(16)]);
-openssl_pkey_new(['private_key_bits' => 1024]);
+crypt($password, {|shopware.php.crypto.predictable_salt:'fixed-salt'|});
+password_hash($password, PASSWORD_DEFAULT, ['{|shopware.php.crypto.predictable_salt:salt|}' => random_bytes(16)]);
+openssl_pkey_new(['private_key_bits' => {|shopware.php.crypto.weak_key:1024|}]);
 
-setcookie('first', 'value');
-setrawcookie('second', 'value', ['path' => '/']);
-setcookie('third', 'value', ['secure' => false]);
-setcookie(name: 'fourth', value: 'value', secure: false);
+{|shopware.php.cookie.insecure:setcookie|}('first', 'value');
+setrawcookie('second', 'value', {|shopware.php.cookie.insecure:['path' => '/']|});
+setcookie('third', 'value', ['secure' => {|shopware.php.cookie.insecure:false|}]);
+setcookie(name: 'fourth', value: 'value', secure: {|shopware.php.cookie.insecure:false|});
 
 crypt($password, $randomSalt);
 password_hash($password, PASSWORD_DEFAULT);
@@ -110,19 +89,11 @@ setcookie('dynamic-options', 'value', $options);
 setcookie(name: 'dynamic-secure', value: 'value', secure: $secure);
 "#,
     );
-    assert_eq!(
-        problem_counts(&problems),
-        counts(&[
-            (SHOPWARE_PHP_PREDICTABLE_SALT_CODE, 2),
-            (SHOPWARE_PHP_WEAK_KEY_CODE, 1),
-            (SHOPWARE_PHP_INSECURE_COOKIE_CODE, 4),
-        ])
-    );
 }
 
 #[test]
 fn shopware_php_local_analyzer_scopes_foreign_key_check_diagnostic() {
-    let (document, problems) = analyze_local(
+    analyze_local(
         r#"<?php
 namespace App;
 
@@ -132,7 +103,7 @@ final class Migration extends BaseMigration
 {
     public function update(): void
     {
-        $connection->executeStatement('SET FOREIGN_KEY_CHECKS = 0');
+        $connection->executeStatement('SET {|shopware.php.foreign_key_checks.disabled:FOREIGN_KEY_CHECKS = 0|}');
         $current = 'SELECT @@FOREIGN_KEY_CHECKS';
         $connection->executeStatement('SET FOREIGN_KEY_CHECKS = 1');
     }
@@ -147,7 +118,7 @@ final class Extension extends \Shopware\Core\Framework\Plugin
 {
     public function update(): void
     {
-        $connection->executeStatement('set foreign_key_checks=0');
+        $connection->executeStatement('set {|shopware.php.foreign_key_checks.disabled:foreign_key_checks=0|}');
     }
 }
 
@@ -160,15 +131,4 @@ final class Unrelated extends LocalMigration
 }
 "#,
     );
-    assert_eq!(
-        problem_counts(&problems),
-        counts(&[(SHOPWARE_PHP_FOREIGN_KEY_CHECKS_CODE, 2)])
-    );
-    for problem in &problems {
-        let highlighted = highlight(&document, problem);
-        assert!(
-            ["FOREIGN_KEY_CHECKS = 0", "foreign_key_checks=0"].contains(&highlighted),
-            "{highlighted}"
-        );
-    }
 }

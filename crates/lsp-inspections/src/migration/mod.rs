@@ -1,4 +1,4 @@
-//! The `shopware.migration` and `shopware.criteria` inspections and their
+//! The Shopware migration and `shopware.criteria` inspections and their
 //! quick fixes (port of Go `shopware_migration*.go`, `shopware_criteria.go`).
 
 mod annotations;
@@ -18,10 +18,12 @@ use serde_json::{Map, Value};
 use swlsp_language::LanguageId;
 use swlsp_lsp::{
     BoundFix, BoxError, Context, DiagnosticId, FixContext, FixId, FixPresentation, FixResolution,
-    Inspection, InspectionDefinition, ProblemDefinition, QuickFix, RewriteQuickFix, TextDocument,
-    bind_fix,
+    Inspection, InspectionDefinition, InspectionScope, ProblemDefinition, QuickFix,
+    RewriteQuickFix, TextDocument, bind_fix,
 };
-use swlsp_lsp_diagnostics::{ShopwareMigrationAnalyzer, ShopwareMigrationPayload};
+use swlsp_lsp_diagnostics::{
+    CodeGroup, SharedAnalysis, ShopwareMigrationAnalyzer, ShopwareMigrationPayload,
+};
 use swlsp_lsp_protocol as protocol;
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::{
@@ -49,7 +51,24 @@ pub(crate) const REVERSE_PROXY_BAN_ALL_FIX_ID: &str = "shopware-rector-reverse-p
 pub(crate) const SCHEDULED_TASK_LOGGER_FIX_ID: &str =
     "shopware-rector-scheduled-task-exception-logger";
 
-const MIGRATION_CODES: &[&str] = &[
+/// The migration codes, one list per inspection.
+const API_CODES: &[&str] = &[
+    "shopware.migration.api.class.rename",
+    "shopware.migration.api.method.rename",
+    "shopware.migration.api.static_method.rename",
+    "shopware.migration.api.constant.rename",
+    "shopware.migration.api.property",
+    "shopware.migration.api.exception_factory",
+];
+const SIGNATURE_CODES: &[&str] = &[
+    "shopware.migration.declaration.interface_to_abstract",
+    "shopware.migration.declaration.parameter.add",
+    "shopware.migration.declaration.type",
+    "shopware.migration.arguments.remove",
+    "shopware.migration.arguments.add_default",
+    "shopware.migration.thumbnail.generate",
+];
+const BEHAVIOR_CODES: &[&str] = &[
     "shopware.migration.entity_search_result.get_entities",
     "shopware.migration.entity_extension.entity_name",
     "shopware.migration.reverse_proxy.ban_all",
@@ -57,61 +76,82 @@ const MIGRATION_CODES: &[&str] = &[
     "shopware.migration.context_metadata.state",
     "shopware.migration.faker.property_call",
     "shopware.migration.product_stream.enrich_criteria",
-    "shopware.migration.api.class.rename",
-    "shopware.migration.api.method.rename",
-    "shopware.migration.api.static_method.rename",
-    "shopware.migration.api.constant.rename",
-    "shopware.migration.api.property",
-    "shopware.migration.api.exception_factory",
-    "shopware.migration.arguments.remove",
-    "shopware.migration.arguments.add_default",
-    "shopware.migration.thumbnail.generate",
-    "shopware.migration.declaration.interface_to_abstract",
-    "shopware.migration.declaration.parameter.add",
-    "shopware.migration.declaration.type",
     "shopware.migration.annotation.route_defaults",
     "shopware.migration.message_handler.subscriber",
 ];
 
-/// Go `NewShopwareMigration`.
-pub fn new_shopware_migration(
+/// The Shopware migration inspections (Go `NewShopwareMigration`, split by
+/// kind of change). They share one run of [`ShopwareMigrationAnalyzer`] per
+/// document.
+pub fn new_shopware_migration_inspections(
     php_index: Option<PhpIndex>,
     version: ResolvedVersion,
-) -> Arc<dyn Inspection> {
-    let bind: BindProblems = Arc::new(bind_migration_fix);
-    Arc::new(BoundInspection {
-        definition: InspectionDefinition {
-            id: "shopware.migration".to_owned(),
-            languages: vec![LanguageId::Php],
-            problems: MIGRATION_CODES
-                .iter()
-                .map(|code| ProblemDefinition {
-                    id: DiagnosticId::from(*code),
-                    source: "shopware-rector".to_owned(),
-                    default_severity: protocol::DiagnosticSeverity::WARNING,
-                    disabled_by_default: false,
-                })
-                .collect(),
-        },
-        analyzers: vec![Arc::new(ShopwareMigrationAnalyzer::new(php_index, version))],
-        fixes: vec![
-            Arc::new(EntitySearchResultGetEntitiesFix),
-            Arc::new(EntityExtensionEntityNameFix),
-            Arc::new(ReverseProxyBanAllFix),
-            Arc::new(ScheduledTaskLoggerFix),
-            Arc::new(calls::ContextMetadataStateFix),
-            Arc::new(calls::FakerPropertyCallFix),
-            Arc::new(calls::ProductStreamEnrichCriteriaFix),
-            Arc::new(api::ApiRenameFix),
-            Arc::new(arguments::RemoveArgumentMigrationFix),
-            Arc::new(arguments::AddDefaultArgumentFix),
-            Arc::new(arguments::ThumbnailGenerateFix),
-            Arc::new(declarations::DeclarationMigrationFix),
-            Arc::new(annotations::RouteAnnotationMigrationFix),
-            Arc::new(message_handler::MessageHandlerSubscriberFix),
-        ],
-        bind: Some(bind),
-    })
+) -> Vec<Arc<dyn Inspection>> {
+    let shared = SharedAnalysis::new(ShopwareMigrationAnalyzer::new(php_index, version));
+    let inspection = |id: &str,
+                      description: &'static str,
+                      codes: &'static [&'static str]|
+     -> Arc<dyn Inspection> {
+        let bind: BindProblems = Arc::new(bind_migration_fix);
+        Arc::new(BoundInspection {
+            definition: InspectionDefinition {
+                id: id.to_owned(),
+                description,
+                domain: "shopware.migrations",
+                scope: InspectionScope::Framework,
+                languages: vec![LanguageId::Php],
+                problems: codes
+                    .iter()
+                    .map(|code| ProblemDefinition {
+                        id: DiagnosticId::from(*code),
+                        source: "shopware-rector".to_owned(),
+                        default_severity: protocol::DiagnosticSeverity::WARNING,
+                        disabled_by_default: false,
+                    })
+                    .collect(),
+            },
+            analyzers: vec![Arc::new(CodeGroup::new(shared.clone(), codes))],
+            // `bind_migration_fix` binds only the fixes its codes use.
+            fixes: migration_fixes(),
+            bind: Some(bind),
+        })
+    };
+    vec![
+        inspection(
+            "shopware.migration.api",
+            "Shopware API that the upgrade to the target version renames or removes: classes, methods, static methods, constants, properties and exception factories, with automated fixes where the change is safe.",
+            API_CODES,
+        ),
+        inspection(
+            "shopware.migration.signature",
+            "Declarations and calls whose signature changes with the upgrade to the target version: interfaces replaced by abstract classes, added or removed parameters and arguments, and changed native types.",
+            SIGNATURE_CODES,
+        ),
+        inspection(
+            "shopware.migration.behavior",
+            "Code relying on behavior the upgrade to the target version replaces: entity search results, entity extension names, reverse proxy invalidation, scheduled task logging, context metadata, Faker properties, product stream criteria, route defaults and message handlers.",
+            BEHAVIOR_CODES,
+        ),
+    ]
+}
+
+fn migration_fixes() -> Vec<Arc<dyn QuickFix>> {
+    vec![
+        Arc::new(EntitySearchResultGetEntitiesFix),
+        Arc::new(EntityExtensionEntityNameFix),
+        Arc::new(ReverseProxyBanAllFix),
+        Arc::new(ScheduledTaskLoggerFix),
+        Arc::new(calls::ContextMetadataStateFix),
+        Arc::new(calls::FakerPropertyCallFix),
+        Arc::new(calls::ProductStreamEnrichCriteriaFix),
+        Arc::new(api::ApiRenameFix),
+        Arc::new(arguments::RemoveArgumentMigrationFix),
+        Arc::new(arguments::AddDefaultArgumentFix),
+        Arc::new(arguments::ThumbnailGenerateFix),
+        Arc::new(declarations::DeclarationMigrationFix),
+        Arc::new(annotations::RouteAnnotationMigrationFix),
+        Arc::new(message_handler::MessageHandlerSubscriberFix),
+    ]
 }
 
 fn bind_migration_fix(code: &DiagnosticId, payload: &Map<String, Value>) -> Vec<BoundFix> {
@@ -291,7 +331,9 @@ pub(crate) fn finish_php_rewrite(
     fix: &FixContext,
     editor: &Editor,
 ) -> Result<WorkspacePlan, BoxError> {
-    let edits = editor.finish()?;
+    // The migration may replace the last use of an imported name.
+    let edits =
+        swlsp_php_imports::remove_orphaned_imports(fix.document.source(), editor.finish()?)?;
     finish_edits(fix, edits, "shopware migration produced invalid PHP")
 }
 

@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use swlsp_indexer::{Indexer, ParsedFile};
+use swlsp_indexer::{Indexer, ParsedFile, PreparingIndexer};
 use swlsp_parser_php::query as phpquery;
 use swlsp_php::PhpIndex;
 use swlsp_php_types::equal_fold;
@@ -285,4 +285,58 @@ class Listener { public function __invoke(): void {} }",
         .index(&file(path, "<?php namespace App; class Listener {}"))
         .unwrap();
     assert!(reopened.event("app.ready").unwrap().is_none());
+}
+
+#[test]
+fn prepared_indexing_matches_direct_indexing() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = "/project/config/services.yaml";
+    let source = r"services:
+    App\Listener\YamlListener:
+        tags:
+            - { name: kernel.event_listener, event: app.yaml, method: onYaml, priority: 10 }
+";
+    let direct = Index::new(directory.path().join("direct"), None).unwrap();
+    direct.index(&file(path, source)).unwrap();
+    let prepared = Index::new(directory.path().join("prepared"), None).unwrap();
+    let parsed = file(path, source);
+    let data = prepared.prepare(&parsed).unwrap();
+    prepared.index_prepared(&parsed, data.as_ref()).unwrap();
+
+    let events = direct.events().unwrap();
+    assert!(!events.is_empty());
+    assert_eq!(prepared.events().unwrap(), events);
+
+    let cleared = file(path, "services: {}\n");
+    let data = prepared.prepare(&cleared).unwrap();
+    prepared.index_prepared(&cleared, data.as_ref()).unwrap();
+    assert!(prepared.events().unwrap().is_empty());
+    direct.close().unwrap();
+    prepared.close().unwrap();
+}
+
+#[test]
+fn event_catalog_is_shared_until_records_change() {
+    let directory = tempfile::tempdir().unwrap();
+    let index = Index::new(directory.path(), None).unwrap();
+    let listener = |event: &str| {
+        format!(
+            "<?php\nnamespace App;\n#[\\Symfony\\Component\\EventDispatcher\\Attribute\\AsEventListener(event: '{event}')]\nclass Listener {{ public function __invoke(): void {{}} }}"
+        )
+    };
+    index
+        .index(&file("/project/src/Listener.php", &listener("app.first")))
+        .unwrap();
+    let first = index.events_view().unwrap();
+    assert!(Arc::ptr_eq(&first, &index.events_view().unwrap()));
+    assert!(index.event("app.first").unwrap().is_some());
+
+    index
+        .index(&file("/project/src/Listener.php", &listener("app.second")))
+        .unwrap();
+    let second = index.events_view().unwrap();
+    assert!(!Arc::ptr_eq(&first, &second));
+    assert!(index.event("app.first").unwrap().is_none());
+    assert!(index.event("app.second").unwrap().is_some());
+    index.close().unwrap();
 }

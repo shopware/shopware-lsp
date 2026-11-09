@@ -2,6 +2,7 @@ use swlsp_lsp_protocol::DiagnosticSeverity;
 
 use super::*;
 use crate::services::TaggedServiceAnalyzer;
+use crate::test_support::check_problems;
 
 fn tagged_php_index(dir: &Path) -> PhpIndex {
     php_index(
@@ -34,11 +35,12 @@ namespace App {
 fn tagged_service_diagnostics_for_yaml() {
     let dir = tempfile::tempdir().unwrap();
     let analyzer = TaggedServiceAnalyzer::new(Some(tagged_php_index(dir.path())));
-    let document = document(
+    let (_, problems) = check_problems(
+        &analyzer,
         "file:///project/config/services.yaml",
         r"services:
   bad:
-    class: App\BadExtension
+    class: {|symfony.service.tag_type:App\BadExtension|}
     tags:
       - { name: twig.extension }
   good:
@@ -51,17 +53,13 @@ fn tagged_service_diagnostics_for_yaml() {
   unknown_tag:
     class: App\BadExtension
     tags: [app.custom]
-  App\BadExtension:
+  {|symfony.service.tag_type:App\BadExtension|}:
     tags:
       - { name: twig.extension }
 ",
     );
-    let result = analyze(&analyzer, &document);
-    assert_eq!(result.len(), 2);
-    for problem in &result {
-        assert_eq!(problem.id.as_str(), "symfony.service.tag_type");
+    for problem in &problems {
         assert_eq!(problem.severity, Some(DiagnosticSeverity::WARNING));
-        assert_eq!(range_text(&document, problem.range), "App\\BadExtension");
         assert!(problem.message.contains("twig.extension"));
         assert!(problem.message.contains("Twig_ExtensionInterface"));
     }
@@ -71,27 +69,25 @@ fn tagged_service_diagnostics_for_yaml() {
 fn tagged_service_diagnostics_for_xml() {
     let dir = tempfile::tempdir().unwrap();
     let analyzer = TaggedServiceAnalyzer::new(Some(tagged_php_index(dir.path())));
-    let document = document(
+    let (_, problems) = check_problems(
+        &analyzer,
         "file:///project/config/services.xml",
         r#"<?xml version="1.0"?>
 <container>
   <services>
-    <service id="bad" class="App\BadForm">
+    <service id="bad" class="{|symfony.service.tag_type:App\BadForm|}">
       <tag name="form.type"/>
     </service>
     <service id="App\GoodForm">
       <tag name="form.type"/>
     </service>
-    <service id="App\BadForm">
+    <service id="{|symfony.service.tag_type:App\BadForm|}">
       <tag name="form.type"/>
     </service>
   </services>
 </container>"#,
     );
-    let result = analyze(&analyzer, &document);
-    assert_eq!(result.len(), 2);
-    for problem in &result {
-        assert_eq!(range_text(&document, problem.range), "App\\BadForm");
+    for problem in &problems {
         assert!(
             problem
                 .message
@@ -110,9 +106,9 @@ fn tagged_service_diagnostics_skip_unknown_contracts() {
             "<?php\nnamespace App;\nclass Extension {}\n",
         )],
     );
-    let document = document(
+    check_problems(
+        &TaggedServiceAnalyzer::new(Some(php)),
         "file:///project/config/services.yaml",
         "services:\n  App\\Extension:\n    tags: [twig.extension]\n",
     );
-    assert!(analyze(&TaggedServiceAnalyzer::new(Some(php)), &document).is_empty());
 }

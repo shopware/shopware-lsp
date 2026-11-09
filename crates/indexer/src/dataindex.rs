@@ -3,7 +3,7 @@
 //!
 //! Values are MessagePack-encoded with field names (so `#[serde(default)]`
 //! and `skip_serializing_if` keep working) and stored per `(namespace,
-//! file_path, key)`. Every write replaces or removes complete source paths so
+//! path, key)`, with namespaces and paths interned as integer ids. Every write replaces or removes complete source paths so
 //! file changes and deletions cannot leave stale rows. Reads go through the
 //! store's WAL reader pool and observe committed data only; decoded results
 //! are cached until a committed mutation touches the repository.
@@ -11,25 +11,28 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
+use rusqlite::ToSql;
 use rusqlite::types::ValueRef;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::error::{CancelToken, Error, Result, ResultExt};
-use crate::store::{MutationCache, lock};
-use crate::{Mutation, Store};
+use crate::store::{MutationCache, MutationConnection, lock, namespace_id};
+use crate::{Mutation, Store, value_codec};
 
 const MAX_POOLED_MESSAGE_PACK_BUFFER: usize = 1 << 20;
 const DELETE_BATCH_SIZE: usize = 128;
+const INSERT_SQL: &str = "INSERT INTO data (namespace, path_id, key, value) VALUES (?, ?, ?, ?)";
 
 thread_local! {
     static ENCODE_BUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Encodes `value` exactly as repositories persist it.
+/// Encodes `value` as repositories encode it before optional compression:
+/// the bytes [`DataIndexer::visit_all_encoded_values`] yields.
 pub fn encode_value<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>> {
     let mut buffer = Vec::new();
     rmp_serde::encode::write_named(&mut buffer, value)?;
@@ -39,13 +42,14 @@ pub fn encode_value<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>> {
 /// Decodes a persisted repository value, for example one visited through
 /// [`DataIndexer::visit_all_encoded_values`].
 pub fn decode_value<T: DeserializeOwned>(encoded: &[u8]) -> Result<T> {
-    Ok(rmp_serde::from_slice(encoded)?)
+    value_codec::with_decoded(encoded, |bytes| Ok(rmp_serde::from_slice(bytes)?))
 }
 
 /// Encodes into a reusable per-thread buffer, bounded so one huge value does
 /// not pin its allocation for the lifetime of a worker thread.
 fn with_encoded<T: Serialize + ?Sized, R>(
     value: &T,
+    compress: bool,
     use_bytes: impl FnOnce(&[u8]) -> Result<R>,
 ) -> Result<R> {
     ENCODE_BUFFER.with(|cell| {
@@ -61,7 +65,7 @@ fn with_encoded<T: Serialize + ?Sized, R>(
         buffer.clear();
         let result = rmp_serde::encode::write_named(buffer, value)
             .map_err(Error::from)
-            .and_then(|()| use_bytes(buffer));
+            .and_then(|()| value_codec::with_stored(buffer, compress, use_bytes));
         if buffer.capacity() > MAX_POOLED_MESSAGE_PACK_BUFFER {
             *buffer = Vec::new();
         }
@@ -69,13 +73,14 @@ fn with_encoded<T: Serialize + ?Sized, R>(
     })
 }
 
-/// Releases this thread's pooled encoding buffer.
+/// Releases this thread's pooled encoding buffers.
 pub(crate) fn clear_message_pack_buffers() {
     ENCODE_BUFFER.with(|cell| {
         if let Ok(mut buffer) = cell.try_borrow_mut() {
             *buffer = Vec::new();
         }
     });
+    value_codec::clear_buffers();
 }
 
 struct CacheState<T> {
@@ -84,6 +89,7 @@ struct CacheState<T> {
     keys: Option<Arc<[String]>>,
     path_keys: HashMap<String, Arc<[String]>>,
     path_values: HashMap<String, Arc<[T]>>,
+    paths: Option<Arc<[String]>>,
 }
 
 impl<T> Default for CacheState<T> {
@@ -94,17 +100,21 @@ impl<T> Default for CacheState<T> {
             keys: None,
             path_keys: HashMap::new(),
             path_values: HashMap::new(),
+            paths: None,
         }
     }
 }
 
 struct RepositoryCache<T> {
     state: Mutex<CacheState<T>>,
+    /// Advanced after every committed change; see [`DataIndexer::revision`].
+    revision: AtomicU64,
 }
 
 impl<T: Send + Sync> MutationCache for RepositoryCache<T> {
     fn invalidate_mutation_cache(&self) {
         *lock(&self.state) = CacheState::default();
+        self.revision.fetch_add(1, Ordering::AcqRel);
     }
 }
 
@@ -141,6 +151,10 @@ fn shared_store(directory: &Path) -> Result<Arc<SharedStore>> {
 pub struct DataIndexer<T> {
     store: Store,
     namespace: String,
+    /// The interned namespace stored in every row.
+    namespace_id: i64,
+    /// Whether large values are LZ4-compressed (see `value_codec`).
+    compress_values: bool,
     owns_store: bool,
     /// The directory store this standalone repository shares, released on
     /// close.
@@ -190,11 +204,14 @@ where
         Ok(Self {
             store: store.clone(),
             namespace: namespace.to_owned(),
+            namespace_id: namespace_id(namespace),
+            compress_values: true,
             owns_store: false,
             shared: Mutex::new(None),
             closed: AtomicBool::new(false),
             cache: Arc::new(RepositoryCache {
                 state: Mutex::new(CacheState::default()),
+                revision: AtomicU64::new(0),
             }),
         })
     }
@@ -218,6 +235,13 @@ where
         let index = Self::in_store(&shared.0, namespace)?;
         *lock(&index.shared) = Some(shared);
         Ok(index)
+    }
+
+    /// Stores values as encoded, for repositories whose values are already
+    /// compressed and would only pay for a futile compression attempt.
+    pub fn without_value_compression(mut self) -> Self {
+        self.compress_values = false;
+        self
     }
 
     pub fn namespace(&self) -> &str {
@@ -252,12 +276,12 @@ where
     pub fn save_item(&self, file_path: &str, key: &str, item: &T) -> Result<()> {
         self.write_standalone(|mutation| {
             mutation.with_connection(|connection| {
-                let mut statement = connection.prepare_cached(
-                    "INSERT INTO data (namespace, file_path, key, value) VALUES (?, ?, ?, ?)",
-                )?;
-                with_encoded(item, |data| {
+                self.register_namespace(connection)?;
+                let path_id = connection.path_id(file_path)?;
+                let mut statement = connection.prepare_cached(INSERT_SQL)?;
+                with_encoded(item, self.compress_values, |data| {
                     statement
-                        .execute(rusqlite::params![self.namespace, file_path, key, data])
+                        .execute(rusqlite::params![self.namespace_id, path_id, key, data])
                         .context("failed to save item")?;
                     Ok(())
                 })
@@ -295,14 +319,17 @@ where
         V: std::borrow::Borrow<T>,
     {
         let Some(mutation) = mutation else {
-            return self.write_standalone(|mutation| self.save_in(mutation, items));
+            return self
+                .store
+                .write(|mutation| self.save_and_touch(mutation, items));
         };
         self.check_mutation(mutation)?;
-        self.save_in(mutation, items)?;
-        self.touch(mutation)
+        self.save_and_touch(mutation, items)
     }
 
-    fn save_in<P, I, K, V>(
+    /// Touches the repository only when rows changed, so its caches and
+    /// [`Self::revision`] stay put for files that never had data here.
+    fn save_and_touch<P, I, K, V>(
         &self,
         mutation: &Mutation,
         items: impl IntoIterator<Item = (P, I)>,
@@ -313,34 +340,72 @@ where
         K: AsRef<str>,
         V: std::borrow::Borrow<T>,
     {
+        if self.save_in(mutation, items)? {
+            self.touch(mutation)?;
+        }
+        Ok(())
+    }
+
+    /// Whether any row was deleted or inserted.
+    fn save_in<P, I, K, V>(
+        &self,
+        mutation: &Mutation,
+        items: impl IntoIterator<Item = (P, I)>,
+    ) -> Result<bool>
+    where
+        P: AsRef<str>,
+        I: IntoIterator<Item = (K, V)>,
+        K: AsRef<str>,
+        V: std::borrow::Borrow<T>,
+    {
         mutation.with_connection(|connection| {
+            self.register_namespace(connection)?;
             let mut delete = connection
-                .prepare_cached("DELETE FROM data WHERE namespace = ? AND file_path = ?")
+                .prepare_cached("DELETE FROM data WHERE namespace = ? AND path_id = ?")
                 .context("failed to prepare delete data statement")?;
             // Deferred until an item actually needs encoding.
             let mut insert = None;
+            let mut changed = false;
             for (file_path, file_items) in items {
-                let file_path = file_path.as_ref();
-                delete.execute([&self.namespace, file_path]).context("failed to delete existing data")?;
+                let path_id = connection.path_id(file_path.as_ref())?;
+                changed |= delete
+                    .execute([self.namespace_id, path_id])
+                    .context("failed to delete existing data")?
+                    > 0;
                 for (key, item) in file_items {
                     if insert.is_none() {
                         insert = Some(
                             connection
-                                .prepare_cached("INSERT INTO data (namespace, file_path, key, value) VALUES (?, ?, ?, ?)")
+                                .prepare_cached(INSERT_SQL)
                                 .context("failed to prepare data statement")?,
                         );
                     }
                     let statement = insert.as_mut().expect("insert statement prepared above");
-                    with_encoded(item.borrow(), |data| {
+                    changed = true;
+                    with_encoded(item.borrow(), self.compress_values, |data| {
                         statement
-                            .execute(rusqlite::params![self.namespace, file_path, key.as_ref(), data])
+                            .execute(rusqlite::params![
+                                self.namespace_id,
+                                path_id,
+                                key.as_ref(),
+                                data
+                            ])
                             .context("failed to save item")?;
                         Ok(())
                     })?;
                 }
             }
-            Ok(())
+            Ok(changed)
         })
+    }
+
+    /// Records the namespace name for its id (inspection only).
+    fn register_namespace(&self, connection: &mut MutationConnection<'_>) -> Result<()> {
+        connection
+            .prepare_cached("INSERT OR IGNORE INTO namespaces(id, name) VALUES (?, ?)")?
+            .execute(rusqlite::params![self.namespace_id, self.namespace])
+            .context("register index namespace")?;
+        Ok(())
     }
 
     /// Deletes every item of `file_path`.
@@ -362,31 +427,45 @@ where
             return Ok(());
         }
         let Some(mutation) = mutation else {
-            return self.write_standalone(|mutation| self.delete_in(mutation, file_paths));
+            return self
+                .store
+                .write(|mutation| self.delete_and_touch(mutation, file_paths));
         };
         self.check_mutation(mutation)?;
-        self.delete_in(mutation, file_paths)?;
-        self.touch(mutation)
+        self.delete_and_touch(mutation, file_paths)
     }
 
-    fn delete_in<S: AsRef<str>>(&self, mutation: &Mutation, file_paths: &[S]) -> Result<()> {
+    /// Touches the repository only when rows were deleted.
+    fn delete_and_touch<S: AsRef<str>>(&self, mutation: &Mutation, file_paths: &[S]) -> Result<()> {
+        if self.delete_in(mutation, file_paths)? {
+            self.touch(mutation)?;
+        }
+        Ok(())
+    }
+
+    /// Whether any row was deleted.
+    fn delete_in<S: AsRef<str>>(&self, mutation: &Mutation, file_paths: &[S]) -> Result<bool> {
+        mutation.release_paths();
         mutation.with_connection(|connection| {
+            let mut deleted = 0;
             for batch in file_paths.chunks(DELETE_BATCH_SIZE) {
-                let sql = in_clause_sql(
-                    "DELETE FROM data WHERE namespace = ? AND file_path IN (",
+                let mut sql = in_clause_sql(
+                    "DELETE FROM data WHERE namespace = ? AND path_id IN (SELECT id FROM paths WHERE path IN (",
                     batch.len(),
                 );
+                sql.push(')');
                 let mut statement = connection
                     .prepare_cached(&sql)
                     .context("failed to prepare data deletion")?;
-                let mut arguments: Vec<&str> = Vec::with_capacity(batch.len() + 1);
-                arguments.push(&self.namespace);
-                arguments.extend(batch.iter().map(AsRef::as_ref));
-                statement
-                    .execute(rusqlite::params_from_iter(arguments))
+                let paths: Vec<&str> = batch.iter().map(AsRef::as_ref).collect();
+                let mut arguments: Vec<&dyn ToSql> = Vec::with_capacity(batch.len() + 1);
+                arguments.push(&self.namespace_id);
+                arguments.extend(paths.iter().map(|path| path as &dyn ToSql));
+                deleted += statement
+                    .execute(arguments.as_slice())
                     .context("failed to delete data")?;
             }
-            Ok(())
+            Ok(deleted > 0)
         })
     }
 
@@ -414,10 +493,11 @@ where
     }
 
     fn clear_rows(&self, mutation: &Mutation) -> Result<()> {
+        mutation.release_paths();
         mutation.with_connection(|connection| {
             connection
                 .connection()
-                .execute("DELETE FROM data WHERE namespace = ?", [&self.namespace])?;
+                .execute("DELETE FROM data WHERE namespace = ?", [self.namespace_id])?;
             Ok(())
         })
     }
@@ -426,11 +506,11 @@ where
     /// active mutation the lookup uses that transaction and sees its
     /// preceding writes.
     pub fn has_file_path_in(&self, mutation: Option<&Mutation>, file_path: &str) -> Result<bool> {
-        const QUERY: &str = "SELECT 1 FROM data WHERE namespace = ? AND file_path = ? LIMIT 1";
+        const QUERY: &str = "SELECT 1 FROM data WHERE namespace = ? AND path_id = (SELECT id FROM paths WHERE path = ?) LIMIT 1";
         let run = |connection: &rusqlite::Connection| -> Result<bool> {
             let mut statement = connection.prepare_cached(QUERY)?;
             let exists = statement
-                .exists([&self.namespace, file_path])
+                .exists(rusqlite::params![self.namespace_id, file_path])
                 .context("failed to query file association")?;
             Ok(exists)
         };
@@ -452,8 +532,10 @@ where
         }
         let values: Arc<[T]> = self
             .query_values(
-                "SELECT value FROM data INDEXED BY idx_data_namespace_key WHERE namespace = ? AND key = ? ORDER BY file_path, rowid",
-                &[&self.namespace, key],
+                "SELECT d.value FROM data d INDEXED BY idx_data_namespace_key
+                 JOIN paths p ON p.id = d.path_id
+                 WHERE d.namespace = ? AND d.key = ? ORDER BY p.path, d.rowid",
+                &[&self.namespace_id, &key],
                 false,
             )?
             .into();
@@ -469,8 +551,11 @@ where
         }
         let values: Arc<[T]> = self
             .query_values(
-                "SELECT value FROM data WHERE namespace = ? ORDER BY file_path, rowid",
-                &[&self.namespace],
+                // Paths drive the loop in path order, so the namespace's rows
+                // come out sorted without a temporary sort of their values.
+                "SELECT d.value FROM paths p CROSS JOIN data d
+                 ON d.namespace = ? AND d.path_id = p.id ORDER BY p.path, d.rowid",
+                &[&self.namespace_id],
                 true,
             )?
             .into();
@@ -486,8 +571,8 @@ where
         }
         let values: Arc<[T]> = self
             .query_values(
-                "SELECT value FROM data WHERE namespace = ? AND file_path = ?",
-                &[&self.namespace, file_path],
+                "SELECT value FROM data WHERE namespace = ? AND path_id = (SELECT id FROM paths WHERE path = ?)",
+                &[&self.namespace_id, &file_path],
                 false,
             )?
             .into();
@@ -497,12 +582,17 @@ where
         Ok(values)
     }
 
-    fn query_values(&self, sql: &str, arguments: &[&str], skip_empty: bool) -> Result<Vec<T>> {
+    fn query_values(
+        &self,
+        sql: &str,
+        arguments: &[&dyn ToSql],
+        skip_empty: bool,
+    ) -> Result<Vec<T>> {
         self.store.read(|connection| {
             let mut statement = connection
                 .prepare_cached(sql)
                 .context("failed to query data")?;
-            let mut rows = statement.query(rusqlite::params_from_iter(arguments))?;
+            let mut rows = statement.query(arguments)?;
             let mut values = Vec::new();
             while let Some(row) = rows.next()? {
                 let data = blob(row.get_ref(0)?);
@@ -522,7 +612,7 @@ where
             let mut statement =
                 connection.prepare_cached("SELECT value FROM data WHERE namespace = ?")?;
             let mut rows = statement
-                .query([&self.namespace])
+                .query([self.namespace_id])
                 .context("failed to query data")?;
             while let Some(row) = rows.next()? {
                 let data = blob(row.get_ref(0)?);
@@ -543,18 +633,23 @@ where
     ) -> Result<()> {
         self.store.read(|connection| {
             let mut statement = connection
-                .prepare_cached("SELECT file_path, key, value FROM data WHERE namespace = ?")?;
+                .prepare_cached("SELECT path_id, key, value FROM data WHERE namespace = ?")?;
             let mut rows = statement
-                .query([&self.namespace])
+                .query([self.namespace_id])
                 .context("failed to query data")?;
             while let Some(row) = rows.next()? {
                 let data = blob(row.get_ref(2)?);
                 if data.is_empty() {
                     continue;
                 }
-                if let Err(error) = visitor(data) {
-                    let file_path: String = row.get(0)?;
+                if let Err(error) = value_codec::with_decoded(data, &mut visitor) {
+                    let path_id: i64 = row.get(0)?;
                     let key: String = row.get(1)?;
+                    let file_path: String = connection
+                        .query_row("SELECT path FROM paths WHERE id = ?", [path_id], |row| {
+                            row.get(0)
+                        })
+                        .unwrap_or_else(|_| format!("#{path_id}"));
                     return Err(error.context(format!("visit encoded value {file_path} ({key})")));
                 }
             }
@@ -571,17 +666,17 @@ where
     ) -> Result<()> {
         self.store.read(|connection| {
             let mut statement = connection.prepare_cached(
-                "SELECT key, value FROM data WHERE namespace = ? AND file_path = ?",
+                "SELECT key, value FROM data WHERE namespace = ? AND path_id = (SELECT id FROM paths WHERE path = ?)",
             )?;
             let mut rows = statement
-                .query([&self.namespace, file_path])
+                .query(rusqlite::params![self.namespace_id, file_path])
                 .context("failed to query encoded values by path")?;
             while let Some(row) = rows.next()? {
                 let data = blob(row.get_ref(1)?);
                 if data.is_empty() {
                     continue;
                 }
-                if let Err(error) = visitor(data) {
+                if let Err(error) = value_codec::with_decoded(data, &mut visitor) {
                     let key: String = row.get(0)?;
                     return Err(error.context(format!("visit encoded value {file_path} ({key})")));
                 }
@@ -595,7 +690,7 @@ where
         self.store.read(|connection| {
             let count: i64 = connection
                 .prepare_cached("SELECT COUNT(*) FROM data WHERE namespace = ?")?
-                .query_row([&self.namespace], |row| row.get(0))
+                .query_row([self.namespace_id], |row| row.get(0))
                 .context("failed to count data")?;
             Ok(usize::try_from(count).unwrap_or_default())
         })
@@ -614,7 +709,7 @@ where
         let keys: Arc<[String]> = self
             .query_strings(
                 "SELECT DISTINCT key FROM data WHERE namespace = ?",
-                &[&self.namespace],
+                &[&self.namespace_id],
             )?
             .into();
         cache.keys = Some(keys.clone());
@@ -628,8 +723,8 @@ where
             return Ok(keys.to_vec());
         }
         let keys = self.query_strings(
-            "SELECT DISTINCT key FROM data WHERE namespace = ? AND file_path = ?",
-            &[&self.namespace, file_path],
+            "SELECT DISTINCT key FROM data WHERE namespace = ? AND path_id = (SELECT id FROM paths WHERE path = ?)",
+            &[&self.namespace_id, &file_path],
         )?;
         cache
             .path_keys
@@ -639,20 +734,41 @@ where
 
     /// Every source path currently represented in the repository.
     pub fn get_all_file_paths(&self) -> Result<Vec<String>> {
-        self.query_strings(
-            "SELECT DISTINCT file_path FROM data WHERE namespace = ?",
-            &[&self.namespace],
-        )
+        self.get_all_file_paths_view().map(|paths| paths.to_vec())
     }
 
-    fn query_strings(&self, sql: &str, arguments: &[&str]) -> Result<Vec<String>> {
+    /// Every source path currently represented in the repository, sorted
+    /// (cached).
+    pub fn get_all_file_paths_view(&self) -> Result<Arc<[String]>> {
+        let mut cache = lock(&self.cache.state);
+        if let Some(paths) = &cache.paths {
+            return Ok(paths.clone());
+        }
+        let paths: Arc<[String]> = self
+            .query_strings(
+                "SELECT p.path FROM paths p WHERE EXISTS
+                 (SELECT 1 FROM data d WHERE d.namespace = ? AND d.path_id = p.id) ORDER BY p.path",
+                &[&self.namespace_id],
+            )?
+            .into();
+        cache.paths = Some(paths.clone());
+        Ok(paths)
+    }
+
+    /// A counter advanced after every committed change to this repository.
+    /// Memoize data derived from the repository under the revision read
+    /// *before* deriving it: a change committed meanwhile then advances the
+    /// revision past the memo instead of hiding behind it.
+    pub fn revision(&self) -> u64 {
+        self.cache.revision.load(Ordering::Acquire)
+    }
+
+    fn query_strings(&self, sql: &str, arguments: &[&dyn ToSql]) -> Result<Vec<String>> {
         self.store.read(|connection| {
             let mut statement = connection
                 .prepare_cached(sql)
                 .context("failed to query keys")?;
-            let rows = statement.query_map(rusqlite::params_from_iter(arguments), |row| {
-                row.get::<_, String>(0)
-            })?;
+            let rows = statement.query_map(arguments, |row| row.get::<_, String>(0))?;
             rows.collect::<rusqlite::Result<Vec<_>>>()
                 .map_err(Error::from)
         })
@@ -679,12 +795,12 @@ where
             sql = in_clause_sql(&format!("{sql} AND LOWER(key) NOT IN ("), normalized.len());
         }
         sql.push_str(" LIMIT 1");
-        let mut arguments: Vec<&str> = vec![&self.namespace];
-        arguments.extend(normalized.iter().map(String::as_str));
+        let mut arguments: Vec<&dyn ToSql> = vec![&self.namespace_id];
+        arguments.extend(normalized.iter().map(|key| key as &dyn ToSql));
         self.store.read(|connection| {
             let mut statement = connection.prepare_cached(&sql)?;
             statement
-                .exists(rusqlite::params_from_iter(arguments))
+                .exists(arguments.as_slice())
                 .context("failed to query key existence")
         })
     }

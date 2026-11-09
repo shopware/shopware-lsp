@@ -4,13 +4,11 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use serde_json::{Map, Value};
-use swlsp_language::LanguageId;
 use swlsp_lsp::{
     BoundFix, BoxError, Context, DiagnosticId, FixContext, Inspection, InspectionDefinition,
-    Problem, ProblemDefinition, ProblemReporter, QuickFix, TextDocument,
+    InspectionSpec, Problem, ProblemReporter, QuickFix, TextDocument,
 };
-use swlsp_lsp_diagnostics::ProblemAnalyzer;
-use swlsp_lsp_protocol as protocol;
+use swlsp_lsp_diagnostics::{DeclaredAnalyzer, ProblemAnalyzer};
 use swlsp_rewrite::HandleError;
 use swlsp_syntax::{SyntaxElement, SyntaxNodeExt};
 
@@ -21,30 +19,19 @@ use crate::suggestion::{SuggestionFix, suggestion_bound_fixes};
 pub type BindProblems =
     Arc<dyn Fn(&DiagnosticId, &Map<String, Value>) -> Vec<BoundFix> + Send + Sync>;
 
-/// Go `NewAnalyzerInspection`: an inspection whose problems are declared as
-/// warnings with one source and offer the suggestion quick fix.
+/// The inspection an analyzer declares, offering the suggestion quick fix.
+pub fn analyzer_inspection<A: DeclaredAnalyzer + 'static>(analyzer: A) -> Arc<dyn Inspection> {
+    new_analyzer_inspection(A::INSPECTION, vec![Arc::new(analyzer)])
+}
+
+/// An inspection running `analyzers` under `spec`, offering the suggestion
+/// quick fix (Go `NewAnalyzerInspection`).
 pub fn new_analyzer_inspection(
-    id: &str,
-    languages: &[LanguageId],
-    source: &str,
-    codes: &[&str],
+    spec: InspectionSpec,
     analyzers: Vec<Arc<dyn ProblemAnalyzer>>,
 ) -> Arc<dyn Inspection> {
-    let problems = codes
-        .iter()
-        .map(|code| ProblemDefinition {
-            id: DiagnosticId::from(*code),
-            source: source.to_owned(),
-            default_severity: protocol::DiagnosticSeverity::WARNING,
-            disabled_by_default: false,
-        })
-        .collect();
     Arc::new(AnalyzerInspection {
-        definition: InspectionDefinition {
-            id: id.to_owned(),
-            languages: languages.to_vec(),
-            problems,
-        },
+        definition: spec.definition(),
         analyzers,
         fixes: vec![Arc::new(SuggestionFix)],
     })
@@ -56,9 +43,40 @@ pub struct AnalyzerInspection {
     fixes: Vec<Arc<dyn QuickFix>>,
 }
 
+/// The files any analyzer may report on although they are not open.
+fn workspace_paths(analyzers: &[Arc<dyn ProblemAnalyzer>], ctx: &Context) -> Vec<String> {
+    let mut paths: Vec<String> = analyzers
+        .iter()
+        .flat_map(|analyzer| analyzer.workspace_paths(ctx))
+        .collect();
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+/// The sum of the analyzers' input revisions, `None` unless every analyzer
+/// declares one.
+fn combined_input_revision(
+    analyzers: &[Arc<dyn ProblemAnalyzer>],
+    document: &TextDocument,
+) -> Option<u64> {
+    analyzers
+        .iter()
+        .map(|analyzer| analyzer.input_revision(document))
+        .sum()
+}
+
 impl Inspection for AnalyzerInspection {
     fn definition(&self) -> InspectionDefinition {
         self.definition.clone()
+    }
+
+    fn workspace_paths(&self, ctx: &Context) -> Vec<String> {
+        workspace_paths(&self.analyzers, ctx)
+    }
+
+    fn input_revision(&self, document: &TextDocument) -> Option<u64> {
+        combined_input_revision(&self.analyzers, document)
     }
 
     fn quick_fixes(&self) -> Vec<Arc<dyn QuickFix>> {
@@ -98,7 +116,9 @@ impl Inspection for AnalyzerInspection {
 }
 
 /// Go `boundInspection`: runs analyzers in order and binds fixes through
-/// `bind`.
+/// `bind`. Its input revision is its analyzers'; `bind` must read nothing
+/// they do not declare, since bound fixes are part of the reused
+/// diagnostics.
 pub struct BoundInspection {
     pub definition: InspectionDefinition,
     pub analyzers: Vec<Arc<dyn ProblemAnalyzer>>,
@@ -109,6 +129,14 @@ pub struct BoundInspection {
 impl Inspection for BoundInspection {
     fn definition(&self) -> InspectionDefinition {
         self.definition.clone()
+    }
+
+    fn workspace_paths(&self, ctx: &Context) -> Vec<String> {
+        workspace_paths(&self.analyzers, ctx)
+    }
+
+    fn input_revision(&self, document: &TextDocument) -> Option<u64> {
+        combined_input_revision(&self.analyzers, document)
     }
 
     fn quick_fixes(&self) -> Vec<Arc<dyn QuickFix>> {

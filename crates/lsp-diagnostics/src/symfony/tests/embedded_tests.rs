@@ -1,11 +1,10 @@
 use swlsp_lsp_protocol::DiagnosticSeverity;
 
-use super::{analyze, index_file, open_php, start_line};
+use super::{index_file, open_php};
 use crate::symfony::{
     EmbeddedCssAnalyzer, EmbeddedJsonAnalyzer, EmbeddedLanguageAnalyzer, EmbeddedXPathAnalyzer,
-    INVALID_EMBEDDED_CSS_CODE, INVALID_EMBEDDED_JSON_CODE, INVALID_EMBEDDED_XPATH_CODE,
 };
-use crate::test_support::diagnostics_document;
+use crate::test_support::check_problems;
 
 #[test]
 fn embedded_css_diagnostics_validate_typed_dom_crawler_selectors() {
@@ -42,19 +41,19 @@ function find(
     string $name,
 ): void {
     $crawler->filter('.product > a[data-active="true"]');
-    $crawler->children('.broken[');
-    $converter->toXPath('button:not(');
+    $crawler->children('.broken{|symfony.php.embedded_css.invalid:[|}');
+    $converter->toXPath('button:not{|symfony.php.embedded_css.invalid:(|}');
     $other->filter('.ignored[');
     $crawler->filter(".dynamic-$name[");
 }
 "#;
-    let document = diagnostics_document("file:///project/src/CrawlerTest.php", source);
-    let result = analyze(&EmbeddedCssAnalyzer::new(Some(php.clone())), &document);
-    assert_eq!(result.len(), 2);
+    let (_, result) = check_problems(
+        &EmbeddedCssAnalyzer::new(Some(php.clone())),
+        "file:///project/src/CrawlerTest.php",
+        source,
+    );
     for problem in &result {
-        assert_eq!(problem.id.0, INVALID_EMBEDDED_CSS_CODE);
         assert!(problem.message.contains("Invalid CSS selector:"));
-        assert!([11, 12].contains(&start_line(&document, problem)));
     }
 }
 
@@ -81,23 +80,22 @@ final class Other {
 
 function send(JsonResponse $response, Other $other, string $value): void {
     $response->setJson('{"valid":[1,true,null]}');
-    $response->setJson('{"broken":}');
-    JsonResponse::fromJsonString("{\"first\":true \"second\":false}");
+    $response->setJson('{"broken":{|symfony.php.embedded_json.invalid:}|}');
+    JsonResponse::fromJsonString("{\"first\":true {|symfony.php.embedded_json.invalid:\"second\"|}:false}");
     $other->setJson('{"ignored":}');
     $response->setJson("{\"dynamic\":\"$value\"}");
 }
 "#;
-    let document = diagnostics_document("file:///project/src/Controller.php", source);
-    let result = analyze(&EmbeddedJsonAnalyzer::new(Some(php.clone())), &document);
-    assert_eq!(result.len(), 2);
+    let (_, result) = check_problems(
+        &EmbeddedJsonAnalyzer::new(Some(php.clone())),
+        "file:///project/src/Controller.php",
+        source,
+    );
     for problem in &result {
-        assert_eq!(problem.id.0, INVALID_EMBEDDED_JSON_CODE);
         assert_eq!(problem.source, "symfony");
         assert_eq!(problem.severity, Some(DiagnosticSeverity::ERROR));
         assert!(problem.message.contains("Invalid JSON: expected"));
     }
-    assert_eq!(start_line(&document, &result[0]), 9);
-    assert_eq!(start_line(&document, &result[1]), 10);
 }
 
 #[test]
@@ -126,23 +124,15 @@ class Crawler {
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\DomCrawler\Crawler;
 function inspect(JsonResponse $response, Crawler $crawler): void {
-    $response->setJson('{"broken":}');
-    $crawler->filter('.broken[');
-    $crawler->evaluate('count(.//article');
+    $response->setJson('{"broken":{|symfony.php.embedded_json.invalid:}|}');
+    $crawler->filter('.broken{|symfony.php.embedded_css.invalid:[|}');
+    $crawler->evaluate('count(.//{|symfony.php.embedded_xpath.invalid:article|}');
 }
 "#;
-    let document = diagnostics_document("file:///project/src/Inspector.php", source);
-    let result = analyze(&EmbeddedLanguageAnalyzer::new(Some(php.clone())), &document);
-    assert_eq!(result.len(), 3);
-    let mut codes: Vec<&str> = result.iter().map(|problem| problem.id.0.as_str()).collect();
-    codes.sort_unstable();
-    assert_eq!(
-        codes,
-        vec![
-            INVALID_EMBEDDED_CSS_CODE,
-            INVALID_EMBEDDED_JSON_CODE,
-            INVALID_EMBEDDED_XPATH_CODE
-        ]
+    check_problems(
+        &EmbeddedLanguageAnalyzer::new(Some(php.clone())),
+        "file:///project/src/Inspector.php",
+        source,
     );
 }
 
@@ -165,18 +155,18 @@ use Symfony\Component\DomCrawler\Crawler;
 final class Other { public function evaluate(string $expression): void {} }
 function find(Crawler $crawler, Other $other, string $id): void {
     $crawler->filterXPath('.//article[@id="valid"]');
-    $crawler->filterXPath('.//article[@id="missing"');
-    $crawler->evaluate('count(.//article');
+    $crawler->filterXPath('.//article[@id={|symfony.php.embedded_xpath.invalid:"missing"|}');
+    $crawler->evaluate('count(.//{|symfony.php.embedded_xpath.invalid:article|}');
     $other->evaluate('.//ignored[');
     $crawler->evaluate(".//article[@id=\"$id\"");
 }
 "#;
-    let document = diagnostics_document("file:///project/src/CrawlerTest.php", source);
-    let result = analyze(&EmbeddedXPathAnalyzer::new(Some(php.clone())), &document);
-    assert_eq!(result.len(), 2);
+    let (_, result) = check_problems(
+        &EmbeddedXPathAnalyzer::new(Some(php.clone())),
+        "file:///project/src/CrawlerTest.php",
+        source,
+    );
     for problem in &result {
-        assert_eq!(problem.id.0, INVALID_EMBEDDED_XPATH_CODE);
         assert!(problem.message.contains("Invalid XPath expression:"));
-        assert!([5, 6].contains(&start_line(&document, problem)));
     }
 }

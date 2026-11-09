@@ -16,7 +16,7 @@ use crate::dataindex::clear_message_pack_buffers;
 use crate::error::{CancelToken, Error, Result, ResultExt};
 use crate::indexer::{Indexer, Prepared};
 use crate::scanner::{
-    FILE_STATS_LIMIT, FileMeta, FileState, Inner, SkippedFileStats, StoredFileState,
+    FILE_STATS_LIMIT, FileMeta, FileState, Inner, SkippedFileStats, StoredFileState, content_hash,
     log_skipped_file, log_skipped_file_count,
 };
 use crate::store::lock;
@@ -57,16 +57,21 @@ struct FileWork {
     path: String,
     content: Vec<u8>,
     meta: FileMeta,
+    hash: i64,
 }
 
 struct PreparedFileWork {
     file: ParsedFile,
     meta: FileMeta,
+    hash: i64,
     prepared: Vec<Option<Prepared>>,
 }
 
 enum Change {
     Unchanged,
+    /// Size or modification time changed, the content did not: only the
+    /// tracked state is refreshed.
+    Touched(FileState),
     Skipped {
         stats: SkippedFileStats,
         tracked: bool,
@@ -74,6 +79,7 @@ enum Change {
     Changed {
         content: Vec<u8>,
         meta: FileMeta,
+        hash: i64,
     },
 }
 
@@ -81,6 +87,9 @@ enum Change {
 struct RunResults {
     errors: Vec<Error>,
     pending_states: Vec<FileState>,
+    /// States of touched but unchanged files; published with the pending
+    /// states but not counted as index updates.
+    touched_states: Vec<FileState>,
     published_files: usize,
     skipped: Vec<(SkippedFileStats, bool)>,
 }
@@ -92,6 +101,9 @@ struct Run<'a> {
     /// Serialises the tracked-state writes, which go to a different database
     /// than the index mutations and therefore cannot join them.
     publish: Mutex<()>,
+    /// States of files whose grouped index mutation committed durably,
+    /// filled by after-commit callbacks on whichever worker commits.
+    durable: Arc<Mutex<Vec<FileState>>>,
 }
 
 impl Inner {
@@ -133,6 +145,7 @@ impl Inner {
             cancel,
             results: Mutex::new(RunResults::default()),
             publish: Mutex::new(()),
+            durable: Arc::default(),
         };
         let result = run.execute(files, stored_states);
 
@@ -146,6 +159,18 @@ impl Inner {
                 .end_indexing_batch()
             {
                 finish_errors.push(error);
+            }
+        }
+        if result.is_ok() && finish_errors.is_empty() && !cancel.is_cancelled() {
+            let workers = self.configured_workers();
+            for indexer in &batch_indexers {
+                if let Err(error) = indexer
+                    .as_batch()
+                    .expect("filtered batch indexer")
+                    .settle_indexing_batch(cancel, workers)
+                {
+                    finish_errors.push(error);
+                }
             }
         }
         clear_message_pack_buffers();
@@ -182,7 +207,7 @@ impl Inner {
         let metadata = std::fs::metadata(path)?;
         let meta = FileMeta::of(&metadata);
         let stored = match state {
-            Some(state) => state.found.then_some(state.meta),
+            Some(state) => state.found.then_some(state),
             None => self.query_file_state(path)?,
         };
         if let Some((reason, limit)) = self.source_size_rejection(meta.size) {
@@ -196,7 +221,7 @@ impl Inner {
                 tracked: stored.is_some(),
             });
         }
-        if stored == Some(meta) {
+        if stored.is_some_and(|stored| stored.meta == meta) {
             return Ok(Change::Unchanged);
         }
         let content = std::fs::read(path)?;
@@ -213,7 +238,25 @@ impl Inner {
                 tracked: stored.is_some(),
             });
         }
-        Ok(Change::Changed { content, meta })
+        let hash = content_hash(&content);
+        if let Some(stored) = stored
+            && stored.meta.size == actual
+            && stored.hash == hash
+        {
+            return Ok(Change::Touched(FileState {
+                path: path.to_owned(),
+                meta: FileMeta {
+                    size: actual,
+                    ..meta
+                },
+                hash,
+            }));
+        }
+        Ok(Change::Changed {
+            content,
+            meta,
+            hash,
+        })
     }
 }
 
@@ -233,6 +276,12 @@ impl Run<'_> {
             None => None,
         };
         let completed = self.run_workers(files, stored_states);
+        // Batches that succeeded are committed also on the cancelled path.
+        if let Some(store) = &self.scanner.store
+            && let Err(error) = store.commit_grouped()
+        {
+            self.record_error(error);
+        }
         if completed {
             self.commit_skipped_files();
         }
@@ -312,13 +361,21 @@ impl Run<'_> {
                         continue;
                     }
                 };
-            let (content, meta) = match change {
+            let (content, meta, hash) = match change {
                 Change::Unchanged => continue,
+                Change::Touched(state) => {
+                    lock(&self.results).touched_states.push(state);
+                    continue;
+                }
                 Change::Skipped { stats, tracked } => {
                     lock(&self.results).skipped.push((stats, tracked));
                     continue;
                 }
-                Change::Changed { content, meta } => (content, meta),
+                Change::Changed {
+                    content,
+                    meta,
+                    hash,
+                } => (content, meta, hash),
             };
             if preparation_batch_would_overflow(batch.len(), batch_bytes, content.len()) {
                 self.process_batch(std::mem::take(&mut batch));
@@ -329,6 +386,7 @@ impl Run<'_> {
                 path: candidate.path,
                 content,
                 meta,
+                hash,
             });
             if preparation_batch_ready(batch.len(), batch_bytes) {
                 self.process_batch(std::mem::take(&mut batch));
@@ -371,9 +429,8 @@ impl Run<'_> {
             return;
         }
         let successful = if self.scanner.store.is_some() {
-            let mut successful = Vec::with_capacity(prepared.len());
-            self.index_with_store(&mut prepared, &mut successful);
-            successful
+            self.index_with_store(&mut prepared);
+            std::mem::take(&mut *lock(&self.durable))
         } else {
             self.index_without_store(&prepared)
         };
@@ -409,6 +466,7 @@ impl Run<'_> {
                 Ok(values) => prepared.push(PreparedFileWork {
                     file,
                     meta: item.meta,
+                    hash: item.hash,
                     prepared: values,
                 }),
                 Err(error) => self.record_error(error),
@@ -470,7 +528,9 @@ impl Run<'_> {
         successful
     }
 
-    fn index_with_store(&self, batch: &mut [PreparedFileWork], successful: &mut Vec<FileState>) {
+    /// Indexes `batch` in one grouped mutation, splitting it after a failure.
+    /// File states reach [`Run::durable`] once the group commits.
+    fn index_with_store(&self, batch: &mut [PreparedFileWork]) {
         if batch.is_empty() {
             return;
         }
@@ -479,7 +539,7 @@ impl Run<'_> {
             return;
         }
         let store = self.scanner.store.as_ref().expect("indexing with a store");
-        let mutation = match store.begin_mutation(self.cancel) {
+        let mutation = match store.begin_grouped_mutation(self.cancel) {
             Ok(mutation) => Arc::new(mutation),
             Err(error) => {
                 self.record_error(
@@ -499,8 +559,8 @@ impl Run<'_> {
             if batch.len() > 1 && !self.cancel.is_cancelled() {
                 let middle = batch.len() / 2;
                 let (left, right) = batch.split_at_mut(middle);
-                self.index_with_store(left, successful);
-                self.index_with_store(right, successful);
+                self.index_with_store(left);
+                self.index_with_store(right);
                 return;
             }
             self.record_error(Error::join(errors).expect("errors are not empty"));
@@ -514,14 +574,15 @@ impl Run<'_> {
             );
             return;
         }
-        if let Err(error) = mutation.commit() {
+        let states: Vec<FileState> = batch.iter().map(file_state).collect();
+        let durable = self.durable.clone();
+        let registered = mutation.after_commit(move || lock(&durable).extend(states));
+        if let Err(error) = registered.and_then(|()| mutation.commit()) {
             self.record_error(error.context(format!(
                 "commit indexing batch starting at {}",
                 batch[0].file.path()
             )));
-            return;
         }
-        successful.extend(batch.iter().map(file_state));
     }
 
     fn index_mutation_batch(
@@ -585,12 +646,22 @@ impl Run<'_> {
     /// ignores cancellation: it describes work that is already durable.
     fn publish_file_states(&self) {
         let _publish = lock(&self.publish);
-        let pending = std::mem::take(&mut lock(&self.results).pending_states);
+        let durable = std::mem::take(&mut *lock(&self.durable));
+        let (mut pending, touched) = {
+            let mut results = lock(&self.results);
+            results.pending_states.extend(durable);
+            (
+                std::mem::take(&mut results.pending_states),
+                std::mem::take(&mut results.touched_states),
+            )
+        };
+        let published = pending.len();
+        pending.extend(touched);
         if pending.is_empty() {
             return;
         }
         match self.scanner.update_file_states(&pending) {
-            Ok(()) => lock(&self.results).published_files += pending.len(),
+            Ok(()) => lock(&self.results).published_files += published,
             Err(error) => self.record_error(error.context("commit file state")),
         }
     }
@@ -600,5 +671,6 @@ fn file_state(item: &PreparedFileWork) -> FileState {
     FileState {
         path: item.file.path().to_owned(),
         meta: item.meta,
+        hash: item.hash,
     }
 }

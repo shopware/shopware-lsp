@@ -11,15 +11,14 @@ mod rules;
 use std::sync::Arc;
 
 use swlsp_indexer::{Indexer, ParsedFile};
-use swlsp_lsp::{Context, Problem, TextDocument};
+use swlsp_lsp::{Problem, TextDocument, fixture};
 use swlsp_php::PhpIndex;
 use swlsp_php_project::Version;
 use swlsp_shopware::{ResolvedVersion, VersionSource};
-use swlsp_syntax::TextRange;
 use tempfile::TempDir;
 
 use super::{ShopwareMigrationAnalyzer, ShopwareMigrationPayload};
-use crate::ProblemAnalyzer;
+use crate::test_support::check_problems;
 
 pub(super) struct TestIndex {
     _dir: TempDir,
@@ -67,23 +66,30 @@ pub(super) fn version(major: i64, minor: i64, patch: i64) -> ResolvedVersion {
     }
 }
 
-pub(super) fn document(uri: &str, source: &str) -> Arc<TextDocument> {
-    Arc::new(TextDocument::new(uri, source, 1))
-}
-
-pub(super) fn analyze(
+/// Asserts that the migration analyzer for `resolved` reports exactly the
+/// problems marked in `fixture` (see [`check_problems`]).
+pub(super) fn check(
     index: &TestIndex,
     resolved: ResolvedVersion,
-    document: &Arc<TextDocument>,
-) -> Vec<Problem> {
-    ShopwareMigrationAnalyzer::new(Some(index.index.clone()), resolved)
-        .analyze(&Context::background(), document)
-        .expect("analyze")
+    uri: &str,
+    fixture: &str,
+) -> (Arc<TextDocument>, Vec<Problem>) {
+    check_problems(
+        &ShopwareMigrationAnalyzer::new(Some(index.index.clone()), resolved),
+        uri,
+        fixture,
+    )
 }
 
-/// Go `problemRangeText`.
-pub(super) fn range_text(document: &TextDocument, range: TextRange) -> &str {
-    &document.source()[range]
+/// `fixture` keeping only the markers whose code is in `codes`, for the same
+/// source analyzed at a version where fewer migrations apply.
+pub(super) fn only(fixture: &str, codes: &[&str]) -> String {
+    let (source, marks) = fixture::parse(fixture);
+    let kept: Vec<_> = marks
+        .into_iter()
+        .filter(|mark| codes.contains(&mark.code.as_str()))
+        .collect();
+    fixture::render(&source, &kept)
 }
 
 pub(super) fn payload(problem: &Problem) -> ShopwareMigrationPayload {

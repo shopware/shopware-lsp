@@ -19,7 +19,7 @@ use crate::configuration::{
 use crate::context::{BoxError, CancellationToken, Context, RpcError, codes, lock};
 use crate::diagnostics::DiagnosticsState;
 use crate::document::{DocumentManager, DocumentObserver, SyntaxContext};
-use crate::inspection::{Inspection, InspectionRegistry};
+use crate::inspection::{Inspection, InspectionRegistry, SuppressionReader};
 use crate::providers::*;
 use crate::transport::{self, Connection, Dispatcher, Handler, Work};
 use crate::workspace::{WorkspaceFactory, WorkspaceRuntime};
@@ -55,6 +55,7 @@ pub(crate) struct Registry {
     pub commands: BTreeMap<String, CommandFunc>,
     pub enrichers: HashMap<LanguageId, ContextEnricher>,
     pub inspections: InspectionRegistry,
+    pub suppressions: HashMap<LanguageId, SuppressionReader>,
 }
 
 /// Client integration negotiated in `initialize`.
@@ -399,6 +400,14 @@ impl Server {
         });
     }
 
+    /// Applies the suppression comments of `language` documents to the
+    /// problems of every inspection.
+    pub fn register_suppressions(&self, language: LanguageId, reader: SuppressionReader) {
+        self.update_registry(|registry| {
+            registry.suppressions.insert(language, reader);
+        });
+    }
+
     /// Exposes the open-document lifecycle to workspace composition.
     pub fn register_document_observer(&self, observer: DocumentObserver) {
         self.documents.register_observer(observer);
@@ -689,6 +698,7 @@ impl Server {
                 result_handler(params, |p| self.semantic_tokens(ctx, p))
             }
             "textDocument/diagnostic" => value_handler(params, |p| self.diagnostic(ctx, &p)),
+            "workspace/diagnostic" => value_handler(params, |p| self.workspace_diagnostic(ctx, &p)),
             "shopware/configuration/catalog" => to_value(&self.configuration_catalog()),
             "shopware/configuration/effective" => to_value(&self.effective_configuration()),
             "shopware/configuration/reload" => to_value(&self.reload_project_configuration()),
@@ -757,10 +767,8 @@ impl Server {
 fn update_callback(weak: Weak<ServerInner>) -> impl Fn() + Send + Sync + 'static {
     move || {
         if let Some(inner) = weak.upgrade() {
-            log::info!("Publishing diagnostics to all open files");
-            let server = Server::from_inner(inner);
-            let ctx = Context::with_token(server.lifecycle.clone());
-            server.publish_diagnostics(&ctx, None);
+            log::info!("Refreshing diagnostics of open files after an index change");
+            Server::from_inner(inner).refresh_after_index_change();
         }
     }
 }

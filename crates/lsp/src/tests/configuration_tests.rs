@@ -8,7 +8,7 @@ use swlsp_lsp_protocol as protocol;
 use swlsp_projectconfig::{DiagnosticOverride, DiagnosticsConfig, Partial, PhpConfig, Severity};
 
 use super::support::*;
-use crate::configuration::{editor_configuration, inspection_domain};
+use crate::configuration::editor_configuration;
 use crate::*;
 
 fn ctx() -> Context {
@@ -69,31 +69,6 @@ fn configuration_layers_project_and_editor_values() {
 }
 
 #[test]
-fn inspection_domains_route_by_prefix() {
-    assert_eq!(inspection_domain("scss.variable"), "scss");
-    assert_eq!(inspection_domain("php.semantic"), "php");
-    assert_eq!(inspection_domain("shopware.dal"), "shopware.dal");
-    assert_eq!(inspection_domain("shopware.criteria"), "shopware.dal");
-    assert_eq!(inspection_domain("shopware.snippet"), "shopware.snippets");
-    assert_eq!(inspection_domain("shopware.other"), "shopware");
-    assert_eq!(
-        inspection_domain("symfony.service_missing"),
-        "symfony.services"
-    );
-    assert_eq!(
-        inspection_domain("symfony.duplicate_route"),
-        "symfony.services"
-    );
-    assert_eq!(inspection_domain("symfony.route"), "symfony");
-    assert_eq!(
-        inspection_domain("twig.component.props"),
-        "symfony.twigComponents"
-    );
-    assert_eq!(inspection_domain("twig.block"), "twig");
-    assert_eq!(inspection_domain("test.invalid-value"), "");
-}
-
-#[test]
 fn diagnostic_configuration_disables_and_overrides_rules() {
     for (name, diagnostics, count, severity) in [
         (
@@ -148,6 +123,50 @@ fn diagnostic_configuration_disables_and_overrides_rules() {
         if count > 0 {
             assert_eq!(items[0].severity, severity, "{name}");
         }
+        server.close_all().unwrap();
+    }
+}
+
+/// [`TestInspection`] in the configuration domain `scss`.
+struct DomainInspection;
+
+impl Inspection for DomainInspection {
+    fn definition(&self) -> InspectionDefinition {
+        InspectionDefinition {
+            domain: "scss",
+            ..TestInspection.definition()
+        }
+    }
+
+    fn inspect(
+        &self,
+        ctx: &Context,
+        document: &Arc<TextDocument>,
+        reporter: &mut dyn ProblemReporter,
+    ) -> Result<(), BoxError> {
+        TestInspection.inspect(ctx, document, reporter)
+    }
+
+    fn quick_fixes(&self) -> Vec<Arc<dyn QuickFix>> {
+        TestInspection.quick_fixes()
+    }
+}
+
+#[test]
+fn inspections_run_only_while_their_declared_domain_is_enabled() {
+    for (enabled, count) in [(true, 1), (false, 0)] {
+        let dir = temp_dir();
+        let server = Server::new(None, "", "test");
+        server.register_inspection(Arc::new(DomainInspection));
+        initialize_with(&server, dir.path(), |params| {
+            params.initialization_options.configuration = Some(Partial {
+                domains: BTreeMap::from([("scss".to_owned(), enabled)]),
+                ..Partial::default()
+            });
+        })
+        .unwrap();
+        let items = diagnostics_for(&server, "file:///project/test.yaml");
+        assert_eq!(items.len(), count, "scss enabled: {enabled}");
         server.close_all().unwrap();
     }
 }
@@ -369,6 +388,7 @@ fn configuration_catalog_serializes_like_go() {
         encoded["inspections"],
         serde_json::json!([{
             "id": "test.invalid-value",
+            "description": "Test inspection.",
             "languages": ["yaml"],
             "rules": [{"id": "test.invalid-value", "source": "test", "defaultSeverity": "warning", "defaultEnabled": true}],
         }])

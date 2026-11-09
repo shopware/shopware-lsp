@@ -2,11 +2,7 @@ use serde_json::Value;
 
 use super::*;
 use crate::services::ServiceArgumentAnalyzer;
-
-const MISSING_ARGUMENTS: &str = "symfony.service.arguments.missing";
-const UNKNOWN_NAMED_ARGUMENT: &str = "symfony.service.named_argument.unknown";
-const MISSING_METHOD: &str = "symfony.service.method.missing";
-const INVALID_TYPE: &str = "symfony.service.argument.type";
+use crate::test_support::check_problems;
 
 struct Fixture {
     _dir: tempfile::TempDir,
@@ -75,7 +71,8 @@ fn contains(value: Option<&Value>, expected: &str) -> bool {
 #[test]
 fn xml_service_argument_diagnostics() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/services.xml",
         r#"<container><services>
   <defaults autowire="false"/>
@@ -83,18 +80,15 @@ fn xml_service_argument_diagnostics() {
     <argument type="service" id="app.logger"/>
     <argument key="$name">name</argument>
   </service>
-  <service id="app.missing" class="App\NeedsArguments">
+  <service id="app.missing" class="{|symfony.service.arguments.missing:App\NeedsArguments|}">
     <argument type="service" id="app.logger"/>
   </service>
   <service id="app.autowired" class="App\NeedsArguments" autowire="true"/>
   <service id="app.factory" class="App\NeedsArguments"><factory service="factory"/></service>
 </services></container>"#,
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id.as_str(), MISSING_ARGUMENTS);
-    assert!(result[0].message.contains("$name"));
-    let data = payload(&result[0]);
+    assert!(problems[0].message.contains("$name"));
+    let data = payload(&problems[0]);
     assert_eq!(data["format"], "xml");
     let arguments = data["missingArguments"].as_array().unwrap();
     assert_eq!(arguments.len(), 1);
@@ -105,7 +99,8 @@ fn xml_service_argument_diagnostics() {
 #[test]
 fn yaml_service_argument_diagnostics() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/services.yaml",
         r"services:
   _defaults:
@@ -119,7 +114,7 @@ fn yaml_service_argument_diagnostics() {
     autowire: false
     arguments: ['@app.logger', 'name']
 
-  app.missing:
+  {|symfony.service.arguments.missing:app.missing|}:
     class: App\NeedsArguments
     autowire: false
     arguments:
@@ -131,27 +126,23 @@ fn yaml_service_argument_diagnostics() {
     factory: ['@factory', create]
 ",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id.as_str(), MISSING_ARGUMENTS);
-    assert!(result[0].message.contains("$name"));
-    assert!(!result[0].message.contains("$logger"));
+    assert!(problems[0].message.contains("$name"));
+    assert!(!problems[0].message.contains("$logger"));
 }
 
 #[test]
 fn service_argument_diagnostics_suggest_unique_typed_service() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/services.yaml",
         r"services:
-  app.consumer:
+  {|symfony.service.arguments.missing:app.consumer|}:
     class: App\NeedsArguments
     arguments: []
 ",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
-    let arguments = payload(&result[0])["missingArguments"]
+    let arguments = payload(&problems[0])["missingArguments"]
         .as_array()
         .unwrap()
         .clone();
@@ -167,7 +158,8 @@ fn service_argument_diagnostics_suggest_unique_typed_service() {
 #[test]
 fn yaml_service_named_argument_diagnostics() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/services.yaml",
         r"services:
   app.consumer:
@@ -175,21 +167,21 @@ fn yaml_service_named_argument_diagnostics() {
     arguments:
       $logger: '@app.logger'
       $name: product
-      $nam: typo
+      {|symfony.service.named_argument.unknown:$nam|}: typo
 ",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id.as_str(), UNKNOWN_NAMED_ARGUMENT);
-    assert_eq!(result[0].message, "Symfony: named argument does not exists");
-    assert_eq!(range_text(&document, result[0].range), "$nam");
-    assert!(contains(payload(&result[0]).get("suggestions"), "$name"));
+    assert_eq!(
+        problems[0].message,
+        "Symfony: named argument does not exists"
+    );
+    assert!(contains(payload(&problems[0]).get("suggestions"), "$name"));
 }
 
 #[test]
 fn yaml_service_named_argument_diagnostics_support_inherited_constructor() {
     let fixture = fixture();
-    let document = document(
+    check_problems(
+        &fixture.analyzer,
         "file:///project/services.yaml",
         r"services:
   app.consumer:
@@ -199,13 +191,13 @@ fn yaml_service_named_argument_diagnostics_support_inherited_constructor() {
       $name: product
 ",
     );
-    assert!(analyze(&fixture.analyzer, &document).is_empty());
 }
 
 #[test]
 fn yaml_service_named_argument_diagnostics_skip_factory_and_unknown_class() {
     let fixture = fixture();
-    let document = document(
+    check_problems(
+        &fixture.analyzer,
         "file:///project/services.yaml",
         r"services:
   app.factory:
@@ -219,32 +211,28 @@ fn yaml_service_named_argument_diagnostics_skip_factory_and_unknown_class() {
       $missing: value
 ",
     );
-    assert!(analyze(&fixture.analyzer, &document).is_empty());
 }
 
 #[test]
 fn yaml_service_argument_type_diagnostics() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/services.yaml",
         r"services:
   app.consumer:
     class: App\NeedsArguments
     arguments:
-      $logger: '@app.wrong'
+      $logger: '{|symfony.service.argument.type:@app.wrong|}'
       $name: product
 ",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id.as_str(), INVALID_TYPE);
     assert_eq!(
-        result[0].message,
+        problems[0].message,
         "Expect instance of: App\\LoggerInterface"
     );
-    assert_eq!(range_text(&document, result[0].range), "@app.wrong");
     assert!(contains(
-        payload(&result[0]).get("suggestions"),
+        payload(&problems[0]).get("suggestions"),
         "@app.logger"
     ));
 }
@@ -252,21 +240,18 @@ fn yaml_service_argument_type_diagnostics() {
 #[test]
 fn xml_service_argument_type_diagnostics() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/services.xml",
         r#"<container><services>
   <service id="app.consumer" class="App\NeedsArguments">
-    <argument type="service" id="app.wrong"/>
+    <argument type="service" id="{|symfony.service.argument.type:app.wrong|}"/>
     <argument>product</argument>
   </service>
 </services></container>"#,
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id.as_str(), INVALID_TYPE);
-    assert_eq!(range_text(&document, result[0].range), "app.wrong");
     assert!(contains(
-        payload(&result[0]).get("suggestions"),
+        payload(&problems[0]).get("suggestions"),
         "app.logger"
     ));
 }
@@ -274,7 +259,8 @@ fn xml_service_argument_type_diagnostics() {
 #[test]
 fn service_argument_type_diagnostics_accept_subtype_and_union() {
     let fixture = fixture();
-    let document = document(
+    check_problems(
+        &fixture.analyzer,
         "file:///project/services.yaml",
         r"services:
   app.consumer:
@@ -288,13 +274,13 @@ fn service_argument_type_diagnostics_accept_subtype_and_union() {
       $dependency: '@app.logger'
 ",
     );
-    assert!(analyze(&fixture.analyzer, &document).is_empty());
 }
 
 #[test]
 fn service_argument_type_diagnostics_use_unsaved_local_service_class() {
     let fixture = fixture();
-    let document = document(
+    check_problems(
+        &fixture.analyzer,
         "file:///project/services.yaml",
         r"services:
   app.local_wrong:
@@ -302,58 +288,52 @@ fn service_argument_type_diagnostics_use_unsaved_local_service_class() {
   app.consumer:
     class: App\NeedsArguments
     arguments:
-      $logger: '@app.local_wrong'
+      $logger: '{|symfony.service.argument.type:@app.local_wrong|}'
       $name: product
 ",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id.as_str(), INVALID_TYPE);
 }
 
 #[test]
 fn yaml_service_call_argument_type_diagnostics() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/services.yaml",
         r"services:
   app.consumer:
     class: App\NeedsArguments
     factory: ['@factory', create]
     calls:
-      - [setLogger, ['@app.wrong']]
+      - [setLogger, ['{|symfony.service.argument.type:@app.wrong|}']]
 ",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id.as_str(), INVALID_TYPE);
-    assert!(result[0].message.contains("LoggerInterface"));
+    assert!(problems[0].message.contains("LoggerInterface"));
 }
 
 #[test]
 fn xml_service_call_argument_type_diagnostics() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/services.xml",
         r#"<container><services>
   <service id="app.consumer" class="App\NeedsArguments">
     <factory service="factory"/>
     <call method="setLogger">
-      <argument type="service" id="app.wrong"/>
+      <argument type="service" id="{|symfony.service.argument.type:app.wrong|}"/>
     </call>
   </service>
 </services></container>"#,
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id.as_str(), INVALID_TYPE);
-    assert!(result[0].message.contains("LoggerInterface"));
+    assert!(problems[0].message.contains("LoggerInterface"));
 }
 
 #[test]
 fn yaml_configured_service_method_diagnostics() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/services.yaml",
         r"services:
   app.consumer:
@@ -361,16 +341,12 @@ fn yaml_configured_service_method_diagnostics() {
     factory: ['@factory', create]
     calls:
       - [setLogger, ['@app.logger']]
-      - setLoggr: []
+      - {|symfony.service.method.missing:setLoggr|}: []
 ",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    let missing = with_code(&result, MISSING_METHOD);
-    assert_eq!(missing.len(), 1);
-    assert_eq!(missing[0].message, "Missing Method");
-    assert_eq!(range_text(&document, missing[0].range), "setLoggr");
+    assert_eq!(problems[0].message, "Missing Method");
     assert!(contains(
-        payload(missing[0]).get("suggestions"),
+        payload(&problems[0]).get("suggestions"),
         "setLogger"
     ));
 }
@@ -378,21 +354,18 @@ fn yaml_configured_service_method_diagnostics() {
 #[test]
 fn xml_configured_service_method_diagnostics() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/services.xml",
         r#"<container><services>
   <service id="app.consumer" class="App\NeedsArguments">
     <factory service="factory"/>
     <call method="setLogger"/>
-    <call method="setLoggr"/>
+    <call method="{|symfony.service.method.missing:setLoggr|}"/>
   </service>
 </services></container>"#,
     );
-    let result = analyze(&fixture.analyzer, &document);
-    let missing = with_code(&result, MISSING_METHOD);
-    assert_eq!(missing.len(), 1);
-    assert_eq!(missing[0].message, "Missing Method");
-    assert_eq!(range_text(&document, missing[0].range), "setLoggr");
+    assert_eq!(problems[0].message, "Missing Method");
 }
 
 #[test]
@@ -407,7 +380,7 @@ return static function (ContainerConfigurator $container): void {
     $services = $container->services();
     $services->set('app.consumer', NeedsArguments::class)
         ->call('setLogger', [])
-        ->call('setLoggr', []);
+        ->call('{|symfony.service.method.missing:setLoggr|}', []);
 };
 ",
         r"<?php
@@ -419,7 +392,7 @@ return ServicesConfig::config([
         NeedsArguments::class => [
             'calls' => [
                 'setLogger' => [],
-                'setLoggr' => [],
+                '{|symfony.service.method.missing:setLoggr|}' => [],
             ],
         ],
     ],
@@ -431,7 +404,7 @@ return [
         'App\\NeedsArguments' => [
             'calls' => [
                 ['setLogger', []],
-                ['setLoggr', [], true],
+                ['{|symfony.service.method.missing:setLoggr|}', [], true],
             ],
         ],
     ],
@@ -439,13 +412,10 @@ return [
 ",
     ];
     for source in fixtures {
-        let document = document("file:///project/services.php", source);
-        let result = analyze(&fixture.analyzer, &document);
-        let missing = with_code(&result, MISSING_METHOD);
-        assert_eq!(missing.len(), 1, "{source}");
-        assert_eq!(range_text(&document, missing[0].range), "setLoggr");
+        let (_, problems) =
+            check_problems(&fixture.analyzer, "file:///project/services.php", source);
         assert!(contains(
-            payload(missing[0]).get("suggestions"),
+            payload(&problems[0]).get("suggestions"),
             "setLogger"
         ));
     }
@@ -454,7 +424,8 @@ return [
 #[test]
 fn configured_service_method_diagnostics_use_inherited_methods() {
     let fixture = fixture();
-    let document = document(
+    check_problems(
+        &fixture.analyzer,
         "file:///project/services.php",
         r"<?php
 return [
@@ -466,14 +437,13 @@ return [
 ];
 ",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert!(with_code(&result, MISSING_METHOD).is_empty());
 }
 
 #[test]
 fn configured_service_method_diagnostics_skip_unknown_classes() {
     let fixture = fixture();
-    let document = document(
+    check_problems(
+        &fixture.analyzer,
         "file:///project/services.yaml",
         r"services:
   app.unknown:
@@ -482,8 +452,6 @@ fn configured_service_method_diagnostics_skip_unknown_classes() {
       - missing: []
 ",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert!(with_code(&result, MISSING_METHOD).is_empty());
 }
 
 #[test]
@@ -497,7 +465,7 @@ fn configured_factory_method_diagnostics_use_factory_receiver() {
     class: App\Factory
   app.product:
     class: App\WrongLogger
-    factory: ['@app.factory', creat]
+    factory: ['@app.factory', {|symfony.service.method.missing:creat|}]
 ",
         ),
         (
@@ -505,18 +473,14 @@ fn configured_factory_method_diagnostics_use_factory_receiver() {
             r#"<container><services>
   <service id="app.factory" class="App\Factory"/>
   <service id="app.product" class="App\WrongLogger">
-    <factory service="app.factory" method="creat"/>
+    <factory service="app.factory" method="{|symfony.service.method.missing:creat|}"/>
   </service>
 </services></container>"#,
         ),
     ];
     for (uri, source) in fixtures {
-        let document = document(uri, source);
-        let result = analyze(&fixture.analyzer, &document);
-        let missing = with_code(&result, MISSING_METHOD);
-        assert_eq!(missing.len(), 1, "{uri}");
-        assert_eq!(range_text(&document, missing[0].range), "creat");
-        let data = payload(missing[0]);
+        let (_, problems) = check_problems(&fixture.analyzer, uri, source);
+        let data = payload(&problems[0]);
         assert_eq!(data["className"], "App\\Factory");
         assert!(contains(data.get("suggestions"), "create"));
     }
@@ -535,19 +499,17 @@ class Called
 ";
     std::fs::write(&class_path, class_source).unwrap();
     let php = php_index(&root.path().join("php"), &[(&p(&class_path), class_source)]);
-    let document = document(
+    let (_, problems) = check_problems(
+        &ServiceArgumentAnalyzer::new(None, Some(php)),
         &format!("file://{}", p(&root.path().join("services.yaml"))),
         r"services:
   app.called:
     class: App\Called
     calls:
-      - [initialize, []]
+      - [{|symfony.service.method.missing:initialize|}, []]
 ",
     );
-    let result = analyze(&ServiceArgumentAnalyzer::new(None, Some(php)), &document);
-    let missing = with_code(&result, MISSING_METHOD);
-    assert_eq!(missing.len(), 1);
-    let data = payload(missing[0]);
+    let data = payload(&problems[0]);
     assert_eq!(data["methodName"], "initialize");
     assert!(!data.contains_key("classURI"));
     assert!(!data.contains_key("insertLine"));
@@ -557,26 +519,23 @@ class Called
 #[test]
 fn php_service_argument_type_diagnostics() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/services.php",
         r"<?php
 namespace Symfony\Component\DependencyInjection\Loader\Configurator;
 
 $container->services()
     ->set('app.consumer', \App\NeedsArguments::class)
-    ->args([service('app.wrong')]);
+    ->args([service('{|symfony.service.argument.type:app.wrong|}')]);
 ",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id.as_str(), INVALID_TYPE);
     assert_eq!(
-        result[0].message,
+        problems[0].message,
         "Expect instance of: App\\LoggerInterface"
     );
-    assert_eq!(range_text(&document, result[0].range), "app.wrong");
     assert!(contains(
-        payload(&result[0]).get("suggestions"),
+        payload(&problems[0]).get("suggestions"),
         "app.logger"
     ));
 }
@@ -584,7 +543,8 @@ $container->services()
 #[test]
 fn php_legacy_array_service_argument_type_diagnostics() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/legacy_services.php",
         r"<?php
 namespace Symfony\Component\DependencyInjection\Loader\Configurator;
@@ -593,18 +553,15 @@ return [
     'services' => [
         'App\NeedsArguments' => [
             'arguments' => [
-                '$logger' => '@app.wrong',
+                '$logger' => '{|symfony.service.argument.type:@app.wrong|}',
             ],
         ],
     ],
 ];
 ",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id.as_str(), INVALID_TYPE);
     assert!(contains(
-        payload(&result[0]).get("suggestions"),
+        payload(&problems[0]).get("suggestions"),
         "@app.logger"
     ));
 }
@@ -612,7 +569,8 @@ return [
 #[test]
 fn php_service_argument_type_diagnostics_formats_expression_suggestion() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/services.php",
         r"<?php
 use App\NeedsArguments;
@@ -622,14 +580,12 @@ use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigura
 return static function (ContainerConfigurator $container): void {
     $services = $container->services();
     $services->set(WrongLogger::class);
-    $services->set(NeedsArguments::class)->arg(0, WrongLogger::class);
+    $services->set(NeedsArguments::class)->arg(0, {|symfony.service.argument.type:WrongLogger::class|});
 };
 ",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
     assert!(contains(
-        payload(&result[0]).get("suggestions"),
+        payload(&problems[0]).get("suggestions"),
         "service('app.logger')"
     ));
 }

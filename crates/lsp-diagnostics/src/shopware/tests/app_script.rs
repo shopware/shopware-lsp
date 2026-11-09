@@ -5,9 +5,8 @@ use swlsp_extension::ExtensionIndexer;
 use swlsp_indexer::{Indexer, ParsedFile};
 use swlsp_uriutil::file_uri;
 
-use super::analyze;
 use crate::shopware::*;
-use crate::test_support::document;
+use crate::test_support::check_problems;
 
 #[test]
 fn app_script_analyzer_checks_hook_services_and_manifest_permissions() {
@@ -49,14 +48,10 @@ class ProductHook extends Hook {
         ))
         .unwrap();
     let script_path = app_root.join("Resources/scripts/product-written/script.twig");
-    let source = "{% set orders = services.repository.search('order', hook.criteria) %}
-{% do services.cart.add('x') %}";
-    let document = document(&file_uri(&script_path.to_string_lossy()), source);
-    let problems = analyze(
+    check_problems(
         &AppScriptAnalyzer::new(Some(Arc::new(hooks)), Some(Arc::new(extensions))),
-        &document,
+        &file_uri(&script_path.to_string_lossy()),
+        "{% set orders = services.repository.search('{|app_script.permission-missing:order|}', hook.criteria) %}
+{% do services.{|app_script.service-unavailable:cart|}.add('x') %}",
     );
-    assert_eq!(problems.len(), 2);
-    assert_eq!(problems[0].id.as_str(), "app_script.service-unavailable");
-    assert_eq!(problems[1].id.as_str(), "app_script.permission-missing");
 }

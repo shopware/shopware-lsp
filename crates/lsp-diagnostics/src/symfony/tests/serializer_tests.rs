@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use super::{analyze, index_file, open_php, suggestions, tempdir};
-use crate::symfony::{MISSING_SERIALIZER_CLASS_CODE, SerializerAnalyzer};
-use crate::test_support::diagnostics_document;
+use super::{index_file, open_php, suggestions, tempdir};
+use crate::symfony::SerializerAnalyzer;
+use crate::test_support::check_problems;
 
 #[test]
 fn serializer_diagnostics_report_missing_string_class() {
@@ -14,16 +14,14 @@ fn serializer_diagnostics_report_missing_string_class() {
     );
     let serializer_dir = tempdir();
     let serializer = Arc::new(swlsp_serializer::Index::new(serializer_dir.path(), None).unwrap());
-    let source = r"<?php
-$serializer->deserialize($data, 'App\Modle[]', 'json');
-$serializer->deserialize($data, 'App\Model', 'json');
-";
-    let result = analyze(
+    let (_, result) = check_problems(
         &SerializerAnalyzer::new(Some(serializer), Some(php.clone())),
-        &diagnostics_document("file:///project/src/Handler.php", source),
+        "file:///project/src/Handler.php",
+        r"<?php
+$serializer->deserialize($data, '{|symfony.serializer.class.missing:App\Modle[]|}', 'json');
+$serializer->deserialize($data, 'App\Model', 'json');
+",
     );
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id.0, MISSING_SERIALIZER_CLASS_CODE);
     assert!(result[0].message.contains("App\\Modle"));
     assert!(suggestions(&result[0]).contains(&"App\\Model".to_owned()));
 }

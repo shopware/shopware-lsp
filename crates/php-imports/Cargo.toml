@@ -13,7 +13,5 @@ swlsp-php-resolver = { path = "../php-resolver" }
 swlsp-php-semantic = { path = "../php-semantic" }
 swlsp-php-types = { path = "../php-types" }
 swlsp-rewrite = { path = "../rewrite" }
-rustc-hash = "2"
-
-[dev-dependencies]
 swlsp-php-binder = { path = "../php-binder" }
+rustc-hash = "2"

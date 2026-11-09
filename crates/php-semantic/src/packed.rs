@@ -89,12 +89,15 @@ pub(crate) struct PackedSymbol {
     /// has-write-visibility(1) | lazy-detail(1) | range-extra(1) |
     /// type selectors(8).
     bits: u32,
-    /// `DERIVED_ID` | `MEMBER_NAME`; lives in what was padding.
+    /// `DERIVED_ID` | `MEMBER_NAME` | `INFERRED_RETURN`; lives in what was
+    /// padding.
     derived: u8,
 }
 
 const DERIVED_ID: u8 = 1;
 const MEMBER_NAME: u8 = 2;
+/// [`Flags::INFERRED_RETURN`], which does not fit the 13 flag bits.
+const INFERRED_RETURN: u8 = 4;
 
 const FLAG_BITS: u32 = 13;
 const FLAG_MASK: u32 = (1 << FLAG_BITS) - 1;
@@ -370,7 +373,11 @@ impl PackedSymbol {
     }
 
     pub fn flags(&self) -> Flags {
-        Flags(self.bits & FLAG_MASK)
+        let mut flags = Flags(self.bits & FLAG_MASK);
+        if self.derived & INFERRED_RETURN != 0 {
+            flags.insert(Flags::INFERRED_RETURN);
+        }
+        flags
     }
 
     pub fn visibility(&self) -> Visibility {
@@ -603,7 +610,13 @@ impl PackedDocument {
                 document.path.clone()
             },
             version: document.version,
-            workspace_revision: document.workspace_revision,
+            // The generation a document was analyzed against is not part of
+            // its workspace projection: equal analyses project equal graphs.
+            workspace_revision: if workspace_only {
+                0
+            } else {
+                document.workspace_revision
+            },
             namespace: document.namespace.clone(),
             symbols: builder.symbols.into_boxed_slice(),
             range_extras: builder.range_extras.into_boxed_slice(),
@@ -746,7 +759,11 @@ impl PackedBuilder {
         if core.lazy_detail {
             bits |= LAZY_DETAIL;
         }
-        debug_assert_eq!(core.flags.0 & !FLAG_MASK, 0, "flags exceed packed range");
+        debug_assert_eq!(
+            core.flags.0 & !(FLAG_MASK | Flags::INFERRED_RETURN.0),
+            0,
+            "flags exceed packed range"
+        );
         let (selection_bits, body_bits) = match (
             compact_subrange(start, selection),
             compact_subrange(start, body),
@@ -795,6 +812,9 @@ impl PackedBuilder {
                 owner
             }
         };
+        if core.flags.has(Flags::INFERRED_RETURN) {
+            derived |= INFERRED_RETURN;
+        }
         self.symbols.push(PackedSymbol {
             id: AtomicU32::new(id),
             name: core.name,

@@ -45,6 +45,10 @@ struct ReferenceNode {
 }
 
 impl ProblemAnalyzer for ControllerAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.service_index) + crate::inputs(&self.php_index))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

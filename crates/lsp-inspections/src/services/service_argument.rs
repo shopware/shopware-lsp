@@ -6,7 +6,7 @@ use serde_json::{Map, Value, json};
 use swlsp_language::LanguageId;
 use swlsp_lsp::{
     BoxError, Context, FixContext, FixId, FixPresentation, FixResolution, Inspection,
-    InspectionDefinition, QuickFix, RewriteQuickFix, bind_fix,
+    InspectionDefinition, InspectionScope, QuickFix, RewriteQuickFix, bind_fix,
 };
 use swlsp_lsp_diagnostics::ServiceArgumentAnalyzer;
 use swlsp_lsp_protocol::{self as protocol, DiagnosticSeverity};
@@ -36,6 +36,9 @@ pub fn new_service_argument(
     Arc::new(BoundInspection {
         definition: InspectionDefinition {
             id: "symfony.service.arguments".to_owned(),
+            description: "Service definitions missing constructor arguments, passing arguments of the wrong type, naming unknown arguments, or calling methods that do not exist.",
+            domain: "symfony.services",
+            scope: InspectionScope::Framework,
             languages: vec![LanguageId::Php, LanguageId::Xml, LanguageId::Yaml],
             problems: vec![
                 definition(

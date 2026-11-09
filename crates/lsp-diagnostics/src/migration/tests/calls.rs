@@ -11,48 +11,32 @@ fn shopware65_call_migrations_are_typed_and_safe() {
         "/project/vendor/Generator.php",
         "<?php\nnamespace Faker;\nclass Generator {}",
     );
-    let document = document(
-        "file:///project/src/Migrate.php",
-        r#"<?php
+    let fixture = r#"<?php
 use Faker\Generator;
 use Shopware\Core\Framework\Context;
 
 function migrate(Generator $faker, Context $context, object $other): void
 {
-    $context->addExtension(EntityIndexerRegistry::USE_INDEXING_QUEUE, new ArrayEntity());
-    $context->addExtension(EntityIndexerRegistry::DISABLE_INDEXING, new ArrayEntity());
+    $context->{|shopware.migration.context_metadata.state:addExtension|}(EntityIndexerRegistry::USE_INDEXING_QUEUE, new ArrayEntity());
+    $context->{|shopware.migration.context_metadata.state:addExtension|}(EntityIndexerRegistry::DISABLE_INDEXING, new ArrayEntity());
     $context->addExtension(EntityIndexerRegistry::OTHER, new ArrayEntity());
     $other->addExtension(EntityIndexerRegistry::USE_INDEXING_QUEUE, new ArrayEntity());
 
-    $faker->randomDigit;
-    $faker->name = 'changed';
+    $faker->{|shopware.migration.faker.property_call:randomDigit|};
+    $faker->{|shopware.migration.faker.property_call:name|} = 'changed';
     $faker->randomDigit();
     $other->randomDigit;
 }
-"#,
-    );
+"#;
+    let uri = "file:///project/src/Migrate.php";
+    let (document, problems) = check(&index, version(6, 5, 0), uri, fixture);
     assert!(document.parse_errors().is_empty());
-    let problems = analyze(&index, version(6, 5, 0), &document);
-    assert_eq!(problems.len(), 4);
-    assert_eq!(
-        problems[0].id.0,
-        "shopware.migration.context_metadata.state"
-    );
-    assert_eq!(range_text(&document, problems[0].range), "addExtension");
     assert!(payload(&problems[0]).safe);
-    assert_eq!(
-        problems[1].id.0,
-        "shopware.migration.context_metadata.state"
-    );
     assert!(payload(&problems[1]).safe);
-    assert_eq!(problems[2].id.0, "shopware.migration.faker.property_call");
-    assert_eq!(range_text(&document, problems[2].range), "randomDigit");
     assert!(payload(&problems[2]).safe);
-    assert_eq!(problems[3].id.0, "shopware.migration.faker.property_call");
-    assert_eq!(range_text(&document, problems[3].range), "name");
     assert!(!payload(&problems[3]).safe);
 
-    assert!(analyze(&index, version(6, 4, 20), &document).is_empty());
+    check(&index, version(6, 4, 20), uri, &only(fixture, &[]));
 }
 
 #[test]
@@ -62,35 +46,30 @@ fn product_stream_migration_recognizes_safe_patterns() {
         "/project/vendor/ProductStreamBuilderInterface.php",
         "<?php\nnamespace Shopware\\Core\\Content\\ProductStream\\Service;\ninterface ProductStreamBuilderInterface {}",
     );
-    let document = document(
-        "file:///project/src/ProductStream.php",
-        r#"<?php
+    // The builder parameter type also migrates; the old test filtered that out.
+    let fixture = r#"<?php
 use Shopware\Core\Content\ProductStream\Service\ProductStreamBuilderInterface;
 
 function migrate(
-    ProductStreamBuilderInterface $builder,
+    {|shopware.migration.declaration.interface_to_abstract:ProductStreamBuilderInterface $builder|},
     object $criteria,
     string $streamId,
     object $context,
 ): array {
-    $filters = $builder->buildFilters($streamId, $context);
+    $filters = $builder->{|shopware.migration.product_stream.enrich_criteria:buildFilters|}($streamId, $context);
     $criteria->addFilter(...$filters);
 
-    $criteria->addFilter(...$builder->buildFilters($streamId, $context));
+    $criteria->addFilter(...$builder->{|shopware.migration.product_stream.enrich_criteria:buildFilters|}($streamId, $context));
 
-    return $builder->buildFilters($streamId, $context);
+    return $builder->{|shopware.migration.product_stream.enrich_criteria:buildFilters|}($streamId, $context);
 }
-"#,
-    );
+"#;
+    let uri = "file:///project/src/ProductStream.php";
+    let (document, problems) = check(&index, version(6, 8, 0), uri, fixture);
     assert!(document.parse_errors().is_empty());
-    let problems = analyze(&index, version(6, 8, 0), &document);
-    let product_stream: Vec<&Problem> = problems
-        .iter()
-        .filter(|problem| problem.id.0 == "shopware.migration.product_stream.enrich_criteria")
-        .collect();
-    assert_eq!(product_stream.len(), 3);
+    let product_stream = &problems[1..];
 
-    let assignment = payload(product_stream[0]);
+    let assignment = payload(&product_stream[0]);
     assert_eq!(assignment.kind, "assignment");
     assert!(assignment.safe);
     assert!(assignment.start < assignment.end);
@@ -99,7 +78,7 @@ function migrate(
         "$builder->enrichCriteria($criteria, $streamId, $context);"
     );
 
-    let inline = payload(product_stream[1]);
+    let inline = payload(&product_stream[1]);
     assert_eq!(inline.kind, "inline");
     assert!(inline.safe);
     assert_eq!(
@@ -107,7 +86,7 @@ function migrate(
         "$builder->enrichCriteria($criteria, $streamId, $context)"
     );
 
-    let manual = payload(product_stream[2]);
+    let manual = payload(&product_stream[2]);
     assert_eq!(manual.kind, "manual");
     assert!(manual.safe);
     assert_ne!(manual.start, 0);
@@ -118,5 +97,5 @@ function migrate(
             .contains("manual migration required")
     );
 
-    assert!(analyze(&index, version(6, 7, 10), &document).is_empty());
+    check(&index, version(6, 7, 10), uri, &only(fixture, &[]));
 }

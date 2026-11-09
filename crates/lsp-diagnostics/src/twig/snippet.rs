@@ -52,6 +52,10 @@ fn snippet_problem(id: &str, range: TextRange, message: String, key: &str) -> Pr
 }
 
 impl ProblemAnalyzer for SnippetAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.snippet_index) + crate::inputs(&self.translation_index))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

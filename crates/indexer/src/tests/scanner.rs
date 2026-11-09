@@ -234,6 +234,7 @@ fn updates_file_states_in_batches() {
                 size: 5,
                 mtime: 1_234,
             },
+            hash: 0,
         })
         .collect();
     scanner.inner.update_file_states(&states).unwrap();
@@ -449,11 +450,13 @@ fn remove_files_batches_state_deletion() {
         .map(|path| FileState {
             path: path.clone(),
             meta: FileMeta { size: 1, mtime: 1 },
+            hash: 0,
         })
         .collect();
     states.push(FileState {
         path: "/survivor.php".into(),
         meta: FileMeta { size: 1, mtime: 1 },
+        hash: 0,
     });
     scanner.inner.update_file_states(&states).unwrap();
     scanner.remove_files(&none(), &paths).unwrap();
@@ -684,6 +687,7 @@ fn seed_states(scanner: &FileScanner, states: &[(&str, i64, i64)]) {
                 size: *size,
                 mtime: *mtime,
             },
+            hash: 0,
         })
         .collect();
     scanner.inner.update_file_states(&states).unwrap();
@@ -692,6 +696,7 @@ fn seed_states(scanner: &FileScanner, states: &[(&str, i64, i64)]) {
 fn found(size: i64, mtime: i64) -> StoredFileState {
     StoredFileState {
         meta: FileMeta { size, mtime },
+        hash: 0,
         found: true,
     }
 }
@@ -758,6 +763,11 @@ fn notifies_batch_indexers_on_failure() {
     assert_eq!(indexer.begins.load(Ordering::SeqCst), 1);
     assert_eq!(indexer.candidates.load(Ordering::SeqCst), 1);
     assert_eq!(indexer.ends.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        indexer.settles.load(Ordering::SeqCst),
+        0,
+        "failed runs are not settled"
+    );
 }
 
 #[test]
@@ -769,9 +779,15 @@ fn notifies_update_after_batch_indexers_publish() {
     scanner.add_indexer(indexer.clone());
     let (sender, published) = crossbeam_channel::unbounded();
     let observed = indexer.clone();
-    scanner.set_on_update(move || sender.send(observed.ends.load(Ordering::SeqCst)).unwrap());
+    scanner.set_on_update(move || {
+        let ends = observed.ends.load(Ordering::SeqCst);
+        let settles = observed.settles.load(Ordering::SeqCst);
+        sender.send((ends, settles)).unwrap();
+    });
     scanner.index_files(&none(), &[&path]).unwrap();
-    assert_eq!(published.try_recv().unwrap(), 1);
+    // Consumers only see a run once it ended and settled, in that order.
+    assert_eq!(published.try_recv().unwrap(), (1, 1));
+    assert_eq!(indexer.ends_before_settle.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -1129,4 +1145,44 @@ fn indexed_content_matches_only_for_the_scanned_disk_state() {
         .unwrap();
     assert!(scanner.indexed_content_matches(&file, b"<?php changed"));
     assert!(!scanner.indexed_content_matches(&text(&root.path().join("missing.php")), b""));
+}
+
+fn stored_mtime(scanner: &FileScanner, path: &str) -> i64 {
+    scanner
+        .with_db(|connection| {
+            Ok(connection.query_row(
+                "SELECT mtime FROM file_hashes WHERE path = ?",
+                [path],
+                |row| row.get(0),
+            )?)
+        })
+        .unwrap()
+}
+
+#[test]
+fn touched_files_with_unchanged_content_are_not_reindexed() {
+    let root = tempfile::tempdir().unwrap();
+    let file = write(&root.path().join("touched.php"), "<?php echo 1;");
+    let path = text(&file);
+    let indexer = Arc::new(MockIndexer::default());
+    let mut scanner = scanner(root.path(), &root.path().join("scanner.db"), None);
+    scanner.add_indexer(indexer.clone());
+    set_mtime(&file, 1_000, 0);
+    scanner.index_files(&none(), &[&path]).unwrap();
+    assert!(indexer.has(&file));
+
+    // Same content, new modification time (git checkout, touch): the
+    // tracked state follows the file, the indexer does not run.
+    indexer.indexed.lock().unwrap().clear();
+    set_mtime(&file, 2_000, 0);
+    scanner.index_files(&none(), &[&path]).unwrap();
+    assert!(!indexer.has(&file));
+    assert_eq!(stored_mtime(&scanner, &path), 2_000_000_000_000);
+
+    // Same size, different content: reindexed.
+    std::fs::write(&file, "<?php echo 2;").unwrap();
+    set_mtime(&file, 3_000, 0);
+    scanner.index_files(&none(), &[&path]).unwrap();
+    assert!(indexer.has(&file));
+    assert_eq!(stored_mtime(&scanner, &path), 3_000_000_000_000);
 }

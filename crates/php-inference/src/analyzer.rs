@@ -53,7 +53,7 @@ impl Analyzer {
     /// Analyzes a copy of `document`.
     pub fn analyze(&self, document: &Document, root: &SyntaxNode) -> Document {
         let source = root.text().to_string();
-        self.run(document.clone(), root, &source, false)
+        self.run(document.clone(), root, &source, false, true)
     }
 
     /// Enriches a document exclusively owned by the caller. Use this in the
@@ -75,10 +75,30 @@ impl Analyzer {
         root: &SyntaxNode,
         source: &str,
     ) -> Document {
-        self.run(document, root, source, true)
+        self.run(document, root, source, true, true)
     }
 
-    fn run(&self, document: Document, root: &SyntaxNode, source: &str, live: bool) -> Document {
+    /// Infers only the return types of the document's function-like
+    /// declarations (the fixed point of [`Analyzer::analyze_owned_with_source`]),
+    /// skipping top-level code, declaration validation, and variable
+    /// references. Expression facts in the result are incomplete.
+    pub fn infer_returns_owned(
+        &self,
+        document: Document,
+        root: &SyntaxNode,
+        source: &str,
+    ) -> Document {
+        self.run(document, root, source, true, false)
+    }
+
+    fn run(
+        &self,
+        document: Document,
+        root: &SyntaxNode,
+        source: &str,
+        live: bool,
+        complete: bool,
+    ) -> Document {
         const MAXIMUM_INFERENCE_PASSES: usize = 8;
         let mut state = AnalyzerState::new(self, document, source);
         let (functions, function_indices) = indexed_functions(&state.document, root);
@@ -126,6 +146,9 @@ impl Analyzer {
                 .map(|(index, _)| index)
                 .collect();
             pass += 1;
+        }
+        if !complete {
+            return state.document;
         }
         let snapshot = state.snapshot.clone();
         state.analyze_top_level(&snapshot, root);
@@ -307,7 +330,11 @@ impl<'e> AnalyzerState<'e> {
             for returned in &returns[1..] {
                 joiner.add(returned.clone());
             }
-            self.document.symbols[function.symbol_index].return_type = joiner.value();
+            let symbol = &mut self.document.symbols[function.symbol_index];
+            symbol.return_type = joiner.value();
+            // The body can call into other files, so the type is only as
+            // complete as this analysis snapshot.
+            symbol.flags.insert(Flags::INFERRED_RETURN);
         }
         dependencies
     }

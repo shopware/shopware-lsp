@@ -531,6 +531,16 @@ impl AdminAnalyzer {
 }
 
 impl ProblemAnalyzer for AdminAnalyzer {
+    fn input_revision(&self, document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        // Only Administration files are analyzed, against the Administration
+        // index and its open-document overlays.
+        if !document.uri.contains("Resources/app/administration") {
+            Some(0)
+        } else {
+            Some(crate::inputs(&self.admin_indexer))
+        }
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

@@ -5,14 +5,15 @@ use std::sync::Arc;
 use swlsp_console::{
     Index, InputKind, ReferenceRole, inputs_for_reference, reference_at, validate_reference,
 };
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::PHP_STRING;
 use swlsp_php::PhpIndex;
 
 use super::{lower_ext, symfony_warning};
-use crate::ProblemAnalyzer;
 use crate::common::value_node_text_range;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 pub const MISSING_CONSOLE_COMMAND_CODE: &str = "symfony.console.command.missing";
 pub const MISSING_CONSOLE_ARGUMENT_CODE: &str = "symfony.console.argument.missing";
@@ -29,7 +30,27 @@ impl ConsoleAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for ConsoleAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "symfony.console",
+        description: "Console commands, arguments and options that are referenced but not defined.",
+        domain: "symfony.console",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Php],
+        source: "symfony",
+        codes: &[
+            MISSING_CONSOLE_ARGUMENT_CODE,
+            MISSING_CONSOLE_COMMAND_CODE,
+            MISSING_CONSOLE_OPTION_CODE,
+        ],
+    };
+}
+
 impl ProblemAnalyzer for ConsoleAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.index) + crate::inputs(&self.php_index))
+    }
+
     fn analyze(
         &self,
         _ctx: &Context,

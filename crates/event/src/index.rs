@@ -5,8 +5,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use swlsp_indexer::{
-    DataIndexer, Indexer, Mutation, ParsedFile, Result, Store, TransactionalClearer,
-    TransactionalRemover,
+    DataIndexer, Indexer, Mutation, ParsedFile, Prepared, PreparingIndexer, Result, Store,
+    TransactionalClearer, TransactionalRemover,
 };
 use swlsp_parser_php::query as phpquery;
 use swlsp_php::{NameResolver, PhpIndex};
@@ -21,10 +21,22 @@ use crate::parser::{
 
 type PathSet = Arc<RwLock<HashSet<String>>>;
 
+/// Keyed records extracted from one file; `None` leaves the file alone.
+struct PreparedRecords(Option<Vec<(String, Record)>>);
+
 #[derive(Default)]
 struct ConstantCache {
     revision: u64,
     values: HashMap<String, String>,
+}
+
+/// The grouped event catalog and the revisions it was derived from: the
+/// records repository's and the PHP index's (constants and listener types
+/// resolve through it).
+struct EventCatalog {
+    records: u64,
+    php: Option<(usize, u64)>,
+    events: Arc<[Event]>,
 }
 
 /// Indexes Symfony event listeners (subscribers, `#[AsEventListener]`,
@@ -37,9 +49,17 @@ pub struct Index {
     php_index: RwLock<Option<PhpIndex>>,
     paths: PathSet,
     constants: Mutex<ConstantCache>,
+    catalog: Mutex<Option<EventCatalog>>,
 }
 
 impl Index {
+    /// Advanced after every committed change to this index's
+    /// records (the catalog also resolves through the PHP index); inspections
+    /// declare it as an input (`ProblemAnalyzer::input_revision`).
+    pub fn revision(&self) -> u64 {
+        self.records.revision()
+    }
+
     pub fn new(config_dir: impl AsRef<Path>, store: Option<&Store>) -> Result<Self> {
         let records = DataIndexer::repository(
             config_dir.as_ref().join("events.db"),
@@ -58,6 +78,7 @@ impl Index {
             php_index: RwLock::new(None),
             paths: Arc::new(RwLock::new(paths.into_iter().collect())),
             constants: Mutex::new(ConstantCache::default()),
+            catalog: Mutex::new(None),
         })
     }
 
@@ -78,17 +99,49 @@ impl Index {
     /// Every event, sorted by name case-insensitively. Constant expressions
     /// and listener parameter types are resolved through the PHP index.
     pub fn events(&self) -> Result<Vec<Event>> {
-        let records = self.records.get_all_values_view()?;
+        self.events_view().map(|events| events.to_vec())
+    }
+
+    /// [`Index::events`] without copying: the catalog is derived once per
+    /// revision of the records and the PHP index and shared until either
+    /// changes.
+    pub fn events_view(&self) -> Result<Arc<[Event]>> {
         let php_index = self.php_index();
+        // Read before deriving, so a change committed meanwhile is not
+        // memoized under the old revisions.
+        let records = self.records.revision();
+        let php = php_index
+            .as_ref()
+            .map(|index| (index.identity(), index.revision()));
+        if let Some(catalog) = self
+            .catalog
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .filter(|catalog| catalog.records == records && catalog.php == php)
+        {
+            return Ok(catalog.events.clone());
+        }
+        let events: Arc<[Event]> = self.derive_events(php_index.as_ref())?.into();
+        *self.catalog.lock().unwrap_or_else(PoisonError::into_inner) = Some(EventCatalog {
+            records,
+            php,
+            events: events.clone(),
+        });
+        Ok(events)
+    }
+
+    fn derive_events(&self, php_index: Option<&PhpIndex>) -> Result<Vec<Event>> {
+        let records = self.records.get_all_values_view()?;
         let mut grouped: HashMap<String, Event> = HashMap::new();
         for record in records.iter() {
             let mut event_type = record.event_type.clone();
             if event_type.is_empty() {
-                event_type = record_event_type(php_index.as_ref(), record);
+                event_type = record_event_type(php_index, record);
             }
             let mut name = record.name.clone();
             if name.is_empty() {
-                name = self.constant_value(php_index.as_ref(), &record.expression);
+                name = self.constant_value(php_index, &record.expression);
             }
             if name.is_empty() && record.expression.is_empty() {
                 name = event_type.clone();
@@ -136,9 +189,10 @@ impl Index {
             return Ok(None);
         }
         Ok(self
-            .events()?
-            .into_iter()
-            .find(|event| equal_fold(&event.name, name)))
+            .events_view()?
+            .iter()
+            .find(|event| equal_fold(&event.name, name))
+            .cloned())
     }
 
     /// The listener declared at `offset` in `path`.
@@ -166,8 +220,8 @@ impl Index {
             return Ok(Vec::new());
         }
         Ok(self
-            .events()?
-            .into_iter()
+            .events_view()?
+            .iter()
             .filter(|event| {
                 event.occurrences.iter().any(|listener| {
                     listener.kind == OccurrenceKind::Listener
@@ -175,6 +229,7 @@ impl Index {
                         && (method.is_empty() || equal_fold(&listener.method, method))
                 })
             })
+            .cloned()
             .collect())
     }
 
@@ -262,34 +317,21 @@ impl Index {
         }
     }
 
-    fn remove_paths(&self, paths: &[String], mutation: Option<&Mutation>) -> Result<()> {
-        let paths = paths.to_vec();
-        self.publish(mutation, move |set| {
-            for path in &paths {
-                set.remove(path);
-            }
-        })
-    }
-}
-
-impl Indexer for Index {
-    fn id(&self) -> &str {
-        "symfony.event"
-    }
-
-    fn index(&self, file: &ParsedFile) -> Result<()> {
+    /// Parses one file's records without writing anything. `None` means the
+    /// file is neither a candidate nor previously indexed.
+    fn extract(&self, file: &ParsedFile) -> PreparedRecords {
         let path = file.path();
         let records = match file.extension() {
             ".php" => {
                 if !is_php_event_candidate(file.source()) && !self.has_path(path) {
-                    return Ok(());
+                    return PreparedRecords(None);
                 }
                 parse_php(file)
             }
             ".yaml" | ".yml" | ".xml" => {
                 if !file.source().contains("kernel.event_listener") {
                     if !self.has_path(path) {
-                        return Ok(());
+                        return PreparedRecords(None);
                     }
                     Vec::new()
                 } else if file.extension() == ".xml" {
@@ -298,7 +340,7 @@ impl Indexer for Index {
                     parse_yaml(file)
                 }
             }
-            _ => return Ok(()),
+            _ => return PreparedRecords(None),
         };
         // Go keys a map by record key; equal keys keep the last value.
         let mut items: Vec<(String, Record)> = Vec::with_capacity(records.len());
@@ -316,6 +358,15 @@ impl Indexer for Index {
                 }
             }
         }
+        PreparedRecords(Some(items))
+    }
+
+    /// Stores extracted records and publishes the path membership.
+    fn persist(&self, file: &ParsedFile, prepared: &PreparedRecords) -> Result<()> {
+        let Some(items) = &prepared.0 else {
+            return Ok(());
+        };
+        let path = file.path();
         let present = !items.is_empty();
         self.records.batch_save_items_in(
             file.mutation(),
@@ -334,6 +385,26 @@ impl Indexer for Index {
         })
     }
 
+    fn remove_paths(&self, paths: &[String], mutation: Option<&Mutation>) -> Result<()> {
+        let paths = paths.to_vec();
+        self.publish(mutation, move |set| {
+            for path in &paths {
+                set.remove(path);
+            }
+        })
+    }
+}
+
+impl Indexer for Index {
+    fn id(&self) -> &str {
+        "symfony.event"
+    }
+
+    fn index(&self, file: &ParsedFile) -> Result<()> {
+        let prepared = self.extract(file);
+        self.persist(file, &prepared)
+    }
+
     fn removed_files(&self, paths: &[String]) -> Result<()> {
         self.records.batch_delete_by_file_paths(paths)?;
         self.remove_paths(paths, None)
@@ -348,12 +419,29 @@ impl Indexer for Index {
         self.publish(None, HashSet::clear)
     }
 
+    fn as_preparing(&self) -> Option<&dyn PreparingIndexer> {
+        Some(self)
+    }
+
     fn as_transactional_remover(&self) -> Option<&dyn TransactionalRemover> {
         Some(self)
     }
 
     fn as_transactional_clearer(&self) -> Option<&dyn TransactionalClearer> {
         Some(self)
+    }
+}
+
+impl PreparingIndexer for Index {
+    fn prepare(&self, file: &ParsedFile) -> Result<Option<Prepared>> {
+        Ok(Some(Box::new(self.extract(file))))
+    }
+
+    fn index_prepared(&self, file: &ParsedFile, prepared: Option<&Prepared>) -> Result<()> {
+        match prepared.and_then(|value| value.downcast_ref::<PreparedRecords>()) {
+            Some(prepared) => self.persist(file, prepared),
+            None => self.index(file),
+        }
     }
 }
 
@@ -470,4 +558,10 @@ fn named_event_type(value: &Type) -> String {
         .map(named_event_type)
         .find(|name| !name.is_empty())
         .unwrap_or_default()
+}
+
+impl swlsp_indexer::Revisioned for Index {
+    fn revision(&self) -> u64 {
+        Index::revision(self)
+    }
 }

@@ -3,6 +3,7 @@ use swlsp_symfony::RouteIndexer;
 
 use super::*;
 use crate::services::RouteAnalyzer;
+use crate::test_support::check_problems;
 
 struct Fixture {
     _dir: tempfile::TempDir,
@@ -74,105 +75,81 @@ fn route_diagnostics_for_php_and_twig() {
         (
             "file:///project/Controller.php",
             "<?php $this->redirectToRoute('product.show');",
-            false,
         ),
         (
             "file:///project/Controller.php",
-            "<?php $this->generateUrl('product.missing');",
-            true,
+            "<?php $this->generateUrl('{|symfony.route.missing:product.missing|}');",
         ),
+        ("file:///project/view.twig", "{{ path('product.show') }}"),
         (
             "file:///project/view.twig",
-            "{{ path('product.show') }}",
-            false,
-        ),
-        (
-            "file:///project/view.twig",
-            "{{ url('product.missing') }}",
-            true,
+            "{{ url('{|symfony.route.missing:product.missing|}') }}",
         ),
         (
             "file:///project/view.twig",
             "{% if app.request.attributes.get('_route') == 'product.show' %}{% endif %}",
-            false,
         ),
         (
             "file:///project/view.twig",
-            "{% if app.request.attributes.get('_route') in ['product.missing'] %}{% endif %}",
-            true,
+            "{% if app.request.attributes.get('_route') in ['{|symfony.route.missing:product.missing|}'] %}{% endif %}",
         ),
         (
             "file:///project/view.twig",
             "{% if app.request.attributes.get('_route') starts with 'product.missing' %}{% endif %}",
-            false,
         ),
         (
             "file:///project/view.twig",
             "{{ path(\"product.#{kind}\") }}",
-            false,
         ),
         (
             "file:///project/view.twig",
             r"{{ path('App\\Controller\\ProductController::show') }}",
-            false,
         ),
     ];
-    for (uri, source, missing) in tests {
-        let result = analyze(&fixture.analyzer, &document(uri, source));
-        if !missing {
-            assert!(result.is_empty(), "{source}");
-            continue;
+    for (uri, source) in tests {
+        let (_, problems) = check_problems(&fixture.analyzer, uri, source);
+        for problem in &problems {
+            assert_eq!(problem.message, "Route 'product.missing' not found");
+            assert_eq!(problem.source, "symfony");
         }
-        assert_eq!(result.len(), 1, "{source}");
-        assert_eq!(result[0].id.as_str(), "symfony.route.missing");
-        assert_eq!(result[0].message, "Route 'product.missing' not found");
-        assert_eq!(result[0].source, "symfony");
     }
 }
 
 #[test]
 fn route_diagnostics_include_typo_suggestions_and_precise_range() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/Controller.php",
-        "<?php $this->generateUrl('product.sho');",
+        "<?php $this->generateUrl('{|symfony.route.missing:product.sho|}');",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
-    assert!(suggestions(&result[0]).contains(&"product.show".to_owned()));
-    assert_eq!(range_text(&document, result[0].range), "product.sho");
+    assert!(suggestions(&problems[0]).contains(&"product.show".to_owned()));
 }
 
 #[test]
 fn route_diagnostics_validate_inherited_phpdoc_assistant_references() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/src/Usage.php",
         r"<?php
 namespace App\Controller;
 function open(RouteConsumer $consumer): void {
-    $consumer->open('product.sho');
+    $consumer->open('{|symfony.route.missing:product.sho|}');
 }",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id.as_str(), "symfony.route.missing");
-    assert!(suggestions(&result[0]).contains(&"product.show".to_owned()));
-    assert_eq!(range_text(&document, result[0].range), "product.sho");
+    assert!(suggestions(&problems[0]).contains(&"product.show".to_owned()));
 }
 
 #[test]
 fn twig_route_comparison_diagnostics_include_typo_suggestion() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/view.twig",
-        "{% if app.request.attributes.get('_route') is same as('product.sho') %}{% endif %}",
+        "{% if app.request.attributes.get('_route') is same as('{|symfony.route.missing:product.sho|}') %}{% endif %}",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id.as_str(), "symfony.route.missing");
-    assert!(suggestions(&result[0]).contains(&"product.show".to_owned()));
-    assert_eq!(range_text(&document, result[0].range), "product.sho");
+    assert!(suggestions(&problems[0]).contains(&"product.show".to_owned()));
 }
 
 #[test]
@@ -181,27 +158,20 @@ fn route_diagnostics_mark_deprecated_controller_actions() {
     let tests = [
         (
             "file:///project/Consumer.php",
-            "<?php $this->generateUrl('product.legacy_method');",
-            "product.legacy_method",
+            "<?php $this->generateUrl('{|symfony.controller.deprecated:product.legacy_method|}');",
         ),
         (
             "file:///project/view.twig",
-            "{{ path('product.legacy_class') }}",
-            "product.legacy_class",
+            "{{ path('{|symfony.controller.deprecated:product.legacy_class|}') }}",
         ),
         (
             "file:///project/view.twig",
-            "{{ path('product.legacy_service') }}",
-            "product.legacy_service",
+            "{{ path('{|symfony.controller.deprecated:product.legacy_service|}') }}",
         ),
     ];
-    for (uri, source, route) in tests {
-        let document = document(uri, source);
-        let result = analyze(&fixture.analyzer, &document);
-        assert_eq!(result.len(), 1, "{source}");
-        assert_eq!(result[0].id.as_str(), "symfony.controller.deprecated");
-        assert_eq!(result[0].severity, Some(DiagnosticSeverity::HINT));
-        assert_eq!(result[0].tags, vec![DiagnosticTag::DEPRECATED]);
-        assert_eq!(range_text(&document, result[0].range), route);
+    for (uri, source) in tests {
+        let (_, problems) = check_problems(&fixture.analyzer, uri, source);
+        assert_eq!(problems[0].severity, Some(DiagnosticSeverity::HINT));
+        assert_eq!(problems[0].tags, vec![DiagnosticTag::DEPRECATED]);
     }
 }

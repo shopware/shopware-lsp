@@ -2,7 +2,8 @@
 
 use std::sync::Arc;
 
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_messenger::{Reference, ReferenceRole, public_handler_methods, reference_at};
 use swlsp_parser_php::syntax::PHP_STRING;
 use swlsp_parser_xml::syntax::XML_ATTRIBUTE;
@@ -11,8 +12,8 @@ use swlsp_php::PhpIndex;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
 
 use super::{lower_ext, symfony_warning};
-use crate::ProblemAnalyzer;
 use crate::common::value_node_text_range;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 pub const MISSING_MESSENGER_MESSAGE_CODE: &str = "symfony.messenger.message.missing";
 pub const MISSING_MESSENGER_HANDLER_METHOD_CODE: &str = "symfony.messenger.handler_method.missing";
@@ -52,7 +53,26 @@ impl MessengerAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for MessengerAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "symfony.messenger",
+        description: "Messenger handlers for unknown messages and handler methods that do not exist.",
+        domain: "symfony.messenger",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Php, LanguageId::Xml, LanguageId::Yaml],
+        source: "symfony",
+        codes: &[
+            MISSING_MESSENGER_HANDLER_METHOD_CODE,
+            MISSING_MESSENGER_MESSAGE_CODE,
+        ],
+    };
+}
+
 impl ProblemAnalyzer for MessengerAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.php_index))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

@@ -1,17 +1,13 @@
 //! Shared fixture for the Administration analyzer tests.
-#![allow(dead_code)]
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use swlsp_admin::{AdminComponentIndexer, VueComponent, VueComponentProp};
 use swlsp_indexer::{Indexer, ParsedFile};
-use swlsp_lsp::{Context, Problem, TextDocument};
-use swlsp_syntax::TextRange;
+use swlsp_lsp::{Problem, TextDocument};
 
 use super::AdminAnalyzer;
-use crate::ProblemAnalyzer;
 
 pub struct Fixture {
     _dir: tempfile::TempDir,
@@ -72,11 +68,10 @@ impl Fixture {
         AdminAnalyzer::new(Some(self.indexer.clone()))
     }
 
-    pub fn analyze_path(&self, path: &str, source: &str) -> Vec<Problem> {
-        analyze(
-            &self.analyzer(),
-            &document(&swlsp_uriutil::file_uri(path), source),
-        )
+    /// Checks the problems reported for `path` against the markup in
+    /// `fixture` (see [`check`]).
+    pub fn check_path(&self, path: &str, fixture: &str) -> Vec<Problem> {
+        check(&self.analyzer(), &swlsp_uriutil::file_uri(path), fixture)
     }
 
     pub fn update_live(&self, path: &str, source: &str) {
@@ -94,28 +89,10 @@ pub fn document(uri: &str, source: &str) -> Arc<TextDocument> {
     Arc::new(TextDocument::new(uri, source, 1))
 }
 
-pub fn analyze(analyzer: &AdminAnalyzer, document: &Arc<TextDocument>) -> Vec<Problem> {
-    analyzer
-        .analyze(&Context::background(), document)
-        .expect("analyze")
-}
-
-pub fn codes(problems: &[Problem]) -> HashSet<String> {
-    problems
-        .iter()
-        .map(|problem| problem.id.0.clone())
-        .collect()
-}
-
-pub fn with_code<'a>(problems: &'a [Problem], code: &str) -> Vec<&'a Problem> {
-    problems
-        .iter()
-        .filter(|problem| problem.id.0 == code)
-        .collect()
-}
-
-pub fn slice(source: &str, range: TextRange) -> &str {
-    &source[usize::from(range.start())..usize::from(range.end())]
+/// Asserts that `analyzer` reports exactly the problems marked in `fixture`
+/// for `uri` and returns them in markup order.
+pub fn check(analyzer: &AdminAnalyzer, uri: &str, fixture: &str) -> Vec<Problem> {
+    crate::test_support::check_problems(analyzer, uri, fixture).1
 }
 
 pub fn prop(name: &str, type_: &str, required: bool) -> VueComponentProp {

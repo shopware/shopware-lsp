@@ -18,7 +18,7 @@ swlsp-php-semantic = { path = "../php-semantic" }
 swlsp-php-stubs = { path = "../php-stubs" }
 swlsp-php-types = { path = "../php-types" }
 swlsp-textutil = { path = "../textutil" }
-flate2 = "1"
+lz4_flex = "0.11"
 lru = "0.16"
 serde = { version = "1", features = ["derive"] }
 

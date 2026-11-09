@@ -7,13 +7,14 @@ use serde_json::json;
 use swlsp_indexer::{Indexer, ParsedFile};
 use swlsp_lsp::{Context, DocumentResolver, DocumentSnapshot, Problem, TextDocument, bind_fix};
 use swlsp_php::PhpIndex;
+use swlsp_symfony::ServiceIndex;
 use swlsp_syntax::{SyntaxElement, SyntaxNodeExt, TextRange, TextSize};
 use swlsp_uriutil::file_uri;
 
 use super::service_argument::ServiceArgumentFix;
 use super::*;
 use crate::test_support::{
-    StaticDocumentResolver, apply_single, document, fix_context, inspect, quick_fix_with_id,
+    StaticDocumentResolver, apply_single, check_diagnostics, check_fix, document, fix_context,
 };
 
 #[test]
@@ -157,41 +158,150 @@ fn php_method_fix_resolves_indexed_class_and_builds_cross_file_edit() {
 fn invokable_command_inspection_rewrites_return_type_from_the_cst() {
     let cache = tempfile::tempdir().unwrap();
     let php = PhpIndex::open(cache.path().join("php-index"), None).unwrap();
-    let document = document(
-        "file:///project/src/Command.php",
+    let inspection = new_invokable_command(Some(php));
+    let uri = "file:///project/src/Command.php";
+    let before = r"<?php
+use Symfony\Component\Console\Attribute\AsCommand;
+
+#[AsCommand]
+class Command
+{
+    public function {|symfony.console.invoke.return_type:__invoke|}(): string
+    {
+        return {|symfony.console.invoke.return_value:'failure'|};
+    }
+}
+";
+    let (_, problems) = check_diagnostics(inspection.as_ref(), uri, before);
+    assert_eq!(problems[0].payload, Some(json!({})));
+    check_fix(
+        inspection.as_ref(),
+        uri,
+        before,
+        INVOKABLE_RETURN_TYPE_FIX_ID,
         r"<?php
 use Symfony\Component\Console\Attribute\AsCommand;
 
 #[AsCommand]
 class Command
 {
-    public function __invoke(): string
+    public function __invoke(): int
     {
         return 'failure';
     }
 }
 ",
     );
-    let inspection = new_invokable_command(Some(php));
-    let problems = inspect(inspection.as_ref(), &document);
-    assert!(!problems.is_empty());
-    let problem = &problems[0];
-    assert_eq!(problem.id.as_str(), "symfony.console.invoke.return_type");
-    assert_eq!(problem.fixes.len(), 1);
-    assert_eq!(problem.payload, Some(json!({})));
+}
 
-    let fix = quick_fix_with_id(inspection.as_ref(), INVOKABLE_RETURN_TYPE_FIX_ID);
-    let updated = apply_single(
-        &fix,
-        &fix_context(&document, problem, &problem.fixes[0], None),
+/// Indexes `php` into a PHP index and `services` into a service index that
+/// resolves classes through it.
+fn symfony_indexes(
+    dir: &std::path::Path,
+    php: &[(&str, &str)],
+    services: &[(&str, &str)],
+) -> (PhpIndex, Arc<ServiceIndex>) {
+    let php_index = PhpIndex::open(dir.join("php"), None).unwrap();
+    for (path, source) in php {
+        php_index
+            .index(&ParsedFile::new(*path, source.as_bytes().to_vec()))
+            .unwrap();
+    }
+    let service_index =
+        ServiceIndex::new(&dir.to_string_lossy(), dir.join("symfony-cache"), None).unwrap();
+    service_index.set_php_index(Some(php_index.clone()));
+    for (path, source) in services {
+        service_index
+            .index(&ParsedFile::new(*path, source.as_bytes().to_vec()))
+            .unwrap();
+    }
+    (php_index, Arc::new(service_index))
+}
+
+#[test]
+fn service_argument_inspection_reports_missing_yaml_arguments() {
+    let dir = tempfile::tempdir().unwrap();
+    let (php, services) = symfony_indexes(
+        dir.path(),
+        &[(
+            "/project/src/Consumer.php",
+            r"<?php
+namespace App;
+interface LoggerInterface {}
+class Logger implements LoggerInterface {}
+class Consumer {
+    public function __construct(LoggerInterface $logger, string $name) {}
+}",
+        )],
+        &[(
+            "/project/config/indexed.yaml",
+            "services:\n  logger:\n    class: App\\Logger\n",
+        )],
     );
-    assert!(
-        updated.contains("public function __invoke(): int"),
-        "{updated}"
+    let inspection = new_service_argument(Some(services), Some(php));
+    let (_, problems) = check_diagnostics(
+        inspection.as_ref(),
+        "file:///project/config/services.yaml",
+        "services:\n  {|symfony.service.arguments.missing:app.consumer|}:\n    class: App\\Consumer\n",
     );
-    assert!(
-        TextDocument::new(document.uri.clone(), &updated, 2)
-            .parse_errors()
-            .is_empty()
+    let problem = &problems[0];
+    assert_eq!(
+        problem.payload,
+        Some(json!({
+            "className": "App\\Consumer",
+            "format": "yaml",
+            "serviceID": "app.consumer",
+            "missingArguments": [
+                {
+                    "name": "$logger",
+                    "type": "App\\LoggerInterface",
+                    "suggestedService": "logger",
+                    "candidates": ["logger"],
+                },
+                {"name": "$name", "type": "string", "suggestedService": "?", "candidates": null},
+            ],
+        }))
+    );
+    assert_eq!(problem.fixes.len(), 1);
+    assert_eq!(problem.fixes[0].id.as_str(), SERVICE_ARGUMENTS_FIX_ID);
+}
+
+#[test]
+fn controller_inspection_reports_missing_route_method() {
+    let dir = tempfile::tempdir().unwrap();
+    let (php, services) = symfony_indexes(
+        dir.path(),
+        &[(
+            "/project/src/ProductController.php",
+            "<?php\nnamespace App;\n\nclass ProductController\n{\n    public function list(): void {}\n}\n",
+        )],
+        &[],
+    );
+    let inspection = new_controller(None, Some(services), Some(php));
+    let (_, problems) = check_diagnostics(
+        inspection.as_ref(),
+        "file:///project/config/routes.yaml",
+        "product.show:\n  path: /products/{id}/{slug}\n  controller: App\\ProductController::{|symfony.controller.method.missing:show|}\n",
+    );
+    let problem = &problems[0];
+    assert_eq!(
+        problem.payload,
+        Some(json!({
+            "className": "App\\ProductController",
+            "controller": "App\\ProductController::show",
+            "methodName": "show",
+            "routeName": "product.show",
+            "routeParameters": ["id", "slug"],
+        }))
+    );
+    assert_eq!(problem.fixes.len(), 1);
+    assert_eq!(problem.fixes[0].id.as_str(), CONTROLLER_METHOD_FIX_ID);
+    assert_eq!(
+        problem.fixes[0].payload,
+        Some(json!({
+            "className": "App\\ProductController",
+            "methodName": "show",
+            "parameters": ["id", "slug"],
+        }))
     );
 }

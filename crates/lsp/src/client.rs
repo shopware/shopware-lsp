@@ -4,6 +4,7 @@
 use serde_json::{Map, Value, json};
 use swlsp_lsp_protocol as protocol;
 
+use crate::inspection::{InspectionDefinition, InspectionScope};
 use crate::server::{ClientState, Server, read, write};
 
 /// The client contract version this server speaks.
@@ -93,12 +94,10 @@ impl Server {
         read(&self.session).client.filter_commands
     }
 
-    pub(crate) fn inspection_presented_to_client(&self, id: &str) -> bool {
-        !self.framework_presentation()
-            || !matches!(
-                id,
-                "php.semantic" | "php.imports" | "symfony.embedded_language"
-            )
+    /// Clients with a framework presentation profile report core-language
+    /// problems themselves.
+    pub(crate) fn inspection_presented_to_client(&self, definition: &InspectionDefinition) -> bool {
+        definition.scope == InspectionScope::Framework || !self.framework_presentation()
     }
 
     pub(crate) fn negotiated_client_state(&self, active: bool, reason: &str) -> Value {

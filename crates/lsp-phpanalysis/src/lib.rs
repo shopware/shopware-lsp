@@ -7,12 +7,14 @@
 use std::sync::Arc;
 
 use swlsp_language::LanguageId;
-use swlsp_lsp::{BoxError, Context, SyntaxContext, TextDocument};
+use swlsp_lsp::{
+    BoxError, Context, DiagnosticId, SuppressionReader, Suppressions, SyntaxContext, TextDocument,
+};
 use swlsp_parser_php::syntax::{PHP_ARGUMENT_LIST, PHP_NAME};
 use swlsp_php::{PhpContext, PhpIndex};
 use swlsp_php_imports::Analysis;
 use swlsp_php_semantic::{Document, Flags, Snapshot, SymbolKind};
-use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
+use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextSize};
 
 /// The document-local semantic graph and the workspace snapshot it was
 /// linked against.
@@ -33,7 +35,9 @@ pub fn for_document(
         return Ok(None);
     };
     let path = swlsp_uriutil::path(&document.uri)?;
-    let revision = index.semantic_snapshot().revision;
+    // Type extensions answer from other indexes (services for
+    // `$container->get()`), so their revisions are part of the key.
+    let revision = index.analysis_revision();
     Ok(Some(document.memoized_analysis(
         index.identity(),
         revision,
@@ -178,3 +182,21 @@ impl State {
 
 #[cfg(test)]
 mod tests;
+
+/// The PHP suppression comments (`@phpstan-ignore`, `@noinspection`) of a
+/// document, applied by the server to every inspection's problems.
+pub fn suppression_reader() -> SuppressionReader {
+    Arc::new(|document: &TextDocument| {
+        Box::new(PhpSuppressions(swlsp_php_suppression::parse(
+            document.source(),
+        ))) as Box<dyn Suppressions>
+    })
+}
+
+struct PhpSuppressions(swlsp_php_suppression::Set);
+
+impl Suppressions for PhpSuppressions {
+    fn suppresses(&self, offset: TextSize, code: &DiagnosticId) -> bool {
+        self.0.suppresses(offset.into(), code.as_str())
+    }
+}

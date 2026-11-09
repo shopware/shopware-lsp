@@ -22,6 +22,7 @@ use crate::call_contract::{
 };
 use crate::document::Document;
 use crate::hierarchy::ReverseHierarchy;
+use crate::lazy_returns::{LazyReturns, ReturnInference};
 use crate::packed::{PackedDocument, PackedSymbol};
 use crate::references::PackedReferences;
 use crate::resolve::{ReferenceQueryCache, ReverseReferences};
@@ -42,6 +43,9 @@ pub struct Snapshot {
     pub revision: u64,
     pub(crate) layer: Arc<Layer>,
     pub(crate) overrides: Arc<FxHashMap<SymbolId, Symbol>>,
+    /// On-demand inferred return types of the generation this snapshot
+    /// derives from (see [`crate::ReturnInference`]).
+    pub(crate) returns: Option<Arc<LazyReturns>>,
 }
 
 #[derive(Default)]
@@ -691,6 +695,16 @@ impl Snapshot {
     }
 
     pub(crate) fn from_packed(revision: u64, documents: Vec<Arc<PackedDocument>>) -> Arc<Snapshot> {
+        Snapshot::from_packed_with(revision, documents, None)
+    }
+
+    /// A generation whose inferred return types `inference` recomputes on
+    /// demand.
+    pub(crate) fn from_packed_with(
+        revision: u64,
+        documents: Vec<Arc<PackedDocument>>,
+        inference: Option<Arc<dyn ReturnInference>>,
+    ) -> Arc<Snapshot> {
         // Member tables group by atom identity, which needs one generation.
         debug_assert!(
             documents
@@ -704,15 +718,18 @@ impl Snapshot {
             .collect();
         let [function_contracts, method_contracts] = index_contracts(&contracts);
         let packed = PackedIndex::build(documents);
-        Arc::new(Snapshot {
+        let layer = Arc::new(Layer {
+            packed,
+            function_contracts,
+            method_contracts,
+            ..Layer::default()
+        });
+        Arc::new_cyclic(|generation| Snapshot {
             revision,
-            layer: Arc::new(Layer {
-                packed,
-                function_contracts,
-                method_contracts,
-                ..Layer::default()
-            }),
+            layer,
             overrides: Arc::default(),
+            returns: inference
+                .map(|inference| Arc::new(LazyReturns::new(inference, generation.clone()))),
         })
     }
 
@@ -721,6 +738,12 @@ impl Snapshot {
     }
 
     /// This generation followed by every base generation.
+    /// A view of a packed declaration that materializes this generation's
+    /// inferred return types.
+    fn packed_view<'a>(&'a self, packed: &'a PackedIndex, reference: SymRef) -> SymbolView<'a> {
+        packed.view(reference).with_returns(self.returns.as_deref())
+    }
+
     pub(crate) fn chain(&self) -> impl Iterator<Item = &Snapshot> {
         std::iter::successors(Some(self), |current| current.base())
     }
@@ -756,13 +779,13 @@ impl Snapshot {
             ));
         }
         if let Some(reference) = self.layer.packed.find(id) {
-            return Some(self.layer.packed.view(reference));
+            return Some(self.packed_view(&self.layer.packed, reference));
         }
         let view = self.base()?.symbol_view(id)?;
         if self.overlay_path() == Some(view.path()) {
             return None;
         }
-        Some(view)
+        Some(view.with_returns(self.returns.as_deref()))
     }
 
     fn visit_named_ids<'a>(
@@ -819,7 +842,7 @@ impl Snapshot {
             return true;
         }
         if direct {
-            return visit(candidate);
+            return visit(candidate.with_returns(self.returns.as_deref()));
         }
         match self.symbol_view(id) {
             Some(view) => visit(view),
@@ -1049,7 +1072,7 @@ impl Snapshot {
                 .packed
                 .members_of(container)
                 .iter()
-                .map(|&reference| self.layer.packed.view(reference))
+                .map(|&reference| self.packed_view(&self.layer.packed, reference))
                 .collect();
         } else {
             result = Vec::new();
@@ -1109,8 +1132,10 @@ impl Snapshot {
         })
     }
 
-    /// Every visible declaration, materialized.
+    /// Every visible declaration, materialized with stored inferred return
+    /// types (like [`Snapshot::global_symbols`]).
     pub fn all_symbols(&self) -> Vec<Symbol> {
+        let stored = |id: &str| self.symbol_view(id).map(|view| view.materialize_stored());
         let mut result = Vec::new();
         let mut seen: FxHashSet<&str> = FxHashSet::default();
         for current in self.chain() {
@@ -1121,7 +1146,7 @@ impl Snapshot {
                     let id = packed.symbol_id(reference);
                     if packed.find(id) == Some(reference)
                         && seen.insert(id)
-                        && let Some(symbol) = self.symbol(id)
+                        && let Some(symbol) = stored(id)
                     {
                         result.push(symbol);
                     }
@@ -1129,7 +1154,7 @@ impl Snapshot {
             }
             for symbol in &current.layer.expanded.symbols {
                 if seen.insert(&symbol.id)
-                    && let Some(symbol) = self.symbol(&symbol.id)
+                    && let Some(symbol) = stored(&symbol.id)
                 {
                     result.push(symbol);
                 }
@@ -1168,10 +1193,13 @@ impl Snapshot {
     }
 
     /// Class-like, function, and constant declarations, materialized.
+    ///
+    /// Inferred return types are the stored ones: a workspace-wide listing
+    /// must not analyze every file declaring such a function.
     pub fn global_symbols(&self) -> Vec<Symbol> {
         self.global_symbol_views()
             .iter()
-            .map(SymbolView::materialize)
+            .map(SymbolView::materialize_stored)
             .collect()
     }
 
@@ -1183,7 +1211,7 @@ impl Snapshot {
                 .packed
                 .globals
                 .iter()
-                .map(|&reference| self.layer.packed.view(reference))
+                .map(|&reference| self.packed_view(&self.layer.packed, reference))
                 .collect();
         }
         let mut result = Vec::new();
@@ -1242,6 +1270,7 @@ impl Snapshot {
                 revision: this.revision,
                 layer: this.layer.clone(),
                 overrides: this.overrides.clone(),
+                returns: this.returns.clone(),
             });
         }
         let snapshot = Arc::get_mut(this).expect("snapshot handle is unique");
@@ -1263,6 +1292,7 @@ impl Snapshot {
             revision: self.revision,
             layer: self.layer.clone(),
             overrides: Arc::new(overrides),
+            returns: self.returns.clone(),
         })
     }
 
@@ -1300,7 +1330,36 @@ impl Snapshot {
                 ..Layer::default()
             }),
             overrides: Arc::default(),
+            returns: self.returns.clone(),
         })
+    }
+
+    /// This snapshot using the inferred return types stored at indexing
+    /// time instead of recomputing them. Indexing analyzes against such a
+    /// snapshot, so preparing a file never analyzes other files.
+    pub fn without_return_inference(self: &Arc<Self>) -> Arc<Snapshot> {
+        if self.returns.is_none() {
+            return self.clone();
+        }
+        Arc::new(Snapshot {
+            revision: self.revision,
+            layer: self.layer.clone(),
+            overrides: self.overrides.clone(),
+            returns: None,
+        })
+    }
+
+    /// Whether inferred return types are recomputed on demand.
+    pub fn infers_returns(&self) -> bool {
+        self.returns.is_some()
+    }
+
+    /// Number of files whose return types this generation inferred on
+    /// demand so far.
+    pub fn inferred_return_files(&self) -> usize {
+        self.returns
+            .as_ref()
+            .map_or(0, |returns| returns.inferred_files())
     }
 
     /// Visits `(path, references)` of every document visible in this

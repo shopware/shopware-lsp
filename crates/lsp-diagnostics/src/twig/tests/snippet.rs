@@ -62,51 +62,34 @@ fn snippet_index_with_admin_known(root: &Path) -> Arc<SnippetIndexer> {
 fn admin_snippet_diagnostics_cover_vue_bound_twig_attributes() {
     let root = tempdir();
     let index = snippet_index_with_admin_known(root.path());
-    let source = "<div\n    :title=\"$t('admin.known')\"\n    :label=\"$tc('admin.missing')\"\n    title=\"$t('admin.plain-attribute')\"\n/>";
-    let document = doc(
+    check_problems(
+        &SnippetAnalyzer::new(Some(index), None),
         "file:///project/src/Resources/app/administration/view.html.twig",
-        source,
+        "<div\n    :title=\"$t('admin.known')\"\n    :label=\"$tc('{|admin.snippet.missing:admin.missing|}')\"\n    title=\"$t('admin.plain-attribute')\"\n/>",
     );
-    let problems = analyze(&SnippetAnalyzer::new(Some(index), None), &document);
-    assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(problems[0].id.as_str(), "admin.snippet.missing");
-    assert_eq!(range_text(&document, problems[0].range), "admin.missing");
 }
 
 #[test]
 fn admin_snippet_diagnostics_cover_java_script_translator_forms() {
     let root = tempdir();
     let index = snippet_index_with_admin_known(root.path());
-    let source = "
+    let fixture = "
 translator.$t('admin.known');
-this.$root.$tc('admin.missing-root');
-Shopware.Snippet.t('admin.missing-service');
+this.$root.$tc({|admin.snippet.missing:'admin.missing-root'|});
+Shopware.Snippet.t({|admin.snippet.missing:'admin.missing-service'|});
 other.t('admin.not-a-translation');
 this.$t(dynamicKey);
 Module.register('demo', {
     title: 'admin.known',
-    description: 'admin.missing-module',
+    description: {|admin.snippet.missing:'admin.missing-module'|},
     navigation: [{ label: 'admin.known' }],
     routes: { index: { meta: { label: 'admin.not-a-module-label' } } },
 });
 ";
-    let document = doc(
+    check_problems(
+        &SnippetAnalyzer::new(Some(index), None),
         "file:///project/src/Resources/app/administration/index.ts",
-        source,
-    );
-    let problems = analyze(&SnippetAnalyzer::new(Some(index), None), &document);
-    assert_eq!(problems.len(), 3, "{problems:?}");
-    assert_eq!(
-        range_text(&document, problems[0].range),
-        "'admin.missing-root'"
-    );
-    assert_eq!(
-        range_text(&document, problems[1].range),
-        "'admin.missing-service'"
-    );
-    assert_eq!(
-        range_text(&document, problems[2].range),
-        "'admin.missing-module'"
+        fixture,
     );
 }
 

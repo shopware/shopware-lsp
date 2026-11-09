@@ -182,6 +182,9 @@ pub(crate) struct BatchControlledIndexer {
     pub begins: AtomicI64,
     pub candidates: AtomicI64,
     pub ends: AtomicI64,
+    /// Settle calls, and the number of ends observed by the last one.
+    pub settles: AtomicI64,
+    pub ends_before_settle: AtomicI64,
 }
 
 impl Indexer for BatchControlledIndexer {
@@ -210,6 +213,13 @@ impl BatchIndexer for BatchControlledIndexer {
     }
     fn end_indexing_batch(&self) -> Result<()> {
         self.ends.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn settle_indexing_batch(&self, _cancel: &CancelToken, workers: usize) -> Result<()> {
+        assert!(workers > 0);
+        self.settles.fetch_add(1, Ordering::SeqCst);
+        self.ends_before_settle
+            .store(self.ends.load(Ordering::SeqCst), Ordering::SeqCst);
         Ok(())
     }
 }

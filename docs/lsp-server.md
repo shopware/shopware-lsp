@@ -540,8 +540,8 @@ advertised and its method returns a disabled result.
 **2. Domains** (`domain_enabled`) gate subsystems — `php`, `symfony.routes`,
 `shopware.snippets`, `administration`, `scss`, … A disabled domain skips index
 construction, scanner registration, provider registration, and inspection
-dispatch. Mapping lives in `domain_for_indexer` (indexers) and
-`inspection_domain` in `crates/lsp/src/configuration.rs` (inspections).
+dispatch. Mapping lives in `domain_for_indexer` (indexers) and in each inspection's
+definition (`InspectionDefinition::domain`).
 
 **3. Diagnostic rules** set per-code severity or `off`. See
 [`diagnostics-pipeline.md`](diagnostics-pipeline.md#configuration-and-gating).

@@ -7,7 +7,7 @@ use serde_json::Value;
 use swlsp_language::LanguageId;
 use swlsp_lsp::{
     BoxError, CommandQuickFix, Context, FixContext, FixId, FixPresentation, FixResolution,
-    Inspection, InspectionDefinition, ProblemDefinition, QuickFix, bind_fix,
+    Inspection, InspectionDefinition, InspectionScope, ProblemDefinition, QuickFix, bind_fix,
 };
 use swlsp_lsp_diagnostics::SnippetAnalyzer;
 use swlsp_lsp_protocol as protocol;
@@ -41,6 +41,9 @@ pub fn new_snippet(
     Arc::new(BoundInspection {
         definition: InspectionDefinition {
             id: "shopware.snippet".into(),
+            description: "Storefront and Administration snippet keys no snippet file defines.",
+            domain: "shopware.snippets",
+            scope: InspectionScope::Framework,
             languages: vec![LanguageId::JavaScript, LanguageId::Twig],
             problems: vec![
                 problem("admin.snippet.missing"),

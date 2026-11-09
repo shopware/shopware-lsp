@@ -62,20 +62,20 @@ impl Index {
         }
         let domain = normalize_domain(domain);
         let mut files: BTreeMap<String, String> = BTreeMap::new();
-        for path in self.messages.get_all_file_paths()? {
-            let Some(metadata) = catalogue_metadata(&path) else {
+        for path in self.messages.get_all_file_paths_view()?.iter() {
+            let Some(metadata) = catalogue_metadata(path) else {
                 continue;
             };
             if !swlsp_php_types::equal_fold(&metadata.domain, domain) {
                 continue;
             }
             if !matches!(
-                lower_extension(&path).as_str(),
+                lower_extension(path).as_str(),
                 ".yaml" | ".yml" | ".xlf" | ".xliff" | ".xml"
             ) {
                 continue;
             }
-            files.entry(path).or_insert(metadata.locale);
+            files.entry(path.clone()).or_insert(metadata.locale);
         }
         let mut ordered: Vec<(String, String)> = files.into_iter().collect();
         ordered.sort_by_key(|(file, locale)| Reverse(insertion_file_priority(file, locale)));

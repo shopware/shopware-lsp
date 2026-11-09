@@ -1,11 +1,8 @@
 use std::sync::Arc;
 
-use super::{analyze, index_file, open_php, suggestions, tempdir};
-use crate::symfony::{
-    DoctrineAnalyzer, INVALID_DOCTRINE_TYPE_CLASS_CODE, MISSING_DOCTRINE_COLUMN_CODE,
-    MISSING_DOCTRINE_TYPE_CLASS_CODE,
-};
-use crate::test_support::diagnostics_document;
+use super::{index_file, open_php, suggestions, tempdir};
+use crate::symfony::DoctrineAnalyzer;
+use crate::test_support::check_problems;
 
 #[test]
 fn doctrine_diagnostics_validate_shopware_dal_tables_and_columns() {
@@ -38,21 +35,19 @@ namespace Doctrine\DBAL;
 class Connection { public function insert(string $table, array $data): void {} }
 ",
     );
-    let source = r"<?php
+    let (_, result) = check_problems(
+        &DoctrineAnalyzer::new(Some(doctrine), Some(php.clone()), Some(dal)),
+        "file:///project/src/Database.php",
+        r"<?php
 use Doctrine\DBAL\Connection;
 function write(Connection $connection): void {
     $connection->insert('scheduled_task', [
         'scheduled_task_class' => 'Task',
-        'scheduled_task_clas' => 'Task',
+        '{|symfony.doctrine.column.missing:scheduled_task_clas|}' => 'Task',
     ]);
     $connection->insert('migration_audit_log', ['payload' => 'value']);
-}";
-    let result = analyze(
-        &DoctrineAnalyzer::new(Some(doctrine), Some(php.clone()), Some(dal)),
-        &diagnostics_document("file:///project/src/Database.php", source),
+}",
     );
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id.0, MISSING_DOCTRINE_COLUMN_CODE);
     assert!(result[0].message.contains("scheduled_task_clas"));
     assert!(suggestions(&result[0]).contains(&"scheduled_task_class".to_owned()));
 }
@@ -77,27 +72,15 @@ namespace App\Doctrine;
 class MoneyType extends \Doctrine\DBAL\Types\Type {}
 class NotAType {}",
     );
-    let result = analyze(
+    let (_, result) = check_problems(
         &DoctrineAnalyzer::new(Some(doctrine), Some(php.clone()), None),
-        &diagnostics_document(
-            "file:///project/config/packages/doctrine.php",
-            r"<?php
+        "file:///project/config/packages/doctrine.php",
+        r"<?php
 use Doctrine\DBAL\Types\Type;
 
 Type::addType('valid', \App\Doctrine\MoneyType::class);
-Type::addType('missing', \App\Doctrine\MonyType::class);
-Type::overrideType('invalid', \App\Doctrine\NotAType::class);",
-        ),
+Type::addType('missing', {|symfony.doctrine.type_class.missing:\App\Doctrine\MonyType|}::class);
+Type::overrideType('invalid', {|symfony.doctrine.type_class.invalid:\App\Doctrine\NotAType|}::class);",
     );
-    assert_eq!(result.len(), 2);
-    let missing = result
-        .iter()
-        .find(|problem| problem.id.0 == MISSING_DOCTRINE_TYPE_CLASS_CODE)
-        .expect("missing type class");
-    assert!(
-        result
-            .iter()
-            .any(|problem| problem.id.0 == INVALID_DOCTRINE_TYPE_CLASS_CODE)
-    );
-    assert!(suggestions(missing).contains(&"App\\Doctrine\\MoneyType".to_owned()));
+    assert!(suggestions(&result[0]).contains(&"App\\Doctrine\\MoneyType".to_owned()));
 }

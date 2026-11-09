@@ -2,10 +2,9 @@ use swlsp_indexer::{Indexer, ParsedFile};
 use swlsp_php::PhpIndex;
 use tempfile::TempDir;
 
-use super::{analyze, counts, highlight, highlights, problem_counts};
 use crate::shopware::php_semantic::same_php_namespace_package;
 use crate::shopware::*;
-use crate::test_support::document;
+use crate::test_support::check_problems;
 
 pub(super) fn php_index_with(fixtures: &[(&str, &str)]) -> (TempDir, PhpIndex) {
     let dir = tempfile::tempdir().unwrap();
@@ -103,7 +102,8 @@ class Core extends AbstractCore { public function getDecorated(): AbstractCore {
 #[test]
 fn shopware_php_semantic_analyzer_reports_type_aware_rules() {
     let (_dir, index) = semantic_test_index();
-    let document = document(
+    let (document, _) = check_problems(
+        &ShopwarePhpSemanticAnalyzer::new(Some(index)),
         "file:///project/src/Consumer.php",
         r"<?php
 namespace App\Plugin;
@@ -120,14 +120,14 @@ use Shopware\Core\Test\Decorator\Core;
 use Symfony\Component\HttpFoundation\Session\SessionInterface;
 use Symfony\Component\Routing\Attribute\Route;
 
-class InternalConsumer extends InternalBase {}
-class Decorator extends Core {}
+class InternalConsumer extends {|shopware.php.internal.class_extension:InternalBase|} {}
+class Decorator extends {|shopware.php.decorator.concrete_extension:Core|} {}
 
 class FrequentTask extends ScheduledTask
 {
     public static function getDefaultInterval(): int
     {
-        return 299;
+        return {|shopware.php.scheduled_task.interval:299|};
     }
 }
 
@@ -135,7 +135,7 @@ class PlainService
 {
     public function __construct(SessionInterface $session)
     {
-        $session->get('constructor');
+        $session->{|shopware.php.session.constructor:get|}('constructor');
     }
 }
 
@@ -143,7 +143,7 @@ class PaymentHandler extends AbstractPaymentHandler
 {
     public function pay(SessionInterface $session): void
     {
-        $session->get('payment');
+        $session->{|shopware.php.session.payment_handler:get|}('payment');
     }
 }
 
@@ -152,77 +152,43 @@ class StoreAPIController
 {
     public function action(SessionInterface $session): void
     {
-        $session->get('store-api');
+        $session->{|shopware.php.session.store_api:get|}('store-api');
     }
 }
 
 function run(EntityRepository $repository, InternalService $internal): void
 {
     foreach ([1] as $id) {
-        $repository->search($id);
+        $repository->{|shopware.php.repository.in_loop:search|}($id);
     }
     while (false) {
-        $repository->search('again');
+        $repository->{|shopware.php.repository.in_loop:search|}('again');
     }
     $repository->search('outside');
     foreach ($repository->search('source') as $entity) {
     }
-    for ($result = $repository->search('init'); $repository->search('condition'); $repository->search('update')) {
+    for ($result = $repository->search('init'); $repository->{|shopware.php.repository.in_loop:search|}('condition'); $repository->{|shopware.php.repository.in_loop:search|}('update')) {
     }
     while (false) {
-        foreach ($repository->search('nested source') as $entity) {
+        foreach ($repository->{|shopware.php.repository.in_loop:search|}('nested source') as $entity) {
         }
     }
 
-    \Shopware\Core\Internal\internal_helper();
-    $internal->secret();
-    (new UserEntity())->getStoreToken();
+    {|shopware.php.internal.function_call:\Shopware\Core\Internal\internal_helper|}();
+    $internal->{|shopware.php.internal.method_call:secret|}();
+    (new UserEntity())->{|shopware.php.user.store_token:getStoreToken|}();
 }
 ",
     );
     assert!(document.parse_errors().is_empty());
-    let problems = analyze(&ShopwarePhpSemanticAnalyzer::new(Some(index)), &document);
-    assert_eq!(
-        problem_counts(&problems),
-        counts(&[
-            (SHOPWARE_PHP_REPOSITORY_IN_LOOP_CODE, 5),
-            (SHOPWARE_PHP_INTERNAL_CLASS_EXTENSION_CODE, 1),
-            (SHOPWARE_PHP_INTERNAL_FUNCTION_CALL_CODE, 1),
-            (SHOPWARE_PHP_INTERNAL_METHOD_CALL_CODE, 1),
-            (SHOPWARE_PHP_SESSION_CONSTRUCTOR_CODE, 1),
-            (SHOPWARE_PHP_SESSION_PAYMENT_HANDLER_CODE, 1),
-            (SHOPWARE_PHP_SESSION_STORE_API_CODE, 1),
-            (SHOPWARE_PHP_SCHEDULED_TASK_INTERVAL_CODE, 1),
-            (SHOPWARE_PHP_USER_STORE_TOKEN_CODE, 1),
-            (SHOPWARE_PHP_CONCRETE_DECORATOR_EXTENSION_CODE, 1),
-        ]),
-        "{:?}",
-        highlights(&document, &problems)
-    );
-    for problem in &problems {
-        let highlighted = highlight(&document, problem);
-        assert!(!highlighted.is_empty());
-        match problem.id.as_str() {
-            SHOPWARE_PHP_INTERNAL_CLASS_EXTENSION_CODE => assert_eq!(highlighted, "InternalBase"),
-            SHOPWARE_PHP_CONCRETE_DECORATOR_EXTENSION_CODE => assert_eq!(highlighted, "Core"),
-            SHOPWARE_PHP_REPOSITORY_IN_LOOP_CODE => {
-                let line = &document.source()[usize::from(problem.range.start())..];
-                let line = &line[..line.find(')').unwrap()];
-                assert!(
-                    !["search('source'", "search('init'"].contains(&line),
-                    "{line}"
-                );
-            }
-            _ => {}
-        }
-    }
 }
 
 #[test]
 fn shopware_php_semantic_analyzer_allows_safe_and_same_package_usage() {
     let (_dir, index) = semantic_test_index();
     let analyzer = ShopwarePhpSemanticAnalyzer::new(Some(index));
-    let safe = document(
+    check_problems(
+        &analyzer,
         "file:///project/src/Safe.php",
         r"<?php
 namespace Shopware\Core\Internal;
@@ -245,10 +211,8 @@ function safe(EntityRepository $repository, InternalService $internal, SessionIn
 }
 ",
     );
-    let problems = analyze(&analyzer, &safe);
-    assert!(problems.is_empty(), "{:?}", highlights(&safe, &problems));
-
-    let shopware = document(
+    check_problems(
+        &analyzer,
         "file:///project/src/ShopwareInternalUse.php",
         r"<?php
 namespace Shopware\Core\DifferentPackage;
@@ -256,27 +220,23 @@ use Shopware\Core\Internal\InternalService;
 function useInternalMethod(InternalService $service): void { $service->secret(); }
 ",
     );
-    let problems = analyze(&analyzer, &shopware);
-    assert!(
-        problems.is_empty(),
-        "{:?}",
-        highlights(&shopware, &problems)
-    );
 }
 
+/// Suppression comments are applied by the server to every inspection
+/// (`swlsp_lsp::Suppressions`), not by analyzers.
 #[test]
-fn shopware_php_semantic_analyzer_honors_rule_suppression() {
+fn shopware_php_semantic_analyzer_leaves_suppression_to_the_server() {
     let (_dir, index) = semantic_test_index();
-    let document = document(
+    check_problems(
+        &ShopwarePhpSemanticAnalyzer::new(Some(index)),
         "file:///project/src/Suppressed.php",
         r"<?php
 use Shopware\Core\System\User\UserEntity;
 
 /** @phpstan-ignore-next-line shopware.php.user.store_token */
-(new UserEntity())->getStoreToken();
+(new UserEntity())->{|shopware.php.user.store_token:getStoreToken|}();
 ",
     );
-    assert!(analyze(&ShopwarePhpSemanticAnalyzer::new(Some(index)), &document).is_empty());
 }
 
 #[test]

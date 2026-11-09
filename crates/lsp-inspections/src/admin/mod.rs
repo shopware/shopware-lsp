@@ -1,4 +1,4 @@
-//! The Shopware Administration inspection and its quick fixes (Go
+//! The Shopware Administration inspections and their quick fixes (Go
 //! `admin.go`, `admin_i18n.go`, `admin_slot.go`, `admin_twig_migration.go`).
 
 mod fixes;
@@ -16,14 +16,15 @@ use swlsp_admin::AdminComponentIndexer;
 use swlsp_admin_twigmigration as twigmigration;
 use swlsp_language::LanguageId;
 use swlsp_lsp::{
-    BoundFix, DiagnosticId, Inspection, InspectionDefinition, ProblemDefinition, bind_fix,
+    BoundFix, DiagnosticId, Inspection, InspectionDefinition, InspectionScope, ProblemDefinition,
+    QuickFix, bind_fix,
 };
 use swlsp_lsp_diagnostics::{
     ADMIN_BLOCK_OVERRIDE_CONDITIONAL_CODE, ADMIN_BLOCK_OVERRIDE_NESTED_CODE,
     ADMIN_BLOCK_OVERRIDE_REPEATED_CODE, ADMIN_BLOCK_PARENT_CONDITIONAL_CODE,
     ADMIN_BLOCK_PARENT_REPEATED_CODE, AdminAnalyzer, AdminBlockOverrideAnalyzer,
     AdminI18nDeprecationAnalyzer, AdminSlotMigrationAnalyzer, AdminTwigMigrationAnalyzer,
-    AdminTwigMigrationPayload,
+    AdminTwigMigrationPayload, CodeGroup, ProblemAnalyzer, SharedAnalysis,
 };
 use swlsp_lsp_protocol::DiagnosticSeverity;
 use swlsp_shopware::ResolvedVersion;
@@ -71,12 +72,77 @@ const SUGGESTION_CODES: &[&str] = &[
     "admin.module-route.not-found",
 ];
 
-/// Go `NewAdmin`: the `shopware.admin` inspection. From Shopware 6.7 the
-/// version-aware `sw-*` → `mt-*` migrations own their component tags.
-pub fn new_admin(
+/// Codes of [`AdminAnalyzer`], one list per inspection.
+const COMPONENT_CODES: &[&str] = &[
+    "admin.component.not-found",
+    "admin.component.parent-not-found",
+    "admin.component.registry-not-found",
+    "admin.component.deprecated",
+    "admin.component.deprecated-block",
+    "admin.component.block-not-found",
+    "admin.cms-block.not-found",
+    "admin.cms-element.not-found",
+    "admin.directive.not-found",
+    "admin.filter.not-found",
+];
+const COMPONENT_API_CODES: &[&str] = &[
+    "admin.component.missing-required-prop",
+    "admin.component.unknown-prop",
+    "admin.component.invalid-prop-value",
+    "admin.component.static-prop-type",
+    "admin.component.bound-prop-type",
+    "admin.component.deprecated-prop",
+    "admin.component.unknown-event",
+    "admin.component.unknown-slot",
+    "admin.component.unknown-slot-prop",
+    "admin.component.unknown-model",
+    "admin.component.model-type",
+    "admin.component.model-not-assignable",
+];
+const MEMBER_CODES: &[&str] = &[
+    "admin.component.unknown-instance-member",
+    "admin.component.unknown-template-member",
+    "admin.component.unknown-vue-member",
+    "admin.component.deprecated-member",
+    "admin.application-container.unknown-member",
+    "admin.shopware-context.unknown-member",
+    "admin.shopware-utils.unknown-member",
+    "admin.event-bus.missing-payload",
+    "admin.event-bus.missing-handler",
+    "admin.event-bus.payload-type",
+    "admin.event-bus.handler-type",
+];
+const MODULE_CODES: &[&str] = &[
+    "admin.module.not-found",
+    "admin.module-route.not-found",
+    "admin.privilege.not-found",
+];
+const BLOCK_OVERRIDE_CODES: &[&str] = &[
+    ADMIN_BLOCK_OVERRIDE_NESTED_CODE,
+    ADMIN_BLOCK_OVERRIDE_CONDITIONAL_CODE,
+    ADMIN_BLOCK_OVERRIDE_REPEATED_CODE,
+    ADMIN_BLOCK_PARENT_CONDITIONAL_CODE,
+    ADMIN_BLOCK_PARENT_REPEATED_CODE,
+];
+
+fn severity(code: &str) -> DiagnosticSeverity {
+    if BLOCK_OVERRIDE_CODES.contains(&code) {
+        DiagnosticSeverity::ERROR
+    } else if code.starts_with("admin.component.deprecated") {
+        DiagnosticSeverity::HINT
+    } else {
+        DiagnosticSeverity::WARNING
+    }
+}
+
+/// The Administration inspections (Go `NewAdmin`, split by concern). The
+/// component, component API, member and module inspections share one run of
+/// [`AdminAnalyzer`] per document. From Shopware 6.7 the version-aware
+/// `sw-*` → `mt-*` migrations own their component tags.
+pub fn new_admin_inspections(
     index: Option<Arc<AdminComponentIndexer>>,
     version: ResolvedVersion,
-) -> Arc<dyn Inspection> {
+) -> Vec<Arc<dyn Inspection>> {
     let mut admin_analyzer = AdminAnalyzer::new(index.clone());
     if version.at_least(6, 7, 0) {
         let names: Vec<&str> = twigmigration::rules()
@@ -85,91 +151,117 @@ pub fn new_admin(
             .collect();
         admin_analyzer.suppress_component_diagnostics(&names);
     }
-    let problem = |id: &str, severity: DiagnosticSeverity| ProblemDefinition {
-        id: DiagnosticId::from(id),
-        source: "shopware-lsp".to_owned(),
-        default_severity: severity,
-        disabled_by_default: false,
-    };
-    let warning = DiagnosticSeverity::WARNING;
-    let error = DiagnosticSeverity::ERROR;
-    let hint = DiagnosticSeverity::HINT;
-    let mut problems = vec![
-        problem("admin.application-container.unknown-member", warning),
-        problem(ADMIN_BLOCK_OVERRIDE_NESTED_CODE, error),
-        problem(ADMIN_BLOCK_OVERRIDE_CONDITIONAL_CODE, error),
-        problem(ADMIN_BLOCK_OVERRIDE_REPEATED_CODE, error),
-        problem(ADMIN_BLOCK_PARENT_CONDITIONAL_CODE, error),
-        problem(ADMIN_BLOCK_PARENT_REPEATED_CODE, error),
-        problem("admin.shopware-context.unknown-member", warning),
-        problem("admin.shopware-utils.unknown-member", warning),
-        problem("admin.component.deprecated", hint),
-        problem("admin.component.deprecated-block", hint),
-        problem("admin.component.deprecated-member", hint),
-        problem("admin.component.deprecated-prop", hint),
-        problem("admin.component.block-not-found", warning),
-        problem("admin.component.bound-prop-type", warning),
-        problem("admin.component.invalid-prop-value", warning),
-        problem("admin.component.model-not-assignable", warning),
-        problem("admin.component.model-type", warning),
-        problem("admin.component.not-found", warning),
-        problem("admin.component.missing-required-prop", warning),
-        problem("admin.component.static-prop-type", warning),
-        problem("admin.component.unknown-slot-prop", warning),
-        problem("admin.component.unknown-prop", warning),
-        problem("admin.component.unknown-event", warning),
-        problem("admin.component.unknown-model", warning),
-        problem("admin.component.unknown-slot", warning),
-        problem("admin.component.unknown-vue-member", warning),
-        problem("admin.component.unknown-instance-member", warning),
-        problem("admin.component.unknown-template-member", warning),
-        problem("admin.component.parent-not-found", warning),
-        problem("admin.component.registry-not-found", warning),
-        problem("admin.cms-element.not-found", warning),
-        problem("admin.cms-block.not-found", warning),
-        problem("admin.directive.not-found", warning),
-        problem("admin.filter.not-found", warning),
-        problem("admin.privilege.not-found", warning),
-        problem("admin.module.not-found", warning),
-        problem("admin.module-route.not-found", warning),
-        problem("admin.slot-syntax-deprecated", warning),
-        problem("admin.vue-i18n.tc-deprecated", warning),
-        problem("admin.event-bus.missing-payload", warning),
-        problem("admin.event-bus.missing-handler", warning),
-        problem("admin.event-bus.payload-type", warning),
-        problem("admin.event-bus.handler-type", warning),
-    ];
-    for rule in twigmigration::rules() {
-        problems.push(problem(
-            &format!("admin.twig.migration.{}", rule.id),
-            warning,
-        ));
-    }
-    let bind: BindProblems = Arc::new(bind_admin_problem);
-    Arc::new(BoundInspection {
-        definition: InspectionDefinition {
-            id: "shopware.admin".to_owned(),
-            languages: vec![LanguageId::JavaScript, LanguageId::Twig, LanguageId::Vue],
-            problems,
-        },
-        analyzers: vec![
-            Arc::new(admin_analyzer),
-            Arc::new(AdminBlockOverrideAnalyzer::new()),
-            Arc::new(AdminTwigMigrationAnalyzer::new(version)),
-            Arc::new(AdminSlotMigrationAnalyzer::new()),
-            Arc::new(AdminI18nDeprecationAnalyzer::new()),
-        ],
-        fixes: vec![
-            Arc::new(AdminPropFix { index }),
+    let shared = SharedAnalysis::new(admin_analyzer);
+    // Every inspection offers every Administration fix; `bind_admin_problem`
+    // binds only the ones its codes use.
+    let fixes = || -> Vec<Arc<dyn QuickFix>> {
+        vec![
+            Arc::new(AdminPropFix {
+                index: index.clone(),
+            }),
             Arc::new(AdminStaticPropFix),
             Arc::new(AdminSlotMigrationFix),
             Arc::new(AdminI18nTcFix),
             Arc::new(AdminComponentTagFix),
             Arc::new(AdminTwigComponentMigrationFix),
             Arc::new(SuggestionFix),
+        ]
+    };
+    let inspection = |id: &str,
+                      description: &'static str,
+                      codes: Vec<String>,
+                      analyzers: Vec<Arc<dyn ProblemAnalyzer>>|
+     -> Arc<dyn Inspection> {
+        let bind: BindProblems = Arc::new(bind_admin_problem);
+        Arc::new(BoundInspection {
+            definition: InspectionDefinition {
+                id: id.to_owned(),
+                description,
+                domain: "administration",
+                scope: InspectionScope::Framework,
+                languages: vec![LanguageId::JavaScript, LanguageId::Twig, LanguageId::Vue],
+                problems: codes
+                    .iter()
+                    .map(|code| ProblemDefinition {
+                        id: DiagnosticId::from(code.as_str()),
+                        source: "shopware-lsp".to_owned(),
+                        default_severity: severity(code),
+                        disabled_by_default: false,
+                    })
+                    .collect(),
+            },
+            analyzers,
+            fixes: fixes(),
+            bind: Some(bind),
+        })
+    };
+    let group = |codes: &'static [&'static str]| -> (Vec<String>, Vec<Arc<dyn ProblemAnalyzer>>) {
+        (
+            codes.iter().map(|code| (*code).to_owned()).collect(),
+            vec![Arc::new(CodeGroup::new(shared.clone(), codes))],
+        )
+    };
+    let (codes, analyzers) = group(COMPONENT_CODES);
+    let component = inspection(
+        "shopware.admin.component",
+        "Administration templates and scripts using components, CMS blocks and elements, directives or filters that are not registered, extending unregistered components, or using deprecated components and blocks.",
+        codes,
+        analyzers,
+    );
+    let (codes, analyzers) = group(COMPONENT_API_CODES);
+    let component_api = inspection(
+        "shopware.admin.component_api",
+        "Administration component usages passing unknown, missing, deprecated or mistyped props, listening to unknown events, or using unknown slots, slot props and models.",
+        codes,
+        analyzers,
+    );
+    let (codes, analyzers) = group(MEMBER_CODES);
+    let member = inspection(
+        "shopware.admin.member",
+        "Administration code accessing members a component, the application container, the Shopware context or Shopware utils do not have, deprecated members, and event-bus events with missing or mistyped payloads and handlers.",
+        codes,
+        analyzers,
+    );
+    let (codes, analyzers) = group(MODULE_CODES);
+    let module = inspection(
+        "shopware.admin.module",
+        "Administration references to modules, module routes and privileges that are not registered.",
+        codes,
+        analyzers,
+    );
+    let block_override = inspection(
+        "shopware.admin.block_override",
+        "Administration template block overrides that are nested, conditional or repeated, and conditional or repeated parent calls.",
+        BLOCK_OVERRIDE_CODES
+            .iter()
+            .map(|code| (*code).to_owned())
+            .collect(),
+        vec![Arc::new(AdminBlockOverrideAnalyzer::new())],
+    );
+    let mut migration_codes: Vec<String> = twigmigration::rules()
+        .iter()
+        .map(|rule| format!("admin.twig.migration.{}", rule.id))
+        .collect();
+    migration_codes.push("admin.slot-syntax-deprecated".to_owned());
+    migration_codes.push("admin.vue-i18n.tc-deprecated".to_owned());
+    let migration = inspection(
+        "shopware.admin.migration",
+        "Administration syntax to migrate: Twig components the Meteor component library replaces, deprecated slot syntax, and vue-i18n's `$tc`.",
+        migration_codes,
+        vec![
+            Arc::new(AdminTwigMigrationAnalyzer::new(version)),
+            Arc::new(AdminSlotMigrationAnalyzer::new()),
+            Arc::new(AdminI18nDeprecationAnalyzer::new()),
         ],
-        bind: Some(bind),
-    })
+    );
+    vec![
+        component,
+        component_api,
+        member,
+        module,
+        block_override,
+        migration,
+    ]
 }
 
 fn bind_admin_problem(code: &DiagnosticId, payload: &Map<String, Value>) -> Vec<BoundFix> {

@@ -1,4 +1,4 @@
-use swlsp_indexer::{Indexer, ParsedFile};
+use swlsp_indexer::{Indexer, ParsedFile, PreparingIndexer};
 use swlsp_parser_js::{query as jsquery, syntax as js};
 use swlsp_parser_php::{query as phpquery, syntax as php};
 use swlsp_parser_twig::{query as twigquery, syntax as twig};
@@ -349,4 +349,34 @@ final class AcmeDefinition extends EntityDefinition {
     idx.removed_files(&[path.to_owned()]).unwrap();
     assert!(idx.definition("acme").unwrap().is_empty());
     idx.close().unwrap();
+}
+
+#[test]
+fn prepared_indexing_matches_direct_indexing() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = "/project/src/AcmeDefinition.php";
+    let source = "<?php
+final class AcmeDefinition extends EntityDefinition {
+    public function getEntityName(): string { return 'acme'; }
+    protected function defineFields(): FieldCollection {
+        return new FieldCollection([new IdField('id', 'id'), new StringField('name', 'name')]);
+    }
+}";
+    let direct = Index::new(directory.path().join("direct"), None).unwrap();
+    index(source, path, &direct);
+    let prepared = Index::new(directory.path().join("prepared"), None).unwrap();
+    let file = ParsedFile::new(path, source.as_bytes().to_vec());
+    let data = prepared.prepare(&file).unwrap();
+    prepared.index_prepared(&file, data.as_ref()).unwrap();
+
+    let definitions = direct.definitions().unwrap();
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(prepared.definitions().unwrap(), definitions);
+
+    let cleared = ParsedFile::new(path, b"<?php final class AcmeDefinition {}".to_vec());
+    let data = prepared.prepare(&cleared).unwrap();
+    prepared.index_prepared(&cleared, data.as_ref()).unwrap();
+    assert!(prepared.definition("acme").unwrap().is_empty());
+    direct.close().unwrap();
+    prepared.close().unwrap();
 }

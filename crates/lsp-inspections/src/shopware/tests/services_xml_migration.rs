@@ -6,7 +6,9 @@ use swlsp_lsp_protocol::DELETE_FILE_OPERATION;
 use swlsp_uriutil::file_uri;
 
 use crate::shopware::*;
-use crate::test_support::{StaticDocumentResolver, fix_context, inspect, quick_fix_with_id};
+use crate::test_support::{
+    StaticDocumentResolver, check_diagnostics, fix_context, quick_fix_with_id,
+};
 
 fn path_uri(path: &std::path::Path) -> String {
     file_uri(&path.to_string_lossy())
@@ -34,11 +36,6 @@ fn services_xml_migration_builds_atomic_imported_file_conversion() {
     std::fs::write(&services_path, services_source).unwrap();
     std::fs::write(&listeners_path, listeners_source).unwrap();
 
-    let document = Arc::new(TextDocument::new(
-        path_uri(&services_path),
-        services_source,
-        7,
-    ));
     let listener_document = Arc::new(TextDocument::new(
         path_uri(&listeners_path),
         listeners_source,
@@ -53,13 +50,16 @@ fn services_xml_migration_builds_atomic_imported_file_conversion() {
     )]));
 
     let inspection = new_services_xml_migration();
-    let problems = inspect(inspection.as_ref(), &document);
-    assert_eq!(problems.len(), 1);
-    let problem = &problems[0];
-    assert_eq!(
-        problem.id.as_str(),
-        swlsp_lsp_diagnostics::SERVICES_XML_DEPRECATED_CODE
+    let (document, problems) = check_diagnostics(
+        inspection.as_ref(),
+        &path_uri(&services_path),
+        &services_source.replacen(
+            "<container>",
+            "<{|symfony.services_xml.deprecated:container|}>",
+            1,
+        ),
     );
+    let problem = &problems[0];
     assert_eq!(problem.fixes.len(), 1);
     assert_eq!(problem.fixes[0].id.as_str(), CONVERT_SERVICES_XML_FIX_ID);
 
@@ -119,14 +119,12 @@ fn services_xml_migration_refuses_existing_yaml_target() {
     std::fs::write(&services_path, "<container/>").unwrap();
     std::fs::write(config_dir.join("services.yaml"), "services:\n").unwrap();
 
-    let document = Arc::new(TextDocument::new(
-        path_uri(&services_path),
-        "<container/>",
-        1,
-    ));
     let inspection = new_services_xml_migration();
-    let problems = inspect(inspection.as_ref(), &document);
-    assert_eq!(problems.len(), 1);
+    let (document, problems) = check_diagnostics(
+        inspection.as_ref(),
+        &path_uri(&services_path),
+        "<{|symfony.services_xml.deprecated:container|}/>",
+    );
     assert_eq!(problems[0].fixes.len(), 1);
     let fix = quick_fix_with_id(inspection.as_ref(), CONVERT_SERVICES_XML_FIX_ID);
     let error = fix
@@ -146,12 +144,10 @@ fn services_xml_migration_refuses_existing_yaml_target() {
 #[test]
 fn services_xml_migration_does_not_offer_lossy_conversion() {
     let root = tempfile::tempdir().unwrap();
-    let document = Arc::new(TextDocument::new(
-        path_uri(&root.path().join("Resources/config/services.xml")),
-        r#"<container><services><stack id="app"/></services></container>"#,
-        1,
-    ));
-    let problems = inspect(new_services_xml_migration().as_ref(), &document);
-    assert_eq!(problems.len(), 1);
+    let (_, problems) = check_diagnostics(
+        new_services_xml_migration().as_ref(),
+        &path_uri(&root.path().join("Resources/config/services.xml")),
+        r#"<{|symfony.services_xml.deprecated:container|}><services><stack id="app"/></services></container>"#,
+    );
     assert!(problems[0].fixes.is_empty());
 }

@@ -10,7 +10,7 @@ use swlsp_admin::{
     VueComponentSlotMember,
 };
 use swlsp_indexer::{Indexer, ParsedFile};
-use swlsp_lsp::{Inspection, Problem, TextDocument};
+use swlsp_lsp::Inspection;
 use swlsp_lsp_diagnostics::{
     ADMIN_BLOCK_OVERRIDE_CONDITIONAL_CODE, ADMIN_BLOCK_OVERRIDE_NESTED_CODE,
     ADMIN_BLOCK_OVERRIDE_REPEATED_CODE, ADMIN_BLOCK_PARENT_CONDITIONAL_CODE,
@@ -20,9 +20,11 @@ use swlsp_lsp_protocol::DiagnosticSeverity;
 use swlsp_shopware::ResolvedVersion;
 
 use super::fixes::REPLACE_ADMIN_COMPONENT_TAG_FIX_ID;
-use super::new_admin;
+use super::new_admin_inspections;
 use crate::SUGGESTION_FIX_ID;
-use crate::test_support::{apply_single, fix_context, inspect, quick_fix_with_id};
+use crate::test_support::{
+    apply_single, check_diagnostics, check_fix, fix_context, quick_fix_with_id,
+};
 
 /// Builds a `VueComponent` (its private fields rule out struct literals).
 macro_rules! vue_component {
@@ -69,44 +71,29 @@ impl Fixture {
     }
 
     pub fn inspection(&self) -> Arc<dyn Inspection> {
-        new_admin(Some(self.index.clone()), ResolvedVersion::default())
+        Arc::new(crate::test_support::Combined(new_admin_inspections(
+            Some(self.index.clone()),
+            ResolvedVersion::default(),
+        )))
     }
 }
 
-pub(super) fn open(path: &str, source: &str) -> Arc<TextDocument> {
-    Arc::new(TextDocument::new(swlsp_uriutil::file_uri(path), source, 1))
-}
-
-/// Applies every suggestion fix of the single reported problem with `code`
-/// and returns the candidate documents.
-fn suggestion_candidates(
-    inspection: &dyn Inspection,
-    document: &Arc<TextDocument>,
-    code: &str,
-) -> Vec<String> {
-    let problems = inspect(inspection, document);
-    assert_eq!(problems.len(), 1, "{problems:?}");
-    let problem = &problems[0];
-    assert_eq!(problem.id.0, code);
+/// Checks the problems marked in `fixture`, then applies every suggestion
+/// fix of the single marked problem and asserts one candidate is `expected`.
+fn assert_suggestion(inspection: &dyn Inspection, path: &str, fixture: &str, expected: &str) {
+    let (document, problems) =
+        check_diagnostics(inspection, &swlsp_uriutil::file_uri(path), fixture);
+    let [problem] = problems.as_slice() else {
+        panic!("expected one problem: {problems:?}");
+    };
     assert!(!problem.fixes.is_empty());
     let fix = quick_fix_with_id(inspection, SUGGESTION_FIX_ID);
-    problem
+    let candidates: Vec<String> = problem
         .fixes
         .iter()
         .filter(|bound| bound.id.0 == SUGGESTION_FIX_ID)
-        .map(|bound| apply_single(&fix, &fix_context(document, problem, bound, None)))
-        .collect()
-}
-
-fn assert_suggestion(
-    inspection: &dyn Inspection,
-    path: &str,
-    source: &str,
-    code: &str,
-    expected: &str,
-) {
-    let document = open(path, source);
-    let candidates = suggestion_candidates(inspection, &document, code);
+        .map(|bound| apply_single(&fix, &fix_context(&document, problem, bound, None)))
+        .collect();
     assert!(
         candidates.iter().any(|candidate| candidate == expected),
         "{expected:?} not in {candidates:?}"
@@ -134,13 +121,13 @@ fn admin_inspection_declares_and_reports_block_override_problems() {
     }
     assert!(expected.is_empty());
 
-    let document = open(
-        &fixture.path("src/Resources/app/administration/src/component.vue"),
-        r#"<template><sw-block v-if="enabled" extends="conditional" /></template>"#,
+    let (_, problems) = check_diagnostics(
+        inspection.as_ref(),
+        &swlsp_uriutil::file_uri(
+            &fixture.path("src/Resources/app/administration/src/component.vue"),
+        ),
+        r#"<template><{|admin.block-override.conditional:sw-block|} v-if="enabled" extends="conditional" /></template>"#,
     );
-    let problems = inspect(inspection.as_ref(), &document);
-    assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(problems[0].id.0, ADMIN_BLOCK_OVERRIDE_CONDITIONAL_CODE);
     assert!(problems[0].fixes.is_empty());
 }
 
@@ -155,8 +142,7 @@ fn admin_twig_privilege_inspection_builds_typo_replacement() {
     assert_suggestion(
         fixture.inspection().as_ref(),
         &format!("{admin_root}/view.html.twig"),
-        r#"<mt-button :disabled="acl.can('product.viwer')" />"#,
-        "admin.privilege.not-found",
+        r#"<mt-button :disabled="acl.can('{|admin.privilege.not-found:product.viwer|}')" />"#,
         r#"<mt-button :disabled="acl.can('product.viewer')" />"#,
     );
 }
@@ -191,8 +177,7 @@ fn admin_twig_block_inspection_builds_parent_block_typo_replacement() {
     assert_suggestion(
         fixture.inspection().as_ref(),
         &child_template,
-        "{% block sw_page_contnet %}{% endblock %}",
-        "admin.component.block-not-found",
+        "{% block {|admin.component.block-not-found:sw_page_contnet|} %}{% endblock %}",
         "{% block sw_page_content %}{% endblock %}",
     );
 }
@@ -215,21 +200,15 @@ fn admin_prop_value_inspection_builds_typo_replacement() {
     let path = fixture.path("src/Administration/Resources/app/administration/src/view.html.twig");
     for (source, expected) in [
         (
-            r#"<sw-label variant="primry" />"#,
+            r#"<sw-label variant="{|admin.component.invalid-prop-value:primry|}" />"#,
             r#"<sw-label variant="primary" />"#,
         ),
         (
-            r#"<sw-label :variant="'primry'" />"#,
+            r#"<sw-label :variant="'{|admin.component.invalid-prop-value:primry|}'" />"#,
             r#"<sw-label :variant="'primary'" />"#,
         ),
     ] {
-        assert_suggestion(
-            inspection.as_ref(),
-            &path,
-            source,
-            "admin.component.invalid-prop-value",
-            expected,
-        );
+        assert_suggestion(inspection.as_ref(), &path, source, expected);
     }
 }
 
@@ -257,29 +236,25 @@ fn admin_component_contract_inspection_builds_name_replacements() {
     });
     let inspection = fixture.inspection();
     let path = fixture.path("Resources/app/administration/src/view.html.twig");
-    for (source, expected, code) in [
+    for (source, expected) in [
         (
-            r#"<sw-field :is-laoding.sync="ready" />"#,
+            r#"<sw-field :{|admin.component.unknown-prop:is-laoding|}.sync="ready" />"#,
             r#"<sw-field :is-loading.sync="ready" />"#,
-            "admin.component.unknown-prop",
         ),
         (
-            r#"<sw-field @item-clik.stop="select" />"#,
+            r#"<sw-field @{|admin.component.unknown-event:item-clik|}.stop="select" />"#,
             r#"<sw-field @item-click.stop="select" />"#,
-            "admin.component.unknown-event",
         ),
         (
-            r#"<sw-field v-model:cheked.trim="checked" />"#,
+            r#"<sw-field v-model:{|admin.component.unknown-model:cheked|}.trim="checked" />"#,
             r#"<sw-field v-model:checked.trim="checked" />"#,
-            "admin.component.unknown-model",
         ),
         (
-            "<sw-field><template #heder>Title</template></sw-field>",
+            "<sw-field><template #{|admin.component.unknown-slot:heder|}>Title</template></sw-field>",
             "<sw-field><template #header>Title</template></sw-field>",
-            "admin.component.unknown-slot",
         ),
     ] {
-        assert_suggestion(inspection.as_ref(), &path, source, code, expected);
+        assert_suggestion(inspection.as_ref(), &path, source, expected);
     }
 }
 
@@ -294,8 +269,7 @@ fn admin_directive_inspection_builds_typo_replacement() {
     assert_suggestion(
         fixture.inspection().as_ref(),
         &format!("{admin_root}/view.html.twig"),
-        r#"<div v-tooltpi.bottom="message"></div>"#,
-        "admin.directive.not-found",
+        r#"<div v-{|admin.directive.not-found:tooltpi|}.bottom="message"></div>"#,
         r#"<div v-tooltip.bottom="message"></div>"#,
     );
 }
@@ -311,8 +285,7 @@ fn admin_filter_inspection_builds_typo_replacement() {
     assert_suggestion(
         fixture.inspection().as_ref(),
         &format!("{admin_root}/consumer.ts"),
-        "Shopware.Filter.getByName('currncy');",
-        "admin.filter.not-found",
+        "Shopware.Filter.getByName('{|admin.filter.not-found:currncy|}');",
         "Shopware.Filter.getByName('currency');",
     );
 }
@@ -328,8 +301,7 @@ fn admin_cms_inspection_builds_typo_replacement() {
     assert_suggestion(
         fixture.inspection().as_ref(),
         &format!("{admin_root}/consumer.ts"),
-        "cmsService.getCmsElementConfigByName('herp');",
-        "admin.cms-element.not-found",
+        "cmsService.getCmsElementConfigByName('{|admin.cms-element.not-found:herp|}');",
         "cmsService.getCmsElementConfigByName('hero');",
     );
 }
@@ -343,22 +315,15 @@ fn admin_component_inspection_builds_tag_typo_replacement() {
         "Shopware.Component.register('sw-button', {});",
     );
     let inspection = fixture.inspection();
-    let document = open(
-        &format!("{admin_root}/view.html.twig"),
-        "<sw-butotn>Save</sw-butotn>",
-    );
-    let problems: Vec<Problem> = inspect(inspection.as_ref(), &document);
-    assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(problems[0].id.0, "admin.component.not-found");
-    let bound = problems[0]
-        .fixes
-        .iter()
-        .find(|bound| bound.id.0 == REPLACE_ADMIN_COMPONENT_TAG_FIX_ID)
-        .expect("tag fix");
-    let fix = quick_fix_with_id(inspection.as_ref(), REPLACE_ADMIN_COMPONENT_TAG_FIX_ID);
-    assert_eq!(
-        apply_single(&fix, &fix_context(&document, &problems[0], bound, None)),
-        "<sw-button>Save</sw-button>"
+    let uri = swlsp_uriutil::file_uri(&format!("{admin_root}/view.html.twig"));
+    let before = "<{|admin.component.not-found:sw-butotn|}>Save</sw-butotn>";
+    check_diagnostics(inspection.as_ref(), &uri, before);
+    check_fix(
+        inspection.as_ref(),
+        &uri,
+        before,
+        REPLACE_ADMIN_COMPONENT_TAG_FIX_ID,
+        "<sw-button>Save</sw-button>",
     );
 }
 
@@ -383,8 +348,7 @@ fn admin_twig_slot_member_inspection_builds_typo_replacement() {
     assert_suggestion(
         fixture.inspection().as_ref(),
         &fixture.path("src/Administration/Resources/app/administration/src/view.html.twig"),
-        r#"<sw-inherit-wrapper><template #content="props">{{ props.curentValue }}</template></sw-inherit-wrapper>"#,
-        "admin.component.unknown-slot-prop",
+        r#"<sw-inherit-wrapper><template #content="props">{{ props.{|admin.component.unknown-slot-prop:curentValue|} }}</template></sw-inherit-wrapper>"#,
         r#"<sw-inherit-wrapper><template #content="props">{{ props.currentValue }}</template></sw-inherit-wrapper>"#,
     );
 }
@@ -407,8 +371,7 @@ fn admin_template_member_inspection_builds_typo_replacement() {
     assert_suggestion(
         fixture.inspection().as_ref(),
         &template_path,
-        "{{ getSlos() }}",
-        "admin.component.unknown-template-member",
+        "{{ {|admin.component.unknown-template-member:getSlos|}() }}",
         "{{ getSlots() }}",
     );
 }
@@ -424,8 +387,7 @@ fn admin_module_registry_inspection_builds_typo_replacement() {
     assert_suggestion(
         fixture.inspection().as_ref(),
         &format!("{admin_root}/consumer.js"),
-        "Shopware.Module.getModuleRegistry().get('sw-prduct');",
-        "admin.module.not-found",
+        "Shopware.Module.getModuleRegistry().get('{|admin.module.not-found:sw-prduct|}');",
         "Shopware.Module.getModuleRegistry().get('sw-product');",
     );
 }
@@ -447,8 +409,7 @@ declare global {
     assert_suggestion(
         fixture.inspection().as_ref(),
         &format!("{admin_root}/consumer.ts"),
-        "Application.getContainer('factory').loacle;",
-        "admin.application-container.unknown-member",
+        "Application.getContainer('factory').{|admin.application-container.unknown-member:loacle|};",
         "Application.getContainer('factory').locale;",
     );
 }
@@ -467,8 +428,7 @@ fn admin_shopware_context_inspection_builds_typo_replacement() {
     assert_suggestion(
         fixture.inspection().as_ref(),
         &format!("{admin_root}/consumer.ts"),
-        "Shopware.Context.api.langaugeId;",
-        "admin.shopware-context.unknown-member",
+        "Shopware.Context.api.{|admin.shopware-context.unknown-member:langaugeId|};",
         "Shopware.Context.api.languageId;",
     );
 }
@@ -484,14 +444,13 @@ fn admin_shopware_utils_inspection_builds_typo_replacement() {
     assert_suggestion(
         fixture.inspection().as_ref(),
         &format!("{admin_root}/consumer.ts"),
-        "const utils = Shopware.Utils; utils.creatId();",
-        "admin.shopware-utils.unknown-member",
+        "const utils = Shopware.Utils; utils.{|admin.shopware-utils.unknown-member:creatId|}();",
         "const utils = Shopware.Utils; utils.createId();",
     );
 }
 
 /// Every code the Administration analyzer can report must be declared, or a
-/// file triggering it fails the whole `shopware.admin` inspection.
+/// file triggering it fails the Administration inspection that runs it.
 #[test]
 fn admin_inspection_declares_event_bus_problems() {
     let fixture = Fixture::new();

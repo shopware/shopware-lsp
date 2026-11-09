@@ -117,8 +117,16 @@ impl<'a> Registrar<'a> {
     }
 
     /// Registers an inspection, logged under its definition ID.
+    /// Registers a production inspection. Like an invalid definition, one
+    /// without a configuration domain fails composition: users must be able
+    /// to switch every diagnostic off by domain.
     pub fn inspection(&self, inspection: Arc<dyn Inspection>) {
         let definition = inspection.definition();
+        assert!(
+            !definition.domain.is_empty(),
+            "inspection {:?} declares no configuration domain",
+            definition.id
+        );
         let languages = definition
             .languages
             .iter()
@@ -131,6 +139,11 @@ impl<'a> Registrar<'a> {
     pub fn context_enricher(&self, language: LanguageId, enricher: ContextEnricher) {
         self.record("contextEnricher", language.as_str());
         self.server.register_context_enricher(language, enricher);
+    }
+
+    pub fn suppressions(&self, language: LanguageId, reader: SuppressionReader) {
+        self.record("suppressions", language.as_str());
+        self.server.register_suppressions(language, reader);
     }
 
     pub fn document_observer(&self, name: &str, observer: DocumentObserver) {

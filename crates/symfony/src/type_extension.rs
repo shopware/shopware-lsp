@@ -62,6 +62,13 @@ impl PhpTypeExtension {
 }
 
 impl Extension for PhpTypeExtension {
+    /// Container lookups answer from the service index.
+    fn revision(&self) -> u64 {
+        self.services
+            .as_ref()
+            .map_or(0, |services| services.revision())
+    }
+
     fn infer_call(&self, context: &CallContext<'_>) -> Option<TypeFact> {
         if let Some(fact) = infer_header_bag_get(context) {
             return Some(fact);

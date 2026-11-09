@@ -183,5 +183,13 @@ fn source_gate_is_case_insensitive() {
         b"$service->translate('example');",
         "generate"
     ));
+    // Candidates at either end, a truncated candidate, and an empty needle.
+    assert!(crate::util::contains_fold_ascii(b"Resource", "resource"));
+    assert!(crate::util::contains_fold_ascii(
+        b"type: RESOURCE",
+        "resource"
+    ));
+    assert!(!crate::util::contains_fold_ascii(b"rr resourc", "resource"));
+    assert!(crate::util::contains_fold_ascii(b"", ""));
     assert!(ROUTE_USAGE_PHP_CANDIDATE_MATCHER.contains_str("$router->GeNeRaTe('x')"));
 }

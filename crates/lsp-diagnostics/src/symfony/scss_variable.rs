@@ -17,14 +17,26 @@ pub const SCSS_VARIABLE_UNKNOWN_CODE: &str = "scss.variable.unknown";
 /// Go `SCSSVariableDeclarationProvider`.
 pub trait ScssVariableDeclarationProvider: Send + Sync {
     fn has_variable_declaration(&self, name: &str, excluded_path: &str) -> Result<bool, BoxError>;
+    /// Advances whenever an answer may change; `None` when unknown.
+    fn revision(&self) -> Option<u64> {
+        None
+    }
 }
 
 /// Go `SCSSVariableIndexReadiness`.
 pub trait ScssVariableIndexReadiness: Send + Sync {
     fn ready(&self, ctx: &Context) -> Result<bool, BoxError>;
+    /// Whether the index is ready, without a context; `None` when unknown.
+    fn ready_now(&self) -> Option<bool> {
+        None
+    }
 }
 
 impl ScssVariableDeclarationProvider for swlsp_style::Index {
+    fn revision(&self) -> Option<u64> {
+        Some(swlsp_indexer::Revisioned::revision(self))
+    }
+
     fn has_variable_declaration(&self, name: &str, excluded_path: &str) -> Result<bool, BoxError> {
         Ok(swlsp_style::Index::has_variable_declaration(
             self,
@@ -37,6 +49,10 @@ impl ScssVariableDeclarationProvider for swlsp_style::Index {
 impl ScssVariableIndexReadiness for swlsp_indexer::WorkspaceSymbolCatalog {
     fn ready(&self, _ctx: &Context) -> Result<bool, BoxError> {
         Ok(swlsp_indexer::WorkspaceSymbolCatalog::ready(self)?)
+    }
+
+    fn ready_now(&self) -> Option<bool> {
+        swlsp_indexer::WorkspaceSymbolCatalog::ready(self).ok()
     }
 }
 
@@ -58,6 +74,20 @@ impl ScssVariableAnalyzer {
 }
 
 impl ProblemAnalyzer for ScssVariableAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        // Readiness can flip back; doubling keeps (declarations, ready)
+        // pairs distinct.
+        let declarations = match &self.variables {
+            Some(variables) => variables.revision()?,
+            None => 0,
+        };
+        let ready = match &self.readiness {
+            Some(readiness) => readiness.ready_now()?,
+            None => true,
+        };
+        Some(declarations * 2 + u64::from(ready))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

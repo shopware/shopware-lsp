@@ -3,10 +3,7 @@ use std::sync::Arc;
 use swlsp_twig::{TwigIndexer, VersioningService};
 
 use super::*;
-use crate::twig::{
-    TWIG_BLOCK_REDUNDANT_OVERRIDE_CODE, TWIG_VERSIONING_COMMENT_MISSING_CODE,
-    TWIG_VERSIONING_ORIGINAL_MISSING_CODE, TWIG_VERSIONING_OUTDATED_CODE, TwigVersioningAnalyzer,
-};
+use crate::twig::TwigVersioningAnalyzer;
 
 fn join(root: &Path, path: &str) -> String {
     root.join(path).to_string_lossy().into_owned()
@@ -20,10 +17,6 @@ fn analyzer(root: &str, index: &Arc<TwigIndexer>, version: &str) -> TwigVersioni
     ))))
 }
 
-fn contains(problems: &[Problem], id: &str) -> bool {
-    problems.iter().any(|problem| problem.id.as_str() == id)
-}
-
 const CORE_BASE: &str = "src/Storefront/Resources/views/storefront/page/base.html.twig";
 const CORE_EXAMPLE: &str = "src/Storefront/Resources/views/storefront/page/example.html.twig";
 const PLUGIN_EXAMPLE: &str =
@@ -33,20 +26,20 @@ const PLUGIN_EXAMPLE: &str =
 fn twig_versioning_analyzer_original_not_found_message() {
     let dir = tempdir();
     let index = twig_index(dir.path());
-    let document = doc(
+    check_problems(
+        &analyzer("/tmp", &index, ""),
         "file:///tmp/myext/Resources/views/storefront/page/checkout/foo.html.twig",
         "{% sw_extends '@Storefront/storefront/page/checkout/foo' %}{# shopware-block: abc123def456@6.4.15.0 #}{% block content %}test{% endblock %}",
     );
-    assert!(analyze(&analyzer("/tmp", &index, ""), &document).is_empty());
 }
 
 #[test]
 fn twig_versioning_analyzer_nil_indexer_no_panic() {
-    let document = doc(
+    check_problems(
+        &TwigVersioningAnalyzer::new(None),
         "file:///tmp/ext/Resources/views/storefront/page/bar.html.twig",
         "{% block foo %}{% endblock %}",
     );
-    assert!(analyze(&TwigVersioningAnalyzer::new(None), &document).is_empty());
 }
 
 #[test]
@@ -60,17 +53,16 @@ fn twig_versioning_analyzer_reports_deprecated_upstream_block() {
     );
     let path =
         "/project/custom/plugins/Example/src/Resources/views/storefront/page/example.html.twig";
-    let source = "{% sw_extends '@Storefront/storefront/page/example.html.twig' %}\n{% block page_old %}custom{% endblock %}";
-    let problems = analyze(
+    let source = "{% sw_extends '@Storefront/storefront/page/example.html.twig' %}\n{% block {|twig.block.deprecated:{|twig.versioning.comment_missing:page_old|}|} %}custom{% endblock %}";
+    let (_, problems) = check_problems(
         &analyzer("/project", &index, ""),
-        &doc(&format!("file://{path}"), source),
+        &format!("file://{path}"),
+        source,
     );
-    let deprecated: Vec<&Problem> = problems
+    for problem in problems
         .iter()
         .filter(|problem| problem.id.as_str() == "twig.block.deprecated")
-        .collect();
-    assert!(!deprecated.is_empty(), "{problems:?}");
-    for problem in deprecated {
+    {
         assert!(problem.message.contains("tag:v6.7.0"));
         assert!(problem.message.contains("page_new"));
     }
@@ -110,18 +102,10 @@ fn twig_versioning_analyzer_accepts_any_chain_candidate_and_reports_changes() {
     let matching = format!(
         "{{% sw_extends '@Theme/storefront/theme/base.html.twig' %}}\n{{# shopware-block: {core_hash}@6.7.2.0 #}}\n{{% block content %}}local{{% endblock %}}"
     );
-    let problems = analyze(&analyzer, &doc(&format!("file://{plugin}"), &matching));
-    assert!(
-        !contains(&problems, TWIG_VERSIONING_OUTDATED_CODE),
-        "{problems:?}"
-    );
+    check_problems(&analyzer, &format!("file://{plugin}"), &matching);
 
-    let outdated = "{% sw_extends '@Theme/storefront/theme/base.html.twig' %}\n{# shopware-block: deadbeef@6.6.0.0 #}\n{% block content %}local{% endblock %}";
-    let problems = analyze(&analyzer, &doc_v(&format!("file://{plugin}"), outdated, 2));
-    assert!(
-        contains(&problems, TWIG_VERSIONING_OUTDATED_CODE),
-        "{problems:?}"
-    );
+    let outdated = "{% sw_extends '@Theme/storefront/theme/base.html.twig' %}\n{|twig.versioning.outdated:{# shopware-block: deadbeef@6.6.0.0 #}|}\n{% block content %}local{% endblock %}";
+    check_problems_v(&analyzer, &format!("file://{plugin}"), outdated, 2);
 }
 
 #[test]
@@ -135,26 +119,15 @@ fn twig_versioning_analyzer_reports_removal_only_for_resolvable_parent() {
     );
     let analyzer = analyzer(&root.path().to_string_lossy(), &index, "");
     let plugin = join(root.path(), "custom/plugin.html.twig");
-    let tracked = "{% sw_extends '@Storefront/storefront/page/base.html.twig' %}\n{# shopware-block: deadbeef@6.6.0.0 #}\n{% block removed %}local{% endblock %}";
-    let problems = analyze(&analyzer, &doc(&format!("file://{plugin}"), tracked));
-    assert!(
-        contains(&problems, TWIG_VERSIONING_ORIGINAL_MISSING_CODE),
-        "{problems:?}"
-    );
+    let tracked = "{% sw_extends '@Storefront/storefront/page/base.html.twig' %}\n{# shopware-block: deadbeef@6.6.0.0 #}\n{% block {|twig.versioning.original_missing:removed|} %}local{% endblock %}";
+    check_problems(&analyzer, &format!("file://{plugin}"), tracked);
 
-    let standalone = tracked.replacen(
+    let standalone = plain(tracked).replacen(
         "@Storefront/storefront/page/base.html.twig",
         "@Missing/storefront/page/base.html.twig",
         1,
     );
-    let problems = analyze(
-        &analyzer,
-        &doc_v(&format!("file://{plugin}"), &standalone, 2),
-    );
-    assert!(
-        !contains(&problems, TWIG_VERSIONING_ORIGINAL_MISSING_CODE),
-        "{problems:?}"
-    );
+    check_problems_v(&analyzer, &format!("file://{plugin}"), &standalone, 2);
 }
 
 #[test]
@@ -167,14 +140,11 @@ fn twig_versioning_analyzer_treats_malformed_comment_as_missing() {
         "{% block content %}core{% endblock %}",
     );
     let plugin = join(root.path(), "custom/plugin.html.twig");
-    let source = "{% sw_extends '@Storefront/storefront/page/base.html.twig' %}\n{# shopware-block: invalid-value@6.6.0.0 #}\n{% block content %}local{% endblock %}";
-    let problems = analyze(
+    let source = "{% sw_extends '@Storefront/storefront/page/base.html.twig' %}\n{|twig.versioning.comment_missing:{# shopware-block: invalid-value@6.6.0.0 #}|}\n{% block content %}local{% endblock %}";
+    check_problems(
         &analyzer(&root.path().to_string_lossy(), &index, ""),
-        &doc(&format!("file://{plugin}"), source),
-    );
-    assert!(
-        contains(&problems, TWIG_VERSIONING_COMMENT_MISSING_CODE),
-        "{problems:?}"
+        &format!("file://{plugin}"),
+        source,
     );
 }
 
@@ -186,14 +156,15 @@ fn twig_versioning_analyzer_reports_exact_resolved_parent_copy() {
     let block = "{% block content %}\n    <div>same</div>\n{% endblock %}";
     index_file(index.as_ref(), &upstream, block);
     let plugin = join(root.path(), PLUGIN_EXAMPLE);
-    let source =
-        format!("{{% sw_extends '@Storefront/storefront/page/example.html.twig' %}}\n{block}");
-    let problems = analyze(
-        &analyzer(&root.path().to_string_lossy(), &index, ""),
-        &doc(&swlsp_uriutil::file_uri(&plugin), &source),
+    let source = format!(
+        "{{% sw_extends '@Storefront/storefront/page/example.html.twig' %}}\n{}",
+        block.replacen("content", "{|twig.block.redundant_override:content|}", 1)
     );
-    assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(problems[0].id.as_str(), TWIG_BLOCK_REDUNDANT_OVERRIDE_CODE);
+    let (_, problems) = check_problems(
+        &analyzer(&root.path().to_string_lossy(), &index, ""),
+        &swlsp_uriutil::file_uri(&plugin),
+        &source,
+    );
     assert!(problems[0].message.contains("parent()"));
     assert_eq!(problems[0].related_information.len(), 1);
     assert_eq!(
@@ -223,11 +194,13 @@ fn twig_versioning_analyzer_does_not_report_different_or_fallback_block() {
     let plugin = join(root.path(), PLUGIN_EXAMPLE);
     let analyzer = analyzer(&root.path().to_string_lossy(), &index, "");
     for source in [
-        format!("{{% sw_extends '@Storefront/storefront/page/example.html.twig' %}}\n{block}"),
-        "{% sw_extends '@Storefront/storefront/page/example.html.twig' %}\n{% block other %}different{% endblock %}".to_owned(),
+        format!(
+            "{{% sw_extends '@Storefront/storefront/page/example.html.twig' %}}\n{}",
+            block.replacen("content", "{|twig.versioning.comment_missing:content|}", 1)
+        ),
+        "{% sw_extends '@Storefront/storefront/page/example.html.twig' %}\n{% block {|twig.versioning.comment_missing:other|} %}different{% endblock %}".to_owned(),
     ] {
-        let problems = analyze(&analyzer, &doc(&swlsp_uriutil::file_uri(&plugin), &source));
-        assert!(!contains(&problems, TWIG_BLOCK_REDUNDANT_OVERRIDE_CODE), "{problems:?}");
+        check_problems(&analyzer, &swlsp_uriutil::file_uri(&plugin), &source);
     }
 }
 
@@ -242,10 +215,9 @@ fn twig_versioning_analyzer_ignores_parent_delegation() {
     );
     let plugin = join(root.path(), "custom/plugin.html.twig");
     let source = "{% sw_extends '@Storefront/storefront/page/example.html.twig' %}\n{% block content %}\n    {{ parent() }}\n{% endblock %}";
-    let problems = analyze(
+    check_problems(
         &analyzer(&root.path().to_string_lossy(), &index, ""),
-        &doc(&swlsp_uriutil::file_uri(&plugin), source),
+        &swlsp_uriutil::file_uri(&plugin),
+        source,
     );
-    assert!(!contains(&problems, TWIG_VERSIONING_COMMENT_MISSING_CODE));
-    assert!(!contains(&problems, TWIG_BLOCK_REDUNDANT_OVERRIDE_CODE));
 }

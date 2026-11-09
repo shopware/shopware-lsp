@@ -2,8 +2,8 @@
 //! problem reporter.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
@@ -13,19 +13,27 @@ use swlsp_rewrite::ElementHandle;
 use swlsp_syntax::{LineIndex, TextRange, TextSize};
 
 use crate::configuration::{
-    diagnostic_rule_severity, inspection_domain, inspection_enabled_by_policy,
-    protocol_diagnostic_severity,
+    diagnostic_rule_severity, inspection_enabled_by_policy, protocol_diagnostic_severity,
 };
 use crate::context::{BoxError, CancellationToken, Context, is_cancellation, lock};
 use crate::document::{TextDocument, diagnostic_element};
 use crate::inspection::{
-    BoundFixEnvelope, DIAGNOSTIC_ENVELOPE_SCHEMA, DiagnosticEnvelope, Problem, ProblemReporter,
-    RegisteredInspection, code_string, encode_diagnostic_data,
+    BoundFixEnvelope, DIAGNOSTIC_ENVELOPE_SCHEMA, DiagnosticEnvelope, InspectionDefinition,
+    Problem, ProblemReporter, RegisteredInspection, Suppressions, code_string,
+    encode_diagnostic_data,
 };
 use crate::server::{Server, read, trace_enabled};
 
 /// Delay between a document change and its push diagnostics.
 pub const DIAGNOSTICS_DEBOUNCE: Duration = Duration::from_millis(150);
+
+/// How long one document's diagnostics may wait for slow inspections before
+/// the results so far are published (push mode), and how long one
+/// inspection may take before it is reported as slow.
+pub const INSPECTION_BUDGET: Duration = Duration::from_millis(200);
+
+/// Weight of the newest run in an inspection's average cost.
+const COST_WEIGHT: f64 = 0.25;
 
 #[derive(Clone)]
 pub(crate) struct DiagnosticsJob {
@@ -38,11 +46,51 @@ struct CacheEntry {
     diagnostics: Vec<protocol::Diagnostic>,
 }
 
+/// The last diagnostics of each inspection that declares its inputs, for one
+/// open document and diagnostic policy. A refresh after an index change
+/// reuses them while the inspection's input revision is unchanged; see
+/// [`crate::Inspection::input_revision`].
+pub(crate) struct InspectionResults {
+    document: Weak<TextDocument>,
+    policy: DiagnosticPolicy,
+    /// Whether every inspection that ran declared its inputs, so the
+    /// document's diagnostics change only with those revisions.
+    fully_declared: bool,
+    /// Inspection ID to (input revision, diagnostics).
+    results: HashMap<String, (u64, Vec<protocol::Diagnostic>)>,
+}
+
+impl InspectionResults {
+    fn new(document: &Arc<TextDocument>, policy: &DiagnosticPolicy) -> Self {
+        InspectionResults {
+            document: Arc::downgrade(document),
+            policy: policy.clone(),
+            fully_declared: true,
+            results: HashMap::new(),
+        }
+    }
+
+    fn matches(&self, document: &Arc<TextDocument>, policy: &DiagnosticPolicy) -> bool {
+        Weak::ptr_eq(&self.document, &Arc::downgrade(document)) && self.policy == *policy
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct DiagnosticsState {
     pub jobs: HashMap<String, DiagnosticsJob>,
     generations: HashMap<String, u64>,
     cache: HashMap<String, CacheEntry>,
+    /// Per-inspection results; unlike `cache`, they survive a refresh.
+    pub(crate) inspection_results: HashMap<String, InspectionResults>,
+    /// Average run time per inspection ID, in seconds; inspections run
+    /// cheapest first.
+    pub(crate) costs: HashMap<String, f64>,
+    /// Advanced by index and configuration changes; the workspace report is
+    /// recomputed when it moves.
+    pub(crate) workspace_generation: u64,
+    pub(crate) workspace_report: Option<Arc<crate::workspace_diagnostics::WorkspaceReport>>,
+    /// Inspections already reported for exceeding [`INSPECTION_BUDGET`].
+    pub(crate) slow_reported: std::collections::HashSet<String>,
     suspensions: u32,
 }
 
@@ -113,6 +161,51 @@ impl Server {
         }
     }
 
+    /// Schedules diagnostics after committed index changes: every open
+    /// document except those whose inspections all declare their inputs and
+    /// whose input revisions are unchanged, which would report the same.
+    pub(crate) fn refresh_after_index_change(&self) {
+        lock(&self.diagnostics).workspace_generation += 1;
+        let registry = self.registry();
+        for document in self.documents.documents() {
+            if self.inputs_unchanged(&registry, &document) {
+                continue;
+            }
+            self.schedule_diagnostics(&document.uri, document.version, Duration::ZERO);
+        }
+    }
+
+    fn inputs_unchanged(
+        &self,
+        registry: &crate::server::Registry,
+        document: &Arc<TextDocument>,
+    ) -> bool {
+        let policy = self.diagnostic_policy(&document.uri);
+        let state = lock(&self.diagnostics);
+        let Some(results) = state.inspection_results.get(&document.uri) else {
+            return false;
+        };
+        if !results.fully_declared || !results.matches(document, &policy) {
+            return false;
+        }
+        registry
+            .inspections
+            .for_language(document.language)
+            .iter()
+            .filter(|inspection| {
+                self.inspection_active(&inspection.definition, &policy)
+                    && inspection_has_enabled_rule(inspection, &policy)
+            })
+            .all(|inspection| {
+                let revision = inspection.inspection.input_revision(document);
+                revision.is_some()
+                    && results
+                        .results
+                        .get(&inspection.definition.id)
+                        .is_some_and(|(cached, _)| Some(*cached) == revision)
+            })
+    }
+
     /// Schedules a debounced re-analysis for every open document accepted by
     /// `matches`; workspace overlays use it when an open dependency changes.
     pub fn refresh_open_document_diagnostics(&self, matches: impl Fn(&TextDocument) -> bool) {
@@ -178,11 +271,13 @@ impl Server {
         let _publish = lock(&self.diagnostics_publish);
         let mut state = lock(&self.diagnostics);
         state.suspensions += 1;
+        state.workspace_generation += 1;
         if state.suspensions == 1 {
             for (_, job) in state.jobs.drain() {
                 job.cancel.cancel();
             }
             state.cache.clear();
+            state.inspection_results.clear();
             state.generations.clear();
         }
     }
@@ -208,15 +303,18 @@ impl Server {
             job.cancel.cancel();
         }
         state.cache.remove(uri);
+        state.inspection_results.remove(uri);
         state.generations.remove(uri);
     }
 
     pub(crate) fn cancel_all_diagnostics(&self) {
         let mut state = lock(&self.diagnostics);
+        state.workspace_generation += 1;
         for (_, job) in state.jobs.drain() {
             job.cancel.cancel();
         }
         state.cache.clear();
+        state.inspection_results.clear();
         state.generations.clear();
     }
 
@@ -251,20 +349,28 @@ impl Server {
             }
             return;
         }
-        let diagnostics = self.diagnostics_for_document(ctx, &document);
-        let _publish = lock(&self.diagnostics_publish);
-        let current = self.documents.get_document(uri);
-        if ctx.is_cancelled() || !current.is_some_and(|current| Arc::ptr_eq(&current, &document)) {
-            return;
-        }
-        let params = protocol::PublishDiagnosticsParams {
-            uri: uri.to_owned(),
-            version,
-            diagnostics,
+        let publish = |diagnostics: Vec<protocol::Diagnostic>| {
+            let _publish = lock(&self.diagnostics_publish);
+            let current = self.documents.get_document(uri);
+            if ctx.is_cancelled()
+                || !current.is_some_and(|current| Arc::ptr_eq(&current, &document))
+            {
+                return;
+            }
+            let params = protocol::PublishDiagnosticsParams {
+                uri: uri.to_owned(),
+                version,
+                diagnostics,
+            };
+            if let Err(error) = conn.notify("textDocument/publishDiagnostics", params) {
+                log::warn!("Error publishing diagnostics: {error}");
+            }
         };
-        if let Err(error) = conn.notify("textDocument/publishDiagnostics", params) {
-            log::warn!("Error publishing diagnostics: {error}");
-        }
+        // Slow inspections do not hold back the others: their partial
+        // results are published first, then the complete set.
+        let diagnostics =
+            self.diagnostics_for_document_with_progress(ctx, &document, Some(&publish));
+        publish(diagnostics);
     }
 
     /// Clears pushed diagnostics when an editor closes a document. Shares
@@ -308,6 +414,17 @@ impl Server {
         ctx: &Context,
         document: &Arc<TextDocument>,
     ) -> Vec<protocol::Diagnostic> {
+        self.diagnostics_for_document_with_progress(ctx, document, None)
+    }
+
+    /// [`Self::diagnostics_for_document`] with partial results reported
+    /// through `progress` while slow inspections run.
+    fn diagnostics_for_document_with_progress(
+        &self,
+        ctx: &Context,
+        document: &Arc<TextDocument>,
+        progress: Option<&dyn Fn(Vec<protocol::Diagnostic>)>,
+    ) -> Vec<protocol::Diagnostic> {
         if !self.diagnostic_policy(&document.uri).enabled {
             return Vec::new();
         }
@@ -325,7 +442,7 @@ impl Server {
             }
             generation
         };
-        let diagnostics = self.collect_diagnostics(ctx, document);
+        let diagnostics = self.collect_diagnostics_with_progress(ctx, document, progress);
         if ctx.is_cancelled() {
             return diagnostics;
         }
@@ -347,10 +464,25 @@ impl Server {
     }
 
     /// Runs every applicable inspection and normalizes the result.
+    #[cfg(test)]
     pub(crate) fn collect_diagnostics(
         &self,
         ctx: &Context,
         document: &Arc<TextDocument>,
+    ) -> Vec<protocol::Diagnostic> {
+        self.collect_diagnostics_with_progress(ctx, document, None)
+    }
+
+    /// [`Self::collect_diagnostics`], calling `progress` at most once with
+    /// the diagnostics so far when slow inspections remain: before starting
+    /// one whose average cost exceeds [`INSPECTION_BUDGET`], or once the
+    /// document has used up the budget. Inspections still to run contribute
+    /// their previous diagnostics of the same document snapshot, if any.
+    pub(crate) fn collect_diagnostics_with_progress(
+        &self,
+        ctx: &Context,
+        document: &Arc<TextDocument>,
+        progress: Option<&dyn Fn(Vec<protocol::Diagnostic>)>,
     ) -> Vec<protocol::Diagnostic> {
         let mut all = Vec::new();
         let policy = self.diagnostic_policy(&document.uri);
@@ -360,19 +492,78 @@ impl Server {
         let trace = diagnostic_performance_trace_enabled();
         let request_started = Instant::now();
         let registry = self.registry();
-        for inspection in registry.inspections.for_language(document.language) {
+        let suppressions = document
+            .language
+            .and_then(|language| registry.suppressions.get(&language))
+            .map(|read| read(document));
+        let mut previous = {
+            let mut state = lock(&self.diagnostics);
+            state
+                .inspection_results
+                .remove(&document.uri)
+                .filter(|results| results.matches(document, &policy))
+        };
+        let mut current = InspectionResults::new(document, &policy);
+        let mut complete = true;
+        let costs = lock(&self.diagnostics).costs.clone();
+        let cost = |id: &str| costs.get(id).copied().unwrap_or(0.0);
+        let mut inspections: Vec<&Arc<RegisteredInspection>> = registry
+            .inspections
+            .for_language(document.language)
+            .iter()
+            .filter(|inspection| {
+                self.inspection_active(&inspection.definition, &policy)
+                    && inspection_has_enabled_rule(inspection, &policy)
+            })
+            .collect();
+        // Cheapest first, so a partial publication carries as much as
+        // possible; ties keep registration order.
+        inspections.sort_by(|left, right| {
+            cost(&left.definition.id).total_cmp(&cost(&right.definition.id))
+        });
+        let mut measured: Vec<(String, f64)> = Vec::new();
+        let mut progress = progress;
+        for (position, inspection) in inspections.iter().enumerate() {
             if ctx.is_cancelled() {
                 break;
             }
             let id = inspection.definition.id.as_str();
-            if !self.inspection_presented_to_client(id) {
-                continue;
-            }
-            let domain = inspection_domain(id);
-            if (!domain.is_empty() && !self.domain_enabled(domain))
-                || !inspection_enabled_by_policy(&policy, id)
-                || !inspection_has_enabled_rule(inspection, &policy)
+            if let Some(report) = progress
+                && (request_started.elapsed() >= INSPECTION_BUDGET
+                    || cost(id) >= INSPECTION_BUDGET.as_secs_f64())
             {
+                let mut partial = all.clone();
+                if let Some(previous) = &previous {
+                    for pending in &inspections[position..] {
+                        if let Some((_, diagnostics)) = previous.results.get(&pending.definition.id)
+                        {
+                            partial.extend(diagnostics.iter().cloned());
+                        }
+                    }
+                }
+                report(normalize_diagnostics(partial));
+                progress = None;
+            }
+            // Read before running, so a change committed meanwhile is not
+            // stored under the old revision.
+            let revision = inspection.inspection.input_revision(document);
+            current.fully_declared &= revision.is_some();
+            if let Some(revision) = revision
+                && let Some((cached, diagnostics)) = previous
+                    .as_mut()
+                    .and_then(|previous| previous.results.remove(id))
+                && cached == revision
+            {
+                if trace {
+                    log::info!(
+                        "Diagnostic inspection {id} reused ({} findings)",
+                        diagnostics.len()
+                    );
+                }
+                all.extend(diagnostics.iter().cloned());
+                current
+                    .results
+                    .insert(id.to_owned(), (revision, diagnostics));
                 continue;
             }
             let inspection_started = Instant::now();
@@ -380,23 +571,63 @@ impl Server {
                 document,
                 inspection,
                 policy: &policy,
+                suppressions: suppressions.as_deref(),
                 diagnostics: Vec::new(),
             };
             if let Err(error) = inspection.inspection.inspect(ctx, document, &mut reporter) {
                 if ctx.is_cancelled() || is_cancellation(error.as_ref()) {
+                    complete = false;
                     break;
                 }
                 log::warn!("Error getting diagnostics from inspection {id}: {error}");
                 continue;
             }
+            if let Some(revision) = revision
+                && !ctx.is_cancelled()
+            {
+                current
+                    .results
+                    .insert(id.to_owned(), (revision, reporter.diagnostics.clone()));
+            }
+            let elapsed = inspection_started.elapsed();
+            measured.push((id.to_owned(), elapsed.as_secs_f64()));
+            if elapsed >= INSPECTION_BUDGET
+                && lock(&self.diagnostics).slow_reported.insert(id.to_owned())
+            {
+                log::warn!(
+                    "Diagnostic inspection {id} took {elapsed:?} on {}, over the {INSPECTION_BUDGET:?} budget; \
+                     set SHOPWARE_LSP_TRACE_DIAGNOSTICS=1 for per-inspection timings",
+                    document.uri
+                );
+            }
             if trace {
                 log::info!(
-                    "Diagnostic inspection {id} took {:?} ({} findings)",
-                    inspection_started.elapsed(),
+                    "Diagnostic inspection {id} took {elapsed:?} ({} findings)",
                     reporter.diagnostics.len()
                 );
             }
             all.extend(reporter.diagnostics);
+        }
+        if !measured.is_empty() {
+            let mut state = lock(&self.diagnostics);
+            for (id, seconds) in measured {
+                let average = state.costs.entry(id).or_insert(seconds);
+                *average += (seconds - *average) * COST_WEIGHT;
+            }
+        }
+        // Only for the open version: a newer one may have been diagnosed
+        // meanwhile, and closed documents must not keep results.
+        if complete
+            && !ctx.is_cancelled()
+            && (!current.results.is_empty() || current.fully_declared)
+            && self
+                .documents
+                .get_document(&document.uri)
+                .is_some_and(|open| Arc::ptr_eq(&open, document))
+        {
+            lock(&self.diagnostics)
+                .inspection_results
+                .insert(document.uri.clone(), current);
         }
         let normalize_started = Instant::now();
         let result = normalize_diagnostics(all);
@@ -410,6 +641,79 @@ impl Server {
             );
         }
         result
+    }
+}
+
+/// One inspection's uncached result, from [`Server::audit_inspections`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct InspectionAudit {
+    pub id: String,
+    /// The declared input revision; `None` when inputs are not declared.
+    pub input_revision: Option<u64>,
+    pub diagnostics: Vec<protocol::Diagnostic>,
+}
+
+impl Server {
+    /// Runs every active inspection on the open document `uri` without
+    /// reusing results, recording each one's declared input revision. Tests
+    /// use it to check input declarations: between two audits, an
+    /// inspection whose revision is unchanged must report the same
+    /// diagnostics. Empty when `uri` is not open.
+    pub fn audit_inspections(&self, ctx: &Context, uri: &str) -> Vec<InspectionAudit> {
+        let Some(document) = self.documents.get_document(uri) else {
+            return Vec::new();
+        };
+        let document = &document;
+        let policy = self.diagnostic_policy(&document.uri);
+        let registry = self.registry();
+        let suppressions = document
+            .language
+            .and_then(|language| registry.suppressions.get(&language))
+            .map(|read| read(document));
+        let mut result = Vec::new();
+        for inspection in registry.inspections.for_language(document.language) {
+            if !self.inspection_active(&inspection.definition, &policy)
+                || !inspection_has_enabled_rule(inspection, &policy)
+            {
+                continue;
+            }
+            let input_revision = inspection.inspection.input_revision(document);
+            let mut reporter = InspectionProblemReporter {
+                document,
+                inspection,
+                policy: &policy,
+                suppressions: suppressions.as_deref(),
+                diagnostics: Vec::new(),
+            };
+            if inspection
+                .inspection
+                .inspect(ctx, document, &mut reporter)
+                .is_err()
+            {
+                continue;
+            }
+            result.push(InspectionAudit {
+                id: inspection.definition.id.clone(),
+                input_revision,
+                diagnostics: reporter.diagnostics,
+            });
+        }
+        result
+    }
+}
+
+impl Server {
+    /// Whether `definition` runs for a document with `policy`: presented
+    /// to this client, its configuration domain enabled, and not disabled
+    /// by the diagnostics configuration.
+    pub(crate) fn inspection_active(
+        &self,
+        definition: &InspectionDefinition,
+        policy: &DiagnosticPolicy,
+    ) -> bool {
+        self.inspection_presented_to_client(definition)
+            && (definition.domain.is_empty() || self.domain_enabled(definition.domain))
+            && inspection_enabled_by_policy(policy, &definition.id)
     }
 }
 
@@ -429,6 +733,7 @@ struct InspectionProblemReporter<'a> {
     document: &'a Arc<TextDocument>,
     inspection: &'a RegisteredInspection,
     policy: &'a DiagnosticPolicy,
+    suppressions: Option<&'a dyn Suppressions>,
     diagnostics: Vec<protocol::Diagnostic>,
 }
 
@@ -442,6 +747,12 @@ impl ProblemReporter for InspectionProblemReporter<'_> {
             )
             .into());
         };
+        if self
+            .suppressions
+            .is_some_and(|suppressions| suppressions.suppresses(problem.range.start(), &problem.id))
+        {
+            return Ok(());
+        }
         let configured = diagnostic_rule_severity(self.policy, &problem.id);
         match configured {
             Some(Severity::Off) => return Ok(()),

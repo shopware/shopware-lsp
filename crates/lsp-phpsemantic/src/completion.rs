@@ -225,10 +225,12 @@ impl Provider {
 /// The declaration a global completion item renders. Class-like items only
 /// need resident summary data (name, flags, hierarchy names), so they skip
 /// the lazy detail load a full materialization triggers for every indexed
-/// file; functions need parameters and the return type.
+/// file; functions need parameters and the return type. The list shows
+/// return types as indexed: recomputing inferred ones would analyze every
+/// file declaring such a function.
 fn completion_symbol(view: &SymbolView<'_>) -> Symbol {
     if !view.kind().is_class_like() {
-        return view.materialize();
+        return view.materialize_stored();
     }
     let (_, extends, implements) = view.hierarchy_names();
     let mut symbol = Symbol {

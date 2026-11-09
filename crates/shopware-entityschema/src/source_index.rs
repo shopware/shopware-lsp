@@ -185,3 +185,10 @@ impl TransactionalClearer for SourceIndex {
         self.documents.clear_in(Some(mutation))
     }
 }
+
+/// Advanced by every committed change to the indexed entity sources.
+impl swlsp_indexer::Revisioned for SourceIndex {
+    fn revision(&self) -> u64 {
+        self.documents.revision()
+    }
+}

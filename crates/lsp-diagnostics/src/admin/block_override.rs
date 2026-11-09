@@ -49,6 +49,10 @@ struct MarkupTag {
 }
 
 impl ProblemAnalyzer for AdminBlockOverrideAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(0)
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

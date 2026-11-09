@@ -3,7 +3,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_lsp_protocol as protocol;
 use swlsp_php::PhpIndex;
 use swlsp_php_types::{equal_fold, go_to_lower};
@@ -11,7 +12,7 @@ use swlsp_twig::TwigIndexer;
 
 use super::component::suggestions_payload;
 use super::go_ext;
-use crate::ProblemAnalyzer;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 const MISSING_TWIG_RENDER_BLOCK_CODE: &str = "twig.template.block.missing";
 
@@ -30,7 +31,23 @@ impl TwigRenderBlockAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for TwigRenderBlockAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "twig.render_block",
+        description: "Rendering a block the template does not define.",
+        domain: "twig",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Php],
+        source: "twig",
+        codes: &[MISSING_TWIG_RENDER_BLOCK_CODE],
+    };
+}
+
 impl ProblemAnalyzer for TwigRenderBlockAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.twig_index) + crate::inputs(&self.php_index))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

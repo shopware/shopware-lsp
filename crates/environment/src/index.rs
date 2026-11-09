@@ -3,8 +3,8 @@ use std::path::Path;
 use std::sync::{Arc, PoisonError, RwLock};
 
 use swlsp_indexer::{
-    DataIndexer, Indexer, Mutation, ParsedFile, Result, Store, SupplementalPathIndexer,
-    TransactionalClearer, TransactionalRemover,
+    DataIndexer, Indexer, Mutation, ParsedFile, Prepared, PreparingIndexer, Result, Store,
+    SupplementalPathIndexer, TransactionalClearer, TransactionalRemover,
 };
 
 use crate::model::{Occurrence, OccurrenceKind, Variable};
@@ -24,6 +24,12 @@ type PathSet = Arc<RwLock<HashSet<String>>>;
 pub struct Index {
     records: DataIndexer<Occurrence>,
     paths: PathSet,
+}
+
+/// A file's occurrences keyed for storage, prepared ahead of the write
+/// transaction.
+struct PreparedOccurrences {
+    items: Vec<(String, Occurrence)>,
 }
 
 /// Environment files the scanner would not select on its own.
@@ -118,25 +124,13 @@ impl Index {
         }
     }
 
-    fn remove_paths(&self, paths: &[String], mutation: Option<&Mutation>) -> Result<()> {
-        let paths = paths.to_vec();
-        self.publish(mutation, move |set| {
-            for path in &paths {
-                set.remove(path);
-            }
-        })
-    }
-}
-
-impl Indexer for Index {
-    fn id(&self) -> &str {
-        "symfony.environment"
-    }
-
-    fn index(&self, file: &ParsedFile) -> Result<()> {
+    /// Collects the file's occurrences keyed for storage without writing
+    /// anything; `None` for files that neither are candidates nor have
+    /// persisted occurrences to clear.
+    fn extract(&self, file: &ParsedFile) -> Option<PreparedOccurrences> {
         let path = file.path();
         if !environment_candidate(file) && !self.has_path(path) {
-            return Ok(());
+            return None;
         }
         let source = file.source();
         let mut occurrences = if is_dot_env_path(path) {
@@ -179,6 +173,16 @@ impl Indexer for Index {
                 }
             }
         }
+        Some(PreparedOccurrences { items })
+    }
+
+    /// Writes prepared occurrences for `file` and publishes whether the path
+    /// has any after commit.
+    fn persist(&self, file: &ParsedFile, prepared: Option<&PreparedOccurrences>) -> Result<()> {
+        let Some(PreparedOccurrences { items }) = prepared else {
+            return Ok(());
+        };
+        let path = file.path();
         let present = !items.is_empty();
         self.records.batch_save_items_in(
             file.mutation(),
@@ -199,6 +203,25 @@ impl Indexer for Index {
         })
     }
 
+    fn remove_paths(&self, paths: &[String], mutation: Option<&Mutation>) -> Result<()> {
+        let paths = paths.to_vec();
+        self.publish(mutation, move |set| {
+            for path in &paths {
+                set.remove(path);
+            }
+        })
+    }
+}
+
+impl Indexer for Index {
+    fn id(&self) -> &str {
+        "symfony.environment"
+    }
+
+    fn index(&self, file: &ParsedFile) -> Result<()> {
+        self.persist(file, self.extract(file).as_ref())
+    }
+
     fn removed_files(&self, paths: &[String]) -> Result<()> {
         self.records.batch_delete_by_file_paths(paths)?;
         self.remove_paths(paths, None)
@@ -213,6 +236,10 @@ impl Indexer for Index {
         self.publish(None, HashSet::clear)
     }
 
+    fn as_preparing(&self) -> Option<&dyn PreparingIndexer> {
+        Some(self)
+    }
+
     fn as_supplemental_path(&self) -> Option<&dyn SupplementalPathIndexer> {
         Some(self)
     }
@@ -223,6 +250,19 @@ impl Indexer for Index {
 
     fn as_transactional_clearer(&self) -> Option<&dyn TransactionalClearer> {
         Some(self)
+    }
+}
+
+impl PreparingIndexer for Index {
+    fn prepare(&self, file: &ParsedFile) -> Result<Option<Prepared>> {
+        Ok(Some(Box::new(self.extract(file))))
+    }
+
+    fn index_prepared(&self, file: &ParsedFile, prepared: Option<&Prepared>) -> Result<()> {
+        match prepared.and_then(|value| value.downcast_ref::<Option<PreparedOccurrences>>()) {
+            Some(prepared) => self.persist(file, prepared.as_ref()),
+            None => self.index(file),
+        }
     }
 }
 
@@ -451,6 +491,75 @@ mod tests {
         mutation.commit().unwrap();
         assert!(!index.has_path(&path));
         assert!(index.variable("APP_ENV").unwrap().is_none());
+        store.close().unwrap();
+    }
+
+    #[test]
+    fn scanner_prepared_indexing_matches_direct_indexing() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let files = [
+            (
+                root.path().join(".env"),
+                "APP_ENV=dev\nDATABASE_URL=mysql://db\n",
+            ),
+            (
+                root.path().join("config").join("services.yaml"),
+                "parameters:\n  url: '%env(resolve:DATABASE_URL)%'\n",
+            ),
+            (
+                root.path().join("src").join("Config.php"),
+                "<?php\n#[Autowire(env: 'APP_ENV')]\nfinal class Config {}\n",
+            ),
+        ];
+        for (path, source) in &files {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, source).unwrap();
+        }
+
+        let store = Store::open(cache.path().join("indexes.db")).unwrap();
+        let scanned = Arc::new(Index::new(cache.path(), Some(&store)).unwrap());
+        let mut scanner = swlsp_indexer::FileScanner::new(
+            root.path().to_str().unwrap(),
+            cache.path().join("scanner.db"),
+            Some(store.clone()),
+        )
+        .unwrap();
+        scanner.add_indexer(scanned.clone());
+        let cancel = swlsp_indexer::CancelToken::new();
+        scanner.index_all(&cancel).unwrap();
+
+        let direct_dir = tempfile::tempdir().unwrap();
+        let direct = Index::new(direct_dir.path(), None).unwrap();
+        for (path, source) in &files {
+            index_file(&direct, path, source);
+        }
+        let scanned_variables = scanned.variables().unwrap();
+        assert_eq!(scanned.names().unwrap(), ["APP_ENV", "DATABASE_URL"]);
+        assert_eq!(scanned_variables, direct.variables().unwrap());
+
+        // A tracked file that stops referencing variables is cleared through
+        // the prepared path as well.
+        let (services, _) = &files[1];
+        std::fs::write(services, "parameters:\n  url: mysql\n").unwrap();
+        scanner
+            .index_files(&cancel, &[services.to_str().unwrap()])
+            .unwrap();
+        index_file(&direct, services, "parameters:\n  url: mysql\n");
+        assert!(!scanned.has_path(services.to_str().unwrap()));
+        assert_eq!(scanned.variables().unwrap(), direct.variables().unwrap());
+        assert!(
+            scanned
+                .variable("DATABASE_URL")
+                .unwrap()
+                .unwrap()
+                .references
+                .is_empty()
+        );
+
+        scanner.close().unwrap();
+        direct.close().unwrap();
+        scanned.close().unwrap();
         store.close().unwrap();
     }
 

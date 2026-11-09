@@ -49,6 +49,14 @@ impl EventAnalyzer {
 }
 
 impl ProblemAnalyzer for EventAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(
+            crate::inputs(&self.index)
+                + crate::inputs(&self.php_index)
+                + crate::inputs(&self.services),
+        )
+    }
+
     fn analyze(
         &self,
         ctx: &Context,
@@ -70,7 +78,7 @@ impl ProblemAnalyzer for EventAnalyzer {
         if references.is_empty() {
             return Ok(Vec::new());
         }
-        let events = index.events()?;
+        let events = index.events_view()?;
         let listener_event_names: Vec<String> = events
             .iter()
             .filter(|current| !current.listeners().is_empty())

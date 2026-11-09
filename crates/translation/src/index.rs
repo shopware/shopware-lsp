@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
 use swlsp_indexer::{
-    DataIndexer, Indexer, Mutation, ParsedFile, Result, Store, TransactionalClearer,
-    TransactionalRemover, WORKSPACE_SYMBOL_PRIORITY_FRAMEWORK,
+    DataIndexer, Indexer, Mutation, ParsedFile, Prepared, PreparingIndexer, Result, Store,
+    TransactionalClearer, TransactionalRemover, WORKSPACE_SYMBOL_PRIORITY_FRAMEWORK,
     WORKSPACE_SYMBOL_PRIORITY_FRAMEWORK_MEMBER, WorkspaceSymbol, WorkspaceSymbolKind,
     WorkspaceSymbolPosition, WorkspaceSymbolRange,
 };
@@ -24,6 +24,12 @@ pub struct Index {
 }
 
 impl Index {
+    /// Advanced after every committed change to this index; inspections
+    /// declare it as an input (`ProblemAnalyzer::input_revision`).
+    pub fn revision(&self) -> u64 {
+        self.messages.revision()
+    }
+
     pub fn new(config_dir: impl AsRef<Path>, store: Option<&Store>) -> Result<Self> {
         let messages = DataIndexer::repository(
             config_dir.as_ref().join("translations.db"),
@@ -113,6 +119,25 @@ impl Index {
         Ok(values)
     }
 
+    /// Stores extracted messages and their workspace symbols.
+    fn persist(&self, file: &ParsedFile, prepared: &PreparedMessages) -> Result<()> {
+        let Some(extracted) = &prepared.0 else {
+            return Ok(());
+        };
+        self.messages.batch_save_items_in(
+            file.mutation(),
+            [(
+                file.path(),
+                extracted
+                    .items
+                    .iter()
+                    .map(|(key, message)| (key.as_str(), message)),
+            )],
+        )?;
+        file.add_workspace_symbols(extracted.symbols.iter().cloned());
+        Ok(())
+    }
+
     fn remove(&self, paths: &[String], mutation: Option<&Mutation>) -> Result<()> {
         if paths.is_empty() {
             return Ok(());
@@ -121,34 +146,47 @@ impl Index {
     }
 }
 
+/// Messages extracted from one catalogue; `None` leaves the file alone.
+struct PreparedMessages(Option<ExtractedMessages>);
+
+struct ExtractedMessages {
+    /// Stored messages by storage key.
+    items: BTreeMap<String, Message>,
+    symbols: Vec<WorkspaceSymbol>,
+}
+
+/// Parses one catalogue resource without writing anything.
+fn extract_messages(file: &ParsedFile) -> PreparedMessages {
+    let Some(metadata) = catalogue_metadata(file.path()) else {
+        return PreparedMessages(None);
+    };
+    let messages = match file.extension() {
+        _ if metadata.compiled => parse_compiled_php_catalogue(file, &metadata),
+        ".php" => parse_php_resource(file, &metadata),
+        ".yaml" | ".yml" => parse_yaml_resource(file, &metadata),
+        ".xml" | ".xlf" | ".xliff" => parse_xml_resource(file, &metadata),
+        _ => Vec::new(),
+    };
+    let symbols = message_workspace_symbols(&messages);
+    // A repeated storage key keeps the last message (Go map semantics).
+    let mut items: BTreeMap<String, Message> = BTreeMap::new();
+    for message in messages {
+        if message.domain.is_empty() || message.key.is_empty() {
+            continue;
+        }
+        items.insert(storage_key(&message.domain, &message.key), message);
+    }
+    PreparedMessages(Some(ExtractedMessages { items, symbols }))
+}
+
 impl Indexer for Index {
     fn id(&self) -> &str {
         "translation.indexer"
     }
 
     fn index(&self, file: &ParsedFile) -> Result<()> {
-        let Some(metadata) = catalogue_metadata(file.path()) else {
-            return Ok(());
-        };
-        let messages = match file.extension() {
-            _ if metadata.compiled => parse_compiled_php_catalogue(file, &metadata),
-            ".php" => parse_php_resource(file, &metadata),
-            ".yaml" | ".yml" => parse_yaml_resource(file, &metadata),
-            ".xml" | ".xlf" | ".xliff" => parse_xml_resource(file, &metadata),
-            _ => Vec::new(),
-        };
-        // A repeated storage key keeps the last message (Go map semantics).
-        let mut items: BTreeMap<String, &Message> = BTreeMap::new();
-        for message in &messages {
-            if message.domain.is_empty() || message.key.is_empty() {
-                continue;
-            }
-            items.insert(storage_key(&message.domain, &message.key), message);
-        }
-        self.messages
-            .batch_save_items_in(file.mutation(), [(file.path(), items)])?;
-        add_message_workspace_symbols(file, &messages);
-        Ok(())
+        let prepared = extract_messages(file);
+        self.persist(file, &prepared)
     }
 
     fn removed_files(&self, paths: &[String]) -> Result<()> {
@@ -163,12 +201,29 @@ impl Indexer for Index {
         self.messages.clear()
     }
 
+    fn as_preparing(&self) -> Option<&dyn PreparingIndexer> {
+        Some(self)
+    }
+
     fn as_transactional_remover(&self) -> Option<&dyn TransactionalRemover> {
         Some(self)
     }
 
     fn as_transactional_clearer(&self) -> Option<&dyn TransactionalClearer> {
         Some(self)
+    }
+}
+
+impl PreparingIndexer for Index {
+    fn prepare(&self, file: &ParsedFile) -> Result<Option<Prepared>> {
+        Ok(Some(Box::new(extract_messages(file))))
+    }
+
+    fn index_prepared(&self, file: &ParsedFile, prepared: Option<&Prepared>) -> Result<()> {
+        match prepared.and_then(|value| value.downcast_ref::<PreparedMessages>()) {
+            Some(prepared) => self.persist(file, prepared),
+            None => self.index(file),
+        }
     }
 }
 
@@ -184,7 +239,7 @@ impl TransactionalClearer for Index {
     }
 }
 
-fn add_message_workspace_symbols(file: &ParsedFile, messages: &[Message]) {
+fn message_workspace_symbols(messages: &[Message]) -> Vec<WorkspaceSymbol> {
     let mut result = Vec::with_capacity(messages.len() * 2);
     let mut domains: HashSet<(&str, &str)> = HashSet::new();
     for message in messages {
@@ -226,5 +281,11 @@ fn add_message_workspace_symbols(file: &ParsedFile, messages: &[Message]) {
             ..WorkspaceSymbol::default()
         });
     }
-    file.add_workspace_symbols(result);
+    result
+}
+
+impl swlsp_indexer::Revisioned for Index {
+    fn revision(&self) -> u64 {
+        Index::revision(self)
+    }
 }

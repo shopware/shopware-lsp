@@ -7,6 +7,8 @@ use swlsp_php_semantic::Document;
 
 use crate::{Analysis, analyze, organize, remove};
 
+mod orphans;
+
 fn never() -> bool {
     false
 }

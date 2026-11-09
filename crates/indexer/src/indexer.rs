@@ -6,7 +6,7 @@
 
 use std::any::Any;
 
-use crate::error::Result;
+use crate::error::{CancelToken, Result};
 use crate::workspace_symbols::WorkspaceSymbol;
 use crate::{Mutation, ParsedFile};
 
@@ -110,6 +110,14 @@ pub trait BatchIndexer: Send + Sync {
     fn begin_indexing_batch(&self, candidate_files: &[String]);
 
     fn end_indexing_batch(&self) -> Result<()>;
+
+    /// Called after every batch indexer ended a run that was not cancelled,
+    /// before consumers are notified. Lets an indexer whose prepared data
+    /// depends on other files of the run refresh it now that the whole run is
+    /// published, preparing on up to `workers` threads.
+    fn settle_indexing_batch(&self, _cancel: &CancelToken, _workers: usize) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// Publishes declarations from the same prepared value an indexer already

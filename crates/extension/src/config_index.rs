@@ -26,6 +26,8 @@ pub struct ConfigIndex {
 #[derive(Default)]
 struct Shared {
     live: RwLock<HashMap<String, Arc<Config>>>,
+    /// Advanced by every change to `live`.
+    live_revision: std::sync::atomic::AtomicU64,
     changed: RwLock<Option<ChangeCallback>>,
 }
 
@@ -112,6 +114,9 @@ impl ConfigIndex {
             .write()
             .unwrap_or_else(|error| error.into_inner())
             .insert(path.clone(), Arc::new(config));
+        self.shared
+            .live_revision
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         self.shared.notify(&path);
     }
 
@@ -122,6 +127,9 @@ impl ConfigIndex {
             .write()
             .unwrap_or_else(|error| error.into_inner())
             .remove(&path);
+        self.shared
+            .live_revision
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         self.shared.notify(&path);
     }
 
@@ -240,6 +248,18 @@ impl TransactionalRemover for ConfigIndex {
 impl TransactionalClearer for ConfigIndex {
     fn clear_in(&self, mutation: &Mutation) -> Result<()> {
         self.clear_in_mutation(Some(mutation))
+    }
+}
+
+/// Advanced by every committed change to the indexed configuration files and
+/// by every change to their open-document overlays.
+impl swlsp_indexer::Revisioned for ConfigIndex {
+    fn revision(&self) -> u64 {
+        self.repository.revision()
+            + self
+                .shared
+                .live_revision
+                .load(std::sync::atomic::Ordering::Acquire)
     }
 }
 

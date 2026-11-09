@@ -50,44 +50,27 @@ namespace Twig\Extra\String {
 #[test]
 fn twig_member_deprecation_diagnostics() {
     let (_cache, php, twig) = member_indexes();
-    let document = doc(
+    let (_, result) = check_problems(
+        &TwigMemberDeprecationAnalyzer::new(Some(twig), Some(php)),
         "file:///project/templates/page.html.twig",
         "{# @var bar \\Foo\\Bar #}
-{{ bar.next.deprecated }}
-{{ bar.deprecatedProperty }}
-{{ bar.deprecatedAttributeProperty }}
-{{ ustring('value').deprecated }}
-{{ 'value'|u.deprecated }}
+{{ bar.next.{|twig.member.deprecated:deprecated|} }}
+{{ bar.{|twig.member.deprecated:deprecatedProperty|} }}
+{{ bar.{|twig.member.deprecated:deprecatedAttributeProperty|} }}
+{{ ustring('value').{|twig.member.deprecated:deprecated|} }}
+{{ 'value'|u.{|twig.member.deprecated:deprecated|} }}
 ",
     );
-    let result = analyze(
-        &TwigMemberDeprecationAnalyzer::new(Some(twig), Some(php)),
-        &document,
-    );
-    assert_eq!(result.len(), 5, "{result:?}");
     let mut messages = Vec::new();
-    let mut ranges = Vec::new();
     for problem in &result {
-        assert_eq!(problem.id.as_str(), "twig.member.deprecated");
         assert_eq!(problem.severity, Some(protocol::DiagnosticSeverity::HINT));
         assert_eq!(problem.tags, vec![protocol::DiagnosticTag::DEPRECATED]);
         messages.push(problem.message.clone());
-        ranges.push(range_text(&document, problem.range).to_owned());
     }
     assert!(messages.contains(&"Method 'Bar::getDeprecated' is deprecated".to_owned()));
     assert!(messages.contains(&"Field 'Bar::$deprecatedProperty' is deprecated".to_owned()));
     assert!(
         messages.contains(&"Field 'Bar::$deprecatedAttributeProperty' is deprecated".to_owned())
-    );
-    assert_eq!(
-        ranges,
-        vec![
-            "deprecated",
-            "deprecatedProperty",
-            "deprecatedAttributeProperty",
-            "deprecated",
-            "deprecated",
-        ]
     );
 }
 
@@ -96,11 +79,6 @@ fn summary(problems: &[Problem]) -> Vec<(String, TextRange, String)> {
         .iter()
         .map(|problem| (problem.id.0.clone(), problem.range, problem.message.clone()))
         .collect()
-}
-
-fn sorted(mut values: Vec<String>) -> Vec<String> {
-    values.sort();
-    values
 }
 
 #[test]
@@ -131,9 +109,7 @@ class ProductCollection implements \IteratorAggregate {
 }
 "#,
     );
-    let document = doc(
-        "file:///project/templates/product.html.twig",
-        r#"{# @var product \App\Product #}
+    let fixture = r#"{# @var product \App\Product #}
 {# @var nullable \App\Product|null #}
 {# @var magic \App\MagicModel #}
 {# @var collection \App\ProductCollection #}
@@ -145,55 +121,39 @@ class ProductCollection implements \IteratorAggregate {
 {{ product.FOO }}
 {{ product.category.title }}
 {{ product.active }}
-{{ product.missing }}
-{{ product.category.missingNested }}
-{{ product.missing.deep }}
-{{ product.secret }}
-{{ nullable.missingNullable }}
+{{ product.{|twig.member.missing:missing|} }}
+{{ product.category.{|twig.member.missing:missingNested|} }}
+{{ product.{|twig.member.missing:missing|}.deep }}
+{{ product.{|twig.member.missing:secret|} }}
+{{ nullable.{|twig.member.missing:missingNullable|} }}
 {{ magic.anything }}
 {{ collection.anything }}
 {{ list.anything }}
 {{ unknown.anything }}
 {{ broad.anything }}
 {{ scalar.anything }}
-"#,
-    );
-    let result = analyze(
+"#;
+    let uri = "file:///project/templates/product.html.twig";
+    let (_, result) = check_problems(
         &TwigMemberMissingAnalyzer::new(None, Some(php.clone())),
-        &document,
+        uri,
+        fixture,
     );
-    assert_eq!(result.len(), 5, "{result:?}");
-    let mut ranges = Vec::new();
     for problem in &result {
-        assert_eq!(problem.id.as_str(), "twig.member.missing");
         assert_eq!(problem.source, "twig");
         assert_eq!(
             problem.severity,
             Some(protocol::DiagnosticSeverity::WARNING)
         );
-        ranges.push(range_text(&document, problem.range).to_owned());
     }
-    assert_eq!(
-        sorted(ranges),
-        sorted(
-            [
-                "missing",
-                "missingNested",
-                "missing",
-                "secret",
-                "missingNullable"
-            ]
-            .map(str::to_owned)
-            .to_vec()
-        )
-    );
     Indexer::close(&php).unwrap();
     drop(php);
 
     let reopened = php_index(cache.path());
-    let restored = analyze(
+    let (_, restored) = check_problems(
         &TwigMemberMissingAnalyzer::new(None, Some(reopened)),
-        &document,
+        uri,
+        fixture,
     );
     assert_eq!(summary(&result), summary(&restored));
 }
@@ -212,46 +172,29 @@ class Second { public function getShared(): string {} }
 class DynamicSecond { public function __call(string $name, array $args): mixed {} }
 "#,
     );
-    let document = doc(
+    let (_, result) = check_problems(
+        &TwigMemberMissingAnalyzer::new(None, Some(php)),
         "file:///project/templates/union.html.twig",
         r#"{# @var known \App\First|\App\Second #}
 {# @var dynamic \App\First|\App\DynamicSecond #}
 {{ known.shared }}
-{{ known.missing }}
+{{ known.{|twig.member.missing:missing|} }}
 {{ dynamic.missing }}
 "#,
     );
-    let result = analyze(&TwigMemberMissingAnalyzer::new(None, Some(php)), &document);
-    assert_eq!(result.len(), 1, "{result:?}");
-    assert_eq!(range_text(&document, result[0].range), "missing");
     assert!(result[0].message.contains("App\\First|App\\Second"));
 }
 
 #[test]
 fn twig_member_missing_diagnostics_uses_twig_callable_return_types() {
     let (_cache, php, twig) = member_indexes();
-    let document = doc(
+    check_problems(
+        &TwigMemberMissingAnalyzer::new(Some(twig), Some(php)),
         "file:///project/templates/callable.html.twig",
         "{{ ustring('value').deprecated }}
-{{ ustring(text: 'value').unknownFunctionMember }}
+{{ ustring(text: 'value').{|twig.member.missing:unknownFunctionMember|} }}
 {{ 'value'|u.deprecated }}
-{{ 'value'|u.unknownFilterMember }}
+{{ 'value'|u.{|twig.member.missing:unknownFilterMember|} }}
 ",
-    );
-    let result = analyze(
-        &TwigMemberMissingAnalyzer::new(Some(twig), Some(php)),
-        &document,
-    );
-    assert_eq!(result.len(), 2, "{result:?}");
-    let ranges: Vec<String> = result
-        .iter()
-        .map(|problem| range_text(&document, problem.range).to_owned())
-        .collect();
-    assert_eq!(
-        sorted(ranges),
-        sorted(vec![
-            "unknownFunctionMember".to_owned(),
-            "unknownFilterMember".to_owned()
-        ])
     );
 }

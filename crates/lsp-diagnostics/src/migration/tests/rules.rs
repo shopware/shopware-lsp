@@ -1,12 +1,11 @@
 use super::*;
 
-const ENTITY_SEARCH_RESULT_GET_ENTITIES_CODE: &str =
-    "shopware.migration.entity_search_result.get_entities";
-
 #[test]
 fn shopware_migration_analyzer_delegates_entity_search_results() {
     let index = migration_test_php_index();
-    let document = document(
+    let (document, problems) = check(
+        &index,
+        version(6, 8, 0),
         "file:///project/src/Migrate.php",
         r#"<?php
 namespace App;
@@ -21,11 +20,11 @@ function migrate(
     ProductListingResult $listing,
     EntityCollection $collection,
 ): void {
-    $result->first();
-    $nullable?->last();
-    count($result);
-    iterator_to_array($listing);
-    foreach ($result as $entity) {}
+    $result->{|shopware.migration.entity_search_result.get_entities:first|}();
+    $nullable?->{|shopware.migration.entity_search_result.get_entities:last|}();
+    count({|shopware.migration.entity_search_result.get_entities:$result|});
+    iterator_to_array({|shopware.migration.entity_search_result.get_entities:$listing|});
+    foreach ({|shopware.migration.entity_search_result.get_entities:$result|} as $entity) {}
 
     $result->getTotal();
     $collection->first();
@@ -35,15 +34,7 @@ function migrate(
 "#,
     );
     assert!(document.parse_errors().is_empty());
-    let problems = analyze(&index, version(6, 8, 0), &document);
-    assert_eq!(problems.len(), 5);
-    assert_eq!(range_text(&document, problems[0].range), "first");
-    assert_eq!(range_text(&document, problems[1].range), "last");
-    assert_eq!(range_text(&document, problems[2].range), "$result");
-    assert_eq!(range_text(&document, problems[3].range), "$listing");
-    assert_eq!(range_text(&document, problems[4].range), "$result");
     for problem in &problems {
-        assert_eq!(problem.id.0, ENTITY_SEARCH_RESULT_GET_ENTITIES_CODE);
         assert_eq!(problem.source, "shopware-rector");
         assert!(payload(problem).safe);
     }
@@ -52,16 +43,15 @@ function migrate(
 #[test]
 fn shopware_migration_analyzer_requires_known_target_version() {
     let index = migration_test_php_index();
-    let document = document(
-        "file:///project/src/Migrate.php",
-        r#"<?php
+    let fixture = r#"<?php
 use Shopware\Core\Framework\DataAbstractionLayer\Search\EntitySearchResult;
-function migrate(EntitySearchResult $result): void { $result->first(); }
-"#,
-    );
+function migrate(EntitySearchResult $result): void { $result->{|shopware.migration.entity_search_result.get_entities:first|}(); }
+"#;
+    let uri = "file:///project/src/Migrate.php";
     for resolved in [ResolvedVersion::default(), version(6, 7, 9)] {
-        assert!(analyze(&index, resolved, &document).is_empty());
+        check(&index, resolved, uri, &only(fixture, &[]));
     }
+    check(&index, version(6, 8, 0), uri, fixture);
 }
 
 #[test]
@@ -75,7 +65,9 @@ fn shopware_migration_analyzer_class_level_rules() {
         "/project/vendor/AbstractReverseProxyGateway.php",
         "<?php\nnamespace Shopware\\Storefront\\Framework\\Cache\\ReverseProxy;\nabstract class AbstractReverseProxyGateway {}",
     );
-    let document = document(
+    let (_, problems) = check(
+        &index,
+        version(6, 7, 0),
         "file:///project/src/Extensions.php",
         r#"<?php
 namespace App;
@@ -83,7 +75,7 @@ namespace App;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityExtension;
 use Shopware\Storefront\Framework\Cache\ReverseProxy\AbstractReverseProxyGateway;
 
-class ProductExtension extends EntityExtension
+class {|shopware.migration.entity_extension.entity_name:ProductExtension|} extends EntityExtension
 {
     public function getDefinitionClass(): string
     {
@@ -96,40 +88,27 @@ class CompleteExtension extends EntityExtension
     public function getEntityName(): string { return 'complete'; }
 }
 
-class LegacyExtension extends EntityExtension
+class {|shopware.migration.entity_extension.entity_name:LegacyExtension|} extends EntityExtension
 {
     public function getDefinitionClass(): string { return LegacyDefinition::class; }
     public function getEntityName(): string { return 'legacy'; }
 }
 
-class Proxy extends AbstractReverseProxyGateway {}
+class {|shopware.migration.reverse_proxy.ban_all:Proxy|} extends AbstractReverseProxyGateway {}
 class CompleteProxy extends AbstractReverseProxyGateway
 {
     public function banAll(): void {}
 }
 "#,
     );
-    let problems = analyze(&index, version(6, 7, 0), &document);
-    assert_eq!(problems.len(), 3);
-    assert_eq!(
-        problems[0].id.0,
-        "shopware.migration.entity_extension.entity_name"
-    );
-    assert_eq!(range_text(&document, problems[0].range), "ProductExtension");
     let product = payload(&problems[0]);
     assert_eq!(product.replacement, "ProductDefinition::ENTITY_NAME");
     assert!(product.remove_legacy);
     assert!(product.safe);
-    assert_eq!(
-        problems[1].id.0,
-        "shopware.migration.entity_extension.entity_name"
-    );
     let legacy = payload(&problems[1]);
     assert_eq!(legacy.replacement, "LegacyDefinition::ENTITY_NAME");
     assert!(legacy.remove_legacy);
     assert!(legacy.safe);
-    assert_eq!(problems[2].id.0, "shopware.migration.reverse_proxy.ban_all");
-    assert_eq!(range_text(&document, problems[2].range), "Proxy");
 }
 
 #[test]
@@ -139,18 +118,18 @@ fn entity_extension_migration_keeps_legacy_method_before_shopware67() {
         "/project/vendor/EntityExtension.php",
         "<?php\nnamespace Shopware\\Core\\Framework\\DataAbstractionLayer;\nabstract class EntityExtension {}",
     );
-    let document = document(
+    let (_, problems) = check(
+        &index,
+        version(6, 6, 0),
         "file:///project/src/Extension.php",
         r#"<?php
 use Shopware\Core\Framework\DataAbstractionLayer\EntityExtension;
-class ProductExtension extends EntityExtension
+class {|shopware.migration.entity_extension.entity_name:ProductExtension|} extends EntityExtension
 {
     public function getDefinitionClass(): string { return ProductDefinition::class; }
 }
 "#,
     );
-    let problems = analyze(&index, version(6, 6, 0), &document);
-    assert_eq!(problems.len(), 1);
     let payload = payload(&problems[0]);
     assert!(!payload.remove_legacy);
     assert_eq!(payload.replacement, "ProductDefinition::ENTITY_NAME");
@@ -163,22 +142,20 @@ fn scheduled_task_logger_migration_is_versioned_and_type_safe() {
         "/project/vendor/ScheduledTaskHandler.php",
         "<?php\nnamespace Shopware\\Core\\Framework\\MessageQueue\\ScheduledTask;\nabstract class ScheduledTaskHandler {}",
     );
-    let document = document(
-        "file:///project/src/Tasks.php",
-        r#"<?php
+    let fixture = r#"<?php
 namespace App;
 use Psr\Log\LoggerInterface;
 use Shopware\Core\Framework\MessageQueue\ScheduledTask\ScheduledTaskHandler;
 
-class MissingLogger extends ScheduledTaskHandler
+class {|shopware.migration.scheduled_task.exception_logger:MissingLogger|} extends ScheduledTaskHandler
 {
     public function __construct(object $repository) { parent::__construct($repository); }
 }
-class ExistingLogger extends ScheduledTaskHandler
+class {|shopware.migration.scheduled_task.exception_logger:ExistingLogger|} extends ScheduledTaskHandler
 {
     public function __construct(object $repository, LoggerInterface $exceptionLogger) { parent::__construct($repository); }
 }
-class WrongLogger extends ScheduledTaskHandler
+class {|shopware.migration.scheduled_task.exception_logger:WrongLogger|} extends ScheduledTaskHandler
 {
     public function __construct(object $repository, string $exceptionLogger) { parent::__construct($repository); }
 }
@@ -186,14 +163,9 @@ class Complete extends ScheduledTaskHandler
 {
     public function __construct(object $repository, LoggerInterface $exceptionLogger) { parent::__construct($repository, $exceptionLogger); }
 }
-"#,
-    );
-    let problems = analyze(&index, version(6, 7, 0), &document);
-    assert_eq!(problems.len(), 3);
-    assert_eq!(
-        problems[0].id.0,
-        "shopware.migration.scheduled_task.exception_logger"
-    );
+"#;
+    let uri = "file:///project/src/Tasks.php";
+    let (_, problems) = check(&index, version(6, 7, 0), uri, fixture);
     let missing = payload(&problems[0]);
     assert!(missing.safe);
     assert!(missing.add_parameter);
@@ -204,66 +176,57 @@ class Complete extends ScheduledTaskHandler
     assert!(!wrong.safe);
     assert!(!wrong.add_parameter);
 
-    assert!(analyze(&index, version(6, 6, 10), &document).is_empty());
+    check(&index, version(6, 6, 10), uri, &only(fixture, &[]));
 }
 
 #[test]
 fn message_handler_subscriber_migration_detects_safe_classes() {
     let index = migration_test_php_index();
-    let document = document(
-        "file:///project/src/Handlers.php",
-        r#"<?php
+    let fixture = r#"<?php
 use Shopware\Core\Framework\MessageQueue\Handler\AbstractMessageHandler;
 
-class Handler extends AbstractMessageHandler
+class {|shopware.migration.message_handler.subscriber:Handler|} extends AbstractMessageHandler
 {
     public static function getHandledMessages(): iterable { return [Message::class]; }
     public function handle(Message $message): void {}
 }
-class ConflictingHandler extends AbstractMessageHandler
+class {|shopware.migration.message_handler.subscriber:ConflictingHandler|} extends AbstractMessageHandler
 {
     public function handle(Message $message): void {}
     public function __invoke(Message $message): void {}
 }
-class IncompleteHandler extends AbstractMessageHandler {}
+class {|shopware.migration.message_handler.subscriber:IncompleteHandler|} extends AbstractMessageHandler {}
 class UnrelatedHandler extends OtherHandler
 {
     public function handle(Message $message): void {}
 }
-"#,
-    );
-    let problems = analyze(&index, version(6, 5, 0), &document);
-    assert_eq!(problems.len(), 3);
-    assert_eq!(
-        problems[0].id.0,
-        "shopware.migration.message_handler.subscriber"
-    );
+"#;
+    let uri = "file:///project/src/Handlers.php";
+    let (_, problems) = check(&index, version(6, 5, 0), uri, fixture);
     assert!(payload(&problems[0]).safe);
     assert!(!payload(&problems[1]).safe);
     assert!(payload(&problems[2]).safe);
 
-    assert!(analyze(&index, version(6, 4, 20), &document).is_empty());
+    check(&index, version(6, 4, 20), uri, &only(fixture, &[]));
 }
 
 #[test]
 fn shopware_route_annotation_migrations() {
     let index = migration_test_php_index();
-    let document = document(
-        "file:///project/src/Controller.php",
-        r#"<?php
+    let fixture = r#"<?php
 /**
- * @RouteScope(scopes={"storefront", "api"})
+ * {|shopware.migration.annotation.route_defaults:@RouteScope(scopes={"storefront", "api"})|}
  */
 class Controller
 {
     /**
      * @Route("/contact", defaults={"XmlHttpRequest"=true})
-     * @Captcha
+     * {|shopware.migration.annotation.route_defaults:@Captcha|}
      */
     public function contact(): void {}
 
     /**
-     * @LoginRequired
+     * {|shopware.migration.annotation.route_defaults:@LoginRequired|}
      * @Route("/account")
      */
     public function account(): void {}
@@ -274,14 +237,9 @@ class Controller
      */
     public function complete(): void {}
 }
-"#,
-    );
-    let problems = analyze(&index, version(6, 5, 0), &document);
-    assert_eq!(problems.len(), 3);
-    assert_eq!(
-        problems[0].id.0,
-        "shopware.migration.annotation.route_defaults"
-    );
+"#;
+    let uri = "file:///project/src/Controller.php";
+    let (_, problems) = check(&index, version(6, 5, 0), uri, fixture);
     let route_scope = payload(&problems[0]);
     assert_eq!(route_scope.kind, "route-scope");
     assert_eq!(
@@ -301,7 +259,7 @@ class Controller
         r#"@Route("/account", defaults={"_loginRequired"=true})"#
     );
 
-    assert!(analyze(&index, version(6, 4, 20), &document).is_empty());
+    check(&index, version(6, 4, 20), uri, &only(fixture, &[]));
 }
 
 #[test]

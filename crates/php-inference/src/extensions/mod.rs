@@ -81,6 +81,14 @@ impl<'a> CallContext<'a> {
 /// evaluator to Symfony or Shopware.
 pub trait Extension: Send + Sync {
     fn infer_call(&self, context: &CallContext<'_>) -> Option<TypeFact>;
+
+    /// Advances whenever the data the extension infers from changes (for
+    /// example an index it queries). Analyses memoized per PHP index
+    /// revision include it in their key, so their types follow that data.
+    /// Stateless extensions keep the default.
+    fn revision(&self) -> u64 {
+        0
+    }
 }
 
 impl<F> Extension for F

@@ -1,5 +1,3 @@
-use std::io::Read;
-
 use serde::Serialize;
 use swlsp_php_semantic::{Document, Symbol, SymbolKind, TemplateParameter, WorkspaceGraph};
 use swlsp_php_types::Type;
@@ -66,19 +64,24 @@ fn round_trip() {
 }
 
 #[test]
-fn uses_standard_raw_deflate() {
+fn uses_size_prefixed_lz4_blocks() {
     let packed = graph("/project/Portable.php");
     let persisted = encode_workspace_graph(&packed).unwrap();
-    let mut raw = Vec::new();
-    flate2::read::DeflateDecoder::new(persisted.payload.0.as_slice())
-        .read_to_end(&mut raw)
-        .unwrap();
+    let raw = lz4_flex::block::decompress_size_prepended(&persisted.payload.0).unwrap();
     assert_eq!(raw, packed.encode());
     assert_eq!(
         crate::persistence::inflate_payload(&persisted.payload.0).unwrap(),
         raw
     );
     assert_eq!(WorkspaceGraph::decode(&raw).unwrap().path(), packed.path());
+}
+
+#[test]
+fn rejects_oversized_declared_length_before_allocating() {
+    let mut payload = u32::MAX.to_le_bytes().to_vec();
+    payload.extend_from_slice(b"tiny");
+    let error = crate::persistence::inflate_payload(&payload).unwrap_err();
+    assert!(error.0.contains("exceeds"), "{error}");
 }
 
 #[test]
@@ -195,7 +198,7 @@ fn rejects_corrupt_payload_without_poisoning_the_pool() {
     assert!(
         PersistedWorkspaceGraph {
             format: PERSISTED_WORKSPACE_GRAPH_FORMAT,
-            payload: Payload(b"not-deflate".to_vec()),
+            payload: Payload(b"not-lz4".to_vec()),
         }
         .decode()
         .is_err()
@@ -247,7 +250,7 @@ fn compresses_large_graphs() {
 }
 
 #[test]
-fn round_trips_highly_compressible_graphs_larger_than_the_initial_buffer() {
+fn round_trips_large_highly_compressible_graphs() {
     let symbols = (0..20_000)
         .map(|index| Symbol {
             id: format!("method-{index}").into(),
@@ -265,8 +268,6 @@ fn round_trips_highly_compressible_graphs_larger_than_the_initial_buffer() {
         ..Document::default()
     });
     let persisted = encode_workspace_graph(&packed).unwrap();
-    // The decoded size exceeds the first output allocation, so inflation
-    // spans several output chunks with back-references across them.
-    assert!(packed.encode().len() > persisted.payload.0.len() * 4 + 4096);
+    assert!(packed.encode().len() > persisted.payload.0.len() * 2);
     assert_eq!(persisted.decode().unwrap().symbol_count(), 20_000);
 }

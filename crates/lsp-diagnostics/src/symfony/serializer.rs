@@ -2,13 +2,14 @@
 
 use std::sync::Arc;
 
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_php::PhpIndex;
 use swlsp_php_types::go_to_lower;
 use swlsp_serializer::{Index, TargetKind, usages_in_document};
 
 use super::symfony_warning;
-use crate::ProblemAnalyzer;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 pub const MISSING_SERIALIZER_CLASS_CODE: &str = "symfony.serializer.class.missing";
 
@@ -23,7 +24,23 @@ impl SerializerAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for SerializerAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "symfony.serializer",
+        description: "Serializer calls for classes that do not exist.",
+        domain: "symfony.serializer",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Php],
+        source: "symfony",
+        codes: &[MISSING_SERIALIZER_CLASS_CODE],
+    };
+}
+
 impl ProblemAnalyzer for SerializerAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.index) + crate::inputs(&self.php_index))
+    }
+
     fn analyze(
         &self,
         _ctx: &Context,

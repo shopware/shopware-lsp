@@ -7,7 +7,8 @@ use serde_json::Value;
 use swlsp_language::LanguageId;
 use swlsp_lsp::{
     BoxError, CommandQuickFix, Context, FixContext, FixId, FixPresentation, FixResolution,
-    Inspection, InspectionDefinition, ProblemDefinition, QuickFix, RewriteQuickFix, bind_fix,
+    Inspection, InspectionDefinition, InspectionScope, ProblemDefinition, QuickFix,
+    RewriteQuickFix, bind_fix,
 };
 use swlsp_lsp_diagnostics::{
     TWIG_BLOCK_DEPRECATED_CODE, TWIG_BLOCK_REDUNDANT_OVERRIDE_CODE,
@@ -38,6 +39,9 @@ pub fn new_twig_versioning(versioning: Option<Arc<VersioningService>>) -> Arc<dy
     Arc::new(BoundInspection {
         definition: InspectionDefinition {
             id: "shopware.twig_versioning".into(),
+            description: "Storefront block overrides whose `shopware-block` version comment is missing, outdated or unmatched, and overrides of deprecated or unchanged blocks. Opt-in.",
+            domain: "shopware.twigVersioning",
+            scope: InspectionScope::Framework,
             languages: vec![LanguageId::Twig],
             problems: vec![
                 problem(

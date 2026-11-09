@@ -5,15 +5,18 @@
 //! reference names of a bound document, constant-name expressions, and
 //! PHPDoc references. [`remove`] deletes selected clauses while preserving
 //! comments; [`organize`] removes unused imports and orders independent,
-//! comment-free runs.
+//! comment-free runs. [`remove_orphaned_imports`] extends a rewrite with the
+//! removal of the imports it leaves unused.
 
 mod analyze;
+mod orphans;
 mod rewrite;
 
 #[cfg(test)]
 mod tests;
 
 pub use analyze::{Analysis, Declaration, Item, Scope, analyze};
+pub use orphans::remove_orphaned_imports;
 pub use rewrite::{organize, remove};
 
 /// The operation was cancelled by its caller.

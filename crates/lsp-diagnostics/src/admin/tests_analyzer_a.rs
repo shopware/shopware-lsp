@@ -14,7 +14,7 @@ fn admin_analyzer_undefined_parent() {
     let analyzer = fixture.analyzer();
     let cases = [
         (
-            "Component.extend('my-component', 'sw-undefined-parent', () => import('./index'));",
+            "Component.extend('my-component', {|admin.component.parent-not-found:'sw-undefined-parent'|}, () => import('./index'));",
             "file:///project/src/Resources/app/administration/src/main.js",
             Some("Parent component 'sw-undefined-parent' is not registered"),
         ),
@@ -24,7 +24,7 @@ fn admin_analyzer_undefined_parent() {
             None,
         ),
         (
-            "Shopware.Component.extend('my-component', 'sw-missing', () => import('./index'));",
+            "Shopware.Component.extend('my-component', {|admin.component.parent-not-found:'sw-missing'|}, () => import('./index'));",
             "file:///project/src/Resources/app/administration/src/main.js",
             Some("Parent component 'sw-missing' is not registered"),
         ),
@@ -35,13 +35,9 @@ fn admin_analyzer_undefined_parent() {
         ),
     ];
     for (code, uri, message) in cases {
-        let problems = analyze(&analyzer, &document(uri, code));
-        match message {
-            Some(message) => {
-                assert_eq!(problems.len(), 1, "{code}");
-                assert_eq!(problems[0].message, message);
-            }
-            None => assert!(problems.is_empty(), "{code}"),
+        let problems = check(&analyzer, uri, code);
+        if let Some(message) = message {
+            assert_eq!(problems[0].message, message);
         }
     }
 }
@@ -53,14 +49,11 @@ fn admin_analyzer_defined_parent() {
         &fixture.path("src/Resources/app/administration/src/component/sw-button/index.js"),
         "Component.register('sw-button', () => import('./index'));",
     );
-    let problems = analyze(
+    check(
         &fixture.analyzer(),
-        &document(
-            "file:///project/src/Resources/app/administration/src/main.js",
-            "Component.extend('my-button', 'sw-button', () => import('./index'));",
-        ),
+        "file:///project/src/Resources/app/administration/src/main.js",
+        "Component.extend('my-button', 'sw-button', () => import('./index'));",
     );
-    assert!(problems.is_empty(), "{problems:?}");
 }
 
 #[test]
@@ -73,18 +66,17 @@ fn admin_analyzer_validates_vue_sfc_template_against_indexed_contracts() {
         props: vec![prop("label", "String", true)],
     });
     let component_path = format!("{admin_root}/sw-host/index.vue");
-    let source = r#"<template><sw-button>{{ titel }}</sw-button></template>
+    let marked = r#"<template><{|admin.component.missing-required-prop:sw-button|}>{{ {|admin.component.unknown-template-member:titel|} }}</sw-button></template>
 <script setup lang="ts">
 const props = defineProps({ title: { type: String, required: true } });
 </script>"#;
-    fixture.index(&component_path, source);
+    let (source, _) = swlsp_lsp::fixture::parse(marked);
+    fixture.index(&component_path, &source);
     fixture.index(
         &format!("{admin_root}/sw-host/index.ts"),
         "Shopware.Component.register('sw-host', () => import('./index.vue'));",
     );
-    let codes = codes(&fixture.analyze_path(&component_path, source));
-    assert!(codes.contains("admin.component.missing-required-prop"));
-    assert!(codes.contains("admin.component.unknown-template-member"));
+    fixture.check_path(&component_path, marked);
 }
 
 #[test]
@@ -129,26 +121,19 @@ export default {
     fixture.update_live(&template_path, live_template);
 
     let consumer_path = format!("{admin_root}/consumer.html.twig");
-    let codes_found = codes(&fixture.analyze_path(
+    fixture.check_path(
         &consumer_path,
-        "<sw-legacy-live live-requird=\"1\">\n    <template #live-solt />\n</sw-legacy-live>",
-    ));
-    assert!(codes_found.contains("admin.component.missing-required-prop"));
-    assert!(codes_found.contains("admin.component.unknown-prop"));
-    assert!(codes_found.contains("admin.component.unknown-slot"));
+        "<{|admin.component.missing-required-prop:sw-legacy-live|} {|admin.component.unknown-prop:live-requird|}=\"1\">\n    <template #{|admin.component.unknown-slot:live-solt|} />\n</sw-legacy-live>",
+    );
 
-    let owner_problems = fixture.analyze_path(&template_path, live_template);
-    assert!(!codes(&owner_problems).contains("admin.component.unknown-template-member"));
+    fixture.check_path(&template_path, live_template);
 
     fixture.indexer.remove_live_document(&definition_path);
     fixture.indexer.remove_live_document(&template_path);
-    let fallback = codes(&fixture.analyze_path(
+    fixture.check_path(
         &consumer_path,
         "<sw-legacy-live old-required=\"saved\">\n    <template #old-slot />\n</sw-legacy-live>",
-    ));
-    assert!(!fallback.contains("admin.component.missing-required-prop"));
-    assert!(!fallback.contains("admin.component.unknown-prop"));
-    assert!(!fallback.contains("admin.component.unknown-slot"));
+    );
 }
 
 #[test]
@@ -186,34 +171,23 @@ defineSlots<{ default(props: { item: string; active: boolean }): unknown }>();
     );
 
     let consumer = format!("{admin_root}/consumer.html.twig");
-    let found = codes(&fixture.analyze_path(
+    fixture.check_path(
         &consumer,
-        "<sw-imported-card mdoe=\"wrong\">\n    <template #header=\"{ itme }\" />\n    <template #haeder />\n</sw-imported-card>",
-    ));
-    for code in [
-        "admin.component.missing-required-prop",
-        "admin.component.unknown-prop",
-        "admin.component.unknown-slot",
-        "admin.component.unknown-slot-prop",
-    ] {
-        assert!(found.contains(code), "{code}");
-    }
+        "<{|admin.component.missing-required-prop:sw-imported-card|} {|admin.component.unknown-prop:mdoe|}=\"wrong\">\n    <template #header=\"{ {|admin.component.unknown-slot-prop:itme|} }\" />\n    <template #{|admin.component.unknown-slot:haeder|} />\n</sw-imported-card>",
+    );
 
     let live_component_source = component_source.replace("heading", "headline");
-    let component_problems = fixture.analyze_path(&component_path, &live_component_source);
-    assert!(!codes(&component_problems).contains("admin.component.unknown-template-member"));
+    fixture.check_path(&component_path, &live_component_source);
 
-    let live_imported = fixture.analyze_path(
+    let live_imported = fixture.check_path(
         &component_path,
-        r#"<template>{{ profile.ctiy }}</template>
+        r#"<template>{{ profile.{|admin.component.unknown-vue-member:ctiy|} }}</template>
 <script setup lang="ts">
 import type { DraftProps } from './draft-contracts';
 const { profile } = defineProps<DraftProps>();
 </script>"#,
     );
-    let nested = with_code(&live_imported, "admin.component.unknown-vue-member");
-    assert!(!nested.is_empty());
-    for problem in nested {
+    for problem in &live_imported {
         assert!(
             problem.message.contains("profile.ctiy"),
             "{}",
@@ -221,28 +195,18 @@ const { profile } = defineProps<DraftProps>();
         );
     }
 
-    let live_local = fixture.analyze_path(
+    fixture.check_path(
         &component_path,
         r#"<template>
-    <DraftPanel lable="wrong">
-        <template #default="{ itme }" />
-        <template #defualt />
+    <{|admin.component.missing-required-prop:DraftPanel|} {|admin.component.unknown-prop:lable|}="wrong">
+        <template #default="{ {|admin.component.unknown-slot-prop:itme|} }" />
+        <template #{|admin.component.unknown-slot:defualt|} />
     </DraftPanel>
 </template>
 <script setup lang="ts">
 import DraftPanel from './DraftPanel.vue';
 </script>"#,
     );
-    let live_local_codes = codes(&live_local);
-    assert!(!live_local_codes.contains("admin.component.not-found"));
-    for code in [
-        "admin.component.missing-required-prop",
-        "admin.component.unknown-prop",
-        "admin.component.unknown-slot",
-        "admin.component.unknown-slot-prop",
-    ] {
-        assert!(live_local_codes.contains(code), "{code}");
-    }
 
     let draft_panel_path = format!("{component_dir}/DraftPanel.vue");
     fixture.update_live(
@@ -253,26 +217,16 @@ defineProps<{ draftLabel: string }>();
 defineSlots<{ preview(props: { record: { id: string } }): unknown }>();
 </script>"#,
     );
-    let live_child = codes(&fixture.analyze_path(
+    fixture.check_path(
         &component_path,
-        "<template>\n\t    <DraftPanel draft-lable=\"value\"><template #preveiw /></DraftPanel>\n</template>\n<script setup lang=\"ts\">import DraftPanel from './DraftPanel.vue';</script>",
-    ));
-    assert!(!live_child.contains("admin.component.not-found"));
-    for code in [
-        "admin.component.missing-required-prop",
-        "admin.component.unknown-prop",
-        "admin.component.unknown-slot",
-    ] {
-        assert!(live_child.contains(code), "{code}");
-    }
+        "<template>\n\t    <{|admin.component.missing-required-prop:DraftPanel|} {|admin.component.unknown-prop:draft-lable|}=\"value\"><template #{|admin.component.unknown-slot:preveiw|} /></DraftPanel>\n</template>\n<script setup lang=\"ts\">import DraftPanel from './DraftPanel.vue';</script>",
+    );
 
     fixture.indexer.remove_live_document(&draft_panel_path);
-    let fallback = codes(&fixture.analyze_path(
+    fixture.check_path(
         &component_path,
         "<template>\n\t    <DraftPanel label=\"persisted\"><template #default /></DraftPanel>\n</template>\n<script setup lang=\"ts\">import DraftPanel from './DraftPanel.vue';</script>",
-    ));
-    assert!(!fallback.contains("admin.component.unknown-prop"));
-    assert!(!fallback.contains("admin.component.unknown-slot"));
+    );
 }
 
 #[test]
@@ -291,26 +245,14 @@ fn admin_analyzer_reports_deprecated_components_and_props() {
             prop("active", "Boolean", false),
         ],
     });
-    let source = r#"<sw-legacy :old-value="value" :active="true" v-bind="{ oldValue: fallback }"></sw-legacy>"#;
-    let problems = fixture.analyze_path(&format!("{admin_root}/consumer.html.twig"), source);
-    let deprecated: Vec<_> = problems
-        .iter()
-        .filter(|problem| {
-            problem.id.0 == "admin.component.deprecated"
-                || problem.id.0 == "admin.component.deprecated-prop"
-        })
-        .collect();
-    assert_eq!(deprecated.len(), 3);
-    let mut by_text = std::collections::HashMap::new();
-    for problem in deprecated {
+    let problems = fixture.check_path(
+        &format!("{admin_root}/consumer.html.twig"),
+        r#"<{|admin.component.deprecated:sw-legacy|} :{|admin.component.deprecated-prop:old-value|}="value" :active="true" v-bind="{ {|admin.component.deprecated-prop:oldValue|}: fallback }"></sw-legacy>"#,
+    );
+    for problem in &problems {
         assert_eq!(problem.severity, Some(DiagnosticSeverity::HINT));
         assert_eq!(problem.tags, vec![DiagnosticTag::DEPRECATED]);
-        by_text.insert(slice(source, problem.range), problem.id.0.clone());
     }
-    assert_eq!(by_text["sw-legacy"], "admin.component.deprecated");
-    assert_eq!(by_text["old-value"], "admin.component.deprecated-prop");
-    assert_eq!(by_text["oldValue"], "admin.component.deprecated-prop");
-    assert!(!by_text.contains_key("active"));
 }
 
 #[test]
@@ -330,11 +272,10 @@ fn admin_analyzer_requires_all_dynamic_contracts_to_deprecate_prop() {
         file_path: format!("{admin_root}/b.ts"),
         props: vec![prop("title", "String", false)],
     });
-    let problems = fixture.analyze_path(
+    fixture.check_path(
         &format!("{admin_root}/consumer.html.twig"),
         r#"<component :is="active ? 'sw-a' : 'sw-b'" :title="title"></component>"#,
     );
-    assert!(!codes(&problems).contains("admin.component.deprecated-prop"));
 }
 
 #[test]
@@ -359,21 +300,19 @@ fn admin_analyzer_reports_deprecated_members_in_script_and_markup() {
         }],
     });
 
-    let markup = r#"{{ legacySave() }}<button @click="legacySave()"></button>"#;
-    let markup_problems = fixture.analyze_path(&template_path, markup);
-    let markup_deprecated = with_code(&markup_problems, "admin.component.deprecated-member");
-    assert_eq!(markup_deprecated.len(), 2);
-    for problem in markup_deprecated {
+    let markup_problems = fixture.check_path(
+        &template_path,
+        r#"{{ {|admin.component.deprecated-member:legacySave|}() }}<button @click="{|admin.component.deprecated-member:legacySave|}()"></button>"#,
+    );
+    for problem in &markup_problems {
         assert_eq!(problem.severity, Some(DiagnosticSeverity::HINT));
         assert_eq!(problem.tags, vec![DiagnosticTag::DEPRECATED]);
-        assert_eq!(slice(markup, problem.range), "legacySave");
     }
 
-    let script = "export default {\n    methods: { current() { this.legacySave(); } },\n};";
-    let script_problems = fixture.analyze_path(&definition_path, script);
-    let script_deprecated = with_code(&script_problems, "admin.component.deprecated-member");
-    assert_eq!(script_deprecated.len(), 1);
-    assert_eq!(slice(script, script_deprecated[0].range), "legacySave");
+    fixture.check_path(
+        &definition_path,
+        "export default {\n    methods: { current() { this.{|admin.component.deprecated-member:legacySave|}(); } },\n};",
+    );
 }
 
 #[test]
@@ -394,27 +333,25 @@ fn admin_analyzer_custom_directive_diagnostics() {
             ..VueLocalDirective::default()
         }],
     });
-    let source = r#"<div v-tooltip.bottom="message" v-if="visible"></div>
+    let problems = fixture.check_path(
+        &template_path,
+        r#"<div v-tooltip.bottom="message" v-if="visible"></div>
 <div v-completely-custom="value"></div>
 <div v-hide="value"></div>
-<div v-hied="value"></div>
-<div v-tooltpi="message"></div>"#;
-    let problems = fixture.analyze_path(&template_path, source);
-    assert_eq!(problems.len(), 2, "{problems:?}");
-    let by_name: std::collections::HashMap<_, _> = problems
-        .iter()
-        .map(|problem| (slice(source, problem.range), problem))
-        .collect();
-    assert!(by_name["tooltpi"].message.contains("v-tooltpi"));
-    assert_eq!(suggestions(by_name["tooltpi"]), ["tooltip"]);
-    assert_eq!(suggestions(by_name["hied"]), ["hide"]);
-
-    let problems = fixture.analyze_path(
-        &format!("{admin_root}/consumer.ts"),
-        "Shopware.Directive.getByName('tooltpi');",
+<div v-{|admin.directive.not-found:hied|}="value"></div>
+<div v-{|admin.directive.not-found:tooltpi|}="message"></div>"#,
     );
-    assert_eq!(problems.len(), 1);
-    assert_eq!(problems[0].id.0, "admin.directive.not-found");
+    let [hied, tooltpi] = problems.as_slice() else {
+        unreachable!()
+    };
+    assert!(tooltpi.message.contains("v-tooltpi"));
+    assert_eq!(suggestions(tooltpi), ["tooltip"]);
+    assert_eq!(suggestions(hied), ["hide"]);
+
+    let problems = fixture.check_path(
+        &format!("{admin_root}/consumer.ts"),
+        "Shopware.Directive.getByName('{|admin.directive.not-found:tooltpi|}');",
+    );
     assert_eq!(suggestions(&problems[0]), ["tooltip"]);
 }
 
@@ -426,29 +363,24 @@ fn admin_analyzer_registry_lookup_diagnostics() {
         &format!("{admin_root}/main.ts"),
         "\nShopware.Component.register('sw-card', {});\nShopware.Module.register('sw-product', { routes: {} });\nShopware.Filter.register('currency', value => value);",
     );
-    let source = r#"
+    let fixture_source = r#"
 Shopware.Component.getComponentRegistry().get('sw-card');
 Shopware.Module.getModuleRegistry().get('sw-product');
 Shopware.Component.getComponentRegistry().has('sw-optional');
 Shopware.Module.getModuleRegistry().has('sw-optional');
-Shopware.Component.getComponentRegistry().get('sw-cadr');
-Shopware.Module.getModuleRegistry().get('sw-prduct');
-Shopware.Filter.getByName('currncy');"#;
-    let problems = analyze(
+Shopware.Component.getComponentRegistry().get('{|admin.component.registry-not-found:sw-cadr|}');
+Shopware.Module.getModuleRegistry().get('{|admin.module.not-found:sw-prduct|}');
+Shopware.Filter.getByName('{|admin.filter.not-found:currncy|}');"#;
+    let problems = check(
         &fixture.analyzer(),
-        &document(&format!("file://{admin_root}/consumer.ts"), source),
+        &format!("file://{admin_root}/consumer.ts"),
+        fixture_source,
     );
-    assert_eq!(problems.len(), 3, "{problems:?}");
-    let by_id: std::collections::HashMap<_, _> = problems
-        .iter()
-        .map(|problem| (problem.id.0.as_str(), problem))
-        .collect();
-    for (code, typo, expected) in [
-        ("admin.component.registry-not-found", "sw-cadr", "sw-card"),
-        ("admin.module.not-found", "sw-prduct", "sw-product"),
-        ("admin.filter.not-found", "currncy", "currency"),
-    ] {
-        let problem = by_id[code];
+    for (problem, (typo, expected)) in problems.iter().zip([
+        ("sw-cadr", "sw-card"),
+        ("sw-prduct", "sw-product"),
+        ("currncy", "currency"),
+    ]) {
         assert!(problem.message.contains(typo));
         assert!(suggestions(problem).contains(&expected.to_owned()));
     }
@@ -465,20 +397,14 @@ fn admin_analyzer_cms_registry_diagnostics() {
     let source = r#"
 cmsService.getCmsElementConfigByName('hero');
 cmsService.getCmsBlockConfigByName('hero-grid');
-cmsService.getCmsElementConfigByName('herp');
-cmsService.getCmsBlockConfigByName('hero-gird');
-cmsService.registerCmsBlock({ name: 'other', slots: { content: { type: 'herp' } } });
-cmsService.registerCmsElement({ name: 'other', component: 'sw-cms-el-herp' });"#;
-    let problems = fixture.analyze_path(&format!("{admin_root}/consumer.ts"), source);
-    assert_eq!(problems.len(), 4, "{problems:?}");
-    let mut counts = std::collections::HashMap::new();
+cmsService.getCmsElementConfigByName('{|admin.cms-element.not-found:herp|}');
+cmsService.getCmsBlockConfigByName('{|admin.cms-block.not-found:hero-gird|}');
+cmsService.registerCmsBlock({ name: 'other', slots: { content: { type: '{|admin.cms-element.not-found:herp|}' } } });
+cmsService.registerCmsElement({ name: 'other', component: '{|admin.component.registry-not-found:sw-cms-el-herp|}' });"#;
+    let problems = fixture.check_path(&format!("{admin_root}/consumer.ts"), source);
     for problem in &problems {
-        *counts.entry(problem.id.0.as_str()).or_insert(0) += 1;
         assert!(!suggestions(problem).is_empty());
     }
-    assert_eq!(counts["admin.cms-element.not-found"], 2);
-    assert_eq!(counts["admin.cms-block.not-found"], 1);
-    assert_eq!(counts["admin.component.registry-not-found"], 1);
 }
 
 #[test]

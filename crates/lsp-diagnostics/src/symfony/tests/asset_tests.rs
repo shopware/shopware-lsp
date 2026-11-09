@@ -3,12 +3,9 @@ use std::sync::Arc;
 
 use swlsp_asset::Index;
 
-use super::{analyze, index_file, suggestions, tempdir};
-use crate::symfony::{
-    AssetAnalyzer, MISSING_ASSET_CODE, MISSING_ASSET_PACKAGE_CODE, MISSING_ENCORE_ENTRY_CODE,
-    MISSING_IMPORTMAP_CODE, MISSING_VITE_ENTRY_CODE,
-};
-use crate::test_support::diagnostics_document;
+use super::{index_file, suggestions, tempdir};
+use crate::symfony::AssetAnalyzer;
+use crate::test_support::check_problems;
 
 fn write(path: &Path, content: &str) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -42,26 +39,16 @@ fn asset_diagnostics_report_missing_asset_and_encore_entry() {
         &s(&root.join("webpack.config.js")),
         "Encore.addEntry('storefront', './assets/app.js');",
     );
-    let source = "{{ asset('build/ap.css') }}
-{{ asset('build/app.css') }}
-{{ encore_entry_script_tags('storefrnot') }}
-{{ encore_entry_script_tags('storefront') }}";
-    let result = analyze(
+    let (_, result) = check_problems(
         &AssetAnalyzer::new(Some(index), None),
-        &diagnostics_document(&template_uri(root, "page.html.twig"), source),
+        &template_uri(root, "page.html.twig"),
+        "{{ asset('{|symfony.asset.missing:build/ap.css|}') }}
+{{ asset('build/app.css') }}
+{{ encore_entry_script_tags('{|symfony.encore.entry.missing:storefrnot|}') }}
+{{ encore_entry_script_tags('storefront') }}",
     );
-    assert_eq!(result.len(), 2);
-    let codes: Vec<&str> = result.iter().map(|problem| problem.id.0.as_str()).collect();
-    assert!(codes.contains(&MISSING_ASSET_CODE));
-    assert!(codes.contains(&MISSING_ENCORE_ENTRY_CODE));
-    for problem in &result {
-        let values = suggestions(problem);
-        if problem.id.0 == MISSING_ASSET_CODE {
-            assert!(values.contains(&"build/app.css".to_owned()));
-        } else {
-            assert!(values.contains(&"storefront".to_owned()));
-        }
-    }
+    assert!(suggestions(&result[0]).contains(&"build/app.css".to_owned()));
+    assert!(suggestions(&result[1]).contains(&"storefront".to_owned()));
 }
 
 #[test]
@@ -75,24 +62,18 @@ fn asset_diagnostics_are_package_aware_and_report_unknown_packages() {
     let (_cache, index) = open_asset(root);
     index_file(index.as_ref(), &s(&target), "app");
     index_file(index.as_ref(), &s(&config), "<routes/>");
-    let source = "{{ asset('administration/app.js', '@Administration') }}
-{{ asset('administration/ap.js', '@Administration') }}
-{{ asset('administration/app.js', '@Administrtion') }}";
-    let result = analyze(
+    let (_, result) = check_problems(
         &AssetAnalyzer::new(Some(index), None),
-        &diagnostics_document(&template_uri(root, "page.html.twig"), source),
+        &template_uri(root, "page.html.twig"),
+        "{{ asset('administration/app.js', '@Administration') }}
+{{ asset('{|symfony.asset.missing:administration/ap.js|}', '@Administration') }}
+{{ asset('administration/app.js', '{|symfony.asset.package.missing:@Administrtion|}') }}",
     );
-    assert_eq!(result.len(), 2);
-    let asset = result
-        .iter()
-        .find(|problem| problem.id.0 == MISSING_ASSET_CODE)
-        .expect("asset problem");
+    let [asset, package] = result.as_slice() else {
+        unreachable!()
+    };
     assert!(asset.message.contains("administration/ap.js"));
     assert!(suggestions(asset).contains(&"administration/app.js".to_owned()));
-    let package = result
-        .iter()
-        .find(|problem| problem.id.0 == MISSING_ASSET_PACKAGE_CODE)
-        .expect("package problem");
     assert!(package.message.contains("@Administrtion"));
     assert!(suggestions(package).contains(&"@Administration".to_owned()));
 }
@@ -115,34 +96,31 @@ fn asset_diagnostics_validate_legacy_assetic_tag_operands() {
 </services></container>"#,
     );
     index.reload_assetic_catalog();
-    let source = "{% stylesheets
+    let analyzer = AssetAnalyzer::new(Some(index), None);
+    let (_, result) = check_problems(
+        &analyzer,
+        &template_uri(root, "page.html.twig"),
+        "{% stylesheets
     '@MainBundle/Resources/public/css/*.css'
-    '@MainBundle/Resources/public/css/ap.css'
+    '{|symfony.asset.missing:@MainBundle/Resources/public/css/ap.css|}'
     'css/' ~ dynamic_name
     '@named_formula'
 %}
 <link href=\"{{ asset_url }}\">
-{% endstylesheets %}";
-    let analyzer = AssetAnalyzer::new(Some(index), None);
-    let result = analyze(
-        &analyzer,
-        &diagnostics_document(&template_uri(root, "page.html.twig"), source),
+{% endstylesheets %}",
     );
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id.0, MISSING_ASSET_CODE);
     assert!(result[0].message.contains("css/ap.css"));
     assert!(
         suggestions(&result[0]).contains(&"@MainBundle/Resources/public/css/app.css".to_owned())
     );
 
-    let missing_named_source = "{% stylesheets '@named_formla' %}
-<link href=\"{{ asset_url }}\">
-{% endstylesheets %}";
-    let missing_named = analyze(
+    let (_, missing_named) = check_problems(
         &analyzer,
-        &diagnostics_document(&template_uri(root, "named.html.twig"), missing_named_source),
+        &template_uri(root, "named.html.twig"),
+        "{% stylesheets '{|symfony.asset.missing:@named_formla|}' %}
+<link href=\"{{ asset_url }}\">
+{% endstylesheets %}",
     );
-    assert_eq!(missing_named.len(), 1);
     assert!(missing_named[0].message.contains("@named_formla"));
     assert!(suggestions(&missing_named[0]).contains(&"@named_formula".to_owned()));
 }
@@ -161,21 +139,17 @@ return [
     'bootstrap' => ['version' => '5.3.2'],
 ];",
     );
-    let source = "{{ importmap('app') }}
-{{ importmap('ap') }}
-{{ importmap('bootstrap') }}";
-    let result = analyze(
+    let (_, result) = check_problems(
         &AssetAnalyzer::new(Some(index), None),
-        &diagnostics_document(&template_uri(root, "page.html.twig"), source),
+        &template_uri(root, "page.html.twig"),
+        "{{ importmap('app') }}
+{{ importmap('{|symfony.asset_mapper.entrypoint.missing:ap|}') }}
+{{ importmap('{|symfony.asset_mapper.entrypoint.missing:bootstrap|}') }}",
     );
-    assert_eq!(result.len(), 2);
     for problem in &result {
-        assert_eq!(problem.id.0, MISSING_IMPORTMAP_CODE);
         assert!(problem.message.contains("AssetMapper entrypoint"));
-        if problem.message.contains("'ap'") {
-            assert!(suggestions(problem).contains(&"app".to_owned()));
-        }
     }
+    assert!(suggestions(&result[0]).contains(&"app".to_owned()));
 }
 
 #[test]
@@ -190,14 +164,12 @@ fn asset_diagnostics_validate_vite_entrypoints() {
   build: {rollupOptions: {input: {frontend: './assets/frontend.js'}}}
 });",
     );
-    let source = "{{ vite_entry_script_tags('frontend') }}
-{{ vite_entry_link_tags('fronend') }}";
-    let result = analyze(
+    let (_, result) = check_problems(
         &AssetAnalyzer::new(Some(index), None),
-        &diagnostics_document(&template_uri(root, "page.html.twig"), source),
+        &template_uri(root, "page.html.twig"),
+        "{{ vite_entry_script_tags('frontend') }}
+{{ vite_entry_link_tags('{|symfony.vite.entry.missing:fronend|}') }}",
     );
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id.0, MISSING_VITE_ENTRY_CODE);
     assert!(suggestions(&result[0]).contains(&"frontend".to_owned()));
 }
 
@@ -209,18 +181,16 @@ fn asset_diagnostics_validate_static_twig_html_assets() {
     write(&logo, "<svg/>");
     let (_cache, index) = open_asset(root);
     index_file(index.as_ref(), &s(&logo), "<svg/>");
-    let source = r#"<img src="/images/logo.svg">
-<img src="images/log.svg">
+    let (_, result) = check_problems(
+        &AssetAnalyzer::new(Some(index), None),
+        &template_uri(root, "page.html.twig"),
+        r#"<img src="/images/logo.svg">
+<img src="{|symfony.asset.missing:images/log.svg|}">
 <img src="https://cdn.example.test/missing.svg">
 <img src="data:image/svg+xml;base64,abc">
 <img src="{{ asset(dynamicPath) }}">
-<script src="/_webpack_hot_proxy_/storefront/hot-reloading.js"></script>"#;
-    let result = analyze(
-        &AssetAnalyzer::new(Some(index), None),
-        &diagnostics_document(&template_uri(root, "page.html.twig"), source),
+<script src="/_webpack_hot_proxy_/storefront/hot-reloading.js"></script>"#,
     );
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id.0, MISSING_ASSET_CODE);
     assert!(result[0].message.contains("images/log.svg"));
     assert!(suggestions(&result[0]).contains(&"images/logo.svg".to_owned()));
 }

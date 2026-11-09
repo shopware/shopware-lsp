@@ -5,7 +5,7 @@ use std::sync::{Arc, LazyLock};
 
 use regex::Regex;
 use swlsp_language::LanguageId;
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::*;
 use swlsp_php::NameResolver;
@@ -13,8 +13,8 @@ use swlsp_php_types::equal_fold;
 use swlsp_syntax::{Kind, SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
 
 use super::util::{go_parse_int, node_text, warning};
-use crate::ProblemAnalyzer;
 use crate::common::{local_call_argument, unwrap_php_parentheses};
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 pub const SHOPWARE_PHP_SUPERGLOBAL_CODE: &str = "shopware.php.superglobal";
 pub const SHOPWARE_PHP_DISALLOWED_FUNCTION_CODE: &str = "shopware.php.function.disallowed";
@@ -47,7 +47,33 @@ impl ShopwarePhpLocalAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for ShopwarePhpLocalAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "shopware.php.local",
+        description: "Store review rules checkable in one file: disallowed functions, superglobals, session functions, insecure cookies, disabled TLS verification, weak crypto and disabled foreign key checks.",
+        domain: "shopware",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Php],
+        source: "shopware-lsp",
+        codes: &[
+            SHOPWARE_PHP_SUPERGLOBAL_CODE,
+            SHOPWARE_PHP_DISALLOWED_FUNCTION_CODE,
+            SHOPWARE_PHP_SESSION_FUNCTION_CODE,
+            SHOPWARE_PHP_GLOB_BRACE_CODE,
+            SHOPWARE_PHP_TLS_VERIFICATION_CODE,
+            SHOPWARE_PHP_PREDICTABLE_SALT_CODE,
+            SHOPWARE_PHP_WEAK_KEY_CODE,
+            SHOPWARE_PHP_INSECURE_COOKIE_CODE,
+            SHOPWARE_PHP_FOREIGN_KEY_CHECKS_CODE,
+        ],
+    };
+}
+
 impl ProblemAnalyzer for ShopwarePhpLocalAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(0)
+    }
+
     fn analyze(
         &self,
         ctx: &Context,
@@ -106,10 +132,6 @@ impl ProblemAnalyzer for ShopwarePhpLocalAnalyzer {
             },
         );
         ctx.check()?;
-        let suppressions = swlsp_php_suppression::parse(document.source());
-        result.retain(|problem| {
-            !suppressions.suppresses(problem.range.start().into(), problem.id.as_str())
-        });
         result.sort_by_key(|problem| problem.range.start());
         Ok(result)
     }

@@ -7,7 +7,7 @@ use serde_json::{Map, Value};
 use swlsp_language::LanguageId;
 use swlsp_lsp::{
     BoundFix, BoxError, Context, DiagnosticId, FixContext, FixId, FixPresentation, Inspection,
-    InspectionDefinition, ProblemDefinition, QuickFix, RewriteQuickFix, bind_fix,
+    InspectionDefinition, InspectionScope, ProblemDefinition, QuickFix, RewriteQuickFix, bind_fix,
 };
 use swlsp_lsp_diagnostics::ShopwareCriteriaAnalyzer;
 use swlsp_lsp_protocol as protocol;
@@ -44,6 +44,9 @@ pub fn new_shopware_criteria() -> Arc<dyn Inspection> {
     Arc::new(BoundInspection {
         definition: InspectionDefinition {
             id: "shopware.criteria".to_owned(),
+            description: "Criteria built with an ID equality filter that should pass the IDs to the Criteria constructor.",
+            domain: "shopware.dal",
+            scope: InspectionScope::Framework,
             languages: vec![LanguageId::Php],
             problems: vec![ProblemDefinition {
                 id: DiagnosticId::from("shopware.criteria.id-filter"),
@@ -102,8 +105,36 @@ impl RewriteQuickFix for CriteriaIdFix {
             range(payload.criteria_start, payload.criteria_end),
             format!("new Criteria({})", payload.argument),
         )?;
-        builder.replace_range(range(payload.filter_start, payload.filter_end), "")?;
+        let (filter_start, filter_end) = statement_line(
+            fix.document.source(),
+            payload.filter_start as usize,
+            payload.filter_end as usize,
+        );
+        builder.replace_range(range(filter_start, filter_end), "")?;
         let edits = builder.finish()?;
         Ok(single_document_plan(&fix.document, edits))
     }
+}
+
+/// Widens a removed statement to its whole line, including the line break,
+/// when nothing else shares the line, so no indentation-only line remains.
+fn statement_line(source: &str, start: usize, end: usize) -> (u32, u32) {
+    let bytes = source.as_bytes();
+    let line_start = source[..start].rfind('\n').map_or(0, |index| index + 1);
+    let line_end = source[end..]
+        .find('\n')
+        .map_or(bytes.len(), |index| end + index);
+    let blank = |text: &str| {
+        text.bytes()
+            .all(|byte| byte == b' ' || byte == b'\t' || byte == b'\r')
+    };
+    if line_start == 0 || !blank(&source[line_start..start]) || !blank(&source[end..line_end]) {
+        return (start as u32, end as u32);
+    }
+    let after = if line_end < bytes.len() {
+        line_end + 1
+    } else {
+        line_end
+    };
+    (line_start as u32, after as u32)
 }

@@ -306,3 +306,11 @@ impl TransactionalClearer for Index {
         self.clear_all(Some(mutation))
     }
 }
+
+/// Advanced by every committed change to the type registrations and by the
+/// DAL index entity tables resolve through.
+impl swlsp_indexer::Revisioned for Index {
+    fn revision(&self) -> u64 {
+        self.type_registrations.revision() + swlsp_indexer::Revisioned::revision(&self.dal())
+    }
+}

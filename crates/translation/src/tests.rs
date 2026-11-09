@@ -1,4 +1,4 @@
-use swlsp_indexer::{Indexer, ParsedFile};
+use swlsp_indexer::{Indexer, ParsedFile, PreparingIndexer};
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::PHP_STRING;
 use swlsp_parser_twig::query as twigquery;
@@ -39,6 +39,29 @@ fn index_yaml_translation_resource() {
         idx.keys("messages").unwrap(),
         vec!["checkout.cart.title", "plain"]
     );
+}
+
+#[test]
+fn prepared_indexing_matches_direct_indexing() {
+    let (_direct_dir, direct) = new_test_index();
+    let (_prepared_dir, prepared) = new_test_index();
+    let path = "/project/translations/messages.en.yaml";
+    let source = "checkout:\n  cart:\n    title: 'Your cart'\nplain: Plain value\n";
+    index_source(&direct, path, source);
+    let file = ParsedFile::from_source(path, source);
+    let data = prepared.prepare(&file).unwrap();
+    prepared.index_prepared(&file, data.as_ref()).unwrap();
+
+    let messages = direct.messages().unwrap();
+    assert_eq!(messages.len(), 2);
+    assert_eq!(prepared.messages().unwrap(), messages);
+
+    let cleared = ParsedFile::from_source(path, "{}\n");
+    let data = prepared.prepare(&cleared).unwrap();
+    prepared.index_prepared(&cleared, data.as_ref()).unwrap();
+    assert!(prepared.messages().unwrap().is_empty());
+    direct.close().unwrap();
+    prepared.close().unwrap();
 }
 
 #[test]

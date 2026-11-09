@@ -3,12 +3,13 @@
 use std::sync::Arc;
 
 use serde_json::json;
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_php::PhpIndex;
 use swlsp_php_semantic::{Flags, SymbolKind};
 
 use super::util::warning;
-use crate::ProblemAnalyzer;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 /// Go `ShopwareDecorationAnalyzer`: constructor parameters typed with a
 /// concrete decorator instead of its decoration abstraction.
@@ -23,7 +24,23 @@ impl ShopwareDecorationAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for ShopwareDecorationAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "shopware.decoration",
+        description: "Decorators type-hinting the concrete service instead of its abstract class.",
+        domain: "shopware",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Php],
+        source: "shopware-lsp",
+        codes: &["shopware.decoration.abstraction"],
+    };
+}
+
 impl ProblemAnalyzer for ShopwareDecorationAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.php))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

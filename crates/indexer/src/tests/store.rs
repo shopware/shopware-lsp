@@ -102,7 +102,9 @@ fn mutation_shares_prepared_statements_across_repositories() {
     second
         .batch_save_items_in(Some(&mutation), [("/b.php", [("b", "second".to_owned())])])
         .unwrap();
-    assert_eq!(mutation.prepared_statement_count(), 2);
+    // Namespace registration, replacement delete and insert, shared by both
+    // repositories.
+    assert_eq!(mutation.prepared_statement_count(), 3);
     mutation.commit().unwrap();
     assert_eq!(mutation.prepared_statement_count(), 0);
     assert_eq!(first.get_values("a").unwrap(), ["first"]);
@@ -124,7 +126,8 @@ fn delete_only_replacement_skips_insert_statement() {
             [("/removed.php", Vec::<(&str, String)>::new())],
         )
         .unwrap();
-    assert_eq!(mutation.prepared_statement_count(), 1);
+    // Namespace registration and the delete; no insert statement.
+    assert_eq!(mutation.prepared_statement_count(), 2);
     mutation.commit().unwrap();
     assert!(
         repository
@@ -249,7 +252,16 @@ fn background_checkpointer_moves_commits_into_the_database_file() {
     let path = directory.path().join("indexes.db");
     let repository = DataIndexer::<String>::in_store(&store, "blobs").unwrap();
     let before = std::fs::metadata(&path).unwrap().len();
-    let payload = "x".repeat(2 * 1024 * 1024);
+    // Incompressible, so the stored value keeps its size.
+    let mut state = 0x2545_f491_4f6c_dd1d_u64;
+    let payload: String = (0..2 * 1024 * 1024)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            char::from(b'!' + (state % 90) as u8)
+        })
+        .collect();
     repository.save_item("/big.php", "big", &payload).unwrap();
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     while std::fs::metadata(&path).unwrap().len() < before + payload.len() as u64 / 2 {
@@ -260,5 +272,135 @@ fn background_checkpointer_moves_commits_into_the_database_file() {
         std::thread::sleep(Duration::from_millis(20));
     }
     assert_eq!(repository.get_values("big").unwrap(), [payload]);
+    store.close().unwrap();
+}
+
+#[test]
+fn interns_paths_and_sweeps_unreferenced_ones_on_close() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("indexes.db");
+    let store = Store::open(&path).unwrap();
+    let first = DataIndexer::<String>::in_store(&store, "first").unwrap();
+    let second = DataIndexer::<String>::in_store(&store, "second").unwrap();
+    first
+        .batch_save_items([("/b.php", [("key", "b".to_owned())])])
+        .unwrap();
+    first
+        .batch_save_items([("/a.php", [("key", "a".to_owned())])])
+        .unwrap();
+    second
+        .batch_save_items([("/a.php", [("key", "second".to_owned())])])
+        .unwrap();
+    first
+        .batch_save_items([("/gone.php", [("key", "gone".to_owned())])])
+        .unwrap();
+    first.delete_by_file_path("/gone.php").unwrap();
+
+    // Values come back in path order, not insertion or id order.
+    assert_eq!(first.get_values("key").unwrap(), ["a", "b"]);
+    assert_eq!(first.get_all_values().unwrap(), ["a", "b"]);
+    assert_eq!(first.get_all_file_paths().unwrap(), ["/a.php", "/b.php"]);
+    assert_eq!(second.get_values_by_path("/a.php").unwrap(), ["second"]);
+    let paths = |store: &Store| -> Vec<String> {
+        store
+            .read(|connection| {
+                let mut statement = connection.prepare("SELECT path FROM paths ORDER BY path")?;
+                let rows = statement.query_map([], |row| row.get(0))?;
+                Ok(rows.collect::<rusqlite::Result<Vec<String>>>()?)
+            })
+            .unwrap()
+    };
+    assert_eq!(paths(&store), ["/a.php", "/b.php", "/gone.php"]);
+    store.close().unwrap();
+
+    let store = Store::open(&path).unwrap();
+    assert_eq!(paths(&store), ["/a.php", "/b.php"]);
+    store.close().unwrap();
+}
+
+fn grouped_save(
+    store: &Store,
+    repository: &DataIndexer<String>,
+    path: &str,
+    value: &str,
+    commit: bool,
+) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+    let mutation = store.begin_grouped_mutation(&CancelToken::new()).unwrap();
+    repository
+        .batch_save_items_in(Some(&mutation), [(path, [("key", value.to_owned())])])
+        .unwrap();
+    let published = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = published.clone();
+    mutation
+        .after_commit(move || flag.store(true, std::sync::atomic::Ordering::SeqCst))
+        .unwrap();
+    if commit {
+        mutation.commit().unwrap();
+    } else {
+        mutation.rollback().unwrap();
+    }
+    published
+}
+
+#[test]
+fn grouped_mutations_commit_together_and_roll_back_alone() {
+    use std::sync::atomic::Ordering::SeqCst;
+    let (_directory, store) = store();
+    let repository = DataIndexer::<String>::in_store(&store, "grouped").unwrap();
+    let first = grouped_save(&store, &repository, "/a.php", "a", true);
+    let failed = grouped_save(&store, &repository, "/b.php", "b", false);
+    let third = grouped_save(&store, &repository, "/c.php", "c", true);
+    // Deferred: readers see the last real commit, callbacks wait.
+    assert!(repository.get_values("key").unwrap().is_empty());
+    assert!(!first.load(SeqCst) && !third.load(SeqCst));
+    // The pending group is visible inside the next grouped mutation.
+    let mutation = store.begin_grouped_mutation(&CancelToken::new()).unwrap();
+    assert!(
+        repository
+            .has_file_path_in(Some(&mutation), "/a.php")
+            .unwrap()
+    );
+    assert!(
+        !repository
+            .has_file_path_in(Some(&mutation), "/b.php")
+            .unwrap()
+    );
+    mutation.rollback().unwrap();
+
+    store.commit_grouped().unwrap();
+    assert_eq!(repository.get_values("key").unwrap(), ["a", "c"]);
+    assert!(first.load(SeqCst) && third.load(SeqCst) && !failed.load(SeqCst));
+    store.commit_grouped().unwrap();
+    store.close().unwrap();
+}
+
+#[test]
+fn plain_mutations_and_close_commit_a_pending_group_first() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("indexes.db");
+    let store = Store::open(&path).unwrap();
+    let repository = DataIndexer::<String>::in_store(&store, "grouped").unwrap();
+    grouped_save(&store, &repository, "/a.php", "a", true);
+    repository
+        .save_item("/b.php", "key", &"b".to_owned())
+        .unwrap();
+    assert_eq!(repository.get_values("key").unwrap(), ["a", "b"]);
+    grouped_save(&store, &repository, "/c.php", "c", true);
+    store.close().unwrap();
+
+    let store = Store::open(&path).unwrap();
+    let repository = DataIndexer::<String>::in_store(&store, "grouped").unwrap();
+    assert_eq!(repository.get_values("key").unwrap(), ["a", "b", "c"]);
+    store.close().unwrap();
+}
+
+#[test]
+fn groups_commit_after_enough_mutations() {
+    let (_directory, store) = store();
+    let repository = DataIndexer::<String>::in_store(&store, "grouped").unwrap();
+    for index in 0..8 {
+        grouped_save(&store, &repository, &format!("/{index}.php"), "v", true);
+    }
+    assert_eq!(repository.get_values("key").unwrap().len(), 8);
     store.close().unwrap();
 }

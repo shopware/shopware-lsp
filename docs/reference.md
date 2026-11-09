@@ -823,6 +823,10 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
 - Go-to-definition and hover details for route names
 - Find all references for routes
 - Diagnostics for missing static route names
+- Diagnostics for route names defined in more than one project file
+  (`symfony.route.redefined`; the definition Symfony loads last replaces the
+  others). Definitions in `vendor/` and test directories are ignored, since
+  redefining a bundle route by name is how it is overridden
 - Deprecated controller class/method diagnostics on XML/YAML/Twig controller
   references and PHP/Twig route-name usages
 - Route completion in Twig anchor `href` and form `action` attributes with
@@ -1352,6 +1356,47 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
 | Missing or non-enum class in `enum()` / `enum_cases()` | Warning | Twig |
 | Invalid `_self` macro import inside a Twig component | Error | Twig |
 
+In PHP files, every diagnostic honors PHPStan and PhpStorm suppression
+comments. `@phpstan-ignore <code>`, `@phpstan-ignore-line` and
+`@phpstan-ignore-next-line` accept Shopware LSP codes such as
+`shopware.php.superglobal` or `symfony.service.missing`; the forms without a
+code suppress every diagnostic on the targeted line. `@noinspection` accepts
+codes and the matching PhpStorm inspection names for core PHP diagnostics.
+
+Twig, YAML, XML, JavaScript/TypeScript and SCSS files honor `@noinspection`
+in their comments (`{# @noinspection twig.macro.missing #}`,
+`# @noinspection symfony.service.missing`, `<!-- @noinspection … -->`,
+`// @noinspection …`). A comment sharing a line with code suppresses that
+line; a comment on its own line suppresses the next line with code. Several
+codes may be listed, separated by spaces or commas; without a code, `*` or
+`all`, every diagnostic on the line is suppressed.
+
+When a file has several problems of one code with the same quick fix, the
+quick-fix menu also offers *Fix all N '<code>' problems in this file*. It
+applies the fix to one problem after another, re-checking the file between
+steps, and returns one edit, so fixes that share changes (such as an import
+several occurrences need) combine correctly.
+
+[`inspections.md`](inspections.md) lists every inspection with its
+description, languages, domain and diagnostic codes, generated from the
+server.
+
+Clients supporting workspace diagnostics (VS Code's problems panel) also
+show problems that rules about the whole project, such as
+`symfony.route.redefined`, find in files that are not open. Diagnostics of a
+document do not wait for slow inspections: the results of the fast ones are
+published first. An inspection taking longer than 200 ms is logged once as a
+warning; `SHOPWARE_LSP_TRACE_DIAGNOSTICS=1` logs every inspection's time.
+
+The former `shopware.admin` inspection is split into
+`shopware.admin.component`, `shopware.admin.component_api`,
+`shopware.admin.member`, `shopware.admin.module`,
+`shopware.admin.block_override` and `shopware.admin.migration`, and
+`shopware.migration` into `shopware.migration.api`,
+`shopware.migration.signature` and `shopware.migration.behavior`. Diagnostic
+codes are unchanged; `diagnostics.inspections` entries naming the old IDs fail
+validation and must use the new ones.
+
 ### Commands
 - `shopware/forceReindex` - Trigger a full re-index of the workspace
 
@@ -1611,7 +1656,7 @@ domains:
 diagnostics:
   enabled: true
   inspections:
-    shopware.admin: false
+    shopware.admin.migration: false
   rules:
     php.arguments: error
     admin.component.unknown-instance-member: off

@@ -584,6 +584,9 @@ fn project_matches_two_stage_projection() {
     let direct = WorkspaceGraph::project(&full).document();
     let staged = WorkspaceGraph::pack_owned(full.workspace_graph()).document();
     assert_eq!(direct, staged);
+    // The analysis generation is not part of a projection.
+    assert_eq!(full.workspace_revision, 11);
+    assert_eq!(direct.workspace_revision, 0);
     assert_eq!(direct.symbols.len(), 1);
     assert_eq!(direct.references.len(), 1);
 }

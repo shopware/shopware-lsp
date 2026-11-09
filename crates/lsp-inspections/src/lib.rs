@@ -9,12 +9,12 @@ mod range;
 mod suggestion;
 
 pub use inspection::{
-    AnalyzerInspection, BindProblems, BoundInspection, diagnostic_payload, new_analyzer_inspection,
-    resolve_anchor,
+    AnalyzerInspection, BindProblems, BoundInspection, analyzer_inspection, diagnostic_payload,
+    new_analyzer_inspection, resolve_anchor,
 };
 pub use range::protocol_text_range;
 pub use suggestion::{SUGGESTION_FIX_ID, SuggestionFix, suggestion_bound_fixes};
-pub use swlsp_lsp_diagnostics::ProblemAnalyzer;
+pub use swlsp_lsp_diagnostics::{DeclaredAnalyzer, ProblemAnalyzer};
 
 mod admin;
 pub use admin::*;

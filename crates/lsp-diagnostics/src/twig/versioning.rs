@@ -49,6 +49,17 @@ fn payload_value(payload: &TwigVersioningPayload) -> Option<serde_json::Value> {
 }
 
 impl ProblemAnalyzer for TwigVersioningAnalyzer {
+    fn input_revision(&self, document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        // Only templates extending another are checked, against the Twig
+        // index and the package versions read from disk.
+        if go_ext(&document.uri) != ".twig" || !document.source().contains("extends") {
+            return Some(0);
+        }
+        let versioning = self.versioning.as_ref()?;
+        let path = swlsp_uriutil::path(&document.uri).unwrap_or_else(|_| document.uri.clone());
+        Some(versioning.inputs_revision(&path))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

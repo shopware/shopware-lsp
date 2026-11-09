@@ -6,7 +6,7 @@ use serde_json::json;
 use swlsp_language::LanguageId;
 use swlsp_lsp::{
     BoxError, Context, FixContext, FixId, FixPresentation, FixResolution, Inspection,
-    InspectionDefinition, QuickFix, RewriteQuickFix, bind_fix,
+    InspectionDefinition, InspectionScope, QuickFix, RewriteQuickFix, bind_fix,
 };
 use swlsp_lsp_diagnostics::InvokableCommandAnalyzer;
 use swlsp_lsp_protocol::{self as protocol, DiagnosticSeverity};
@@ -30,6 +30,9 @@ pub fn new_invokable_command(php_index: Option<PhpIndex>) -> Arc<dyn Inspection>
     Arc::new(BoundInspection {
         definition: InspectionDefinition {
             id: "symfony.console.invoke".to_owned(),
+            description: "Invokable console commands whose `__invoke` does not return an integer exit code.",
+            domain: "symfony.console",
+            scope: InspectionScope::Framework,
             languages: vec![LanguageId::Php],
             problems: vec![
                 definition(

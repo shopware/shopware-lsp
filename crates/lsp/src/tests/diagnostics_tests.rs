@@ -7,7 +7,9 @@ use std::time::Duration;
 use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
 use serde_json::{Value, json};
 use swlsp_indexer::{BatchIndexer, FileScanner, Indexer, ParsedFile};
+use swlsp_language::LanguageId;
 use swlsp_lsp_protocol as protocol;
+use swlsp_syntax::TextSize;
 
 use super::support::*;
 use crate::context::lock;
@@ -338,6 +340,193 @@ fn diagnostics_cache_reuses_and_invalidates_document_analysis() {
     server.close_all().unwrap();
 }
 
+/// Counts runs and declares one input whose revision tests advance.
+#[derive(Default)]
+struct DeclaredInspection {
+    counting: CountingInspection,
+    revision: std::sync::atomic::AtomicU64,
+}
+
+impl Inspection for DeclaredInspection {
+    fn definition(&self) -> InspectionDefinition {
+        self.counting.definition()
+    }
+
+    fn inspect(
+        &self,
+        ctx: &Context,
+        document: &Arc<TextDocument>,
+        reporter: &mut dyn ProblemReporter,
+    ) -> Result<(), BoxError> {
+        self.counting.inspect(ctx, document, reporter)
+    }
+
+    fn quick_fixes(&self) -> Vec<Arc<dyn QuickFix>> {
+        self.counting.quick_fixes()
+    }
+
+    fn input_revision(&self, _document: &TextDocument) -> Option<u64> {
+        Some(self.revision.load(Ordering::SeqCst))
+    }
+}
+
+#[test]
+fn refresh_reuses_inspections_whose_declared_inputs_are_unchanged() {
+    let dir = temp_dir();
+    let uri = file_uri(&dir.path().join("test.yaml"));
+    let server = Server::new(None, &root_string(&dir), "test");
+    let inspection = Arc::new(DeclaredInspection::default());
+    server.register_inspection(inspection.clone());
+    let revision = &inspection.revision;
+    let calls = || inspection.counting.calls.load(Ordering::SeqCst);
+    let ctx = Context::background();
+    let diagnose = || {
+        let document = server.documents.get_document(&uri).unwrap();
+        // An index refresh: schedules every open document again.
+        server.schedule_diagnostics(&uri, document.version, Duration::from_secs(3600));
+        server.diagnostics_for_document(&ctx, &document)
+    };
+    server.documents.open_document(&uri, "value: bad\n", 3);
+    let first = diagnose();
+    assert_eq!(first.len(), 1);
+    assert_eq!(calls(), 1);
+
+    // Unchanged inputs and document: the previous result is reused.
+    assert_eq!(diagnose(), first);
+    assert_eq!(calls(), 1);
+
+    // A changed input runs the inspection again.
+    revision.store(1, Ordering::SeqCst);
+    assert_eq!(diagnose(), first);
+    assert_eq!(calls(), 2);
+
+    // So does a changed document.
+    server.documents.open_document(&uri, "other: bad\n", 4);
+    diagnose();
+    assert_eq!(calls(), 3);
+
+    // Configuration changes drop every reused result.
+    server.cancel_all_diagnostics();
+    diagnose();
+    assert_eq!(calls(), 4);
+
+    // Closing the document drops its results.
+    server.cancel_diagnostics(&uri);
+    assert!(lock(&server.diagnostics).inspection_results.is_empty());
+    server.close_all().unwrap();
+}
+
+#[test]
+fn index_refresh_skips_documents_whose_declared_inputs_are_unchanged() {
+    let dir = temp_dir();
+    let uri = file_uri(&dir.path().join("test.yaml"));
+    let server = Server::new(None, &root_string(&dir), "test");
+    let inspection = Arc::new(DeclaredInspection::default());
+    server.register_inspection(inspection.clone());
+    server.documents.open_document(&uri, "value: bad\n", 3);
+    let document = server.documents.get_document(&uri).unwrap();
+    let scheduled = || lock(&server.diagnostics).jobs.contains_key(&uri);
+
+    // Never diagnosed: nothing is known about its inputs.
+    server.refresh_after_index_change();
+    assert!(scheduled());
+    server.cancel_diagnostics(&uri);
+
+    server.diagnostics_for_document(&Context::background(), &document);
+    server.refresh_after_index_change();
+    assert!(!scheduled(), "unchanged inputs");
+
+    inspection.revision.store(1, Ordering::SeqCst);
+    server.refresh_after_index_change();
+    assert!(scheduled(), "changed input");
+    server.close_all().unwrap();
+}
+
+#[test]
+fn index_refresh_keeps_documents_with_undeclared_inspections() {
+    let dir = temp_dir();
+    let uri = file_uri(&dir.path().join("test.yaml"));
+    let server = Server::new(None, &root_string(&dir), "test");
+    server.register_inspection(Arc::new(CountingInspection::default()));
+    server.documents.open_document(&uri, "value: bad\n", 3);
+    let document = server.documents.get_document(&uri).unwrap();
+    server.diagnostics_for_document(&Context::background(), &document);
+    server.refresh_after_index_change();
+    assert!(lock(&server.diagnostics).jobs.contains_key(&uri));
+    server.close_all().unwrap();
+}
+
+/// Reports `test.slow` on the whole document after 300 ms.
+struct SlowInspection;
+
+impl Inspection for SlowInspection {
+    fn definition(&self) -> InspectionDefinition {
+        test_definition("test.slow", false)
+    }
+
+    fn inspect(
+        &self,
+        _ctx: &Context,
+        document: &Arc<TextDocument>,
+        reporter: &mut dyn ProblemReporter,
+    ) -> Result<(), BoxError> {
+        std::thread::sleep(Duration::from_millis(300));
+        reporter.report(Problem {
+            id: "test.slow".into(),
+            range: swlsp_syntax::TextRange::new(0.into(), TextSize::of(document.source())),
+            message: "slow".to_owned(),
+            ..Problem::default()
+        })
+    }
+
+    fn quick_fixes(&self) -> Vec<Arc<dyn QuickFix>> {
+        Vec::new()
+    }
+}
+
+#[test]
+fn slow_inspections_do_not_hold_back_the_others() {
+    let dir = temp_dir();
+    let server = Server::new(None, &root_string(&dir), "test");
+    // Registered first; the first run has no cost data to reorder by.
+    server.register_inspection(Arc::new(SlowInspection));
+    server.register_inspection(Arc::new(TestInspection));
+    let client = start_client(&server, |_, _| {});
+    const URI: &str = "file:///project/test.yaml";
+    let codes = |published: &protocol::PublishDiagnosticsParams| -> Vec<String> {
+        published
+            .diagnostics
+            .iter()
+            .map(|diagnostic| crate::inspection::code_string(diagnostic.code.as_ref()))
+            .collect()
+    };
+    did_open(&client, URI, 1, "value: bad\n");
+    // Unknown costs: registration order. The slow inspection uses up the
+    // budget, so its result is published before the rest runs.
+    assert_eq!(codes(&client.wait_published()), ["test.slow"]);
+    assert_eq!(
+        codes(&client.wait_published()),
+        ["test.slow", "test.invalid-value"]
+    );
+
+    did_change(&client, URI, 2, "value: bad\n");
+    // The slow inspection is known now: the fast one is published first.
+    let partial = client.wait_published();
+    assert_eq!(partial.version, 2);
+    assert_eq!(codes(&partial), ["test.invalid-value"]);
+    let complete = client.wait_published();
+    assert_eq!(complete.version, 2);
+    assert_eq!(codes(&complete), ["test.slow", "test.invalid-value"]);
+    {
+        let state = lock(&server.diagnostics);
+        assert!(state.costs["test.slow"] >= 0.25);
+        // Reported once as over budget; the fast inspection is not.
+        assert!(state.slow_reported.contains("test.slow"));
+        assert!(!state.slow_reported.contains("test.invalid-value"));
+    }
+    client.shutdown().unwrap();
+}
+
 #[test]
 fn diagnostic_performance_trace_defaults_off() {
     if std::env::var_os("SHOPWARE_LSP_TRACE_DIAGNOSTICS").is_none() {
@@ -533,4 +722,47 @@ fn initial_index_resumes_diagnostics_before_indexing_completed() {
     client.call("shutdown", json!({})).unwrap();
     client.notify("exit", json!({}));
     client.shutdown().unwrap();
+}
+
+/// Suppresses one code reported at one offset.
+struct SuppressAt(u32, &'static str);
+
+impl Suppressions for SuppressAt {
+    fn suppresses(&self, offset: TextSize, code: &DiagnosticId) -> bool {
+        offset == TextSize::from(self.0) && code.as_str() == self.1
+    }
+}
+
+#[test]
+fn registered_suppressions_apply_to_every_inspection() {
+    // `TestInspection` reports `test.invalid-value` at byte 7.
+    for (offset, code, count) in [
+        (7, "test.invalid-value", 0),
+        (7, "test.other", 1),
+        (0, "test.invalid-value", 1),
+    ] {
+        let server = Server::new(None, "", "test");
+        server.register_inspection(Arc::new(TestInspection));
+        server.register_suppressions(
+            LanguageId::Yaml,
+            Arc::new(move |_: &TextDocument| {
+                Box::new(SuppressAt(offset, code)) as Box<dyn Suppressions>
+            }),
+        );
+        let document = Arc::new(TextDocument::new("file:///fixture.yaml", "value: bad\n", 1));
+        assert_eq!(
+            server
+                .diagnostics_for_document(&Context::background(), &document)
+                .len(),
+            count,
+            "{code} at {offset}"
+        );
+        // Other languages are unaffected.
+        let json = Arc::new(TextDocument::new("file:///fixture.json", "{}", 1));
+        assert!(
+            server
+                .diagnostics_for_document(&Context::background(), &json)
+                .is_empty()
+        );
+    }
 }

@@ -13,11 +13,10 @@ use swlsp_rewrite::{self as rewrite, DocumentPlan, HandleError, WorkspacePlan};
 use swlsp_syntax::{LineIndex, TextRange, TextSize};
 use swlsp_uriutil::{filepath, go_quote};
 
-use crate::configuration::{
-    diagnostic_rule_severity, inspection_domain, inspection_enabled_by_policy,
-};
+use crate::configuration::diagnostic_rule_severity;
 use crate::context::{BoxError, Context};
 use crate::document::{TextDocument, parse_path};
+use crate::fix_all::{FIX_ALL_SCHEMA, FixAllEnvelope};
 use crate::inspection::{
     BoundFixEnvelope, DiagnosticId, DocumentResolver, DocumentSnapshot, FixContext, FixId,
     FixResolution, QuickFix, RegisteredInspection, code_string, decode_diagnostic_envelope,
@@ -315,7 +314,7 @@ impl Server {
         })
     }
 
-    fn document_resolver(&self) -> Arc<dyn DocumentResolver> {
+    pub(crate) fn document_resolver(&self) -> Arc<dyn DocumentResolver> {
         Arc::new(ServerDocumentResolver(self.clone()))
     }
 
@@ -461,6 +460,7 @@ impl Server {
         let registry = self.registry();
         let resolve_support = read(&self.session).code_action_resolve_support;
         let mut result = Vec::new();
+        let mut fix_all: Vec<(Arc<RegisteredInspection>, DiagnosticId, FixId)> = Vec::new();
         for diagnostic in &request.params.context.diagnostics {
             if ctx.is_cancelled() {
                 return result;
@@ -528,9 +528,95 @@ impl Server {
                     self.populate_inspection_edit(ctx, &mut action, fix.as_ref(), &fix_context);
                 }
                 result.push(action);
+                if fix.as_rewrite().is_some()
+                    && !fix_all.iter().any(|(inspection, code, id)| {
+                        Arc::ptr_eq(inspection, registered)
+                            && *code == envelope.code
+                            && *id == bound.id
+                    })
+                {
+                    fix_all.push((registered.clone(), envelope.code.clone(), bound.id.clone()));
+                }
+            }
+        }
+        if kind_matches_only(
+            Some(&protocol::CodeActionKind::QUICKFIX),
+            &request.params.context.only,
+        ) {
+            for (registered, code, fix) in fix_all {
+                if ctx.is_cancelled() {
+                    break;
+                }
+                let count = self.fix_all_candidates(ctx, &document, &code, &fix);
+                if count < 2 {
+                    continue;
+                }
+                let data = FixAllEnvelope {
+                    schema: FIX_ALL_SCHEMA,
+                    inspection: registered.definition.id.clone(),
+                    code: code.clone(),
+                    fix,
+                    uri: document.uri.clone(),
+                    version: document.version,
+                };
+                let mut action = protocol::CodeAction {
+                    title: format!("Fix all {count} '{}' problems in this file", code.0),
+                    kind: Some(protocol::CodeActionKind::QUICKFIX),
+                    data: serde_json::to_value(&data).ok(),
+                    ..protocol::CodeAction::default()
+                };
+                if !resolve_support {
+                    action = self.resolve_fix_all(ctx, action, data);
+                }
+                result.push(action);
             }
         }
         result
+    }
+
+    fn resolve_fix_all(
+        &self,
+        ctx: &Context,
+        mut action: protocol::CodeAction,
+        data: FixAllEnvelope,
+    ) -> protocol::CodeAction {
+        let registry = self.registry();
+        let Some(registered) = registry.inspections.inspection(&data.inspection) else {
+            return disabled_code_action(
+                action,
+                "The inspection that provided this fix is no longer available",
+            );
+        };
+        if !self.inspection_action_enabled(&data.uri, registered, &data.code) {
+            return disabled_code_action(
+                action,
+                "The diagnostic is disabled by the current configuration",
+            );
+        }
+        let document = match self.documents.get_document(&data.uri) {
+            Some(document) if document.version == data.version => document,
+            _ => {
+                return disabled_code_action(
+                    action,
+                    "The document changed; request code actions again",
+                );
+            }
+        };
+        let plan = match self.fix_all_plan(ctx, registered, &document, &data.code, &data.fix) {
+            Ok(Some(plan)) => plan,
+            _ => return disabled_code_action(action, "The problems could not be fixed"),
+        };
+        if self.validate_workspace_plan(ctx, &plan).is_err() {
+            return disabled_code_action(action, "The generated edit is no longer valid");
+        }
+        match plan.workspace_edit() {
+            Ok(edit) => {
+                action.disabled = None;
+                action.edit = Some(edit);
+                action
+            }
+            Err(_) => disabled_code_action(action, "The generated edit is invalid"),
+        }
     }
 
     /// `codeAction/resolve`: computes lazy edits after rechecking policy,
@@ -545,6 +631,12 @@ impl Server {
             && legacy.kind == LEGACY_ACTION_SCHEMA
         {
             let resolved = self.resolve_provider_action(ctx, action, legacy);
+            return self.filter_resolved_code_action_for_client(resolved);
+        }
+        if let Ok(fix_all) = FixAllEnvelope::deserialize(&data)
+            && fix_all.schema == FIX_ALL_SCHEMA
+        {
+            let resolved = self.resolve_fix_all(ctx, action, fix_all);
             return self.filter_resolved_code_action_for_client(resolved);
         }
         let Ok(data) = CodeActionEnvelope::deserialize(&data) else {
@@ -678,13 +770,8 @@ impl Server {
         inspection: &RegisteredInspection,
         code: &DiagnosticId,
     ) -> bool {
-        let id = inspection.definition.id.as_str();
         let policy = self.diagnostic_policy(uri);
-        let domain = inspection_domain(id);
-        if !self.inspection_presented_to_client(id)
-            || (!domain.is_empty() && !self.domain_enabled(domain))
-            || !inspection_enabled_by_policy(&policy, id)
-        {
+        if !self.inspection_active(&inspection.definition, &policy) {
             return false;
         }
         let Some(definition) = inspection.problems.get(code) else {

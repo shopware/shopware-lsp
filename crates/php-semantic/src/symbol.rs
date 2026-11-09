@@ -247,6 +247,10 @@ impl Flags {
     pub const GENERATED_STUB: Flags = Flags(1 << 10);
     pub const CLASS_ALIAS: Flags = Flags(1 << 11);
     pub const SOFT_FINAL: Flags = Flags(1 << 12);
+    /// The return type was not declared but inferred from the body, so it
+    /// may depend on other files. A snapshot with return inference
+    /// recomputes it on demand.
+    pub const INFERRED_RETURN: Flags = Flags(1 << 13);
 
     pub const fn empty() -> Flags {
         Flags(0)

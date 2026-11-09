@@ -85,11 +85,15 @@ swlsp-uriutil = { path = "../uriutil" }
 serde_json = "1"
 sha2 = "0.10"
 log = "0.4"
+swlsp-parser-twig = { path = "../parser-twig" }
+swlsp-parser-js = { path = "../parser-js" }
+swlsp-parser-scss = { path = "../parser-scss" }
+swlsp-parser-xml = { path = "../parser-xml" }
+swlsp-parser-yaml = { path = "../parser-yaml" }
 
 [dev-dependencies]
 tempfile = "3"
 serde = { version = "1", features = ["derive"] }
-swlsp-parser-twig = { path = "../parser-twig" }
 swlsp-php-semantic = { path = "../php-semantic" }
 swlsp-rewrite = { path = "../rewrite" }
 swlsp-httpclient = { path = "../httpclient" }

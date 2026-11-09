@@ -18,4 +18,5 @@ swlsp-uriutil = { path = "../uriutil" }
 
 [dev-dependencies]
 swlsp-indexer = { path = "../indexer" }
+swlsp-php-inference = { path = "../php-inference" }
 tempfile = "3"

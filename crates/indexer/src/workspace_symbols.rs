@@ -136,7 +136,7 @@ pub struct WorkspaceSymbolQueryOptions {
 const WORKSPACE_SYMBOL_SCHEMA: &str = "
     CREATE TABLE IF NOT EXISTS workspace_symbols (
         id INTEGER PRIMARY KEY,
-        owner_path TEXT NOT NULL,
+        owner_id INTEGER NOT NULL,
         file_path TEXT NOT NULL DEFAULT '',
         name TEXT NOT NULL,
         container_name TEXT NOT NULL DEFAULT '',
@@ -150,8 +150,8 @@ const WORKSPACE_SYMBOL_SCHEMA: &str = "
         end_line INTEGER NOT NULL,
         end_character INTEGER NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_workspace_symbols_path
-        ON workspace_symbols(owner_path);
+    CREATE INDEX IF NOT EXISTS idx_workspace_symbols_owner
+        ON workspace_symbols(owner_id);
     CREATE INDEX IF NOT EXISTS idx_workspace_symbols_priority
         ON workspace_symbols(priority DESC, name);
     CREATE VIRTUAL TABLE IF NOT EXISTS workspace_symbols_fts USING fts4(
@@ -197,9 +197,15 @@ impl WorkspaceSymbolCatalog {
         store
             .write(|mutation| {
                 mutation.with_connection(|connection| {
-                    connection
-                        .connection()
-                        .execute_batch(WORKSPACE_SYMBOL_SCHEMA)?;
+                    let connection = connection.connection();
+                    if catalog_uses_path_text(connection)? {
+                        connection.execute_batch(
+                            "DROP TABLE IF EXISTS workspace_symbols_fts;
+                             DROP TABLE IF EXISTS workspace_symbols;
+                             DROP TABLE IF EXISTS workspace_symbol_meta;",
+                        )?;
+                    }
+                    connection.execute_batch(WORKSPACE_SYMBOL_SCHEMA)?;
                     Ok(())
                 })
             })
@@ -403,7 +409,7 @@ impl WorkspaceSymbolCatalog {
         self.delete_files_in(mutation, &paths)?;
 
         struct Insert<'a> {
-            owner_path: &'a str,
+            owner_id: i64,
             location_path: &'a str,
             symbol: &'a WorkspaceSymbol,
             aliases: String,
@@ -422,7 +428,7 @@ impl WorkspaceSymbolCatalog {
                 for insert in inserts.iter() {
                     let symbol = insert.symbol;
                     arguments.extend([
-                        insert.owner_path.to_owned().into(),
+                        insert.owner_id.into(),
                         insert.location_path.to_owned().into(),
                         symbol.name.clone().into(),
                         symbol.container_name.clone().into(),
@@ -461,9 +467,10 @@ impl WorkspaceSymbolCatalog {
             Ok(())
         };
         for file in files {
-            if file.path.is_empty() {
+            if file.path.is_empty() || file.symbols.iter().all(|symbol| symbol.name.is_empty()) {
                 continue;
             }
+            let owner_id = mutation.with_connection(|connection| connection.path_id(&file.path))?;
             for symbol in &file.symbols {
                 if symbol.name.is_empty() {
                     continue;
@@ -474,7 +481,7 @@ impl WorkspaceSymbolCatalog {
                     symbol.path.as_str()
                 };
                 inserts.push(Insert {
-                    owner_path: &file.path,
+                    owner_id,
                     location_path,
                     symbol,
                     aliases: workspace_symbol_aliases(&symbol.aliases),
@@ -494,6 +501,7 @@ impl WorkspaceSymbolCatalog {
             return Ok(());
         }
         let bulk = self.bulk.load(Ordering::Acquire);
+        mutation.release_paths();
         mutation.with_connection(|connection| {
             for batch in paths.chunks(DELETE_BATCH_SIZE) {
                 let placeholders = vec!["?"; batch.len()].join(",");
@@ -501,13 +509,13 @@ impl WorkspaceSymbolCatalog {
                 if !bulk {
                     connection
                         .prepare_cached(&format!(
-                            "DELETE FROM workspace_symbols_fts WHERE docid IN (SELECT id FROM workspace_symbols WHERE owner_path IN ({placeholders}))"
+                            "DELETE FROM workspace_symbols_fts WHERE docid IN (SELECT id FROM workspace_symbols WHERE owner_id IN (SELECT id FROM paths WHERE path IN ({placeholders})))"
                         ))?
                         .execute(rusqlite::params_from_iter(arguments.clone()))
                         .context("delete workspace symbol search rows")?;
                 }
                 connection
-                    .prepare_cached(&format!("DELETE FROM workspace_symbols WHERE owner_path IN ({placeholders})"))?
+                    .prepare_cached(&format!("DELETE FROM workspace_symbols WHERE owner_id IN (SELECT id FROM paths WHERE path IN ({placeholders}))"))?
                     .execute(rusqlite::params_from_iter(arguments))
                     .context("delete workspace symbols")?;
             }
@@ -516,6 +524,7 @@ impl WorkspaceSymbolCatalog {
     }
 
     pub fn clear_in(&self, mutation: &Mutation) -> Result<()> {
+        mutation.release_paths();
         mutation.with_connection(|connection| {
             connection.connection().execute_batch(
                 "DELETE FROM workspace_symbols_fts; DELETE FROM workspace_symbols; DELETE FROM workspace_symbol_meta;",
@@ -543,10 +552,10 @@ impl WorkspaceSymbolCatalog {
         let candidate_limit = (limit.saturating_mul(8)).clamp(1000, 8000) as i64;
         let mut sql = String::from(
             "SELECT s.name, s.container_name, s.aliases,
-                CASE WHEN s.file_path = '' THEN s.owner_path ELSE s.file_path END,
+                CASE WHEN s.file_path = '' THEN o.path ELSE s.file_path END,
                 s.domain, s.kind, s.priority, s.start_line, s.start_character,
                 s.end_line, s.end_character
-            FROM workspace_symbols s",
+            FROM workspace_symbols s JOIN paths o ON o.id = s.owner_id",
         );
         let (domain_predicate, domain_arguments) =
             workspace_symbol_domain_exclusion(&options.excluded_domains);
@@ -572,7 +581,7 @@ impl WorkspaceSymbolCatalog {
         // Ties (same name) are broken by location so results do not depend
         // on storage order.
         sql.push_str(
-            " ORDER BY s.priority DESC, s.name, s.owner_path, s.file_path, s.start_line, s.start_character, s.id LIMIT ?",
+            " ORDER BY s.priority DESC, s.name, o.path, s.file_path, s.start_line, s.start_character, s.id LIMIT ?",
         );
         arguments.push(candidate_limit.into());
 
@@ -628,7 +637,7 @@ impl WorkspaceSymbolCatalog {
 fn workspace_symbol_insert_sql(count: usize) -> String {
     let mut sql = String::from(
         "INSERT INTO workspace_symbols(
-            owner_path, file_path, name, container_name, aliases, search_text, domain,
+            owner_id, file_path, name, container_name, aliases, search_text, domain,
             kind, priority, start_line, start_character, end_line, end_character
         ) VALUES ",
     );
@@ -863,3 +872,10 @@ pub(crate) fn identifier_words(value: &str) -> Vec<&str> {
 
 #[cfg(test)]
 mod tests;
+
+/// Whether the catalog predates interned owner paths and must be rebuilt.
+fn catalog_uses_path_text(connection: &Connection) -> rusqlite::Result<bool> {
+    let mut statement = connection.prepare("PRAGMA table_info(workspace_symbols)")?;
+    let mut names = statement.query_map([], |row| row.get::<_, String>(1))?;
+    names.try_fold(false, |legacy, name| Ok(legacy || name? == "owner_path"))
+}

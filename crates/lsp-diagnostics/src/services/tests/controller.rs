@@ -1,14 +1,9 @@
-use std::collections::HashMap;
-
 use serde_json::json;
 use swlsp_lsp_protocol::{DiagnosticSeverity, DiagnosticTag};
 
 use super::*;
 use crate::services::ControllerAnalyzer;
-
-const MISSING_TARGET: &str = "symfony.controller.target.missing";
-const MISSING_METHOD: &str = "symfony.controller.method.missing";
-const DEPRECATED: &str = "symfony.controller.deprecated";
+use crate::test_support::check_problems;
 
 struct Fixture {
     _dir: tempfile::TempDir,
@@ -56,81 +51,57 @@ class LegacyController
 #[test]
 fn controller_diagnostics_for_yaml_targets_and_methods() {
     let fixture = fixture();
-    let document = document(
+    let (_, problems) = check_problems(
+        &fixture.analyzer,
         "file:///project/routes.yaml",
         r"product.show:
   path: /products/{id}
   controller: App\Controller\ProductController::show
 product.edit:
   path: /products/{id}/edit
-  controller: App\Controller\ProductController::edit
+  controller: App\Controller\ProductController::{|symfony.controller.method.missing:edit|}
 product.service:
   path: /products/{id}
   controller: app.product_controller:show
 product.unknown:
   path: /unknown
-  controller: App\Controller\MissingController::show
+  controller: {|symfony.controller.target.missing:App\Controller\MissingController|}::show
 product.legacy:
   path: /legacy
   controller: Bundle:Controller:action
 ",
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 2);
-    let by_code: HashMap<&str, &Problem> = result
-        .iter()
-        .map(|problem| (problem.id.as_str(), problem))
-        .collect();
-    let method = by_code[MISSING_METHOD];
-    assert_eq!(range_text(&document, method.range), "edit");
+    let method = &problems[0];
     assert!(method.message.contains("ProductController::edit"));
     let data = payload(method);
     assert_eq!(data["methodName"], "edit");
     assert_eq!(data["routeParameters"], json!(["id"]));
     assert!(!data.contains_key("classURI"));
 
-    let target = by_code[MISSING_TARGET];
-    assert_eq!(
-        range_text(&document, target.range),
-        "App\\Controller\\MissingController"
-    );
-    assert!(target.message.contains("Controller target"));
+    assert!(problems[1].message.contains("Controller target"));
 }
 
 #[test]
 fn controller_diagnostics_for_xml_controller() {
     let fixture = fixture();
-    let document = document(
+    check_problems(
+        &fixture.analyzer,
         "file:///project/routes.xml",
         r#"<routes>
-  <route id="product.edit" path="/products/{id}" controller="App\Controller\ProductController::edit"/>
+  <route id="product.edit" path="/products/{id}" controller="App\Controller\ProductController::{|symfony.controller.method.missing:edit|}"/>
 </routes>"#,
     );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id.as_str(), MISSING_METHOD);
-    assert_eq!(range_text(&document, result[0].range), "edit");
 }
 
 #[test]
 fn controller_diagnostics_for_twig_controller() {
     let fixture = fixture();
-    let document = document(
+    check_problems(
+        &fixture.analyzer,
         "file:///project/navigation.html.twig",
-        r"{{ controller('App\\Controller\\ProductController::edit') }}
-{{ render(controller('\\App\\Controller\\MissingController::show')) }}
+        r"{{ controller('App\\Controller\\ProductController::{|symfony.controller.method.missing:edit|}') }}
+{{ render(controller('{|symfony.controller.target.missing:\\App\\Controller\\MissingController::show|}')) }}
 ",
-    );
-    let result = analyze(&fixture.analyzer, &document);
-    assert_eq!(result.len(), 2);
-    let by_code: HashMap<&str, &Problem> = result
-        .iter()
-        .map(|problem| (problem.id.as_str(), problem))
-        .collect();
-    assert_eq!(range_text(&document, by_code[MISSING_METHOD].range), "edit");
-    assert_eq!(
-        range_text(&document, by_code[MISSING_TARGET].range),
-        r"\\App\\Controller\\MissingController::show"
     );
 }
 
@@ -142,30 +113,23 @@ fn controller_diagnostics_mark_deprecated_actions() {
             "file:///project/routes.yaml",
             r"product.legacy:
   path: /legacy
-  controller: App\Controller\ProductController::legacy
+  controller: {|symfony.controller.deprecated:App\Controller\ProductController::legacy|}
 ",
-            r"App\Controller\ProductController::legacy",
         ),
         (
             "file:///project/routes.xml",
             r#"<routes>
-<route id="product.legacy" path="/legacy" controller="App\Controller\LegacyController::show"/>
+<route id="product.legacy" path="/legacy" controller="{|symfony.controller.deprecated:App\Controller\LegacyController::show|}"/>
 </routes>"#,
-            r"App\Controller\LegacyController::show",
         ),
         (
             "file:///project/view.twig",
-            "{{ controller('app.legacy_controller:show') }}",
-            "app.legacy_controller:show",
+            "{{ controller('{|symfony.controller.deprecated:app.legacy_controller:show|}') }}",
         ),
     ];
-    for (uri, source, value) in tests {
-        let document = document(uri, source);
-        let result = analyze(&fixture.analyzer, &document);
-        assert_eq!(result.len(), 1, "{uri}");
-        assert_eq!(result[0].id.as_str(), DEPRECATED);
-        assert_eq!(result[0].severity, Some(DiagnosticSeverity::HINT));
-        assert_eq!(result[0].tags, vec![DiagnosticTag::DEPRECATED]);
-        assert_eq!(range_text(&document, result[0].range), value);
+    for (uri, source) in tests {
+        let (_, problems) = check_problems(&fixture.analyzer, uri, source);
+        assert_eq!(problems[0].severity, Some(DiagnosticSeverity::HINT));
+        assert_eq!(problems[0].tags, vec![DiagnosticTag::DEPRECATED]);
     }
 }

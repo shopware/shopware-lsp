@@ -11,6 +11,7 @@ mod duplicate;
 mod event;
 mod invokable_command;
 mod route;
+mod route_redefined;
 mod service;
 mod service_argument;
 mod tagged_service;
@@ -27,6 +28,9 @@ pub use invokable_command::{
     InvokableCommandAnalyzer,
 };
 pub use route::RouteAnalyzer;
+pub use route_redefined::{
+    ROUTE_REDEFINED_CODE, RouteDefinitions, RouteLocation, RouteRedefinedAnalysis,
+};
 pub use service::ServiceAnalyzer;
 pub use service_argument::ServiceArgumentAnalyzer;
 pub use tagged_service::TaggedServiceAnalyzer;

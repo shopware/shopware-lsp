@@ -3,13 +3,14 @@
 
 use std::sync::Arc;
 
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_lsp_protocol::DiagnosticSeverity;
 use swlsp_php::PhpIndex;
 use swlsp_symfony::{ContainerConstantReference, ContainerValueKind};
 
 use super::{lower_ext, problem};
-use crate::ProblemAnalyzer;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 const MISSING_CONTAINER_CONSTANT_CODE: &str = "symfony.constant.missing";
 
@@ -24,7 +25,23 @@ impl ContainerConstantAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for ContainerConstantAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "symfony.container_constant",
+        description: "Service configuration referencing PHP constants that do not exist.",
+        domain: "symfony.services",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Xml, LanguageId::Yaml],
+        source: "symfony",
+        codes: &[MISSING_CONTAINER_CONSTANT_CODE],
+    };
+}
+
 impl ProblemAnalyzer for ContainerConstantAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.php_index))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

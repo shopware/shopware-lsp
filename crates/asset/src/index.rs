@@ -3,8 +3,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use swlsp_indexer::{
-    DataIndexer, Error, Indexer, Mutation, ParsedFile, Result, Store, SupplementalPathIndexer,
-    SupplementalSyntaxIndexer, TransactionalClearer, TransactionalRemover,
+    DataIndexer, Error, Indexer, Mutation, ParsedFile, Prepared, PreparingIndexer, Result, Store,
+    SupplementalPathIndexer, SupplementalSyntaxIndexer, TransactionalClearer, TransactionalRemover,
 };
 use swlsp_php_types::{equal_fold, go_to_lower};
 
@@ -661,6 +661,140 @@ impl Index {
     }
 }
 
+/// A file's keyed packages, resources, and usages prepared ahead of the
+/// write transaction. `None` leaves that repository untouched.
+struct PreparedAssets {
+    packages: Option<Vec<(String, Package)>>,
+    resources: Option<Vec<(String, Resource)>>,
+    usages: Option<Vec<(String, Usage)>>,
+}
+
+impl Index {
+    /// Collects the file's keyed records without writing anything; `None`
+    /// for files that neither are candidates nor have tracked records.
+    fn extract(&self, file: &ParsedFile) -> Option<PreparedAssets> {
+        let path = file.path();
+        let resource_candidate = self.is_resource_candidate(path);
+        let usage_candidate = is_usage_candidate(file);
+        let package_candidate = self.is_package_candidate(path);
+        let (resource_tracked, usage_tracked) = self.tracked(path);
+        if !resource_candidate
+            && !usage_candidate
+            && !package_candidate
+            && !resource_tracked
+            && !usage_tracked
+        {
+            return None;
+        }
+        Some(PreparedAssets {
+            packages: package_candidate.then(|| package_items(file)),
+            resources: (resource_candidate || resource_tracked)
+                .then(|| resource_items(self.resources_in_file(file))),
+            usages: (usage_candidate || usage_tracked).then(|| usage_items(file)),
+        })
+    }
+
+    /// Writes prepared records for `file` and publishes its tracked paths
+    /// after commit.
+    fn persist(&self, file: &ParsedFile, prepared: Option<&PreparedAssets>) -> Result<()> {
+        let Some(prepared) = prepared else {
+            return Ok(());
+        };
+        let path = file.path();
+        if let Some(items) = &prepared.packages {
+            self.packages.batch_save_items_in(
+                file.mutation(),
+                [(path, items.iter().map(|(key, item)| (key.as_str(), item)))],
+            )?;
+        }
+        if let Some(items) = &prepared.resources {
+            self.records.batch_save_items_in(
+                file.mutation(),
+                [(path, items.iter().map(|(key, item)| (key.as_str(), item)))],
+            )?;
+            self.publish_path(path, true, !items.is_empty(), file.mutation())?;
+        }
+        if let Some(items) = &prepared.usages {
+            self.usages.batch_save_items_in(
+                file.mutation(),
+                [(path, items.iter().map(|(key, item)| (key.as_str(), item)))],
+            )?;
+            return self.publish_path(path, false, !items.is_empty(), file.mutation());
+        }
+        Ok(())
+    }
+}
+
+fn package_items(file: &ParsedFile) -> Vec<(String, Package)> {
+    let path = file.path();
+    let packages = match (file.syntax_tree(), file.extension()) {
+        (Some(tree), ".xml") => packages_in_xml(path, &tree.root()),
+        (Some(tree), ".yaml" | ".yml") => packages_in_yaml(path, &tree.root()),
+        (Some(tree), ".php") => packages_in_php(path, &tree.root()),
+        _ => Vec::new(),
+    };
+    keyed(packages.into_iter().enumerate().map(|(position, package)| {
+        let key = format!(
+            "{}:{}",
+            go_to_lower(&package.name),
+            go_to_lower(&package.base_path)
+        );
+        (position, key, package)
+    }))
+}
+
+fn resource_items(resources: Vec<Resource>) -> Vec<(String, Resource)> {
+    keyed(
+        resources
+            .into_iter()
+            .enumerate()
+            .filter_map(|(position, mut resource)| {
+                resource.name = normalize_name(&resource.name);
+                if resource.name.is_empty() {
+                    return None;
+                }
+                let key = format!(
+                    "{}:{}",
+                    resource.kind.ordinal(),
+                    go_to_lower(&resource.name)
+                );
+                Some((position, key, resource))
+            }),
+    )
+}
+
+fn usage_items(file: &ParsedFile) -> Vec<(String, Usage)> {
+    let path = file.path();
+    let usages = file
+        .syntax_tree()
+        .map(|tree| references(path, &tree.root()))
+        .unwrap_or_default();
+    keyed(
+        usages
+            .into_iter()
+            .enumerate()
+            .filter_map(|(position, reference)| {
+                if reference.name.is_empty() {
+                    return None;
+                }
+                let usage = Usage {
+                    range: reference_range(&reference),
+                    name: reference.name,
+                    package: reference.package,
+                    kind: reference.kind,
+                    file: path.to_owned(),
+                };
+                let key = format!(
+                    "{}:{}:{}",
+                    usage.kind.ordinal(),
+                    go_to_lower(&usage.name),
+                    u32::from(usage.range.start())
+                );
+                Some((position, key, usage))
+            }),
+    )
+}
+
 /// Saves `items` for `path`; equal keys get a `#<position>` suffix like Go.
 fn keyed<T>(items: impl IntoIterator<Item = (usize, String, T)>) -> Vec<(String, T)> {
     let mut result: Vec<(String, T)> = Vec::new();
@@ -688,94 +822,7 @@ impl Indexer for Index {
     }
 
     fn index(&self, file: &ParsedFile) -> Result<()> {
-        let path = file.path();
-        let resource_candidate = self.is_resource_candidate(path);
-        let usage_candidate = is_usage_candidate(file);
-        let package_candidate = self.is_package_candidate(path);
-        let (resource_tracked, usage_tracked) = self.tracked(path);
-        if !resource_candidate
-            && !usage_candidate
-            && !package_candidate
-            && !resource_tracked
-            && !usage_tracked
-        {
-            return Ok(());
-        }
-        if package_candidate {
-            let packages = match (file.syntax_tree(), file.extension()) {
-                (Some(tree), ".xml") => packages_in_xml(path, &tree.root()),
-                (Some(tree), ".yaml" | ".yml") => packages_in_yaml(path, &tree.root()),
-                (Some(tree), ".php") => packages_in_php(path, &tree.root()),
-                _ => Vec::new(),
-            };
-            let items = keyed(packages.into_iter().enumerate().map(|(position, package)| {
-                let key = format!(
-                    "{}:{}",
-                    go_to_lower(&package.name),
-                    go_to_lower(&package.base_path)
-                );
-                (position, key, package)
-            }));
-            self.packages.batch_save_items_in(
-                file.mutation(),
-                [(path, items.iter().map(|(key, item)| (key.as_str(), item)))],
-            )?;
-        }
-        if resource_candidate || resource_tracked {
-            let resources = self.resources_in_file(file);
-            let items = keyed(resources.into_iter().enumerate().filter_map(
-                |(position, mut resource)| {
-                    resource.name = normalize_name(&resource.name);
-                    if resource.name.is_empty() {
-                        return None;
-                    }
-                    let key = format!(
-                        "{}:{}",
-                        resource.kind.ordinal(),
-                        go_to_lower(&resource.name)
-                    );
-                    Some((position, key, resource))
-                },
-            ));
-            self.records.batch_save_items_in(
-                file.mutation(),
-                [(path, items.iter().map(|(key, item)| (key.as_str(), item)))],
-            )?;
-            self.publish_path(path, true, !items.is_empty(), file.mutation())?;
-        }
-        if usage_candidate || usage_tracked {
-            let usages = file
-                .syntax_tree()
-                .map(|tree| references(path, &tree.root()))
-                .unwrap_or_default();
-            let items = keyed(usages.into_iter().enumerate().filter_map(
-                |(position, reference)| {
-                    if reference.name.is_empty() {
-                        return None;
-                    }
-                    let usage = Usage {
-                        range: reference_range(&reference),
-                        name: reference.name,
-                        package: reference.package,
-                        kind: reference.kind,
-                        file: path.to_owned(),
-                    };
-                    let key = format!(
-                        "{}:{}:{}",
-                        usage.kind.ordinal(),
-                        go_to_lower(&usage.name),
-                        u32::from(usage.range.start())
-                    );
-                    Some((position, key, usage))
-                },
-            ));
-            self.usages.batch_save_items_in(
-                file.mutation(),
-                [(path, items.iter().map(|(key, item)| (key.as_str(), item)))],
-            )?;
-            return self.publish_path(path, false, !items.is_empty(), file.mutation());
-        }
-        Ok(())
+        self.persist(file, self.extract(file).as_ref())
     }
 
     fn removed_files(&self, paths: &[String]) -> Result<()> {
@@ -808,6 +855,10 @@ impl Indexer for Index {
         self.reset_paths(None)
     }
 
+    fn as_preparing(&self) -> Option<&dyn PreparingIndexer> {
+        Some(self)
+    }
+
     fn as_supplemental_path(&self) -> Option<&dyn SupplementalPathIndexer> {
         Some(self)
     }
@@ -822,6 +873,19 @@ impl Indexer for Index {
 
     fn as_transactional_clearer(&self) -> Option<&dyn TransactionalClearer> {
         Some(self)
+    }
+}
+
+impl PreparingIndexer for Index {
+    fn prepare(&self, file: &ParsedFile) -> Result<Option<Prepared>> {
+        Ok(Some(Box::new(self.extract(file))))
+    }
+
+    fn index_prepared(&self, file: &ParsedFile, prepared: Option<&Prepared>) -> Result<()> {
+        match prepared.and_then(|value| value.downcast_ref::<Option<PreparedAssets>>()) {
+            Some(prepared) => self.persist(file, prepared.as_ref()),
+            None => self.index(file),
+        }
     }
 }
 
@@ -1057,5 +1121,16 @@ fn assetic_bundle_base_path(package_name: &str) -> String {
         String::new()
     } else {
         format!("bundles/{name}")
+    }
+}
+
+/// Advanced by every committed change to the indexed resources, usages and
+/// packages, and by changes of the compiled Assetic resources.
+impl swlsp_indexer::Revisioned for Index {
+    fn revision(&self) -> u64 {
+        self.records.revision()
+            + self.usages.revision()
+            + self.packages.revision()
+            + self.assetic.revision()
     }
 }

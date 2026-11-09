@@ -36,7 +36,6 @@ swlsp-php-project = { path = "../php-project" }
 swlsp-php-resolver = { path = "../php-resolver" }
 swlsp-php-rewrite = { path = "../php-rewrite" }
 swlsp-php-semantic = { path = "../php-semantic" }
-swlsp-php-suppression = { path = "../php-suppression" }
 swlsp-php-types = { path = "../php-types" }
 swlsp-rewrite = { path = "../rewrite" }
 swlsp-serializer = { path = "../serializer" }

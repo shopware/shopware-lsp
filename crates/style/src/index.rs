@@ -333,5 +333,13 @@ impl TransactionalClearer for Index {
     }
 }
 
+/// Advanced by every committed change to the indexed class declarations,
+/// usages and variables.
+impl swlsp_indexer::Revisioned for Index {
+    fn revision(&self) -> u64 {
+        self.declarations.revision() + self.usages.revision() + self.variables.revision()
+    }
+}
+
 #[cfg(test)]
 mod tests;

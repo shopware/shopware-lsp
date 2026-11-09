@@ -132,9 +132,19 @@ impl FileMeta {
     }
 }
 
+/// A fast, stable content digest. When a file's size or modification time
+/// changed but its digest did not (a `git checkout` round trip, `touch`, a
+/// re-extracted dependency), only the tracked state is refreshed and no
+/// indexer runs, like clangd's shard digests and rust-analyzer's VFS.
+pub(crate) fn content_hash(content: &[u8]) -> i64 {
+    // SQLite integers are signed; the bit pattern is what matters.
+    xxhash_rust::xxh3::xxh3_64(content) as i64
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct StoredFileState {
     pub meta: FileMeta,
+    pub hash: i64,
     pub found: bool,
 }
 
@@ -142,6 +152,7 @@ pub(crate) struct StoredFileState {
 pub(crate) struct FileState {
     pub path: String,
     pub meta: FileMeta,
+    pub hash: i64,
 }
 
 type UpdateCallback = Arc<dyn Fn() + Send + Sync>;
@@ -201,7 +212,8 @@ impl FileScanner {
                 "CREATE TABLE IF NOT EXISTS file_hashes (
                     path TEXT PRIMARY KEY,
                     size INTEGER NOT NULL,
-                    mtime INTEGER NOT NULL
+                    mtime INTEGER NOT NULL,
+                    hash INTEGER NOT NULL DEFAULT 0
                 )",
             )
             .context("failed to initialize tables")?;
@@ -325,7 +337,7 @@ impl FileScanner {
         if metadata.len() != content.len() as u64 {
             return false;
         }
-        if !matches!(self.inner.query_file_state(path), Ok(Some(meta)) if meta == FileMeta::of(&metadata))
+        if !matches!(self.inner.query_file_state(path), Ok(Some(state)) if state.meta == FileMeta::of(&metadata))
         {
             return false;
         }
@@ -672,7 +684,7 @@ impl Inner {
     ) -> Result<(Vec<StoredFileState>, Vec<String>)> {
         self.with_db(|connection| {
             let mut statement = connection
-                .prepare_cached("SELECT path, size, mtime FROM file_hashes ORDER BY path")?;
+                .prepare_cached("SELECT path, size, mtime, hash FROM file_hashes ORDER BY path")?;
             let mut rows = statement.query([])?;
             let mut states = vec![StoredFileState::default(); files.len()];
             let mut stale = Vec::new();
@@ -687,12 +699,17 @@ impl Inner {
                     size: row.get(1)?,
                     mtime: row.get(2)?,
                 };
+                let hash = row.get(3)?;
                 let mut matched = false;
                 while file_index < files.len() {
                     match path.cmp(files[file_index].as_bytes()) {
                         std::cmp::Ordering::Less => break,
                         std::cmp::Ordering::Equal => {
-                            states[file_index] = StoredFileState { meta, found: true };
+                            states[file_index] = StoredFileState {
+                                meta,
+                                hash,
+                                found: true,
+                            };
                             matched = true;
                             break;
                         }
@@ -707,15 +724,19 @@ impl Inner {
         })
     }
 
-    pub(crate) fn query_file_state(&self, path: &str) -> Result<Option<FileMeta>> {
+    pub(crate) fn query_file_state(&self, path: &str) -> Result<Option<StoredFileState>> {
         self.with_db(|connection| {
-            let mut statement =
-                connection.prepare_cached("SELECT size, mtime FROM file_hashes WHERE path = ?")?;
+            let mut statement = connection
+                .prepare_cached("SELECT size, mtime, hash FROM file_hashes WHERE path = ?")?;
             let mut rows = statement.query([path])?;
             match rows.next()? {
-                Some(row) => Ok(Some(FileMeta {
-                    size: row.get(0)?,
-                    mtime: row.get(1)?,
+                Some(row) => Ok(Some(StoredFileState {
+                    meta: FileMeta {
+                        size: row.get(0)?,
+                        mtime: row.get(1)?,
+                    },
+                    hash: row.get(2)?,
+                    found: true,
                 })),
                 None => Ok(None),
             }
@@ -818,11 +839,12 @@ impl Inner {
                 let mut statement =
                     transaction.prepare_cached(&file_state_upsert_sql(batch.len()))?;
                 let mut arguments: Vec<rusqlite::types::Value> =
-                    Vec::with_capacity(batch.len() * 3);
+                    Vec::with_capacity(batch.len() * 4);
                 for file in batch {
                     arguments.push(file.path.clone().into());
                     arguments.push(file.meta.size.into());
                     arguments.push(file.meta.mtime.into());
+                    arguments.push(file.hash.into());
                 }
                 statement.execute(rusqlite::params_from_iter(arguments))?;
             }
@@ -1008,8 +1030,8 @@ fn rollback_with(error: Error, mutation: &Mutation) -> Error {
 
 fn file_state_upsert_sql(count: usize) -> String {
     format!(
-        "INSERT OR REPLACE INTO file_hashes (path, size, mtime) VALUES {}",
-        vec!["(?, ?, ?)"; count].join(",")
+        "INSERT OR REPLACE INTO file_hashes (path, size, mtime, hash) VALUES {}",
+        vec!["(?, ?, ?, ?)"; count].join(",")
     )
 }
 

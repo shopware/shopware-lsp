@@ -4,14 +4,15 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use serde_json::json;
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_parser_js::query as jsquery;
 use swlsp_parser_js::syntax::JS_STRING;
 use swlsp_shopware_dal::{self as dal, JsEntityReferenceKind};
 
 use super::util::warning;
-use crate::ProblemAnalyzer;
 use crate::common::{admin_nearby_suggestions, javascript_string_content_range};
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 /// Go `DALEntityAnalyzer`: only close misspellings of statically named DAL
 /// entities are reported. Runtime custom entities are valid, so an unknown
@@ -27,7 +28,23 @@ impl DalEntityAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for DalEntityAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "shopware.dal.entity",
+        description: "Administration repository calls for entity names no entity definition declares.",
+        domain: "shopware",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::JavaScript, LanguageId::Vue],
+        source: "shopware-lsp",
+        codes: &["shopware.dal.entity-not-found"],
+    };
+}
+
 impl ProblemAnalyzer for DalEntityAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.index))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

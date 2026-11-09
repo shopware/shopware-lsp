@@ -1,12 +1,11 @@
 use serde_json::json;
 use swlsp_event::Index;
+use swlsp_lsp::fixture;
 use swlsp_uriutil::file_uri;
 
 use super::*;
 use crate::services::EventAnalyzer;
-
-const MISSING_EVENT: &str = "symfony.event.missing";
-const MISSING_LISTENER_METHOD: &str = "symfony.event.listener_method.missing";
+use crate::test_support::check_problems;
 
 fn event_index(dir: &Path, php: &PhpIndex) -> Arc<Index> {
     let index = Index::new(dir, None).unwrap();
@@ -31,41 +30,38 @@ interface EventDispatcherInterface {
         )],
     );
     let events = event_index(&dir.path().join("events"), &php);
-    let source = r"<?php
+    let fixture = r"<?php
 namespace App;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 class DomainEvent {}
 class Subscriber implements EventSubscriberInterface {
     public static function getSubscribedEvents(): array {
-        return ['app.ready' => 'onRady'];
+        return ['app.ready' => '{|symfony.event.listener_method.missing:onRady|}'];
     }
     public function onReady(DomainEvent $event): void {}
 }
 function publish(EventDispatcherInterface $dispatcher): void {
     $dispatcher->dispatch(new DomainEvent(), 'app.ready');
-    $dispatcher->dispatch(new DomainEvent(), 'app.raedy');
+    $dispatcher->dispatch(new DomainEvent(), '{|symfony.event.missing:app.raedy|}');
 }";
+    let (source, _) = fixture::parse(fixture);
     let path = p(&dir.path().join("Events.php"));
-    std::fs::write(&path, source).unwrap();
+    std::fs::write(&path, &source).unwrap();
     let parsed = ParsedFile::new(path.as_str(), source.as_bytes().to_vec());
     php.index(&parsed).unwrap();
     events.index(&parsed).unwrap();
 
     let analyzer = EventAnalyzer::new(Some(events), Some(php), None);
-    let result = analyze(&analyzer, &document(&format!("file://{path}"), source));
-    assert_eq!(result.len(), 2);
-    for problem in &result {
+    let (_, problems) = check_problems(&analyzer, &format!("file://{path}"), fixture);
+    for problem in &problems {
         assert!(!payload(problem).is_empty());
-        if problem.id.as_str() == MISSING_LISTENER_METHOD {
-            let data = payload(problem);
-            assert_eq!(data["methodName"], "onRady");
-            assert!(!data.contains_key("classURI"));
-            assert!(!data.contains_key("insertLine"));
-            assert_eq!(data["eventTypes"], json!(["App\\DomainEvent"]));
-        }
     }
-    assert_codes(&result, &[MISSING_EVENT, MISSING_LISTENER_METHOD]);
+    let data = payload(&problems[0]);
+    assert_eq!(data["methodName"], "onRady");
+    assert!(!data.contains_key("classURI"));
+    assert!(!data.contains_key("insertLine"));
+    assert_eq!(data["eventTypes"], json!(["App\\DomainEvent"]));
 }
 
 #[test]
@@ -77,19 +73,20 @@ fn event_diagnostics_configured_listener_methods_and_create_data() {
   app.listener:
     class: App\Listener
     tags:
-      - { name: kernel.event_listener, event: App\DomainEvent, method: onMissing }
+      - { name: kernel.event_listener, event: App\DomainEvent, method: {|symfony.event.listener_method.missing:onMissing|} }
 ",
         ),
         (
             ".xml",
             r#"<container><services>
   <service id="app.listener" class="App\Listener">
-    <tag name="kernel.event_listener" event="App\DomainEvent" method="onMissing"/>
+    <tag name="kernel.event_listener" event="App\DomainEvent" method="{|symfony.event.listener_method.missing:onMissing|}"/>
   </service>
 </services></container>"#,
         ),
     ];
-    for (extension, source) in fixtures {
+    for (extension, fixture) in fixtures {
+        let (source, _) = fixture::parse(fixture);
         let root = tempfile::tempdir().unwrap();
         let class_path = p(&root.path().join("Listener.php"));
         let class_source = r"<?php
@@ -110,15 +107,12 @@ class Listener
                 source.as_bytes().to_vec(),
             ))
             .unwrap();
-        let document = document(&file_uri(&config_path), source);
-        let result = analyze(
+        let (_, problems) = check_problems(
             &EventAnalyzer::new(Some(events), Some(php), None),
-            &document,
+            &file_uri(&config_path),
+            fixture,
         );
-        let missing = with_code(&result, MISSING_LISTENER_METHOD);
-        assert_eq!(missing.len(), 1, "{extension}");
-        assert_eq!(range_text(&document, missing[0].range), "onMissing");
-        let data = payload(missing[0]);
+        let data = payload(&problems[0]);
         assert_eq!(data["eventTypes"], json!(["App\\DomainEvent"]));
         assert!(!data.contains_key("classURI"));
     }
@@ -130,27 +124,26 @@ fn event_diagnostics_class_level_attribute_method() {
     let php = php_index(&root.path().join("php"), &[]);
     let events = event_index(&root.path().join("events"), &php);
     let path = p(&root.path().join("AttributedListener.php"));
-    let source = r"<?php
+    let fixture = r"<?php
 namespace App;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 class DomainEvent {}
-#[AsEventListener(event: DomainEvent::class, method: 'onMissing')]
+#[AsEventListener(event: DomainEvent::class, method: '{|symfony.event.listener_method.missing:onMissing|}')]
 class AttributedListener
 {
 }
 ";
-    std::fs::write(&path, source).unwrap();
+    let (source, _) = fixture::parse(fixture);
+    std::fs::write(&path, &source).unwrap();
     let parsed = ParsedFile::new(path.as_str(), source.as_bytes().to_vec());
     php.index(&parsed).unwrap();
     events.index(&parsed).unwrap();
-    let document = document(&file_uri(&path), source);
-    let result = analyze(
+    let (_, problems) = check_problems(
         &EventAnalyzer::new(Some(events), Some(php), None),
-        &document,
+        &file_uri(&path),
+        fixture,
     );
-    let missing = with_code(&result, MISSING_LISTENER_METHOD);
-    assert_eq!(missing.len(), 1);
-    let data = payload(missing[0]);
+    let data = payload(&problems[0]);
     assert_eq!(data["methodName"], "onMissing");
     assert_eq!(data["eventTypes"], json!(["App\\DomainEvent"]));
     assert!(!data.contains_key("classURI"));

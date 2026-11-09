@@ -45,6 +45,10 @@ impl AppScriptAnalyzer {
 }
 
 impl ProblemAnalyzer for AppScriptAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.index) + crate::inputs(&self.extensions))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

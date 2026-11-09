@@ -3,14 +3,15 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_lsp_protocol as protocol;
 use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_twigcomponent::{Index, LiveListener};
 
 use super::component::suggestions_payload;
 use super::{contains_fold, live_argument_attribute_segment, lower_ext, uri_path};
-use crate::ProblemAnalyzer;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 const MISSING_LIVE_EVENT_CODE: &str = "twig.component.live_event.missing";
 const MISSING_LIVE_EVENT_ARGUMENT_CODE: &str = "twig.component.live_event_argument.missing";
@@ -26,7 +27,23 @@ impl LiveComponentEventAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for LiveComponentEventAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "twig.component.live_event",
+        description: "Live component events emitted or listened to that no component defines, and unknown event arguments.",
+        domain: "symfony.twigComponents",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Php, LanguageId::Twig],
+        source: "twig",
+        codes: &[MISSING_LIVE_EVENT_CODE, MISSING_LIVE_EVENT_ARGUMENT_CODE],
+    };
+}
+
 impl ProblemAnalyzer for LiveComponentEventAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.index))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

@@ -1,23 +1,32 @@
 //! Port of Go `shopware_store_composer.go`.
 
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 
-use regex::Regex;
 use serde_json::{Map, Value};
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
-use swlsp_syntax::{TextRange, TextSize};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
+use swlsp_parser_json::syntax::{JSON_OBJECT, JSON_PAIR, JSON_STRING, TK_STRING};
+use swlsp_syntax::{SyntaxNode, TextRange, TextSize};
 
 use super::util::{go_dir, warning};
-use crate::ProblemAnalyzer;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 /// Supplies the extension's explicit Store validation setting (Go
 /// `StoreComplianceResolver`).
 pub trait StoreComplianceResolver: Send + Sync {
     fn store_compliance_enabled(&self, dir: &str) -> Result<bool, BoxError>;
+    /// Advances whenever an answer may change; `None` when unknown.
+    fn revision(&self) -> Option<u64> {
+        None
+    }
 }
 
 /// The production resolver: the indexed extension configuration.
 impl StoreComplianceResolver for swlsp_extension::ConfigIndex {
+    fn revision(&self) -> Option<u64> {
+        Some(swlsp_indexer::Revisioned::revision(self))
+    }
+
     fn store_compliance_enabled(&self, dir: &str) -> Result<bool, BoxError> {
         Ok(swlsp_extension::ConfigIndex::store_compliance_enabled(
             self, dir,
@@ -46,7 +55,37 @@ impl ShopwareStoreComposerAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for ShopwareStoreComposerAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "shopware.store_composer",
+        description: "Store requirements for an extension's composer.json: localized label and description, manufacturer and support links, and a shopware/core requirement. Opt-in per extension.",
+        domain: "shopware.store",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Json],
+        source: "shopware-lsp",
+        codes: &[
+            "shopware.store.description",
+            "shopware.store.label",
+            "shopware.store.manufacturer-link",
+            "shopware.store.require-core",
+            "shopware.store.support-link",
+        ],
+    };
+}
+
 impl ProblemAnalyzer for ShopwareStoreComposerAnalyzer {
+    fn input_revision(&self, document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        // Only `composer.json` is checked, against the extension configuration
+        // and its open overlays (and the document itself).
+        if swlsp_uriutil::filepath::base(&document.uri) != "composer.json" {
+            return Some(0);
+        }
+        match &self.compliance {
+            Some(compliance) => compliance.revision(),
+            None => Some(0),
+        }
+    }
+
     fn analyze(
         &self,
         _ctx: &Context,
@@ -66,33 +105,35 @@ impl ProblemAnalyzer for ShopwareStoreComposerAnalyzer {
             return Ok(Vec::new());
         }
         let source = document.source();
-        let problem = |id: &str, key: &str, message: &str| store_problem(source, id, key, message);
+        let root = swlsp_parser_json::parse(source).root();
+        let problem =
+            |id: &str, key: &str, message: &str| store_problem(&root, id, &[key], message);
         let mut result = Vec::new();
         match composer.get("extra") {
             Some(Value::Object(extra)) => {
                 result.extend(validate_localized(
-                    source,
+                    &root,
                     extra,
                     "label",
                     "shopware.store.label",
                     false,
                 ));
                 result.extend(validate_localized(
-                    source,
+                    &root,
                     extra,
                     "description",
                     "shopware.store.description",
                     true,
                 ));
                 result.extend(validate_localized(
-                    source,
+                    &root,
                     extra,
                     "manufacturerLink",
                     "shopware.store.manufacturer-link",
                     false,
                 ));
                 result.extend(validate_localized(
-                    source,
+                    &root,
                     extra,
                     "supportLink",
                     "shopware.store.support-link",
@@ -144,7 +185,7 @@ impl ProblemAnalyzer for ShopwareStoreComposerAnalyzer {
 }
 
 fn validate_localized(
-    source: &str,
+    root: &SyntaxNode,
     extra: &Map<String, Value>,
     key: &str,
     id: &str,
@@ -152,9 +193,9 @@ fn validate_localized(
 ) -> Vec<Problem> {
     let Some(Value::Object(value)) = extra.get(key) else {
         return vec![store_problem(
-            source,
+            root,
             id,
-            key,
+            &["extra", key],
             &format!("Store: extra.{key} must be an object containing de-DE and en-GB"),
         )];
     };
@@ -166,9 +207,9 @@ fn validate_localized(
             .unwrap_or_default();
         if text.is_empty() {
             result.push(store_problem(
-                source,
+                root,
                 id,
-                key,
+                &["extra", key],
                 &format!("Store: extra.{key} requires locale {locale}"),
             ));
             continue;
@@ -176,9 +217,9 @@ fn validate_localized(
         let length = text.chars().count();
         if check_length && !(150..=185).contains(&length) {
             result.push(store_problem(
-                source,
+                root,
                 id,
-                locale,
+                &["extra", key, locale],
                 &format!(
                     "Store: {locale} description must contain 150 to 185 characters; got {length}"
                 ),
@@ -188,33 +229,46 @@ fn validate_localized(
     result
 }
 
-fn store_problem(source: &str, id: &str, key: &str, message: &str) -> Problem {
-    let mut range = json_key_range(source, key);
-    if range.is_empty() {
-        range = TextRange::new(TextSize::from(0), TextSize::of(source));
-    }
+/// A problem on the key at `path`, or on the whole document when the key
+/// does not exist.
+fn store_problem(root: &SyntaxNode, id: &str, path: &[&str], message: &str) -> Problem {
+    let range = json_key_range(root, path).unwrap_or_else(|| root.text_range());
     warning(id, range, message.to_owned())
 }
 
-/// Go `jsonKeyRange`: the key text of the first `"key"\s*:` occurrence.
-fn json_key_range(source: &str, key: &str) -> TextRange {
-    static CACHE: LazyLock<std::sync::Mutex<std::collections::HashMap<String, Regex>>> =
-        LazyLock::new(Default::default);
-    let pattern = {
-        let mut cache = CACHE.lock().unwrap_or_else(|poison| poison.into_inner());
-        cache
-            .entry(key.to_owned())
-            .or_insert_with(|| {
-                Regex::new(&format!("\"{}\"[\\t\\n\\x0C\\r ]*:", regex::escape(key)))
-                    .expect("json key pattern")
-            })
-            .clone()
-    };
-    match pattern.find(source) {
-        Some(found) => {
-            let start = TextSize::from(found.start() as u32 + 1);
-            TextRange::new(start, start + TextSize::of(key))
+/// The text of the key at `path` (object keys from the document root),
+/// without its quotes.
+fn json_key_range(root: &SyntaxNode, path: &[&str]) -> Option<TextRange> {
+    let mut object = root.descendants().find(|node| node.kind() == JSON_OBJECT)?;
+    let mut found = None;
+    for (depth, key) in path.iter().enumerate() {
+        let pair = object
+            .children()
+            .filter(|pair| pair.kind() == JSON_PAIR)
+            .find(|pair| pair_key(pair).is_some_and(|(text, _)| text == *key))?;
+        found = pair_key(&pair).map(|(_, range)| range);
+        if depth + 1 < path.len() {
+            object = pair
+                .children()
+                .skip(1)
+                .find(|value| value.kind() == JSON_OBJECT)?;
         }
-        None => TextRange::default(),
     }
+    found
+}
+
+/// The unquoted text and range of a pair's key.
+fn pair_key(pair: &SyntaxNode) -> Option<(String, TextRange)> {
+    let key = pair.children().find(|child| child.kind() == JSON_STRING)?;
+    let token = key
+        .children_with_tokens()
+        .filter_map(|element| element.into_token())
+        .find(|token| token.kind() == TK_STRING)?;
+    let text = token.text();
+    let inner = text.strip_prefix('"')?.strip_suffix('"')?;
+    let start = token.text_range().start() + TextSize::from(1);
+    Some((
+        inner.to_owned(),
+        TextRange::new(start, start + TextSize::of(inner)),
+    ))
 }

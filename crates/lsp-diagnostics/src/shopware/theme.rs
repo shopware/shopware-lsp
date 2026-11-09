@@ -4,13 +4,16 @@ use std::sync::Arc;
 
 use serde_json::json;
 use swlsp_extension::ExtensionIndexer;
-use swlsp_lsp::{BoxError, Context, DiagnosticId, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{
+    BoxError, Context, DiagnosticId, InspectionScope, InspectionSpec, Problem, TextDocument,
+};
 use swlsp_lsp_protocol::DiagnosticSeverity;
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::{SHOPWARE_ICON, TWIG_LITERAL_HASH_PAIR, TWIG_LITERAL_STRING};
 use swlsp_syntax::SyntaxNodeExt;
 
-use crate::ProblemAnalyzer;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 /// Icon lookups (Go `IconProvider`).
 pub trait IconProvider: Send + Sync {
@@ -18,9 +21,18 @@ pub trait IconProvider: Send + Sync {
     fn icons(&self, pack: &str) -> Vec<String>;
     /// The icon path, or `""` when the pack has no such icon.
     fn icon(&self, pack: &str, icon: &str) -> String;
+    /// A revision that advances whenever the answers above change; `None`
+    /// when the provider cannot tell.
+    fn revision(&self) -> Option<u64> {
+        None
+    }
 }
 
 impl IconProvider for swlsp_theme::IconProvider {
+    fn revision(&self) -> Option<u64> {
+        Some(swlsp_theme::IconProvider::revision(self))
+    }
+
     fn icon_packs(&self) -> Vec<String> {
         swlsp_theme::IconProvider::icon_packs(self)
     }
@@ -53,7 +65,30 @@ impl ThemeAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for ThemeAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "shopware.theme",
+        description: "Storefront `sw_icon` calls for icons no icon pack provides.",
+        domain: "shopware.theme",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Twig],
+        source: "shopware-lsp",
+        codes: &["theme.icon.missing"],
+    };
+}
+
 impl ProblemAnalyzer for ThemeAnalyzer {
+    fn input_revision(&self, document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        // Only `sw_icon` tags are checked, against the icon provider.
+        if !swlsp_uriutil::filepath::ext(&document.uri).eq_ignore_ascii_case(".twig")
+            || !document.source().contains("sw_icon")
+        {
+            Some(0)
+        } else {
+            self.icon_provider.revision()
+        }
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

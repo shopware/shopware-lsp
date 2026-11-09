@@ -9,6 +9,7 @@ use crate::str::Str;
 use crate::atom::{Collection, Generation, current_generation, should_collect};
 use crate::canon::Canon;
 use crate::document::Document;
+use crate::lazy_returns::ReturnInference;
 use crate::packed::PackedDocument;
 use crate::snapshot::Snapshot;
 use crate::workspace::{LoadError, WorkspaceGraph, WorkspaceGraphDecoder};
@@ -29,6 +30,8 @@ pub struct Store {
     revision: AtomicU64,
     current: RwLock<Arc<Snapshot>>,
     collection_listeners: Mutex<Vec<CollectionListener>>,
+    /// Attached to every published generation.
+    inference: RwLock<Option<Arc<dyn ReturnInference>>>,
 }
 
 type CollectionListener = Box<dyn Fn() + Send + Sync>;
@@ -46,7 +49,18 @@ impl Store {
             revision: AtomicU64::new(0),
             current: RwLock::new(Snapshot::from_packed(0, Vec::new())),
             collection_listeners: Mutex::new(Vec::new()),
+            inference: RwLock::new(None),
         }
+    }
+
+    /// Lets every generation published from now on recompute inferred
+    /// return types on demand through `inference` (see
+    /// [`ReturnInference`]).
+    pub fn set_return_inference(&self, inference: Arc<dyn ReturnInference>) {
+        *self
+            .inference
+            .write()
+            .unwrap_or_else(|poison| poison.into_inner()) = Some(inference);
     }
 
     /// The current generation.
@@ -168,10 +182,31 @@ impl Store {
         capacity: WorkspaceRestoreCapacity,
         load: impl FnOnce(&mut WorkspaceGraphDecoder, &mut dyn FnMut(WorkspaceGraph)) -> Result<(), E>,
     ) -> Result<Arc<Snapshot>, E> {
+        self.restore_workspace_graphs_decoded_with(capacity, &[], load)
+    }
+
+    /// Like [`Store::restore_workspace_graphs_decoded`], also publishing the
+    /// workspace projections of `documents` (runtime stubs, say) in the same
+    /// generation. Building a snapshot indexes every document, so restoring
+    /// and then replacing would pay for that twice.
+    pub fn restore_workspace_graphs_decoded_with<E>(
+        &self,
+        capacity: WorkspaceRestoreCapacity,
+        documents: &[Document],
+        load: impl FnOnce(&mut WorkspaceGraphDecoder, &mut dyn FnMut(WorkspaceGraph)) -> Result<(), E>,
+    ) -> Result<Arc<Snapshot>, E> {
         let mut decoder = WorkspaceGraphDecoder::new();
         decoder.canon = Canon::with_capacity(capacity.types);
         decoder.type_cache.reserve(capacity.types);
-        self.restore(|accept| load(&mut decoder, &mut |graph| accept(graph.document)))
+        self.restore(|accept| {
+            load(&mut decoder, &mut |graph| accept(graph.document))?;
+            for document in documents {
+                let mut packed = PackedDocument::pack(document, true);
+                packed.canonicalize(&mut decoder.canon);
+                accept(packed);
+            }
+            Ok(())
+        })
     }
 
     fn restore<E>(
@@ -285,7 +320,13 @@ impl Store {
             collection.finish();
         }
         let revision = self.revision.fetch_add(1, Ordering::SeqCst) + 1;
-        let snapshot = Snapshot::from_packed(revision, state.values().cloned().collect());
+        let inference = self
+            .inference
+            .read()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .clone();
+        let snapshot =
+            Snapshot::from_packed_with(revision, state.values().cloned().collect(), inference);
         *self
             .current
             .write()

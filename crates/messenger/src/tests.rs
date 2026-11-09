@@ -1,6 +1,6 @@
 //! Ports of the Go `internal/messenger` tests.
 
-use swlsp_indexer::{Indexer, ParsedFile};
+use swlsp_indexer::{Indexer, ParsedFile, PreparingIndexer};
 use swlsp_php::PhpIndex;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextSize};
 
@@ -204,6 +204,37 @@ class Handler {
         .unwrap();
     assert!(restored.message_names().unwrap().is_empty());
     restored.close().unwrap();
+}
+
+#[test]
+fn prepared_indexing_matches_direct_indexing() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = "/project/src/Handler.php";
+    let source = r"<?php
+namespace App;
+use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+class Message {}
+#[AsMessageHandler(handles: Message::class, method: 'run')]
+class Handler {
+    public function run(Message $message): void {}
+}";
+    let direct = Index::new(directory.path().join("direct"), None).unwrap();
+    direct.index(&file(path, source)).unwrap();
+    let prepared = Index::new(directory.path().join("prepared"), None).unwrap();
+    let parsed = file(path, source);
+    let data = prepared.prepare(&parsed).unwrap();
+    prepared.index_prepared(&parsed, data.as_ref()).unwrap();
+
+    let messages = direct.messages().unwrap();
+    assert!(!messages.is_empty());
+    assert_eq!(prepared.messages().unwrap(), messages);
+
+    let cleared = file(path, "<?php namespace App; class Handler {}");
+    let data = prepared.prepare(&cleared).unwrap();
+    prepared.index_prepared(&cleared, data.as_ref()).unwrap();
+    assert!(prepared.messages().unwrap().is_empty());
+    direct.close().unwrap();
+    prepared.close().unwrap();
 }
 
 fn node_at(root: &SyntaxNode, offset: usize) -> SyntaxNode {

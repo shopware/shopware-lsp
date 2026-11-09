@@ -70,6 +70,7 @@ The model is IntelliJ's, not a bag of independent providers:
         ▼
  InspectionProblemReporter::report(problem)
         ├─ validate the code is declared
+        ├─ drop it when a suppression comment covers it
         ├─ apply configured severity / off
         ├─ validate the range
         ├─ anchor: ElementHandle::new(uri, version, language, element)
@@ -107,6 +108,8 @@ The model is IntelliJ's, not a bag of independent providers:
 // crates/lsp/src/inspection.rs
 pub struct InspectionDefinition {
     pub id: String,
+    pub domain: &'static str,       // configuration domain that gates it
+    pub scope: InspectionScope,     // Framework, or Language (core PHP)
     pub languages: Vec<LanguageId>,
     pub problems: Vec<ProblemDefinition>,
 }
@@ -132,6 +135,9 @@ silently missing diagnostics. `InspectionRegistry::register` rejects:
 
 - an empty or duplicate inspection ID;
 - an inspection with no languages;
+- a domain missing from `swlsp_projectconfig::DOMAIN_CATALOG` (the app's
+  `Registrar` additionally requires every production inspection to declare
+  one);
 - an inspection with no diagnostics;
 - a diagnostic with an empty ID or an empty `Source`;
 - the same diagnostic code declared twice, or owned by two inspections;
@@ -171,6 +177,68 @@ codes and attaches bound fixes through `bind`.
 Analyzers live in `swlsp-lsp-diagnostics`; the inspections that wire them up
 live in `swlsp-lsp-inspections`. That split is why a diagnostic can be unit
 tested against a source string without a server.
+
+### Declared analyzers
+
+An analyzer that forms an inspection on its own, with warnings from one
+source and the suggestion quick fix, declares that inspection beside its
+implementation:
+
+```rust
+// crates/lsp-diagnostics/src/symfony/console.rs
+impl DeclaredAnalyzer for ConsoleAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "symfony.console",
+        domain: "symfony.console",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Php],
+        source: "symfony",
+        codes: &[
+            MISSING_CONSOLE_ARGUMENT_CODE,
+            MISSING_CONSOLE_COMMAND_CODE,
+            MISSING_CONSOLE_OPTION_CODE,
+        ],
+    };
+}
+```
+
+The composition root only supplies services:
+`analyzer_inspection(ConsoleAnalyzer::new(console, php))`. Inspections with
+their own quick fixes build an `InspectionDefinition` in
+`swlsp-lsp-inspections` and state `domain` and `scope` the same way.
+
+### One analyzer behind several inspections
+
+A large analyzer whose rules share per-document work but belong to separate
+inspections (the Administration checks, the Shopware migrations) runs once
+per document through `SharedAnalysis`; each inspection holds a `CodeGroup`
+reporting only its codes. Results are memoized per document snapshot and
+input revision (so the analyzer must declare one), cancelled runs are not
+kept, and syntax elements are stored by range and kind and resolved again in
+the same document.
+
+### Project analyses
+
+A rule about the project as a whole ("this route name is also defined in
+another file") implements `ProjectAnalysis` (`swlsp-lsp-diagnostics`,
+`project.rs`) in two phases, like PHPStan collectors:
+
+- `summarize` derives a summary from index data. `Project` memoizes it per
+  `revision()`, the combined revision of the indexes it reads
+  (`DataIndexer::revision`, `PhpIndex::revision`), and derives it only when
+  a document asks through its `SummaryHandle`, so documents the rule cannot
+  apply to never pay for it. Concurrent documents wait for one derivation; a
+  cancelled one is not memoized.
+- `analyze` checks one document against the summary and anchors problems in
+  the document's live tree. The document's own unsaved definitions win over
+  what the index stored for it; ranges never come from index data.
+
+`Project<P>` is a `DeclaredAnalyzer`, so registration is
+`analyzer(Project::new(RouteRedefinedAnalysis::new(routes)))` and the rule
+gets gating, suppression and configuration like any other inspection. Open
+documents are re-diagnosed after every committed index change, which picks up
+a changed summary. `symfony.route.redefined`
+(`services/route_redefined.rs`) is the reference implementation.
 
 ## Problems
 
@@ -477,6 +545,20 @@ if presentation.resolution == FixResolution::Eager || !resolve_support {
 }
 ```
 
+### Fix all in file
+
+When a document has at least two problems of one code offering the same
+rewrite fix, `inspection_code_actions` adds a *Fix all N '<code>' problems in
+this file* action (resolved lazily when the client supports it). Resolving
+it (`fix_all.rs`) applies the fix to one problem at a time on an in-memory
+copy of the document and re-runs the inspection between steps, instead of
+merging independently built edits: fixes share side effects (each occurrence
+of a replaced type adding the same import, or seeing the others keep an old
+import in use) that only sequential application gets right. A step that does
+not reduce the number of matching problems ends the run. Fixes editing other
+documents or creating files are not applied. The result is one validated
+edit of the changed region.
+
 ### Plan validation
 
 `Server::validate_workspace_plan` runs before any plan becomes a
@@ -506,20 +588,36 @@ When any of this fails the action is returned disabled with a human-readable
 reason (`"The generated edit is no longer valid"`, `"The document changed;
 request code actions again"`, …). The pipeline never ships an unvalidated edit.
 
+## Suppression comments
+
+Suppression is applied by the server, not by analyzers. Composition
+registers one `SuppressionReader` per language
+(`Server::register_suppressions`); `collect_diagnostics` reads a document's
+comments once and `InspectionProblemReporter` drops every problem a comment
+covers, whatever inspection reported it. PHP uses
+`swlsp_lsp_phpanalysis::suppression_reader`, which recognizes PHPStan's
+`@phpstan-ignore` forms and PhpStorm's `@noinspection`
+(`swlsp-php-suppression`). Twig, YAML, XML, JavaScript and SCSS use
+`swlsp_lsp::comment_suppression_reader` with their comment kinds: it finds
+`@noinspection` in the syntax tree's comments and applies it to the
+comment's own line when code shares it, or to the next line with code.
+Analyzers therefore never parse suppression comments; the PHP semantic analyzer still checks them before expensive
+per-reference work, which only saves time.
+
 ## Configuration and gating
 
 Diagnostics as a whole can be disabled by the file's policy. Beyond that, four
-independent gates run per inspection, per document, in `collect_diagnostics`:
+independent gates run per inspection, per document, in `collect_diagnostics`;
+the first three (`Server::inspection_active`) are re-checked before a quick fix
+is offered:
 
-1. **Client presentation profile.** `inspection_presented_to_client` suppresses
-   inspections the host IDE already provides. Under the framework-only profile
-   used by the PhpStorm integration, `php.semantic` and
-   `symfony.embedded_language` are withheld so generic PHP presentation stays
+1. **Client presentation profile.** Under the framework-only profile used by
+   the PhpStorm integration, inspections declared with
+   `InspectionScope::Language` (`php.semantic`, `php.imports`,
+   `symfony.embedded_language`) are withheld so generic PHP presentation stays
    with the IDE. See [`phpstorm-integration.md`](phpstorm-integration.md).
-2. **Domain.** `inspection_domain(id)` (`crates/lsp/src/configuration.rs`) maps an inspection to a configuration
-   domain (`php.semantic` → `php`, `shopware.migration` →
-   `shopware.migrations`, `shopware.snippet` → `shopware.snippets`, …), and the
-   domain can be switched off wholesale.
+2. **Domain.** The definition's `domain` (`php`, `shopware.migrations`,
+   `symfony.services`, …) can be switched off wholesale.
 3. **Inspection.** `diagnostics.inspections[<id>]` in project configuration can
    disable one inspection; an unconfigured inspection is enabled.
 4. **Rules.** `inspection_has_enabled_rule` skips an inspection entirely when
@@ -597,6 +695,97 @@ empty results. The server does not currently return unchanged reports.
 change elsewhere — the "open dependency changed" case — using the debounce so a
 workspace overlay does not schedule one job per keystroke. It is skipped in CLI
 mode.
+
+### Reusing results across index refreshes
+
+A committed index change does not re-diagnose a document whose result
+cannot have changed. Each inspection may report an input revision
+(`Inspection::input_revision`): the combined revision of everything it reads
+besides the document. The server keeps each inspection's last diagnostics
+per open document, and
+
+- `collect_diagnostics` reuses them while the inspection's input revision,
+  the document snapshot and the document's `DiagnosticPolicy` are unchanged;
+- `refresh_after_index_change` (the scanner's update callback) does not
+  schedule a document at all when every inspection on it declares inputs
+  and none of their revisions changed.
+
+Analyzers declare their inputs beside the fields they read, through
+`ProblemAnalyzer::input_revision`; the adapters sum their analyzers' values
+(`None` if any analyzer does not declare):
+
+```rust
+// crates/lsp-diagnostics/src/symfony/console.rs
+impl ProblemAnalyzer for ConsoleAnalyzer {
+    fn input_revision(&self) -> Option<u64> {
+        Some(crate::inputs(&self.index) + crate::inputs(&self.php_index))
+    }
+    // ...
+}
+// Document-only analyzers return Some(0).
+```
+
+Index types implement `swlsp_indexer::Revisioned`, as do `Option` and `Arc`
+of them (an absent index is revision 0). Revisions only grow, so a sum is a
+valid combined revision. Index revisions come from `DataIndexer::revision()`
+plus any in-memory catalog the index publishes (compiled container and
+route catalogs). `PhpIndex`'s includes `analysis_revision()`, which adds the
+revisions of the registered type extensions (`Extension::revision`), so PHP
+analyses follow the indexes extensions answer from (the service index for
+`$container->get()`). Repositories advance their revision only when a write
+changes rows, so a file without data for an index (every indexer sees every
+file) leaves it, and the inspections declaring it, alone.
+
+The declaration must be complete: an index, configuration or file read
+from disk left out leaves stale diagnostics on open documents after it
+changes. `crates/app/src/tests/inspection_inputs_test.rs` audits the
+declarations with `Server::audit_inspections`: it edits one indexed file at
+a time and fails when an inspection reports something different although
+its declared revision did not change, naming the inspection and the file.
+Extend its fixture when declaring a new input, with an edit that advances
+that input alone.
+
+The revision may depend on the document. An analyzer that ignores a
+document reports `Some(0)` for it: the Administration analyzers outside
+`Resources/app/administration`, the theme analyzer for templates without
+`sw_icon`, versioning for templates that extend nothing. Files read from
+disk outside the scanner are tracked by polling: the Assetic catalog and the
+theme icon provider re-check their files at most every 500 ms when asked for
+their revision and advance it when a fingerprint changes; versioning stamps
+the `composer.json` files its version lookup walks for the document, and
+entity snapshots stamp their plugin's snapshot directory. Indexes whose
+readiness can flip back (the workspace symbol catalog behind SCSS variables
+and entity snapshots) encode it as `2 × revision + ready`, which stays
+distinct for every pair. Every production inspection declares its inputs;
+the audit test fails on an active inspection without one. Configuration
+reloads clear every reused result; closing a document drops its results.
+
+### Time budget
+
+Inspections run cheapest first, ordered by a moving average of their run
+time. In push mode a document's diagnostics do not wait for slow
+inspections: before starting one whose average exceeds `INSPECTION_BUDGET`
+(200 ms), or once the document's run has used up that budget, the results so
+far are published, then the complete set. Inspections still to run keep
+their previous diagnostics in that partial set when the document snapshot is
+unchanged (an index refresh), so nothing flickers; after an edit, their
+results appear when they finish. An inspection exceeding the budget is
+logged once per session as a warning naming it. Pull clients receive the
+complete set.
+
+### Workspace diagnostics
+
+Project rules know problems in files nobody opened. The server advertises
+`workspaceDiagnostics` and answers `workspace/diagnostic`
+(`workspace_diagnostics.rs`): inspections name the files they may report on
+(`Inspection::workspace_paths`; for project analyses
+`ProjectAnalysis::affected_paths` from their summary), which are loaded from
+disk and diagnosed by the whole pipeline, so the workspace view shows what
+opening the file would. Open documents are left to document pulls. The
+report is computed once per index and configuration state and served with
+result IDs: files whose problems did not change are reported `unchanged`,
+and files the client still lists that no longer have problems get an empty
+report.
 
 ## Parser and language-level diagnostics
 
@@ -710,34 +899,63 @@ slow.
    `ProblemAnalyzer::analyze`. Guard on a missing syntax tree, check
    cancellation in loops, use the language's `query` module, and report
    trimmed ranges.
-2. **Declare the inspection** in `swlsp-lsp-inspections`, listing its
-   languages and every `ProblemDefinition` it can emit — each with a `source`
-   and a `default_severity`. Set `disabled_by_default` for opt-in checks.
+2. **Declare the inspection** with its ID, a description for users,
+   configuration domain, scope, languages and every code it can emit. For a single analyzer with warnings
+   and suggestion fixes, implement `DeclaredAnalyzer` beside it. Otherwise
+   build an `InspectionDefinition` in `swlsp-lsp-inspections` with a
+   `ProblemDefinition` per code — each with a `source` and a
+   `default_severity`; set `disabled_by_default` for opt-in checks.
 3. **Add quick fixes** implementing `RewriteQuickFix` or `CommandQuickFix`, and
    wire them in `bind` so each code offers the right fixes with the right
    payloads.
 4. **Register it** from the application composition root
-   (`crates/app/src/inspections.rs`) with `Server::register_inspection`.
-5. **Map a configuration domain** in `inspection_domain` if the inspection
-   belongs to a toggleable feature domain.
+   (`crates/app/src/inspections.rs`): `analyzer_inspection(Analyzer::new(…))`
+   or the `swlsp-lsp-inspections` constructor. Composition fails on a missing
+   description or a missing or unknown domain. Regenerate
+   [`inspections.md`](inspections.md) with
+   `SHOPWARE_LSP_UPDATE_REFERENCE=1 cargo test -p swlsp-app inspection_reference`;
+   the test fails while it is out of date.
+5. **Declare its inputs** in `ProblemAnalyzer::input_revision` when the
+   analyzer reads only indexes with a revision (see
+   [reusing results](#reusing-results-across-index-refreshes)).
 6. **Test it** — see below.
 
 ## Debugging and testing
 
 ### Unit level
 
-Analyzer tests construct a `TextDocument` from a source string and assert on
-the returned problems, with no server involved:
+Analyzer and inspection tests run against a source string with no server
+involved. Write the expected problems into the source as markup
+(`swlsp_lsp::fixture`): `{|code:text|}` marks a problem with that code over
+`text`, markers may nest, and `{|code:|}` marks an empty range.
 
 ```rust
-let document = Arc::new(TextDocument::new("file:///src/Handler.php", source, 1));
-let problems = analyzer.analyze(&Context::background(), &document).unwrap();
+// crates/lsp-diagnostics: one analyzer
+let (_, problems) = check_problems(
+    &AssetAnalyzer::new(Some(index), None),
+    "file:///project/templates/page.html.twig",
+    "{{ asset('{|symfony.asset.missing:build/ap.css|}') }}",
+);
+assert!(problems[0].message.contains("build/ap.css"));
+
+// crates/lsp-inspections: a whole inspection and one of its fixes
+check_diagnostics(inspection.as_ref(), uri, before);
+check_fix(inspection.as_ref(), uri, before, FIX_ID, after);
 ```
 
-`TextDocument::new` parses through the default registry, so the tree, line
-index, and parse errors are all populated. Assert on `TextRange` values rather than
-line/column where possible — they are stable against reformatting of the
-fixture.
+The helpers strip the markup, run the analyzer or inspection on the plain
+source, and compare the reported problems rendered back into markup with the
+fixture. A failure prints the source with the differing lines marked `-`
+(fixture) and `+` (reported), so a wrong range reads as moved markers rather
+than offsets. Both return the problems in markup order for assertions on
+messages, payloads, or tags. `check_fix` applies the fix to the one marked
+problem that has it bound, ignoring other problems, so a test can reuse the
+fixture of `check_diagnostics`; it returns the fix's presentation.
+
+Tests that need the raw problems can still call
+`analyzer.analyze(&Context::background(), &document)` on a
+`TextDocument::new(uri, source, 1)`, which parses through the default
+registry, so the tree, line index, and parse errors are all populated.
 
 ### Server level
 
@@ -747,6 +965,16 @@ sources) fails at composition time, so every test that builds the production
 workspace in `swlsp-app` exercises it. The real-world
 `crates/app/src/tests/real_world/diagnostics_audit.rs` harness runs the PHP
 diagnostics over a real checkout and groups the recurring findings.
+
+### Performance
+
+`crates/bench/benches/diagnostics.rs` (CodSpeed, `cargo bench -p swlsp-bench
+--bench diagnostics`) runs every registered inspection on a PHP controller
+and a Twig template of an indexed plugin through the production session the
+CLI uses, editing the document each iteration so nothing is served from a
+cache. A regression there usually means an inspection rebuilt index-wide
+data per document; `SHOPWARE_LSP_TRACE_DIAGNOSTICS=1` with `check` shows
+which one.
 
 ### CLI
 

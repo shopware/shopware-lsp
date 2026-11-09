@@ -1,6 +1,7 @@
 # Shopware Rector parity
 
-The `shopware.migration` inspection is the native LSP counterpart of the
+The `shopware.migration.api`, `shopware.migration.signature` and
+`shopware.migration.behavior` inspections are the native LSP counterpart of the
 Shopware-specific transformations in `frosh/shopware-rector`. The current
 matrix was audited against commit
 `8cae3156e421142bcd0dc75fe3ae904c080d6cb7`.
@@ -49,7 +50,7 @@ outside the group namespace remain diagnostic-only.
 The Shopware set files also import Rector-owned Symfony 5.4 through 7.2 and PHP
 7.4 through 8.2 sets. Those rules are not defined or version-pinned by
 `frosh/shopware-rector` (the audited checkout has neither a lock file nor a
-vendored Rector tree), so they are not duplicated in `shopware.migration`.
+vendored Rector tree), so they are not duplicated in the migration inspections.
 Language-level PHP diagnostics and Symfony compatibility inspections remain
 owned by their existing LSP subsystems.
 

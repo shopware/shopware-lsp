@@ -3,12 +3,13 @@
 
 use std::sync::Arc;
 
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_lsp_protocol::DiagnosticSeverity;
 use swlsp_php::PhpIndex;
 
 use super::{lower_ext, problem};
-use crate::ProblemAnalyzer;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 const TAGGED_SERVICE_TYPE_CODE: &str = "symfony.service.tag_type";
 
@@ -23,7 +24,23 @@ impl TaggedServiceAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for TaggedServiceAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "symfony.service.tag_type",
+        description: "Tagged services that do not implement the interface their tag requires.",
+        domain: "symfony.services",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Xml, LanguageId::Yaml],
+        source: "symfony",
+        codes: &[TAGGED_SERVICE_TYPE_CODE],
+    };
+}
+
 impl ProblemAnalyzer for TaggedServiceAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.php_index))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

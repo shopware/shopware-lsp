@@ -1,4 +1,4 @@
-//! Quick fixes of the `shopware.admin` inspection.
+//! Quick fixes of the Administration inspections.
 
 use std::sync::Arc;
 

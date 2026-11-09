@@ -88,61 +88,49 @@ fn admin_analyzer_unknown_whole_slot_object_member() {
         slots: vec![content_slot(true, vec![slot_member("currentValue", "number")])],
     });
     let analyzer = fixture.analyzer();
-    let cases: &[(&str, usize, bool)] = &[
+    let cases: &[(&str, bool)] = &[
         (
             r#"<sw-inherit-wrapper><template #content="props">{{ props.currentValue }}</template></sw-inherit-wrapper>"#,
-            0,
             false,
         ),
         (
-            r#"<sw-inherit-wrapper><template #content="props">{{ props.curentValue }}</template></sw-inherit-wrapper>"#,
-            1,
+            r#"<sw-inherit-wrapper><template #content="props">{{ props.{|admin.component.unknown-slot-prop:curentValue|} }}</template></sw-inherit-wrapper>"#,
             true,
         ),
         (
-            r#"<sw-inherit-wrapper><template #content="{ curentValue }">{{ curentValue }}</template></sw-inherit-wrapper>"#,
-            1,
+            r#"<sw-inherit-wrapper><template #content="{ {|admin.component.unknown-slot-prop:curentValue|} }">{{ curentValue }}</template></sw-inherit-wrapper>"#,
             true,
         ),
         (
             r#"<sw-inherit-wrapper><template #content="props"><div v-for="props in rows">{{ props.anything }}</div></template></sw-inherit-wrapper>"#,
-            0,
             false,
         ),
         (
             r#"<sw-forwarding-wrapper><template #content="props">{{ props.anything }}</template></sw-forwarding-wrapper>"#,
-            0,
             false,
         ),
         (
             r#"<component :is="active ? 'sw-card-a' : 'sw-card-b'"><template #content="props">{{ props.currentValue }}</template></component>"#,
-            0,
             false,
         ),
         (
-            r#"<component :is="active ? 'sw-card-a' : 'sw-card-b'"><template #content="props">{{ props.onlyA }}</template></component>"#,
-            1,
+            r#"<component :is="active ? 'sw-card-a' : 'sw-card-b'"><template #content="props">{{ props.{|admin.component.unknown-slot-prop:onlyA|} }}</template></component>"#,
             false,
         ),
         (
             r#"<component :is="runtimeComponent"><template #content="props">{{ props.anything }}</template></component>"#,
-            0,
             false,
         ),
     ];
-    for (source, count, unknown) in cases {
-        let problems = analyze(
+    for (source, unknown) in cases {
+        let problems = check(
             &analyzer,
-            &document(
-                "file:///project/Resources/app/administration/src/view.html.twig",
-                source,
-            ),
+            "file:///project/Resources/app/administration/src/view.html.twig",
+            source,
         );
-        assert_eq!(problems.len(), *count, "{source}: {problems:?}");
-        if *count == 0 {
+        if problems.is_empty() {
             continue;
         }
-        assert_eq!(problems[0].id.0, "admin.component.unknown-slot-prop");
         if *unknown {
             assert_eq!(payload_str(&problems[0], "memberName"), "curentValue");
             assert!(suggestions(&problems[0]).contains(&"currentValue".to_owned()));
@@ -194,19 +182,19 @@ fn admin_analyzer_unknown_typed_vue_binding_member() {
             "",
         ),
         (
-            r#"<div v-for="card in products.map((product) => ({ label: product.name }))">{{ card.lable }}</div>"#,
+            r#"<div v-for="card in products.map((product) => ({ label: product.name }))">{{ card.{|admin.component.unknown-vue-member:lable|} }}</div>"#,
             "label",
         ),
         (
-            r#"<div v-for="product in products">{{ product.manufaturer.name }}</div>"#,
+            r#"<div v-for="product in products">{{ product.{|admin.component.unknown-vue-member:manufaturer|}.name }}</div>"#,
             "manufacturer",
         ),
         (
-            r#"<div v-for="product in products">{{ product.manufacturer.naem }}</div>"#,
+            r#"<div v-for="product in products">{{ product.manufacturer.{|admin.component.unknown-vue-member:naem|} }}</div>"#,
             "name",
         ),
         (
-            r#"<div v-for="(product, productId, index) in productsById">{{ product.naem }}</div>"#,
+            r#"<div v-for="(product, productId, index) in productsById">{{ product.{|admin.component.unknown-vue-member:naem|} }}</div>"#,
             "name",
         ),
         (
@@ -214,7 +202,7 @@ fn admin_analyzer_unknown_typed_vue_binding_member() {
             "",
         ),
         (
-            r#"<div v-for="product in Object.values(productsById)">{{ product.naem }}</div>"#,
+            r#"<div v-for="product in Object.values(productsById)">{{ product.{|admin.component.unknown-vue-member:naem|} }}</div>"#,
             "name",
         ),
         (
@@ -226,11 +214,11 @@ fn admin_analyzer_unknown_typed_vue_binding_member() {
             "",
         ),
         (
-            r#"<div v-for="(product, index) in products">{{ products[index].naem }}</div>"#,
+            r#"<div v-for="(product, index) in products">{{ products[index].{|admin.component.unknown-vue-member:naem|} }}</div>"#,
             "name",
         ),
         (
-            r#"<div>{{ productsById[selectedProduct.name].naem }}</div>"#,
+            r#"<div>{{ productsById[selectedProduct.name].{|admin.component.unknown-vue-member:naem|} }}</div>"#,
             "name",
         ),
         (
@@ -238,9 +226,12 @@ fn admin_analyzer_unknown_typed_vue_binding_member() {
             "",
         ),
         (r#"<div>{{ cards.length }} {{ cards[0].id }}</div>"#, ""),
-        (r#"<div :title="selectedProduct.naem"></div>"#, "name"),
         (
-            r#"<div :title="selectedProduct.manufacturer.naem"></div>"#,
+            r#"<div :title="selectedProduct.{|admin.component.unknown-vue-member:naem|}"></div>"#,
+            "name",
+        ),
+        (
+            r#"<div :title="selectedProduct.manufacturer.{|admin.component.unknown-vue-member:naem|}"></div>"#,
             "name",
         ),
         (
@@ -248,11 +239,11 @@ fn admin_analyzer_unknown_typed_vue_binding_member() {
             "",
         ),
         (
-            r#"<div :title="selectedProduct.getManufacturr().name"></div>"#,
+            r#"<div :title="selectedProduct.{|admin.component.unknown-vue-member:getManufacturr|}().name"></div>"#,
             "getManufacturer",
         ),
         (
-            r#"<div :title="selectedProduct.getManufacturer().naem"></div>"#,
+            r#"<div :title="selectedProduct.getManufacturer().{|admin.component.unknown-vue-member:naem|}"></div>"#,
             "name",
         ),
         (
@@ -260,17 +251,12 @@ fn admin_analyzer_unknown_typed_vue_binding_member() {
             "",
         ),
     ];
+    let uri = swlsp_uriutil::file_uri(&template_path);
     for (source, suggestion) in cases {
-        let problems = analyze(
-            &analyzer,
-            &document(&format!("file://{template_path}"), source),
-        );
+        let problems = check(&analyzer, &uri, source);
         if suggestion.is_empty() {
-            assert!(problems.is_empty(), "{source}: {problems:?}");
             continue;
         }
-        assert_eq!(problems.len(), 1, "{source}: {problems:?}");
-        assert_eq!(problems[0].id.0, "admin.component.unknown-vue-member");
         assert!(
             suggestions(&problems[0]).contains(&suggestion.to_string()),
             "{source}"
@@ -300,15 +286,10 @@ fn admin_analyzer_keeps_inferred_runtime_object_shapes_open() {
         template_path: template_path.clone(),
         members: vec![page, declared],
     });
-    let problems = analyze(
-        &fixture.analyzer(),
-        &document(
-            &format!("file://{template_path}"),
-            "<div>{{ page.locked }} {{ declared.titel }}</div>",
-        ),
+    let problems = fixture.check_path(
+        &template_path,
+        "<div>{{ page.locked }} {{ declared.{|admin.component.unknown-vue-member:titel|} }}</div>",
     );
-    assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(problems[0].id.0, "admin.component.unknown-vue-member");
     assert!(problems[0].message.contains("titel"));
     assert!(!problems[0].message.contains("locked"));
 }
@@ -336,16 +317,11 @@ fn admin_analyzer_unknown_this_member() {
             this.$emit('save');
 \t\t\tthis.runtimeValue = 1;
 \t\t\tthis.runtimeValue;
-\t\t\tthis.freshMethd;
+\t\t\tthis.{|admin.component.unknown-instance-member:freshMethd|};
         },
     },
 };";
-    let problems = analyze(
-        &fixture.analyzer(),
-        &document(&format!("file://{definition_path}"), source),
-    );
-    assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(problems[0].id.0, "admin.component.unknown-instance-member");
+    let problems = fixture.check_path(&definition_path, source);
     assert!(problems[0].message.contains("freshMethd"));
     assert!(suggestions(&problems[0]).contains(&"freshMethod".to_owned()));
 }
@@ -363,17 +339,13 @@ fn admin_analyzer_treats_inherited_assignments_as_instance_members() {
     methods: {
         stop() {
             window.clearInterval(this.runtimeHandle);
-            this.runtimeHandel;
+            this.{|admin.component.unknown-instance-member:runtimeHandel|};
         },
     },
 });";
-    fixture.index(&override_path, source);
-    let problems = analyze(
-        &fixture.analyzer(),
-        &document(&format!("file://{override_path}"), source),
-    );
-    assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(problems[0].id.0, "admin.component.unknown-instance-member");
+    let (plain, _) = swlsp_lsp::fixture::parse(source);
+    fixture.index(&override_path, &plain);
+    let problems = fixture.check_path(&override_path, source);
     assert!(problems[0].message.contains("runtimeHandel"));
     assert!(suggestions(&problems[0]).contains(&"runtimeHandle".to_owned()));
 }
@@ -385,21 +357,18 @@ fn admin_analyzer_scopes_unknown_instance_members_per_component() {
     let source = "Component.register('sw-first', {
     methods: {
         firstOnly() {},
-        run() { this.secondOnly(); },
+        run() { this.{|admin.component.unknown-instance-member:secondOnly|}(); },
     },
 });
 Component.register('sw-second', {
     methods: {
         secondOnly() {},
-        run() { this.firstOnly(); },
+        run() { this.{|admin.component.unknown-instance-member:firstOnly|}(); },
     },
 });";
-    fixture.index(&definition_path, source);
-    let problems = analyze(
-        &fixture.analyzer(),
-        &document(&format!("file://{definition_path}"), source),
-    );
-    assert_eq!(problems.len(), 2, "{problems:?}");
+    let (plain, _) = swlsp_lsp::fixture::parse(source);
+    fixture.index(&definition_path, &plain);
+    let problems = fixture.check_path(&definition_path, source);
     assert!(problems[0].message.contains("secondOnly"));
     assert!(problems[1].message.contains("firstOnly"));
 }
@@ -415,14 +384,10 @@ fn admin_analyzer_suppresses_unknown_members_for_open_runtime_component() {
         definition_path: definition_path.clone(),
         open_runtime_members: true,
     });
-    let problems = analyze(
-        &fixture.analyzer(),
-        &document(
-            &format!("file://{definition_path}"),
-            "export default {\n    methods: { run() { this.runtimePluginMember(); } },\n};",
-        ),
+    fixture.check_path(
+        &definition_path,
+        "export default {\n    methods: { run() { this.runtimePluginMember(); } },\n};",
     );
-    assert!(problems.is_empty(), "{problems:?}");
 }
 
 #[test]
@@ -452,8 +417,14 @@ fn admin_analyzer_unknown_template_root_member_with_suggestion() {
     });
     let analyzer = fixture.analyzer();
     for (source, suggestion) in [
-        ("{{ getSlos() }}", "getSlots"),
-        ("{{ Objcet.keys(rows) }}", "Object"),
+        (
+            "{{ {|admin.component.unknown-template-member:getSlos|}() }}",
+            "getSlots",
+        ),
+        (
+            "{{ {|admin.component.unknown-template-member:Objcet|}.keys(rows) }}",
+            "Object",
+        ),
         (
             "{{ getSlots() }} {{ Object.keys(rows) }} {{ $t('key') }}",
             "",
@@ -465,16 +436,10 @@ fn admin_analyzer_unknown_template_root_member_with_suggestion() {
         ("{{ runtimePluginValue() }}", ""),
         ("{% block sw_card_row %}{{ item.name }}{% endblock %}", ""),
     ] {
-        let problems = analyze(
-            &analyzer,
-            &document(&format!("file://{template_path}"), source),
-        );
+        let problems = check(&analyzer, &swlsp_uriutil::file_uri(&template_path), source);
         if suggestion.is_empty() {
-            assert!(problems.is_empty(), "{source}: {problems:?}");
             continue;
         }
-        assert_eq!(problems.len(), 1, "{source}: {problems:?}");
-        assert_eq!(problems[0].id.0, "admin.component.unknown-template-member");
         assert!(suggestions(&problems[0]).contains(&suggestion.to_owned()));
     }
 }
@@ -490,15 +455,10 @@ fn admin_analyzer_keeps_runtime_open_template_scope_conservative() {
         open_runtime_members: true,
         members: vec![member("flowId", VueComponentMemberKind::Prop, "")],
     });
-    let problems = analyze(
-        &fixture.analyzer(),
-        &document(
-            &format!("file://{template_path}"),
-            "{{ flow.name }} {{ Objcet.keys(flow) }}",
-        ),
+    let problems = fixture.check_path(
+        &template_path,
+        "{{ flow.name }} {{ {|admin.component.unknown-template-member:Objcet|}.keys(flow) }}",
     );
-    assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(problems[0].id.0, "admin.component.unknown-template-member");
     assert!(suggestions(&problems[0]).contains(&"Object".to_owned()));
 }
 
@@ -516,16 +476,12 @@ fn admin_analyzer_treats_setup_returns_as_instance_members() {
     render() {
         this.parent;
         this.open();
-        this.typoMember;
+        this.{|admin.component.unknown-instance-member:typoMember|};
     },
 }));";
-    fixture.index(&definition_path, source);
-    let problems = analyze(
-        &fixture.analyzer(),
-        &document(&format!("file://{definition_path}"), source),
-    );
-    assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(problems[0].id.0, "admin.component.unknown-instance-member");
+    let (plain, _) = swlsp_lsp::fixture::parse(source);
+    fixture.index(&definition_path, &plain);
+    let problems = fixture.check_path(&definition_path, source);
     assert!(problems[0].message.contains("typoMember"));
 }
 
@@ -537,14 +493,8 @@ fn admin_analyzer_reports_unknown_twig_privilege_with_suggestion() {
         &format!("{admin_root}/privileges.ts"),
         "Shopware.Service('privileges').addPrivilegeMappingEntry({\n    key: 'product', roles: { viewer: { privileges: ['product:read'] } },\n});",
     );
-    let source = "<div>\n    <mt-button :disabled=\"acl.can('admin')\" />\n    <mt-button :disabled=\"acl.can('product.viwer')\" />\n</div>";
-    let problems = analyze(
-        &fixture.analyzer(),
-        &document(&format!("file://{admin_root}/view.html.twig"), source),
-    );
-    assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(problems[0].id.0, "admin.privilege.not-found");
-    assert_eq!(slice(source, problems[0].range), "product.viwer");
+    let source = "<div>\n    <mt-button :disabled=\"acl.can('admin')\" />\n    <mt-button :disabled=\"acl.can('{|admin.privilege.not-found:product.viwer|}')\" />\n</div>";
+    let problems = fixture.check_path(&format!("{admin_root}/view.html.twig"), source);
     assert!(suggestions(&problems[0]).contains(&"product.viewer".to_owned()));
 }
 
@@ -570,46 +520,26 @@ Module.register('sw-profile-extension', options);",
     for (path, source) in [
         (
             "component.js",
-            "this.$router.push({ name: 'sw.product.detial' });",
+            "this.$router.push({ name: '{|admin.module-route.not-found:sw.product.detial|}' });",
         ),
         (
             "component.html.twig",
-            r#"<router-link :to="{ name: 'sw.product.detial' }" />"#,
+            r#"<router-link :to="{ name: '{|admin.module-route.not-found:sw.product.detial|}' }" />"#,
         ),
     ] {
-        let problems = analyze(
-            &fixture.analyzer(),
-            &document(&format!("file://{admin_root}/{path}"), source),
-        );
-        assert_eq!(problems.len(), 1, "{source}: {problems:?}");
-        assert_eq!(problems[0].id.0, "admin.module-route.not-found");
-        assert_eq!(slice(source, problems[0].range), "sw.product.detial");
+        let problems = fixture.check_path(&format!("{admin_root}/{path}"), source);
         assert!(suggestions(&problems[0]).contains(&"sw.product.detail".to_owned()));
     }
     for source in [
         "this.$router.push({ name: 'sw.product.detail' });",
         r#"<router-link :to="{ name: 'sw.profile.index.mfa' }" />"#,
     ] {
-        let problems = analyze(
-            &fixture.analyzer(),
-            &document(
-                &format!("file://{admin_root}/known-route.html.twig"),
-                source,
-            ),
-        );
-        assert!(
-            !codes(&problems).contains("admin.module-route.not-found"),
-            "{source}"
-        );
+        fixture.check_path(&format!("{admin_root}/known-route.html.twig"), source);
     }
-    let problems = analyze(
-        &fixture.analyzer(),
-        &document(
-            &format!("file://{admin_root}/module/sw-other/index.js"),
-            "Module.register('sw-other', {\n    name: 'Not a route',\n    routes: { detail: { path: 'detail/:id' } },\n});",
-        ),
+    fixture.check_path(
+        &format!("{admin_root}/module/sw-other/index.js"),
+        "Module.register('sw-other', {\n    name: 'Not a route',\n    routes: { detail: { path: 'detail/:id' } },\n});",
     );
-    assert!(problems.is_empty(), "{problems:?}");
 }
 
 #[test]
@@ -622,14 +552,10 @@ fn admin_analyzer_unknown_this_member_suppresses_spread_generated_scope() {
         file_path: definition_path.clone(),
         definition_path: definition_path.clone(),
     });
-    let problems = analyze(
-        &fixture.analyzer(),
-        &document(
-            &format!("file://{definition_path}"),
-            "export default {\n    computed: { ...mapPropertyErrors('product', ['name']) },\n    methods: { run() { return this.productNameError; } },\n};",
-        ),
+    fixture.check_path(
+        &definition_path,
+        "export default {\n    computed: { ...mapPropertyErrors('product', ['name']) },\n    methods: { run() { return this.productNameError; } },\n};",
     );
-    assert!(problems.is_empty(), "{problems:?}");
 }
 
 #[test]
@@ -685,7 +611,7 @@ fn admin_analyzer_block_references() {
             vec![],
         ),
         (
-            "{% block sw_page_contnet %}<div>Custom content</div>{% endblock %}",
+            "{% block {|admin.component.block-not-found:sw_page_contnet|} %}<div>Custom content</div>{% endblock %}",
             vec!["sw_page_contnet"],
         ),
         (
@@ -701,18 +627,16 @@ fn admin_analyzer_block_references() {
             vec![],
         ),
     ] {
-        let problems = analyze(
+        let problems = check(
             &analyzer,
-            &document(&format!("file://{extend_template_path}"), code),
+            &swlsp_uriutil::file_uri(&extend_template_path),
+            code,
         );
-        assert_eq!(problems.len(), blocks.len(), "{code}: {problems:?}");
-        for expected in blocks {
-            let problem = problems
-                .iter()
-                .find(|problem| payload_str(problem, "blockName") == expected)
-                .expect("block diagnostic");
-            assert_eq!(problem.id.0, "admin.component.block-not-found");
-        }
+        let names: Vec<String> = problems
+            .iter()
+            .map(|problem| payload_str(problem, "blockName"))
+            .collect();
+        assert_eq!(names, blocks, "{code}");
     }
 }
 
@@ -726,14 +650,10 @@ fn admin_analyzer_block_references_no_override() {
         file_path: format!("{base}/index.js"),
         template_path: template_path.clone(),
     });
-    let problems = analyze(
-        &fixture.analyzer(),
-        &document(
-            &format!("file://{template_path}"),
-            "{% block any_block_name %}content{% endblock %}",
-        ),
+    fixture.check_path(
+        &template_path,
+        "{% block any_block_name %}content{% endblock %}",
     );
-    assert!(problems.is_empty(), "{problems:?}");
 }
 
 #[test]
@@ -766,23 +686,17 @@ fn admin_analyzer_override_blocks_report_deprecation_and_typo() {
         file_path: format!("{admin_root}/zz-acme-card.js"),
         template_path: override_template.clone(),
     });
-    let problems = fixture.analyze_path(
+    let problems = fixture.check_path(
         &override_template,
-        "{% block sw_card_legacy %}{% endblock %}\n{% block sw_card_contnet %}{% endblock %}",
+        "{% block {|admin.component.deprecated-block:sw_card_legacy|} %}{% endblock %}\n{% block {|admin.component.block-not-found:sw_card_contnet|} %}{% endblock %}",
     );
-    assert_eq!(problems.len(), 2, "{problems:?}");
-    let by_id: HashMap<_, _> = problems
-        .iter()
-        .map(|problem| (problem.id.0.as_str(), problem))
-        .collect();
-    let deprecated = by_id["admin.component.deprecated-block"];
+    let [deprecated, missing] = problems.as_slice() else {
+        unreachable!()
+    };
     assert_eq!(deprecated.severity, Some(DiagnosticSeverity::HINT));
     assert_eq!(deprecated.tags, vec![DiagnosticTag::DEPRECATED]);
     assert!(deprecated.message.contains("Use sw_card_content instead"));
-    assert!(
-        suggestions(by_id["admin.component.block-not-found"])
-            .contains(&"sw_card_content".to_owned())
-    );
+    assert!(suggestions(missing).contains(&"sw_card_content".to_owned()));
 }
 
 #[test]
@@ -804,17 +718,11 @@ declare global {
 }",
     );
     let source = "
-Application.getContainer('factory').loacle;
+Application.getContainer('factory').{|admin.application-container.unknown-member:loacle|};
 Application.getContainer('factory').module;
 Application.getContainer('service').al;
 ";
-    let problems = fixture.analyze_path(&format!("{admin_root}/consumer.ts"), source);
-    assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(
-        problems[0].id.0,
-        "admin.application-container.unknown-member"
-    );
-    assert_eq!(slice(source, problems[0].range), "loacle");
+    let problems = fixture.check_path(&format!("{admin_root}/consumer.ts"), source);
     assert!(suggestions(&problems[0]).contains(&"locale".to_owned()));
 }
 
@@ -830,14 +738,11 @@ fn admin_analyzer_reports_closed_shopware_context_typos() {
 }",
     );
     let source = "
-Shopware.Context.api.langaugeId;
+Shopware.Context.api.{|admin.shopware-context.unknown-member:langaugeId|};
 Shopware.Context.api.versionId;
 Shopware.Context.customRuntimeHelper;
 ";
-    let problems = fixture.analyze_path(&format!("{admin_root}/consumer.ts"), source);
-    assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(problems[0].id.0, "admin.shopware-context.unknown-member");
-    assert_eq!(slice(source, problems[0].range), "langaugeId");
+    let problems = fixture.check_path(&format!("{admin_root}/consumer.ts"), source);
     assert!(suggestions(&problems[0]).contains(&"languageId".to_owned()));
 }
 
@@ -854,19 +759,17 @@ function date(value: string): string { return value; }
 function fileSize(bytes: number): string { return String(bytes); }",
     );
     let source = "
-Shopware.Utils.creatId();
-Shopware.Utils.format.dtae('2026-01-01');
+Shopware.Utils.{|admin.shopware-utils.unknown-member:creatId|}();
+Shopware.Utils.format.{|admin.shopware-utils.unknown-member:dtae|}('2026-01-01');
 Shopware.Utils.format.fileSize(42);
 const utils = Shopware.Utils;
-utils.creatId();
+utils.{|admin.shopware-utils.unknown-member:creatId|}();
 const { format } = Shopware.Utils;
-format.dtae('2026-01-01');
+format.{|admin.shopware-utils.unknown-member:dtae|}('2026-01-01');
 ";
-    let problems = fixture.analyze_path(&format!("{admin_root}/consumer.ts"), source);
-    assert_eq!(problems.len(), 4, "{problems:?}");
+    let problems = fixture.check_path(&format!("{admin_root}/consumer.ts"), source);
     let mut by_member = HashMap::new();
     for problem in &problems {
-        assert_eq!(problem.id.0, "admin.shopware-utils.unknown-member");
         by_member.insert(payload_str(problem, "memberName"), problem);
     }
     assert!(suggestions(by_member["creatId"]).contains(&"createId".to_owned()));
@@ -892,38 +795,20 @@ const emitter = mitt<Events>();
 export default emitter;",
     );
     let source = "
-Shopware.Utils.EventBus.emit('save');
-Shopware.Utils.EventBus.emit('save', 42);
+Shopware.Utils.EventBus.emit('{|admin.event-bus.missing-payload:save|}');
+Shopware.Utils.EventBus.emit('save', {|admin.event-bus.payload-type:42|});
 Shopware.Utils.EventBus.emit('save', 'id');
 Shopware.Utils.EventBus.emit('done');
-Shopware.Utils.EventBus.on('save');
-Shopware.Utils.EventBus.on('save', 'not-a-handler');
+Shopware.Utils.EventBus.on('{|admin.event-bus.missing-handler:save|}');
+Shopware.Utils.EventBus.on('save', {|admin.event-bus.handler-type:'not-a-handler'|});
 Shopware.Utils.EventBus.off('save');
-Shopware.Utils.EventBus.off('save', 42);
+Shopware.Utils.EventBus.off('save', {|admin.event-bus.handler-type:42|});
 Shopware.Utils.EventBus.emit('extension-event', 42);
 const { EventBus } = Shopware.Utils;
-EventBus.emit('save', false);
+EventBus.emit('save', {|admin.event-bus.payload-type:false|});
 ";
-    let problems = fixture.analyze_path(&format!("{admin_root}/consumer.ts"), source);
-    assert_eq!(problems.len(), 6, "{problems:?}");
-    let mut counts: HashMap<&str, usize> = HashMap::new();
+    let problems = fixture.check_path(&format!("{admin_root}/consumer.ts"), source);
     for problem in &problems {
-        *counts.entry(problem.id.0.as_str()).or_default() += 1;
         assert_eq!(payload_str(problem, "eventName"), "save");
-        let selected = slice(source, problem.range);
-        match problem.id.0.as_str() {
-            "admin.event-bus.missing-payload" | "admin.event-bus.missing-handler" => {
-                assert_eq!(selected, "save")
-            }
-            "admin.event-bus.payload-type" => assert!(["42", "false"].contains(&selected)),
-            "admin.event-bus.handler-type" => {
-                assert!(["'not-a-handler'", "42"].contains(&selected))
-            }
-            _ => {}
-        }
     }
-    assert_eq!(counts["admin.event-bus.missing-payload"], 1);
-    assert_eq!(counts["admin.event-bus.payload-type"], 2);
-    assert_eq!(counts["admin.event-bus.missing-handler"], 1);
-    assert_eq!(counts["admin.event-bus.handler-type"], 2);
 }

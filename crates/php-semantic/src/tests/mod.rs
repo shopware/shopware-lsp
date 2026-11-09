@@ -2,6 +2,7 @@
 
 mod document;
 mod hierarchy;
+mod lazy_returns;
 mod references;
 mod snapshot;
 mod store;

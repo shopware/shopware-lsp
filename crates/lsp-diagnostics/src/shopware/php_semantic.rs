@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 use swlsp_language::LanguageId;
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::*;
 use swlsp_php::PhpIndex;
@@ -19,10 +19,10 @@ use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
 use super::util::{
     equal_php_name, go_parse_int, range_contains, ranges_touch, trim_php_name, warning,
 };
-use crate::ProblemAnalyzer;
 use crate::common::{
     call_target_name, local_call_argument, php_type_is_subtype, unwrap_php_parentheses,
 };
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 pub const SHOPWARE_PHP_REPOSITORY_IN_LOOP_CODE: &str = "shopware.php.repository.in_loop";
 pub const SHOPWARE_PHP_INTERNAL_CLASS_EXTENSION_CODE: &str =
@@ -61,7 +61,34 @@ impl ShopwarePhpSemanticAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for ShopwarePhpSemanticAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "shopware.php.semantic",
+        description: "Store review rules needing type information: internal API use, repositories queried in loops, session access in Store API routes and payment handlers, and scheduled task intervals.",
+        domain: "shopware",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Php],
+        source: "shopware-lsp",
+        codes: &[
+            SHOPWARE_PHP_REPOSITORY_IN_LOOP_CODE,
+            SHOPWARE_PHP_INTERNAL_CLASS_EXTENSION_CODE,
+            SHOPWARE_PHP_INTERNAL_FUNCTION_CALL_CODE,
+            SHOPWARE_PHP_INTERNAL_METHOD_CALL_CODE,
+            SHOPWARE_PHP_SESSION_CONSTRUCTOR_CODE,
+            SHOPWARE_PHP_SESSION_PAYMENT_HANDLER_CODE,
+            SHOPWARE_PHP_SESSION_STORE_API_CODE,
+            SHOPWARE_PHP_SCHEDULED_TASK_INTERVAL_CODE,
+            SHOPWARE_PHP_USER_STORE_TOKEN_CODE,
+            SHOPWARE_PHP_CONCRETE_DECORATOR_EXTENSION_CODE,
+        ],
+    };
+}
+
 impl ProblemAnalyzer for ShopwarePhpSemanticAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.php_index))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,
@@ -102,11 +129,7 @@ impl ProblemAnalyzer for ShopwarePhpSemanticAnalyzer {
             },
         );
         ctx.check()?;
-        let suppressions = swlsp_php_suppression::parse(document.source());
         let mut problems = run.problems;
-        problems.retain(|problem| {
-            !suppressions.suppresses(problem.range.start().into(), problem.id.as_str())
-        });
         problems.sort_by(|left, right| {
             left.range
                 .start()

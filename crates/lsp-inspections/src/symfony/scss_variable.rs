@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use swlsp_indexer::WorkspaceSymbolCatalog;
 use swlsp_language::LanguageId;
-use swlsp_lsp::{DiagnosticId, Inspection, InspectionDefinition, ProblemDefinition};
+use swlsp_lsp::{
+    DiagnosticId, Inspection, InspectionDefinition, InspectionScope, ProblemDefinition,
+};
 use swlsp_lsp_diagnostics::{
     SCSS_VARIABLE_UNKNOWN_CODE, ScssVariableAnalyzer, ScssVariableDeclarationProvider,
     ScssVariableIndexReadiness,
@@ -24,6 +26,9 @@ pub fn new_scss_variable(
     Arc::new(BoundInspection {
         definition: InspectionDefinition {
             id: "scss.variable".to_owned(),
+            description: "Reports SCSS variables that are neither defined in the workspace nor provided by Shopware themes.",
+            domain: "scss",
+            scope: InspectionScope::Framework,
             languages: vec![LanguageId::Scss],
             problems: vec![ProblemDefinition {
                 id: DiagnosticId::from(SCSS_VARIABLE_UNKNOWN_CODE),

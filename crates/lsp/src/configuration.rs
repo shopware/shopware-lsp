@@ -81,6 +81,10 @@ pub struct ConfigurationIssue {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ConfigurationInspection {
     pub id: String,
+    pub description: String,
+    /// The configuration domain gating the inspection; empty for none.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub domain: String,
     #[serde(serialize_with = "null_if_empty")]
     pub languages: Vec<String>,
     #[serde(serialize_with = "null_if_empty")]
@@ -418,6 +422,8 @@ impl Server {
                 rules.sort_by(|left, right| left.id.cmp(&right.id));
                 ConfigurationInspection {
                     id: registered.definition.id.clone(),
+                    description: registered.definition.description.to_owned(),
+                    domain: registered.definition.domain.to_owned(),
                     languages: registered
                         .definition
                         .languages
@@ -788,42 +794,4 @@ pub(crate) fn disabled_feature_result(method: &str) -> Value {
 
 pub(crate) fn is_configuration_method(method: &str) -> bool {
     method.starts_with("shopware/configuration")
-}
-
-/// The domain an inspection belongs to; empty when it is always available.
-pub(crate) fn inspection_domain(id: &str) -> &'static str {
-    match id {
-        "php.semantic" | "php.imports" => return "php",
-        "shopware.admin" => return "administration",
-        "shopware.migration" => return "shopware.migrations",
-        "shopware.snippet" => return "shopware.snippets",
-        "shopware.app_script" => return "shopware.appScripts",
-        "shopware.entity_snapshot" => return "shopware.entitySchema",
-        "shopware.store_composer" => return "shopware.store",
-        "shopware.theme" => return "shopware.theme",
-        "shopware.twig_versioning" => return "shopware.twigVersioning",
-        "shopware.dal" | "shopware.criteria" => return "shopware.dal",
-        _ => {}
-    }
-    const PREFIXES: &[(&str, &str)] = &[
-        ("symfony.doctrine", "symfony.doctrine"),
-        ("symfony.console", "symfony.console"),
-        ("symfony.event", "symfony.events"),
-        ("symfony.messenger", "symfony.messenger"),
-        ("symfony.serializer", "symfony.serializer"),
-        ("symfony.validation", "symfony.validation"),
-        ("symfony.asset", "symfony.assets"),
-        ("symfony.service", "symfony.services"),
-        ("symfony.container", "symfony.services"),
-        ("symfony.duplicate", "symfony.services"),
-        ("twig.component", "symfony.twigComponents"),
-        ("twig.", "twig"),
-        ("scss.", "scss"),
-        ("symfony.", "symfony"),
-        ("shopware.", "shopware"),
-    ];
-    PREFIXES
-        .iter()
-        .find(|(prefix, _)| id.starts_with(prefix))
-        .map_or("", |(_, domain)| domain)
 }

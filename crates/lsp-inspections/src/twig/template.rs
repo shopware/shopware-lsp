@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use swlsp_language::LanguageId;
 use swlsp_lsp::{
     BoxError, Context, FixContext, FixId, FixPresentation, FixResolution, Inspection,
-    InspectionDefinition, ProblemDefinition, QuickFix, RewriteQuickFix, bind_fix,
+    InspectionDefinition, InspectionScope, ProblemDefinition, QuickFix, RewriteQuickFix, bind_fix,
 };
 use swlsp_lsp_diagnostics::TemplateAnalyzer;
 use swlsp_lsp_protocol as protocol;
@@ -40,6 +40,9 @@ pub fn new_template(
     Arc::new(BoundInspection {
         definition: InspectionDefinition {
             id: "twig.template".into(),
+            description: "References to templates that do not exist.",
+            domain: "twig",
+            scope: InspectionScope::Framework,
             languages: vec![LanguageId::Php, LanguageId::Twig],
             problems: vec![ProblemDefinition {
                 id: "twig.template.missing".into(),

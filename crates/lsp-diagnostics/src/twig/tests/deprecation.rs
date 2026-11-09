@@ -82,25 +82,18 @@ fn assert_deprecated_hint(problem: &Problem) {
 #[test]
 fn twig_deprecation_diagnostics_for_functions_filters_and_tests() {
     let (_dir, index) = deprecation_index();
-    let document = doc(
+    let (_, result) = check_problems(
+        &TwigDeprecationAnalyzer::new(Some(index)),
         "file:///project/templates/page.html.twig",
-        "{{ legacy_function() }}
+        "{{ {|twig.function.deprecated:legacy_function|}() }}
 {{ active_function() }}
-{{ value|legacy_filter }}
+{{ value|{|twig.filter.deprecated:legacy_filter|} }}
 {{ value|active_filter }}
-{% if value is legacy_test %}{% endif %}
+{% if value is {|twig.test.deprecated:legacy_test|} %}{% endif %}
 {% if value is active_test %}{% endif %}
 ",
     );
-    let result = analyze(&TwigDeprecationAnalyzer::new(Some(index)), &document);
-    assert_eq!(result.len(), 3, "{result:?}");
-    assert_eq!(result[0].id.as_str(), "twig.function.deprecated");
-    assert_eq!(range_text(&document, result[0].range), "legacy_function");
     assert!(result[0].message.contains("Use active_function"));
-    assert_eq!(result[1].id.as_str(), "twig.filter.deprecated");
-    assert_eq!(range_text(&document, result[1].range), "legacy_filter");
-    assert_eq!(result[2].id.as_str(), "twig.test.deprecated");
-    assert_eq!(range_text(&document, result[2].range), "legacy_test");
     for problem in &result {
         assert_deprecated_hint(problem);
     }
@@ -122,30 +115,27 @@ class OverrideExtension extends AbstractExtension {
     public function active(): string { return ''; }
 }"#,
     );
-    let document = doc(
+    check_problems(
+        &TwigDeprecationAnalyzer::new(Some(index)),
         "file:///project/templates/page.html.twig",
         "{{ legacy_function() }}",
     );
-    assert!(analyze(&TwigDeprecationAnalyzer::new(Some(index)), &document).is_empty());
 }
 
 #[test]
 fn twig_deprecation_diagnostics_for_custom_tags() {
     let (_dir, index) = deprecation_index();
-    let document = doc(
+    let (_, result) = check_problems(
+        &TwigDeprecationAnalyzer::new(Some(index)),
         "file:///project/templates/page.html.twig",
-        "{% legacy_tag %}
-{% endlegacy_tag %}
+        "{% {|twig.tag.deprecated:legacy_tag|} %}
+{% {|twig.tag.deprecated:endlegacy_tag|} %}
 {% active_tag %}
 {% raw %}{% legacy_tag %}{% endraw %}
 {% verbatim %}{% legacy_tag %}{% endverbatim %}
 ",
     );
-    let result = analyze(&TwigDeprecationAnalyzer::new(Some(index)), &document);
-    assert_eq!(result.len(), 2, "{result:?}");
-    for (problem, expected) in result.iter().zip(["legacy_tag", "endlegacy_tag"]) {
-        assert_eq!(problem.id.as_str(), "twig.tag.deprecated");
-        assert_eq!(range_text(&document, problem.range), expected);
+    for problem in &result {
         assert!(problem.message.contains("modern_tag"));
         assert_deprecated_hint(problem);
     }
@@ -162,9 +152,9 @@ class OverrideTokenParser implements \Twig\TokenParser\TokenParserInterface {
     public function getTag(): string { return 'legacy_tag'; }
 }"#,
     );
-    let document = doc(
+    check_problems(
+        &TwigDeprecationAnalyzer::new(Some(index)),
         "file:///project/templates/page.html.twig",
         "{% legacy_tag %}",
     );
-    assert!(analyze(&TwigDeprecationAnalyzer::new(Some(index)), &document).is_empty());
 }

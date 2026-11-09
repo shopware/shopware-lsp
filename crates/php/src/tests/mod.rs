@@ -4,6 +4,8 @@ mod api;
 mod embedded;
 mod indexer;
 mod persistence;
+mod return_inference;
+mod settle;
 mod twig;
 
 use std::path::Path;

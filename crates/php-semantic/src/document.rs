@@ -429,12 +429,13 @@ impl Document {
     /// The declaration/reference view retained by a workspace snapshot.
     /// File-local scopes, locals, parameters, closures, type facts, aliases,
     /// diagnostics, and variable references are omitted; reference scope IDs
-    /// are cleared because they address the omitted scope table.
+    /// are cleared because they address the omitted scope table, and so is
+    /// the analysis generation (equal analyses give equal graphs).
     pub fn workspace_graph(&self) -> Document {
         Document {
             path: self.path.clone(),
             version: self.version,
-            workspace_revision: self.workspace_revision,
+            workspace_revision: 0,
             namespace: self.namespace.clone(),
             symbols: self
                 .symbols

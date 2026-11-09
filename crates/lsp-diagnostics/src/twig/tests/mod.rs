@@ -20,6 +20,7 @@ use swlsp_syntax::TextRange;
 use swlsp_twig::TwigIndexer;
 
 use crate::ProblemAnalyzer;
+use crate::test_support::check_problems;
 
 pub(super) fn doc(uri: &str, source: &str) -> Arc<TextDocument> {
     Arc::new(TextDocument::new(uri, source, 1))
@@ -36,6 +37,24 @@ pub(super) fn analyze(
     analyzer
         .analyze(&Context::background(), document)
         .expect("analyze")
+}
+
+/// [`check_problems`] analyzing the document at `version` instead of 1, for
+/// tests that reanalyze one URI with changed content.
+pub(super) fn check_problems_v(
+    analyzer: &dyn ProblemAnalyzer,
+    uri: &str,
+    fixture: &str,
+    version: i32,
+) -> (Arc<TextDocument>, Vec<Problem>) {
+    swlsp_lsp::fixture::check(uri, fixture, |document| {
+        analyze(analyzer, &doc_v(uri, document.source(), version))
+    })
+}
+
+/// The plain source of `fixture`, without its problem markup.
+pub(super) fn plain(fixture: &str) -> String {
+    swlsp_lsp::fixture::parse(fixture).0
 }
 
 pub(super) fn index_file(indexer: &dyn Indexer, path: &str, source: &str) {
@@ -89,8 +108,4 @@ pub(super) fn payload_str(problem: &Problem, key: &str) -> String {
         .and_then(|value| value.as_str())
         .unwrap_or_default()
         .to_owned()
-}
-
-pub(super) fn ids(problems: &[Problem]) -> Vec<&str> {
-    problems.iter().map(|problem| problem.id.as_str()).collect()
 }

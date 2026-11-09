@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use swlsp_language::LanguageId;
 use swlsp_lsp::{
     BoxError, Context, DiagnosticId, FixContext, FixId, FixPresentation, FixResolution, Inspection,
-    InspectionDefinition, Problem, ProblemDefinition, ProblemReporter, QuickFix, RewriteQuickFix,
-    TextDocument, bind_fix,
+    InspectionDefinition, InspectionScope, Problem, ProblemDefinition, ProblemReporter, QuickFix,
+    RewriteQuickFix, TextDocument, bind_fix,
 };
 use swlsp_lsp_protocol as protocol;
 use swlsp_php::PhpIndex;
@@ -64,6 +64,9 @@ impl Inspection for PhpImportsInspection {
     fn definition(&self) -> InspectionDefinition {
         InspectionDefinition {
             id: "php.imports".to_owned(),
+            description: "Reports `use` imports nothing in the file refers to.",
+            domain: "php",
+            scope: InspectionScope::Language,
             languages: vec![LanguageId::Php],
             problems: vec![ProblemDefinition {
                 id: DiagnosticId::from("php.unusedImport"),
@@ -72,6 +75,10 @@ impl Inspection for PhpImportsInspection {
                 disabled_by_default: false,
             }],
         }
+    }
+
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(swlsp_lsp_diagnostics::inputs(&self.index))
     }
 
     fn quick_fixes(&self) -> Vec<Arc<dyn QuickFix>> {

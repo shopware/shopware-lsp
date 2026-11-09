@@ -34,7 +34,7 @@ use swlsp_lsp::{
 use swlsp_lsp_protocol as protocol;
 use swlsp_php::{PhpContext, PhpIndex};
 
-pub use diagnostics::{DIAGNOSTIC_IDS, SOURCE};
+pub use diagnostics::{DIAGNOSTIC_IDS, INSPECTION, SOURCE};
 
 /// Exposes the PHP semantic graph through LSP features. Without an index
 /// only the CST outline is available.
@@ -46,6 +46,11 @@ pub struct Provider {
 impl Provider {
     pub fn new(index: Option<PhpIndex>) -> Self {
         Self { index }
+    }
+
+    /// The PHP index the provider analyzes against.
+    pub fn index(&self) -> Option<&PhpIndex> {
+        self.index.as_ref()
     }
 
     /// The request's PHP analysis (Go's PHP context enricher): the memoized

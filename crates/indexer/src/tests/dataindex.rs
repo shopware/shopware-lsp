@@ -142,6 +142,45 @@ fn value_views_reuse_cached_catalogs() {
 }
 
 #[test]
+fn revision_and_path_view_follow_committed_changes() {
+    let (_directory, index) = open();
+    let initial = index.revision();
+    let empty = index.get_all_file_paths_view().unwrap();
+    assert!(empty.is_empty());
+    assert!(Arc::ptr_eq(
+        &empty,
+        &index.get_all_file_paths_view().unwrap()
+    ));
+
+    index.save_item("/b.php", "key", &sample("b", 1)).unwrap();
+    index.save_item("/a.php", "key", &sample("a", 1)).unwrap();
+    let saved = index.revision();
+    assert!(saved > initial);
+    assert_eq!(
+        *index.get_all_file_paths_view().unwrap(),
+        ["/a.php", "/b.php"]
+    );
+    // Reads do not advance it.
+    index.get_all_values_view().unwrap();
+    assert_eq!(index.revision(), saved);
+
+    index.delete_by_file_path("/a.php").unwrap();
+    assert!(index.revision() > saved);
+    assert_eq!(index.get_all_file_paths().unwrap(), ["/b.php"]);
+
+    // Writes that change no row leave the revision and the views alone:
+    // every indexer sees every file, most of which have no data here.
+    let unchanged = index.revision();
+    let view = index.get_all_values_view().unwrap();
+    index.delete_by_file_path("/other.yaml").unwrap();
+    index
+        .batch_save_items([("/other.yaml", Vec::<(&str, Sample)>::new())])
+        .unwrap();
+    assert_eq!(index.revision(), unchanged);
+    assert!(Arc::ptr_eq(&view, &index.get_all_values_view().unwrap()));
+}
+
+#[test]
 fn visits_encoded_values() {
     let (_directory, index) = open();
     index
@@ -280,4 +319,66 @@ fn standalone_repositories_share_one_store_per_directory() {
     let again: DataIndexer<Sample> =
         DataIndexer::repository(directory.path().join("first.db"), "first", None).unwrap();
     assert_eq!(again.get_values("key").unwrap(), [sample("a", 1)]);
+}
+
+#[test]
+fn large_values_are_stored_compressed_and_read_back_through_every_api() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = crate::Store::open(directory.path().join("indexes.db")).unwrap();
+    let compressed = DataIndexer::<Vec<Sample>>::in_store(&store, "compressed").unwrap();
+    let plain = DataIndexer::<Vec<Sample>>::in_store(&store, "plain")
+        .unwrap()
+        .without_value_compression();
+    let items: Vec<Sample> = (0..64)
+        .map(|index| sample("repeated name", index))
+        .collect();
+    for repository in [&compressed, &plain] {
+        repository
+            .batch_save_items([("/large.php", [("key", items.clone())])])
+            .unwrap();
+        assert_eq!(
+            repository.get_values("key").unwrap(),
+            std::slice::from_ref(&items)
+        );
+        assert_eq!(
+            repository.get_all_values().unwrap(),
+            std::slice::from_ref(&items)
+        );
+        assert_eq!(
+            repository.get_values_by_path("/large.php").unwrap(),
+            std::slice::from_ref(&items)
+        );
+        let mut visited = Vec::new();
+        repository
+            .visit_all_encoded_values(|encoded| {
+                visited.push(decode_value::<Vec<Sample>>(encoded)?);
+                Ok(())
+            })
+            .unwrap();
+        repository
+            .visit_encoded_values_by_path("/large.php", |encoded| {
+                visited.push(rmp_serde::from_slice(encoded).unwrap());
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(visited, [items.clone(), items.clone()]);
+    }
+    let stored_sizes: Vec<i64> = store
+        .read(|connection| {
+            let mut statement =
+                connection.prepare("SELECT length(value) FROM data ORDER BY namespace = ?")?;
+            let rows =
+                statement.query_map([crate::store::namespace_id("plain")], |row| row.get(0))?;
+            Ok(rows.collect::<rusqlite::Result<Vec<i64>>>()?)
+        })
+        .unwrap();
+    let encoded = crate::encode_value(&items).unwrap().len() as i64;
+    assert!(
+        stored_sizes[0] < encoded / 2,
+        "{stored_sizes:?} vs {encoded}"
+    );
+    assert_eq!(stored_sizes[1], encoded);
+    compressed.close().unwrap();
+    plain.close().unwrap();
+    store.close().unwrap();
 }

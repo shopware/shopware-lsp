@@ -277,11 +277,22 @@ code-action rediscovery pass.
    but cannot execute editor-only commands.
 8. Prefer lazy fixes for non-trivial or cross-file rewrites so element handles
    can reject stale document versions.
-9. Register the inspection in `crates/app/src/inspections.rs` and map it to a
-   domain in `inspection_domain` (`crates/lsp/src/configuration.rs`) when
-   needed.
+9. Declare the inspection's configuration domain and scope in its
+   definition (`DeclaredAnalyzer::INSPECTION` for a single analyzer), next to
+   the code, and register it in `crates/app/src/inspections.rs`. Registration
+   fails on a missing or unknown domain.
+   A rule about the whole project (facts from several files) is a
+   `ProjectAnalysis` run through `Project`: a summary memoized per index
+   revision, checked per document against its live tree. Declare the
+   indexes an analyzer reads in `ProblemAnalyzer::input_revision`, beside its
+   fields, only when the list is complete (no disk reads, no undeclared
+   index); a refresh then reuses its results while they are unchanged. Cover each new input in
+   `crates/app/src/tests/inspection_inputs_test.rs`.
 10. Test the diagnostic, fix presentation, generated edit, stale-state
     behavior, configuration override, and MCP/CLI path when externally useful.
+    Write diagnostic and fix tests with the fixture markup helpers
+    (`check_problems`, `check_diagnostics`, `check_fix`; see
+    `docs/diagnostics-pipeline.md#debugging-and-testing`).
 
 Diagnostic ranges and edits must be derived from CST elements or validated byte
 ranges. Never construct UTF-16 offsets by counting bytes. Code actions must not

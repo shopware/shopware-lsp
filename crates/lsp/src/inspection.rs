@@ -15,7 +15,7 @@ use serde_json::Value;
 use swlsp_language::LanguageId;
 use swlsp_lsp_protocol as protocol;
 use swlsp_rewrite::{ElementHandle, WorkspacePlan};
-use swlsp_syntax::{SyntaxElement, TextRange};
+use swlsp_syntax::{SyntaxElement, TextRange, TextSize};
 
 use crate::context::{BoxError, Context};
 use crate::document::TextDocument;
@@ -74,12 +74,83 @@ pub struct ProblemDefinition {
     pub disabled_by_default: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+/// Which clients an inspection is presented to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum InspectionScope {
+    /// Framework diagnostics, shown to every client.
+    #[default]
+    Framework,
+    /// Core-language diagnostics (syntax, types, imports), hidden from
+    /// clients with a framework presentation profile because their IDE
+    /// already reports them.
+    Language,
+}
+
+/// Everything the server needs to know about an inspection, declared next
+/// to it: no other table routes, gates or presents it.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct InspectionDefinition {
     pub id: String,
+    /// What the inspection reports, one or two sentences for users: shown
+    /// in the configuration catalog and the generated inspection reference.
+    pub description: &'static str,
+    /// The configuration domain that must be enabled for the inspection to
+    /// run (`swlsp_projectconfig::DOMAIN_CATALOG`); empty for none.
+    pub domain: &'static str,
+    pub scope: InspectionScope,
     pub languages: Vec<LanguageId>,
     pub problems: Vec<ProblemDefinition>,
 }
+
+/// The static declaration of an inspection whose diagnostics share one
+/// source and default to warnings, kept next to the analyzer that reports
+/// them.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct InspectionSpec {
+    pub id: &'static str,
+    /// See [`InspectionDefinition::description`].
+    pub description: &'static str,
+    /// See [`InspectionDefinition::domain`].
+    pub domain: &'static str,
+    pub scope: InspectionScope,
+    pub languages: &'static [LanguageId],
+    pub source: &'static str,
+    pub codes: &'static [&'static str],
+}
+
+impl InspectionSpec {
+    pub fn definition(&self) -> InspectionDefinition {
+        InspectionDefinition {
+            id: self.id.to_owned(),
+            description: self.description,
+            domain: self.domain,
+            scope: self.scope,
+            languages: self.languages.to_vec(),
+            problems: self
+                .codes
+                .iter()
+                .map(|code| ProblemDefinition {
+                    id: DiagnosticId::from(*code),
+                    source: self.source.to_owned(),
+                    default_severity: protocol::DiagnosticSeverity::WARNING,
+                    disabled_by_default: false,
+                })
+                .collect(),
+        }
+    }
+}
+
+/// The source-level suppression comments of one document
+/// (`@phpstan-ignore`, `@noinspection`, …).
+pub trait Suppressions: Send + Sync {
+    /// Whether a comment suppresses diagnostic `code` reported at `offset`.
+    fn suppresses(&self, offset: TextSize, code: &DiagnosticId) -> bool;
+}
+
+/// Reads the suppression comments of a document in one language. The
+/// server applies them to every inspection's problems, so analyzers do not
+/// need to know about suppression.
+pub type SuppressionReader = Arc<dyn Fn(&TextDocument) -> Box<dyn Suppressions> + Send + Sync>;
 
 /// The byte-oriented representation of one diagnostic.
 #[derive(Debug, Clone, Default)]
@@ -162,6 +233,23 @@ pub trait Inspection: Send + Sync {
         reporter: &mut dyn ProblemReporter,
     ) -> Result<(), BoxError>;
     fn quick_fixes(&self) -> Vec<Arc<dyn QuickFix>>;
+    /// The combined revision of everything besides `document` that the
+    /// inspection reads for it; it may depend on the document (an inspection
+    /// that ignores a file can report `Some(0)` for it). While it and the document are unchanged, the server
+    /// reuses the inspection's previous diagnostics instead of running it
+    /// again. `None`, the default, means the inputs are not declared: the
+    /// inspection runs on every refresh. Analyzer-backed inspections derive
+    /// it from `ProblemAnalyzer::input_revision` (`swlsp-lsp-diagnostics`).
+    fn input_revision(&self, _document: &TextDocument) -> Option<u64> {
+        None
+    }
+
+    /// Files this inspection may report problems in although they are not
+    /// open, for workspace diagnostics (`workspace/diagnostic`): rules about
+    /// the project as a whole know them from index data. Empty by default.
+    fn workspace_paths(&self, _ctx: &Context) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -317,6 +405,19 @@ impl InspectionRegistry {
         }
         if definition.languages.is_empty() {
             return Err(format!("inspection {:?} has no languages", definition.id));
+        }
+        if definition.description.trim().is_empty() {
+            return Err(format!("inspection {:?} has no description", definition.id));
+        }
+        if !definition.domain.is_empty()
+            && !swlsp_projectconfig::DOMAIN_CATALOG
+                .iter()
+                .any(|domain| domain.id == definition.domain)
+        {
+            return Err(format!(
+                "inspection {:?} belongs to unknown domain {:?}",
+                definition.id, definition.domain
+            ));
         }
         let mut problems = HashMap::new();
         for problem in &definition.problems {

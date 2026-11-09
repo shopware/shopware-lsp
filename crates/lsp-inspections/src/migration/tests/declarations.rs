@@ -4,33 +4,26 @@ use super::*;
 #[test]
 fn interface_to_abstract_class_migration_quick_fixes() {
     let index = migration_inspection_php_index();
-    for (name, source, expected) in [
+    for (before, after) in [
         (
-            "class inheritance",
-            "<?php\nuse Shopware\\Core\\Checkout\\Cart\\CartPersisterInterface;\nclass Persister implements CartPersisterInterface {}\n",
-            "class Persister extends AbstractCartPersister",
+            "<?php\nuse Shopware\\Core\\Checkout\\Cart\\CartPersisterInterface;\nclass {|shopware.migration.declaration.interface_to_abstract:Persister|} implements CartPersisterInterface {}\n",
+            "<?php\nuse Shopware\\Core\\Checkout\\Cart\\AbstractCartPersister;\nclass Persister extends AbstractCartPersister {}\n",
         ),
         (
-            "parameter type",
-            "<?php\nuse Shopware\\Core\\Checkout\\Cart\\CartPersisterInterface;\nclass Service\n{\n    public function __construct(CartPersisterInterface $persister) {}\n}\n",
-            "__construct(AbstractCartPersister $persister)",
+            "<?php\nuse Shopware\\Core\\Checkout\\Cart\\CartPersisterInterface;\nclass Service\n{\n    public function __construct({|shopware.migration.declaration.interface_to_abstract:CartPersisterInterface $persister|}) {}\n}\n",
+            "<?php\nuse Shopware\\Core\\Checkout\\Cart\\AbstractCartPersister;\nclass Service\n{\n    public function __construct(AbstractCartPersister $persister) {}\n}\n",
         ),
         (
-            "property type",
-            "<?php\nuse Shopware\\Core\\Checkout\\Cart\\CartPersisterInterface;\nclass Service\n{\n    private CartPersisterInterface $persister;\n}\n",
-            "private AbstractCartPersister $persister;",
+            "<?php\nuse Shopware\\Core\\Checkout\\Cart\\CartPersisterInterface;\nclass Service\n{\n    {|shopware.migration.declaration.interface_to_abstract:private CartPersisterInterface $persister;|}\n}\n",
+            "<?php\nuse Shopware\\Core\\Checkout\\Cart\\AbstractCartPersister;\nclass Service\n{\n    private AbstractCartPersister $persister;\n}\n",
         ),
     ] {
-        let document = document("file:///project/src/InterfaceMigration.php", source);
-        let updated = apply_only_migration_fix(
+        check_only_migration_fix(
             &migration(&index, 5),
-            &document,
+            "file:///project/src/InterfaceMigration.php",
+            before,
             DECLARATION_MIGRATION_FIX_ID,
-        );
-        assert!(updated.contains(expected), "{name}: {updated}");
-        assert!(
-            updated.contains("use Shopware\\Core\\Checkout\\Cart\\AbstractCartPersister;"),
-            "{name}"
+            after,
         );
     }
 }
@@ -58,54 +51,46 @@ fn shopware_method_declaration_migration_quick_fixes() {
     ] {
         index.add(path, source);
     }
-    for (name, minor, source, expected) in [
+    for (minor, before, after) in [
         (
-            "required parameter",
             5,
-            "<?php\nuse Shopware\\Storefront\\Framework\\Captcha\\AbstractCaptcha;\nclass Captcha extends AbstractCaptcha\n{\n    public function supports(string $type): bool { return true; }\n}\n",
-            "supports(string $type, array $captchaConfig)",
+            "<?php\nuse Shopware\\Storefront\\Framework\\Captcha\\AbstractCaptcha;\nclass Captcha extends AbstractCaptcha\n{\n    {|shopware.migration.declaration.parameter.add:public function supports(string $type): bool { return true; }|}\n}\n",
+            "<?php\nuse Shopware\\Storefront\\Framework\\Captcha\\AbstractCaptcha;\nclass Captcha extends AbstractCaptcha\n{\n    public function supports(string $type, array $captchaConfig): bool { return true; }\n}\n",
         ),
         (
-            "parameter type",
             5,
-            "<?php\nuse Shopware\\Core\\Framework\\DataAbstractionLayer\\Indexing\\EntityIndexer;\nclass Indexer extends EntityIndexer\n{\n    public function iterate($offset): void {}\n}\n",
-            "iterate(?array $offset)",
+            "<?php\nuse Shopware\\Core\\Framework\\DataAbstractionLayer\\Indexing\\EntityIndexer;\nclass Indexer extends EntityIndexer\n{\n    public function iterate({|shopware.migration.declaration.type:$offset|}): void {}\n}\n",
+            "<?php\nuse Shopware\\Core\\Framework\\DataAbstractionLayer\\Indexing\\EntityIndexer;\nclass Indexer extends EntityIndexer\n{\n    public function iterate(?array $offset): void {}\n}\n",
         ),
         (
-            "return type",
             5,
-            "<?php\nuse Shopware\\Core\\Framework\\Adapter\\Twig\\TemplateIterator;\nclass Iterator extends TemplateIterator\n{\n    public function getIterator(): array { return []; }\n}\n",
-            "getIterator(): Traversable",
+            "<?php\nuse Shopware\\Core\\Framework\\Adapter\\Twig\\TemplateIterator;\nclass Iterator extends TemplateIterator\n{\n    {|shopware.migration.declaration.type:public function getIterator(): array { return []; }|}\n}\n",
+            "<?php\nuse Shopware\\Core\\Framework\\Adapter\\Twig\\TemplateIterator;\nclass Iterator extends TemplateIterator\n{\n    public function getIterator(): Traversable { return []; }\n}\n",
         ),
         (
-            "Shopware 6.7 return type",
             7,
-            "<?php\nuse Shopware\\Elasticsearch\\Framework\\AbstractElasticsearchDefinition;\nclass Definition extends AbstractElasticsearchDefinition\n{\n    public function buildTermQuery(): BoolQuery {}\n}\n",
-            "buildTermQuery(): BuilderInterface",
+            "<?php\nuse Shopware\\Elasticsearch\\Framework\\AbstractElasticsearchDefinition;\nclass Definition extends AbstractElasticsearchDefinition\n{\n    {|shopware.migration.declaration.type:public function buildTermQuery(): BoolQuery {}|}\n}\n",
+            "<?php\nuse Shopware\\Elasticsearch\\Framework\\AbstractElasticsearchDefinition;\nuse OpenSearchDSL\\BuilderInterface;\nclass Definition extends AbstractElasticsearchDefinition\n{\n    public function buildTermQuery(): BuilderInterface {}\n}\n",
         ),
     ] {
-        let document = document("file:///project/src/DeclarationMigration.php", source);
-        let updated = apply_only_migration_fix(
+        check_only_migration_fix(
             &migration(&index, minor),
-            &document,
+            "file:///project/src/DeclarationMigration.php",
+            before,
             DECLARATION_MIGRATION_FIX_ID,
+            after,
         );
-        assert!(updated.contains(expected), "{name}: {updated}");
     }
 }
 
 #[test]
 fn interface_to_abstract_class_migration_quick_fixes_free_function_parameter() {
     let index = migration_inspection_php_index();
-    let document = document(
-        "file:///project/src/Function.php",
-        "<?php\nnamespace App;\n\nuse Shopware\\Core\\Checkout\\Cart\\CartPersisterInterface;\n\nfunction persist(CartPersisterInterface $persister): void {}\n",
-    );
-    let updated = apply_only_migration_fix(
+    check_only_migration_fix(
         &migration(&index, 5),
-        &document,
+        "file:///project/src/Function.php",
+        "<?php\nnamespace App;\n\nuse Shopware\\Core\\Checkout\\Cart\\CartPersisterInterface;\n\nfunction persist({|shopware.migration.declaration.interface_to_abstract:CartPersisterInterface $persister|}): void {}\n",
         DECLARATION_MIGRATION_FIX_ID,
+        "<?php\nnamespace App;\n\nuse Shopware\\Core\\Checkout\\Cart\\AbstractCartPersister;\n\nfunction persist(AbstractCartPersister $persister): void {}\n",
     );
-    assert!(updated.contains("use Shopware\\Core\\Checkout\\Cart\\AbstractCartPersister;"));
-    assert!(updated.contains("function persist(AbstractCartPersister $persister): void"));
 }

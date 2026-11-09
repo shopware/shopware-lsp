@@ -67,6 +67,14 @@ fn static_translation_key(extension: &str, node: &SyntaxNode, key: &str) -> bool
 }
 
 impl ProblemAnalyzer for TranslationAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(
+            crate::inputs(&self.index)
+                + crate::inputs(&self.php_index)
+                + crate::inputs(&self.snippet_index),
+        )
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

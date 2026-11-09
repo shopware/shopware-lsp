@@ -2,7 +2,8 @@
 
 use std::sync::Arc;
 
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_lsp_protocol as protocol;
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::{TWIG_FILTER, TWIG_FUNCTION_CALL, TWIG_LITERAL_NAME};
@@ -10,8 +11,8 @@ use swlsp_php_types::{go_quote, go_to_lower};
 use swlsp_syntax::SyntaxNode;
 use swlsp_twig::TwigIndexer;
 
-use crate::ProblemAnalyzer;
 use crate::common::value_node_text_range;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 const DEPRECATED_TWIG_FUNCTION_CODE: &str = "twig.function.deprecated";
 const DEPRECATED_TWIG_FILTER_CODE: &str = "twig.filter.deprecated";
@@ -29,7 +30,28 @@ impl TwigDeprecationAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for TwigDeprecationAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "twig.deprecation",
+        description: "Deprecated Twig filters, functions, tags and tests.",
+        domain: "twig",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Twig],
+        source: "twig",
+        codes: &[
+            DEPRECATED_TWIG_FILTER_CODE,
+            DEPRECATED_TWIG_FUNCTION_CODE,
+            DEPRECATED_TWIG_TAG_CODE,
+            DEPRECATED_TWIG_TEST_CODE,
+        ],
+    };
+}
+
 impl ProblemAnalyzer for TwigDeprecationAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.twig_index))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

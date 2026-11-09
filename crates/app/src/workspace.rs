@@ -267,15 +267,16 @@ fn build(
     }
 
     let store_ref = Some(&store);
-    let php = PhpIndex::open(cache_dir, store_ref).map_err(context("create PHP index"))?;
-    partial.indexers.push(Arc::new(php.clone()));
     let options = server.initialization_options();
-    php.configure_project_with_extensions(
+    let php = PhpIndex::open_project(
+        cache_dir,
+        store_ref,
         Path::new(root),
         &options.php_extensions,
         &options.disabled_php_extensions,
     )
-    .map_err(context("configure PHP project"))?;
+    .map_err(context("create PHP index"))?;
+    partial.indexers.push(Arc::new(php.clone()));
     php.register_type_extension(Arc::new(swlsp_php_inference::FakerTypes));
     php.register_type_extension(Arc::new(swlsp_shopware::PhpTypeExtension::new()));
     php.register_type_extension(Arc::new(swlsp_event::PhpTypeExtension::new()));

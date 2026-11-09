@@ -3,9 +3,9 @@ use crate::services::{
     INVOKABLE_COMMAND_RETURN_TYPE_MESSAGE, INVOKABLE_COMMAND_RETURN_VALUE_MESSAGE,
     InvokableCommandAnalyzer,
 };
+use crate::test_support::check_problems;
 
 const RETURN_TYPE: &str = "symfony.console.invoke.return_type";
-const RETURN_VALUE: &str = "symfony.console.invoke.return_value";
 
 #[test]
 fn invokable_command_diagnostics() {
@@ -30,7 +30,7 @@ use Symfony\Component\Console\Command\Command;
 #[AsCommand(name: 'app:invalid')]
 class InvalidCommand
 {
-    public function __invoke()
+    public function {|symfony.console.invoke.return_type:__invoke|}()
     {
         $exitCode = 0;
         if (rand(0, 1)) {
@@ -39,7 +39,7 @@ class InvalidCommand
         if (rand(0, 1)) {
             return Command::SUCCESS;
         }
-        return 'error';
+        return {|symfony.console.invoke.return_value:'error'|};
     }
 }
 
@@ -55,9 +55,9 @@ class TypedCommand
 #[AsCommand(name: 'app:wrong')]
 class WrongTypeCommand
 {
-    public function __invoke(): string
+    public function {|symfony.console.invoke.return_type:__invoke|}(): string
     {
-        return null;
+        return {|symfony.console.invoke.return_value:null|};
     }
 }
 
@@ -66,51 +66,37 @@ class TraditionalCommand extends Command
     public function __invoke(): void {}
 }
 ";
-    let document = document("file:///project/src/Command/Commands.php", source);
-    let result = analyze(&InvokableCommandAnalyzer::new(Some(php)), &document);
-    assert_eq!(result.len(), 4, "{result:?}");
-    let mut types = 0;
-    let mut values = 0;
-    for problem in &result {
-        match problem.id.as_str() {
-            RETURN_TYPE => {
-                types += 1;
-                assert_eq!(problem.message, INVOKABLE_COMMAND_RETURN_TYPE_MESSAGE);
-            }
-            RETURN_VALUE => {
-                values += 1;
-                assert_eq!(problem.message, INVOKABLE_COMMAND_RETURN_VALUE_MESSAGE);
-            }
-            _ => {}
-        }
+    let (_, problems) = check_problems(
+        &InvokableCommandAnalyzer::new(Some(php)),
+        "file:///project/src/Command/Commands.php",
+        source,
+    );
+    for problem in &problems {
+        let expected = match problem.id.as_str() {
+            RETURN_TYPE => INVOKABLE_COMMAND_RETURN_TYPE_MESSAGE,
+            _ => INVOKABLE_COMMAND_RETURN_VALUE_MESSAGE,
+        };
+        assert_eq!(problem.message, expected);
     }
-    assert_eq!(types, 2);
-    assert_eq!(values, 2);
-    assert_eq!(range_text(&document, result[0].range), "__invoke");
-    assert_eq!(range_text(&document, result[1].range), "'error'");
-    assert!(result[0].payload.is_none());
+    assert!(problems[0].payload.is_none());
 }
 
 #[test]
 fn invokable_command_diagnostics_report_bare_return() {
     let dir = tempfile::tempdir().unwrap();
     let php = php_index(dir.path(), &[]);
-    let document = document(
+    let (_, problems) = check_problems(
+        &InvokableCommandAnalyzer::new(Some(php)),
         "file:///project/BareCommand.php",
         r"<?php
 use Symfony\Component\Console\Attribute\AsCommand;
 
 #[AsCommand]
 class BareCommand {
-    public function __invoke(): void {
-        return;
+    public function {|symfony.console.invoke.return_type:__invoke|}(): void {
+        {|symfony.console.invoke.return_value:return;|}
     }
 }",
     );
-    let result = analyze(&InvokableCommandAnalyzer::new(Some(php)), &document);
-    assert_eq!(result.len(), 2);
-    assert_eq!(result[0].id.as_str(), RETURN_TYPE);
-    assert!(result[0].payload.is_none());
-    assert_eq!(result[1].id.as_str(), RETURN_VALUE);
-    assert_eq!(range_text(&document, result[1].range), "return;");
+    assert!(problems[0].payload.is_none());
 }

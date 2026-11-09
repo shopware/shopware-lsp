@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use swlsp_language::LanguageId;
-use swlsp_lsp::{Inspection, InspectionDefinition, bind_fix};
+use swlsp_lsp::{Inspection, InspectionDefinition, InspectionScope, bind_fix};
 use swlsp_lsp_diagnostics::{ControllerAnalyzer, RouteAnalyzer};
 use swlsp_lsp_protocol::DiagnosticSeverity;
 use swlsp_php::PhpIndex;
@@ -28,6 +28,9 @@ pub fn new_controller(
     Arc::new(BoundInspection {
         definition: InspectionDefinition {
             id: "symfony.routing".to_owned(),
+            description: "Route names that do not exist, and route controllers that are missing, lack the method, or are deprecated.",
+            domain: "symfony",
+            scope: InspectionScope::Framework,
             languages: vec![
                 LanguageId::Php,
                 LanguageId::Yaml,

@@ -2,12 +2,9 @@ use std::sync::Arc;
 
 use swlsp_indexer::{Indexer, ParsedFile};
 
-use super::{analyze, index_file, open_php, tempdir};
-use crate::symfony::{
-    ConsoleAnalyzer, MISSING_CONSOLE_ARGUMENT_CODE, MISSING_CONSOLE_COMMAND_CODE,
-    MISSING_CONSOLE_OPTION_CODE,
-};
-use crate::test_support::diagnostics_document;
+use super::{index_file, open_php, tempdir};
+use crate::symfony::ConsoleAnalyzer;
+use crate::test_support::check_problems;
 
 #[test]
 fn console_diagnostics_report_unknown_command_arguments_and_options() {
@@ -28,7 +25,7 @@ class Application {
     );
     let console_dir = tempdir();
     let console = Arc::new(swlsp_console::Index::new(console_dir.path(), None).unwrap());
-    let source = r"<?php
+    let fixture = r"<?php
 namespace App\Command;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Input\InputInterface;
@@ -40,33 +37,24 @@ class CreateUserCommand {
         $this->addOption('admin');
     }
     public function execute(InputInterface $input): void {
-        $input->getArgument('usernme');
-        $input->getOption('admn');
+        $input->getArgument('{|symfony.console.argument.missing:usernme|}');
+        $input->getOption('{|symfony.console.option.missing:admn|}');
     }
 }
 
 function run(Application $application): void {
-    $application->find('app:user:creat');
+    $application->find('{|symfony.console.command.missing:app:user:creat|}');
 }";
     let path = "/project/src/Command/CreateUserCommand.php";
+    let (source, _) = swlsp_lsp::fixture::parse(fixture);
     let parsed = ParsedFile::new(path, source.as_bytes().to_vec());
     php.index(&parsed).unwrap();
     console.index(&parsed).unwrap();
 
-    let result = analyze(
+    let (_, result) = check_problems(
         &ConsoleAnalyzer::new(Some(console), Some(php.clone())),
-        &diagnostics_document(&format!("file://{path}"), source),
-    );
-    assert_eq!(result.len(), 3);
-    let mut codes: Vec<&str> = result.iter().map(|problem| problem.id.0.as_str()).collect();
-    codes.sort_unstable();
-    assert_eq!(
-        codes,
-        vec![
-            MISSING_CONSOLE_ARGUMENT_CODE,
-            MISSING_CONSOLE_COMMAND_CODE,
-            MISSING_CONSOLE_OPTION_CODE
-        ]
+        &format!("file://{path}"),
+        fixture,
     );
     for problem in &result {
         assert!(problem.payload.is_some());

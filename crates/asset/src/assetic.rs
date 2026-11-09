@@ -20,6 +20,8 @@ struct State {
     checked_at: Option<Instant>,
     fingerprint: String,
     cached: Vec<Resource>,
+    /// Advanced whenever the cached resources change.
+    revision: u64,
 }
 
 pub(crate) struct AsseticCatalog {
@@ -59,6 +61,9 @@ impl AsseticCatalog {
         state.checked_at = Some(Instant::now());
         let candidates = find_candidates(&self.root);
         if candidates.is_empty() {
+            if !state.fingerprint.is_empty() || !state.cached.is_empty() {
+                state.revision += 1;
+            }
             state.fingerprint.clear();
             state.cached.clear();
             return Vec::new();
@@ -100,7 +105,19 @@ impl AsseticCatalog {
         });
         state.fingerprint = fingerprint;
         state.cached = resources.clone();
+        state.revision += 1;
         resources
+    }
+
+    /// The revision of the resources, after the same throttled check of the
+    /// compiled container files as [`Self::resources`]: they live outside
+    /// the scanner, so asking is what notices a change.
+    pub(crate) fn revision(&self) -> u64 {
+        self.resources(false);
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .revision
     }
 }
 

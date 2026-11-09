@@ -3,7 +3,8 @@
 use std::sync::Arc;
 
 use swlsp_doctrine::{DbalReference, DbalReferenceRole, Index, type_registrations_in_document};
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::PHP_STRING;
 use swlsp_php::PhpIndex;
@@ -13,8 +14,8 @@ use swlsp_syntax::{SyntaxNode, TextRange};
 
 use super::dbal_schema::{DbalSchemaCatalog, has_dbal_schema_name};
 use super::{lower_ext, symfony_warning};
-use crate::ProblemAnalyzer;
 use crate::common::admin_nearby_suggestions;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 pub const MISSING_DOCTRINE_TABLE_CODE: &str = "symfony.doctrine.table.missing";
 pub const MISSING_DOCTRINE_COLUMN_CODE: &str = "symfony.doctrine.column.missing";
@@ -87,7 +88,32 @@ impl DoctrineAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for DoctrineAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "symfony.doctrine",
+        description: "Doctrine DBAL queries naming unknown tables or columns, and invalid custom type classes.",
+        domain: "symfony.doctrine",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Php],
+        source: "symfony",
+        codes: &[
+            MISSING_DOCTRINE_COLUMN_CODE,
+            MISSING_DOCTRINE_TABLE_CODE,
+            INVALID_DOCTRINE_TYPE_CLASS_CODE,
+            MISSING_DOCTRINE_TYPE_CLASS_CODE,
+        ],
+    };
+}
+
 impl ProblemAnalyzer for DoctrineAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(
+            crate::inputs(&self.index)
+                + crate::inputs(&self.php_index)
+                + crate::inputs(&self.dal_index),
+        )
+    }
+
     fn analyze(
         &self,
         ctx: &Context,

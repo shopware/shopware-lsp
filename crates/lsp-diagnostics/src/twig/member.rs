@@ -4,7 +4,8 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
+use swlsp_language::LanguageId;
+use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_lsp_protocol as protocol;
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::TWIG_ACCESSOR;
@@ -14,7 +15,7 @@ use swlsp_php_types::go_to_lower;
 use swlsp_syntax::SyntaxNodeExt;
 use swlsp_twig::{PhpAccessResolver, TwigIndexer};
 
-use crate::ProblemAnalyzer;
+use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 const DEPRECATED_TWIG_MEMBER_CODE: &str = "twig.member.deprecated";
 const MISSING_TWIG_MEMBER_CODE: &str = "twig.member.missing";
@@ -34,7 +35,23 @@ impl TwigMemberDeprecationAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for TwigMemberDeprecationAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "twig.member.deprecation",
+        description: "Twig member access to deprecated properties and methods.",
+        domain: "twig",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Twig],
+        source: "twig",
+        codes: &[DEPRECATED_TWIG_MEMBER_CODE],
+    };
+}
+
 impl ProblemAnalyzer for TwigMemberDeprecationAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.twig_index) + crate::inputs(&self.php_index))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,
@@ -129,7 +146,23 @@ impl TwigMemberMissingAnalyzer {
     }
 }
 
+impl DeclaredAnalyzer for TwigMemberMissingAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "twig.member.missing",
+        description: "Twig member access to properties and methods the variable's type does not have.",
+        domain: "twig",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Twig],
+        source: "twig",
+        codes: &[MISSING_TWIG_MEMBER_CODE],
+    };
+}
+
 impl ProblemAnalyzer for TwigMemberMissingAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(crate::inputs(&self.twig_index) + crate::inputs(&self.php_index))
+    }
+
     fn analyze(
         &self,
         ctx: &Context,
