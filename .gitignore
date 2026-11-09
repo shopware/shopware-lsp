@@ -9,3 +9,4 @@ node_modules
 **/.claude/settings.local.json
 /target
 __pycache__/
+/vscode-extension/
