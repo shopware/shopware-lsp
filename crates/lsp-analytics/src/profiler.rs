@@ -1,7 +1,8 @@
-//! Local Symfony profiler request catalog (port of `profiler_catalog.go`).
+//! Local Symfony profiler request catalog.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io::Read;
+use std::num::IntErrorKind;
 use std::sync::{Arc, LazyLock};
 
 use regex::bytes::Regex;
@@ -14,11 +15,12 @@ use swlsp_uriutil::filepath;
 use url::{Position, Url};
 
 use crate::profiler_serialized::profiler_twig_components;
-use crate::request::{Field, decode, present};
+use crate::request::{Field, RequestError, decode, present};
 use crate::{
-    Result, RouteTemplateResolver, SourceLineResolver, check, errorf, is_zero, lower, range_len,
-    range_start, trim_space,
+    Result, RouteTemplateResolver, SourceLineResolver, check, errorf, is_zero, range_len,
+    range_start,
 };
+use swlsp_textutil::lowercase;
 
 pub const LIST_PROFILER_REQUESTS_COMMAND: &str = "shopware/symfony/analytics/profiler/requests";
 
@@ -58,10 +60,9 @@ pub struct ProfilerRequestCatalogRequest {
 }
 
 impl ProfilerRequestCatalogRequest {
-    fn decode(value: &Value) -> Result<Self, String> {
+    fn decode(value: &Value) -> Result<Self, RequestError> {
         let members = decode(
             value,
-            "ProfilerRequestCatalogRequest",
             &[
                 ("url", Field::String),
                 ("hash", Field::String),
@@ -186,23 +187,23 @@ impl ProfilerCatalogProvider {
             limit = DEFAULT_PROFILER_REQUEST_LIMIT;
         }
         limit = limit.min(MAX_PROFILER_REQUEST_LIMIT);
-        let url_filter = lower(trim_space(&request.url));
-        let hash_filter = lower(trim_space(&request.hash));
-        let controller_filter = lower(trim_space(&request.controller));
-        let route_filter = lower(trim_space(&request.route));
+        let url_filter = lowercase(request.url.trim());
+        let hash_filter = lowercase(request.hash.trim());
+        let controller_filter = lowercase(request.controller.trim());
+        let route_filter = lowercase(request.route.trim());
         let mut templates = RouteTemplateResolver::new(self.php.as_ref(), self.twig.as_deref());
         let mut lines = SourceLineResolver::default();
         let mut result = Vec::new();
         let mut seen: HashSet<String> = HashSet::with_capacity(rows.len());
         for row in rows {
             check(ctx)?;
-            if !seen.insert(lower(&row.entry.hash)) {
+            if !seen.insert(lowercase(&row.entry.hash)) {
                 continue;
             }
-            if !url_filter.is_empty() && !lower(&row.entry.url).contains(&url_filter) {
+            if !url_filter.is_empty() && !lowercase(&row.entry.url).contains(&url_filter) {
                 continue;
             }
-            if !hash_filter.is_empty() && !lower(&row.entry.hash).contains(&hash_filter) {
+            if !hash_filter.is_empty() && !lowercase(&row.entry.hash).contains(&hash_filter) {
                 continue;
             }
             let mut entry = row.entry;
@@ -222,11 +223,11 @@ impl ProfilerCatalogProvider {
                 entry.twig_components = profiler_twig_components(&content);
             }
             if !controller_filter.is_empty()
-                && !lower(&entry.controller).contains(&controller_filter)
+                && !lowercase(&entry.controller).contains(&controller_filter)
             {
                 continue;
             }
-            if !route_filter.is_empty() && !lower(&entry.route).contains(&route_filter) {
+            if !route_filter.is_empty() && !lowercase(&entry.route).contains(&route_filter) {
                 continue;
             }
             self.add_controller_details(&mut entry, &mut templates, &mut lines);
@@ -246,7 +247,7 @@ impl ProfilerCatalogProvider {
     ) {
         for component in &mut entry.twig_components {
             if !component.class.is_empty()
-                && !swlsp_php_types::equal_fold(&component.class, ANONYMOUS_COMPONENT)
+                && !swlsp_textutil::eq_ignore_case(&component.class, ANONYMOUS_COMPONENT)
                 && let Some(php) = &self.php
                 && let Some(class) = php.find_class(&component.class)
             {
@@ -316,7 +317,7 @@ impl ProfilerCatalogProvider {
     }
 
     fn profiler_index_paths(&self, index_override: &str) -> Result<Vec<String>> {
-        let index_override = trim_space(index_override);
+        let index_override = index_override.trim();
         if !index_override.is_empty() {
             let mut path = index_override.to_owned();
             if !filepath::is_abs(&path) {
@@ -324,12 +325,8 @@ impl ProfilerCatalogProvider {
             }
             let path = secure_workspace_path(&self.root, &path)
                 .map_err(|error| errorf!("invalid profiler index path: {error}"))?;
-            let metadata = std::fs::metadata(&path).map_err(|error| {
-                errorf!(
-                    "read profiler index {path}: {}",
-                    go_path_error("stat", &path, &error)
-                )
-            })?;
+            let metadata = std::fs::metadata(&path)
+                .map_err(|source| ProfilerIndexError::new("stat", &path, source))?;
             if !metadata.is_file() {
                 return Err(errorf!("profiler index {path} is not a file"));
             }
@@ -358,7 +355,7 @@ impl CommandProvider for ProfilerCatalogProvider {
     }
 }
 
-/// Go `filepath.Glob(<cache>/*/profiler/index.csv)`.
+/// The `<cache>/*/profiler/index.csv` files, sorted by directory name.
 fn glob_profiler_indexes(cache: &str) -> Vec<String> {
     let Ok(metadata) = std::fs::metadata(cache) else {
         return Vec::new();
@@ -399,12 +396,8 @@ fn read_profiler_rows(ctx: &Context, index_paths: &[String]) -> Result<Vec<Profi
     let mut rows = Vec::new();
     for index_path in index_paths {
         check(ctx)?;
-        let metadata = std::fs::metadata(index_path).map_err(|error| {
-            errorf!(
-                "read profiler index {index_path}: {}",
-                go_path_error("stat", index_path, &error)
-            )
-        })?;
+        let metadata = std::fs::metadata(index_path)
+            .map_err(|source| ProfilerIndexError::new("stat", index_path, source))?;
         if metadata.len() > MAX_PROFILER_INDEX_BYTES {
             return Err(errorf!(
                 "profiler index {index_path} exceeds the {} MiB limit",
@@ -416,23 +409,14 @@ fn read_profiler_rows(ctx: &Context, index_paths: &[String]) -> Result<Vec<Profi
             .ok()
             .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
             .map_or(0, |duration| duration.as_nanos() as i128);
-        let file = std::fs::File::open(index_path).map_err(|error| {
-            errorf!(
-                "open profiler index {index_path}: {}",
-                go_path_error("open", index_path, &error)
-            )
-        })?;
+        let file = std::fs::File::open(index_path)
+            .map_err(|source| ProfilerIndexError::new("open", index_path, source))?;
         let mut content = Vec::new();
         file.take(MAX_PROFILER_INDEX_BYTES + 1)
             .read_to_end(&mut content)
-            .map_err(|error| {
-                errorf!(
-                    "read profiler index {index_path}: {}",
-                    go_path_error("read", index_path, &error)
-                )
-            })?;
+            .map_err(|source| ProfilerIndexError::new("read", index_path, source))?;
         let index_file_uri = swlsp_uriutil::file_uri(index_path);
-        let profiler_directory = go_dir(index_path);
+        let profiler_directory = filepath::dir(index_path);
         let mut valid = Vec::new();
         let mut rest = &content[..];
         let mut row_number = 0usize;
@@ -449,8 +433,8 @@ fn read_profiler_rows(ctx: &Context, index_paths: &[String]) -> Result<Vec<Profi
             rest = next;
             let current_row = row_number;
             row_number += 1;
-            let line = go_lossy(line);
-            let line = trim_space(&line);
+            let line = utf8_lossy_per_byte(line);
+            let line = line.trim();
             if line.is_empty() {
                 continue;
             }
@@ -460,23 +444,23 @@ fn read_profiler_rows(ctx: &Context, index_paths: &[String]) -> Result<Vec<Profi
             if record.len() < 4 {
                 continue;
             }
-            let hash = trim_space(&record[0]);
+            let hash = record[0].trim();
             let hash = hash.strip_prefix('\u{FEFF}').unwrap_or(hash);
             if !is_profiler_hash(hash) {
                 continue;
             }
             let mut entry = ProfilerRequestCatalogEntry {
                 hash: hash.to_owned(),
-                method: trim_space(&record[2]).to_owned(),
-                url: trim_space(&record[3]).to_owned(),
+                method: record[2].trim().to_owned(),
+                url: record[3].trim().to_owned(),
                 index_file_uri: index_file_uri.clone(),
                 ..ProfilerRequestCatalogEntry::default()
             };
             if record.len() > 4 {
-                entry.timestamp = go_parse_int(trim_space(&record[4]));
+                entry.timestamp = parse_decimal_saturating(record[4].trim());
             }
             if record.len() > 6 {
-                entry.status_code = go_parse_int(trim_space(&record[6]));
+                entry.status_code = parse_decimal_saturating(record[6].trim());
             }
             valid.push(ProfilerRow {
                 entry,
@@ -500,21 +484,14 @@ fn read_profiler_rows(ctx: &Context, index_paths: &[String]) -> Result<Vec<Profi
     Ok(rows)
 }
 
-/// Go `filepath.Dir` on Unix paths.
-fn go_dir(path: &str) -> String {
-    match path.rfind('/') {
-        Some(index) => filepath::clean(&path[..=index]),
-        None => ".".to_owned(),
-    }
-}
-
 fn is_profiler_hash(hash: &str) -> bool {
     (6..=64).contains(&hash.len()) && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-/// One record of Go `encoding/csv` (default options, `FieldsPerRecord =
-/// -1`) read from a single line without its newline; `None` on a parse
-/// error.
+/// One CSV record read from a single line without its newline; `None` when
+/// the line is not valid CSV. Fields may be quoted (`""` escapes a quote);
+/// a bare quote inside an unquoted field is an error, and records may have
+/// any number of fields.
 pub(crate) fn parse_csv_record(line: &str) -> Option<Vec<String>> {
     let mut fields = Vec::new();
     let mut rest = line;
@@ -559,30 +536,16 @@ pub(crate) fn parse_csv_record(line: &str) -> Option<Vec<String>> {
     }
 }
 
-/// Go `strconv.ParseInt(value, 10, 64)` ignoring the error: syntax errors
-/// yield 0 and out-of-range values clamp.
-pub(crate) fn go_parse_int(value: &str) -> i64 {
-    let (negative, digits) = match value.as_bytes().first() {
-        Some(b'+') => (false, &value[1..]),
-        Some(b'-') => (true, &value[1..]),
-        _ => (false, value),
-    };
-    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return 0;
-    }
-    let mut magnitude: u128 = 0;
-    for byte in digits.bytes() {
-        magnitude = (magnitude * 10 + u128::from(byte - b'0')).min(u128::from(u64::MAX) + 1);
-    }
-    if negative {
-        if magnitude > i64::MAX as u128 + 1 {
-            return i64::MIN;
-        }
-        (magnitude as i128).wrapping_neg() as i64
-    } else if magnitude > i64::MAX as u128 {
-        i64::MAX
-    } else {
-        magnitude as i64
+/// A decimal integer with an optional sign; invalid text yields 0 and
+/// out-of-range values saturate at the `i64` bounds.
+pub(crate) fn parse_decimal_saturating(value: &str) -> i64 {
+    match value.parse::<i64>() {
+        Ok(number) => number,
+        Err(error) => match error.kind() {
+            IntErrorKind::PosOverflow => i64::MAX,
+            IntErrorKind::NegOverflow => i64::MIN,
+            _ => 0,
+        },
     }
 }
 
@@ -639,9 +602,10 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
-/// Go string conversion of arbitrary bytes followed by JSON encoding: every
-/// byte of an invalid UTF-8 sequence becomes U+FFFD.
-pub(crate) fn go_lossy(bytes: &[u8]) -> String {
+/// `bytes` as text where every byte of an invalid UTF-8 sequence becomes
+/// U+FFFD (unlike [`String::from_utf8_lossy`], which replaces each maximal
+/// invalid sequence once), so the replacement count matches the bytes.
+pub(crate) fn utf8_lossy_per_byte(bytes: &[u8]) -> String {
     let mut result = String::with_capacity(bytes.len());
     let mut rest = bytes;
     loop {
@@ -652,7 +616,7 @@ pub(crate) fn go_lossy(bytes: &[u8]) -> String {
             }
             Err(error) => {
                 let valid = error.valid_up_to();
-                // SAFETY-free: the prefix was validated by `from_utf8`.
+                // The prefix was validated by `from_utf8`.
                 result.push_str(std::str::from_utf8(&rest[..valid]).unwrap_or_default());
                 let invalid = error.error_len().unwrap_or(rest.len() - valid);
                 for _ in 0..invalid {
@@ -664,7 +628,8 @@ pub(crate) fn go_lossy(bytes: &[u8]) -> String {
     }
 }
 
-/// Go `profilerLengthPrefixedString`-free lookup of `"<key>";s:<n>:"<value>`.
+/// The PHP-serialized string after `"<key>";s:<n>:"`: exactly `<n>` bytes,
+/// or an empty string when the marker or length is missing or invalid.
 pub(crate) fn profiler_serialized_string(content: &[u8], key: &str) -> String {
     let marker = [key.as_bytes(), b"\";s:"].concat();
     let Some(offset) = find_bytes(content, &marker) else {
@@ -695,7 +660,7 @@ pub(crate) fn profiler_serialized_string(content: &[u8], key: &str) -> String {
     else {
         return String::new();
     };
-    go_lossy(&content[start..end])
+    utf8_lossy_per_byte(&content[start..end])
 }
 
 pub(crate) fn profiler_rendered_templates(content: &[u8]) -> Vec<String> {
@@ -707,9 +672,9 @@ pub(crate) fn profiler_rendered_templates(content: &[u8]) -> Vec<String> {
         let mut result = Vec::new();
         let mut seen = HashSet::new();
         for captures in TEMPLATE_PAIR_PATTERN.captures_iter(segment) {
-            let template = trim_space(&go_lossy(&captures[1])).to_owned();
-            let path = go_lossy(&captures[2]);
-            if template.is_empty() || trim_space(&path).is_empty() {
+            let template = utf8_lossy_per_byte(&captures[1]).trim().to_owned();
+            let path = utf8_lossy_per_byte(&captures[2]);
+            if template.is_empty() || path.trim().is_empty() {
                 continue;
             }
             if !seen.insert(template.clone()) {
@@ -723,7 +688,7 @@ pub(crate) fn profiler_rendered_templates(content: &[u8]) -> Vec<String> {
     }
     let mut result = Vec::new();
     for captures in FALLBACK_TEMPLATE_PATTERN.captures_iter(content) {
-        let template = trim_space(&go_lossy(&captures[1])).to_owned();
+        let template = utf8_lossy_per_byte(&captures[1]).trim().to_owned();
         if !template.is_empty() {
             result.push(template);
         }
@@ -734,7 +699,7 @@ pub(crate) fn profiler_rendered_templates(content: &[u8]) -> Vec<String> {
         return result;
     }
     if let Some(captures) = LEGACY_TEMPLATE_PATTERN.captures(content) {
-        return vec![go_lossy(&captures[1])];
+        return vec![utf8_lossy_per_byte(&captures[1])];
     }
     Vec::new()
 }
@@ -750,7 +715,7 @@ pub(crate) fn profiler_entry_view(content: &[u8], templates: &[String]) -> Strin
         return first.clone();
     }
     if let Some(captures) = LEGACY_TEMPLATE_PATTERN.captures(content) {
-        return go_lossy(&captures[1]);
+        return utf8_lossy_per_byte(&captures[1]);
     }
     String::new()
 }
@@ -771,7 +736,7 @@ pub(crate) fn profiler_mail_messages(content: &[u8]) -> Vec<ProfilerMailMessage>
             continue;
         };
         offset = end;
-        if !swlsp_php_types::equal_fold(trim_space(&go_lossy(name)), "Subject") {
+        if !swlsp_textutil::eq_ignore_case(utf8_lossy_per_byte(name).trim(), "Subject") {
             continue;
         }
         let mut header = &content[end..];
@@ -779,12 +744,12 @@ pub(crate) fn profiler_mail_messages(content: &[u8]) -> Vec<ProfilerMailMessage>
             header = &header[..closing];
         }
         let title = profiler_serialized_string(header, "UnstructuredHeader\x00value");
-        let title = trim_space(&title);
+        let title = title.trim();
         if title.is_empty() {
             continue;
         }
         let title: String = title.chars().take(512).collect();
-        if !seen.insert(lower(&title) + "\x00mailer") {
+        if !seen.insert(lowercase(&title) + "\x00mailer") {
             continue;
         }
         result.push(ProfilerMailMessage {
@@ -821,13 +786,13 @@ fn profiler_length_prefixed_string(content: &[u8], offset: usize) -> Option<(&[u
 }
 
 pub(crate) fn split_profiler_controller(controller: &str) -> Option<(String, String)> {
-    let controller = trim_space(controller.strip_prefix('\\').unwrap_or(controller));
+    let controller = controller.strip_prefix('\\').unwrap_or(controller).trim();
     let separator = controller.rfind("::")?;
     if separator == 0 || separator + 2 >= controller.len() {
         return None;
     }
-    let class_name = trim_space(&controller[..separator]);
-    let method_name = trim_space(&controller[separator + 2..]);
+    let class_name = controller[..separator].trim();
+    let method_name = controller[separator + 2..].trim();
     if class_name.is_empty() || method_name.is_empty() {
         return None;
     }
@@ -835,7 +800,7 @@ pub(crate) fn split_profiler_controller(controller: &str) -> Option<(String, Str
 }
 
 pub(crate) fn normalized_profiler_base_url(value: &str) -> Result<String> {
-    let value = trim_space(value);
+    let value = value.trim();
     if value.is_empty() {
         return Ok(String::new());
     }
@@ -886,48 +851,85 @@ pub(crate) fn profiler_url(base_url: &str, request_url: &str, hash: &str) -> Str
     parsed.into()
 }
 
-/// Go `*os.PathError` text for an I/O error.
-fn go_path_error(op: &str, path: &str, error: &std::io::Error) -> String {
-    let message = match error.raw_os_error() {
-        Some(code) => {
-            let text = std::io::Error::from_raw_os_error(code).to_string();
-            let text = text
-                .rsplit_once(" (os error ")
-                .map_or(text.as_str(), |(head, _)| head)
-                .to_owned();
-            let mut characters = text.chars();
-            match characters.next() {
-                Some(first) => first.to_lowercase().chain(characters).collect(),
-                None => text,
-            }
-        }
-        None => error.to_string(),
-    };
-    format!("{op} {path}: {message}")
+/// A profiler index that cannot be read.
+#[derive(Debug, thiserror::Error)]
+#[error("cannot {operation} profiler index {path}: {source}")]
+pub(crate) struct ProfilerIndexError {
+    operation: &'static str,
+    path: String,
+    #[source]
+    source: std::io::Error,
 }
 
-/// Go `secureWorkspacePath`: rejects `candidate` when it is, lexically or
+impl ProfilerIndexError {
+    fn new(operation: &'static str, path: &str, source: std::io::Error) -> Self {
+        Self {
+            operation,
+            path: path.to_owned(),
+            source,
+        }
+    }
+}
+
+/// A path that is not safely inside the workspace.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum WorkspacePathError {
+    #[error("cannot resolve {path}: {source}")]
+    Resolve {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("cannot relate {path} to the workspace")]
+    Relate {
+        path: String,
+        #[source]
+        source: swlsp_uriutil::filepath::RelError,
+    },
+    #[error("path {path} is outside workspace {root}")]
+    Outside { path: String, root: String },
+    #[error("path {path} resolves outside workspace {root}")]
+    ResolvesOutside { path: String, root: String },
+}
+
+/// `candidate` as a clean absolute path, rejected when it is, lexically or
 /// after resolving symlinks, outside `root`.
-pub(crate) fn secure_workspace_path(root: &str, candidate: &str) -> Result<String, String> {
-    let absolute_root = filepath::abs(root).map_err(|error| error.to_string())?;
-    let absolute_candidate = filepath::abs(candidate).map_err(|error| error.to_string())?;
+pub(crate) fn secure_workspace_path(
+    root: &str,
+    candidate: &str,
+) -> Result<String, WorkspacePathError> {
+    let absolute = |path: &str| {
+        filepath::abs(path).map_err(|source| WorkspacePathError::Resolve {
+            path: path.to_owned(),
+            source,
+        })
+    };
+    let relate = |base: &str, target: &str| {
+        filepath::rel(base, target).map_err(|source| WorkspacePathError::Relate {
+            path: candidate.to_owned(),
+            source,
+        })
+    };
+    let absolute_root = absolute(root)?;
+    let absolute_candidate = absolute(candidate)?;
     let outside = |relative: &str| relative == ".." || relative.starts_with("../");
-    let relative = filepath::rel(&absolute_root, &absolute_candidate)?;
-    if outside(&relative) {
-        return Err(format!("path {candidate} is outside workspace {root}"));
+    if outside(&relate(&absolute_root, &absolute_candidate)?) {
+        return Err(WorkspacePathError::Outside {
+            path: candidate.to_owned(),
+            root: root.to_owned(),
+        });
     }
     if let Ok(evaluated_root) = std::fs::canonicalize(&absolute_root)
         && let Ok(evaluated_candidate) = std::fs::canonicalize(&absolute_candidate)
-    {
-        let relative = filepath::rel(
+        && outside(&relate(
             &evaluated_root.to_string_lossy(),
             &evaluated_candidate.to_string_lossy(),
-        )?;
-        if outside(&relative) {
-            return Err(format!(
-                "path {candidate} resolves outside workspace {root}"
-            ));
-        }
+        )?)
+    {
+        return Err(WorkspacePathError::ResolvesOutside {
+            path: candidate.to_owned(),
+            root: root.to_owned(),
+        });
     }
     Ok(filepath::clean(&absolute_candidate))
 }
@@ -935,7 +937,7 @@ pub(crate) fn secure_workspace_path(root: &str, candidate: &str) -> Result<Strin
 #[cfg(test)]
 pub(crate) mod testing {
     pub(crate) use super::{
-        go_lossy, go_parse_int, parse_csv_record, profiler_mail_messages,
-        profiler_serialized_string, profiler_url,
+        parse_csv_record, parse_decimal_saturating, profiler_mail_messages,
+        profiler_serialized_string, profiler_url, utf8_lossy_per_byte,
     };
 }

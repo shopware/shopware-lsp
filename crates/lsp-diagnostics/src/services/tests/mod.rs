@@ -1,4 +1,4 @@
-//! Ports of the Go `*_test.go` files of this group.
+//! Tests of the services analyzer group.
 
 mod container_constant;
 mod controller;
@@ -58,7 +58,6 @@ pub(super) fn payload(problem: &Problem) -> &serde_json::Map<String, Value> {
         .expect("object payload")
 }
 
-/// Go `problemSuggestionStrings`.
 pub(super) fn suggestions(problem: &Problem) -> Vec<String> {
     strings(
         problem

@@ -1,4 +1,4 @@
-//! Handler and dispatch extraction (port of Go `messenger/parser.go`).
+//! Handler and dispatch extraction.
 
 use std::sync::Arc;
 
@@ -13,8 +13,9 @@ use swlsp_parser_yaml::query as yamlquery;
 use swlsp_parser_yaml::syntax::YAML_SCALAR;
 use swlsp_php::{NameResolver, PhpIndex};
 use swlsp_php_semantic::Document;
-use swlsp_php_types::{Kind as TypeKind, Type, equal_fold, go_to_lower};
+use swlsp_php_types::{Kind as TypeKind, Type};
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::index::{normalize_name, object_type_names, unique_names, unique_occurrences};
 use crate::model::{Occurrence, OccurrenceKind, SourceKind};
@@ -139,7 +140,7 @@ fn parse_legacy_subscriber(
     let mut result = Vec::new();
     let class_range = node_name_range(Some(class));
     for method in phpquery::methods(class) {
-        if !equal_fold(&phpquery::method_name(&method), "getHandledMessages") {
+        if !eq_ignore_case(&phpquery::method_name(&method), "getHandledMessages") {
             continue;
         }
         for statement in phpquery::nodes(&method, &[PHP_RETURN_STATEMENT]) {
@@ -214,7 +215,7 @@ fn handler_method_value(value: Option<&SyntaxNode>) -> (String, Option<SyntaxNod
     for item in phpquery::array_items(&array) {
         let key = phpquery::array_item_key(&item);
         let item_value = phpquery::array_item_value(&item);
-        if equal_fold(&string_value_of(key.as_ref()), "method")
+        if eq_ignore_case(&string_value_of(key.as_ref()), "method")
             && let Some(item_value) = item_value
             && item_value.kind() == PHP_STRING
         {
@@ -227,7 +228,7 @@ fn handler_method_value(value: Option<&SyntaxNode>) -> (String, Option<SyntaxNod
 fn parse_php_service_tags(root: &SyntaxNode, resolver: &NameResolver) -> Vec<Occurrence> {
     let mut result = Vec::new();
     for call in phpquery::calls(root, &[]) {
-        if !equal_fold(&phpquery::call_method_name(&call), "tag")
+        if !eq_ignore_case(&phpquery::call_method_name(&call), "tag")
             || string_argument(phpquery::argument_expression(&call, 0).as_ref())
                 != "messenger.message_handler"
         {
@@ -290,7 +291,7 @@ fn parse_dispatches(
     };
     let mut result = Vec::new();
     for call in phpquery::calls(root, &[]) {
-        if !equal_fold(&phpquery::call_method_name(&call), "dispatch") {
+        if !eq_ignore_case(&phpquery::call_method_name(&call), "dispatch") {
             continue;
         }
         let receiver = phpquery::call_receiver(&call);
@@ -344,7 +345,7 @@ fn classify_message_bus_receiver(
     if !declared.is_empty() {
         return (is_message_bus_name(&declared), true);
     }
-    let text = go_to_lower(&receiver.text().to_string().replace('_', ""));
+    let text = lowercase(&receiver.text().to_string().replace('_', ""));
     if text.contains("messagebus") {
         (true, true)
     } else if text.contains("eventdispatcher") || text.contains("eventbus") {
@@ -375,8 +376,8 @@ fn is_message_bus_type(value: &Type, php_index: Option<&PhpIndex>) -> bool {
 }
 
 fn is_message_bus_name(value: &str) -> bool {
-    let value = go_to_lower(normalize_name(value));
-    value == go_to_lower(MESSAGE_BUS_INTERFACE) || value.ends_with("\\messagebusinterface")
+    let value = lowercase(normalize_name(value));
+    value == lowercase(MESSAGE_BUS_INTERFACE) || value.ends_with("\\messagebusinterface")
 }
 
 fn expression_message_names(
@@ -420,7 +421,7 @@ fn method_parameter_message_names(
 ) -> Vec<String> {
     phpquery::methods(class)
         .into_iter()
-        .find(|method| equal_fold(&phpquery::method_name(method), method_name))
+        .find(|method| eq_ignore_case(&phpquery::method_name(method), method_name))
         .map(|method| parameter_message_names(&method, resolver))
         .unwrap_or_default()
 }
@@ -435,7 +436,7 @@ fn parameter_message_names(method: &SyntaxNode, resolver: &NameResolver) -> Vec<
         let part = part.strip_prefix('?').unwrap_or(part);
         let bare = part.strip_prefix('\\').unwrap_or(part);
         if matches!(
-            go_to_lower(bare).as_str(),
+            lowercase(bare).as_str(),
             "" | "array"
                 | "bool"
                 | "callable"
@@ -458,7 +459,7 @@ fn parameter_message_names(method: &SyntaxNode, resolver: &NameResolver) -> Vec<
     unique_names(result)
 }
 
-/// Go `strings.FieldsFunc` on `|` and `&`.
+/// The non-empty parts of a union or intersection type.
 fn type_parts(value: &str) -> impl Iterator<Item = &str> {
     value.split(['|', '&']).filter(|part| !part.is_empty())
 }
@@ -621,7 +622,7 @@ pub(crate) fn parse_xml(file: &ParsedFile) -> Vec<Occurrence> {
 }
 
 pub(crate) fn is_as_message_handler(attribute: &SyntaxNode, resolver: &NameResolver) -> bool {
-    equal_fold(
+    eq_ignore_case(
         normalize_name(&resolver.resolve(&phpquery::attribute_name(attribute))),
         AS_MESSAGE_HANDLER_ATTRIBUTE,
     )
@@ -635,7 +636,7 @@ fn attribute_argument(
     fallback: Option<usize>,
 ) -> Option<SyntaxNode> {
     for (index, argument) in phpquery::arguments(attribute).enumerate() {
-        if equal_fold(&phpquery::argument_name(&argument), name) {
+        if eq_ignore_case(&phpquery::argument_name(&argument), name) {
             return phpquery::argument_expression(attribute, index);
         }
     }
@@ -678,7 +679,7 @@ fn node_name_range(node: Option<&SyntaxNode>) -> TextRange {
 fn method_name_range(class: &SyntaxNode, name: &str) -> TextRange {
     phpquery::methods(class)
         .into_iter()
-        .find(|method| equal_fold(&phpquery::method_name(method), name))
+        .find(|method| eq_ignore_case(&phpquery::method_name(method), name))
         .map(|method| node_name_range(Some(&method)))
         .unwrap_or_default()
 }
@@ -688,7 +689,7 @@ fn php_array_property(array: Option<&SyntaxNode>, name: &str) -> Option<SyntaxNo
     phpquery::array_items(array)
         .into_iter()
         .find(|item| {
-            equal_fold(
+            eq_ignore_case(
                 &string_value_of(phpquery::array_item_key(item).as_ref()),
                 name,
             )
@@ -705,7 +706,7 @@ pub(crate) fn service_tag_class(tag_call: &SyntaxNode, resolver: &NameResolver) 
         return String::new();
     };
     for call in phpquery::calls(&statement, &[]) {
-        match go_to_lower(&phpquery::call_method_name(&call)).as_str() {
+        match lowercase(&phpquery::call_method_name(&call)).as_str() {
             "set" => {
                 let class_name =
                     class_argument(phpquery::argument_expression(&call, 1).as_ref(), resolver);
@@ -761,13 +762,13 @@ fn declared_receiver_type(
         };
         for property in phpquery::properties(&class) {
             for variable in phpquery::property_variables(&property) {
-                if equal_fold(&phpquery::variable_name(&variable), member) {
+                if eq_ignore_case(&phpquery::variable_name(&variable), member) {
                     return resolve_first_type(&phpquery::property_type(&property), resolver);
                 }
             }
         }
         for method in phpquery::methods(&class) {
-            if equal_fold(&phpquery::method_name(&method), "__construct") {
+            if eq_ignore_case(&phpquery::method_name(&method), "__construct") {
                 let value = parameter_type_by_name(Some(&method), member, resolver);
                 if !value.is_empty() {
                     return value;
@@ -797,7 +798,7 @@ fn parameter_type_by_name(
     let name = name.strip_prefix('$').unwrap_or(name);
     for parameter in phpquery::parameters(function) {
         let parameter_name = phpquery::parameter_name(&parameter);
-        if equal_fold(
+        if eq_ignore_case(
             parameter_name.strip_prefix('$').unwrap_or(&parameter_name),
             name,
         ) {
@@ -821,7 +822,7 @@ fn resolve_type_names(value: &str, resolver: &NameResolver) -> Vec<String> {
         let candidate = candidate.strip_prefix('?').unwrap_or(candidate);
         let bare = candidate.strip_prefix('\\').unwrap_or(candidate);
         if matches!(
-            go_to_lower(bare).as_str(),
+            lowercase(bare).as_str(),
             "" | "array"
                 | "bool"
                 | "callable"

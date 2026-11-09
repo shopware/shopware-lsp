@@ -1,15 +1,13 @@
-//! Port of Go `real_world_indexing_main_test.go` (`TestShopwareTrunkIndexing`).
+//! The main real-world indexing test (`shopware_trunk_indexing`).
 //!
-//! The Go test is one function of `require` calls. Here it is split into
-//! ordered sections over one indexed fixture. Value comparisons are "soft":
-//! a failure is recorded and the section continues (like testify `assert`),
+//! The test is split into ordered sections over one indexed fixture. Value comparisons are "soft":
+//! a failure is recorded and the section continues,
 //! while prerequisite failures (errors, missing values, lengths before
 //! indexing) panic and end only their section. The test fails at the end
-//! with every recorded failure, which makes the result directly comparable
-//! with a soft run of the Go test.
+//! with every recorded failure, so one run reports every regression.
 
 // Struct updates keep request literals robust to new optional fields;
-// soft comparisons mirror testify on any ordered value.
+// soft comparisons work on any ordered value.
 #![allow(clippy::needless_update, clippy::neg_cmp_op_on_partial_ord)]
 
 use std::cell::RefCell;
@@ -246,7 +244,8 @@ pub(super) fn ctx() -> Context {
     Context::background()
 }
 
-/// Strips the root prefix like Go `strings.TrimPrefix(ToSlash(path), root+"/")`.
+/// `path` with `/` separators and without the `root/` prefix (unchanged when
+/// it lies outside `root`).
 pub(super) fn relative(root: &str, path: &str) -> String {
     let prefix = format!("{}/", root.replace('\\', "/"));
     let path = path.replace('\\', "/");
@@ -876,7 +875,7 @@ mod admin {
         );
         let hints = inlay_hints(&index, &model_document);
         require_len!(hints, 1);
-        check_eq!(Value::from("position:"), hints[0].label);
+        check_eq!(protocol::InlayHintLabel::from("position:"), hints[0].label);
         check_str!(
             hints[0].tooltip,
             "changeModelPosition(position: { x: number; y: number; z: number }): void"
@@ -1327,12 +1326,12 @@ mod admin {
                 "sw-profile-index-search-preferences".to_owned(),
             ],
             resolved.names(),
-            "(Go fails too on checkouts without the FroshTools plugin)"
+            "(fails on checkouts without the FroshTools plugin)"
         );
         check_eq!(
             4,
             route_components.len(),
-            "(Go fails too on checkouts without the FroshTools plugin)"
+            "(fails on checkouts without the FroshTools plugin)"
         );
         let user_index = offset_of(&profile_source, "\n                            user,");
         let user_offset = (user_index + "\n                            us".len()) as u32;
@@ -3449,10 +3448,10 @@ mod domains {
     pub(super) fn label_parts(
         hint: &protocol::InlayHint,
     ) -> Option<Vec<protocol::InlayHintLabelPart>> {
-        if !hint.label.is_array() {
-            return None;
+        match &hint.label {
+            protocol::InlayHintLabel::Parts(parts) => Some(parts.clone()),
+            protocol::InlayHintLabel::String(_) => None,
         }
-        serde_json::from_value(hint.label.clone()).ok()
     }
 
     pub(super) fn dal(f: &RealWorldWorkspaceFixture) {
@@ -4020,7 +4019,7 @@ mod domains {
         s.serializer.classes().expect("serializer classes");
     }
 
-    /// Go `realWorldExtractionHost`: the extraction file outside the
+    /// The extraction file outside the
     /// workspace resolves from disk; everything else through the server.
     struct ExtractionHost {
         server: Server,
@@ -4690,7 +4689,7 @@ mod inlays {
             .unwrap_or_default()
     }
 
-    /// Go `httpclient.Options(phpIndex)` checks: at least 20 declared options
+    /// HTTP client option checks: at least 20 declared options
     /// and `timeout` typed and defaulted `null`.
     fn check_http_client_options(php: &swlsp_php::PhpIndex) {
         let options = swlsp_httpclient::options(php);
@@ -4734,8 +4733,14 @@ mod inlays {
         )
         .expect("inlay hints");
         require_len!(hints, 2);
-        check_eq!(Value::from("TranslatorInterface"), hints[0].label);
-        check_eq!(Value::from("RequestStack"), hints[1].label);
+        check_eq!(
+            protocol::InlayHintLabel::from("TranslatorInterface"),
+            hints[0].label
+        );
+        check_eq!(
+            protocol::InlayHintLabel::from("RequestStack"),
+            hints[1].label
+        );
         let document = new_document(
             "file:///real-world-property-service.php",
             "<?php\nnamespace Shopware\\Storefront\\Event;\nclass CartMergedSubscriber\n{\n    public function indexTest(): void\n    {\n        $this->indexTestLogger->info('indexed');\n    }\n}",
@@ -5454,7 +5459,7 @@ mod restore {
             Some(ROUTE.to_owned()),
             edit_text(&real_world_completion_by_label(&items, ROUTE))
         );
-        // Go passes the PHP index through the request context.
+        // The PHP index is passed through the request context.
         let locations = swlsp_lsp_definition::RouteDefinitionProvider::new(
             Some(s.routes.clone()),
             Some(php.clone()),
@@ -5679,7 +5684,7 @@ mod restore {
         probes.push((label.to_owned(), format!("{value:#?}")));
     }
 
-    /// Every value Go compares between the cold and the restored workspace,
+    /// Every value compared between the cold and the restored workspace,
     /// computed against `workspace` (Debug-rendered for comparison).
     pub(super) fn probes(
         f: &RealWorldWorkspaceFixture,
@@ -5691,7 +5696,7 @@ mod restore {
         let admin = workspace_admin_index(workspace);
         let mut p = Probes::new();
         push(&mut p, "php.class_symbols.len", php.class_symbols().len());
-        // Go compares the restored HTTP client options with the cold count
+        // The restored HTTP client options are compared with the cold count
         // and re-checks `timeout`.
         push(
             &mut p,

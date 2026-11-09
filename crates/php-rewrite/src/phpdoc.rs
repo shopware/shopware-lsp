@@ -1,8 +1,8 @@
-//! Standalone PHPDoc annotation edits (port of `phpdoc.go`).
+//! Standalone PHPDoc annotation edits.
 
 use swlsp_parser_php::syntax::TK_BLOCK_COMMENT;
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::{SyntaxNode, SyntaxToken, TextRange};
+use swlsp_textutil::eq_ignore_case;
 
 use crate::editor::{Editor, Result, invalid, range, start};
 
@@ -144,8 +144,8 @@ fn find_annotation(source: &str, annotation_name: &str) -> Option<AnnotationSpan
                 while name_end < line.len() && is_name_byte(line[name_end]) {
                     name_end += 1;
                 }
-                // Go classifies each byte as a Latin-1 rune, so a name may end
-                // inside a multi-byte character; such names never match.
+                // Bytes are classified as Latin-1 code points, so a name may
+                // end inside a multi-byte character; such names never match.
                 if let Ok(actual) = std::str::from_utf8(&line[name_start..name_end]) {
                     let actual = actual.strip_prefix('\\').unwrap_or(actual);
                     if names_equal(actual, annotation_name) {
@@ -163,7 +163,7 @@ fn find_annotation(source: &str, annotation_name: &str) -> Option<AnnotationSpan
 }
 
 fn names_equal(actual: &str, requested: &str) -> bool {
-    if equal_fold(actual, requested) {
+    if eq_ignore_case(actual, requested) {
         return true;
     }
     if requested.contains('\\') {
@@ -171,7 +171,7 @@ fn names_equal(actual: &str, requested: &str) -> bool {
     }
     actual
         .rfind('\\')
-        .is_some_and(|separator| equal_fold(&actual[separator + 1..], requested))
+        .is_some_and(|separator| eq_ignore_case(&actual[separator + 1..], requested))
 }
 
 fn scan_annotation(
@@ -245,8 +245,8 @@ fn scan_annotation(
     })
 }
 
-/// Go's `isPHPDocAnnotationNameCharacter(rune(byte))`: bytes are classified
-/// as Latin-1 code points.
+/// Whether `byte`, read as a Latin-1 code point, can be part of an annotation
+/// name.
 fn is_name_byte(byte: u8) -> bool {
     byte == b'\\' || byte == b'_' || byte.is_ascii_alphanumeric() || {
         let character = char::from(byte);

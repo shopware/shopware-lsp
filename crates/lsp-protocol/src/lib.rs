@@ -1,16 +1,16 @@
-//! LSP wire types used by the Shopware language server (port of
-//! `internal/lsp/protocol`).
+//! LSP wire types used by the Shopware language server.
 //!
 //! Standard value types (`Position`, `Range`, `MarkupContent`, the numeric
 //! enumerations such as `SymbolKind`) come from the [`lsp_types`] crate,
-//! which is re-exported. The message shapes are defined here because the Go
+//! which is re-exported. The message shapes are defined here because the
 //! server deliberately deviates from the specification-complete
 //! `lsp-types` structures: URIs are plain strings, `documentChanges` uses one
 //! compact union record, completion items carry untyped edits, and custom
 //! Shopware extensions (initialization options, input requests, errors) are
-//! included. Every type serializes to exactly the Go JSON shape (`omitempty`
-//! fields are skipped when empty) and decodes leniently like Go: missing and
-//! `null` fields take their zero value and unknown fields are ignored.
+//! included. Optional fields are skipped when empty, keeping messages compact
+//! and stable for clients. Decoding is lenient because clients differ in
+//! which fields they send: missing and `null` fields take their default value
+//! and unknown fields are ignored.
 
 use std::collections::BTreeMap;
 
@@ -24,7 +24,7 @@ pub use lsp_types::{
     MarkupKind, Position, Range, SymbolKind,
 };
 
-/// Go JSON decoding leaves a field at its zero value when the input is null.
+/// Decodes `null` as the field's default value.
 fn nullable<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: Deserializer<'de>,
@@ -42,7 +42,7 @@ fn is_zero(value: &i32) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Shared identifiers (definition.go, hierarchy.go)
+// Shared identifiers
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub struct TextDocumentIdentifier {
@@ -56,7 +56,8 @@ impl TextDocumentIdentifier {
     }
 }
 
-/// A location in a document. The URI stays a plain string like Go.
+/// A location in a document. The URI is a plain string, passed through as
+/// the client sent it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub struct Location {
     #[serde(default, deserialize_with = "nullable")]
@@ -125,7 +126,7 @@ pub struct TypeHierarchySubtypesParams {
 }
 
 // ---------------------------------------------------------------------------
-// Call hierarchy (call_hierarchy.go)
+// Call hierarchy
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -182,7 +183,7 @@ pub struct CallHierarchyOutgoingCall {
 }
 
 // ---------------------------------------------------------------------------
-// Code actions and workspace edits (codeaction.go)
+// Code actions and workspace edits
 
 /// Parameters of `textDocument/codeAction`.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -208,7 +209,7 @@ pub struct CodeActionContext {
     pub only: Vec<String>,
 }
 
-/// Go `CodeActionSourceFixAll` and friends are the `lsp_types` constants
+/// A code action. Kinds are the `lsp_types` constants
 /// (`CodeActionKind::QUICKFIX`, `CodeActionKind::SOURCE_FIX_ALL`, ...).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -286,7 +287,7 @@ impl TextEdit {
     }
 }
 
-/// A workspace edit. `changes` is ordered by URI like Go's map encoding.
+/// A workspace edit. `changes` is ordered by URI so output is deterministic.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceEdit {
@@ -413,7 +414,7 @@ pub struct OptionalVersionedTextDocumentIdentifier {
 }
 
 // ---------------------------------------------------------------------------
-// Code lenses (codelens.go)
+// Code lenses
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -438,7 +439,7 @@ pub struct CodeLens {
 }
 
 // ---------------------------------------------------------------------------
-// Colors (color.go). Components are `f64` like Go (`lsp_types` uses `f32`).
+// Colors. Components are `f64` for full precision (`lsp_types` uses `f32`).
 
 /// Normalized RGBA components in the inclusive range [0, 1].
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
@@ -499,7 +500,7 @@ pub struct ColorPresentation {
 }
 
 // ---------------------------------------------------------------------------
-// Custom commands and input requests (commands.go)
+// Custom commands and input requests
 
 /// A custom `workspace/executeCommand` style request.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -553,7 +554,7 @@ pub struct MultipleInputsResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Initialization and completion (completion.go)
+// Initialization and completion
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -844,7 +845,7 @@ pub struct CompletionItem {
         skip_serializing_if = "is_zero"
     )]
     pub insert_text_mode: i32,
-    // Typed rather than `Value`: Go only ever stores `TextEdit` here, and a
+    // Typed rather than `Value`: only `TextEdit` is ever stored here, and a
     // JSON tree per edit cost ~2.5 KB vs ~80 B on large completion lists.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text_edit: Option<TextEdit>,
@@ -867,7 +868,7 @@ pub struct CompletionItem {
 }
 
 // ---------------------------------------------------------------------------
-// Diagnostics (diagnostics.go)
+// Diagnostics
 
 /// Parameters of `textDocument/diagnostic`.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -1067,7 +1068,7 @@ pub struct DocumentSymbol {
 }
 
 // ---------------------------------------------------------------------------
-// Errors (error.go)
+// Errors
 
 /// A Shopware-specific error payload.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -1078,7 +1079,7 @@ pub struct ShopwareLspError {
     pub message: String,
 }
 
-/// Go `NewLspError` (note the message-first argument order).
+/// Builds a Shopware error payload (note the message-first argument order).
 pub fn new_lsp_error(message: impl Into<String>, code: impl Into<String>) -> ShopwareLspError {
     ShopwareLspError {
         code: code.into(),
@@ -1087,7 +1088,7 @@ pub fn new_lsp_error(message: impl Into<String>, code: impl Into<String>) -> Sho
 }
 
 // ---------------------------------------------------------------------------
-// File synchronization and file operations (file_sync.go)
+// File synchronization and file operations
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct FileOperationRegistrationOptions {
@@ -1330,15 +1331,14 @@ pub struct InlayHintParams {
     pub work_done_token: Option<Value>,
 }
 
-/// An inlay hint. `label` is a string or an array of
-/// [`InlayHintLabelPart`] values.
+/// An inlay hint.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InlayHint {
     #[serde(default)]
     pub position: Position,
     #[serde(default)]
-    pub label: Value,
+    pub label: InlayHintLabel,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<InlayHintKind>,
     #[serde(
@@ -1361,6 +1361,39 @@ pub struct InlayHint {
     pub padding_right: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<Value>,
+}
+
+/// The text of an inlay hint: plain, or segments that can each carry a
+/// tooltip, a location and a command.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum InlayHintLabel {
+    String(String),
+    Parts(Vec<InlayHintLabelPart>),
+}
+
+impl Default for InlayHintLabel {
+    fn default() -> Self {
+        Self::String(String::new())
+    }
+}
+
+impl From<String> for InlayHintLabel {
+    fn from(value: String) -> Self {
+        Self::String(value)
+    }
+}
+
+impl From<&str> for InlayHintLabel {
+    fn from(value: &str) -> Self {
+        Self::String(value.to_owned())
+    }
+}
+
+impl From<Vec<InlayHintLabelPart>> for InlayHintLabel {
+    fn from(parts: Vec<InlayHintLabelPart>) -> Self {
+        Self::Parts(parts)
+    }
 }
 
 /// A clickable segment of an inlay label.
@@ -1447,7 +1480,7 @@ pub struct SelectionRange {
 }
 
 // ---------------------------------------------------------------------------
-// Semantic tokens (semantic_tokens.go)
+// Semantic tokens
 
 pub type SemanticTokensParams = DocumentLinkParams;
 
@@ -1510,7 +1543,7 @@ impl SemanticTokensLegend {
 }
 
 // ---------------------------------------------------------------------------
-// Signature help (signature_help.go)
+// Signature help
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1601,7 +1634,7 @@ pub struct ParameterInformation {
 }
 
 // ---------------------------------------------------------------------------
-// Workspace symbols (symbol.go)
+// Workspace symbols
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct WorkspaceSymbolParams {

@@ -1,5 +1,3 @@
-//! Port of `internal/parser/twig/ast/ast_test.go`.
-
 use swlsp_syntax::{Kind, SyntaxNode, SyntaxToken};
 
 use super::*;

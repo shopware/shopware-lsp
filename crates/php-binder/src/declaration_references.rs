@@ -4,8 +4,8 @@ use crate::fast::Fast;
 use swlsp_parser_php::syntax::*;
 use swlsp_php_resolver::NameContext;
 use swlsp_php_semantic::{NameKind, Reference, ScopeId, SymbolId};
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::{Kind, SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::eq_ignore_case;
 
 use crate::builder::Builder;
 use crate::modifiers::compact_name;
@@ -94,12 +94,12 @@ impl Builder<'_> {
             return;
         }
         let trimmed = name.strip_prefix('\\').unwrap_or(&name);
-        let resolved = if equal_fold(trimmed, "self") || equal_fold(trimmed, "static") {
+        let resolved = if eq_ignore_case(trimmed, "self") || eq_ignore_case(trimmed, "static") {
             match self.enclosing_class(owner) {
                 Some(index) => self.doc.symbols[index].fully_qualified.to_string(),
                 None => String::new(),
             }
-        } else if equal_fold(trimmed, "parent") {
+        } else if eq_ignore_case(trimmed, "parent") {
             match self.enclosing_class(owner) {
                 Some(index) => self.doc.symbols[index]
                     .extends()
@@ -195,7 +195,7 @@ pub(crate) fn non_class_native_type_name(name: &str) -> bool {
     };
     candidates
         .iter()
-        .any(|candidate| equal_fold(name, candidate))
+        .any(|candidate| eq_ignore_case(name, candidate))
 }
 
 pub(crate) fn is_type_node(kind: Kind) -> bool {

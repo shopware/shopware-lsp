@@ -10,7 +10,7 @@ swlsp-syntax.workspace = true
 swlsp-language = { path = "../language" }
 swlsp-lsp-protocol = { path = "../lsp-protocol" }
 serde = { version = "1", features = ["derive"] }
-thiserror = "2"
+thiserror.workspace = true
 
 [dev-dependencies]
 serde_json = "1"

@@ -1,4 +1,5 @@
-//! `shopware/extension/all` (port of Go `extension_command.go`).
+//! `shopware/extension/all`: every Shopware extension detected in the
+//! workspace.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -12,7 +13,8 @@ pub struct ExtensionCommandProvider {
     index: Arc<ExtensionIndexer>,
 }
 
-/// Go's untagged `ShopwareExtension` JSON encoding.
+/// The extension JSON shape the editor clients expect: PascalCase members
+/// and `null` permissions when there are none.
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
 struct ExtensionWire<'a> {
@@ -56,7 +58,7 @@ impl ExtensionCommandProvider {
     }
 }
 
-/// Go returns the repository rows in storage order, `null` when empty.
+/// The extensions in repository order, or `null` when there are none.
 fn all_extensions(index: &ExtensionIndexer) -> Result<serde_json::Value, BoxError> {
     let extensions = index.get_all()?;
     if extensions.is_empty() {

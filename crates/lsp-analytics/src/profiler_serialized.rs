@@ -1,10 +1,10 @@
-//! A bounded reader for PHP `serialize()` data stored in Symfony profiles
-//! (port of `profiler_serialized.go`).
+//! A bounded reader for PHP `serialize()` data stored in Symfony profiles.
 
 use std::collections::HashMap;
 
-use crate::profiler::{ProfilerRuntimeTwigComponent, go_lossy};
-use crate::{lower, trim_space};
+use crate::profiler::{ProfilerRuntimeTwigComponent, utf8_lossy_per_byte};
+
+use swlsp_textutil::lowercase;
 
 const MAX_PROFILER_SERIALIZED_DEPTH: usize = 64;
 
@@ -135,7 +135,7 @@ fn read_container(
     })
 }
 
-/// Go `profilerSerializedUnsigned`: digits ending in `terminator`; returns
+/// The unsigned decimal at `start`, ending in `terminator`; returns
 /// the value and the terminator offset.
 fn unsigned(content: &[u8], start: usize, terminator: u8) -> Option<(usize, usize)> {
     let mut cursor = start;
@@ -248,7 +248,7 @@ pub(crate) fn profiler_twig_components(content: &[u8]) -> Vec<ProfilerRuntimeTwi
         let Some(current) = runtime_twig_component(component.raw) else {
             continue;
         };
-        let key = lower(&current.name);
+        let key = lowercase(&current.name);
         if let Some(existing) = grouped.get_mut(&key) {
             if existing.class.is_empty() {
                 existing.class = current.class;
@@ -266,7 +266,7 @@ pub(crate) fn profiler_twig_components(content: &[u8]) -> Vec<ProfilerRuntimeTwi
         right
             .render_count
             .cmp(&left.render_count)
-            .then_with(|| lower(&left.name).cmp(&lower(&right.name)))
+            .then_with(|| lowercase(&left.name).cmp(&lowercase(&right.name)))
     });
     result
 }
@@ -280,7 +280,7 @@ fn runtime_twig_component(content: &[u8]) -> Option<ProfilerRuntimeTwigComponent
         let text = pair
             .value
             .text
-            .map(|text| trim_space(&go_lossy(text)).to_owned());
+            .map(|text| utf8_lossy_per_byte(text).trim().to_owned());
         match property_name(key) {
             b"name" => {
                 if let Some(text) = text {

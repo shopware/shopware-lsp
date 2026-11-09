@@ -1,4 +1,4 @@
-//! Go `service_tag_codeaction.go`: the Symfony plugin's XML/YAML "Add Tags"
+//! The Symfony plugin's XML/YAML "Add Tags"
 //! intentions, one deterministic action per inferred tag.
 
 use std::collections::{BTreeMap, HashSet};

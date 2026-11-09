@@ -1,5 +1,5 @@
 //! Reads PHP Archive (PHAR) files without invoking PHP or extracting the
-//! whole archive into memory (port of `internal/phar`).
+//! whole archive into memory.
 
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -18,48 +18,107 @@ pub const COMPRESSION_BZIP2: u32 = 0x0000_2000;
 
 const HALT_COMPILER_MARKER: &[u8] = b"__HALT_COMPILER();";
 
-/// Errors produced while opening or extracting an archive. `Display` matches
-/// the Go error text.
-#[derive(Debug)]
+/// Errors produced while opening or extracting an archive.
+#[derive(Debug, thiserror::Error)]
 pub enum PharError {
-    /// The file does not contain a PHAR manifest (Go `ErrNotArchive`).
-    /// Composer sometimes installs PHP wrapper scripts with a `.phar`
-    /// suffix; callers can ignore these without hiding malformed archives.
+    /// The file does not contain a PHAR manifest. Composer sometimes
+    /// installs PHP wrapper scripts with a `.phar` suffix; callers can
+    /// ignore these without hiding malformed archives.
+    #[error("not a PHAR archive: {0}")]
     NotArchive(String),
-    /// Opening the file failed (Go returns the bare `os.Open` error).
-    Io(io::Error),
-    /// Any other failure, with its full message.
-    Other(String),
+    /// Opening the archive file failed.
+    #[error("open PHAR: {0}")]
+    Open(#[source] io::Error),
+    #[error("stat PHAR: {0}")]
+    Stat(#[source] io::Error),
+    #[error("read PHAR stub: {0}")]
+    ReadStub(#[source] io::Error),
+    #[error("parse PHAR manifest: more than {MAX_HALT_MARKERS} halt markers")]
+    TooManyHaltMarkers,
+    /// Every candidate manifest offset failed to parse; one error per
+    /// candidate, in stub order.
+    #[error("parse PHAR manifest: {}", join_lines(.0))]
+    Manifest(Vec<ManifestError>),
+    #[error("PHAR archive is closed")]
+    Closed,
+    #[error("invalid PHAR entry")]
+    InvalidEntry,
+    #[error("extract {name:?}: unsupported compression flags {flags:#x}")]
+    UnsupportedCompression { name: String, flags: u32 },
+    #[error("extract {name:?}: {source}")]
+    Read {
+        name: String,
+        #[source]
+        source: io::Error,
+    },
+    #[error("extract {name:?}: {source}")]
+    Write {
+        name: String,
+        #[source]
+        source: io::Error,
+    },
+    #[error("extract {name:?}: size mismatch: manifest has {expected} bytes, read {actual}")]
+    SizeMismatch {
+        name: String,
+        expected: i64,
+        actual: i64,
+    },
+    #[error("extract {name:?}: CRC32 mismatch: manifest has {expected:#010x}, read {actual:#010x}")]
+    ChecksumMismatch {
+        name: String,
+        expected: u32,
+        actual: u32,
+    },
 }
 
 impl PharError {
-    /// Mirrors `errors.Is(err, phar.ErrNotArchive)`.
+    /// Reports whether the file is not a PHAR at all (as opposed to a
+    /// malformed or unreadable archive).
     pub fn is_not_archive(&self) -> bool {
         matches!(self, PharError::NotArchive(_))
     }
 }
 
-impl std::fmt::Display for PharError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PharError::NotArchive(detail) => write!(formatter, "not a PHAR archive: {detail}"),
-            PharError::Io(error) => write!(formatter, "{error}"),
-            PharError::Other(message) => formatter.write_str(message),
-        }
-    }
+/// Why a candidate manifest offset could not be parsed.
+#[derive(Debug, thiserror::Error)]
+pub enum ManifestError {
+    #[error("read manifest length at {offset}: {source}")]
+    ReadLength {
+        offset: i64,
+        #[source]
+        source: io::Error,
+    },
+    #[error("invalid manifest length {length} at {offset}")]
+    InvalidLength { length: i64, offset: i64 },
+    #[error("manifest extends beyond the archive")]
+    BeyondArchive,
+    #[error("read manifest at {offset}: {source}")]
+    Read {
+        offset: i64,
+        #[source]
+        source: io::Error,
+    },
+    #[error("manifest declares too many entries: {0}")]
+    TooManyEntries(u32),
+    /// The manifest ended inside the named field.
+    #[error("{0}: unexpected end of manifest")]
+    Truncated(String),
+    #[error("entry {0} has an invalid filename")]
+    InvalidFilename(u32),
+    #[error("entry {name:?} uses unsupported compression flags {flags:#x}")]
+    UnsupportedCompression { name: String, flags: u32 },
+    #[error("entry {0:?} content extends beyond the archive")]
+    ContentBeyondArchive(String),
+    #[error("manifest has {remaining} trailing bytes after {entries} entries")]
+    TrailingBytes { remaining: usize, entries: u32 },
 }
 
-impl std::error::Error for PharError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            PharError::Io(error) => Some(error),
-            _ => None,
-        }
-    }
-}
-
-fn other(message: impl Into<String>) -> PharError {
-    PharError::Other(message.into())
+fn join_lines(errors: &[ManifestError]) -> String {
+    errors
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// One file in a PHAR. The content offset deliberately remains private so
@@ -92,12 +151,11 @@ fn read_at(file: &File, buffer: &mut [u8], offset: u64) -> io::Result<usize> {
     std::os::windows::fs::FileExt::seek_read(file, buffer, offset)
 }
 
-/// Go `io.ReaderAt.ReadAt` semantics: fill the whole buffer or fail with
-/// `UnexpectedEof` (Go reports `EOF`).
+/// Fills the whole buffer from `offset` or fails with `UnexpectedEof`.
 fn read_exact_at(file: &File, mut buffer: &mut [u8], mut offset: u64) -> io::Result<()> {
     while !buffer.is_empty() {
         match read_at(file, buffer, offset) {
-            Ok(0) => return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "EOF")),
+            Ok(0) => return Err(io::ErrorKind::UnexpectedEof.into()),
             Ok(read) => {
                 buffer = &mut buffer[read..];
                 offset += read as u64;
@@ -109,8 +167,7 @@ fn read_exact_at(file: &File, mut buffer: &mut [u8], mut offset: u64) -> io::Res
     Ok(())
 }
 
-/// A positional reader over `[offset, offset+length)` of a shared file
-/// (Go `io.SectionReader`).
+/// A positional reader over `[offset, offset+length)` of a shared file.
 struct SectionReader<'a> {
     file: &'a File,
     offset: u64,
@@ -142,30 +199,23 @@ impl Archive {
     /// Validates the PHAR manifest and returns the opened archive.
     pub fn open(path: impl AsRef<Path>) -> Result<Archive, PharError> {
         let path = path.as_ref();
-        let file = File::open(path).map_err(PharError::Io)?;
-        let size = file
-            .metadata()
-            .map_err(|error| other(format!("stat PHAR: {error}")))?
-            .len();
+        let file = File::open(path).map_err(PharError::Open)?;
+        let size = file.metadata().map_err(PharError::Stat)?.len();
         if size < (HALT_COMPILER_MARKER.len() + 4) as u64 {
             return Err(PharError::NotArchive("halt marker is missing".to_owned()));
         }
 
         let stub_size = size.min(MAX_STUB_SIZE) as usize;
         let mut stub = vec![0u8; stub_size];
-        (&file)
-            .read_exact(&mut stub)
-            .map_err(|error| other(format!("read PHAR stub: {}", go_io_error(&error))))?;
+        (&file).read_exact(&mut stub).map_err(PharError::ReadStub)?;
 
-        let mut parse_errors: Vec<String> = Vec::new();
+        let mut parse_errors = Vec::new();
         let mut search_from = 0;
         let mut marker_count = 0;
         while let Some(relative) = find(&stub[search_from..], HALT_COMPILER_MARKER) {
             marker_count += 1;
             if marker_count > MAX_HALT_MARKERS {
-                return Err(other(format!(
-                    "parse PHAR manifest: more than {MAX_HALT_MARKERS} halt markers"
-                )));
+                return Err(PharError::TooManyHaltMarkers);
             }
             let marker_end = search_from + relative + HALT_COMPILER_MARKER.len();
             for manifest_offset in manifest_offsets(&stub, marker_end) {
@@ -184,10 +234,7 @@ impl Archive {
         }
 
         if !parse_errors.is_empty() {
-            return Err(other(format!(
-                "parse PHAR manifest: {}",
-                parse_errors.join("\n")
-            )));
+            return Err(PharError::Manifest(parse_errors));
         }
         if size > MAX_STUB_SIZE {
             return Err(PharError::NotArchive(format!(
@@ -211,10 +258,10 @@ impl Archive {
     /// uncompressed size and CRC32 checksum.
     pub fn extract(&self, entry: &Entry, destination: &mut dyn Write) -> Result<(), PharError> {
         let Some(file) = self.file.as_ref() else {
-            return Err(other("PHAR archive is closed"));
+            return Err(PharError::Closed);
         };
         if entry.offset < 0 || entry.compressed_size < 0 {
-            return Err(other("invalid PHAR entry"));
+            return Err(PharError::InvalidEntry);
         }
         let section = SectionReader {
             file,
@@ -226,10 +273,10 @@ impl Archive {
             COMPRESSION_GZIP => Box::new(flate2::read::DeflateDecoder::new(section)),
             COMPRESSION_BZIP2 => Box::new(bzip2::read::BzDecoder::new(section)),
             flags => {
-                return Err(other(format!(
-                    "extract {}: unsupported compression flags {flags:#x}",
-                    go_quote(&entry.name)
-                )));
+                return Err(PharError::UnsupportedCompression {
+                    name: entry.name.clone(),
+                    flags,
+                });
             }
         };
 
@@ -243,33 +290,35 @@ impl Archive {
                 Ok(read) => read,
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
                 Err(error) => {
-                    return Err(other(format!(
-                        "extract {}: {}",
-                        go_quote(&entry.name),
-                        go_io_error(&error)
-                    )));
+                    return Err(PharError::Read {
+                        name: entry.name.clone(),
+                        source: error,
+                    });
                 }
             };
             destination
                 .write_all(&buffer[..read])
-                .map_err(|error| other(format!("extract {}: {error}", go_quote(&entry.name))))?;
+                .map_err(|source| PharError::Write {
+                    name: entry.name.clone(),
+                    source,
+                })?;
             hasher.update(&buffer[..read]);
             written += read as i64;
         }
         if written != entry.uncompressed_size {
-            return Err(other(format!(
-                "extract {}: size mismatch: manifest has {} bytes, read {written}",
-                go_quote(&entry.name),
-                entry.uncompressed_size
-            )));
+            return Err(PharError::SizeMismatch {
+                name: entry.name.clone(),
+                expected: entry.uncompressed_size,
+                actual: written,
+            });
         }
         let checksum = hasher.finalize();
         if checksum != entry.crc32 {
-            return Err(other(format!(
-                "extract {}: CRC32 mismatch: manifest has {:#010x}, read {checksum:#010x}",
-                go_quote(&entry.name),
-                entry.crc32
-            )));
+            return Err(PharError::ChecksumMismatch {
+                name: entry.name.clone(),
+                expected: entry.crc32,
+                actual: checksum,
+            });
         }
         Ok(())
     }
@@ -278,17 +327,6 @@ impl Archive {
     pub fn close(&mut self) {
         self.file = None;
     }
-}
-
-fn go_io_error(error: &io::Error) -> String {
-    if error.kind() == io::ErrorKind::UnexpectedEof {
-        return "unexpected EOF".to_owned();
-    }
-    error.to_string()
-}
-
-fn go_quote(value: &str) -> String {
-    format!("{value:?}")
 }
 
 fn manifest_offsets(stub: &[u8], marker_end: usize) -> Vec<usize> {
@@ -322,30 +360,26 @@ struct ManifestCursor<'a> {
     offset: usize,
 }
 
-const UNEXPECTED_EOF: &str = "unexpected EOF";
-
 impl<'a> ManifestCursor<'a> {
-    fn bytes(&mut self, length: u32) -> Result<&'a [u8], String> {
-        if length as u64 > (self.data.len() - self.offset) as u64 {
-            return Err(UNEXPECTED_EOF.to_owned());
-        }
-        let end = self.offset + length as usize;
-        let value = &self.data[self.offset..end];
+    /// Takes the next `length` bytes, or `None` when the manifest ends first.
+    fn bytes(&mut self, length: u32) -> Option<&'a [u8]> {
+        let end = self.offset.checked_add(usize::try_from(length).ok()?)?;
+        let value = self.data.get(self.offset..end)?;
         self.offset = end;
-        Ok(value)
+        Some(value)
     }
 
-    fn uint16(&mut self) -> Result<u16, String> {
+    fn uint16(&mut self) -> Option<u16> {
         let value = self.bytes(2)?;
-        Ok(u16::from_le_bytes([value[0], value[1]]))
+        Some(u16::from_le_bytes([value[0], value[1]]))
     }
 
-    fn uint32(&mut self) -> Result<u32, String> {
+    fn uint32(&mut self) -> Option<u32> {
         let value = self.bytes(4)?;
-        Ok(u32::from_le_bytes([value[0], value[1], value[2], value[3]]))
+        Some(u32::from_le_bytes([value[0], value[1], value[2], value[3]]))
     }
 
-    fn skip(&mut self, length: u32) -> Result<(), String> {
+    fn skip(&mut self, length: u32) -> Option<()> {
         self.bytes(length).map(|_| ())
     }
 
@@ -354,102 +388,98 @@ impl<'a> ManifestCursor<'a> {
     }
 }
 
+fn truncated(field: impl Into<String>) -> ManifestError {
+    ManifestError::Truncated(field.into())
+}
+
 fn parse_manifest(
     file: &File,
     archive_size: i64,
     manifest_offset: i64,
-) -> Result<Vec<Entry>, String> {
+) -> Result<Vec<Entry>, ManifestError> {
     let mut length_bytes = [0u8; 4];
-    read_exact_at(file, &mut length_bytes, manifest_offset as u64).map_err(|error| {
-        format!(
-            "read manifest length at {manifest_offset}: {}",
-            go_read_at_error(&error)
-        )
+    read_exact_at(file, &mut length_bytes, manifest_offset as u64).map_err(|source| {
+        ManifestError::ReadLength {
+            offset: manifest_offset,
+            source,
+        }
     })?;
     let manifest_length = u32::from_le_bytes(length_bytes) as i64;
     if !(18..=MAX_MANIFEST_SIZE as i64).contains(&manifest_length) {
-        return Err(format!(
-            "invalid manifest length {manifest_length} at {manifest_offset}"
-        ));
+        return Err(ManifestError::InvalidLength {
+            length: manifest_length,
+            offset: manifest_offset,
+        });
     }
     let manifest_end = manifest_offset + 4 + manifest_length;
     if manifest_end < manifest_offset || manifest_end > archive_size {
-        return Err("manifest extends beyond the archive".to_owned());
+        return Err(ManifestError::BeyondArchive);
     }
 
     let mut manifest = vec![0u8; manifest_length as usize];
-    read_exact_at(file, &mut manifest, manifest_offset as u64 + 4).map_err(|error| {
-        format!(
-            "read manifest at {manifest_offset}: {}",
-            go_read_at_error(&error)
-        )
+    read_exact_at(file, &mut manifest, manifest_offset as u64 + 4).map_err(|source| {
+        ManifestError::Read {
+            offset: manifest_offset,
+            source,
+        }
     })?;
     let mut cursor = ManifestCursor {
         data: &manifest,
         offset: 0,
     };
-    let entry_count = cursor.uint32()?;
+    let entry_count = cursor.uint32().ok_or_else(|| truncated("entry count"))?;
     if entry_count > MAX_ENTRY_COUNT {
-        return Err(format!("manifest declares too many entries: {entry_count}"));
+        return Err(ManifestError::TooManyEntries(entry_count));
     }
-    cursor.uint16()?; // minimum supported API version
-    cursor.uint32()?; // global flags
-    let alias_length = cursor.uint32()?;
+    cursor.uint16().ok_or_else(|| truncated("API version"))?;
+    cursor.uint32().ok_or_else(|| truncated("global flags"))?;
+    let alias_length = cursor.uint32().ok_or_else(|| truncated("alias length"))?;
     cursor
         .skip(alias_length)
-        .map_err(|error| format!("read archive alias: {error}"))?;
-    let metadata_length = cursor.uint32()?;
+        .ok_or_else(|| truncated("archive alias"))?;
+    let metadata_length = cursor
+        .uint32()
+        .ok_or_else(|| truncated("archive metadata length"))?;
     cursor
         .skip(metadata_length)
-        .map_err(|error| format!("read archive metadata: {error}"))?;
+        .ok_or_else(|| truncated("archive metadata"))?;
 
     let mut entries = Vec::with_capacity(entry_count as usize);
     let mut content_offset = manifest_end;
     for index in 0..entry_count {
         let name_length = cursor
             .uint32()
-            .map_err(|error| format!("entry {index} filename length: {error}"))?;
+            .ok_or_else(|| truncated(format!("entry {index} filename length")))?;
         let name = cursor
             .bytes(name_length)
-            .map_err(|error| format!("entry {index} filename: {error}"))?;
+            .ok_or_else(|| truncated(format!("entry {index} filename")))?;
         if name.is_empty() || name.contains(&0) {
-            return Err(format!("entry {index} has an invalid filename"));
+            return Err(ManifestError::InvalidFilename(index));
         }
         let name = String::from_utf8_lossy(name).into_owned();
-        let quoted = go_quote(&name);
-        let uncompressed_size = cursor
-            .uint32()
-            .map_err(|error| format!("entry {quoted} size: {error}"))?;
-        cursor
-            .uint32()
-            .map_err(|error| format!("entry {quoted} timestamp: {error}"))?;
-        let compressed_size = cursor
-            .uint32()
-            .map_err(|error| format!("entry {quoted} compressed size: {error}"))?;
-        let checksum = cursor
-            .uint32()
-            .map_err(|error| format!("entry {quoted} checksum: {error}"))?;
-        let flags = cursor
-            .uint32()
-            .map_err(|error| format!("entry {quoted} flags: {error}"))?;
+        let field = |field: &str| truncated(format!("entry {name:?} {field}"));
+        let uncompressed_size = cursor.uint32().ok_or_else(|| field("size"))?;
+        cursor.uint32().ok_or_else(|| field("timestamp"))?;
+        let compressed_size = cursor.uint32().ok_or_else(|| field("compressed size"))?;
+        let checksum = cursor.uint32().ok_or_else(|| field("checksum"))?;
+        let flags = cursor.uint32().ok_or_else(|| field("flags"))?;
         match flags & COMPRESSION_MASK {
             0 | COMPRESSION_GZIP | COMPRESSION_BZIP2 => {}
             unsupported => {
-                return Err(format!(
-                    "entry {quoted} uses unsupported compression flags {unsupported:#x}"
-                ));
+                return Err(ManifestError::UnsupportedCompression {
+                    name,
+                    flags: unsupported,
+                });
             }
         }
-        let entry_metadata_length = cursor
-            .uint32()
-            .map_err(|error| format!("entry {quoted} metadata size: {error}"))?;
+        let entry_metadata_length = cursor.uint32().ok_or_else(|| field("metadata size"))?;
         cursor
             .skip(entry_metadata_length)
-            .map_err(|error| format!("entry {quoted} metadata: {error}"))?;
+            .ok_or_else(|| field("metadata"))?;
 
         let next_offset = content_offset + compressed_size as i64;
         if next_offset < content_offset || next_offset > archive_size {
-            return Err(format!("entry {quoted} content extends beyond the archive"));
+            return Err(ManifestError::ContentBeyondArchive(name));
         }
         entries.push(Entry {
             name,
@@ -462,19 +492,12 @@ fn parse_manifest(
         content_offset = next_offset;
     }
     if cursor.remaining() != 0 {
-        return Err(format!(
-            "manifest has {} trailing bytes after {entry_count} entries",
-            cursor.remaining()
-        ));
+        return Err(ManifestError::TrailingBytes {
+            remaining: cursor.remaining(),
+            entries: entry_count,
+        });
     }
     Ok(entries)
-}
-
-fn go_read_at_error(error: &io::Error) -> String {
-    if error.kind() == io::ErrorKind::UnexpectedEof {
-        return "EOF".to_owned();
-    }
-    error.to_string()
 }
 
 #[cfg(test)]

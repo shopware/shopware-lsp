@@ -1,4 +1,4 @@
-//! Feature flag names (Go `feature_completion.go`).
+//! Feature flag names.
 
 use std::sync::Arc;
 

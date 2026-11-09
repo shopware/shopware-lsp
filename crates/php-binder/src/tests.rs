@@ -1,7 +1,3 @@
-//! Port of `binder_test.go` and `declaration_set_test.go`.
-//! (`capacity_profile_test.go` is an opt-in real-world profiling test; the
-//! corpus differential oracle covers it.)
-
 use std::collections::BTreeMap;
 
 use swlsp_php_semantic::{
@@ -1261,9 +1257,7 @@ class_alias($dynamic, 'Legacy\DynamicAlias');
 
 #[test]
 fn declaration_set_tracks_identities_and_deduplicates() {
-    // Go's hand-rolled declaration set is a plain hash set of node
-    // identities here; check the observable invariant: a node is a
-    // declaration exactly when its identity was marked.
+    // A node is a declaration exactly when its identity was marked.
     let source = "<?php\nfunction transform($input) {\n    $first = $input;\n    $second = $first;\n    return [$first, $second];\n}\n";
     let document = bind("/declarations.php", source);
     let locals: Vec<_> = document

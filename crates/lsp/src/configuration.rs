@@ -10,7 +10,7 @@ use swlsp_lsp_protocol as protocol;
 use swlsp_projectconfig::{
     self as projectconfig, CatalogEntry, DiagnosticPolicy, Effective, Partial, Scope, Severity,
 };
-use swlsp_uriutil::{filepath, go_quote};
+use swlsp_uriutil::filepath;
 
 use crate::context::RpcError;
 use crate::inspection::DiagnosticId;
@@ -23,7 +23,7 @@ pub(crate) struct ConfigurationState {
     pub scopes: Vec<Scope>,
     pub editor: Partial,
     pub effective: Effective,
-    /// Go `configurationErr` (joined error messages).
+    /// The last configuration load error (newline-joined messages).
     pub error: Option<String>,
     pub issues: Vec<ConfigurationIssue>,
     pub pending_fingerprint: String,
@@ -43,6 +43,8 @@ impl Default for ConfigurationState {
     }
 }
 
+/// Serializes an empty list as `null`; the configuration catalog's wire
+/// shape uses `null` for "none".
 fn null_if_empty<S: Serializer, T: Serialize>(
     values: &[T],
     serializer: S,
@@ -111,7 +113,7 @@ pub struct ConfigurationReloadResult {
     pub errors: Vec<ConfigurationIssue>,
 }
 
-/// Go `errors.Join` for optional messages.
+/// Joins optional error messages with a newline.
 pub(crate) fn join_errors(left: Option<String>, right: Option<String>) -> Option<String> {
     match (left, right) {
         (Some(left), Some(right)) => Some(format!("{left}\n{right}")),
@@ -208,16 +210,14 @@ fn validate_diagnostic_layer(
         for id in inspections.keys() {
             if !inspection_ids.contains(id) {
                 errors.push(format!(
-                    "{name} configuration has unknown inspection {}",
-                    go_quote(id)
+                    "{name} configuration has unknown inspection {id:?}"
                 ));
             }
         }
         for id in rules.keys() {
             if !rule_ids.contains(id) {
                 errors.push(format!(
-                    "{name} configuration has unknown diagnostic rule {}",
-                    go_quote(id)
+                    "{name} configuration has unknown diagnostic rule {id:?}"
                 ));
             }
         }

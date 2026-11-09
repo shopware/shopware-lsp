@@ -1,5 +1,6 @@
 //! Symfony resource-pattern matching: brace expansion, plain directory
-//! prefixes, and Go `filepath.Match` globs where `**` crosses directories.
+//! prefixes, and shell globs where `*` stays within a directory and `**`
+//! crosses directories.
 
 use crate::util::{clean_path, relative_path};
 
@@ -13,7 +14,7 @@ pub(crate) fn path_matches_config_pattern(candidate: &str, pattern: &str) -> boo
             }
             continue;
         }
-        if swlsp_pathmatch::go_glob(&expanded, &candidate, true) {
+        if swlsp_pathmatch::path_glob(&expanded, &candidate, true) {
             return true;
         }
     }
@@ -57,7 +58,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn matches_like_go() {
+    fn star_stays_within_a_directory_and_double_star_crosses() {
         assert!(path_matches_config_pattern("/p/src/b/c", "/p/src/*/c"));
         assert!(!path_matches_config_pattern("/p/src/b/x/c", "/p/src/*/c"));
         assert!(path_matches_config_pattern("/p/src/cd", "/p/src/[bc]d"));

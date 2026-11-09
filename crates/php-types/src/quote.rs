@@ -1,25 +1,34 @@
-//! Byte-compatible ports of the Go string helpers whose output is visible to
-//! users (`strconv.Quote`) or affects parsing (`strconv.Unquote`,
-//! `strings.EqualFold`, `strings.ToLower`).
+//! Quoted string literals of the canonical type syntax.
+//!
+//! Literal string types (`"foo"`) and quoted array-shape keys are stored and
+//! rendered in this form, and the type parser reads it back, so the escaping
+//! is part of a type's identity and of persisted type text. Changing it
+//! requires an index version bump.
+//!
+//! A literal is written in double quotes. `"` and `\` are backslash-escaped,
+//! printable characters stay verbatim, and every other character uses
+//! `\a \b \f \n \r \t \v`, `\xHH` (remaining ASCII controls), `\uHHHH` or
+//! `\UHHHHHHHH`.
+
+use std::fmt::Write;
 
 use unicode_general_category::{GeneralCategory, get_general_category};
 
-/// Port of Go's `strconv.Quote`.
-pub fn go_quote(value: &str) -> String {
+/// `value` as a double-quoted literal.
+pub fn quote_literal(value: &str) -> String {
     let mut out = String::with_capacity(value.len() + 2);
-    write_go_quote(&mut out, value);
+    write_quoted_literal(&mut out, value);
     out
 }
 
-/// Appends the Go `strconv.Quote` rendering of `value` to `out`.
-pub fn write_go_quote(out: &mut String, value: &str) {
-    use std::fmt::Write;
+/// Appends `value` as a double-quoted literal to `out`.
+pub(crate) fn write_quoted_literal(out: &mut String, value: &str) {
     out.push('"');
     for character in value.chars() {
         match character {
             '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),
-            _ if go_is_print(character) => out.push(character),
+            _ if is_printable(character) => out.push(character),
             '\u{7}' => out.push_str("\\a"),
             '\u{8}' => out.push_str("\\b"),
             '\u{c}' => out.push_str("\\f"),
@@ -42,9 +51,9 @@ pub fn write_go_quote(out: &mut String, value: &str) {
     out.push('"');
 }
 
-/// Port of Go's `strconv.IsPrint`: letters, marks, numbers, punctuation,
-/// symbols, and the ASCII space.
-pub fn go_is_print(character: char) -> bool {
+/// Whether `character` is written verbatim: letters, marks, numbers,
+/// punctuation, symbols, and the ASCII space.
+fn is_printable(character: char) -> bool {
     if character.is_ascii() {
         return (' '..='~').contains(&character);
     }
@@ -76,11 +85,15 @@ pub fn go_is_print(character: char) -> bool {
     )
 }
 
-/// Port of Go's `strconv.Unquote` for double- and single-quoted input.
+/// Decodes a literal written in double or single quotes.
 ///
-/// Go strings may hold arbitrary bytes produced by `\x` or octal escapes;
-/// such invalid UTF-8 is replaced with U+FFFD here.
-pub fn go_unquote(input: &str) -> Option<String> {
+/// Accepts the escapes [`quote_literal`] writes, three-digit octal escapes
+/// (`\101`), and `\'` inside single quotes. A single-quoted literal holds
+/// exactly one character or escape. Returns `None` for mismatched quotes, a
+/// raw newline, an unknown escape, or the other quote character escaped.
+/// Bytes from `\x` or octal escapes that do not form valid UTF-8 are replaced
+/// with U+FFFD.
+pub fn unquote_literal(input: &str) -> Option<String> {
     let bytes = input.as_bytes();
     if bytes.len() < 2 {
         return None;
@@ -205,59 +218,8 @@ fn utf8_sequence_length(first: u8) -> usize {
     }
 }
 
-/// Port of Go's per-rune `unicode.ToLower` (simple case mapping).
-pub fn go_lower_char(character: char) -> char {
-    if character.is_ascii() {
-        return character.to_ascii_lowercase();
-    }
-    if character == '\u{130}' {
-        return 'i';
-    }
-    let mut lower = character.to_lowercase();
-    match (lower.next(), lower.next()) {
-        (Some(value), None) => value,
-        _ => character,
-    }
-}
-
-/// Port of Go's `strings.ToLower`.
-pub fn go_to_lower(value: &str) -> String {
-    if value.is_ascii() {
-        return value.to_ascii_lowercase();
-    }
-    value.chars().map(go_lower_char).collect()
-}
-
-fn fold_char(character: char) -> char {
-    match character {
-        '\u{17f}' => 's',
-        '\u{212a}' => 'k',
-        '\u{2126}' => '\u{3c9}',
-        _ => go_lower_char(character),
-    }
-}
-
-/// Approximation of Go's `strings.EqualFold` (Unicode simple case folding).
-pub fn equal_fold(left: &str, right: &str) -> bool {
-    if left.is_ascii() && right.is_ascii() {
-        return left.eq_ignore_ascii_case(right);
-    }
-    let mut left_chars = left.chars();
-    let mut right_chars = right.chars();
-    loop {
-        match (left_chars.next(), right_chars.next()) {
-            (None, None) => return true,
-            (Some(a), Some(b)) => {
-                if a != b && fold_char(a) != fold_char(b) {
-                    return false;
-                }
-            }
-            _ => return false,
-        }
-    }
-}
-
-/// Go's `unicode.IsSpace(rune(byte))`, used by byte-oriented scanners.
+/// Whitespace between type tokens: ASCII whitespace plus the single bytes
+/// 0x85 (NEL) and 0xa0 (NBSP).
 pub(crate) fn is_space_byte(value: u8) -> bool {
     matches!(
         value,
@@ -270,28 +232,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn quote_matches_go() {
-        assert_eq!(go_quote("line\n\"quoted\""), "\"line\\n\\\"quoted\\\"\"");
-        assert_eq!(go_quote("ä"), "\"ä\"");
-        assert_eq!(go_quote("\u{a0}\u{7f}\u{1}"), "\"\\u00a0\\x7f\\x01\"");
-        assert_eq!(go_quote("\u{e000}"), "\"\\ue000\"");
+    fn quote_escapes_quotes_controls_and_unprintable_characters() {
+        assert_eq!(
+            quote_literal("line\n\"quoted\""),
+            "\"line\\n\\\"quoted\\\"\""
+        );
+        assert_eq!(quote_literal("ä"), "\"ä\"");
+        assert_eq!(quote_literal("\u{a0}\u{7f}\u{1}"), "\"\\u00a0\\x7f\\x01\"");
+        assert_eq!(quote_literal("\u{e000}"), "\"\\ue000\"");
     }
 
     #[test]
-    fn unquote_matches_go() {
-        assert_eq!(go_unquote("\"a\\\"b\"").as_deref(), Some("a\"b"));
-        assert_eq!(go_unquote("'a'").as_deref(), Some("a"));
-        assert_eq!(go_unquote("'ab'"), None);
-        assert_eq!(go_unquote("''"), None);
-        assert_eq!(go_unquote("\"\\u00e4\"").as_deref(), Some("ä"));
-        assert_eq!(go_unquote("\"\\'\""), None);
-        assert_eq!(go_unquote("\"\\101\"").as_deref(), Some("A"));
-    }
-
-    #[test]
-    fn equal_fold_matches_go() {
-        assert!(equal_fold("aſ", "AS"));
-        assert!(equal_fold("Ärger", "äRGER"));
-        assert!(!equal_fold("abc", "abd"));
+    fn unquote_decodes_escapes_and_rejects_malformed_literals() {
+        assert_eq!(unquote_literal("\"a\\\"b\"").as_deref(), Some("a\"b"));
+        assert_eq!(unquote_literal("'a'").as_deref(), Some("a"));
+        assert_eq!(unquote_literal("'ab'"), None);
+        assert_eq!(unquote_literal("''"), None);
+        assert_eq!(unquote_literal("\"\\u00e4\"").as_deref(), Some("ä"));
+        assert_eq!(unquote_literal("\"\\'\""), None);
+        assert_eq!(unquote_literal("\"\\101\"").as_deref(), Some("A"));
     }
 }

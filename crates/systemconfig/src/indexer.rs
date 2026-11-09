@@ -59,7 +59,7 @@ impl Indexer for SystemConfigIndexer {
             .syntax_tree()
             .ok_or_else(|| Error::msg("not a system config file"))?;
         let entries = index_system_config_tree(path, tree, file.line_index())?;
-        // A repeated key keeps its last entry, like the Go map.
+        // A repeated key keeps its last entry.
         let mut items: Vec<&SystemConfigEntry> = Vec::with_capacity(entries.len());
         for entry in &entries {
             match items

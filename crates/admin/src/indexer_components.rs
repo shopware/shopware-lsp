@@ -1,5 +1,4 @@
-//! Component, mixin and module catalog queries (port of Go
-//! `indexer_components.go`).
+//! Component, mixin and module catalog queries.
 
 use std::sync::Arc;
 

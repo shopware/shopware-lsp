@@ -1,5 +1,4 @@
-//! Formatting, signature help, rename, inlay hints and semantic tokens (port
-//! of Go `internal/app/providers_editor.go`).
+//! Formatting, signature help, rename, inlay hints and semantic tokens.
 
 use std::sync::Arc;
 

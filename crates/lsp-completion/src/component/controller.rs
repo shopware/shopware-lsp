@@ -1,5 +1,4 @@
-//! Statically resolvable `controller()` targets in Twig (Go
-//! `controller_completion.go`).
+//! Statically resolvable `controller()` targets in Twig.
 
 use std::collections::{BTreeSet, HashSet};
 use std::sync::{Arc, Mutex};
@@ -8,11 +7,12 @@ use swlsp_lsp::{CompletionProvider, CompletionRequest, Context};
 use swlsp_lsp_protocol as protocol;
 use swlsp_php::PhpIndex;
 use swlsp_php_semantic::{Symbol, SymbolKind, Visibility};
-use swlsp_php_types::equal_fold;
 use swlsp_symfony::{RouteIndexer, ServiceIndex};
+use swlsp_textutil::eq_ignore_case;
 
 use super::util::kind;
-use crate::common::{go_to_lower, protocol_range, text_edit};
+use crate::common::{protocol_range, text_edit};
+use swlsp_textutil::lowercase;
 
 #[derive(Clone)]
 struct Candidate {
@@ -104,7 +104,7 @@ impl ControllerCompletionProvider {
         let Ok(routes) = routes.get_routes_view() else {
             return Vec::new();
         };
-        // Go iterates a map here; sorted order keeps Rust deterministic.
+        // Sorted, so the completion order is deterministic.
         let mut service_ids = BTreeSet::new();
         for route in routes.iter() {
             let Some(reference) = swlsp_symfony::parse_controller_reference(&route.controller)
@@ -162,7 +162,7 @@ impl CompletionProvider for ControllerCompletionProvider {
         let (Some(php), Some(node)) = (self.php.as_ref(), request.node.as_ref()) else {
             return Vec::new();
         };
-        if !equal_fold(
+        if !eq_ignore_case(
             swlsp_uriutil::filepath::ext(&request.params.text_document.uri),
             ".twig",
         ) {
@@ -175,7 +175,7 @@ impl CompletionProvider for ControllerCompletionProvider {
             .class_candidates(ctx, php)
             .into_iter()
             .chain(self.service_candidates(ctx, php))
-            .map(|candidate| (go_to_lower(&candidate.label), candidate))
+            .map(|candidate| (lowercase(&candidate.label), candidate))
             .collect();
         // Case variants of one label are deduplicated below; the exact label
         // and detail decide which one survives.
@@ -245,11 +245,11 @@ fn controller_action_method(method: &Symbol, class_controller: bool) -> bool {
     if method.name.starts_with("__") && &*method.name != "__invoke" {
         return false;
     }
-    class_controller || !go_to_lower(&method.name).starts_with("set")
+    class_controller || !lowercase(&method.name).starts_with("set")
 }
 
 fn controller_test_class(class: &Symbol) -> bool {
-    let name = go_to_lower(&format!(
+    let name = lowercase(&format!(
         "\\{}\\",
         class.fully_qualified.trim_start_matches('\\')
     ));

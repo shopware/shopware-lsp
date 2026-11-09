@@ -34,8 +34,8 @@ impl Parse {
         self.tree.root()
     }
 
-    /// Debug tree followed by one line per error, the format used for
-    /// differential testing against the Go implementation.
+    /// Debug tree followed by one line per error, the format of parser
+    /// snapshot tests and CST dumps.
     pub fn debug_dump(&self) -> String {
         let mut out = debug_tree(&self.tree.root());
         for error in &self.errors {

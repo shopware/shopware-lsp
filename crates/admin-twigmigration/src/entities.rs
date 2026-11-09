@@ -1,4 +1,4 @@
-//! HTML named character references, generated from Go `html/entity.go`.
+//! HTML named character references (the HTML5 entity table).
 
 /// Single code point entities, sorted by name bytes.
 pub(crate) static ENTITY: &[(&str, char)] = &[

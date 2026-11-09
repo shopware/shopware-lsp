@@ -1,5 +1,4 @@
-//! Go `php_imports_test.go`, `php_extract_variable_test.go`,
-//! `php_extract_method_test.go`.
+//! Organize-imports, extract-variable and extract-method tests.
 
 use std::sync::Arc;
 

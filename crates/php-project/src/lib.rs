@@ -1,5 +1,4 @@
-//! Loads the Composer model that defines a PHP workspace (port of
-//! `internal/php/project`).
+//! Loads the Composer model that defines a PHP workspace.
 
 mod bootstrap;
 mod composer;
@@ -42,7 +41,7 @@ impl Version {
     }
 
     /// -1, 0, or 1 when `self` is lower than, equal to, or greater than
-    /// `other` (Go `Compare`).
+    /// `other`.
     pub fn compare(self, other: Version) -> i32 {
         match self.cmp(&other) {
             std::cmp::Ordering::Less => -1,
@@ -72,8 +71,8 @@ pub struct Model {
     pub required_extensions: Vec<String>,
     pub enabled_extensions: Vec<String>,
     pub disabled_extensions: Vec<String>,
-    /// Extensions reported by the configured runtime. `None` means unknown
-    /// (Go `nil`), which differs from an empty list.
+    /// Extensions reported by the configured runtime. `None` means unknown,
+    /// which differs from an empty list.
     pub loaded_extensions: Option<Vec<String>>,
 }
 
@@ -96,45 +95,22 @@ pub struct Psr4Mapping {
 }
 
 /// Error returned while loading Composer metadata.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("{context}: {source}")]
     Io {
         context: String,
+        #[source]
         source: io::Error,
     },
+    #[error("{context}: {source}")]
     Json {
         context: String,
+        #[source]
         source: serde_json::Error,
     },
-    OutsideRoot {
-        directory: PathBuf,
-        root: PathBuf,
-    },
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Io { context, source } => write!(f, "{context}: {source}"),
-            Error::Json { context, source } => write!(f, "{context}: {source}"),
-            Error::OutsideRoot { directory, root } => write!(
-                f,
-                "composer directory {:?} is outside project root {:?}",
-                directory.display().to_string(),
-                root.display().to_string()
-            ),
-        }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Error::Io { source, .. } => Some(source),
-            Error::Json { source, .. } => Some(source),
-            Error::OutsideRoot { .. } => None,
-        }
-    }
+    #[error("composer directory {directory:?} is outside project root {root:?}")]
+    OutsideRoot { directory: PathBuf, root: PathBuf },
 }
 
 impl Model {
@@ -259,7 +235,7 @@ impl Model {
                 }
             }
         }
-        // Go sorts path strings byte-wise, unlike `Path`'s component order.
+        // Sort path strings byte-wise, not in `Path`'s component order.
         result.sort_by(|left, right| left.as_os_str().cmp(right.as_os_str()));
         result
     }
@@ -475,7 +451,7 @@ pub fn parse_version_constraint(source: &str) -> Option<Version> {
 }
 
 fn parse_decimal(digits: &str) -> i64 {
-    // Go's Sscanf leaves the zero value on overflow.
+    // A component that overflows counts as zero.
     digits.parse().unwrap_or(0)
 }
 

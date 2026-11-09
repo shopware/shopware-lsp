@@ -1,5 +1,4 @@
-//! Go `twig_member_deprecation_diagnostics.go` and
-//! `twig_member_missing_diagnostics.go`.
+//! Deprecated and missing members accessed in Twig expressions.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -11,8 +10,8 @@ use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::TWIG_ACCESSOR;
 use swlsp_php::PhpIndex;
 use swlsp_php_semantic::{Flags, Snapshot, Symbol, SymbolKind};
-use swlsp_php_types::go_to_lower;
 use swlsp_syntax::SyntaxNodeExt;
+use swlsp_textutil::lowercase;
 use swlsp_twig::{PhpAccessResolver, TwigIndexer};
 
 use crate::{DeclaredAnalyzer, ProblemAnalyzer};
@@ -20,7 +19,6 @@ use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 const DEPRECATED_TWIG_MEMBER_CODE: &str = "twig.member.deprecated";
 const MISSING_TWIG_MEMBER_CODE: &str = "twig.member.missing";
 
-/// Go `TwigMemberDeprecationAnalyzer`.
 pub struct TwigMemberDeprecationAnalyzer {
     twig_index: Option<Arc<TwigIndexer>>,
     php_index: Option<PhpIndex>,
@@ -60,7 +58,7 @@ impl ProblemAnalyzer for TwigMemberDeprecationAnalyzer {
         let Some(php_index) = &self.php_index else {
             return Ok(Vec::new());
         };
-        if !go_to_lower(&document.uri).ends_with(".twig") {
+        if !lowercase(&document.uri).ends_with(".twig") {
             return Ok(Vec::new());
         }
         let Some(root) = document.root() else {
@@ -105,7 +103,6 @@ impl ProblemAnalyzer for TwigMemberDeprecationAnalyzer {
     }
 }
 
-/// Go `deprecatedTwigMemberMessage`.
 fn deprecated_twig_member_message(snapshot: &Snapshot, symbol: &Symbol) -> String {
     let mut class_name = snapshot
         .symbol(symbol.container.as_str())
@@ -131,7 +128,6 @@ fn deprecated_twig_member_message(snapshot: &Snapshot, symbol: &Symbol) -> Strin
     }
 }
 
-/// Go `TwigMemberMissingAnalyzer`.
 pub struct TwigMemberMissingAnalyzer {
     twig_index: Option<Arc<TwigIndexer>>,
     php_index: Option<PhpIndex>,
@@ -171,7 +167,7 @@ impl ProblemAnalyzer for TwigMemberMissingAnalyzer {
         let Some(php_index) = &self.php_index else {
             return Ok(Vec::new());
         };
-        if !go_to_lower(&document.uri).ends_with(".twig") {
+        if !lowercase(&document.uri).ends_with(".twig") {
             return Ok(Vec::new());
         }
         let Some(root) = document.root() else {

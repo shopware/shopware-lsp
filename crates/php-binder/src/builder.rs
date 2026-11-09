@@ -2,6 +2,8 @@
 
 use std::collections::HashMap;
 
+use swlsp_textutil::{eq_ignore_case, lowercase};
+
 use crate::fast::Fast;
 use rustc_hash::{FxHashMap, FxHashSet};
 use swlsp_parser_php::query;
@@ -12,7 +14,7 @@ use swlsp_php_semantic::{
     NodeId, Parameter, Scope, ScopeId, ScopeKind, Str, Symbol, SymbolId, SymbolKind, TypeFact,
     TypeSource, attribute_named, new_symbol_id, node_identity,
 };
-use swlsp_php_types::{Kind as TypeKind, Type, equal_fold, go_to_lower};
+use swlsp_php_types::{Kind as TypeKind, Type};
 use swlsp_syntax::rowan::NodeOrToken;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
 
@@ -29,7 +31,8 @@ use crate::trait_alias::bind_trait_aliases;
 
 pub use crate::phpdoc::effective_type;
 
-/// Identity of one Go import map (`nil` maps have no identity).
+/// Indexes into `import_maps` of the class, function and constant import
+/// maps a scope uses (`None` before the namespace has one).
 type ImportMapIds = [Option<u32>; 3];
 
 pub(crate) fn bind(path: &str, version: i64, root: Option<&SyntaxNode>, source: &str) -> Document {
@@ -83,8 +86,8 @@ pub(crate) struct Builder<'s> {
     declarations: FxHashSet<NodeId>,
     /// First document index of every symbol ID.
     symbol_indexes: FxHashMap<SymbolId, u32>,
-    /// Go shares import maps between every scope of a namespace; these are
-    /// the shared maps, materialized into scopes by `finish`.
+    /// Import maps shared by every scope of a namespace, materialized into
+    /// scopes by `finish`.
     import_maps: Vec<HashMap<Str, Str>>,
     current_imports: ImportMapIds,
     scope_imports: Vec<ImportMapIds>,
@@ -224,7 +227,7 @@ impl<'s> Builder<'s> {
             let key = if import.kind == ImportKind::Constant {
                 Str::from(alias)
             } else {
-                Str::from(go_to_lower(alias))
+                Str::from(lowercase(alias))
             };
             self.import_maps[map as usize].insert(key, Str::from(import.target.as_str()));
             context.add_import(&import);
@@ -473,7 +476,7 @@ impl<'s> Builder<'s> {
         }
         let mut native_return =
             self.bind_native_type(&crate::fast::direct_type_text(node, self.source), context);
-        if equal_fold(&name, "__construct") && native_return.is_unknown() {
+        if eq_ignore_case(&name, "__construct") && native_return.is_unknown() {
             native_return = Type::void();
         }
         let documentation = swlsp_php_phpdoc::parse(leading_doc_comment(node, self.source));
@@ -545,7 +548,7 @@ impl<'s> Builder<'s> {
         );
         self.bind_direct_type_references(node, function_scope, context, container);
         self.bind_attribute_references(node, function_scope, context);
-        let constructor = !container.is_empty() && equal_fold(&name, "__construct");
+        let constructor = !container.is_empty() && eq_ignore_case(&name, "__construct");
         for parameter_node in &parameters {
             let parameter = self.bind_parameter(
                 parameter_node,
@@ -833,7 +836,7 @@ impl<'s> Builder<'s> {
         for element in node.children_with_tokens() {
             match element {
                 NodeOrToken::Token(token) => {
-                    if equal_fold(token.text(), "const") || token.kind() == TK_COMMA {
+                    if eq_ignore_case(token.text(), "const") || token.kind() == TK_COMMA {
                         expect_name = true;
                         expect_value = false;
                         current_symbol = None;
@@ -978,8 +981,7 @@ impl<'s> Builder<'s> {
 
     pub(crate) fn symbol_index(&self, id: &SymbolId) -> Option<u32> {
         if id.is_empty() {
-            // Go's linear scan also matches symbols with empty IDs, which
-            // the binder never creates.
+            // The binder never creates symbols with empty IDs.
             return None;
         }
         self.symbol_indexes.get(id.as_str()).copied()
@@ -1097,7 +1099,7 @@ fn constant_array_value_type(node: &SyntaxNode, source: &str) -> Type {
 
 pub(crate) fn numeric_literal_is_float(value: &str) -> bool {
     let value = value.trim().replace('_', "");
-    let lower = go_to_lower(value.trim_start_matches(['+', '-']));
+    let lower = lowercase(value.trim_start_matches(['+', '-']));
     if lower.starts_with("0x") || lower.starts_with("0b") || lower.starts_with("0o") {
         return false;
     }
@@ -1150,10 +1152,10 @@ fn return_metadata(
         }
         let receiver = text[..separator].trim();
         let name = text[separator + 2..].trim();
-        if receiver.is_empty() || name.is_empty() || equal_fold(name, "class") {
+        if receiver.is_empty() || name.is_empty() || eq_ignore_case(name, "class") {
             continue;
         }
-        let lower = go_to_lower(receiver);
+        let lower = lowercase(receiver);
         let receiver = match lower.as_str() {
             "self" | "static" | "parent" => lower,
             _ => context.resolve_class(receiver),

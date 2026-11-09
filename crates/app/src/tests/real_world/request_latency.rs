@@ -1,4 +1,4 @@
-//! Port of Go `request_latency_integration_test.go`: the production request
+//! The production request
 //! census over JSON-RPC with p95 budgets.
 
 use std::collections::HashSet;

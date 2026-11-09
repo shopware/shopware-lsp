@@ -97,7 +97,7 @@ impl RouteResourceResolver {
         };
         let roots = catalog
             .roots
-            .get(&swlsp_php_types::go_to_lower(&name))
+            .get(&swlsp_textutil::lowercase(&name))
             .cloned()
             .unwrap_or_default();
         let targets = roots
@@ -173,7 +173,7 @@ impl RouteResourceResolver {
             {
                 continue;
             }
-            let key = swlsp_php_types::go_to_lower(&symbol.name);
+            let key = swlsp_textutil::lowercase(&symbol.name);
             catalog
                 .names
                 .insert(key.clone(), symbol.name.as_str().to_owned());

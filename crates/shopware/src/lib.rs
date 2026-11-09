@@ -1,6 +1,6 @@
 //! Shopware-specific semantic extensions layered on top of the
-//! framework-neutral PHP engine (port of the `internal/shopware` root
-//! package): Shopware version resolution and PHP call type inference.
+//! framework-neutral PHP engine: Shopware version resolution and PHP call
+//! type inference.
 
 mod type_extension;
 mod version;

@@ -147,9 +147,3 @@ diagnostic settings.
 | Outdated block version | Warning | Twig |
 | Missing block version comment (opt-in) | Warning | Twig |
 
-## Resource usage
-
-The bundled server is written in Rust and has no garbage collector, so it
-needs no memory tuning. `shopwareLSP.memoryLimitMiB` set a soft memory limit
-(`GOMEMLIMIT`) for the former Go server; it is deprecated and no longer has an
-effect.

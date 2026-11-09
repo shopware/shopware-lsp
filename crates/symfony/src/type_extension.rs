@@ -7,8 +7,9 @@ use std::sync::Arc;
 
 use swlsp_php_inference::{CallContext, Extension};
 use swlsp_php_semantic::{Confidence, TypeFact, TypeSource};
-use swlsp_php_types::{Kind, Type, contains_uncertain, equal_fold};
+use swlsp_php_types::{Kind, Type, contains_uncertain};
 use swlsp_syntax::TextRange;
+use swlsp_textutil::eq_ignore_case;
 
 use crate::model::Service;
 use crate::service_index::ServiceIndex;
@@ -33,7 +34,7 @@ fn framework_fact(ty: Type, reason: &'static str) -> TypeFact {
     }
 }
 
-/// Symfony framework call inference (Go `symfony.PHPTypeExtension`).
+/// Symfony framework call inference.
 #[derive(Clone, Default)]
 pub struct PhpTypeExtension {
     services: Option<Arc<ServiceIndex>>,
@@ -74,7 +75,7 @@ impl Extension for PhpTypeExtension {
             return Some(fact);
         }
         let services = self.services.as_deref()?;
-        if !equal_fold(context.name, "get")
+        if !eq_ignore_case(context.name, "get")
             || context
                 .arguments
                 .first()
@@ -101,7 +102,7 @@ impl Extension for PhpTypeExtension {
 
 fn infer_header_bag_get(context: &CallContext<'_>) -> Option<TypeFact> {
     let snapshot = context.snapshot?;
-    if context.is_static || !equal_fold(context.name, "get") || context.arguments.len() < 2 {
+    if context.is_static || !eq_ignore_case(context.name, "get") || context.arguments.len() < 2 {
         return None;
     }
     let relations = snapshot.relations();

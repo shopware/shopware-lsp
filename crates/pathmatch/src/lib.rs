@@ -2,12 +2,12 @@
 //!
 //! Two dialects share one engine:
 //!
-//! * Ant/LSP globs ([`ant`], [`Matcher`], port of `internal/pathmatch`):
+//! * Ant/LSP globs ([`ant`], [`Matcher`]):
 //!   `**/` crosses directories, `*` and `?` do not, `[abc]`/`[!abc]` are
 //!   character classes and `{a,b}` are alternatives. This is the syntax users
 //!   write in `.config/shopware/lsp.yaml`, so it is validated strictly.
-//! * Go `path.Match` globs ([`go_glob`]): `*`, `?`, `[...]`/`[^...]` classes
-//!   and `\` escapes; braces are literal. `**` is either a plain `*` or, for
+//! * Path-component globs ([`path_glob`]): `*`, `?`, `[...]`/`[^...]`
+//!   classes and `\` escapes; braces are literal. `**` is either a plain `*` or, for
 //!   Symfony resource patterns, any run of characters including `/`.
 //!
 //! Both are translated into `globset` syntax with a literal separator, so
@@ -26,9 +26,10 @@ const MAXIMUM_CACHE_ENTRIES: usize = 1024;
 /// separator at all, or one or more directories in between.
 const ANY: &str = "{*,*/**/*}";
 
-/// A glob compilation failure. Messages match Go for every glob-level error
-/// (`pattern must not be empty`, `unclosed character class`, ...). Errors
-/// raised by the underlying glob engine use the `globset` wording.
+/// A glob compilation failure. Syntax errors found while translating an
+/// Ant pattern have their own messages (`pattern must not be empty`,
+/// `unclosed character class`, ...); errors raised by the underlying glob
+/// engine use the `globset` wording.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompileError(String);
 
@@ -55,7 +56,7 @@ impl Default for Matcher {
 }
 
 impl Matcher {
-    /// Validates and compiles patterns for repeated matching (Go `Compile`).
+    /// Validates and compiles patterns for repeated matching.
     pub fn compile<S: AsRef<str>>(patterns: &[S]) -> Result<Matcher, CompileError> {
         let mut builder = GlobSetBuilder::new();
         for pattern in patterns {
@@ -71,7 +72,7 @@ impl Matcher {
         Ok(Matcher { set })
     }
 
-    /// Reports whether any compiled pattern matches `candidate` (Go `Match`).
+    /// Reports whether any compiled pattern matches `candidate`.
     pub fn matches(&self, candidate: &str) -> bool {
         self.set.is_match(normalize_candidate(candidate))
     }
@@ -97,19 +98,19 @@ pub fn ant(pattern: &str, candidate: &str) -> bool {
     .is_some_and(|matcher| matcher.is_match(normalize_candidate(candidate)))
 }
 
-/// Matches `name` against a Go `path.Match` pattern: `*` and `?` never match
+/// Matches `name` against a path-component glob: `*` and `?` never match
 /// `/`, classes negate with `^`, `\` escapes and `{`/`}` are literal. With
 /// `double_star`, `**` matches any run of characters including `/`;
 /// otherwise it is a plain `*`. Malformed patterns never match.
-pub fn go_glob(pattern: &str, name: &str, double_star: bool) -> bool {
+pub fn path_glob(pattern: &str, name: &str, double_star: bool) -> bool {
     let dialect = if double_star {
-        Dialect::GoDoubleStar
+        Dialect::PathDoubleStar
     } else {
-        Dialect::Go
+        Dialect::Path
     };
     cached(dialect, pattern.to_owned(), |pattern| {
         let mut translated = String::with_capacity(pattern.len() + 8);
-        go_to_glob(pattern, double_star, &mut translated).ok()?;
+        path_to_glob(pattern, double_star, &mut translated).ok()?;
         build(&translated).ok().map(|glob| glob.compile_matcher())
     })
     .is_some_and(|matcher| matcher.is_match(name))
@@ -118,8 +119,8 @@ pub fn go_glob(pattern: &str, name: &str, double_star: bool) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Dialect {
     Ant,
-    Go,
-    GoDoubleStar,
+    Path,
+    PathDoubleStar,
 }
 
 type Cache = RwLock<HashMap<(Dialect, String), Option<Arc<GlobMatcher>>>>;
@@ -270,8 +271,8 @@ fn push_ant_class(content: &str, out: &mut String) {
     out.push('}');
 }
 
-/// Appends the globset form of a Go `path.Match` pattern.
-fn go_to_glob(pattern: &str, double_star: bool, out: &mut String) -> Result<(), String> {
+/// Appends the globset form of a [`path_glob`] pattern.
+fn path_to_glob(pattern: &str, double_star: bool, out: &mut String) -> Result<(), String> {
     let mut characters = pattern.chars().peekable();
     let mut in_class = false;
     while let Some(character) = characters.next() {
@@ -436,7 +437,7 @@ mod tests {
     #[test]
     fn single_character_wildcards_match_one_byte() {
         // globset matches bytes, so `?` and classes see one byte of a
-        // multi-byte UTF-8 character (the Go regexp matched characters).
+        // multi-byte UTF-8 character.
         assert!(!ant("a?b", "aéb"));
         assert!(ant("a??b", "aéb"));
         assert!(!ant("a[é]b", "aéb"));
@@ -455,7 +456,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_the_same_malformed_patterns_as_go() {
+    fn rejects_malformed_patterns_with_specific_messages() {
         for (pattern, message) in [
             ("a[]b", "empty character class"),
             ("a[!]b", "empty character class"),
@@ -475,7 +476,7 @@ mod tests {
     }
 
     #[test]
-    fn go_glob_follows_go_path_match() {
+    fn path_glob_matches_within_path_components() {
         for (pattern, name, expected) in [
             ("css/*.css", "css/app.css", true),
             ("css/*.css", "css/sub/app.css", false),
@@ -498,17 +499,21 @@ mod tests {
             ("a/**/b", "a/x/b", true),
             ("a/**/b", "a/x/y/b", false),
         ] {
-            assert_eq!(go_glob(pattern, name, false), expected, "{pattern} {name}");
+            assert_eq!(
+                path_glob(pattern, name, false),
+                expected,
+                "{pattern} {name}"
+            );
         }
     }
 
     #[test]
-    fn go_glob_double_star_crosses_directories() {
-        assert!(go_glob("/p/src/**/*.php", "/p/src/X/A.php", true));
-        assert!(go_glob("/p/src/**/*.php", "/p/src/X/Y/A.php", true));
+    fn path_glob_double_star_crosses_directories() {
+        assert!(path_glob("/p/src/**/*.php", "/p/src/X/A.php", true));
+        assert!(path_glob("/p/src/**/*.php", "/p/src/X/Y/A.php", true));
         // `**` is `.*`, so the surrounding separators stay mandatory.
-        assert!(!go_glob("/p/src/**/*.php", "/p/src/A.php", true));
-        assert!(go_glob("/p/src/**.php", "/p/src/X/A.php", true));
-        assert!(!go_glob("/p/src/*.php", "/p/src/X/A.php", true));
+        assert!(!path_glob("/p/src/**/*.php", "/p/src/A.php", true));
+        assert!(path_glob("/p/src/**.php", "/p/src/X/A.php", true));
+        assert!(!path_glob("/p/src/*.php", "/p/src/X/A.php", true));
     }
 }

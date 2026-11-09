@@ -1,5 +1,4 @@
-//! Go `admin_block_override.go`: `<sw-block extends>` / `<sw-block-parent>`
-//! placement rules.
+//! `<sw-block extends>` / `<sw-block-parent>` placement rules.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -8,10 +7,10 @@ use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
 use swlsp_lsp_protocol::DiagnosticSeverity;
 use swlsp_parser_twig::ast::{AstNode, HtmlStartingTag};
 use swlsp_parser_twig::{query as twigquery, syntax as twigsyntax};
-use swlsp_php_types::go_to_lower;
 use swlsp_syntax::{SyntaxNode, TextRange};
+use swlsp_textutil::lowercase;
+use swlsp_uriutil::filepath;
 
-use super::go_ext;
 use crate::ProblemAnalyzer;
 
 pub const ADMIN_BLOCK_OVERRIDE_NESTED_CODE: &str = "admin.block-override.nested";
@@ -20,7 +19,6 @@ pub const ADMIN_BLOCK_OVERRIDE_REPEATED_CODE: &str = "admin.block-override.repea
 pub const ADMIN_BLOCK_PARENT_CONDITIONAL_CODE: &str = "admin.block-parent.conditional";
 pub const ADMIN_BLOCK_PARENT_REPEATED_CODE: &str = "admin.block-parent.repeated";
 
-/// Go `AdminBlockOverrideAnalyzer`.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AdminBlockOverrideAnalyzer;
 
@@ -65,7 +63,7 @@ impl ProblemAnalyzer for AdminBlockOverrideAnalyzer {
             return Ok(Vec::new());
         }
         if !matches!(
-            go_to_lower(go_ext(&document.uri)).as_str(),
+            lowercase(filepath::ext(&document.uri)).as_str(),
             ".twig" | ".vue"
         ) {
             return Ok(Vec::new());
@@ -144,7 +142,7 @@ fn markup_tag_at(start_node: &SyntaxNode) -> Option<MarkupTag> {
     let mut has_extends = false;
     for attribute in starting.attributes() {
         let attribute_name =
-            go_to_lower(&twigquery::html_attribute_name(attribute.syntax()).unwrap_or_default());
+            lowercase(&twigquery::html_attribute_name(attribute.syntax()).unwrap_or_default());
         match attribute_name.as_str() {
             "extends" => has_extends = true,
             "v-if" | "v-else-if" | "v-else" => control |= CONDITIONAL,
@@ -152,7 +150,7 @@ fn markup_tag_at(start_node: &SyntaxNode) -> Option<MarkupTag> {
             _ => {}
         }
     }
-    let kind = match go_to_lower(name.text()).as_str() {
+    let kind = match lowercase(name.text()).as_str() {
         "sw-block" if has_extends => MarkupKind::Override,
         "sw-block-parent" => MarkupKind::Parent,
         _ => MarkupKind::Other,

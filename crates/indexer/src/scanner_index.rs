@@ -1,4 +1,4 @@
-//! One coordinated indexing run (Go `fileIndexRun`).
+//! One coordinated indexing run.
 //!
 //! Workers read changed files, parse and prepare them in bounded batches
 //! outside any transaction, then persist each batch in one workspace

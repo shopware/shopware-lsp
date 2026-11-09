@@ -1,4 +1,4 @@
-//! Go `xml_service_suggestion_codeaction_test.go`.
+//! "Suggest Service" XML action tests.
 
 use std::sync::Arc;
 

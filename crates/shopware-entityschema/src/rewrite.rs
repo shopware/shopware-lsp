@@ -1,6 +1,6 @@
-//! Source-preserving rewrites of generated DAL classes (port of Go
-//! `rewrite.go`). Only managed members change; other methods, attributes,
-//! constants and comments stay byte-for-byte intact.
+//! Source-preserving rewrites of generated DAL classes. Only managed members
+//! change; other methods, attributes, constants and comments stay byte-for-byte
+//! intact.
 
 use std::collections::HashSet;
 
@@ -607,11 +607,11 @@ fn remove_obsolete_managed_imports(
 ) -> Result<String> {
     let retained: HashSet<String> = next
         .iter()
-        .map(|class| go_to_lower(trim_class(class)))
+        .map(|class| lowercase(trim_class(class)))
         .collect();
     let obsolete: HashSet<String> = previous
         .iter()
-        .map(|class| go_to_lower(trim_class(class)))
+        .map(|class| lowercase(trim_class(class)))
         .filter(|key| !key.is_empty() && !retained.contains(key))
         .collect();
     if obsolete.is_empty() {
@@ -628,7 +628,7 @@ fn remove_obsolete_managed_imports(
             continue;
         };
         if imported.kind != ImportKind::Class
-            || !obsolete.contains(&go_to_lower(trim_class(&imported.target)))
+            || !obsolete.contains(&lowercase(trim_class(&imported.target)))
         {
             continue;
         }
@@ -938,7 +938,7 @@ fn rewrite_managed_entity_traits(
             continue;
         };
         let class_name = resolve.resolve(&phpquery::name_value(name));
-        let key = go_to_lower(trim_class(&class_name));
+        let key = lowercase(trim_class(&class_name));
         existing.insert(key.clone());
         if !previous.contains(&key) || next.contains(&key) {
             continue;
@@ -947,7 +947,7 @@ fn rewrite_managed_entity_traits(
         existing.remove(&key);
     }
     for trait_name in next_traits {
-        let key = go_to_lower(trim_class(trait_name));
+        let key = lowercase(trim_class(trait_name));
         if existing.contains(&key) {
             continue;
         }
@@ -961,7 +961,7 @@ fn rewrite_managed_entity_traits(
 fn class_name_set(classes: &[String]) -> HashSet<String> {
     classes
         .iter()
-        .map(|class| go_to_lower(trim_class(class)))
+        .map(|class| lowercase(trim_class(class)))
         .filter(|class| !class.is_empty())
         .collect()
 }
@@ -988,7 +988,7 @@ pub(crate) fn named_method(class: &SyntaxNode, name: &str) -> Option<SyntaxNode>
 
 fn add_member_names(properties: &mut HashSet<String>, methods: &mut HashSet<String>, name: &str) {
     properties.insert(name.to_owned());
-    let exported = exported(name);
+    let exported = uppercase_first(name);
     methods.insert(format!("get{exported}"));
     methods.insert(format!("is{exported}"));
     methods.insert(format!("set{exported}"));

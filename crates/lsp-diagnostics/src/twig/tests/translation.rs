@@ -129,7 +129,7 @@ fn snippet_diagnostics_accept_symfony_message_catalogue_key() {
 }
 
 #[test]
-fn suggestions_are_null_when_nothing_is_similar() {
+fn suggestions_are_empty_when_nothing_is_similar() {
     let (_dirs, index) = translation_index();
     let provider = TranslationAnalyzer::new(Some(index), None, None);
     let (_, result) = check_problems(
@@ -138,5 +138,5 @@ fn suggestions_are_null_when_nothing_is_similar() {
         "{{ '{|symfony.translation.key.missing:zzz|}'|trans }}",
     );
     let payload = result[0].payload.as_ref().unwrap();
-    assert_eq!(payload["suggestions"], serde_json::Value::Null);
+    assert_eq!(payload["suggestions"], serde_json::json!([]));
 }

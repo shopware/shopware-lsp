@@ -152,9 +152,9 @@ fn build_versioned_catalog() {
 fn empty_list_policies_differ_only_in_hierarchy_and_throws() {
     let (root, lock) = fixture();
     let (committed, _) = build(root.path(), &lock, EmptyListPolicy::Committed).unwrap();
-    let (head, _) = build(root.path(), &lock, EmptyListPolicy::GoHead).unwrap();
+    let (head, _) = build(root.path(), &lock, EmptyListPolicy::OmitEmpty).unwrap();
     let committed = encode(&committed, EmptyListPolicy::Committed);
-    let head = encode(&head, EmptyListPolicy::GoHead);
+    let head = encode(&head, EmptyListPolicy::OmitEmpty);
     assert_ne!(committed, head);
     // Both decode to the same catalog content.
     let left = Catalog::decode(&committed).unwrap();
@@ -217,7 +217,7 @@ fn rejects_non_increasing_versions() {
 }
 
 #[test]
-fn version_helpers_match_go() {
+fn version_helpers_parse_and_reject_versions() {
     assert_eq!(parse_version("8.1").unwrap(), ProjectVersion::new(8, 1, 0));
     assert_eq!(
         parse_version("8.1.2").unwrap(),

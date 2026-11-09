@@ -96,7 +96,7 @@ impl AsseticCatalog {
             }
         }
         resources.sort_by(|left, right| {
-            if !swlsp_php_types::equal_fold(&left.name, &right.name) {
+            if !swlsp_textutil::eq_ignore_case(&left.name, &right.name) {
                 return left.name.to_lowercase().cmp(&right.name.to_lowercase());
             }
             left.target

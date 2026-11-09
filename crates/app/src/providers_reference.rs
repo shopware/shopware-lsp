@@ -1,5 +1,4 @@
-//! Reference and file-rename providers (port of Go
-//! `internal/app/providers_reference.go`).
+//! Reference and file-rename providers.
 
 use std::sync::Arc;
 

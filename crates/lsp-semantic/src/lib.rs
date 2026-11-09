@@ -1,4 +1,4 @@
-//! Semantic token providers (port of Go `internal/lsp/semantic`).
+//! Semantic token providers.
 //!
 //! - [`AdminMarkupProvider`] gives registry-backed Vue component markup in
 //!   Administration Twig/Vue templates semantic meaning.
@@ -33,7 +33,7 @@ fn token(range: TextRange, token_type: u32) -> SemanticToken {
     }
 }
 
-/// Orders tokens by start, then end (Go `sort.Slice` on the same keys).
+/// Orders tokens by start, then end.
 fn sort_tokens(tokens: &mut [SemanticToken]) {
     tokens.sort_by(|left, right| {
         left.range

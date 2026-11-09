@@ -1,5 +1,3 @@
-//! Port of `internal/php/phpdoc/phpdoc_test.go` plus reference-name coverage.
-
 use swlsp_php_types::{Type, must_parse};
 
 use super::*;

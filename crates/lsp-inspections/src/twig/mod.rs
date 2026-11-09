@@ -1,5 +1,4 @@
-//! Twig template, versioning, snippet and translation inspections (port of
-//! the corresponding Go `internal/lsp/inspections` files).
+//! Twig template, versioning, snippet and translation inspections.
 
 mod snippet;
 mod template;
@@ -16,7 +15,6 @@ pub use versioning::new_twig_versioning;
 
 use serde_json::{Map, Value};
 
-/// Go `mapString`.
 pub(crate) fn map_string(values: &Map<String, Value>, key: &str) -> String {
     match values.get(key) {
         Some(Value::String(value)) => value.clone(),
@@ -24,7 +22,8 @@ pub(crate) fn map_string(values: &Map<String, Value>, key: &str) -> String {
     }
 }
 
-/// Go `path.Clean` for `/`-separated paths.
+/// The shortest lexically equivalent form of a `/`-separated path (resolves
+/// `.`, `..` and repeated slashes; empty becomes `.`).
 pub(crate) fn clean_path(path: &str) -> String {
     if path.is_empty() {
         return ".".to_owned();
@@ -52,7 +51,6 @@ pub(crate) fn clean_path(path: &str) -> String {
     }
 }
 
-/// Go `filepath.Base`.
 pub(crate) fn base_name(path: &str) -> String {
     if path.is_empty() {
         return ".".to_owned();
@@ -72,7 +70,7 @@ mod path_tests {
     use super::*;
 
     #[test]
-    fn clean_path_matches_go() {
+    fn clean_path_resolves_dots_and_slashes() {
         assert_eq!(clean_path("a/../../b"), "../b");
         assert_eq!(clean_path("/a/../.."), "/");
         assert_eq!(clean_path("a//b/./c/"), "a/b/c");

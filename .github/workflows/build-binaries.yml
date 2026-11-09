@@ -87,7 +87,7 @@ jobs:
     env:
       SHOPWARE_LSP_VERSION: ${{ inputs.version }}
       # Keep symbol names for panic backtraces; drop DWARF line tables to keep
-      # the binaries (and VSIX downloads) small, as Go's -s -w did.
+      # the binaries (and VSIX downloads) small.
       CARGO_PROFILE_RELEASE_STRIP: debuginfo
       # musl targets link statically by default. musl-tools installs one
       # musl-gcc wrapper for the runner's own architecture; cc-rs would look

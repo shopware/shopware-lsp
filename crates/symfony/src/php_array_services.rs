@@ -15,7 +15,7 @@ use crate::php_services::{
     sort_services, static_php_value,
 };
 use crate::reference::parse_service_reference;
-use crate::util::{configured_service_bool, go_trim_space, line_at};
+use crate::util::{configured_service_bool, line_at};
 
 pub(crate) fn parse_php_array_service_config(
     path: &str,
@@ -90,7 +90,7 @@ fn parse_php_array_parameters(
         {
             let text = expression.text().to_string();
             if is_static_parameter_expression(&text) {
-                value = Some(go_trim_space(&text).to_owned());
+                value = Some(text.trim().to_owned());
             }
         }
         result.insert(
@@ -444,7 +444,7 @@ pub(crate) fn php_array_static_value_ok(
 fn php_array_normalize_service(value: &str) -> String {
     match parse_service_reference(value) {
         Some((service, _)) => service,
-        None => go_trim_space(value).to_owned(),
+        None => value.trim().to_owned(),
     }
 }
 

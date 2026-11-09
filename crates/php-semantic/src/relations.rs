@@ -6,11 +6,12 @@ use swlsp_php_types::{
     CallableParameter, Hierarchy, Kind as TypeKind, Relations, Type, Variance, phpdoc_alias_parts,
     substitute,
 };
+use swlsp_textutil::eq_ignore_case;
 
 use crate::snapshot::Snapshot;
 use crate::str::Str;
 use crate::symbol::{Flags, Symbol, SymbolKind};
-use crate::text::{equal_fold, lower_equals, normalize_symbol_name};
+use crate::text::{lower_equals, normalize_symbol_name};
 use crate::view::SymbolView;
 
 impl Snapshot {
@@ -82,8 +83,8 @@ impl Snapshot {
             parents.extend(extends.iter().chain(implements).cloned());
             true
         });
-        // Preserve Go's per-class short-circuit order: a class's parents are
-        // checked before the next declaration with the same name.
+        // Short-circuit per class: a class's parents are checked before the
+        // next declaration with the same name.
         for parent in &parents {
             if lower_equals(trim_class(parent), normalized_target)
                 || self.is_subtype_inner(parent, normalized_target, visited)
@@ -322,7 +323,10 @@ fn class_parent_types_from_edges(
     let declared: Vec<&Type> = extends_types.iter().chain(implements_types).collect();
     let mut result: Vec<Type> = declared.iter().map(|value| (*value).clone()).collect();
     for name in extends.iter().chain(implements) {
-        if !declared.iter().any(|value| equal_fold(value.name(), name)) {
+        if !declared
+            .iter()
+            .any(|value| eq_ignore_case(value.name(), name))
+        {
             result.push(Type::named(name, Vec::new()));
         }
     }

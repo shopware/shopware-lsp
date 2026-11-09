@@ -1,4 +1,4 @@
-//! CST to formatting IR conversion (port of `formatter/converter.go`).
+//! CST to formatting IR conversion.
 
 use swlsp_syntax::{Kind, SyntaxNode, Tree};
 

@@ -1,5 +1,5 @@
-//! The Shopware migration and `shopware.criteria` inspections and their
-//! quick fixes (port of Go `shopware_migration*.go`, `shopware_criteria.go`).
+//! The Shopware migration and `shopware.criteria` inspections and their quick
+//! fixes.
 
 mod annotations;
 mod api;
@@ -33,10 +33,10 @@ use swlsp_parser_php::syntax::{
 };
 use swlsp_php::PhpIndex;
 use swlsp_php_rewrite::Editor;
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_rewrite::{Builder, DocumentPlan, Edit, WorkspacePlan};
 use swlsp_shopware::ResolvedVersion;
 use swlsp_syntax::{Kind, SyntaxElement, SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::inspection::{BindProblems, BoundInspection};
 use crate::resolve_anchor;
@@ -80,9 +80,8 @@ const BEHAVIOR_CODES: &[&str] = &[
     "shopware.migration.message_handler.subscriber",
 ];
 
-/// The Shopware migration inspections (Go `NewShopwareMigration`, split by
-/// kind of change). They share one run of [`ShopwareMigrationAnalyzer`] per
-/// document.
+/// The Shopware migration inspections, split by kind of change. They share one
+/// run of [`ShopwareMigrationAnalyzer`] per document.
 pub fn new_shopware_migration_inspections(
     php_index: Option<PhpIndex>,
     version: ResolvedVersion,
@@ -206,8 +205,8 @@ pub(crate) fn quick_fix_presentation(title: &str) -> FixPresentation {
     }
 }
 
-/// Decodes the bound payload and presents `title` when it is a safe payload
-/// of `rule` (the shared body of the Go `Present` methods).
+/// Decodes the bound payload and presents `title` when it is a safe payload of
+/// `rule`.
 pub(crate) fn present_migration(
     fix: &FixContext,
     rule: &str,
@@ -238,7 +237,7 @@ pub(crate) fn invalid(message: impl Into<String>) -> BoxError {
     message.into().into()
 }
 
-/// Go `ancestorNode`: the element or its nearest ancestor node of `kind`.
+/// The element or its nearest ancestor node of `kind`.
 pub(crate) fn ancestor_node(element: &SyntaxElement, kind: Kind) -> Option<SyntaxNode> {
     element_ancestors(element).find(|node| node.kind() == kind)
 }
@@ -258,7 +257,7 @@ pub(crate) fn document_root(document: &TextDocument) -> Result<SyntaxNode, BoxEr
         .ok_or_else(|| invalid("shopware migration document has no syntax tree"))
 }
 
-/// Go `resolveMigrationClass`: the class enclosing the fix anchor.
+/// The class enclosing the fix anchor.
 pub(crate) fn resolve_migration_class(
     fix: &FixContext,
 ) -> Result<(SyntaxNode, SyntaxNode), BoxError> {
@@ -268,7 +267,6 @@ pub(crate) fn resolve_migration_class(
     Ok((class, document_root(&fix.document)?))
 }
 
-/// Go `resolveMigrationPHPNode`.
 pub(crate) fn resolve_migration_php_node(
     fix: &FixContext,
     kind: Kind,
@@ -279,19 +277,17 @@ pub(crate) fn resolve_migration_php_node(
     Ok((node, document_root(&fix.document)?))
 }
 
-/// Go `phpOwnMethodForMigrationFix`.
 pub(crate) fn php_own_method_for_migration_fix(
     class: &SyntaxNode,
     name: &str,
 ) -> Option<SyntaxNode> {
     phpquery::methods(class)
         .into_iter()
-        .find(|method| equal_fold(&phpquery::method_name(method), name))
+        .find(|method| eq_ignore_case(&phpquery::method_name(method), name))
 }
 
 /// Applies `edits`, rejects results that do not parse, and returns the
-/// single-document plan (shared tail of Go `finishPHPRewrite` and the
-/// builder-based fixes).
+/// single-document plan (shared by the text-edit and builder-based fixes).
 pub(crate) fn finish_edits(
     fix: &FixContext,
     edits: Vec<Edit>,
@@ -326,7 +322,6 @@ pub(crate) fn single_document_plan(
     }
 }
 
-/// Go `finishPHPRewrite`.
 pub(crate) fn finish_php_rewrite(
     fix: &FixContext,
     editor: &Editor,
@@ -428,7 +423,7 @@ fn rewrite_entity_search_result_method(
     if call.kind() != PHP_MEMBER_CALL {
         return Err(invalid("EntitySearchResult method call changed"));
     }
-    let method = go_to_lower(&phpquery::call_method_name(call));
+    let method = lowercase(&phpquery::call_method_name(call));
     if !entity_search_result_delegated_method_for_fix(&method) {
         return Err(invalid(format!(
             "EntitySearchResult method {method:?} is not delegated"
@@ -651,10 +646,10 @@ fn scheduled_task_parent_constructor_calls_for_fix(constructor: &SyntaxNode) -> 
         .into_iter()
         .filter(|call| {
             phpquery::function_like_at(call).as_ref() == Some(constructor)
-                && equal_fold(&phpquery::call_method_name(call), "__construct")
+                && eq_ignore_case(&phpquery::call_method_name(call), "__construct")
                 && phpquery::arguments(call).count() == 1
                 && phpquery::call_receiver(call).is_some_and(|receiver| {
-                    equal_fold(receiver.text().to_string().trim(), "parent")
+                    eq_ignore_case(receiver.text().to_string().trim(), "parent")
                 })
         })
         .collect()

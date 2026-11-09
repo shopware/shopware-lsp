@@ -1,5 +1,4 @@
-//! Workspace-wide Twig globals from YAML configuration and PHP extensions
-//! (port of `global.go`).
+//! Workspace-wide Twig globals from YAML configuration and PHP extensions.
 
 use serde::{Deserialize, Serialize};
 use swlsp_parser_php::query as phpquery;
@@ -12,7 +11,7 @@ use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
 
 use crate::extension_parser::method_named;
 
-/// Persisted as its Go `uint8` value.
+/// Persisted as its `u8` discriminant.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum GlobalSource {
@@ -182,26 +181,18 @@ fn yaml_global_type(node: Option<&SyntaxNode>) -> String {
     if raw.eq_ignore_ascii_case("true") || raw.eq_ignore_ascii_case("false") {
         return "bool".to_owned();
     }
-    if go_parse_int(raw) {
+    if raw.parse::<i64>().is_ok() {
         return "int".to_owned();
     }
-    if go_parse_float(raw) {
+    if is_float_literal(raw) {
         return "float".to_owned();
     }
     "string".to_owned()
 }
 
-/// Go `strconv.ParseInt(raw, 10, 64)` succeeds.
-fn go_parse_int(raw: &str) -> bool {
-    let digits = raw.strip_prefix(['+', '-']).unwrap_or(raw);
-    !digits.is_empty()
-        && digits.bytes().all(|byte| byte.is_ascii_digit())
-        && raw.parse::<i64>().is_ok()
-}
-
-/// Go `strconv.ParseFloat(raw, 64)` succeeds (decimal forms, `inf`, `nan`;
-/// out-of-range values are errors in Go).
-fn go_parse_float(raw: &str) -> bool {
+/// Whether `raw` is a float: a decimal number in range, `inf`/`infinity`
+/// with an optional sign, or an unsigned `nan` (all case-insensitive).
+fn is_float_literal(raw: &str) -> bool {
     let unsigned = raw.strip_prefix(['+', '-']).unwrap_or(raw);
     let lower = unsigned.to_ascii_lowercase();
     if matches!(lower.as_str(), "inf" | "infinity") {
@@ -293,7 +284,7 @@ pub(crate) fn is_twig_extension_class(class: &SyntaxNode, resolver: &NameResolve
             let resolved = resolver.resolve(&name);
             let resolved = resolved.strip_prefix('\\').unwrap_or(&resolved);
             matches!(
-                swlsp_php_types::go_to_lower(resolved).as_str(),
+                swlsp_textutil::lowercase(resolved).as_str(),
                 "twig\\extension\\abstractextension"
                     | "twig\\extension\\extensioninterface"
                     | "twig\\extension\\globalsinterface"
@@ -361,7 +352,7 @@ pub(crate) fn unique_globals(values: Vec<Global>) -> Vec<Global> {
         .filter(|value| {
             !value.name.is_empty()
                 && seen.insert((
-                    swlsp_php_types::go_to_lower(&value.name),
+                    swlsp_textutil::lowercase(&value.name),
                     value.file.clone(),
                     value.range,
                 ))

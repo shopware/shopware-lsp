@@ -1,4 +1,4 @@
-//! Condition narrowing (port of `flow_condition_dispatch.go`).
+//! Condition narrowing.
 
 mod array;
 mod assertion;
@@ -9,8 +9,9 @@ mod update;
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;
 use swlsp_php_semantic::TypeSource;
-use swlsp_php_types::{Type, go_to_lower};
+use swlsp_php_types::Type;
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::lowercase;
 
 pub(crate) use boolean::boolean_alias_prefix;
 
@@ -94,7 +95,7 @@ impl Fs<'_, '_, '_> {
         }
         let left = &nodes[0];
         let right = &nodes[nodes.len() - 1];
-        let operator = go_to_lower(&direct_operator(node));
+        let operator = lowercase(&direct_operator(node));
         match operator.as_str() {
             "&&" | "and" => {
                 let (left_true, left_false) = self.condition_environments(Some(left), env);

@@ -4,7 +4,7 @@ use swlsp_parser_xml::query as xmlquery;
 use swlsp_syntax::{LineIndex, SyntaxNodeExt, Tree};
 
 use crate::model::Route;
-use crate::util::{go_trim_space, line_at, xml_attr};
+use crate::util::{line_at, xml_attr};
 use crate::yaml_routes::split_methods;
 
 /// Parses Symfony routing XML using the native lossless frontend.
@@ -41,7 +41,7 @@ pub fn parse_xml_routes_tree(
         if controller.is_empty() {
             for default in xmlquery::child_elements(&node, &["default"]) {
                 if xml_attr(&default, "key") == "_controller" {
-                    controller = go_trim_space(&xmlquery::text_content(&default)).to_owned();
+                    controller = xmlquery::text_content(&default).trim().to_owned();
                     break;
                 }
             }

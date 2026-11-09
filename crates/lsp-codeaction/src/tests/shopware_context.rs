@@ -1,4 +1,4 @@
-//! Go `shopware_context_codeaction_test.go`.
+//! Shopware context action tests.
 
 use swlsp_indexer::{Indexer, ParsedFile};
 use swlsp_syntax::SyntaxNodeExt;
@@ -7,7 +7,6 @@ use crate::test_support::request_at;
 
 use super::*;
 
-/// Go `symfonyGeneratorCodeActionRequest`.
 fn needle_request(uri: &str, source: &str, needle: &str) -> CodeActionRequest {
     let offset = source.find(needle).unwrap_or(0) as u32;
     let mut request = request_at(uri, source, offset, offset);

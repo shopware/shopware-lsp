@@ -1,5 +1,4 @@
-//! Context metadata, Faker property and ProductStream builder migrations
-//! (Go `shopware_migration_calls.go`).
+//! Context metadata, Faker property and ProductStream builder migrations.
 
 use super::scan;
 use swlsp_lsp::{Context, Problem};
@@ -13,8 +12,8 @@ use swlsp_parser_php::syntax::{
     PHP_WHILE_STATEMENT, TK_ELLIPSIS,
 };
 use swlsp_php_semantic::{Document, Snapshot};
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::eq_ignore_case;
 
 use super::{
     ShopwareMigrationAnalyzer, ShopwareMigrationPayload, call_name_range, migration_problem,
@@ -45,7 +44,7 @@ impl ShopwareMigrationAnalyzer {
             if ctx.is_cancelled() {
                 return result;
             }
-            if !equal_fold(&phpquery::call_method_name(&call), "addExtension") {
+            if !eq_ignore_case(&phpquery::call_method_name(&call), "addExtension") {
                 continue;
             }
             let Some(receiver) = phpquery::call_receiver(&call) else {
@@ -67,8 +66,8 @@ impl ShopwareMigrationAnalyzer {
                 continue;
             }
             let constant_name = php_member_target_name(&constant);
-            if !equal_fold(&constant_name, "USE_INDEXING_QUEUE")
-                && !equal_fold(&constant_name, "DISABLE_INDEXING")
+            if !eq_ignore_case(&constant_name, "USE_INDEXING_QUEUE")
+                && !eq_ignore_case(&constant_name, "DISABLE_INDEXING")
             {
                 continue;
             }
@@ -146,7 +145,7 @@ impl ShopwareMigrationAnalyzer {
             if ctx.is_cancelled() {
                 return result;
             }
-            if !equal_fold(&phpquery::call_method_name(&call), "buildFilters") {
+            if !eq_ignore_case(&phpquery::call_method_name(&call), "buildFilters") {
                 continue;
             }
             let Some(receiver) = phpquery::call_receiver(&call) else {
@@ -272,7 +271,7 @@ fn product_stream_assignment_rewrite(call: &SyntaxNode) -> Option<(u32, u32, Str
     let next = next_php_statement(&statement)?;
     let add_filter = direct_php_expression(&next)?;
     if add_filter.kind() != PHP_MEMBER_CALL
-        || !equal_fold(&phpquery::call_method_name(&add_filter), "addFilter")
+        || !eq_ignore_case(&phpquery::call_method_name(&add_filter), "addFilter")
         || phpquery::arguments(&add_filter).count() != 1
     {
         return None;
@@ -281,7 +280,7 @@ fn product_stream_assignment_rewrite(call: &SyntaxNode) -> Option<(u32, u32, Str
     let filter_expression = php_argument_expression(&argument)?;
     if argument.child_token_of_kind(TK_ELLIPSIS).is_none()
         || filter_expression.kind() != PHP_VARIABLE
-        || !equal_fold(node_text(&filter_expression).trim(), &filters_variable)
+        || !eq_ignore_case(node_text(&filter_expression).trim(), &filters_variable)
     {
         return None;
     }
@@ -310,7 +309,7 @@ fn product_stream_inline_rewrite(call: &SyntaxNode) -> Option<(u32, u32, String)
             break;
         }
         if node.kind() != PHP_MEMBER_CALL
-            || !equal_fold(&phpquery::call_method_name(&node), "addFilter")
+            || !eq_ignore_case(&phpquery::call_method_name(&node), "addFilter")
             || phpquery::arguments(&node).count() != 1
         {
             current = node.parent();
@@ -343,12 +342,12 @@ fn product_stream_enrich_criteria_call(
     ))
 }
 
-/// Go `phpMemberReceiver`: the first child node.
+/// The first child node.
 fn php_member_receiver(member: &SyntaxNode) -> Option<SyntaxNode> {
     member.children().next()
 }
 
-/// Go `phpMemberTarget`: the last child node.
+/// The last child node.
 fn php_member_target(member: &SyntaxNode) -> Option<SyntaxNode> {
     member.children().last()
 }
@@ -372,12 +371,12 @@ fn php_member_is_write_target(member: &SyntaxNode) -> bool {
     }
 }
 
-/// Go `nextPHPStatement`: the next sibling node of `statement`.
+/// The next sibling node of `statement`.
 fn next_php_statement(statement: &SyntaxNode) -> Option<SyntaxNode> {
     statement.next_sibling()
 }
 
-/// Go `directPHPExpression`: the first child node.
+/// The first child node.
 fn direct_php_expression(node: &SyntaxNode) -> Option<SyntaxNode> {
     node.children().next()
 }

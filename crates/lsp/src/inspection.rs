@@ -188,7 +188,7 @@ pub struct BoundFix {
     encode_error: Option<String>,
 }
 
-/// Binds the fix `id` with a serializable payload (Go `BindFix`). A payload
+/// Binds the fix `id` with a serializable payload . A payload
 /// that fails to serialize is reported when the problem is reported.
 pub fn bind_fix<T: Serialize>(id: impl Into<FixId>, payload: T) -> BoundFix {
     match serde_json::to_value(payload) {
@@ -534,12 +534,13 @@ pub(crate) fn decode_diagnostic_envelope(
     Ok(envelope)
 }
 
-/// Go `fmt.Sprint(diagnostic.Code)` for JSON-decoded codes.
-pub(crate) fn code_string(code: Option<&Value>) -> String {
+/// The text of a JSON-decoded diagnostic code (numbers in their JSON
+/// form); `None` when the diagnostic has no code.
+pub(crate) fn code_string(code: Option<&Value>) -> Option<String> {
     match code {
-        None | Some(Value::Null) => "<nil>".to_owned(),
-        Some(Value::String(value)) => value.clone(),
-        Some(other) => other.to_string(),
+        None | Some(Value::Null) => None,
+        Some(Value::String(value)) => Some(value.clone()),
+        Some(other) => Some(other.to_string()),
     }
 }
 

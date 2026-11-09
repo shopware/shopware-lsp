@@ -225,7 +225,8 @@ pub(crate) fn safe_phar_entry_path(name: &str) -> Result<String> {
     Ok(cleaned)
 }
 
-/// Go `path.Clean` (always slash-separated).
+/// Lexically cleans a `/`-separated path: drops empty and `.` elements and
+/// resolves `..` against the preceding element (never above a root).
 fn clean_slash(path: &str) -> String {
     let rooted = path.starts_with('/');
     let mut parts: Vec<&str> = Vec::new();

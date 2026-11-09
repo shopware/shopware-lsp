@@ -1,5 +1,4 @@
-//! Route names, paths and parameters in PHP, Twig and JavaScript (Go
-//! `route_completion.go`).
+//! Route names, paths and parameters in PHP, Twig and JavaScript.
 
 use std::cell::OnceCell;
 use std::collections::HashSet;
@@ -13,12 +12,12 @@ use swlsp_symfony::{Route, RouteIndexer, TwigHtmlRouteReference};
 use swlsp_syntax::{LineIndex, SyntaxNodeExt, TextRange};
 
 use super::util::{kind, request_offset};
-use crate::common::{go_to_lower, php_context, protocol_range, text_edit};
+use crate::common::{php_context, protocol_range, text_edit};
+use swlsp_textutil::lowercase;
 
 pub struct RouteCompletionProvider {
     routes: Arc<RouteIndexer>,
-    /// Supplies the request's PHP analysis (Go reads it from the enriched
-    /// context); without it PHP route contexts are recognized syntactically.
+    /// Supplies the request's PHP analysis; without it PHP route contexts are recognized syntactically.
     php: Option<PhpIndex>,
 }
 
@@ -324,7 +323,7 @@ impl CompletionProvider for RouteCompletionProvider {
         ctx: &Context,
         request: &CompletionRequest,
     ) -> Vec<protocol::CompletionItem> {
-        match go_to_lower(swlsp_uriutil::filepath::ext(
+        match lowercase(swlsp_uriutil::filepath::ext(
             &request.params.text_document.uri,
         ))
         .as_str()

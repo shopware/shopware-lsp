@@ -78,7 +78,10 @@ fn plan_services_xml_conversion_refuses_existing_target() {
         &mut |path| Ok(path == "/project/config/services.yaml"),
     )
     .unwrap_err();
-    assert!(error.0.contains("services.yaml exists already"), "{error}");
+    assert!(
+        error.to_string().contains("services.yaml exists already"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -90,11 +93,14 @@ fn plan_services_xml_conversion_refuses_lossy_input() {
         &mut |_| Ok(false),
     )
     .unwrap_err();
-    assert!(error.0.contains("unsupported element <stack>"), "{error}");
+    assert!(
+        error.to_string().contains("unsupported element <stack>"),
+        "{error}"
+    );
 }
 
 /// Dry-runs every convention-loaded plugin services.xml of a real Shopware
-/// checkout (Go `TestServicesXMLConversionOnTrunk`). Never writes.
+/// checkout. Never writes.
 #[test]
 #[ignore = "needs SHOPWARE_LSP_REAL_WORLD_ROOT"]
 fn services_xml_conversion_on_trunk() {

@@ -1,5 +1,4 @@
-//! Persisted workspace-symbol catalog with live fallbacks (port of
-//! `catalog_symbol.go`).
+//! Persisted workspace-symbol catalog with live fallbacks.
 
 use std::sync::Arc;
 

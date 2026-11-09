@@ -1,5 +1,5 @@
 //! `constant()` and `enum()` style constant references in Twig to PHP
-//! constants (port of Go `twig_constant_definition.go`).
+//! constants.
 
 use std::collections::HashSet;
 use std::sync::Arc;

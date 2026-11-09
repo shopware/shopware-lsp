@@ -1,5 +1,4 @@
-//! Go `twig_translation_extract_codeaction.go` and
-//! `twig_translation_extract_plan.go`: extracts static Twig text into a
+//! Extracts static Twig text into a
 //! translation resource. The server owns selection validation, domain
 //! inference, escaping and resource edits; clients only prompt.
 
@@ -15,9 +14,9 @@ use swlsp_lsp::{
 };
 use swlsp_lsp_protocol::{self as protocol, CodeActionKind};
 use swlsp_parser_twig::syntax::{HTML_STRING_INNER, HTML_TEXT};
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_rewrite::{Builder, DocumentPlan, HandleError, WorkspacePlan};
 use swlsp_syntax::{LineIndex, SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 use swlsp_translation::{Index, Insertion, insertion_for_source, twig_default_domain_before};
 use swlsp_uriutil::{file_uri, filepath};
 
@@ -203,7 +202,7 @@ impl TwigTranslationExtractProvider {
         let (params, selection) = self.decode_twig_translation_extraction(ctx, raw)?;
         let mut domains = self.translation_index()?.domains()?;
         append_unique_fold(&mut domains, &selection.active_domain);
-        domains.sort_by_key(|domain| go_to_lower(domain));
+        domains.sort_by_key(|domain| lowercase(domain));
         Ok(TwigTranslationExtractionPreparation {
             workspace_edits: true,
             text: selection.text.clone(),
@@ -236,17 +235,16 @@ impl TwigTranslationExtractProvider {
         let index = self.translation_index()?;
         if index.has_message(&domain, &key)? {
             return Err(format!(
-                "translation key {} already exists in domain {}",
-                swlsp_uriutil::go_quote(&key),
-                swlsp_uriutil::go_quote(&domain)
+                "translation key {:?} already exists in domain {:?}",
+                key, domain
             )
             .into());
         }
         let insertions = index.insertion_targets(&domain)?;
         if insertions.is_empty() {
             return Err(format!(
-                "domain {} has no writable YAML or XLIFF resources",
-                swlsp_uriutil::go_quote(&domain)
+                "domain {:?} has no writable YAML or XLIFF resources",
+                domain
             )
             .into());
         }
@@ -280,7 +278,7 @@ impl TwigTranslationExtractProvider {
             });
         }
         let mut replacement = format!("{{{{ '{}'|trans", escape_twig_single_quoted(&key));
-        if !equal_fold(&domain, &selection.active_domain) {
+        if !eq_ignore_case(&domain, &selection.active_domain) {
             replacement.push_str(&format!("({{}}, '{}')", escape_twig_single_quoted(&domain)));
         }
         replacement.push_str(" }}");
@@ -313,7 +311,7 @@ impl TwigTranslationExtractProvider {
         if params.file_uri.trim().is_empty() {
             return Err("missing Twig file URI".into());
         }
-        let extension = go_to_lower(filepath::ext(&params.file_uri));
+        let extension = lowercase(filepath::ext(&params.file_uri));
         if extension != ".twig" && extension != ".html" {
             return Err("translation extraction requires a Twig template".into());
         }
@@ -338,7 +336,7 @@ impl TwigTranslationExtractProvider {
         Ok((params, selection))
     }
 
-    /// Go `extractionEdit`: the final plan is built after locale selection,
+    /// The final plan is built after locale selection,
     /// with no disk writes or positions carried across the prompt.
     fn extraction_edit(
         &self,
@@ -429,7 +427,7 @@ fn translation_insertion_plan(
     )
 }
 
-/// Go `twigTranslationExtraction`: the trimmed static text selected by
+/// The trimmed static text selected by
 /// `range` (or the whole text node at a caret).
 pub(crate) fn twig_translation_extraction(
     source: &str,
@@ -506,11 +504,15 @@ fn default_translation_key(value: &str) -> String {
     if value.chars().count() >= 15 {
         return String::new();
     }
-    go_to_lower(&value.replace(' ', "."))
+    lowercase(&value.replace(' ', "."))
 }
 
 fn append_unique_fold(values: &mut Vec<String>, value: &str) {
-    if value.trim().is_empty() || values.iter().any(|candidate| equal_fold(candidate, value)) {
+    if value.trim().is_empty()
+        || values
+            .iter()
+            .any(|candidate| eq_ignore_case(candidate, value))
+    {
         return;
     }
     values.push(value.to_owned());

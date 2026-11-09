@@ -1,7 +1,7 @@
-//! Allocation-free PHP lexer (port of Go `internal/parser/php/lexer`).
+//! Allocation-free PHP lexer.
 //!
 //! The lexer runs in PHP mode from the first byte; inline HTML is lexed as
-//! ordinary PHP tokens exactly like the Go implementation.
+//! ordinary PHP tokens.
 
 use swlsp_syntax::{Kind, Token};
 
@@ -163,7 +163,8 @@ fn scan_quoted(source: &[u8], position: usize, quote: u8) -> usize {
     source.len() - position
 }
 
-/// Trims ASCII and Unicode white space like Go `strings.TrimSpace`.
+/// Trims Unicode white space, or only ASCII white space when `bytes` is not
+/// valid UTF-8.
 fn trim_space(bytes: &[u8]) -> &[u8] {
     match std::str::from_utf8(bytes) {
         Ok(text) => text.trim().as_bytes(),

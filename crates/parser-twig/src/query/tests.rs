@@ -1,5 +1,3 @@
-//! Port of `internal/parser/twig/query/query_test.go`.
-
 use std::collections::BTreeMap;
 
 use super::*;

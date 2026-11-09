@@ -1,11 +1,11 @@
 //! Component declarations, props, Live actions, listeners and emitted events
-//! in PHP sources (port of `parser_php.go`).
+//! in PHP sources.
 
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::{PHP_MEMBER_CALL, PHP_NAME, PHP_NAMED_ARGUMENT};
 use swlsp_php::NameResolver;
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::config::quoted_value_range as string_value_range;
 use crate::model::*;
@@ -50,14 +50,14 @@ pub fn declarations_in_php(path: &str, root: &SyntaxNode) -> Vec<Declaration> {
         }
         for attribute in phpquery::attributes(&class) {
             let resolved = resolved_name(&resolver, &phpquery::attribute_name(&attribute));
-            let live = equal_fold(&resolved, AS_LIVE_COMPONENT);
-            if !equal_fold(&resolved, AS_TWIG_COMPONENT) && !live {
+            let live = eq_ignore_case(&resolved, AS_LIVE_COMPONENT);
+            if !eq_ignore_case(&resolved, AS_TWIG_COMPONENT) && !live {
                 continue;
             }
             let (name, name_range) = php_attribute_string_value(&attribute, "name", 0);
             let (template, template_range) = php_attribute_string_value(&attribute, "template", 1);
             let expose_public_props = php_attribute_argument(&attribute, "exposePublicProps", 2)
-                .is_none_or(|value| !equal_fold(value.text().to_string().trim(), "false"));
+                .is_none_or(|value| !eq_ignore_case(value.text().to_string().trim(), "false"));
             result.push(Declaration {
                 name: normalize_component_name(&name),
                 class: class_name.clone(),
@@ -121,7 +121,7 @@ pub(crate) fn props_in_php(path: &str, root: &SyntaxNode) -> Vec<Prop> {
                     if !getter.is_empty()
                         && let Some(method) = phpquery::methods(&class)
                             .into_iter()
-                            .find(|method| equal_fold(&phpquery::method_name(method), &getter))
+                            .find(|method| eq_ignore_case(&phpquery::method_name(method), &getter))
                     {
                         prop_type = phpquery::method_return_type(&method);
                     }
@@ -215,7 +215,7 @@ pub(crate) fn live_listeners_in_php_impl(path: &str, root: &SyntaxNode) -> Vec<L
             let mut names: Vec<(String, TextRange)> = Vec::new();
             for attribute in attributes {
                 let resolved = resolved_name(resolver(), &phpquery::attribute_name(&attribute));
-                if !equal_fold(&resolved, LIVE_LISTENER) {
+                if !eq_ignore_case(&resolved, LIVE_LISTENER) {
                     continue;
                 }
                 let (name, range) = php_attribute_string_value(&attribute, "event", 0);
@@ -349,14 +349,14 @@ fn live_event_call_kind(call: Option<&SyntaxNode>) -> Option<LiveEventReferenceK
     }
     // The method name is checked first: it rejects almost every call
     // without copying the receiver text.
-    let kind = match go_to_lower(&phpquery::call_method_name(call)).as_str() {
+    let kind = match lowercase(&phpquery::call_method_name(call)).as_str() {
         "emit" => LiveEventReferenceKind::Emit,
         "emitup" => LiveEventReferenceKind::EmitUp,
         "emitself" => LiveEventReferenceKind::EmitSelf,
         _ => return None,
     };
     let receiver = phpquery::call_receiver(call)?;
-    if !equal_fold(receiver.text().to_string().trim(), "$this") {
+    if !eq_ignore_case(receiver.text().to_string().trim(), "$this") {
         return None;
     }
     Some(kind)
@@ -371,7 +371,10 @@ fn php_call_argument_expression(
     for (index, argument) in phpquery::arguments(call).enumerate() {
         let name = phpquery::argument_name(&argument);
         if !name.is_empty() {
-            if names.iter().any(|candidate| equal_fold(&name, candidate)) {
+            if names
+                .iter()
+                .any(|candidate| eq_ignore_case(&name, candidate))
+            {
                 return phpquery::argument_expression(call, index);
             }
             continue;
@@ -494,9 +497,9 @@ pub(crate) fn component_class_kinds(class: &SyntaxNode, resolver: &NameResolver)
     let mut live = false;
     for attribute in phpquery::attributes(class) {
         let resolved = resolved_name(resolver, &phpquery::attribute_name(&attribute));
-        if equal_fold(&resolved, AS_TWIG_COMPONENT) {
+        if eq_ignore_case(&resolved, AS_TWIG_COMPONENT) {
             component = true;
-        } else if equal_fold(&resolved, AS_LIVE_COMPONENT) {
+        } else if eq_ignore_case(&resolved, AS_LIVE_COMPONENT) {
             component = true;
             live = true;
         }
@@ -510,7 +513,7 @@ fn resolved_attribute(
     name: &str,
 ) -> Option<SyntaxNode> {
     phpquery::attributes(node).into_iter().find(|attribute| {
-        equal_fold(
+        eq_ignore_case(
             &resolved_name(resolver, &phpquery::attribute_name(attribute)),
             name,
         )
@@ -520,7 +523,7 @@ fn resolved_attribute(
 fn live_prop_writable(attribute: Option<&SyntaxNode>) -> bool {
     attribute
         .and_then(|attribute| php_attribute_argument(attribute, "writable", 0))
-        .is_some_and(|value| !equal_fold(value.text().to_string().trim(), "false"))
+        .is_some_and(|value| !eq_ignore_case(value.text().to_string().trim(), "false"))
 }
 
 fn php_method_name_range(method: &SyntaxNode) -> TextRange {
@@ -550,7 +553,7 @@ fn php_attribute_argument(
     let mut positional = 0;
     for argument in phpquery::arguments(attribute) {
         let argument_name = phpquery::argument_name(&argument);
-        if equal_fold(&argument_name, name) {
+        if eq_ignore_case(&argument_name, name) {
             return php_argument_expression(&argument);
         }
         if argument_name.is_empty() {
@@ -601,9 +604,8 @@ pub(crate) fn computed_method_name(name: &str) -> Option<String> {
     None
 }
 
-/// Go `strings.ToLower(value[:1]) + value[1:]`: lowercases the first byte
-/// when it is ASCII; a multi-byte first character is left as is (Go would
-/// lowercase an invalid one-byte string, which is a no-op).
+/// `value` with its first byte lowercased when it is ASCII; a multi-byte
+/// first character is left as is.
 fn lower_first_byte(value: &str) -> String {
     let mut result = value.to_owned();
     if let Some(first) = result.get_mut(..1) {

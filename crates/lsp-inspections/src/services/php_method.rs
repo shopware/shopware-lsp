@@ -1,4 +1,4 @@
-//! Creates a missing PHP method in an indexed class (Go `php_method.go`).
+//! Creates a missing PHP method in an indexed class.
 
 use std::sync::LazyLock;
 
@@ -11,9 +11,9 @@ use swlsp_lsp::{
 use swlsp_lsp_protocol as protocol;
 use swlsp_parser_php::query as phpquery;
 use swlsp_php::PhpIndex;
-use swlsp_php_types::equal_fold;
 use swlsp_rewrite::{Builder, DocumentPlan, WorkspacePlan};
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::eq_ignore_case;
 
 use crate::inspection::resolve_anchor;
 
@@ -21,7 +21,6 @@ static PHP_IDENTIFIER: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^[A-Za-z_\x{80}-\x{ff}][A-Za-z0-9_\x{80}-\x{ff}]*$").expect("identifier regex")
 });
 
-/// Go `phpMethodPayload`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PhpMethodPayload {
@@ -35,7 +34,6 @@ pub struct PhpMethodPayload {
     pub typed_parameters: Vec<PhpMethodParameter>,
 }
 
-/// Go `phpMethodParameter`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PhpMethodParameter {
     #[serde(default)]
@@ -44,7 +42,6 @@ pub struct PhpMethodParameter {
     pub types: Vec<String>,
 }
 
-/// Go `phpMethodFix`.
 pub struct PhpMethodFix {
     pub id: &'static str,
     pub title_prefix: &'static str,
@@ -133,7 +130,7 @@ impl RewriteQuickFix for PhpMethodFix {
             return Err(format!("class {:?} has no body", payload.class_name).into());
         };
         for method in phpquery::methods(&class) {
-            if equal_fold(&phpquery::method_name(&method), &payload.method_name) {
+            if eq_ignore_case(&phpquery::method_name(&method), &payload.method_name) {
                 return Err(format!(
                     "method {}::{} already exists",
                     payload.class_name, payload.method_name
@@ -176,7 +173,7 @@ fn php_class_for_symbol(
     let root = document.root()?;
     let mut best: Option<(SyntaxNode, u32)> = None;
     for class in phpquery::classes(&root) {
-        if !equal_fold(&phpquery::class_name(&class), short_name) {
+        if !eq_ignore_case(&phpquery::class_name(&class), short_name) {
             continue;
         }
         let distance = u32::from(class.text_range().start()).abs_diff(old_offset);

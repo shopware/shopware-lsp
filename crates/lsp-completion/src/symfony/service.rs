@@ -1,5 +1,5 @@
 //! Symfony service, parameter, tag and class completion in YAML, XML and PHP
-//! configuration (port of Go `service_completion.go`).
+//! configuration.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -16,12 +16,12 @@ use swlsp_symfony::{
 use swlsp_syntax::{SyntaxNode, TextRange};
 
 use super::{lower_ext, markdown, request_offset};
-use crate::common::{go_to_lower, php_context, protocol_range, text_edit};
+use crate::common::{php_context, protocol_range, text_edit};
+use swlsp_textutil::lowercase;
 
 use protocol::CompletionItemKind as Kind;
 
-/// Completes Symfony services, parameters, tags and classes (Go
-/// `SymfonyCompletionProvider`).
+/// Completes Symfony services, parameters, tags and classes.
 pub struct ServiceCompletionProvider {
     service_index: Option<Arc<ServiceIndex>>,
     php_index: Option<PhpIndex>,
@@ -360,7 +360,7 @@ impl ServiceCompletionProvider {
         let Some(node) = request.node.as_ref() else {
             return Vec::new();
         };
-        if !go_to_lower(&request.params.text_document.uri).ends_with(".xml") {
+        if !lowercase(&request.params.text_document.uri).ends_with(".xml") {
             return Vec::new();
         }
         if let Some(items) = self.configured_service_method_completions(request) {
@@ -448,8 +448,7 @@ impl ServiceCompletionProvider {
         Vec::new()
     }
 
-    /// `Some` when the cursor is on a configured service method reference
-    /// (the Go `matched` flag).
+    /// `Some` when the cursor is on a configured service method reference.
     fn configured_service_method_completions(
         &self,
         request: &CompletionRequest,
@@ -481,7 +480,7 @@ impl ServiceCompletionProvider {
             if method.visibility != Visibility::Public || method.name.starts_with("__") {
                 continue;
             }
-            if !seen.insert(go_to_lower(&method.name)) {
+            if !seen.insert(lowercase(&method.name)) {
                 continue;
             }
             let mut entry = item(&*method.name, Kind::METHOD);
@@ -524,7 +523,7 @@ impl ServiceCompletionProvider {
             return Some(Vec::new());
         };
         let current = normalize_named_argument(&argument.name);
-        let prefix = go_to_lower(current);
+        let prefix = lowercase(current);
         let existing: HashSet<&str> = argument
             .existing
             .iter()
@@ -535,7 +534,7 @@ impl ServiceCompletionProvider {
         let mut seen: HashSet<String> = HashSet::new();
         for parameter in &constructor.parameters {
             let name = normalize_named_argument(&parameter.name);
-            if name.is_empty() || !go_to_lower(name).starts_with(&prefix) {
+            if name.is_empty() || !lowercase(name).starts_with(&prefix) {
                 continue;
             }
             if existing.contains(name) || !seen.insert(name.to_string()) {
@@ -557,7 +556,7 @@ impl ServiceCompletionProvider {
         }
         let mut keyed: Vec<(String, protocol::CompletionItem)> = items
             .into_iter()
-            .map(|entry| (go_to_lower(&entry.label), entry))
+            .map(|entry| (lowercase(&entry.label), entry))
             .collect();
         keyed.sort_unstable_by(|left, right| {
             left.0
@@ -641,7 +640,7 @@ impl ServiceCompletionProvider {
         let mut seen: HashSet<String> = HashSet::with_capacity(symbols.len());
         for symbol in symbols.iter() {
             let name: &str = &symbol.fully_qualified;
-            if name.is_empty() || !seen.insert(go_to_lower(name)) {
+            if name.is_empty() || !seen.insert(lowercase(name)) {
                 continue;
             }
             let deprecated = symbol.flags.has(Flags::DEPRECATED);
@@ -662,7 +661,7 @@ impl ServiceCompletionProvider {
     }
 }
 
-/// Go `configuredServiceMap`: services of the unsaved document by ID.
+/// The services of the unsaved document by ID.
 fn configured_service_map(request: &CompletionRequest) -> HashMap<String, swlsp_symfony::Service> {
     let mut result = HashMap::new();
     let Some(line_index) = request.line_index() else {

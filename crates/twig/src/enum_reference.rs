@@ -1,4 +1,4 @@
-//! `enum()` / `enum_cases()` class references (port of `enum_reference.go`).
+//! `enum()` / `enum_cases()` class references.
 
 use swlsp_parser_twig::query as twigquery;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};

@@ -317,7 +317,7 @@ fn yaml_mapping_colon(value: &str) -> Option<usize> {
 }
 
 /// Lines without their `\n` and one trailing `\r`; a trailing newline yields
-/// a final empty line, like Go.
+/// a final empty line.
 fn source_lines(source: &str) -> impl Iterator<Item = SourceLine<'_>> {
     let mut start = 0;
     let mut done = false;
@@ -371,7 +371,8 @@ pub(crate) fn is_docker_compose_path(path: &str) -> bool {
         || has_prefix_fold(stem, "docker-compose.")
 }
 
-/// Go `filepath.Base` for slash-separated paths (trailing separators ignored).
+/// The last element of a slash-separated path, ignoring trailing slashes;
+/// `.` for an empty path and `/` for the root.
 pub(crate) fn base_name(path: &str) -> &str {
     let trimmed = path.trim_end_matches('/');
     if trimmed.is_empty() {
@@ -383,7 +384,8 @@ pub(crate) fn base_name(path: &str) -> &str {
     }
 }
 
-/// Go `filepath.Ext`: the suffix from the last dot of the final element.
+/// The suffix of the last slash-separated element from its final dot
+/// (`.env`); empty when there is none.
 pub(crate) fn extension(path: &str) -> &str {
     let base_start = path.rfind('/').map_or(0, |separator| separator + 1);
     match path[base_start..].rfind('.') {
@@ -511,7 +513,7 @@ mod tests {
     }
 
     #[test]
-    fn path_helpers_match_go_filepath() {
+    fn base_name_and_extension_use_the_last_path_element() {
         assert_eq!(base_name("/a/b/.env"), ".env");
         assert_eq!(base_name("/a/b/"), "b");
         assert_eq!(extension("/a/.env"), ".env");

@@ -1,4 +1,4 @@
-//! Port of Go `shopware_decoration.go`.
+//! Constructor parameters typed with a concrete decorator.
 
 use std::sync::Arc;
 
@@ -11,8 +11,8 @@ use swlsp_php_semantic::{Flags, SymbolKind};
 use super::util::warning;
 use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
-/// Go `ShopwareDecorationAnalyzer`: constructor parameters typed with a
-/// concrete decorator instead of its decoration abstraction.
+/// Constructor parameters typed with a concrete decorator instead of its
+/// decoration abstraction.
 #[derive(Clone)]
 pub struct ShopwareDecorationAnalyzer {
     php: Option<PhpIndex>,

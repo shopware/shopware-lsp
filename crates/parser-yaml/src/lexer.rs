@@ -1,4 +1,4 @@
-//! Indentation-aware YAML lexer (port of Go `internal/parser/yaml/lexer`).
+//! Indentation-aware YAML lexer.
 
 use swlsp_syntax::{Kind, Token};
 
@@ -149,7 +149,7 @@ impl Scanner<'_> {
         let end = scan_plain(source, position, self.flow_depth);
         self.line_content_start = false;
         if end == position {
-            // Go emits one byte; Rust keeps the character whole.
+            // Keep the whole character so token ranges stay on character boundaries.
             return (TK_UNKNOWN, position + utf8_len(source[position]));
         }
         (TK_PLAIN_SCALAR, end)

@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use swlsp_lsp::{Context, HoverProvider, HoverRequest, ProviderResult};
 use swlsp_lsp_protocol as protocol;
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::{LineIndex, SyntaxNode, TextRange};
+use swlsp_textutil::eq_ignore_case;
 use swlsp_twigcomponent::{
     ComponentBlockUsage, Index, LiveActionArgumentReference, LiveActionReference, Prop, PropUsage,
     SourceKind,
@@ -45,11 +45,11 @@ impl TwigComponentHoverProvider {
         line_index: &LineIndex,
     ) -> HoverResult {
         for action in index.live_actions_for_template(path)? {
-            if !equal_fold(&action.name, &reference.action) {
+            if !eq_ignore_case(&action.name, &reference.action) {
                 continue;
             }
             for parameter in &action.parameters {
-                if !equal_fold(&parameter.name, &reference.name) {
+                if !eq_ignore_case(&parameter.name, &reference.name) {
                     continue;
                 }
                 let mut value = format!(
@@ -85,7 +85,7 @@ impl TwigComponentHoverProvider {
         line_index: &LineIndex,
     ) -> HoverResult {
         for action in index.live_actions_for_template(path)? {
-            if !equal_fold(&action.name, &reference.name) {
+            if !eq_ignore_case(&action.name, &reference.name) {
                 continue;
             }
             let mut signature = format!("{}::{}(", action.class, action.method);
@@ -180,7 +180,7 @@ impl TwigComponentHoverProvider {
             )));
         }
         for prop in &props {
-            if !equal_fold(&prop.name, name) {
+            if !eq_ignore_case(&prop.name, name) {
                 continue;
             }
             return Ok(Some(component_variable_prop_hover(prop, range, line_index)));
@@ -197,7 +197,7 @@ impl TwigComponentHoverProvider {
         line_index: &LineIndex,
     ) -> HoverResult {
         for prop in index.computed_for_template(path)? {
-            if !equal_fold(&prop.name, name) {
+            if !eq_ignore_case(&prop.name, name) {
                 continue;
             }
             let mut value = format!(
@@ -218,7 +218,7 @@ impl TwigComponentHoverProvider {
 
     fn prop_hover(&self, index: &Index, usage: &PropUsage, line_index: &LineIndex) -> HoverResult {
         for prop in index.props(&usage.component)? {
-            if !equal_fold(&prop.name, &usage.name) {
+            if !eq_ignore_case(&prop.name, &usage.name) {
                 continue;
             }
             let mut markdown = format!(

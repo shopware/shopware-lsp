@@ -1,14 +1,13 @@
-//! Context metadata, Faker and ProductStream fixes (Go
-//! `shopware_migration_calls.go`).
+//! Context metadata, Faker and ProductStream fixes.
 
 use swlsp_lsp::{BoxError, Context, FixContext, FixId, FixPresentation, QuickFix, RewriteQuickFix};
 use swlsp_lsp_diagnostics::common::call_target_name;
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::{PHP_MEMBER_ACCESS, PHP_MEMBER_CALL};
 use swlsp_php_rewrite::Editor;
-use swlsp_php_types::equal_fold;
 use swlsp_rewrite::{Builder, WorkspacePlan};
 use swlsp_syntax::{SyntaxNodeExt, TextRange, TextSize};
+use swlsp_textutil::eq_ignore_case;
 
 use super::{
     finish_edits, finish_php_rewrite, invalid, present_migration, resolve_migration_php_node,
@@ -48,7 +47,7 @@ impl RewriteQuickFix for ContextMetadataStateFix {
             "context state rewrite is no longer safe",
         )?;
         let (call, root) = resolve_migration_php_node(fix, PHP_MEMBER_CALL)?;
-        if !equal_fold(&phpquery::call_method_name(&call), "addExtension")
+        if !eq_ignore_case(&phpquery::call_method_name(&call), "addExtension")
             || phpquery::arguments(&call).count() != 2
         {
             return Err(invalid("context addExtension() call changed"));
@@ -127,7 +126,7 @@ impl RewriteQuickFix for ProductStreamEnrichCriteriaFix {
             "ProductStream rewrite is no longer safe",
         )?;
         let (call, _) = resolve_migration_php_node(fix, PHP_MEMBER_CALL)?;
-        if !equal_fold(&phpquery::call_method_name(&call), "buildFilters")
+        if !eq_ignore_case(&phpquery::call_method_name(&call), "buildFilters")
             || payload.replacement.is_empty()
         {
             return Err(invalid("ProductStream migration target changed"));

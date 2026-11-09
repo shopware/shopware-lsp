@@ -1,4 +1,4 @@
-//! The Symfony route index (Go `RouteIndexer`): routes from YAML, XML, and
+//! The Symfony route index: routes from YAML, XML, and
 //! PHP (attributes and `RoutingConfigurator`) plus routing imports, merged
 //! with the compiled URL generator catalog.
 
@@ -18,12 +18,12 @@ use crate::php_routes::parse_php_routes_tree;
 use crate::route_constant_names::{ClassConstantLookup, resolve_constant_route_names};
 use crate::route_context::normalize_route_search_path;
 use crate::route_resource::{RouteResourceImport, route_resource_references};
-use crate::util::{base_name, contains_fold_ascii, go_trim_space};
+use crate::util::{base_name, contains_fold_ascii};
 use crate::workspace_symbols::add_route_workspace_symbols;
 use crate::xml_routes::parse_xml_routes_tree;
 use crate::yaml_routes::parse_yaml_routes_tree;
 
-/// The first route whose controller is `name` (Go `RouteList.GetByController`).
+/// The first route whose controller is `name`.
 pub fn route_by_controller<'a>(routes: &'a [Route], name: &str) -> Option<&'a Route> {
     routes.iter().find(|route| route.controller == name)
 }
@@ -87,8 +87,7 @@ impl RouteIndexer {
         })
     }
 
-    /// Opens the route repositories with the project's compiled route catalog
-    /// (Go `NewProjectRouteIndexer`).
+    /// Opens the route repositories with the project's compiled route catalog.
     pub fn new_project(
         project_root: &str,
         config_dir: impl AsRef<Path>,
@@ -105,7 +104,7 @@ impl RouteIndexer {
     }
 
     /// The scanner-fed compiled route index publishing into this indexer's
-    /// catalog (Go `NewCompiledRouteIndex`). An indexer without a project
+    /// catalog. An indexer without a project
     /// catalog gets a fresh, unshared one.
     pub fn compiled_route_index(
         &self,
@@ -164,8 +163,8 @@ impl RouteIndexer {
         self.routes.revision()
     }
 
-    /// The first route whose controller is `name` (Go
-    /// `GetRoutes().GetByController(name)`), without copying the catalog.
+    /// The first route whose controller is `name`, without copying the
+    /// catalog.
     pub fn route_by_controller(&self, name: &str) -> Result<Option<Route>> {
         Ok(route_by_controller(&self.get_routes_view()?, name).cloned())
     }
@@ -281,20 +280,16 @@ impl RouteIndexer {
         if prefix.is_empty() {
             return Ok(Vec::new());
         }
-        let prefix_with_slash = swlsp_php_types::go_to_lower(&format!(
-            "{}/",
-            prefix.strip_suffix('/').unwrap_or(&prefix)
-        ));
+        let prefix_with_slash =
+            swlsp_textutil::lowercase(&format!("{}/", prefix.strip_suffix('/').unwrap_or(&prefix)));
         let mut result = Vec::new();
         for route in routes.iter() {
             let path = normalized_route_path(&route.path);
-            if path.is_empty() || swlsp_php_types::equal_fold(&path, &full_path) {
+            if path.is_empty() || swlsp_textutil::eq_ignore_case(&path, &full_path) {
                 continue;
             }
-            let path_with_slash = swlsp_php_types::go_to_lower(&format!(
-                "{}/",
-                path.strip_suffix('/').unwrap_or(&path)
-            ));
+            let path_with_slash =
+                swlsp_textutil::lowercase(&format!("{}/", path.strip_suffix('/').unwrap_or(&path)));
             if path_with_slash.starts_with(&prefix_with_slash) {
                 result.push(route.clone());
             }
@@ -357,7 +352,7 @@ impl RouteIndexer {
         key: impl Fn(&'r Route) -> &'r str,
     ) -> Result<()> {
         let path = file.path();
-        // Go keys a path → key map; the last route of a key wins.
+        // One record per key; the last route of a key wins.
         let mut buckets: Vec<(String, Vec<(String, &Route)>)> = vec![(path.to_owned(), Vec::new())];
         for route in routes {
             let route_key = key(route);
@@ -473,7 +468,7 @@ fn may_import_route_resources(file: &ParsedFile) -> bool {
     }
 }
 
-/// Go `cst.TextRange.String`: `start..end`.
+/// A range as `start..end` byte offsets, used as a record key.
 pub(crate) fn range_key(range: TextRange) -> String {
     format!("{}..{}", u32::from(range.start()), u32::from(range.end()))
 }
@@ -555,7 +550,7 @@ pub(crate) fn sort_routes(routes: &mut [Route]) {
 }
 
 fn normalized_route_path(value: &str) -> String {
-    let value = go_trim_space(value);
+    let value = value.trim();
     if value.is_empty() {
         return String::new();
     }

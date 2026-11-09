@@ -1,8 +1,7 @@
-//! A port of the parts of `gopkg.in/yaml.v3` (v3.0.1) the services
-//! conversion depends on: the node model, `Encoder.Encode` of a node tree
-//! with a custom indent, scalar resolution, and the libyaml emitter. Output
-//! is byte-identical to Go for the trees the converter builds (no anchors,
-//! comments, or directives).
+//! The YAML writer of the services conversion: a node model, encoding of a
+//! node tree with a custom indent, implicit-tag scalar resolution, and an
+//! emitter that follows libyaml's layout and quoting rules. It covers the
+//! trees the converter builds (no anchors, comments, or directives).
 
 const STR_TAG: &str = "!!str";
 const NULL_TAG: &str = "!!null";
@@ -53,7 +52,7 @@ impl Node {
         }
     }
 
-    /// `Node.SetString`.
+    /// A string scalar; multi-line values use the literal block style.
     pub(crate) fn string(value: &str) -> Node {
         Node {
             kind: NodeKind::Scalar,
@@ -77,8 +76,8 @@ impl Node {
         }
     }
 
-    /// A scalar as produced by `Node.Encode` of a non-string Go value: the
-    /// formatted value re-parsed with its implicit tag.
+    /// A scalar for a non-string value: the formatted value with the
+    /// implicit tag it resolves to.
     pub(crate) fn implicit(value: String) -> Node {
         let tag = resolve(&value).to_owned();
         Node {
@@ -105,7 +104,7 @@ fn long_tag(tag: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// resolve.go
+// Scalar resolution
 
 /// The implicit tag of a plain scalar (`resolve("", in)`).
 pub(crate) fn resolve(input: &str) -> &'static str {
@@ -130,7 +129,7 @@ pub(crate) fn resolve(input: &str) -> &'static str {
     }
     match hint {
         b'.' => {
-            if go_parse_float(input).is_some() {
+            if parse_finite_float(input).is_some() {
                 return FLOAT_TAG;
             }
         }
@@ -139,10 +138,12 @@ pub(crate) fn resolve(input: &str) -> &'static str {
                 return TIMESTAMP_TAG;
             }
             let plain = input.replace('_', "");
-            if go_parse_int_base0(&plain).is_some() || go_parse_uint_base0(&plain).is_some() {
+            if swlsp_textutil::parse_int_literal(&plain).is_some()
+                || swlsp_textutil::parse_uint_literal(&plain).is_some()
+            {
                 return INT_TAG;
             }
-            if yaml_style_float(&plain) && go_parse_float(&plain).is_some() {
+            if yaml_style_float(&plain) && parse_finite_float(&plain).is_some() {
                 return FLOAT_TAG;
             }
             if let Some(rest) = plain.strip_prefix("0b") {
@@ -179,39 +180,9 @@ fn parse_digits(digits: &str, radix: u32) -> Option<u128> {
         .then_some(value)
 }
 
-/// Go `strconv.ParseUint(s, 0, 64)` without underscores.
-fn go_parse_uint_base0(value: &str) -> Option<u64> {
-    let (digits, radix) = base_prefix(value);
-    parse_digits(digits, radix).map(|value| value as u64)
-}
-
-fn base_prefix(value: &str) -> (&str, u32) {
-    let bytes = value.as_bytes();
-    if bytes.len() >= 2 && bytes[0] == b'0' {
-        match bytes[1] {
-            b'x' | b'X' => return (&value[2..], 16),
-            b'o' | b'O' => return (&value[2..], 8),
-            b'b' | b'B' => return (&value[2..], 2),
-            _ => return (&value[1..], 8),
-        }
-    }
-    (value, 10)
-}
-
-/// Go `strconv.ParseInt(s, 0, 64)` without underscores.
-fn go_parse_int_base0(value: &str) -> Option<i64> {
-    let (negative, rest) = match value.as_bytes().first() {
-        Some(b'+') => (false, &value[1..]),
-        Some(b'-') => (true, &value[1..]),
-        _ => (false, value),
-    };
-    let magnitude = go_parse_uint_base0(rest)? as i128;
-    let signed = if negative { -magnitude } else { magnitude };
-    i64::try_from(signed).ok()
-}
-
-/// Go `strconv.ParseFloat(s, 64)` for decimal input: rejects overflow.
-pub(crate) fn go_parse_float(value: &str) -> Option<f64> {
+/// A decimal float with at most one sign, rejecting `inf`, `nan` and values
+/// out of `f64` range.
+pub(crate) fn parse_finite_float(value: &str) -> Option<f64> {
     let bytes = value.as_bytes();
     let body = value.trim_start_matches(['+', '-']);
     if bytes.is_empty()
@@ -266,7 +237,8 @@ fn yaml_style_float(value: &str) -> bool {
     index == bytes.len()
 }
 
-/// `parseTimestamp` for the layouts yaml.v3 accepts.
+/// Whether `value` is a YAML timestamp: a date, optionally followed by a
+/// time and zone.
 fn parse_timestamp(value: &str) -> bool {
     let bytes = value.as_bytes();
     let year_digits = bytes
@@ -369,7 +341,9 @@ fn parse_timestamp(value: &str) -> bool {
     }
 }
 
-/// Go `strconv.FormatFloat(value, 'g', -1, 64)` as yaml.v3 renders floats.
+/// The YAML form of a float: `.nan`/`.inf`, otherwise the shortest
+/// round-trip digits, in exponent form (`1e+06`, `1e-05`) when the decimal
+/// exponent is below -4 or at least 6.
 pub(crate) fn format_float(value: f64) -> String {
     if value.is_nan() {
         return ".nan".to_owned();
@@ -427,7 +401,7 @@ pub(crate) fn format_float(value: f64) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// encode.go: node → events
+// Node tree → events
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ScalarStyle {
@@ -552,7 +526,7 @@ pub(crate) fn encode(node: &Node, indent: usize) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// emitterc.go
+// Emitter
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum State {
@@ -987,7 +961,8 @@ impl Emitter {
                     }
                     self.state = State::DocumentContent;
                 } else {
-                    // yaml.v3 clears open_ended before STREAM-END.
+                    // An open-ended document needs no `...` before the
+                    // stream end.
                     self.state = State::End;
                 }
             }

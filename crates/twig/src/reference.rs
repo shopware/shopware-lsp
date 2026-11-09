@@ -1,5 +1,4 @@
-//! Statically known template references in Twig and PHP (port of
-//! `reference.go`).
+//! Statically known template references in Twig and PHP.
 
 use serde::{Deserialize, Serialize};
 use swlsp_parser_php::query as phpquery;
@@ -211,7 +210,7 @@ fn twig_string_is_hash_value_for_key(literal: &SyntaxNode, key: &str) -> bool {
     if !twig_node_contains(&value_node, literal) {
         return false;
     }
-    swlsp_php_types::equal_fold(&hash_key_text(&key_node), key)
+    swlsp_textutil::eq_ignore_case(&hash_key_text(&key_node), key)
 }
 
 pub fn twig_template_strings(root: &SyntaxNode) -> Vec<SyntaxNode> {
@@ -381,7 +380,7 @@ fn twig_function_argument(call: &SyntaxNode, position: usize, name: &str) -> Opt
         }
         if argument
             .child_token_of_kind(TK_WORD)
-            .is_some_and(|token| swlsp_php_types::equal_fold(token.text(), name))
+            .is_some_and(|token| swlsp_textutil::eq_ignore_case(token.text(), name))
         {
             return Some(argument);
         }
@@ -531,7 +530,7 @@ fn twig_hash_value_for_key(node: &SyntaxNode, key: &str) -> Option<SyntaxNode> {
         let (Some(key_node), Some(value_node)) = hash_pair_parts(&pair) else {
             continue;
         };
-        if swlsp_php_types::equal_fold(&hash_key_text(&key_node), key) {
+        if swlsp_textutil::eq_ignore_case(&hash_key_text(&key_node), key) {
             return Some(value_node);
         }
     }
@@ -598,7 +597,7 @@ pub fn is_php_template_string(node: &SyntaxNode) -> bool {
     let Some(attribute) = phpquery::attribute_at(&literal) else {
         return false;
     };
-    if !swlsp_php_types::equal_fold(
+    if !swlsp_textutil::eq_ignore_case(
         base(&phpquery::attribute_name(&attribute).replace('\\', "/")),
         "Template",
     ) {
@@ -612,7 +611,7 @@ pub fn is_php_template_string(node: &SyntaxNode) -> bool {
         .unwrap_or_default();
     phpquery::argument_expression(&attribute, index).as_ref() == Some(&literal)
         && (argument_name.is_empty() && index == 0
-            || swlsp_php_types::equal_fold(&argument_name, "template"))
+            || swlsp_textutil::eq_ignore_case(&argument_name, "template"))
 }
 
 /// An exact static PHP string that looks like a logical Twig template name.
@@ -624,7 +623,7 @@ pub fn php_template_like_string(node: &SyntaxNode) -> Option<String> {
         return None;
     }
     let name = normalize_template_reference(&phpquery::string_value(&literal));
-    if name.is_empty() || !swlsp_php_types::go_to_lower(&name).ends_with(".twig") {
+    if name.is_empty() || !swlsp_textutil::lowercase(&name).ends_with(".twig") {
         return None;
     }
     Some(name)
@@ -700,7 +699,7 @@ fn php_template_call_reference(literal: &SyntaxNode) -> bool {
     let method = phpquery::call_method_name(&call);
     if !PHP_TEMPLATE_CALL_NAMES
         .iter()
-        .any(|name| swlsp_php_types::equal_fold(name, &method))
+        .any(|name| swlsp_textutil::eq_ignore_case(name, &method))
     {
         return false;
     }
@@ -708,7 +707,7 @@ fn php_template_call_reference(literal: &SyntaxNode) -> bool {
         return false;
     };
     let name = phpquery::argument(&call, index)
-        .map(|argument| swlsp_php_types::go_to_lower(&phpquery::argument_name(&argument)))
+        .map(|argument| swlsp_textutil::lowercase(&phpquery::argument_name(&argument)))
         .unwrap_or_default();
     phpquery::argument_expression(&call, index).as_ref() == Some(literal)
         && (index == 0 || name == "view" || name == "name" || name == "template")

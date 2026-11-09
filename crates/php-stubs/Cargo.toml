@@ -6,6 +6,8 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+thiserror.workspace = true
+swlsp-textutil = { path = "../textutil" }
 swlsp-php-project = { path = "../php-project" }
 swlsp-php-semantic = { path = "../php-semantic" }
 swlsp-php-types = { path = "../php-types" }

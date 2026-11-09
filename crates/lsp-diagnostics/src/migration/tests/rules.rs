@@ -278,7 +278,7 @@ fn doctrine_route_default_rewrite_handles_nested_values() {
 }
 
 #[test]
-fn migration_payload_omits_empty_fields_like_go() {
+fn migration_payload_omits_empty_fields() {
     let value = serde_json::to_value(ShopwareMigrationPayload {
         rule: "r".into(),
         kind: "k".into(),

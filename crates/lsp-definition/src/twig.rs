@@ -1,7 +1,4 @@
-//! Go-to-definition inside Twig templates and for template references in
-//! PHP (port of Go `twig_definition.go`, `twig_guard_definition.go`,
-//! `twig_see_definition.go`, `twig_types_definition.go` and
-//! `twig_test_definition.go`).
+//! Go-to-definition inside Twig templates and for template references in PHP.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -12,8 +9,8 @@ use swlsp_lsp_protocol as protocol;
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::{TWIG_ACCESSOR, TWIG_FILTER, TWIG_LITERAL_NAME, TWIG_VAR};
 use swlsp_php::PhpIndex;
-use swlsp_php_types::go_to_lower;
 use swlsp_syntax::TextRange;
+use swlsp_textutil::lowercase;
 use swlsp_theme::IconProvider;
 use swlsp_twig::{GuardKind, PhpAccessResolver, TwigIndexer};
 use swlsp_uriutil::{file_uri, filepath};
@@ -31,8 +28,7 @@ pub struct TwigDefinitionProvider {
 }
 
 impl TwigDefinitionProvider {
-    /// Go `NewTwigDefinitionProvider`. Without an extension indexer the
-    /// `sw_icon` lookup is skipped (Go would dereference nil).
+    /// Without an extension indexer the `sw_icon` lookup is skipped.
     pub fn new(
         project_root: impl Into<String>,
         twig: Option<Arc<TwigIndexer>>,
@@ -97,7 +93,7 @@ impl TwigDefinitionProvider {
             return locations;
         }
         let Some(twig) = self.twig.as_deref() else {
-            // Go dereferences the nil indexer here; nothing can resolve.
+            // Without the Twig index nothing can resolve.
             return Vec::new();
         };
 
@@ -256,7 +252,7 @@ impl TwigDefinitionProvider {
                 }
             }
             if !variables.is_empty() {
-                return non_nil(locations);
+                return non_empty(locations);
             }
         }
         let twig = self.twig.as_deref()?;
@@ -275,7 +271,7 @@ impl TwigDefinitionProvider {
             seen.insert(key);
             locations.push(location);
         }
-        non_nil(locations)
+        non_empty(locations)
     }
 
     fn php_definitions(&self, request: &DefinitionRequest) -> Vec<protocol::Location> {
@@ -349,7 +345,7 @@ impl TwigDefinitionProvider {
         let target = reference.target;
         let mut locations = Vec::new();
         if let Some(twig) = self.twig.as_deref()
-            && go_to_lower(&target).ends_with(".twig")
+            && lowercase(&target).ends_with(".twig")
         {
             for file in twig.get_twig_files_by_rel_path(&target).unwrap_or_default() {
                 locations.push(protocol::Location {
@@ -387,7 +383,7 @@ impl TwigDefinitionProvider {
         if filepath::is_abs(&target) {
             return None;
         }
-        let candidate = filepath::clean(&filepath::join(&[dir(&current), target]));
+        let candidate = filepath::clean(&filepath::join(&[filepath::dir(&current), target]));
         let relative = filepath::rel(&self.project_root, &candidate).ok()?;
         if relative == ".." || relative.starts_with("../") {
             return None;
@@ -426,7 +422,7 @@ impl TwigDefinitionProvider {
     }
 }
 
-/// Go guard/test target deduplication: first target per lowercased path
+/// Guard/test target deduplication: first target per lowercased path
 /// and line, at the start of the clamped zero-based line.
 fn line_locations(targets: Vec<(String, i64)>) -> Vec<protocol::Location> {
     let mut seen = HashSet::with_capacity(targets.len());
@@ -435,7 +431,7 @@ fn line_locations(targets: Vec<(String, i64)>) -> Vec<protocol::Location> {
         if path.is_empty() {
             continue;
         }
-        if !seen.insert((go_to_lower(&path), line)) {
+        if !seen.insert((lowercase(&path), line)) {
             continue;
         }
         locations.push(zero_line_location(&path, one_based(line)));
@@ -448,26 +444,18 @@ fn one_based(line: i64) -> u32 {
     u32::try_from(line.saturating_sub(1).max(0)).unwrap_or(u32::MAX)
 }
 
-/// Go `TextRange.Contains`: start <= offset < end.
+/// Whether `range` contains `offset` (start inclusive, end exclusive).
 fn contains(range: TextRange, offset: u32) -> bool {
     u32::from(range.start()) <= offset && offset < u32::from(range.end())
 }
 
-/// Go returns a nil slice when nothing was appended; the caller falls
-/// through on nil.
-fn non_nil(locations: Vec<protocol::Location>) -> Locations {
+/// `None` when nothing was found, so the caller falls through to the next
+/// lookup.
+fn non_empty(locations: Vec<protocol::Location>) -> Locations {
     if locations.is_empty() {
         None
     } else {
         Some(locations)
-    }
-}
-
-/// Go `filepath.Dir`.
-fn dir(path: &str) -> String {
-    match path.rfind('/') {
-        Some(index) => filepath::clean(&path[..=index]),
-        None => ".".to_owned(),
     }
 }
 

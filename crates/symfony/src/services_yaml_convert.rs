@@ -1,7 +1,5 @@
 //! Lossless conversion of a parsed `services.xml` container into the
-//! equivalent `services.yaml` (Go `services_yaml_convert.go`). The YAML is
-//! rendered by a port of the `gopkg.in/yaml.v3` emitter so the output is
-//! byte-identical to Go.
+//! equivalent `services.yaml`, rendered by the emitter in `services_yaml_emit`.
 
 use std::collections::HashSet;
 
@@ -11,31 +9,24 @@ use crate::services_yaml_model::{
     unknown_attribute_error, unknown_element_error,
 };
 use crate::services_yaml_phpize::{PhpValue, phpize};
-use crate::util::go_trim_space;
 
 #[path = "services_yaml_emit.rs"]
 mod emit;
 
 use emit::{Node, NodeKind};
 
-pub(crate) use emit::go_parse_float;
-pub(crate) use swlsp_php_types::go_quote;
+pub(crate) use emit::parse_finite_float;
 
 /// Points the YAML language server of editors to the JSON schema Symfony
 /// 7.4+ ships for the services.yaml format.
 const SERVICES_SCHEMA_COMMENT: &str = "# yaml-language-server: $schema=https://raw.githubusercontent.com/symfony/dependency-injection/7.4/Loader/schema/services.schema.json\n";
 
 /// A conversion that cannot be expressed losslessly, or invalid input.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// The message names the offending element, prefixed by the service,
+/// parameter or call it belongs to.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("{0}")]
 pub struct ConvertError(pub String);
-
-impl std::fmt::Display for ConvertError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for ConvertError {}
 
 type Result<T> = std::result::Result<T, ConvertError>;
 
@@ -145,7 +136,7 @@ fn parameters_to_node(parameters: &XmlParameters) -> Result<Node> {
             return err("<parameter> requires a key attribute");
         }
         let value = context(parameter_value_to_node(parameter), || {
-            format!("parameter {}", go_quote(&parameter.key))
+            format!("parameter {:?}", parameter.key)
         })?;
         map_put(&mut mapping, &parameter.key, value);
     }
@@ -157,8 +148,8 @@ fn parameter_value_to_node(parameter: &XmlParameter) -> Result<Node> {
     unknown_attribute_error("parameter", &parameter.unknown_attrs)?;
     match parameter.kind.as_str() {
         "collection" => parameter_collection_to_node(&parameter.children),
-        "constant" => Ok(Node::tagged("!php/const", go_trim_space(&parameter.value))),
-        "binary" => Ok(Node::tagged("!!binary", go_trim_space(&parameter.value))),
+        "constant" => Ok(Node::tagged("!php/const", parameter.value.trim())),
+        "binary" => Ok(Node::tagged("!!binary", parameter.value.trim())),
         "string" => Ok(Node::string(&parameter.value)),
         "" => {
             if !parameter.children.is_empty() {
@@ -166,7 +157,7 @@ fn parameter_value_to_node(parameter: &XmlParameter) -> Result<Node> {
             }
             Ok(scalar_value(phpize(&parameter.value)))
         }
-        kind => err(format!("unsupported parameter type {}", go_quote(kind))),
+        kind => err(format!("unsupported parameter type {kind:?}")),
     }
 }
 
@@ -214,19 +205,16 @@ fn services_to_node(services: &XmlServices) -> Result<Node> {
         }
         if !service.class.is_empty() {
             return err(format!(
-                "instanceof {}: the class attribute is not supported",
-                go_quote(&service.id)
+                "instanceof {:?}: the class attribute is not supported",
+                service.id
             ));
         }
-        reject_prototype_fields(service, &format!("instanceof {}", go_quote(&service.id)))?;
+        reject_prototype_fields(service, &format!("instanceof {:?}", service.id))?;
         if !seen_instanceof.insert(&service.id) {
-            return err(format!(
-                "duplicate <instanceof> for {}",
-                go_quote(&service.id)
-            ));
+            return err(format!("duplicate <instanceof> for {:?}", service.id));
         }
         let body = context(service_body_to_node(service, false), || {
-            format!("instanceof {}", go_quote(&service.id))
+            format!("instanceof {:?}", service.id)
         })?;
         map_put(&mut instanceof, &service.id, body);
     }
@@ -242,10 +230,7 @@ fn services_to_node(services: &XmlServices) -> Result<Node> {
             (kind, _) => return err(format!("unsupported element <{kind}> inside <services>")),
         };
         if !seen.insert(key.clone()) {
-            return err(format!(
-                "service {} is defined multiple times",
-                go_quote(&key)
-            ));
+            return err(format!("service {key:?} is defined multiple times"));
         }
         map_put(&mut mapping, &key, node);
     }
@@ -280,16 +265,14 @@ fn service_to_node(service: &XmlService) -> Result<(String, Node)> {
     if service.id.is_empty() {
         return err("<service> requires an id attribute");
     }
-    reject_prototype_fields(service, &format!("service {}", go_quote(&service.id)))?;
+    reject_prototype_fields(service, &format!("service {:?}", service.id))?;
     if !service.alias.is_empty() {
-        let node = context(alias_to_node(service), || {
-            format!("alias {}", go_quote(&service.id))
-        })?;
+        let node = context(alias_to_node(service), || format!("alias {:?}", service.id))?;
         return Ok((service.id.clone(), node));
     }
     let omit_class = service.class == service.id && service.id.contains('\\');
     let body = context(service_body_to_node(service, omit_class), || {
-        format!("service {}", go_quote(&service.id))
+        format!("service {:?}", service.id)
     })?;
     Ok((service.id.clone(), body))
 }
@@ -363,7 +346,7 @@ fn prototype_to_node(prototype: &XmlService) -> Result<(String, Node)> {
     if prototype.namespace.is_empty() {
         return err("<prototype> requires a namespace attribute");
     }
-    let namespace = go_quote(&prototype.namespace);
+    let namespace = format!("{:?}", prototype.namespace);
     if prototype.resource.is_empty() {
         return err(format!(
             "prototype {namespace}: requires a resource attribute"
@@ -493,10 +476,7 @@ fn append_decoration(mapping: &mut Node, service: &XmlService) -> Result<()> {
         // XML uses the string "null" while YAML expects an actual null value.
         "null" => map_put(mapping, "decoration_on_invalid", Node::null("null")),
         other => {
-            return err(format!(
-                "unsupported decoration-on-invalid value {}",
-                go_quote(other)
-            ));
+            return err(format!("unsupported decoration-on-invalid value {other:?}"));
         }
     }
     Ok(())
@@ -550,7 +530,7 @@ fn deprecated_to_node(deprecated: &XmlDeprecated) -> Node {
     if !deprecated.version.is_empty() {
         map_put(&mut mapping, "version", Node::string(&deprecated.version));
     }
-    let message = go_trim_space(&deprecated.message);
+    let message = deprecated.message.trim();
     if !message.is_empty() {
         map_put(&mut mapping, "message", Node::string(message));
     }
@@ -608,10 +588,7 @@ fn arguments_to_node(arguments: &[XmlArgument], is_child_definition: bool) -> Re
             Node::string(&argument.key)
         } else if !argument.index.is_empty() {
             let PhpValue::Int(index) = phpize(&argument.index) else {
-                return err(format!(
-                    "invalid argument index {}",
-                    go_quote(&argument.index)
-                ));
+                return err(format!("invalid argument index {:?}", argument.index));
             };
             if index >= next_index {
                 next_index = index + 1;
@@ -669,8 +646,8 @@ fn argument_value_to_node(argument: &XmlArgument) -> Result<Node> {
         }
         "expression" => Ok(Node::string(&format!("@={}", argument.value))),
         "string" => Ok(service_string(&argument.value)),
-        "constant" => Ok(Node::tagged("!php/const", go_trim_space(&argument.value))),
-        "binary" => Ok(Node::tagged("!!binary", go_trim_space(&argument.value))),
+        "constant" => Ok(Node::tagged("!php/const", argument.value.trim())),
+        "binary" => Ok(Node::tagged("!!binary", argument.value.trim())),
         "abstract" => Ok(Node::tagged("!abstract", &argument.value)),
         "iterator" => {
             let mut node = arguments_to_node(&argument.children, false)?;
@@ -685,8 +662,8 @@ fn argument_value_to_node(argument: &XmlArgument) -> Result<Node> {
         "service_closure" | "closure" => {
             if argument.id.is_empty() {
                 return err(format!(
-                    "argument type={} requires an id attribute",
-                    go_quote(&argument.kind)
+                    "argument type={:?} requires an id attribute",
+                    argument.kind
                 ));
             }
             let mut node = reference_node(&argument.id, &argument.on_invalid)?;
@@ -694,15 +671,15 @@ fn argument_value_to_node(argument: &XmlArgument) -> Result<Node> {
             Ok(node)
         }
         "tagged" | "tagged_iterator" | "tagged_locator" => tagged_iterator_to_node(argument),
-        kind => err(format!("unsupported argument type {}", go_quote(kind))),
+        kind => err(format!("unsupported argument type {kind:?}")),
     }
 }
 
 fn tagged_iterator_to_node(argument: &XmlArgument) -> Result<Node> {
     if argument.tag.is_empty() {
         return err(format!(
-            "argument type={} requires a tag attribute",
-            go_quote(&argument.kind)
+            "argument type={:?} requires a tag attribute",
+            argument.kind
         ));
     }
     let yaml_tag = if argument.kind == "tagged_locator" {
@@ -778,7 +755,7 @@ fn reference_node(id: &str, on_invalid: &str) -> Result<Node> {
             );
         }
         "ignore_uninitialized" => "@!",
-        other => return err(format!("unsupported on-invalid value {}", go_quote(other))),
+        other => return err(format!("unsupported on-invalid value {other:?}")),
     };
     Ok(Node::string(&format!("{prefix}{id}")))
 }
@@ -790,7 +767,7 @@ fn properties_to_node(properties: &[XmlProperty]) -> Result<Node> {
             return err("<property> requires a name attribute");
         }
         let node = context(argument_value_to_node(&property.argument), || {
-            format!("property {}", go_quote(&property.name))
+            format!("property {:?}", property.name)
         })?;
         map_put(&mut mapping, &property.name, node);
     }
@@ -808,7 +785,7 @@ fn binds_to_node(binds: &[XmlArgument]) -> Result<Node> {
             ..bind.clone()
         };
         let node = context(argument_value_to_node(&unkeyed), || {
-            format!("bind {}", go_quote(&bind.key))
+            format!("bind {:?}", bind.key)
         })?;
         map_put(&mut mapping, &bind.key, node);
     }
@@ -829,7 +806,7 @@ fn calls_to_node(calls: &[XmlCall]) -> Result<Node> {
         let returns_clone = phpize(&call.returns_clone) == PhpValue::Bool(true);
         if !call.arguments.is_empty() || returns_clone {
             let arguments = context(arguments_to_node(&call.arguments, false), || {
-                format!("call {}", go_quote(&call.method))
+                format!("call {:?}", call.method)
             })?;
             entry.content.push(arguments);
         }
@@ -851,7 +828,7 @@ fn tags_to_node(tags: &[XmlTag]) -> Result<Node> {
 
 fn tag_to_node(tag: &XmlTag) -> Result<Node> {
     let name = if tag.name_attr.is_empty() {
-        go_trim_space(&tag.value)
+        tag.value.trim()
     } else {
         &tag.name_attr
     };

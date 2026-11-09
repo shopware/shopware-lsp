@@ -1,5 +1,4 @@
-//! Go `twig_see_completion.go`: PHP symbols, methods and templates in
-//! `@see` comments.
+//! Completion of PHP symbols, methods and templates in `@see` comments.
 
 use std::collections::HashMap;
 
@@ -13,7 +12,8 @@ use swlsp_twig::SeeCompletionContext;
 
 use super::completion::TwigCompletionProvider;
 use super::{request_offset, sort_by_lower_label};
-use crate::common::{go_to_lower, protocol_range, text_edit};
+use crate::common::{protocol_range, text_edit};
+use swlsp_textutil::lowercase;
 
 impl TwigCompletionProvider {
     pub(crate) fn twig_see_completions(
@@ -33,7 +33,7 @@ impl TwigCompletionProvider {
             ));
         }
         let replace = protocol_range(completion.range, line_index);
-        let prefix = go_to_lower(&completion.prefix);
+        let prefix = lowercase(&completion.prefix);
         let mut items: HashMap<String, protocol::CompletionItem> = HashMap::new();
         if let Some(php) = &self.php_index
             && !prefix.contains(['@', '/', ':', '.'])
@@ -42,7 +42,7 @@ impl TwigCompletionProvider {
             let leading_slash = completion.prefix.starts_with('\\');
             for symbol in php.class_symbols_view().iter() {
                 let name = symbol.fully_qualified.trim_start_matches('\\').to_string();
-                if !class_prefix.is_empty() && !go_to_lower(&name).starts_with(class_prefix) {
+                if !class_prefix.is_empty() && !lowercase(&name).starts_with(class_prefix) {
                     continue;
                 }
                 let insert = if leading_slash {
@@ -56,7 +56,7 @@ impl TwigCompletionProvider {
                     _ => CompletionItemKind::CLASS,
                 };
                 items.insert(
-                    format!("php\0{}", go_to_lower(&name)),
+                    format!("php\0{}", lowercase(&name)),
                     protocol::CompletionItem {
                         label: name,
                         kind: Some(kind),
@@ -70,11 +70,11 @@ impl TwigCompletionProvider {
         }
         if let Some(index) = &self.twig_indexer {
             for template in index.get_all_template_files().unwrap_or_default() {
-                if !prefix.is_empty() && !go_to_lower(&template).starts_with(&prefix) {
+                if !prefix.is_empty() && !lowercase(&template).starts_with(&prefix) {
                     continue;
                 }
                 items.insert(
-                    format!("twig\0{}", go_to_lower(&template)),
+                    format!("twig\0{}", lowercase(&template)),
                     protocol::CompletionItem {
                         label: template.clone(),
                         kind: Some(CompletionItemKind::FILE),
@@ -85,8 +85,7 @@ impl TwigCompletionProvider {
                 );
             }
         }
-        // Go iterates a map before sorting; visit keys in order so equal
-        // lowercase labels stay deterministic.
+        // Visit keys in order so equal lowercase labels stay deterministic.
         let mut keyed: Vec<(String, protocol::CompletionItem)> = items.into_iter().collect();
         keyed.sort_by(|left, right| left.0.cmp(&right.0));
         let mut result: Vec<protocol::CompletionItem> =
@@ -117,7 +116,7 @@ impl TwigCompletionProvider {
             TextRange::new(start, completion.range.end().max(start)),
             line_index,
         );
-        let lower_prefix = go_to_lower(prefix);
+        let lower_prefix = lowercase(prefix);
         let snapshot = php.semantic_snapshot();
         let mut items = Vec::new();
         for member in
@@ -126,7 +125,7 @@ impl TwigCompletionProvider {
             let symbol = &member.symbol;
             if symbol.kind != SymbolKind::Method
                 || symbol.visibility != Visibility::Public
-                || !prefix.is_empty() && !go_to_lower(&symbol.name).starts_with(&lower_prefix)
+                || !prefix.is_empty() && !lowercase(&symbol.name).starts_with(&lower_prefix)
             {
                 continue;
             }

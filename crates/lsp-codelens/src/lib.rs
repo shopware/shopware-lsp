@@ -1,9 +1,9 @@
-//! Code lens providers (port of Go `internal/lsp/codelens`).
+//! Code lens providers.
 //!
-//! Providers work with byte ranges of the open document snapshot and convert
-//! to UTF-16 protocol positions only when building a lens. Navigation lenses
-//! use the `shopware.openReferences` client command with one argument: the
-//! sorted, deduplicated list of `file://...#line` targets.
+//! Providers work with byte ranges of the open document snapshot and convert to
+//! UTF-16 protocol positions only when building a lens. Navigation lenses use
+//! the `shopware.openReferences` client command with one argument: the sorted,
+//! deduplicated list of `file://...#line` targets.
 
 mod admin_component;
 mod console_command;
@@ -154,7 +154,7 @@ pub(crate) fn by_line_title(left: &protocol::CodeLens, right: &protocol::CodeLen
     by_line(left, right).then_with(|| title(left).cmp(title(right)))
 }
 
-/// Line, character, then title (Go `sortRelatedCodeLenses`).
+/// Line, character, then title.
 pub(crate) fn by_position_title(left: &protocol::CodeLens, right: &protocol::CodeLens) -> Ordering {
     by_position(left, right).then_with(|| title(left).cmp(title(right)))
 }

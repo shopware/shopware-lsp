@@ -9,4 +9,4 @@ publish.workspace = true
 swlsp-syntax.workspace = true
 swlsp-parser-php = { path = "../parser-php" }
 swlsp-rewrite = { path = "../rewrite" }
-thiserror = "2"
+thiserror.workspace = true

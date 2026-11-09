@@ -1,4 +1,4 @@
-//! XML syntax kinds (values identical to the Go implementation).
+//! XML syntax kinds. Kind values are persisted in caches; do not renumber them.
 
 swlsp_syntax::language! {
     name: "xml", base: 16384,

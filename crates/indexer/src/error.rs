@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// Errors produced by stores, repositories, indexers and the scanner.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// The operation observed a cancelled [`CancelToken`] (Go `context.Canceled`).
+    /// The operation observed a cancelled [`CancelToken`].
     #[error("operation cancelled")]
     Cancelled,
     #[error(transparent)]
@@ -20,14 +20,14 @@ pub enum Error {
     Decode(#[from] rmp_serde::decode::Error),
     #[error("{0}")]
     Message(String),
-    /// An error wrapped with operation context (Go `fmt.Errorf("...: %w")`).
+    /// An error wrapped with operation context; displays as `context: source`.
     #[error("{context}: {source}")]
     Context {
         context: String,
         #[source]
         source: Box<Error>,
     },
-    /// Several independent failures (Go `errors.Join`).
+    /// Several independent failures, displayed one per line.
     #[error("{}", join_messages(.0))]
     Multiple(Vec<Error>),
     /// An error from a domain crate.
@@ -59,7 +59,7 @@ impl Error {
         }
     }
 
-    /// Joins errors like Go `errors.Join`: `None` for no errors, the error
+    /// Joins errors: `None` for no errors, the error
     /// itself for exactly one, [`Error::Multiple`] otherwise.
     pub fn join(errors: impl IntoIterator<Item = Error>) -> Option<Error> {
         let mut errors: Vec<Error> = errors.into_iter().collect();

@@ -1,5 +1,5 @@
 //! Dynamic component selector resolution against the effective component
-//! graph (port of Go `dynamic_component_resolution.go`).
+//! graph.
 
 use crate::*;
 

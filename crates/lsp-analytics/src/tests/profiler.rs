@@ -1,4 +1,4 @@
-//! Port of `profiler_catalog_test.go` plus Go-parity helper checks.
+//! Profiler request catalog tests plus checks of its parsing helpers.
 
 use std::io::Write;
 use std::path::Path;
@@ -177,7 +177,7 @@ final class Alert {}
         )
         .unwrap();
     assert_eq!(relative_override.len(), 1);
-    // Typed serialization keeps Go's struct field order.
+    // Typed serialization keeps the declared field order.
     assert_eq!(
         serde_json::to_string(&relative_override).unwrap(),
         format!(
@@ -207,7 +207,7 @@ final class Alert {}
         .unwrap_err();
     assert!(error.to_string().contains("HTTP(S)"), "{error}");
 
-    // The command wire shape: Go field order and omitted empty members.
+    // The command wire shape: declared field order and omitted empty members.
     let commands = swlsp_lsp::CommandProvider::commands(&provider, &ctx());
     let value = commands[LIST_PROFILER_REQUESTS_COMMAND](
         &ctx(),
@@ -226,7 +226,7 @@ final class Alert {}
             .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "invalid profiler request catalog request: json: cannot unmarshal string into Go struct field ProfilerRequestCatalogRequest.limit of type int"
+        "invalid profiler request catalog request: member \"limit\" must be an integer, found string"
     );
 }
 
@@ -295,7 +295,7 @@ fn profiler_parsing_helpers_use_serialized_byte_lengths_and_safe_urls() {
 }
 
 #[test]
-fn profiler_go_parity_helpers() {
+fn profiler_parsing_helpers() {
     assert_eq!(
         parse_csv_record(r#"a,"b ""c""",d"#),
         Some(vec!["a".into(), r#"b "c""#.into(), "d".into()])
@@ -309,13 +309,16 @@ fn profiler_go_parity_helpers() {
     );
     assert_eq!(parse_csv_record(r#""a""#), Some(vec!["a".into()]));
 
-    assert_eq!(go_parse_int("+12"), 12);
-    assert_eq!(go_parse_int("-12"), -12);
-    assert_eq!(go_parse_int("12x"), 0);
-    assert_eq!(go_parse_int("99999999999999999999"), i64::MAX);
-    assert_eq!(go_parse_int("-99999999999999999999"), i64::MIN);
+    assert_eq!(parse_decimal_saturating("+12"), 12);
+    assert_eq!(parse_decimal_saturating("-12"), -12);
+    assert_eq!(parse_decimal_saturating("12x"), 0);
+    assert_eq!(parse_decimal_saturating("99999999999999999999"), i64::MAX);
+    assert_eq!(parse_decimal_saturating("-99999999999999999999"), i64::MIN);
 
-    assert_eq!(go_lossy(b"a\xf0\x9f\x98b"), "a\u{FFFD}\u{FFFD}\u{FFFD}b");
+    assert_eq!(
+        utf8_lossy_per_byte(b"a\xf0\x9f\x98b"),
+        "a\u{FFFD}\u{FFFD}\u{FFFD}b"
+    );
 
     assert_eq!(
         profiler_url(

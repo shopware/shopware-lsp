@@ -1,4 +1,4 @@
-//! Scoped-slot consumers in Twig templates (port of Go `slot_scope.go`).
+//! Scoped-slot consumers in Twig templates.
 
 use swlsp_parser_twig::ast::AstNode;
 
@@ -41,7 +41,7 @@ pub struct ResolvedTwigSlotContract {
     pub slot: VueComponentSlot,
 }
 
-/// Go embeds `ResolvedTwigScopedSlot`.
+/// A slot-prop binding together with its resolved scoped slot.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ResolvedTwigSlotBinding {
     pub scoped: ResolvedTwigScopedSlot,
@@ -53,7 +53,7 @@ pub struct ResolvedTwigSlotBinding {
     pub range: TextRange,
 }
 
-/// Go embeds `ResolvedTwigScopedSlot`.
+/// A slot-prop member together with its resolved scoped slot.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ResolvedTwigSlotMember {
     pub scoped: ResolvedTwigScopedSlot,
@@ -527,7 +527,7 @@ pub(crate) fn dynamic_scoped_slot_from_malformed_tag(
         return None;
     }
     // The node text starts at the node range, which may include leading
-    // trivia; Go uses the trimmed start as base (kept verbatim).
+    // trivia; offsets are relative to the trimmed start.
     let base = range_start(node.range_trimmed_trivia());
     let value = String::from_utf8_lossy(&opening[value_start..value_end]);
     Some(TwigScopedSlot {
@@ -842,7 +842,8 @@ pub(crate) fn split_scoped_slot_source_parts(
     result
 }
 
-/// Go `scopedSlotSourceRange`; a missing (`-1`) start yields an empty range.
+/// The source range of a scoped-slot value part; a missing start yields an
+/// empty range at `base`.
 pub(crate) fn scoped_slot_source_range(
     base: u32,
     start: Option<usize>,
@@ -933,7 +934,7 @@ impl SlotScanState {
 }
 
 /// The index of the delimiter closing the one at `start`, skipping quoted
-/// text (Go `matchingSlotDelimiter`, `-1` -> `None`).
+/// text; `None` when it is not closed.
 pub(crate) fn matching_slot_delimiter(
     value: &str,
     start: usize,

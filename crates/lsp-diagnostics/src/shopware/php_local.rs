@@ -1,5 +1,5 @@
-//! Port of Go `shopware_php_local.go`: cheap, syntax-local Shopware checks
-//! in a single CST walk. No PHP semantic document is constructed.
+//! Cheap, syntax-local Shopware checks in a single CST walk. No PHP semantic
+//! document is constructed.
 
 use std::sync::{Arc, LazyLock};
 
@@ -9,10 +9,10 @@ use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, Tex
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::*;
 use swlsp_php::NameResolver;
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::{Kind, SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
+use swlsp_textutil::eq_ignore_case;
 
-use super::util::{go_parse_int, node_text, warning};
+use super::util::{node_text, warning};
 use crate::common::{local_call_argument, unwrap_php_parentheses};
 use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
@@ -26,7 +26,7 @@ pub const SHOPWARE_PHP_WEAK_KEY_CODE: &str = "shopware.php.crypto.weak_key";
 pub const SHOPWARE_PHP_INSECURE_COOKIE_CODE: &str = "shopware.php.cookie.insecure";
 pub const SHOPWARE_PHP_FOREIGN_KEY_CHECKS_CODE: &str = "shopware.php.foreign_key_checks.disabled";
 
-/// Go `(?i)\bFOREIGN_KEY_CHECKS\s*=\s*0\b` with RE2's ASCII `\b` and `\s`.
+/// `(?i)\bFOREIGN_KEY_CHECKS\s*=\s*0\b` with ASCII `\b` and `\s`.
 static DISABLED_FOREIGN_KEY_CHECKS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(?-u:\b)FOREIGN_KEY_CHECKS[\t\n\x0C\r ]*=[\t\n\x0C\r ]*0(?-u:\b)")
         .expect("foreign key pattern")
@@ -37,7 +37,6 @@ const DISALLOWED_FUNCTIONS: [&str; 5] = ["var_dump", "exit", "die", "dd", "dump"
 const DISALLOWED_SESSION_FUNCTIONS: [&str; 3] =
     ["session_write_close", "session_start", "session_destroy"];
 
-/// Go `ShopwarePHPLocalAnalyzer`.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ShopwarePhpLocalAnalyzer;
 
@@ -190,7 +189,7 @@ fn function_problems(call: &SyntaxNode) -> Option<Problem> {
 fn name_problem(node: &SyntaxNode) -> Option<Problem> {
     let value = phpquery::name_value(node);
     let trimmed = value.strip_prefix('\\').unwrap_or(&value);
-    let name = swlsp_php_types::go_to_lower(trimmed);
+    let name = swlsp_textutil::lowercase(trimmed);
     if (name == "exit" || name == "die") && is_standalone_php_name(node) {
         return Some(local_problem(
             SHOPWARE_PHP_DISALLOWED_FUNCTION_CODE,
@@ -198,7 +197,7 @@ fn name_problem(node: &SyntaxNode) -> Option<Problem> {
             format!("Do not use {name} in application code"),
         ));
     }
-    if !equal_fold(trimmed, "GLOB_BRACE") || !is_bare_php_constant_name(node) {
+    if !eq_ignore_case(trimmed, "GLOB_BRACE") || !is_bare_php_constant_name(node) {
         return None;
     }
     Some(local_problem(
@@ -394,7 +393,7 @@ fn insecure_cookie_problem(function_name: &str, node: &SyntaxNode, reason: &str)
 fn foreign_key_problem(literal: &SyntaxNode, resolver: &NameResolver) -> Option<Problem> {
     let method = phpquery::method_at(literal)?;
     let class = phpquery::class_at(literal)?;
-    if !equal_fold(&phpquery::method_name(&method), "update") {
+    if !eq_ignore_case(&phpquery::method_name(&method), "update") {
         return None;
     }
     let allowed = phpquery::class_extends(&class).iter().any(|parent| {
@@ -432,7 +431,7 @@ fn normalized_local_function_name(call: &SyntaxNode) -> String {
     if name.is_empty() || name.contains('\\') && !absolute {
         return String::new();
     }
-    swlsp_php_types::go_to_lower(name)
+    swlsp_textutil::lowercase(name)
 }
 
 fn normalized_php_constant_name(node: Option<&SyntaxNode>) -> String {
@@ -443,21 +442,7 @@ fn normalized_php_constant_name(node: Option<&SyntaxNode>) -> String {
         return String::new();
     }
     let value = phpquery::name_value(&node);
-    go_to_upper(value.strip_prefix('\\').unwrap_or(&value))
-}
-
-/// Go `strings.ToUpper`.
-fn go_to_upper(value: &str) -> String {
-    value
-        .chars()
-        .map(|character| {
-            let mut upper = character.to_uppercase();
-            match (upper.next(), upper.next()) {
-                (Some(single), None) => single,
-                _ => character,
-            }
-        })
-        .collect()
+    swlsp_textutil::uppercase(value.strip_prefix('\\').unwrap_or(&value))
 }
 
 fn php_call_name_range(call: &SyntaxNode) -> TextRange {
@@ -467,8 +452,7 @@ fn php_call_name_range(call: &SyntaxNode) -> TextRange {
     }
 }
 
-/// Go `localArrayStringEntry`: `(value, item)` of the first string-keyed
-/// entry named `name`.
+/// `(value, item)` of the first string-keyed entry named `name`.
 fn local_array_string_entry(
     array: Option<&SyntaxNode>,
     name: &str,
@@ -481,7 +465,7 @@ fn local_array_string_entry(
         let Some(key) = phpquery::array_item_key(&candidate) else {
             continue;
         };
-        if !equal_fold(&phpquery::string_value(&key), name) {
+        if !eq_ignore_case(&phpquery::string_value(&key), name) {
             continue;
         }
         return Some((phpquery::array_item_value(&candidate), candidate));
@@ -489,13 +473,12 @@ fn local_array_string_entry(
     None
 }
 
-/// Go `phpBooleanLiteral`: `Some(value)` for literal booleans, `null` and
-/// integer literals.
+/// `Some(value)` for literal booleans, `null` and integer literals.
 fn php_boolean_literal(node: Option<&SyntaxNode>) -> Option<bool> {
     let node = unwrap_php_parentheses(node?);
     match node.kind() {
         PHP_BOOLEAN => {
-            let value = swlsp_php_types::go_to_lower(node_text(&node).trim());
+            let value = swlsp_textutil::lowercase(node_text(&node).trim());
             match value.as_str() {
                 "true" => Some(true),
                 "false" => Some(false),
@@ -517,12 +500,12 @@ fn php_integer_literal(node: Option<&SyntaxNode>) -> Option<i64> {
     if node.kind() != PHP_NUMBER {
         return None;
     }
-    go_parse_int(&node_text(node).trim().replace('_', ""))
+    swlsp_textutil::parse_int_literal(&node_text(node).trim().replace('_', ""))
 }
 
-/// Go `containsASCIIFoldLocal`: byte windows compared case-insensitively.
-/// For an ASCII needle, Go's `strings.EqualFold` on a same-length byte
-/// window only matches ASCII text, so ASCII folding is exact.
+/// Byte windows compared case-insensitively. For an ASCII needle a
+/// case-insensitive match of a same-length byte window can only be ASCII text,
+/// so ASCII folding is exact.
 fn contains_ascii_fold(source: &str, needle: &str) -> bool {
     let (source, needle) = (source.as_bytes(), needle.as_bytes());
     if needle.is_empty() {

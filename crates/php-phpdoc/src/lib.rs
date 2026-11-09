@@ -1,10 +1,11 @@
 //! Parses type-bearing PHPDoc tags into the shared semantic type algebra
-//! (port of `internal/php/phpdoc`). Deliberately independent of the CST and
+//!. Deliberately independent of the CST and
 //! the workspace index.
 
 use std::collections::{BTreeMap, HashSet};
 
-use swlsp_php_types::{Type, equal_fold, go_to_lower};
+use swlsp_php_types::Type;
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 mod references;
 
@@ -15,8 +16,8 @@ mod tests;
 
 /// The type-bearing content of one PHPDoc comment.
 ///
-/// Go's nil maps and slices are empty collections here. `return_type` is
-/// `unknown` when the comment has no `@return` tag.
+/// Absent tags leave their collections empty. `return_type` is `unknown`
+/// when the comment has no `@return` tag.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Document {
     pub summary: String,
@@ -225,14 +226,16 @@ fn parse_type_import(source: &str) -> Option<(String, TypeImport)> {
     if fields.len() < 3 {
         return None;
     }
-    let from = fields.iter().position(|field| equal_fold(field, "from"))?;
+    let from = fields
+        .iter()
+        .position(|field| eq_ignore_case(field, "from"))?;
     if from != 1 || from + 1 >= fields.len() {
         return None;
     }
     let imported_name = fields[0];
     let source_class = fields[from + 1];
     let mut local_name = imported_name;
-    if from + 3 < fields.len() && equal_fold(fields[from + 2], "as") {
+    if from + 3 < fields.len() && eq_ignore_case(fields[from + 2], "as") {
         local_name = fields[from + 3];
     }
     Some((
@@ -293,7 +296,7 @@ fn parse_template(source: &str) -> Option<Template> {
 fn parse_method(source: &str) -> Option<Method> {
     let mut source = source.trim();
     let mut method = Method::default();
-    if go_to_lower(source).starts_with("static ") {
+    if lowercase(source).starts_with("static ") {
         method.is_static = true;
         source = slice_from(source, "static ".len()).trim();
     }
@@ -433,7 +436,7 @@ impl<'a> LogicalLineScanner<'a> {
 /// Splits a tag line into the lowercased tag and its trimmed value.
 pub(crate) fn split_tag(line: &str) -> (String, &str) {
     let (tag, rest) = split_first(line);
-    (go_to_lower(tag), rest.trim())
+    (lowercase(tag), rest.trim())
 }
 
 /// Splits `Type $name description` at the first top-level `$`, dropping a
@@ -535,7 +538,7 @@ fn top_level_index(source: &str, target: char) -> Option<usize> {
 }
 
 /// `&source[start..]` that tolerates offsets computed on a differently sized
-/// lowercase copy (Go slices bytes there; Rust must stay on a char boundary).
+/// lowercase copy by moving them to a character boundary.
 fn slice_from(source: &str, start: usize) -> &str {
     let mut start = start.min(source.len());
     while !source.is_char_boundary(start) {

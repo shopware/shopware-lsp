@@ -1,4 +1,4 @@
-//! Listener and dispatch extraction (port of Go `event/parser.go`).
+//! Listener and dispatch extraction.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::LazyLock;
@@ -15,8 +15,9 @@ use swlsp_parser_yaml::query as yamlquery;
 use swlsp_parser_yaml::syntax::YAML_SCALAR;
 use swlsp_php::NameResolver;
 use swlsp_php_semantic::Snapshot;
-use swlsp_php_types::{Kind as TypeKind, Type, equal_fold, go_to_lower};
+use swlsp_php_types::{Kind as TypeKind, Type};
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::index::{looks_like_class_name, normalize_name, record_key, unique_occurrences};
 use crate::model::{Constant, Occurrence, OccurrenceKind, Record, SourceKind};
@@ -32,7 +33,8 @@ const DISPATCHER_INTERFACES: [&str; 3] = [
     "Psr\\EventDispatcher\\EventDispatcherInterface",
 ];
 
-// Go RE2: `\s` is ASCII-only and `\x80-\xff` are code points.
+// PHP identifiers allow bytes 0x80-0xff, matched here as the code points
+// U+0080-U+00FF; whitespace is ASCII only.
 static CLASS_CONSTANT_NAME_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?i)([A-Za-z_\x{80}-\x{ff}][A-Za-z0-9_\x{80}-\x{ff}]*)[\t\n\x0C\r ]*=[\t\n\x0C\r ]*$",
@@ -70,9 +72,9 @@ impl RecordCollector {
             occurrence.event_type = spec.event_type.clone();
         }
         let key = if !spec.name.is_empty() {
-            format!("name:{}", go_to_lower(&spec.name))
+            format!("name:{}", lowercase(&spec.name))
         } else if !spec.expression.is_empty() {
-            format!("expression:{}", go_to_lower(&spec.expression))
+            format!("expression:{}", lowercase(&spec.expression))
         } else {
             let target = if occurrence.class.is_empty() {
                 &occurrence.service
@@ -84,7 +86,7 @@ impl RecordCollector {
             }
             format!(
                 "inferred:{}",
-                go_to_lower(&format!("{target}::{}", occurrence.method))
+                lowercase(&format!("{target}::{}", occurrence.method))
             )
         };
         let record = self.records.entry(key).or_insert_with(|| Record {
@@ -147,7 +149,7 @@ pub(crate) fn parse_php(file: &ParsedFile) -> Vec<Record> {
 fn has_subscriber_method(class: &SyntaxNode) -> bool {
     phpquery::methods(class)
         .iter()
-        .any(|method| equal_fold(&phpquery::method_name(method), "getSubscribedEvents"))
+        .any(|method| eq_ignore_case(&phpquery::method_name(method), "getSubscribedEvents"))
 }
 
 /// The string-valued class constants of `class` (`NAME = 'value'`).
@@ -197,7 +199,7 @@ fn parse_subscriber(
     resolver: &NameResolver,
 ) {
     for method in phpquery::methods(class) {
-        if !equal_fold(&phpquery::method_name(&method), "getSubscribedEvents") {
+        if !eq_ignore_case(&phpquery::method_name(&method), "getSubscribedEvents") {
             continue;
         }
         for statement in phpquery::nodes(&method, &[PHP_RETURN_STATEMENT]) {
@@ -217,7 +219,7 @@ fn parse_subscriber(
                 }
                 for listener in subscriber_methods(phpquery::array_item_value(&item).as_ref()) {
                     let event_type =
-                        listener_event_type(methods.get(&go_to_lower(&listener.name)), resolver);
+                        listener_event_type(methods.get(&lowercase(&listener.name)), resolver);
                     collector.add(
                         &spec,
                         Occurrence {
@@ -327,7 +329,7 @@ fn parse_listener_attributes(
         if method_name.is_empty() {
             method_name = "__invoke".to_owned();
         }
-        let event_type = listener_event_type(methods.get(&go_to_lower(&method_name)), resolver);
+        let event_type = listener_event_type(methods.get(&lowercase(&method_name)), resolver);
         add_attribute_listener(
             collector,
             &attribute,
@@ -403,7 +405,7 @@ fn parse_php_service_tags(
     resolver: &NameResolver,
 ) {
     for call in phpquery::calls(root, &[]) {
-        if !equal_fold(&phpquery::call_method_name(&call), "tag")
+        if !eq_ignore_case(&phpquery::call_method_name(&call), "tag")
             || php_string_value(phpquery::argument_expression(&call, 0).as_ref())
                 != "kernel.event_listener"
         {
@@ -442,7 +444,7 @@ fn parse_php_service_tags(
 
 fn parse_dispatches(collector: &mut RecordCollector, root: &SyntaxNode, resolver: &NameResolver) {
     for call in phpquery::calls(root, &[]) {
-        if !equal_fold(&phpquery::call_method_name(&call), "dispatch")
+        if !eq_ignore_case(&phpquery::call_method_name(&call), "dispatch")
             || !is_event_dispatcher_call(&call, resolver)
         {
             continue;
@@ -488,9 +490,9 @@ fn is_event_dispatcher_call(call: &SyntaxNode, resolver: &NameResolver) -> bool 
     };
     let declared = declared_receiver_type(call, &receiver, resolver);
     if !declared.is_empty() {
-        return go_to_lower(&declared).contains("eventdispatcher");
+        return lowercase(&declared).contains("eventdispatcher");
     }
-    let text = go_to_lower(&receiver.text().to_string().replace('_', ""));
+    let text = lowercase(&receiver.text().to_string().replace('_', ""));
     text.contains("eventdispatcher")
         || (text.contains("dispatcher")
             && !text.contains("message")
@@ -511,13 +513,13 @@ fn declared_receiver_type(
         };
         for property in phpquery::properties(&class) {
             for variable in phpquery::property_variables(&property) {
-                if equal_fold(&phpquery::variable_name(&variable), member) {
+                if eq_ignore_case(&phpquery::variable_name(&variable), member) {
                     return resolve_php_type(&phpquery::property_type(&property), resolver);
                 }
             }
         }
         for method in phpquery::methods(&class) {
-            if !equal_fold(&phpquery::method_name(&method), "__construct") {
+            if !eq_ignore_case(&phpquery::method_name(&method), "__construct") {
                 continue;
             }
             let value = parameter_type_by_name(Some(&method), member, resolver);
@@ -548,7 +550,7 @@ fn parameter_type_by_name(
     let name = name.strip_prefix('$').unwrap_or(name);
     for parameter in phpquery::parameters(function) {
         let parameter_name = phpquery::parameter_name(&parameter);
-        if equal_fold(
+        if eq_ignore_case(
             parameter_name.strip_prefix('$').unwrap_or(&parameter_name),
             name,
         ) {
@@ -569,7 +571,7 @@ pub(crate) fn is_dispatcher_type(value: &Type, snapshot: Option<&Snapshot>) -> b
     let name = value.name();
     let name = name.strip_prefix('\\').unwrap_or(name);
     for target in DISPATCHER_INTERFACES {
-        if equal_fold(name, target) {
+        if eq_ignore_case(name, target) {
             return true;
         }
         if let Some(snapshot) = snapshot
@@ -630,7 +632,7 @@ fn php_event_spec(
         return EventSpec::default();
     };
     let member = &text[separator + 2..];
-    let class_name = match go_to_lower(&text[..separator]).as_str() {
+    let class_name = match lowercase(&text[..separator]).as_str() {
         "self" | "static" => current_class.to_owned(),
         "parent" => String::new(),
         _ => normalize_name(&resolver.resolve(&text[..separator])).to_owned(),
@@ -638,7 +640,7 @@ fn php_event_spec(
     if class_name.is_empty() || member.is_empty() {
         return EventSpec::default();
     }
-    if equal_fold(member, "class") {
+    if eq_ignore_case(member, "class") {
         return EventSpec {
             event_type: class_name.clone(),
             name: class_name,
@@ -673,7 +675,7 @@ pub(crate) fn resolved_class_name(class: Option<&SyntaxNode>, resolver: &NameRes
 
 pub(crate) fn is_subscriber_class(class: &SyntaxNode, resolver: &NameResolver) -> bool {
     phpquery::class_implements(class).iter().any(|implemented| {
-        equal_fold(
+        eq_ignore_case(
             normalize_name(&resolver.resolve(implemented)),
             EVENT_SUBSCRIBER_INTERFACE,
         )
@@ -681,7 +683,7 @@ pub(crate) fn is_subscriber_class(class: &SyntaxNode, resolver: &NameResolver) -
 }
 
 pub(crate) fn is_as_event_listener(attribute: &SyntaxNode, resolver: &NameResolver) -> bool {
-    equal_fold(
+    eq_ignore_case(
         normalize_name(&resolver.resolve(&phpquery::attribute_name(attribute))),
         AS_EVENT_LISTENER_ATTRIBUTE,
     )
@@ -690,7 +692,7 @@ pub(crate) fn is_as_event_listener(attribute: &SyntaxNode, resolver: &NameResolv
 fn class_method_map(class: &SyntaxNode) -> HashMap<String, SyntaxNode> {
     phpquery::methods(class)
         .into_iter()
-        .map(|method| (go_to_lower(&phpquery::method_name(&method)), method))
+        .map(|method| (lowercase(&phpquery::method_name(&method)), method))
         .collect()
 }
 
@@ -707,7 +709,7 @@ fn resolve_php_type(value: &str, resolver: &NameResolver) -> String {
         let candidate = candidate.trim();
         let candidate = candidate.strip_prefix('?').unwrap_or(candidate);
         if matches!(
-            go_to_lower(candidate.strip_prefix('\\').unwrap_or(candidate)).as_str(),
+            lowercase(candidate.strip_prefix('\\').unwrap_or(candidate)).as_str(),
             "" | "array"
                 | "bool"
                 | "callable"
@@ -736,7 +738,7 @@ fn resolve_php_type(value: &str, resolver: &NameResolver) -> String {
 /// it is not itself named.
 fn call_argument(call: &SyntaxNode, name: &str, fallback: Option<usize>) -> Option<SyntaxNode> {
     for (index, argument) in phpquery::arguments(call).enumerate() {
-        if equal_fold(&phpquery::argument_name(&argument), name) {
+        if eq_ignore_case(&phpquery::argument_name(&argument), name) {
             return phpquery::argument_expression(call, index);
         }
     }
@@ -771,7 +773,7 @@ fn php_array_property(array: Option<&SyntaxNode>, name: &str) -> Option<SyntaxNo
         .into_iter()
         .find(|item| {
             phpquery::array_item_key(item).is_some_and(|key| {
-                key.kind() == PHP_STRING && equal_fold(&phpquery::string_value(&key), name)
+                key.kind() == PHP_STRING && eq_ignore_case(&phpquery::string_value(&key), name)
             })
         })
         .and_then(|item| phpquery::array_item_value(&item))
@@ -786,7 +788,7 @@ pub(crate) fn service_tag_class(tag_call: &SyntaxNode, resolver: &NameResolver) 
         return String::new();
     };
     for call in phpquery::calls(&statement, &[]) {
-        let candidates: &[usize] = match go_to_lower(&phpquery::call_method_name(&call)).as_str() {
+        let candidates: &[usize] = match lowercase(&phpquery::call_method_name(&call)).as_str() {
             "set" => &[1, 0],
             "get" => &[0],
             _ => &[],

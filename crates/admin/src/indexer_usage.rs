@@ -1,5 +1,4 @@
-//! Symbol usage queries over the persisted usage index (port of Go
-//! `indexer_usage.go`).
+//! Symbol usage queries over the persisted usage index.
 
 use crate::*;
 

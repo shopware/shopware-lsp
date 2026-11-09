@@ -1,4 +1,4 @@
-//! Literal registration symbols (port of Go `usage_symbol_registration.go`).
+//! Literal registration symbols.
 
 use crate::*;
 

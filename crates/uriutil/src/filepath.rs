@@ -1,13 +1,15 @@
-//! Lexical path helpers with the exact semantics of Go's `path/filepath`.
+//! Lexical path helpers over UTF-8 strings.
 //!
-//! Go code in the language server relies on `filepath.Clean`, `ToSlash`,
-//! `FromSlash`, `IsAbs`, `Rel` and `Abs` producing specific strings (for
-//! example in persisted cache keys and configuration scopes). These helpers
-//! operate on `&str` and mirror the Go algorithms for the host operating
-//! system: on Windows both `\` and `/` are separators and volume names are
-//! honored; elsewhere only `/` is a separator.
+//! Paths are stored and compared as strings throughout the server (index
+//! keys, URIs, configuration scopes), so these helpers work on `&str`
+//! without touching the filesystem and always produce the same string for
+//! the same path: [`clean`] yields the shortest lexically equivalent form,
+//! which makes paths comparable. On Windows both `\` and `/` are
+//! separators and volume names (`C:`, `\\host\share`) are honored;
+//! elsewhere only `/` is a separator. [`ext`] includes the leading dot, and
+//! [`dir`] and [`base`] return `.` for an empty result.
 
-/// The host path separator, like Go's `filepath.Separator`.
+/// The host path separator.
 pub const SEPARATOR: char = if cfg!(windows) { '\\' } else { '/' };
 
 /// Reports whether `byte` is a path separator on the host.
@@ -20,7 +22,7 @@ pub fn is_path_separator(byte: u8) -> bool {
     }
 }
 
-/// Go `filepath.ToSlash`.
+/// `path` with the host separator replaced by `/`.
 pub fn to_slash(path: &str) -> String {
     if SEPARATOR == '/' {
         return path.to_owned();
@@ -28,7 +30,7 @@ pub fn to_slash(path: &str) -> String {
     path.replace(SEPARATOR, "/")
 }
 
-/// Go `filepath.FromSlash`.
+/// `path` with `/` replaced by the host separator.
 pub fn from_slash(path: &str) -> String {
     if SEPARATOR == '/' {
         return path.to_owned();
@@ -70,12 +72,13 @@ fn windows_volume_name_len(path: &str) -> usize {
     0
 }
 
-/// Go `filepath.VolumeName`.
+/// The leading volume name of `path` (`C:` or `\\host\share` on Windows;
+/// empty elsewhere).
 pub fn volume_name(path: &str) -> &str {
     &path[..volume_name_len(path)]
 }
 
-/// Go `filepath.IsAbs`.
+/// Whether `path` is absolute.
 pub fn is_abs(path: &str) -> bool {
     if !cfg!(windows) {
         return path.starts_with('/');
@@ -111,7 +114,7 @@ fn is_clean_slash_path(path: &str) -> bool {
         .all(|segment| !segment.is_empty() && segment != b"." && segment != b"..")
 }
 
-/// Go `filepath.Dir`: every element but the last, cleaned.
+/// Every element of `path` but the last, cleaned; `.` when there is none.
 pub fn dir(path: &str) -> String {
     let volume = volume_name(path);
     let bytes = path.as_bytes();
@@ -126,7 +129,9 @@ pub fn dir(path: &str) -> String {
     format!("{volume}{directory}")
 }
 
-/// Go `filepath.Clean`: the shortest lexically equivalent path.
+/// The shortest lexically equivalent path: repeated separators collapse,
+/// `.` elements go away, `..` elements remove the element before them (not
+/// beyond the root), and an empty result becomes `.`.
 pub fn clean(path: &str) -> String {
     if !cfg!(windows) && is_clean_slash_path(path) {
         return path.to_owned();
@@ -167,7 +172,7 @@ fn clean_general(path: &str) -> String {
         {
             read += 2;
             if out.len() > dotdot {
-                // Mirrors Go's lazybuf: w--; for w > dotdot && !sep(buf[w]) { w-- }
+                // Drops the last written element.
                 let mut write = out.len() - 1;
                 while write > dotdot && !is_path_separator(out[write]) {
                     write -= 1;
@@ -207,8 +212,18 @@ fn same_word(left: &str, right: &str) -> bool {
     }
 }
 
-/// Go `filepath.Rel`. The error text matches Go.
-pub fn rel(base_path: &str, target_path: &str) -> Result<String, String> {
+/// [`rel`] could not express `target` relative to `base`.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("cannot make {target} relative to {base}")]
+pub struct RelError {
+    pub base: String,
+    pub target: String,
+}
+
+/// `target_path` relative to `base_path`, lexically. Fails when one is
+/// absolute and the other is not, when the volumes differ, or when the
+/// result would have to climb out of `base_path` through a `..` element.
+pub fn rel(base_path: &str, target_path: &str) -> Result<String, RelError> {
     let base_volume = volume_name(base_path);
     let target_volume = volume_name(target_path);
     let base_clean = clean(base_path);
@@ -227,7 +242,10 @@ pub fn rel(base_path: &str, target_path: &str) -> Result<String, String> {
     let separator = SEPARATOR as u8;
     let base_slashed = !base.is_empty() && base.as_bytes()[0] == separator;
     let target_slashed = !target.is_empty() && target.as_bytes()[0] == separator;
-    let failure = || format!("Rel: can't make {target_path} relative to {base_path}");
+    let failure = || RelError {
+        base: base_path.to_owned(),
+        target: target_path.to_owned(),
+    };
     if base_slashed != target_slashed || !same_word(base_volume, target_volume) {
         return Err(failure());
     }
@@ -273,7 +291,8 @@ pub fn rel(base_path: &str, target_path: &str) -> Result<String, String> {
     Ok(target[t0..].to_owned())
 }
 
-/// Go `filepath.Join`: joins non-empty elements and cleans the result.
+/// Joins the non-empty `elements` with the host separator and cleans the
+/// result; empty when every element is empty.
 pub fn join<S: AsRef<str>>(elements: &[S]) -> String {
     let parts: Vec<&str> = elements
         .iter()
@@ -286,8 +305,7 @@ pub fn join<S: AsRef<str>>(elements: &[S]) -> String {
     clean(&parts.join(&SEPARATOR.to_string()))
 }
 
-/// Go `filepath.Abs`: joins relative paths with the working directory and
-/// cleans the result.
+/// `path` made absolute against the working directory, cleaned.
 pub fn abs(path: &str) -> std::io::Result<String> {
     if is_abs(path) {
         return Ok(clean(path));
@@ -297,7 +315,8 @@ pub fn abs(path: &str) -> std::io::Result<String> {
     Ok(join(&[working.as_ref(), path]))
 }
 
-/// Go `filepath.Ext`.
+/// The extension of the last element of `path`, with its dot (`.php`);
+/// empty when there is none.
 pub fn ext(path: &str) -> &str {
     let bytes = path.as_bytes();
     let mut index = bytes.len();
@@ -310,7 +329,8 @@ pub fn ext(path: &str) -> &str {
     ""
 }
 
-/// Go `filepath.Base`.
+/// The last element of `path` without trailing separators; `.` for an
+/// empty path and the separator for the root.
 pub fn base(path: &str) -> String {
     if path.is_empty() {
         return ".".to_owned();
@@ -337,7 +357,7 @@ mod tests {
 
     #[cfg(not(windows))]
     #[test]
-    fn clean_matches_go() {
+    fn clean_yields_shortest_equivalent_path() {
         for (input, expected) in [
             ("", "."),
             ("abc", "abc"),
@@ -377,7 +397,7 @@ mod tests {
 
     #[cfg(not(windows))]
     #[test]
-    fn rel_matches_go() {
+    fn rel_makes_paths_relative_lexically() {
         for (root, path, expected) in [
             ("a/b", "a/b", Some(".")),
             ("a/b/.", "a/b", Some(".")),
@@ -425,10 +445,10 @@ mod tests {
 
     #[test]
     fn ext_and_base() {
-        assert_eq!(ext("path.go"), ".go");
-        assert_eq!(ext("path.pb.go"), ".go");
+        assert_eq!(ext("path.php"), ".php");
+        assert_eq!(ext("path.html.twig"), ".twig");
         assert_eq!(ext("a.dir/b"), "");
-        assert_eq!(ext("a.dir/b.go"), ".go");
+        assert_eq!(ext("a.dir/b.php"), ".php");
         assert_eq!(ext("a.dir/"), "");
         assert_eq!(base(""), ".");
         assert_eq!(base("/"), "/");
@@ -483,7 +503,7 @@ mod clean_fast_path_tests {
 #[cfg(test)]
 mod dir_tests {
     #[test]
-    fn dir_matches_go() {
+    fn dir_drops_the_last_element() {
         use super::dir;
         assert_eq!(dir("/a/b/c.js"), "/a/b");
         assert_eq!(dir("c.js"), ".");

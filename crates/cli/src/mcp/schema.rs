@@ -34,13 +34,26 @@ pub fn tool_definitions() -> &'static [ToolDefinition] {
     })
 }
 
-/// Validates `instance` against `schema` (Go `Resolved.Validate`).
-pub fn validate(instance: &Value, schema: &Value) -> Result<(), String> {
-    validate_at(Some(instance), schema, "root")
+/// Why tool arguments do not match their input schema. `path` is the JSON
+/// pointer of the offending value (`/` for the arguments object itself).
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum SchemaError {
+    /// `value` is the offending value as compact JSON.
+    #[error("{path}: expected {expected}, found {value}")]
+    Type {
+        path: String,
+        expected: String,
+        value: String,
+    },
+    #[error("{path}: unexpected properties: {}", .names.join(", "))]
+    UnexpectedProperties { path: String, names: Vec<String> },
+    #[error("{path}: missing required properties: {}", .names.join(", "))]
+    MissingProperties { path: String, names: Vec<String> },
 }
 
-fn validate_at(instance: Option<&Value>, schema: &Value, path: &str) -> Result<(), String> {
-    validate_inner(instance, schema, path).map_err(|error| format!("validating {path}: {error}"))
+/// Validates `instance` against `schema`.
+pub fn validate(instance: &Value, schema: &Value) -> Result<(), SchemaError> {
+    validate_at(Some(instance), schema, "")
 }
 
 fn json_type(instance: Option<&Value>) -> &'static str {
@@ -65,38 +78,37 @@ fn json_type(instance: Option<&Value>) -> &'static str {
     }
 }
 
-/// The offending value in a type error: strings unquoted, anything else
-/// as compact JSON.
+/// The offending value in a type error, as compact JSON.
 fn display_value(instance: Option<&Value>) -> String {
-    match instance {
-        None => "null".into(),
-        Some(Value::String(value)) => value.clone(),
-        Some(value) => value.to_string(),
+    instance.map_or_else(|| "null".into(), Value::to_string)
+}
+
+/// The pointer shown for `path`: the arguments object itself is `/`.
+fn display_path(path: &str) -> String {
+    if path.is_empty() {
+        "/".into()
+    } else {
+        path.to_owned()
     }
 }
 
-fn validate_inner(instance: Option<&Value>, schema: &Value, path: &str) -> Result<(), String> {
-    let got = json_type(instance);
+fn validate_at(instance: Option<&Value>, schema: &Value, path: &str) -> Result<(), SchemaError> {
+    let found = json_type(instance);
+    let type_error = |expected: String| SchemaError::Type {
+        path: display_path(path),
+        expected,
+        value: display_value(instance),
+    };
     match &schema["type"] {
         Value::String(want) => {
-            if !(got == want || (got == "integer" && want == "number")) {
-                return Err(format!(
-                    "type: {} has type {:?}, want {:?}",
-                    display_value(instance),
-                    got,
-                    want
-                ));
+            if !(found == want || (found == "integer" && want == "number")) {
+                return Err(type_error(want.clone()));
             }
         }
         Value::Array(types) => {
             let types: Vec<&str> = types.iter().filter_map(Value::as_str).collect();
-            if !(types.contains(&got) || (got == "integer" && types.contains(&"number"))) {
-                return Err(format!(
-                    "type: {} has type {:?}, want one of {:?}",
-                    display_value(instance),
-                    got,
-                    types.join(", ")
-                ));
+            if !(types.contains(&found) || (found == "integer" && types.contains(&"number"))) {
+                return Err(type_error(format!("one of {}", types.join(", "))));
             }
         }
         _ => {}
@@ -104,9 +116,8 @@ fn validate_inner(instance: Option<&Value>, schema: &Value, path: &str) -> Resul
     match instance {
         Some(Value::Array(items)) => {
             if let Some(item_schema) = schema.get("items") {
-                let item_path = format!("{}/items", schema_path(path));
-                for item in items {
-                    validate_at(Some(item), item_schema, &item_path)?;
+                for (index, item) in items.iter().enumerate() {
+                    validate_at(Some(item), item_schema, &format!("{path}/{index}"))?;
                 }
             }
         }
@@ -115,50 +126,51 @@ fn validate_inner(instance: Option<&Value>, schema: &Value, path: &str) -> Resul
             if let Some(Value::Object(properties)) = schema.get("properties") {
                 for (name, property_schema) in properties {
                     let Some(value) = map.get(name) else { continue };
-                    let property_path = format!("{}/properties/{name}", schema_path(path));
-                    validate_at(Some(value), property_schema, &property_path)?;
+                    validate_at(Some(value), property_schema, &format!("{path}/{name}"))?;
                     evaluated.insert(name.as_str());
                 }
             }
             match schema.get("additionalProperties") {
                 Some(Value::Bool(false)) => {
-                    let disallowed: Vec<&str> = map
+                    let names: Vec<String> = map
                         .keys()
-                        .map(String::as_str)
-                        .filter(|name| !evaluated.contains(name))
+                        .filter(|name| !evaluated.contains(name.as_str()))
+                        .cloned()
                         .collect();
-                    if !disallowed.is_empty() {
-                        return Err(format!("unexpected additional properties {disallowed:?}"));
+                    if !names.is_empty() {
+                        return Err(SchemaError::UnexpectedProperties {
+                            path: display_path(path),
+                            names,
+                        });
                     }
                 }
                 Some(additional @ Value::Object(_)) => {
-                    let additional_path = format!("{}/additionalProperties", schema_path(path));
                     for (name, value) in map {
                         if !evaluated.contains(name.as_str()) {
-                            validate_at(Some(value), additional, &additional_path)?;
+                            validate_at(Some(value), additional, &format!("{path}/{name}"))?;
                         }
                     }
                 }
                 _ => {}
             }
             if let Some(Value::Array(required)) = schema.get("required") {
-                let missing: Vec<&str> = required
+                let names: Vec<String> = required
                     .iter()
                     .filter_map(Value::as_str)
                     .filter(|name| !map.contains_key(*name))
+                    .map(str::to_owned)
                     .collect();
-                if !missing.is_empty() {
-                    return Err(format!("required: missing properties: {missing:?}"));
+                if !names.is_empty() {
+                    return Err(SchemaError::MissingProperties {
+                        path: display_path(path),
+                        names,
+                    });
                 }
             }
         }
         _ => {}
     }
     Ok(())
-}
-
-fn schema_path(path: &str) -> &str {
-    if path == "root" { "" } else { path }
 }
 
 #[cfg(test)]
@@ -179,24 +191,32 @@ mod tests {
     fn reports_validation_errors() {
         let schema = hover_schema();
         assert_eq!(
-            validate(&json!({}), &schema).unwrap_err(),
-            "validating root: required: missing properties: [\"path\", \"line\"]"
+            validate(&json!({}), &schema).unwrap_err().to_string(),
+            "/: missing required properties: path, line"
         );
         assert_eq!(
-            validate(&json!({"path": "a", "line": "x"}), &schema).unwrap_err(),
-            "validating root: validating /properties/line: type: x has type \"string\", want \"integer\""
+            validate(&json!({"path": "a", "line": "x"}), &schema)
+                .unwrap_err()
+                .to_string(),
+            "/line: expected integer, found \"x\""
         );
         assert_eq!(
-            validate(&json!({"path": "a", "line": 1.5}), &schema).unwrap_err(),
-            "validating root: validating /properties/line: type: 1.5 has type \"number\", want \"integer\""
+            validate(&json!({"path": "a", "line": 1.5}), &schema)
+                .unwrap_err()
+                .to_string(),
+            "/line: expected integer, found 1.5"
         );
         assert_eq!(
-            validate(&json!({"path": "a", "line": 1, "zzz": 1}), &schema).unwrap_err(),
-            "validating root: unexpected additional properties [\"zzz\"]"
+            validate(&json!({"path": "a", "line": 1, "zzz": 1}), &schema)
+                .unwrap_err()
+                .to_string(),
+            "/: unexpected properties: zzz"
         );
         assert_eq!(
-            validate(&json!({"path": null, "line": 1}), &schema).unwrap_err(),
-            "validating root: validating /properties/path: type: null has type \"null\", want \"string\""
+            validate(&json!({"path": null, "line": 1}), &schema)
+                .unwrap_err()
+                .to_string(),
+            "/path: expected string, found null"
         );
         assert!(validate(&json!({"path": "a", "line": 1.0}), &schema).is_ok());
     }

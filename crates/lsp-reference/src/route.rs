@@ -1,5 +1,4 @@
-//! Route name, path and controller references (port of
-//! `route_reference.go`).
+//! Route name, path and controller references.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -9,18 +8,17 @@ use swlsp_lsp_protocol as protocol;
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_twig::query as twigquery;
 use swlsp_php::PhpIndex;
-use swlsp_php_types::go_to_lower;
 use swlsp_symfony::{
     Route, RouteIndexer, RouteUsage, RouteUsageIndexer, is_php_route_name,
     is_php_route_name_in_context, is_twig_route_name, route_by_controller, route_path_matches,
     twig_html_route_reference_at,
 };
+use swlsp_textutil::lowercase;
 use swlsp_uriutil::filepath;
 
 use crate::{line_location, php_context};
 
-/// `php` supplies the request's semantic PHP context, which Go receives
-/// through the server's context enricher.
+/// `php` supplies the request's semantic PHP context.
 pub struct RouteReferenceProvider {
     routes: Arc<RouteIndexer>,
     usages: Arc<RouteUsageIndexer>,
@@ -131,7 +129,7 @@ impl RouteReferenceProvider {
         };
         let mut route_names = HashSet::with_capacity(routes.len());
         for route in routes {
-            if route.name.is_empty() || !route_names.insert(go_to_lower(&route.name)) {
+            if route.name.is_empty() || !route_names.insert(lowercase(&route.name)) {
                 continue;
             }
             for usage in self.usages.get_route(&route.name)? {

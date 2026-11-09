@@ -1,4 +1,4 @@
-//! Go `twig_test_completion.go`: test names after `is` / `is not`.
+//! Completion of test names after `is` / `is not`.
 
 use std::collections::HashMap;
 
@@ -10,7 +10,7 @@ use super::completion::{
     apply_twig_callable_completion_deprecation,
 };
 use super::{markdown, request_offset};
-use crate::common::go_to_lower;
+use swlsp_textutil::lowercase;
 
 const TWIG_BUILTIN_TESTS: [&str; 15] = [
     "constant",
@@ -38,7 +38,7 @@ impl TwigCompletionProvider {
         let root = request.root.as_ref()?;
         let offset = request_offset(request)?;
         let position = swlsp_twig::test_completion_at(root, request.source().as_bytes(), offset)?;
-        let prefix = go_to_lower(&position.name);
+        let prefix = lowercase(&position.name);
         let mut items_by_name: HashMap<String, protocol::CompletionItem> = HashMap::new();
         if self.include_builtin_completions {
             for name in TWIG_BUILTIN_TESTS {
@@ -65,7 +65,7 @@ impl TwigCompletionProvider {
             }
             let mut entries: HashMap<String, Entry> = HashMap::new();
             for test in index.get_all_twig_tests().unwrap_or_default() {
-                let key = go_to_lower(&test.name);
+                let key = lowercase(&test.name);
                 if test.name.contains('*') || !key.starts_with(&prefix) {
                     continue;
                 }
@@ -104,8 +104,8 @@ impl TwigCompletionProvider {
         }
         let mut items: Vec<protocol::CompletionItem> = items_by_name.into_values().collect();
         items.sort_by(|left, right| {
-            go_to_lower(&left.label)
-                .cmp(&go_to_lower(&right.label))
+            lowercase(&left.label)
+                .cmp(&lowercase(&right.label))
                 .then_with(|| left.label.cmp(&right.label))
         });
         Some(items)

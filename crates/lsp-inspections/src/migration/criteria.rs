@@ -1,4 +1,4 @@
-//! The `shopware.criteria` inspection (Go `shopware_criteria.go`).
+//! The `shopware.criteria` inspection.
 
 use std::sync::Arc;
 
@@ -31,7 +31,6 @@ struct CriteriaIdFixPayload {
     argument: String,
 }
 
-/// Go `NewShopwareCriteria`.
 pub fn new_shopware_criteria() -> Arc<dyn Inspection> {
     let bind: BindProblems = Arc::new(
         |_: &DiagnosticId, payload: &Map<String, Value>| -> Vec<BoundFix> {

@@ -12,8 +12,8 @@ use swlsp_uriutil::filepath;
 
 use crate::bundle::{create_bundle_from_class, is_shopware_bundle, is_valid_for_index};
 use crate::manifest::parse_manifest_tree;
-use crate::paths::dir;
 use crate::types::{ShopwareExtension, ShopwareExtensionType};
+use swlsp_uriutil::filepath::dir;
 
 /// Indexes Shopware plugin/bundle classes and app manifests, keyed by
 /// extension name.
@@ -111,7 +111,7 @@ impl ExtensionIndexer {
         self.repository.get_all_values_view()
     }
 
-    /// The underlying repository (oracle and diagnostics access).
+    /// The underlying repository (for diagnostics and tests).
     pub fn repository(&self) -> &DataIndexer<ShopwareExtension> {
         &self.repository
     }

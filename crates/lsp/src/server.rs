@@ -89,6 +89,17 @@ struct Background {
     active: usize,
 }
 
+/// Shutting the server down failed.
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum CloseError {
+    /// Closing the workspace (its store and background work) failed.
+    #[error("close the workspace: {0}")]
+    Workspace(Arc<dyn std::error::Error + Send + Sync>),
+    /// The shutdown task stopped before finishing.
+    #[error("close the server: {0}")]
+    Interrupted(String),
+}
+
 /// Shared server state (reachable only inside this crate).
 pub struct ServerInner {
     pub(crate) version: String,
@@ -102,7 +113,7 @@ pub struct ServerInner {
     pub(crate) lifecycle: CancellationToken,
     background: Mutex<Background>,
     background_done: Condvar,
-    close_result: Mutex<Option<Result<(), String>>>,
+    close_result: Mutex<Option<Result<(), CloseError>>>,
     pub(crate) diagnostics: Mutex<DiagnosticsState>,
     pub(crate) diagnostics_publish: Mutex<()>,
     pub(crate) configuration: RwLock<ConfigurationState>,
@@ -158,7 +169,8 @@ pub(crate) fn trace_enabled(variable: &str) -> bool {
     trace_value_enabled(&std::env::var(variable).unwrap_or_default())
 }
 
-/// Go's trace switch: anything but empty, `0`, `false` or `off`.
+/// Whether a trace environment value enables tracing: anything but empty,
+/// `0`, `false` or `off` (case-insensitive).
 pub(crate) fn trace_value_enabled(value: &str) -> bool {
     let value = value.trim().to_lowercase();
     !value.is_empty() && value != "0" && value != "false" && value != "off"
@@ -452,7 +464,7 @@ impl Server {
 
     /// Cancels background work, waits for it, then closes documents and the
     /// workspace. Idempotent; later calls return the first result.
-    pub fn close_all(&self) -> Result<(), String> {
+    pub fn close_all(&self) -> Result<(), CloseError> {
         let mut result = lock(&self.close_result);
         if let Some(result) = result.as_ref() {
             return result.clone();
@@ -474,9 +486,13 @@ impl Server {
         }
         self.documents.close();
         let closed = if let Some(workspace) = lock(&self.workspace).as_ref() {
-            workspace.close().map_err(|error| error.to_string())
+            workspace
+                .close()
+                .map_err(|error| CloseError::Workspace(Arc::from(error)))
         } else if let Some(scanner) = read(&self.scanner).as_ref() {
-            scanner.close().map_err(|error| error.to_string())
+            scanner
+                .close()
+                .map_err(|error| CloseError::Workspace(Arc::new(error)))
         } else {
             Ok(())
         };
@@ -490,7 +506,7 @@ impl Server {
         &self,
         input: impl Read + Send + 'static,
         output: impl Write + Send + 'static,
-    ) -> Result<(), String> {
+    ) -> Result<(), CloseError> {
         self.register_commands();
         let handler: Arc<dyn Handler> = Arc::new(self.clone());
         let server = self.clone();
@@ -508,7 +524,7 @@ impl Server {
         input: crate::async_io::Input,
         output: crate::async_io::Output,
         stop: impl std::future::Future<Output = ()>,
-    ) -> Result<(), String> {
+    ) -> Result<(), CloseError> {
         self.register_commands();
         let handler: Arc<dyn Handler> = Arc::new(self.clone());
         let server = self.clone();
@@ -526,7 +542,7 @@ impl Server {
         let server = self.clone();
         tokio::task::spawn_blocking(move || server.close_all())
             .await
-            .map_err(|error| format!("close the server: {error}"))?
+            .map_err(|error| CloseError::Interrupted(error.to_string()))?
     }
 
     pub(crate) fn connection(&self) -> Option<Arc<Connection>> {
@@ -631,7 +647,7 @@ impl Server {
         }
     }
 
-    /// The protocol method table (Go `protocolMethodHandlers`). `None` means
+    /// The protocol method table. `None` means
     /// the method is unknown.
     fn protocol_method(
         &self,
@@ -650,71 +666,71 @@ impl Server {
             "textDocument/didClose" => self.handle_did_close(params),
             "textDocument/completion" => value_handler(params, |p| self.completion(ctx, p)),
             "textDocument/definition" => {
-                value_handler(params, |p| nil_if_empty(self.definition(ctx, p)))
+                value_handler(params, |p| null_if_empty(self.definition(ctx, p)))
             }
             "textDocument/implementation" => {
-                value_handler(params, |p| nil_if_empty(self.implementation(ctx, p)))
+                value_handler(params, |p| null_if_empty(self.implementation(ctx, p)))
             }
             "textDocument/prepareTypeHierarchy" => value_handler(params, |p| {
-                nil_if_empty(self.prepare_type_hierarchy(ctx, p))
+                null_if_empty(self.prepare_type_hierarchy(ctx, p))
             }),
             "typeHierarchy/supertypes" => {
                 value_handler(params, |p: protocol::TypeHierarchySupertypesParams| {
-                    nil_if_empty(self.type_hierarchy_supertypes(ctx, &p.item))
+                    null_if_empty(self.type_hierarchy_supertypes(ctx, &p.item))
                 })
             }
             "typeHierarchy/subtypes" => {
                 value_handler(params, |p: protocol::TypeHierarchySubtypesParams| {
-                    nil_if_empty(self.type_hierarchy_subtypes(ctx, &p.item))
+                    null_if_empty(self.type_hierarchy_subtypes(ctx, &p.item))
                 })
             }
             "textDocument/prepareCallHierarchy" => result_handler(params, |p| {
-                self.prepare_call_hierarchy(ctx, p).map(nil_if_empty)
+                self.prepare_call_hierarchy(ctx, p).map(null_if_empty)
             }),
             "callHierarchy/incomingCalls" => {
                 result_handler(params, |p: protocol::CallHierarchyIncomingCallsParams| {
                     self.call_hierarchy_incoming_calls(ctx, p.item)
-                        .map(nil_if_empty)
+                        .map(null_if_empty)
                 })
             }
             "callHierarchy/outgoingCalls" => {
                 result_handler(params, |p: protocol::CallHierarchyOutgoingCallsParams| {
                     self.call_hierarchy_outgoing_calls(ctx, p.item)
-                        .map(nil_if_empty)
+                        .map(null_if_empty)
                 })
             }
             "textDocument/references" => {
-                result_handler(params, |p| self.references(ctx, p).map(nil_if_empty))
+                result_handler(params, |p| self.references(ctx, p).map(null_if_empty))
             }
             "textDocument/codeLens" => {
-                result_handler(params, |p| self.code_lens(ctx, p).map(nil_if_empty))
+                result_handler(params, |p| self.code_lens(ctx, p).map(null_if_empty))
             }
             "textDocument/hover" => result_handler(params, |p| self.hover(ctx, p)),
             "textDocument/signatureHelp" => result_handler(params, |p| self.signature_help(ctx, p)),
             "textDocument/rename" => result_handler(params, |p| self.rename(ctx, p)),
             "textDocument/inlayHint" => {
-                result_handler(params, |p| self.inlay_hints(ctx, p).map(nil_if_empty))
+                result_handler(params, |p| self.inlay_hints(ctx, p).map(null_if_empty))
             }
             "textDocument/documentLink" => {
-                result_handler(params, |p| self.document_links(ctx, p).map(nil_if_empty))
+                result_handler(params, |p| self.document_links(ctx, p).map(null_if_empty))
             }
             "textDocument/documentSymbol" => {
-                result_handler(params, |p| self.document_symbols(ctx, p).map(nil_if_empty))
+                result_handler(params, |p| self.document_symbols(ctx, p).map(null_if_empty))
             }
             "textDocument/documentHighlight" => result_handler(params, |p| {
-                self.document_highlights(ctx, p).map(nil_if_empty)
+                self.document_highlights(ctx, p).map(null_if_empty)
             }),
             "textDocument/linkedEditingRange" => {
                 result_handler(params, |p| self.linked_editing_ranges(ctx, p))
             }
             "textDocument/foldingRange" => {
-                result_handler(params, |p| self.folding_ranges(ctx, p).map(nil_if_empty))
+                result_handler(params, |p| self.folding_ranges(ctx, p).map(null_if_empty))
             }
             "textDocument/formatting" => {
-                result_handler(params, |p| self.formatting(ctx, p).map(nil_if_empty))
+                result_handler(params, |p| self.formatting(ctx, p).map(null_if_empty))
             }
             "textDocument/selectionRange" => {
-                result_handler(params, |p| self.selection_ranges(ctx, p).map(nil_if_empty))
+                result_handler(params, |p| self.selection_ranges(ctx, p).map(null_if_empty))
             }
             "textDocument/documentColor" => {
                 result_handler(params, |p| self.document_colors(ctx, Some(p)))
@@ -733,7 +749,7 @@ impl Server {
             "workspace/didChangeConfiguration" => self.handle_did_change_configuration(params),
             "codeLens/resolve" => result_handler(params, |p| self.resolve_code_lens(ctx, p)),
             "textDocument/codeAction" => {
-                value_handler(params, |p| nil_if_empty(self.code_action(ctx, &p)))
+                value_handler(params, |p| null_if_empty(self.code_action(ctx, &p)))
             }
             "codeAction/resolve" => value_handler(params, |p| self.resolve_code_action(ctx, p)),
             "shopware/forceReindex" => self.handle_force_reindex(),
@@ -743,9 +759,9 @@ impl Server {
             "workspace/willRenameFiles" => {
                 result_handler(params, |p| self.will_rename_files(ctx, p))
             }
-            "workspace/symbol" => {
-                result_handler(params, |p| self.workspace_symbols(ctx, p).map(nil_if_empty))
-            }
+            "workspace/symbol" => result_handler(params, |p| {
+                self.workspace_symbols(ctx, p).map(null_if_empty)
+            }),
             "shutdown" => {
                 if let Err(error) = self.close_all() {
                     log::warn!("Error closing indexers: {error}");
@@ -838,13 +854,13 @@ impl Handler for Server {
 
 pub(crate) fn decode_params<P: DeserializeOwned>(params: Value) -> Result<P, RpcError> {
     if params.is_null() {
-        return Err(RpcError::new(0, "missing request parameters"));
+        return Err(RpcError::invalid_params("missing request parameters"));
     }
-    serde_json::from_value(params).map_err(|error| RpcError::new(0, error.to_string()))
+    serde_json::from_value(params).map_err(|error| RpcError::invalid_params(error.to_string()))
 }
 
 pub(crate) fn to_value(value: &impl Serialize) -> Result<Value, RpcError> {
-    serde_json::to_value(value).map_err(|error| RpcError::new(0, error.to_string()))
+    serde_json::to_value(value).map_err(|error| RpcError::internal(error.to_string()))
 }
 
 fn value_handler<P: DeserializeOwned, R: Serialize>(
@@ -866,8 +882,8 @@ fn result_handler<P: DeserializeOwned, R: Serialize>(
     }
 }
 
-/// Go marshals nil slices as `null`; accumulated provider results are nil
-/// when empty.
-pub(crate) fn nil_if_empty<T>(values: Vec<T>) -> Option<Vec<T>> {
+/// Empty provider results are sent as `null` ("no result" in LSP) rather
+/// than `[]`.
+pub(crate) fn null_if_empty<T>(values: Vec<T>) -> Option<Vec<T>> {
     (!values.is_empty()).then_some(values)
 }

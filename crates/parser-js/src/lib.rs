@@ -1,5 +1,4 @@
-//! Lossless, error-tolerant JavaScript/TypeScript parser (port of Go
-//! `internal/parser/javascript`).
+//! Lossless, error-tolerant JavaScript/TypeScript parser.
 //!
 //! The grammar is intentionally lightweight: it recognises the statement and
 //! expression shapes used by Shopware Administration code (imports, default

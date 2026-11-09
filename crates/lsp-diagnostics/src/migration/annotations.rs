@@ -1,12 +1,11 @@
-//! Doctrine route annotation migrations (Go
-//! `shopware_migration_annotations.go`).
+//! Doctrine route annotation migrations.
 
 use super::scan;
 use swlsp_lsp::{Context, Problem};
 use swlsp_parser_php::query as phpquery;
 use swlsp_php_rewrite::{PhpDocAnnotation, find_phpdoc_annotation};
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::eq_ignore_case;
 
 use super::{ShopwareMigrationAnalyzer, ShopwareMigrationPayload, migration_problem};
 
@@ -119,8 +118,8 @@ fn route_annotation_problem(
     )
 }
 
-/// Go `addDoctrineRouteDefault`: returns the updated annotation, whether it
-/// changed and whether the rewrite is safe.
+/// Returns the updated annotation, whether it changed and whether the rewrite
+/// is safe.
 pub(crate) fn add_doctrine_route_default(
     annotation: &str,
     key: &str,
@@ -201,7 +200,7 @@ fn doctrine_named_value_range(content: &str, requested: &str) -> Option<(usize, 
         let segment = &content[start..end];
         if let Some(equals) = doctrine_top_level_equals(segment) {
             let name = segment[..equals].trim().trim_matches(['"', '\'']);
-            if equal_fold(name, requested) {
+            if eq_ignore_case(name, requested) {
                 let mut value_start = start + equals + 1;
                 while value_start < end && is_doctrine_space(bytes[value_start]) {
                     value_start += 1;

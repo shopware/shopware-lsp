@@ -198,10 +198,6 @@ See the [project configuration reference](docs/reference.md#project-configuratio
 and the bundled [JSON schema](crates/projectconfig/schema.json) for every
 option.
 
-The server is a native Rust binary without a garbage collector, so it needs no
-memory tuning. `shopwareLSP.memoryLimitMiB` only tuned the former Go server's
-`GOMEMLIMIT` and is now deprecated and ignored.
-
 ## Command line and CI
 
 The standalone binary exposes the same workspace, indexes, diagnostics, and

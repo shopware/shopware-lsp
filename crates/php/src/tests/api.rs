@@ -124,7 +124,7 @@ class Child extends Base {
         ["Alpha", "beta", "gamma"]
     );
     assert_eq!(names(idx.properties("App\\Child")), ["alpha", "zeta"]);
-    // Like Go, the member resolver lets the method `Alpha` shadow the
+    // The member resolver lets the method `Alpha` shadow the
     // constant `ALPHA` (names fold case across member kinds).
     assert_eq!(names(idx.constants("App\\Child")), ["PREFIX"]);
     assert_eq!(idx.find_properties("App\\Child", "$zeta").len(), 1);
@@ -267,12 +267,12 @@ fn identity_is_shared_by_clones_and_distinct_per_index() {
 }
 
 /// A phar polyfill declaring `\Attribute` shares the declaration ID of the
-/// runtime stub. Like Go, the document whose path sorts last owns the ID
+/// runtime stub. The document whose path sorts last owns the ID
 /// (here the `phpstub://` stub, since `/home/...` sorts before it) and every
 /// lookup resolves to it. A polyfill below a relative cache directory such as
-/// `rs-cache/` sorts after `phpstub://` and wins instead, in Go as in Rust.
+/// `rs-cache/` sorts after `phpstub://` and wins instead.
 #[test]
-fn polyfill_sharing_a_stub_id_resolves_like_go() {
+fn polyfill_sharing_a_stub_id_resolves_to_the_last_sorted_path() {
     let project = tempfile::tempdir().unwrap();
     std::fs::write(
         project.path().join("composer.json"),
@@ -330,10 +330,9 @@ fn polyfill_sharing_a_stub_id_resolves_like_go() {
     idx.close().unwrap();
 }
 
-/// The class catalog sorts like Go's `sort.Slice` (pdqsort): in a catalog
-/// larger than the insertion-sort cutoff, an interface and its `class_alias`
-/// declared under the same name in the same file keep Go's (unstable) order.
-/// Expected IDs recorded from the Go implementation.
+/// In a catalog large enough for a full sort, an interface and its
+/// `class_alias` declared under the same name in the same file keep a
+/// deterministic order.
 #[test]
 fn class_catalog_breaks_same_name_ties_by_position() {
     // Declarations of one name (an interface and its `class_alias`) are

@@ -54,7 +54,7 @@ impl Indexer for FeatureIndexer {
             }),
         }
         .map_err(|error| Error::other(error).context("parsing feature file"))?;
-        // Later duplicates replace earlier ones, like the Go map.
+        // Later duplicates replace earlier ones.
         let mut items: Vec<(&str, &Feature)> = Vec::with_capacity(features.len());
         for feature in &features {
             match items.iter_mut().find(|(name, _)| *name == feature.name) {

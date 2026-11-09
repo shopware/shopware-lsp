@@ -5,9 +5,8 @@ use swlsp_lsp::SyntaxContext;
 use swlsp_lsp_protocol as protocol;
 use swlsp_php::{PhpContext, PhpIndex};
 
-/// The request's PHP semantic context, as Go's PHP context enricher attaches
-/// it to every PHP request (`PhpContext` is not `Send`, so it cannot travel
-/// in [`swlsp_lsp::Context`]): the memoized document analysis, falling back
+/// The request's PHP semantic context, computed per request because
+/// `PhpContext` is not `Send` and cannot travel in [`swlsp_lsp::Context`]: the memoized document analysis, falling back
 /// to a fresh analysis of the open document. `None` outside PHP documents.
 pub(crate) fn php_context(php: Option<&PhpIndex>, request: &SyntaxContext) -> Option<PhpContext> {
     if request.language != Some(LanguageId::Php) {
@@ -34,8 +33,8 @@ pub(crate) fn php_context(php: Option<&PhpIndex>, request: &SyntaxContext) -> Op
 }
 
 /// A zero-width location at the start of a one-based line without clamping
-/// (Go `routeLocations` and tagged XML services). Go would emit line -1 for
-/// line 0; protocol lines are unsigned, so it saturates at 0.
+/// (route declarations and tagged XML services). Line 0 saturates at the
+/// first line because protocol lines are unsigned.
 pub(crate) fn unclamped_line_location(path: &str, line: u32) -> protocol::Location {
     let position = protocol::Position {
         line: line.saturating_sub(1),
@@ -50,7 +49,7 @@ pub(crate) fn unclamped_line_location(path: &str, line: u32) -> protocol::Locati
     }
 }
 
-/// Go `fmt.Sprintf("%s:%d:%d:%d:%d")` location key.
+/// A key identifying a location by URI and range, for deduplication.
 pub(crate) fn location_key(location: &protocol::Location) -> (String, u32, u32, u32, u32) {
     (
         location.uri.clone(),
@@ -97,7 +96,7 @@ pub(crate) mod test_support {
         Arc::new(TextDocument::new(uri, source, 1))
     }
 
-    /// Go `NodeAtOffset`.
+    /// The deepest node at `offset`.
     pub fn node_at(document: &TextDocument, offset: usize) -> SyntaxNode {
         document
             .root()
@@ -106,7 +105,7 @@ pub(crate) mod test_support {
             .unwrap()
     }
 
-    /// Go `definitionRequest`: the cursor at `offset` with an explicit node.
+    /// A request with the cursor at `offset` and an explicit node.
     pub fn request_with_node(
         document: &Arc<TextDocument>,
         node: Option<SyntaxNode>,
@@ -128,7 +127,7 @@ pub(crate) mod test_support {
         }
     }
 
-    /// The request at `offset` with Go's `NodeAtOffset` node.
+    /// The request at `offset` with the node from [`node_at`].
     pub fn request_at(document: &Arc<TextDocument>, offset: usize) -> DefinitionRequest {
         request_with_node(document, Some(node_at(document, offset)), offset)
     }

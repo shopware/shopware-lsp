@@ -22,7 +22,7 @@ fn indexed_catalog_rejects_incomplete_workspace_generation() {
 
     let plugin = tempfile::tempdir().unwrap();
     let error = catalog.scan(&path_string(plugin.path()), None).unwrap_err();
-    assert_eq!(error.to_string(), ERR_INDEX_NOT_READY);
+    assert!(matches!(error, Error::IndexNotReady), "{error}");
 
     readiness.set_ready(&CancelToken::new(), true).unwrap();
     let (schema, definitions) = catalog.scan(&path_string(plugin.path()), None).unwrap();

@@ -17,6 +17,7 @@ swlsp-parser-twig = { path = "../parser-twig" }
 swlsp-twig = { path = "../twig" }
 swlsp-parser-vue = { path = "../parser-vue" }
 swlsp-uriutil = { path = "../uriutil" }
+swlsp-textutil = { path = "../textutil" }
 serde = { version = "1", features = ["derive"] }
 regex = "1"
 log = "0.4"

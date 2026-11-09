@@ -1,6 +1,4 @@
-//! Declaration, control-flow, write-target and extraction queries (port of Go
-//! `constants.go`, `control_flow.go`, `declarations.go`, `extract.go`,
-//! `extract_method.go` and `write.go`).
+//! Declaration, control-flow, write-target and extraction queries.
 
 use swlsp_syntax::rowan::NodeOrToken;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
@@ -9,7 +7,7 @@ use super::{
     array_item_value, child_tokens, class_at, class_body, direct_child, function_like_at, nodes,
     variable_name,
 };
-use crate::equal_fold;
+use crate::eq_ignore_case;
 use crate::syntax::*;
 
 /// Declared constant names of a (class) const declaration, excluding names in
@@ -23,7 +21,7 @@ pub fn constant_names(node: &SyntaxNode) -> Vec<SyntaxNode> {
     for child in node.children_with_tokens() {
         match child {
             NodeOrToken::Token(token) => {
-                if equal_fold(token.text(), "const") || token.kind() == TK_COMMA {
+                if eq_ignore_case(token.text(), "const") || token.kind() == TK_COMMA {
                     expect_name = true;
                 }
                 if token.kind() == TK_EQUALS {
@@ -539,7 +537,7 @@ pub fn simple_assignment(statement: &SyntaxNode) -> Option<(String, SyntaxNode)>
 }
 
 pub fn declaration_is_static(node: &SyntaxNode) -> bool {
-    child_tokens(node).any(|token| equal_fold(token.text(), "static"))
+    child_tokens(node).any(|token| eq_ignore_case(token.text(), "static"))
 }
 
 /// Syntactic local-variable write targets, including array/destructuring
@@ -562,7 +560,7 @@ pub fn variable_is_write(node: &SyntaxNode) -> bool {
                 let mut after_as = false;
                 for element in parent.children_with_tokens() {
                     match element {
-                        NodeOrToken::Token(token) => after_as |= equal_fold(token.text(), "as"),
+                        NodeOrToken::Token(token) => after_as |= eq_ignore_case(token.text(), "as"),
                         NodeOrToken::Node(child) if child == current => return after_as,
                         NodeOrToken::Node(_) => {}
                     }

@@ -3,10 +3,6 @@ use super::support::*;
 use crate::*;
 use swlsp_indexer::Indexer;
 
-// Go's BenchmarkCollectJavaScriptUsages / BenchmarkCollectTwigUsages /
-// BenchmarkCollectTwigEventUsages are benchmarks, not tests, and are not
-// ported here.
-
 fn assert_usage_occurrence_count(
     idx: &AdminComponentIndexer,
     kind: AdminSymbolKind,

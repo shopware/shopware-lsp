@@ -8,9 +8,10 @@ use swlsp_php_semantic::{
     Attribute, AttributeArgument, AttributeArrayItem, AttributeValue, AttributeValueKind, Flags,
     Str, Symbol, SymbolKind, Visibility, attribute_named,
 };
-use swlsp_php_types::{Kind as TypeKind, ShapeField, Type, equal_fold, go_to_lower};
+use swlsp_php_types::{Kind as TypeKind, ShapeField, Type};
 use swlsp_syntax::rowan::NodeOrToken;
 use swlsp_syntax::{Kind, SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::builder::{constant_literal_type, numeric_literal_is_float};
 
@@ -19,11 +20,11 @@ pub(crate) fn text<'s>(source: &'s str, node: &SyntaxNode) -> &'s str {
 }
 
 fn visibility_of(text: &str) -> Option<Visibility> {
-    if equal_fold(text, "private") {
+    if eq_ignore_case(text, "private") {
         Some(Visibility::Private)
-    } else if equal_fold(text, "protected") {
+    } else if eq_ignore_case(text, "protected") {
         Some(Visibility::Protected)
-    } else if equal_fold(text, "public") {
+    } else if eq_ignore_case(text, "public") {
         Some(Visibility::Public)
     } else {
         None
@@ -68,7 +69,7 @@ fn has_set_suffix(children: &[swlsp_syntax::SyntaxElement]) -> bool {
         if token.kind().is_trivia() {
             continue;
         }
-        if !equal_fold(token.text(), EXPECTED[matched]) {
+        if !eq_ignore_case(token.text(), EXPECTED[matched]) {
             return false;
         }
         matched += 1;
@@ -92,22 +93,22 @@ pub(crate) fn declaration_flags(node: &SyntaxNode) -> Flags {
             continue;
         }
         let text = token.text();
-        if equal_fold(text, "static") {
+        if eq_ignore_case(text, "static") {
             flags |= Flags::STATIC;
-        } else if equal_fold(text, "final") {
+        } else if eq_ignore_case(text, "final") {
             flags |= Flags::FINAL;
-        } else if equal_fold(text, "abstract") {
+        } else if eq_ignore_case(text, "abstract") {
             flags |= Flags::ABSTRACT;
-        } else if equal_fold(text, "readonly") {
+        } else if eq_ignore_case(text, "readonly") {
             flags |= Flags::READONLY;
         } else if kind == TK_AMPERSAND {
             flags |= Flags::BY_REFERENCE;
         }
         if parameter
             && kind == TK_KEYWORD
-            && (equal_fold(text, "public")
-                || equal_fold(text, "protected")
-                || equal_fold(text, "private"))
+            && (eq_ignore_case(text, "public")
+                || eq_ignore_case(text, "protected")
+                || eq_ignore_case(text, "private"))
         {
             promoted = true;
         }
@@ -123,7 +124,7 @@ pub(crate) fn declaration_flags(node: &SyntaxNode) -> Flags {
 pub(crate) fn has_token(node: &SyntaxNode, kind: Kind, text: &str) -> bool {
     node.children_with_tokens().any(|child| match child {
         NodeOrToken::Token(token) => {
-            token.kind() == kind && (text.is_empty() || equal_fold(token.text(), text))
+            token.kind() == kind && (text.is_empty() || eq_ignore_case(token.text(), text))
         }
         NodeOrToken::Node(_) => false,
     })
@@ -167,7 +168,7 @@ pub(crate) fn bind_attributes(
 }
 
 fn retain_attribute_arguments(name: &str) -> bool {
-    let name = go_to_lower(name.trim_matches('\\'));
+    let name = lowercase(name.trim_matches('\\'));
     [
         "arrayshape",
         "deprecated",
@@ -193,8 +194,7 @@ fn bind_attribute_arguments(
     let arguments: Vec<SyntaxNode> = query::arguments(attribute).collect();
     let mut result = Vec::with_capacity(arguments.len());
     for argument in &arguments {
-        // Go indexes by the number of bound arguments, not the iteration
-        // index; keep that behavior.
+        // Index by the number of bound arguments, not the iteration index.
         let Some(expression) = query::argument_expression(attribute, result.len()) else {
             continue;
         };
@@ -244,7 +244,7 @@ pub(crate) fn bind_attribute_value(
         },
         PHP_BOOLEAN => {
             result.kind = AttributeValueKind::Bool;
-            result.value = Str::from(go_to_lower(expression));
+            result.value = Str::from(lowercase(expression));
         }
         PHP_NULL => {
             result.kind = AttributeValueKind::Null;
@@ -313,7 +313,7 @@ fn resolve_attribute_class_constant(expression: &str, context: &NameContext) -> 
             .unwrap_or(expression)
             .to_owned();
     }
-    match go_to_lower(receiver).as_str() {
+    match lowercase(receiver).as_str() {
         "self" | "static" | "parent" => format!("{receiver}::{member}"),
         _ => format!("{}::{member}", context.resolve_class(receiver)),
     }
@@ -414,7 +414,7 @@ fn attribute_shape_type(attributes: &[Attribute], context: &NameContext) -> Opti
                 }
                 AttributeValueKind::Integer => {
                     name = item.key.expression.replace('_', "");
-                    if let Some(parsed) = go_atoi(&name)
+                    if let Ok(parsed) = name.parse::<i64>()
                         && parsed >= next_numeric_key
                     {
                         next_numeric_key = parsed + 1;
@@ -449,13 +449,4 @@ fn attribute_shape_type(attributes: &[Attribute], context: &NameContext) -> Opti
     } else {
         Type::array_shape(fields, false)
     })
-}
-
-/// Go `strconv.Atoi` on 64-bit platforms.
-fn go_atoi(value: &str) -> Option<i64> {
-    let digits = value.strip_prefix(['+', '-']).unwrap_or(value);
-    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    value.parse::<i64>().ok()
 }

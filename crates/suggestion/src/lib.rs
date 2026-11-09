@@ -1,6 +1,8 @@
-//! "Did you mean" candidate ranking (port of `internal/suggestion`).
+//! "Did you mean" candidate ranking.
 
 use std::collections::{HashMap, HashSet};
+
+use swlsp_textutil::lowercase;
 
 struct ScoredCandidate<'a> {
     value: &'a str,
@@ -8,23 +10,11 @@ struct ScoredCandidate<'a> {
     score: i64,
 }
 
-/// Lowercases like Go's `strings.ToLower`: every rune maps to exactly one
-/// rune (Rust's multi-character special cases keep their first character).
-fn go_to_lower(value: &str) -> String {
-    if value.is_ascii() {
-        return value.to_ascii_lowercase();
-    }
-    value
-        .chars()
-        .map(|character| character.to_lowercase().next().unwrap_or(character))
-        .collect()
-}
-
 /// Returns at most five candidates using the Symfony plugin's fuzzy
 /// subsequence scoring: one point per matched character and two bonus points
 /// for consecutive matches. Results are deterministic when scores tie.
 pub fn similar<S: AsRef<str>>(input: &str, candidates: &[S]) -> Vec<String> {
-    let input = go_to_lower(input);
+    let input = lowercase(input);
     let mut seen: HashSet<String> = HashSet::with_capacity(candidates.len());
     let mut scored: Vec<ScoredCandidate<'_>> = Vec::new();
     for candidate in candidates {
@@ -32,7 +22,7 @@ pub fn similar<S: AsRef<str>>(input: &str, candidates: &[S]) -> Vec<String> {
         if candidate.is_empty() {
             continue;
         }
-        let lower = go_to_lower(candidate);
+        let lower = lowercase(candidate);
         if !seen.insert(lower.clone()) {
             continue;
         }
@@ -98,7 +88,7 @@ pub fn similar_templates<S: AsRef<str>>(input: &str, candidates: &[S]) -> Vec<St
         .into_iter()
         .filter_map(|matched| {
             originals
-                .get(&go_to_lower(&matched))
+                .get(&lowercase(&matched))
                 .filter(|original| !original.is_empty())
                 .map(|original| (*original).to_owned())
         })
@@ -136,7 +126,7 @@ fn fuzzy_distance_units<T: PartialEq>(term: &[T], query: &[T]) -> i64 {
 }
 
 fn strip_template_extensions(value: &str) -> String {
-    let mut value = go_to_lower(value);
+    let mut value = lowercase(value);
     for _ in 0..2 {
         let Some(index) = value.rfind('.') else {
             break;

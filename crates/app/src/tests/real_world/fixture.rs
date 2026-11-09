@@ -1,5 +1,5 @@
-//! Port of Go `real_world_fixture_test.go` and the workspace helpers of
-//! `real_world_helpers_fixture_test.go`.
+//! The real-world workspace fixture: opening, indexing and closing the
+//! production workspace over a Shopware checkout.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -43,7 +43,7 @@ macro_rules! real_world_root_or_skip {
     };
 }
 
-/// Builds the production workspace like Go `openRealWorldWorkspaceWithServer`:
+/// Builds the production workspace:
 /// a server with the default configuration and the workspace constructed
 /// directly (not through `initialize`).
 pub fn open_real_world_workspace_with_server(
@@ -58,7 +58,7 @@ pub fn open_real_world_workspace_with_server(
 }
 
 /// The expensive indexed workspace shared by the feature checks of the
-/// real-world indexing test (Go `realWorldWorkspaceFixture`).
+/// real-world indexing test.
 pub struct RealWorldWorkspaceFixture {
     pub root: String,
     pub ctx: Context,

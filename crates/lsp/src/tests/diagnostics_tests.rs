@@ -1,4 +1,4 @@
-//! Port of `server_diagnostics_test.go`.
+//! Diagnostics scheduling and publication tests.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -497,7 +497,9 @@ fn slow_inspections_do_not_hold_back_the_others() {
         published
             .diagnostics
             .iter()
-            .map(|diagnostic| crate::inspection::code_string(diagnostic.code.as_ref()))
+            .map(|diagnostic| {
+                crate::inspection::code_string(diagnostic.code.as_ref()).unwrap_or_default()
+            })
             .collect()
     };
     did_open(&client, URI, 1, "value: bad\n");
@@ -696,7 +698,7 @@ fn initial_index_resumes_diagnostics_before_indexing_completed() {
     client.notify("initialized", json!({}));
     recv(&index_started, "initial indexing did not start");
     did_open(&client, &uri, 1, SOURCE);
-    // A pull during the initial index keeps Go's suspended (empty) report.
+    // A pull during the initial index returns the suspended (empty) report.
     let during = client
         .call(
             "textDocument/diagnostic",

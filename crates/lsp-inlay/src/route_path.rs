@@ -13,12 +13,12 @@ use swlsp_parser_php::syntax::PHP_STRING;
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::TWIG_LITERAL_STRING;
 use swlsp_php::PhpIndex;
-use swlsp_php_types::{go_quote, go_to_lower};
 use swlsp_symfony::{Route, RouteIndexer};
 use swlsp_syntax::SyntaxNodeExt;
+use swlsp_textutil::lowercase;
 use swlsp_uriutil::file_uri;
 
-use crate::{inlay_hint_byte_range, line_position, parts_label, position};
+use crate::{inlay_hint_byte_range, line_position, position};
 
 pub struct RoutePathProvider {
     routes: Arc<RouteIndexer>,
@@ -83,7 +83,7 @@ impl InlayHintProvider for RoutePathProvider {
             }
             result.push(protocol::InlayHint {
                 position: position(document, candidate.position),
-                label: parts_label(vec![part]),
+                label: protocol::InlayHintLabel::Parts(vec![part]),
                 kind: Some(InlayHintKind::TYPE),
                 tooltip: route_path_hint_tooltip(&candidate.name, &routes),
                 padding_left: true,
@@ -156,7 +156,7 @@ fn route_path_hint_targets(routes: Vec<Route>) -> Vec<Route> {
     let mut seen = HashSet::new();
     let mut result: Vec<Route> = routes
         .into_iter()
-        .filter(|route| !route.path.is_empty() && seen.insert(go_to_lower(&route.path)))
+        .filter(|route| !route.path.is_empty() && seen.insert(lowercase(&route.path)))
         .collect();
     result.sort_by(|left, right| {
         left.path
@@ -176,7 +176,7 @@ fn route_path_hint_label(routes: &[Route]) -> String {
 }
 
 fn route_path_hint_tooltip(name: &str, routes: &[Route]) -> String {
-    let mut lines = vec![format!("Route {}", go_quote(name))];
+    let mut lines = vec![format!("Route {name:?}")];
     for route in routes {
         let mut detail = route.path.clone();
         if !route.methods.is_empty() {

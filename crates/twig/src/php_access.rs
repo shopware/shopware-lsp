@@ -1,5 +1,4 @@
-//! Twig attribute access resolved against the PHP semantic graph (port of
-//! `php_access.go`, `loop_context.go` and `loop_type.go`).
+//! Twig attribute access resolved against the PHP semantic graph.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -9,8 +8,9 @@ use swlsp_parser_twig::syntax::*;
 use swlsp_php::PhpIndex;
 use swlsp_php_resolver::{MemberResolver, NameContext, ResolvedMember};
 use swlsp_php_semantic::{Flags, Snapshot, Symbol, SymbolKind, Visibility};
-use swlsp_php_types::{Kind as TypeKind, Type, equal_fold};
+use swlsp_php_types::{Kind as TypeKind, Type};
 use swlsp_syntax::{Kind, SyntaxNode};
+use swlsp_textutil::eq_ignore_case;
 
 use crate::extension_parser::{callback_method_name, last_name_part};
 use crate::indexer::TwigIndexer;
@@ -76,7 +76,7 @@ fn direct_loop_accessor(accessor: &SyntaxNode) -> bool {
         return false;
     };
     first_twig_child(first).is_some_and(|root| {
-        root.kind() == TWIG_LITERAL_NAME && equal_fold(root.text().to_string().trim(), "loop")
+        root.kind() == TWIG_LITERAL_NAME && eq_ignore_case(root.text().to_string().trim(), "loop")
     })
 }
 
@@ -558,7 +558,7 @@ fn definite_twig_object_receiver(snapshot: &Snapshot, receiver: &Type) -> bool {
                 let name = value.name().trim_matches('\\');
                 if name.is_empty()
                     || snapshot.classes(name).is_empty()
-                    || equal_fold(name, "stdClass")
+                    || eq_ignore_case(name, "stdClass")
                     || snapshot.is_subtype_of(name, "ArrayAccess")
                     || snapshot.is_subtype_of(name, "Traversable")
                     || snapshot.is_subtype_of(name, "Iterator")
@@ -602,12 +602,14 @@ pub fn resolve_php_members(
             }
             match symbol.kind {
                 SymbolKind::Property => {
-                    equal_fold(symbol.name.strip_prefix('$').unwrap_or(&symbol.name), name)
+                    eq_ignore_case(symbol.name.strip_prefix('$').unwrap_or(&symbol.name), name)
                 }
-                SymbolKind::ClassConstant | SymbolKind::EnumCase => equal_fold(&symbol.name, name),
+                SymbolKind::ClassConstant | SymbolKind::EnumCase => {
+                    eq_ignore_case(&symbol.name, name)
+                }
                 SymbolKind::Method => {
-                    equal_fold(&symbol.name, name)
-                        || equal_fold(&twig_attribute_name(&symbol.name), name)
+                    eq_ignore_case(&symbol.name, name)
+                        || eq_ignore_case(&twig_attribute_name(&symbol.name), name)
                 }
                 _ => false,
             }
@@ -675,8 +677,8 @@ pub fn twig_attribute_name(method: &str) -> String {
         {
             continue;
         }
-        // Go converts the byte after the prefix to a rune; only ASCII
-        // upper-case letters produce a valid attribute name here.
+        // Only an ASCII upper-case letter after the prefix starts a valid
+        // attribute name.
         let next = bytes[prefix.len()];
         if !next.is_ascii_uppercase() {
             continue;
@@ -843,7 +845,7 @@ fn callback_receiver_class(callback: &str) -> String {
     let receiver = &callback[..index];
     let receiver = receiver.strip_prefix('\\').unwrap_or(receiver);
     let receiver = receiver.strip_suffix("::class").unwrap_or(receiver);
-    match swlsp_php_types::go_to_lower(receiver).as_str() {
+    match swlsp_textutil::lowercase(receiver).as_str() {
         "" | "self" | "static" | "parent" | "self::class" | "static::class" => String::new(),
         _ => receiver.to_owned(),
     }

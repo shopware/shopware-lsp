@@ -1,4 +1,4 @@
-//! Shared test helpers (Go `helpers_test.go`, `document_test.go`).
+//! Shared test helpers.
 
 use std::sync::Arc;
 

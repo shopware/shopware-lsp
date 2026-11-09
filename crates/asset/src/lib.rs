@@ -1,10 +1,10 @@
 //! Symfony public assets, asset metadata (manifest, Encore entrypoints,
 //! AssetMapper importmaps, webpack and Vite configs), asset packages,
 //! Assetic named formulas, and editor-independent asset references in PHP
-//! and Twig (port of Go `internal/asset`).
+//! and Twig.
 //!
-//! Go reads the request's PHP analysis from `context.Context`; Rust takes an
-//! explicit [`swlsp_php::PhpContext`].
+//! Request-time PHP analysis is passed explicitly as a
+//! [`swlsp_php::PhpContext`].
 
 mod assetic;
 pub(crate) mod index;

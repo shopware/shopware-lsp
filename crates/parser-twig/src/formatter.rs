@@ -1,7 +1,5 @@
-//! Twig/HTML document formatter over the lossless Twig CST (port of
-//! `internal/parser/twig/formatter`). Its rendering rules are adapted from
-//! shopware-cli's HTML formatter; output is byte-identical to the Go
-//! implementation.
+//! Twig/HTML document formatter over the lossless Twig CST. Its rendering
+//! rules are adapted from shopware-cli's HTML formatter.
 //!
 //! The CST is first converted into a small private formatting IR
 //! ([`converter`]) which is then rendered ([`render`]).

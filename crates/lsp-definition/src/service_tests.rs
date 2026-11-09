@@ -17,7 +17,7 @@ fn service_index(root: &Path, cache: &Path) -> Arc<ServiceIndex> {
     Arc::new(ServiceIndex::new(&p(root), cache, None).unwrap())
 }
 
-/// Go `phpDefinitionRequest`: a PHP config document with an explicit node.
+/// A PHP config document request with an explicit node.
 fn php_request(document: &Arc<TextDocument>, node: SyntaxNode) -> DefinitionRequest {
     request_with_node(document, Some(node), 0)
 }
@@ -460,9 +460,9 @@ class Consumer {}",
     }
 }
 
-// -- configured service methods (service_method_definition_test.go) ----------
+// -- configured service methods -----------------------------------------------
 
-/// Go `definitionCaret`.
+/// The source without its `<caret>` marker, and the marker's byte offset.
 fn caret(source: &str) -> (String, usize) {
     let offset = index_of(source, "<caret>");
     (source.replacen("<caret>", "", 1), offset)

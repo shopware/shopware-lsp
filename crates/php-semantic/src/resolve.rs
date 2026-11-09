@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use rustc_hash::FxHashMap;
 use swlsp_php_types::{Kind as TypeKind, Type};
+use swlsp_textutil::eq_ignore_case;
 
 use crate::str::Str;
 
@@ -12,7 +13,7 @@ use crate::document::NameKind;
 use crate::references::{PackedReferences, ReferenceRecord, bloom_bits, reference_bloom_hash};
 use crate::snapshot::{IdSet, NameIndexKind, ReferenceLocation, Snapshot};
 use crate::symbol::SymbolKind;
-use crate::text::{eq_lower, equal_fold, trim_name};
+use crate::text::{eq_lower, trim_name};
 use crate::view::SymbolView;
 
 /// The lazily built reverse-reference index of a published generation.
@@ -146,7 +147,7 @@ fn may_resolve_global(
     }
     record.qualified_values().any(|value| {
         let candidate = trim_name(references.value(value), false);
-        candidate == target_name || (case_insensitive && equal_fold(candidate, target_name))
+        candidate == target_name || (case_insensitive && eq_ignore_case(candidate, target_name))
     })
 }
 

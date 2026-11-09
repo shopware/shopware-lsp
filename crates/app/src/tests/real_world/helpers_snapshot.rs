@@ -1,9 +1,9 @@
-//! Port of Go `real_world_helpers_snapshot_test.go`.
+//! Snapshot and diagnostic assertion helpers of the real-world suite.
 
 #[allow(unused_imports)]
 use super::indexing_main::record_failure as soft;
 
-/// Records a soft failure (Go `t.Errorf` in the soft oracle run) and
+/// Records a soft failure and
 /// continues with the zero value.
 #[allow(dead_code)]
 fn soft_default<T: Default>(message: String) -> T {
@@ -53,7 +53,8 @@ fn file_uri_with_fragment(path: &str, fragment: &str) -> String {
     swlsp_uriutil::file_uri_with_fragment(path, fragment)
 }
 
-/// Go `requireRealWorldSuggestionDiagnostic`.
+/// The first diagnostic with `code`; checks that it covers `value` and
+/// suggests `suggestion`.
 pub fn require_real_world_suggestion_diagnostic(
     document: &TextDocument,
     diagnostics: &[Problem],

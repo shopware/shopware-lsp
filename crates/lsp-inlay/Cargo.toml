@@ -24,6 +24,7 @@ swlsp-php-types = { path = "../php-types" }
 swlsp-snippet = { path = "../snippet" }
 swlsp-symfony = { path = "../symfony" }
 swlsp-twig = { path = "../twig" }
+swlsp-textutil = { path = "../textutil" }
 swlsp-uriutil = { path = "../uriutil" }
 regex = "1"
 serde_json = "1"

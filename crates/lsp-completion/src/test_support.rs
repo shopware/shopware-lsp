@@ -1,4 +1,4 @@
-//! Request builders shared by provider tests (Go `request_test.go`).
+//! Request builders shared by provider tests.
 #![allow(dead_code)]
 
 use std::sync::Arc;
@@ -7,7 +7,7 @@ use swlsp_lsp::{CompletionRequest, SyntaxContext, TextDocument};
 use swlsp_lsp_protocol as protocol;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextSize};
 
-/// Go `completionRequest`: a request for `node` at `offset`. `node` defaults
+/// A request for `node` at `offset`. `node` defaults
 /// to the smallest node containing `offset`.
 pub fn completion_request(
     document: Arc<TextDocument>,

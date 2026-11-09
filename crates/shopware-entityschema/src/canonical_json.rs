@@ -1,35 +1,40 @@
-//! JSON encoding compatible with Go's `encoding/json`.
+//! The canonical JSON encoding of entity schema snapshots.
 //!
-//! Committed snapshot IDs are SHA-256 digests of `json.Marshal` output, so the
-//! bytes must match Go exactly: HTML-safe string escaping, nil slices encoded
-//! as `null`, and `MarshalIndent` layout.
+//! Snapshot IDs committed to plugin repositories are SHA-256 digests of this
+//! encoding, so its bytes are fixed and must never change:
+//!
+//! - strings escape `<`, `>`, `&`, U+2028 and U+2029 as `\uXXXX` (HTML-safe);
+//! - fields declared with [`null_if_empty`] encode an empty list as `null`;
+//! - integral floats below 1e15 ([`integral_f64`]) encode without a fraction;
+//! - [`to_vec`] is compact, [`to_vec_indent`] indents by two spaces.
 
 use std::io;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::ser::{CompactFormatter, Formatter, PrettyFormatter};
 
-/// Go `json.Marshal`.
+/// The compact canonical encoding of `value`.
 pub fn to_vec<T: Serialize + ?Sized>(value: &T) -> serde_json::Result<Vec<u8>> {
     let mut out = Vec::new();
     let mut serializer =
-        serde_json::Serializer::with_formatter(&mut out, GoFormatter(CompactFormatter));
+        serde_json::Serializer::with_formatter(&mut out, CanonicalFormatter(CompactFormatter));
     value.serialize(&mut serializer)?;
     Ok(out)
 }
 
-/// Go `json.MarshalIndent(value, "", "  ")`.
+/// The canonical encoding of `value`, indented by two spaces.
 pub fn to_vec_indent<T: Serialize + ?Sized>(value: &T) -> serde_json::Result<Vec<u8>> {
     let mut out = Vec::new();
     let mut serializer = serde_json::Serializer::with_formatter(
         &mut out,
-        GoFormatter(PrettyFormatter::with_indent(b"  ")),
+        CanonicalFormatter(PrettyFormatter::with_indent(b"  ")),
     );
     value.serialize(&mut serializer)?;
     Ok(out)
 }
 
-/// Go `json.Unmarshal`: `null` members decode to the zero value.
+/// Decodes `source`, treating `null` object members as absent so they take
+/// their serde default.
 pub fn from_slice<T: serde::de::DeserializeOwned>(source: &[u8]) -> serde_json::Result<T> {
     let mut value: serde_json::Value = serde_json::from_slice(source)?;
     strip_nulls(&mut value);
@@ -53,9 +58,9 @@ fn strip_nulls(value: &mut serde_json::Value) {
     }
 }
 
-struct GoFormatter<F>(F);
+struct CanonicalFormatter<F>(F);
 
-impl<F: Formatter> Formatter for GoFormatter<F> {
+impl<F: Formatter> Formatter for CanonicalFormatter<F> {
     fn begin_array<W: ?Sized + io::Write>(&mut self, writer: &mut W) -> io::Result<()> {
         self.0.begin_array(writer)
     }
@@ -118,8 +123,7 @@ impl<F: Formatter> Formatter for GoFormatter<F> {
     }
 }
 
-/// Serializes an empty vector as `null`, like a Go nil slice without
-/// `omitempty`.
+/// Serializes an empty list as `null`.
 pub fn null_if_empty<S: Serializer, T: Serialize>(
     value: &[T],
     serializer: S,
@@ -131,15 +135,15 @@ pub fn null_if_empty<S: Serializer, T: Serialize>(
     }
 }
 
-/// Accepts `null` as the zero value.
+/// Accepts `null` as the default value.
 pub fn nullable<'de, D: Deserializer<'de>, T: Deserialize<'de> + Default>(
     deserializer: D,
 ) -> Result<T, D::Error> {
     Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
-/// Go encodes integral float64 values without a fractional part.
-pub fn go_f64<S: Serializer>(value: &f64, serializer: S) -> Result<S::Ok, S::Error> {
+/// Serializes an integral float below 1e15 as an integer (`3`, not `3.0`).
+pub fn integral_f64<S: Serializer>(value: &f64, serializer: S) -> Result<S::Ok, S::Error> {
     if value.is_finite() && value.fract() == 0.0 && value.abs() < 1e15 {
         serializer.serialize_i64(*value as i64)
     } else {
@@ -147,9 +151,13 @@ pub fn go_f64<S: Serializer>(value: &f64, serializer: S) -> Result<S::Ok, S::Err
     }
 }
 
-pub fn go_opt_f64<S: Serializer>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error> {
+/// [`integral_f64`] for an optional value; `None` serializes as `null`.
+pub fn integral_opt_f64<S: Serializer>(
+    value: &Option<f64>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
     match value {
-        Some(value) => go_f64(value, serializer),
+        Some(value) => integral_f64(value, serializer),
         None => serializer.serialize_none(),
     }
 }
@@ -171,7 +179,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn escapes_like_go() {
+    fn escapes_html_characters_and_line_separators() {
         let encoded = to_vec(&serde_json::json!({"a": "<b>&\u{2028}\u{8}\u{c}\u{1}"})).unwrap();
         assert_eq!(
             String::from_utf8(encoded).unwrap(),

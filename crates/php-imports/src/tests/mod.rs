@@ -1,6 +1,4 @@
-//! Ports of the Go `internal/php/imports` tests.
-//!
-//! Like Go, each source is bound with the PHP binder.
+//! Each source is bound with the PHP binder before analysis.
 
 use swlsp_php_binder::Binder;
 use swlsp_php_semantic::Document;

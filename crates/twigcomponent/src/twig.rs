@@ -1,5 +1,4 @@
-//! Component usages, props and Live references in Twig templates (port of
-//! `parser_twig.go`).
+//! Component usages, props and Live references in Twig templates.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
@@ -8,14 +7,14 @@ use regex::Regex;
 use swlsp_parser_twig::ast::{AstNode, HtmlAttribute, HtmlStartingTag, HtmlString, HtmlTag};
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::*;
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_syntax::{Kind, SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::config::quoted_value_range as twig_string_value_range;
 use crate::model::*;
 use swlsp_twig::DocumentMemo;
 
-/// Go RE2 `\s` is ASCII-only, hence the explicit classes.
+/// Whitespace is ASCII only, hence the explicit classes.
 static PROP_DOCUMENTATION_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?m)@prop[\t\n\x0C\r ]+([A-Za-z_][A-Za-z0-9_]*)[\t\n\x0C\r ]+([^\t\n\x0C\r ]+)(?:[\t\n\x0C\r ]+([^\r\n#]+))?",
@@ -34,7 +33,7 @@ fn start(range: TextRange) -> u32 {
 }
 
 fn function_named(call: &SyntaxNode, name: &str) -> bool {
-    twigquery::function_name(call).is_some_and(|function| equal_fold(&function, name))
+    twigquery::function_name(call).is_some_and(|function| eq_ignore_case(&function, name))
 }
 
 /// `twig:Name` → `Name`, for a name with the `twig:` prefix (any case).
@@ -94,7 +93,7 @@ pub(crate) fn usages_in_twig_impl(path: &str, root: &SyntaxNode) -> Vec<Usage> {
             continue;
         };
         let component = normalize_component_name(rest);
-        if equal_fold(&component, "block") {
+        if eq_ignore_case(&component, "block") {
             continue;
         }
         let token_range = name.text_range();
@@ -153,7 +152,7 @@ fn live_action_reference_from_html_attribute(
     path: &str,
     node: &SyntaxNode,
 ) -> Option<LiveActionReference> {
-    if !equal_fold(&attribute_name(node), "data-live-action-param") {
+    if !eq_ignore_case(&attribute_name(node), "data-live-action-param") {
         return None;
     }
     let value = HtmlAttribute::cast(node.clone())?.value()?;
@@ -315,11 +314,11 @@ pub(crate) fn live_event_references_in_twig_impl(
         let mut action_kind = None;
         let mut event_name = String::new();
         let mut event_range = TextRange::default();
-        let context_range = TextRange::default();
+        let mut context_range = TextRange::default();
         let mut current_arguments = Vec::new();
         for attribute in tag.attributes() {
             let node = attribute.syntax();
-            match go_to_lower(&attribute_name(node)).as_str() {
+            match lowercase(&attribute_name(node)).as_str() {
                 "data-action" => {
                     let Some(value) = attribute.value() else {
                         continue;
@@ -333,11 +332,10 @@ pub(crate) fn live_event_references_in_twig_impl(
                     let Some(value) = attribute.value() else {
                         continue;
                     };
-                    // Go shadows the outer context range here, so the
-                    // recorded context range stays empty.
                     let Some((value_range, text)) = html_string_static_value(&value) else {
                         continue;
                     };
+                    context_range = value_range;
                     (event_name, event_range) = live_action_directive_name(&text, value_range);
                 }
                 _ => {
@@ -378,7 +376,7 @@ pub(crate) fn live_event_references_in_twig_impl(
 }
 
 fn live_event_attribute_action_kind(value: &str) -> Option<LiveEventReferenceKind> {
-    let lower = go_to_lower(value);
+    let lower = lowercase(value);
     if lower.contains("live#emitself") {
         Some(LiveEventReferenceKind::EmitSelf)
     } else if lower.contains("live#emitup") {
@@ -391,7 +389,7 @@ fn live_event_attribute_action_kind(value: &str) -> Option<LiveEventReferenceKin
 }
 
 fn live_event_argument_attribute(node: &SyntaxNode) -> Option<(String, TextRange)> {
-    live_action_argument_attribute(node).filter(|(name, _)| !equal_fold(name, "event"))
+    live_action_argument_attribute(node).filter(|(name, _)| !eq_ignore_case(name, "event"))
 }
 
 type LiveEventScan = (Vec<LiveEventReference>, Vec<LiveEventArgumentReference>);
@@ -468,7 +466,7 @@ fn twig_hash_key_name_range(key: &SyntaxNode) -> (String, TextRange) {
 fn live_action_argument_attribute(node: &SyntaxNode) -> Option<(String, TextRange)> {
     const PREFIX: &str = "data-live-";
     const SUFFIX: &str = "-param";
-    let raw = go_to_lower(&attribute_name(node));
+    let raw = lowercase(&attribute_name(node));
     if !raw.starts_with(PREFIX) || !raw.ends_with(SUFFIX) || raw.len() < PREFIX.len() + SUFFIX.len()
     {
         return None;
@@ -483,7 +481,7 @@ fn live_action_argument_attribute(node: &SyntaxNode) -> Option<(String, TextRang
         return None;
     }
     let text = node.text().to_string();
-    let offset = go_to_lower(text.trim()).find(&raw)?;
+    let offset = lowercase(text.trim()).find(&raw)?;
     let begin = start(node.range_trimmed_trivia()) + (offset + PREFIX.len()) as u32;
     Some((
         live_argument_name(middle),
@@ -560,12 +558,12 @@ fn live_action_directive_name(value: &str, value_range: TextRange) -> (String, T
 pub fn block_usage_at(node: &SyntaxNode, offset: u32) -> Option<ComponentBlockUsage> {
     let attribute = twigquery::html_attribute_at(node)?;
     let name = attribute_name(&attribute);
-    if !equal_fold(name.strip_prefix(':').unwrap_or(&name), "name") {
+    if !eq_ignore_case(name.strip_prefix(':').unwrap_or(&name), "name") {
         return None;
     }
     let tag_node = twigquery::starting_html_tag_at(&attribute)?;
     let tag = HtmlStartingTag::cast(tag_node.clone())?;
-    if !equal_fold(tag.name()?.text(), "twig:block") {
+    if !eq_ignore_case(tag.name()?.text(), "twig:block") {
         return None;
     }
     let value = HtmlString::cast(first_descendant(&attribute, HTML_STRING)?)?;
@@ -622,7 +620,7 @@ pub fn enclosing_html_component(node: &SyntaxNode) -> String {
             continue;
         };
         let name = normalize_component_name(rest);
-        if !equal_fold(&name, "block") {
+        if !eq_ignore_case(&name, "block") {
             return name;
         }
     }

@@ -6,8 +6,10 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+swlsp-textutil = { path = "../textutil" }
 serde = "1.0.228"
 smallvec = "1.15.1"
+thiserror.workspace = true
 unicode-general-category = "1.1.0"
 
 [dev-dependencies]

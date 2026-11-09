@@ -1,5 +1,4 @@
-//! Go `template.go`: missing template inspection with suggestion and
-//! create-file quick fixes.
+//! Missing template inspection with suggestion and create-file quick fixes.
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -30,7 +29,6 @@ struct CreateTemplatePayload {
     uri: String,
 }
 
-/// Go `NewTemplate`.
 pub fn new_template(
     root: &str,
     twig_index: Option<Arc<TwigIndexer>>,
@@ -113,7 +111,7 @@ impl RewriteQuickFix for CreateTemplateFix {
     }
 }
 
-/// Go `filepath.Abs` followed by `Clean`.
+/// `path` made absolute against the working directory, then cleaned.
 fn absolute(path: &str) -> Option<String> {
     let joined = if path.starts_with('/') {
         path.to_owned()
@@ -124,8 +122,7 @@ fn absolute(path: &str) -> Option<String> {
     Some(clean_path(&joined))
 }
 
-/// Go `pathInside`: `target` equals `root` or is below it (both clean and
-/// absolute).
+/// `target` equals `root` or is below it (both clean and absolute).
 fn path_inside(root: &str, target: &str) -> bool {
     if target == root {
         return true;
@@ -152,8 +149,8 @@ fn parent_dir(path: &str) -> String {
     }
 }
 
-/// Go `safeTemplateCreationTarget`: a non-existing `templates/<name>` file
-/// below the workspace root, also after resolving symlinks.
+/// A non-existing `templates/<name>` file below the workspace root, also after
+/// resolving symlinks.
 fn safe_template_creation_target(root: &str, name: &str) -> Option<String> {
     if root.trim().is_empty() {
         return None;
@@ -163,7 +160,7 @@ fn safe_template_creation_target(root: &str, name: &str) -> Option<String> {
     if name.is_empty()
         || name.starts_with('@')
         || name.contains([':', '\\'])
-        || !swlsp_php_types::go_to_lower(name).ends_with(".twig")
+        || !swlsp_textutil::lowercase(name).ends_with(".twig")
     {
         return None;
     }

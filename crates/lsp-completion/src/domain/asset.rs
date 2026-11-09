@@ -1,5 +1,4 @@
-//! Public asset, Encore/Vite/importmap entry, Assetic and package names (Go
-//! `asset_completion.go`).
+//! Public asset, Encore/Vite/importmap entry, Assetic and package names.
 
 use std::sync::Arc;
 

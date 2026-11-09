@@ -1,5 +1,4 @@
-//! Document outline and highlights (port of `document_symbols.go` and
-//! `document_highlights.go`).
+//! Document outline and highlights.
 
 use std::collections::HashMap;
 
@@ -189,7 +188,7 @@ impl Outline<'_> {
             );
             symbol.children = self.children(node);
             if node.kind() == PHP_METHOD_DECLARATION
-                && swlsp_php_types::equal_fold(&symbol.name, "__construct")
+                && swlsp_textutil::eq_ignore_case(&symbol.name, "__construct")
             {
                 symbol.kind = SymbolKind::CONSTRUCTOR;
                 // Promoted parameters are properties of the class, not of the

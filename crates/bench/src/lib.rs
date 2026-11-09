@@ -1,9 +1,8 @@
-//! Benchmark inputs shared by `benches/`. The cases mirror the Go oracle's
-//! CodSpeed suite (`internal/parser/performance_validation_test.go`,
-//! `internal/php/benchmark_test.go`) so both implementations track the same
-//! production paths.
+//! Benchmark inputs shared by `benches/`. The cases track the production
+//! parser and PHP semantic paths with fixed inputs, so CodSpeed results stay
+//! comparable across revisions.
 
-/// Synthetic parser inputs, identical to Go `nativeBenchmarks`.
+/// Synthetic parser inputs, one per built-in language.
 pub fn parser_inputs() -> Vec<(&'static str, String)> {
     vec![
         ("JavaScript", "const service = Shopware.Service('repositoryFactory').create('product');\n".repeat(700)),
@@ -23,5 +22,5 @@ pub fn parser_inputs() -> Vec<(&'static str, String)> {
     ]
 }
 
-/// The PHP document of Go `BenchmarkSemanticBinding`/`BenchmarkSemanticAnalysis`.
+/// The PHP document of the semantic binding and analysis benchmarks.
 pub const PHP_DOCUMENT: &str = include_str!("../data/01.php");

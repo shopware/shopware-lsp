@@ -6,10 +6,10 @@ use swlsp_syntax::{Kind, SyntaxElement, TextRange, TextSize, Tree};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum HandleError {
-    /// Go `ErrStaleHandle`: the handle belongs to another document snapshot.
+    /// The handle belongs to another document snapshot.
     #[error("syntax element handle is stale")]
     Stale,
-    /// Go `ErrMissingHandle`: the handle cannot be resolved in the tree.
+    /// The handle cannot be resolved in the tree.
     #[error("syntax element handle cannot be resolved")]
     Missing,
     /// The recorded element no longer exists at its range.
@@ -18,7 +18,7 @@ pub enum HandleError {
 }
 
 impl HandleError {
-    /// Mirrors `errors.Is(err, ErrStaleHandle)`.
+    /// Whether the handle refers to an outdated snapshot or element.
     pub fn is_stale(&self) -> bool {
         matches!(self, HandleError::Stale | HandleError::StaleElement { .. })
     }
@@ -154,13 +154,14 @@ mod kind_serde {
 mod range_serde {
     use super::*;
 
-    /// Go's `cst.TextRange` has no JSON tags, so the anchor is written as
-    /// `{"Start","End"}`; Go's decoder matches keys case-insensitively.
+    /// The anchor range as `{"Start","End"}` byte offsets. Handles are
+    /// produced only by this server and echoed back verbatim by clients, so
+    /// one spelling is accepted.
     #[derive(Serialize, Deserialize)]
     struct Wire {
-        #[serde(rename = "Start", alias = "start")]
+        #[serde(rename = "Start")]
         start: u32,
-        #[serde(rename = "End", alias = "end")]
+        #[serde(rename = "End")]
         end: u32,
     }
 

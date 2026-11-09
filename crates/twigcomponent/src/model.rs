@@ -1,8 +1,8 @@
-//! Component, prop and Live Component records (port of `model.go`).
+//! Component, prop and Live Component records.
 
 use serde::{Deserialize, Serialize};
-use swlsp_php_types::go_to_lower;
 use swlsp_syntax::TextRange;
+use swlsp_textutil::lowercase;
 
 macro_rules! u8_enum_default {
     ($(#[$meta:meta])* $name:ident { $first:ident = $first_value:literal => $first_label:literal $(, $variant:ident = $value:literal => $label:literal)* $(,)? }) => {
@@ -273,7 +273,7 @@ pub struct Component {
     pub live: bool,
 }
 
-/// Go `strings.Trim(strings.TrimSpace(name), "\\")`.
+/// `name` without surrounding whitespace and backslashes.
 pub(crate) fn normalize_class(name: &str) -> String {
     name.trim().trim_matches('\\').to_owned()
 }
@@ -309,7 +309,7 @@ pub(crate) fn normalize_component_name(name: &str) -> String {
     name.trim().trim_matches(':').to_owned()
 }
 
-/// Go `cst.TextRange.String()`.
+/// A range as `start..end` byte offsets, used as a record key.
 pub(crate) fn range_key(range: TextRange) -> String {
     format!("{}..{}", u32::from(range.start()), u32::from(range.end()))
 }
@@ -317,8 +317,8 @@ pub(crate) fn range_key(range: TextRange) -> String {
 pub(crate) fn component_key(component: &Component) -> String {
     format!(
         "{}\0{}\0{}\0{}\0{}\0{}",
-        go_to_lower(&component.name),
-        go_to_lower(&component.class),
+        lowercase(&component.name),
+        lowercase(&component.class),
         component.template,
         component.file,
         component.template_from_method,
@@ -328,8 +328,8 @@ pub(crate) fn component_key(component: &Component) -> String {
 
 pub(crate) fn sort_components(components: &mut [Component]) {
     components.sort_by(|left, right| {
-        go_to_lower(&left.name)
-            .cmp(&go_to_lower(&right.name))
+        lowercase(&left.name)
+            .cmp(&lowercase(&right.name))
             .then(left.source.cmp(&right.source))
             .then_with(|| left.file.cmp(&right.file))
             .then(left.name_range.start().cmp(&right.name_range.start()))

@@ -1,4 +1,4 @@
-//! Ports of `parser_test.go` and `index_test.go`.
+//! Component parser and index tests.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -189,7 +189,10 @@ fn live_event_references_in_twig_require_emit_action() {
     assert_eq!(references[0].name, "productAdded");
     assert_eq!(references[0].kind, LiveEventReferenceKind::Attribute);
     assert_eq!(slice(source, references[0].range), "productAdded");
-    assert_eq!(references[0].context_range, TextRange::default());
+    assert_eq!(
+        slice(source, references[0].context_range),
+        "name(ProductList)|productAdded"
+    );
     assert_eq!(references[1].name, "refreshed");
     assert_eq!(references[1].kind, LiveEventReferenceKind::EmitSelf);
 
@@ -659,7 +662,7 @@ final class Button {
     assert_eq!(usages.len(), 1);
     assert_eq!(usages[0].file, usage);
 
-    // Like Go, the template below the default anonymous directory also
+    // The template below the default anonymous directory also
     // registers an anonymous `pizza:Button`.
     let names = fixture.components.names().unwrap();
     assert_eq!(names, ["Nav", "Pizza:Button", "pizza:Button"]);

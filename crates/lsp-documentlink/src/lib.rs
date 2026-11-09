@@ -1,4 +1,4 @@
-//! Related-file document links (port of Go `internal/lsp/documentlink`).
+//! Related-file document links.
 //!
 //! Exposes the reference plugin's file-navigation targets as native editor
 //! links. Ambiguous references are intentionally left to go-to-definition and
@@ -19,7 +19,7 @@ use swlsp_symfony::{RouteResourceResolver, route_resource_references};
 use swlsp_symfonyconfig as symfonyconfig;
 use swlsp_syntax::{SyntaxNode, TextRange};
 use swlsp_twig::{TemplateReference, TwigIndexer};
-use swlsp_uriutil::{file_uri, filepath, go_quote};
+use swlsp_uriutil::{file_uri, filepath};
 
 #[cfg(test)]
 mod tests;
@@ -100,9 +100,9 @@ impl DocumentLinkProvider for RelatedProvider {
                 let targets: Vec<String> = files.into_iter().map(|file| file.path).collect();
                 links.add(reference.range, &targets, || {
                     format!(
-                        "Open {} template {}",
+                        "Open {} template {:?}",
                         reference.kind.as_str(),
-                        go_quote(&reference.template)
+                        reference.template
                     )
                 });
             }
@@ -147,10 +147,7 @@ impl DocumentLinkProvider for RelatedProvider {
                 let roots = configuration.roots(&reference.name)?;
                 let targets: Vec<String> = roots.into_iter().map(|root| root.file).collect();
                 links.add(reference.range, &targets, || {
-                    format!(
-                        "Open {} configuration declaration",
-                        go_quote(&reference.name)
-                    )
+                    format!("Open {:?} configuration declaration", reference.name)
                 });
             }
         }

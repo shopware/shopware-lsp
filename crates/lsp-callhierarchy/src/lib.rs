@@ -1,4 +1,4 @@
-//! Administration call hierarchy (port of Go `internal/lsp/callhierarchy`).
+//! Administration call hierarchy.
 //!
 //! Exposes the native Administration call graph for source-owned component
 //! methods and Pinia actions. The persisted usage graph narrows incoming-call
@@ -532,7 +532,7 @@ impl AdminCallHierarchyProvider {
                 let (end_line, end_character) = document
                     .line_index()
                     .position_utf16(document.source().len() as u32);
-                let mut name = go_base(&data.path);
+                let mut name = swlsp_uriutil::filepath::base(&data.path);
                 let mut detail = "Administration JavaScript file";
                 if data.domain == DOMAIN_TEMPLATE {
                     detail = "Administration component template";
@@ -663,11 +663,11 @@ fn load_document(
     }
 }
 
+/// The item of a file or template caller that has no resolvable item.
 fn empty_item() -> protocol::CallHierarchyItem {
     protocol::CallHierarchyItem {
         name: String::new(),
-        // Go's zero `SymbolKind`.
-        kind: serde_json::from_value(serde_json::Value::from(0)).unwrap_or(SymbolKind::FILE),
+        kind: SymbolKind::FILE,
         tags: Vec::new(),
         detail: String::new(),
         uri: String::new(),
@@ -713,19 +713,6 @@ fn normalize_path(value: &str) -> String {
 
 fn normalize_document_path(document: &TextDocument) -> String {
     swlsp_uriutil::path(&document.uri).map_or_else(|_| String::new(), |path| normalize_path(&path))
-}
-
-/// Go `filepath.Base`.
-fn go_base(path: &str) -> String {
-    let trimmed = path.trim_end_matches('/');
-    if trimmed.is_empty() {
-        return if path.is_empty() {
-            ".".to_owned()
-        } else {
-            "/".to_owned()
-        };
-    }
-    trimmed.rsplit('/').next().unwrap_or(trimmed).to_owned()
 }
 
 /// The exact range of the identifier `name` on `line` of `document`.

@@ -1,4 +1,4 @@
-//! Workspace indexing infrastructure (port of Go `internal/indexer`).
+//! Workspace indexing infrastructure.
 //!
 //! - [`Store`] is the single namespaced SQLite database of a workspace; a
 //!   [`Mutation`] is its one coordinated write transaction.

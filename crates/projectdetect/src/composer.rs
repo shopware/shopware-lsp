@@ -1,7 +1,7 @@
-//! Decoding of `composer.json` and `composer.lock` with the acceptance rules
-//! of Go's `encoding/json` for the fields the detector reads: keys match
-//! struct fields case-insensitively, `null` leaves a field unset, unknown
-//! fields are ignored, and a value of the wrong JSON type is an error.
+//! Lenient decoding of the `composer.json` and `composer.lock` fields the
+//! detector reads: keys match case-insensitively (an exact match wins),
+//! `null` leaves a field unset, unknown fields are ignored, and a value of
+//! the wrong JSON type is an error.
 
 use serde_json::{Map, Value};
 
@@ -20,13 +20,27 @@ pub(crate) struct ComposerLock {
     pub packages_dev: Vec<String>,
 }
 
-fn parse_value(content: &[u8]) -> Result<Value, String> {
-    let source = String::from_utf8_lossy(content);
-    serde_json::from_str(&source).map_err(|error| error.to_string())
+/// Why a Composer file could not be decoded.
+#[derive(Debug, thiserror::Error)]
+pub enum ComposerError {
+    #[error("invalid JSON: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("expected {expected}, found {found}")]
+    Type {
+        expected: &'static str,
+        found: &'static str,
+    },
 }
 
-fn type_error(value: &Value, target: &str) -> String {
-    let kind = match value {
+type Result<T, E = ComposerError> = std::result::Result<T, E>;
+
+fn parse_value(content: &[u8]) -> Result<Value> {
+    let source = String::from_utf8_lossy(content);
+    Ok(serde_json::from_str(&source)?)
+}
+
+fn type_error(value: &Value, expected: &'static str) -> ComposerError {
+    let found = match value {
         Value::Null => "null",
         Value::Bool(_) => "bool",
         Value::Number(_) => "number",
@@ -34,10 +48,10 @@ fn type_error(value: &Value, target: &str) -> String {
         Value::Array(_) => "array",
         Value::Object(_) => "object",
     };
-    format!("json: cannot unmarshal {kind} into Go value of type {target}")
+    ComposerError::Type { expected, found }
 }
 
-/// Go struct field lookup: an exact key wins, otherwise a case-insensitive
+/// Looks up a field: an exact key wins, otherwise the last case-insensitive
 /// match is used.
 fn field<'a>(object: &'a Map<String, Value>, name: &str) -> Option<&'a Value> {
     object.get(name).or_else(|| {
@@ -49,34 +63,34 @@ fn field<'a>(object: &'a Map<String, Value>, name: &str) -> Option<&'a Value> {
     })
 }
 
-fn object<'a>(value: &'a Value, target: &str) -> Result<Option<&'a Map<String, Value>>, String> {
+fn object<'a>(value: &'a Value, expected: &'static str) -> Result<Option<&'a Map<String, Value>>> {
     match value {
         Value::Null => Ok(None),
         Value::Object(object) => Ok(Some(object)),
-        other => Err(type_error(other, target)),
+        other => Err(type_error(other, expected)),
     }
 }
 
-fn string_field(object: &Map<String, Value>, name: &str) -> Result<String, String> {
+fn string_field(object: &Map<String, Value>, name: &str) -> Result<String> {
     match field(object, name) {
         None | Some(Value::Null) => Ok(String::new()),
         Some(Value::String(value)) => Ok(value.clone()),
-        Some(other) => Err(type_error(other, "string")),
+        Some(other) => Err(type_error(other, "a string")),
     }
 }
 
-fn map_keys(object: &Map<String, Value>, name: &str) -> Result<Vec<String>, String> {
+fn map_keys(object: &Map<String, Value>, name: &str) -> Result<Vec<String>> {
     match field(object, name) {
         None => Ok(Vec::new()),
-        Some(value) => Ok(self::object(value, "map[string]json.RawMessage")?
+        Some(value) => Ok(self::object(value, "an object")?
             .map(|map| map.keys().cloned().collect())
             .unwrap_or_default()),
     }
 }
 
-pub(crate) fn parse_manifest(content: &[u8]) -> Result<ComposerManifest, String> {
+pub(crate) fn parse_manifest(content: &[u8]) -> Result<ComposerManifest> {
     let value = parse_value(content)?;
-    let Some(root) = object(&value, "projectdetect.composerManifest")? else {
+    let Some(root) = object(&value, "an object")? else {
         return Ok(ComposerManifest::default());
     };
     let mut result = ComposerManifest {
@@ -87,21 +101,21 @@ pub(crate) fn parse_manifest(content: &[u8]) -> Result<ComposerManifest, String>
         ..ComposerManifest::default()
     };
     if let Some(extra) = field(root, "extra")
-        && let Some(extra) = object(extra, "struct { ShopwarePluginClass string }")?
+        && let Some(extra) = object(extra, "an object")?
     {
         result.shopware_plugin_class = string_field(extra, "shopware-plugin-class")?;
     }
     Ok(result)
 }
 
-fn package_names(object: &Map<String, Value>, name: &str) -> Result<Vec<String>, String> {
+fn package_names(object: &Map<String, Value>, name: &str) -> Result<Vec<String>> {
     let Some(value) = field(object, name) else {
         return Ok(Vec::new());
     };
     let items = match value {
         Value::Null => return Ok(Vec::new()),
         Value::Array(items) => items,
-        other => return Err(type_error(other, "[]projectdetect.composerPackage")),
+        other => return Err(type_error(other, "an array of packages")),
     };
     let mut result = Vec::with_capacity(items.len());
     for item in items {
@@ -114,13 +128,13 @@ fn package_names(object: &Map<String, Value>, name: &str) -> Result<Vec<String>,
     Ok(result)
 }
 
-fn object_or_null(value: &Value) -> Result<Option<&Map<String, Value>>, String> {
-    object(value, "projectdetect.composerPackage")
+fn object_or_null(value: &Value) -> Result<Option<&Map<String, Value>>> {
+    object(value, "a package object")
 }
 
-pub(crate) fn parse_lock(content: &[u8]) -> Result<ComposerLock, String> {
+pub(crate) fn parse_lock(content: &[u8]) -> Result<ComposerLock> {
     let value = parse_value(content)?;
-    let Some(root) = object(&value, "projectdetect.composerLock")? else {
+    let Some(root) = object(&value, "an object")? else {
         return Ok(ComposerLock::default());
     };
     Ok(ComposerLock {
@@ -134,7 +148,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn manifest_follows_go_decoding_rules() {
+    fn manifest_decodes_leniently_but_checks_types() {
         let manifest = parse_manifest(
             br#"{"Name":"Shopware/Core","type":null,"require":{"a/b":"*"},"EXTRA":{"shopware-plugin-class":"X"},"unknown":[1]}"#,
         )
@@ -151,7 +165,7 @@ mod tests {
     }
 
     #[test]
-    fn lock_follows_go_decoding_rules() {
+    fn lock_decodes_leniently_but_checks_types() {
         let lock =
             parse_lock(br#"{"packages":[{"name":"a/b"},null],"packages-dev":null}"#).unwrap();
         assert_eq!(lock.packages, ["a/b", ""]);

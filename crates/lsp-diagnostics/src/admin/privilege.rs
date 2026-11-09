@@ -1,5 +1,4 @@
-//! Go `admin_diagnostics_privilege.go`: ACL privileges, block overrides and
-//! the start-tag walk.
+//! ACL privileges, block overrides and the start-tag walk.
 
 use std::collections::{HashMap, HashSet};
 
@@ -13,7 +12,7 @@ use swlsp_syntax::SyntaxNode;
 
 use super::analyzer::AdminAnalyzer;
 use super::twig::AdminTwigDiagnosticDocument;
-use super::{go_string_list, payload, text};
+use super::{payload, string_array, text};
 use crate::common::admin_nearby_suggestions;
 
 impl AdminAnalyzer {
@@ -78,7 +77,7 @@ impl AdminAnalyzer {
                     ("privilegeName", text(&reference.name)),
                     (
                         "suggestions",
-                        go_string_list(similar(&reference.name, &names)),
+                        string_array(similar(&reference.name, &names)),
                     ),
                 ])),
                 ..Problem::default()
@@ -88,7 +87,7 @@ impl AdminAnalyzer {
     }
 
     /// Checks block overrides against the source registration's parent
-    /// contract (Go `checkBlockReferences`).
+    /// contract.
     pub(super) fn check_block_references(
         &self,
         root: &SyntaxNode,
@@ -123,7 +122,6 @@ impl AdminAnalyzer {
         find_block_tags(root, &parent.name, &blocks, &names, diagnostics);
     }
 
-    /// Go `findHTMLStartTags`.
     pub(super) fn find_html_start_tags(
         &self,
         ctx: &Context,
@@ -148,7 +146,6 @@ impl AdminAnalyzer {
     }
 }
 
-/// Go `findBlockTags`.
 fn find_block_tags(
     node: &SyntaxNode,
     parent_name: &str,
@@ -185,7 +182,7 @@ fn find_block_tags(
                 id: "admin.component.block-not-found".into(),
                 payload: Some(payload(vec![
                     ("blockName", text(&block_name)),
-                    ("suggestions", go_string_list(suggestions)),
+                    ("suggestions", string_array(suggestions)),
                 ])),
                 ..Problem::default()
             });

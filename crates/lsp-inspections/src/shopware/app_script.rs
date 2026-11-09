@@ -1,4 +1,4 @@
-//! Port of Go `app_script.go` (inspection and manifest permission fix).
+//! App script inspection and its manifest permission fix.
 
 use std::sync::Arc;
 use swlsp_textutil::html_escape;
@@ -30,7 +30,6 @@ pub(crate) struct AppPermissionPayload {
     pub manifest: String,
 }
 
-/// Go `NewAppScript`.
 pub fn new_app_script(
     index: Option<Arc<AppScriptIndex>>,
     extensions: Option<Arc<ExtensionIndexer>>,
@@ -125,11 +124,9 @@ impl RewriteQuickFix for AppReadPermissionFix {
         if let Some(permissions) = &permissions {
             for read in xmlquery::child_elements(permissions, &["read"]) {
                 if xmlquery::text_content(&read).trim() == payload.entity {
-                    return Err(format!(
-                        "read permission for {} already exists",
-                        swlsp_php_types::go_quote(&payload.entity)
-                    )
-                    .into());
+                    return Err(
+                        format!("read permission for {:?} already exists", payload.entity).into(),
+                    );
                 }
             }
         }
@@ -172,8 +169,8 @@ impl RewriteQuickFix for AppReadPermissionFix {
     }
 }
 
-/// Go `xmlChildInsertion`: the offset and text inserting `child` before the
-/// closing tag of `parent`, indented one level below it.
+/// The offset and text inserting `child` before the closing tag of `parent`,
+/// indented one level below it.
 fn xml_child_insertion(
     source: &str,
     start: u32,

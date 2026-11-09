@@ -1,6 +1,3 @@
-//! Port of `inference_test.go` (part D: from
-//! `TestGeneratorBareReturnIsNotValidatedAsObjectReturn` to the end).
-
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 

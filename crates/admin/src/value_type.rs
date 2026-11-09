@@ -1,5 +1,5 @@
 //! Lightweight value-type inference for Options API members and template
-//! expressions (port of Go `value_type.go`).
+//! expressions.
 
 use std::sync::LazyLock;
 
@@ -12,13 +12,10 @@ static VUE_JSDOC_TYPE_PATTERN: LazyLock<Regex> =
 static VUE_JSDOC_RETURN_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"@returns?[\t\n\f\r ]*\{([^}]+)\}").expect("valid regex"));
 
-/// Known member types; accepts `&map`, `Some(&map)` or `None` (Go nil map).
-/// Go `unicode.IsSpace(rune(b))` applied to one byte (Latin-1 view).
-pub(crate) fn go_byte_is_space(value: u8) -> bool {
-    matches!(
-        value,
-        b'\t' | b'\n' | 0x0b | 0x0c | b'\r' | b' ' | 0x85 | 0xa0
-    )
+/// ASCII white space including vertical tab (`\t`, `\n`, `\x0B`, `\x0C`,
+/// `\r`, space).
+pub(crate) fn is_ascii_space(value: u8) -> bool {
+    value.is_ascii_whitespace() || value == 0x0b
 }
 
 fn property_name_or_empty(node: &SyntaxNode) -> String {
@@ -225,7 +222,7 @@ pub(crate) fn vue_method_has_inferred_object_shape(method: &SyntaxNode) -> bool 
     vue_runtime_object_literal_expression(&vue_method_return_expression(method))
 }
 
-/// Strips balanced outer parentheses repeatedly (Go loops of this shape).
+/// Strips balanced outer parentheses repeatedly.
 fn strip_outer_parentheses(value: &str) -> &str {
     let mut value = value;
     while value.len() >= 2
@@ -1054,8 +1051,9 @@ pub(crate) fn vue_prop_runtime_comparable_kind(value: &str) -> Option<&'static s
     }
 }
 
-/// Go `strconv.ParseFloat(value, 64) == nil` for the spellings that matter.
-fn go_parses_float(value: &str) -> bool {
+/// Whether `value` spells a decimal number (`1`, `-2.5`, `1e3`, `Infinity`);
+/// underscores and hexadecimal literals are not numbers here.
+fn is_decimal_number(value: &str) -> bool {
     if value.is_empty() || value.contains('_') {
         return false;
     }
@@ -1085,7 +1083,7 @@ pub(crate) fn vue_comparable_type_kind(value: &str) -> Option<&'static str> {
     {
         return Some("string");
     }
-    if go_parses_float(value) {
+    if is_decimal_number(value) {
         return Some("number");
     }
     if value.starts_with('(')
@@ -1108,7 +1106,7 @@ pub(crate) fn vue_comparable_type_kind(value: &str) -> Option<&'static str> {
     None
 }
 
-/// Go `vueMethodHeader`: `(parameters, returnType)` when a parenthesized
+/// `(parameters, return_type)` of a method signature when a parenthesized
 /// header exists.
 pub(crate) fn vue_method_header(value: &str) -> Option<(String, String)> {
     let bytes = value.as_bytes();

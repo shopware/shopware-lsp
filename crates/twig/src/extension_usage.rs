@@ -1,5 +1,4 @@
-//! Exact Twig function, filter and test name occurrences (port of
-//! `extension_usage.go`).
+//! Exact Twig function, filter and test name occurrences.
 
 use std::collections::HashSet;
 
@@ -13,7 +12,7 @@ use crate::macros::{function_name_operand, literal_names};
 use crate::template_variable::is_descendant_node;
 use crate::test_expression::{is_test_function_call, test_expressions};
 
-/// Persisted as its Go `uint8` value.
+/// Persisted as its `u8` discriminant.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum ExtensionUsageKind {
@@ -55,7 +54,7 @@ pub struct ExtensionUsageCatalog {
 }
 
 pub fn extension_usage_key(kind: ExtensionUsageKind, name: &str) -> String {
-    let name = swlsp_php_types::go_to_lower(name.trim());
+    let name = swlsp_textutil::lowercase(name.trim());
     if name.is_empty() {
         return String::new();
     }
@@ -99,7 +98,7 @@ pub fn extension_usages_in_document(file_path: &str, root: &SyntaxNode) -> Vec<E
         };
         let name_range = literal_names(Some(operand.syntax()))
             .into_iter()
-            .find(|candidate| swlsp_php_types::equal_fold(&candidate.name, &name))
+            .find(|candidate| swlsp_textutil::eq_ignore_case(&candidate.name, &name))
             .map(|candidate| candidate.range)
             .unwrap_or_default();
         if name_range.is_empty() {
@@ -164,8 +163,8 @@ pub(crate) fn unique_extension_usages(usages: Vec<ExtensionUsage>) -> Vec<Extens
             !key.is_empty() && seen.insert((key, usage.file_path.clone(), usage.range))
         })
         .collect();
-    // Go sorts unstably by path and start only; the kind and name keep
-    // same-position usages deterministic.
+    // Sorted by path and start; the kind and name keep same-position usages
+    // deterministic.
     result.sort_by(|left, right| {
         left.file_path
             .cmp(&right.file_path)

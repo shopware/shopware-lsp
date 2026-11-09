@@ -1,5 +1,4 @@
-//! `enum('App\\Status')` style references in Twig to PHP enums (port of Go
-//! `twig_enum_definition.go`).
+//! `enum('App\\Status')` style references in Twig to PHP enums.
 
 use swlsp_lsp::{Context, DefinitionRequest, GotoDefinitionProvider};
 use swlsp_lsp_protocol as protocol;

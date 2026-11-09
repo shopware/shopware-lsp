@@ -1,5 +1,4 @@
-//! `v-bind="{ ... }"` object bindings (port of Go `object_binding.go`).
-#![allow(clippy::needless_range_loop)] // byte loops mirror the Go scanners
+//! `v-bind="{ ... }"` object bindings.
 
 use swlsp_parser_twig::ast::AstNode;
 
@@ -57,8 +56,8 @@ pub(crate) fn vue_object_binding_segments(
     let mut result = Vec::new();
     let mut segment_start = start;
     let mut state = SlotScanState::default();
-    for index in start..end {
-        if bytes[index] == b',' && state.top_level() {
+    for (index, &byte) in bytes.iter().enumerate().take(end).skip(start) {
+        if byte == b',' && state.top_level() {
             result.push(VueObjectBindingSegment {
                 start: segment_start,
                 end: index,
@@ -66,7 +65,7 @@ pub(crate) fn vue_object_binding_segments(
             segment_start = index + 1;
             continue;
         }
-        state.consume(bytes[index]);
+        state.consume(byte);
     }
     result.push(VueObjectBindingSegment {
         start: segment_start,
@@ -141,11 +140,11 @@ pub(crate) fn object_binding_top_level_colon(
 ) -> Option<usize> {
     let bytes = value.as_bytes();
     let mut state = SlotScanState::default();
-    for index in start..end {
-        if bytes[index] == b':' && state.top_level() {
+    for (index, &byte) in bytes.iter().enumerate().take(end).skip(start) {
+        if byte == b':' && state.top_level() {
             return Some(index);
         }
-        state.consume(bytes[index]);
+        state.consume(byte);
     }
     None
 }

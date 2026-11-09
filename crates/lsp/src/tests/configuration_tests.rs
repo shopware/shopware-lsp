@@ -1,4 +1,4 @@
-//! Port of `configuration_test.go`.
+//! Layered configuration, validation and catalog tests.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -22,7 +22,9 @@ fn initialize_with(
 ) -> Result<serde_json::Value, String> {
     let mut params = initialize_params(root);
     configure(&mut params);
-    server.initialize(&ctx(), &params)
+    server
+        .initialize(&ctx(), &params)
+        .map_err(|error| error.to_string())
 }
 
 fn diagnostics_for(server: &Server, uri: &str) -> Vec<protocol::Diagnostic> {
@@ -374,7 +376,7 @@ fn editor_configuration_maps_legacy_options() {
 }
 
 #[test]
-fn configuration_catalog_serializes_like_go() {
+fn configuration_catalog_wire_shape_omits_empty_fields() {
     let server = Server::new(None, "/workspace", "test");
     let encoded = serde_json::to_value(server.configuration_catalog()).unwrap();
     assert_eq!(encoded["inspections"], serde_json::Value::Null);

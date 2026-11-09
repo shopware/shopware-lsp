@@ -1,4 +1,4 @@
-//! JSON syntax kinds (values identical to the Go implementation).
+//! JSON syntax kinds. Kind values are persisted in caches; do not renumber them.
 
 swlsp_syntax::language! {
     name: "json", base: 4096,

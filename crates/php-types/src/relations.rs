@@ -4,8 +4,8 @@
 use std::collections::{HashMap, HashSet};
 
 use smallvec::SmallVec;
+use swlsp_textutil::eq_ignore_case;
 
-use crate::gostr::equal_fold;
 use crate::kind::Kind;
 use crate::ty::{ShapeField, Type, union_impl};
 
@@ -21,10 +21,9 @@ pub enum Variance {
 /// Supplies class/interface inheritance without coupling the type algebra to
 /// a particular index implementation.
 ///
-/// Go models the optional capabilities (`GenericHierarchy`,
-/// `SupertypeHierarchy`, `TypeAliasHierarchy`, `CallableHierarchy`) as
-/// separate interfaces discovered by type assertion. Here they are default
-/// methods whose defaults behave exactly like an absent capability.
+/// Generic, supertype, type-alias and callable information are optional
+/// capabilities: their default methods behave like a hierarchy that has no
+/// such information.
 pub trait Hierarchy: Send + Sync {
     fn is_subtype_of(&self, candidate: &str, target: &str) -> bool;
 
@@ -61,7 +60,7 @@ pub(crate) const MAX_PRECISE_LITERAL_UNION_MEMBERS: usize = 8;
 pub(crate) const MAX_PRECISE_UNION_MEMBERS: usize = 32;
 
 pub(crate) fn same_object_name(left: &str, right: &str) -> bool {
-    equal_fold(
+    eq_ignore_case(
         left.strip_prefix('\\').unwrap_or(left),
         right.strip_prefix('\\').unwrap_or(right),
     )
@@ -508,7 +507,7 @@ impl<'h> Relations<'h> {
         target: &Type,
         related: impl Fn(&Type, &Type) -> bool,
     ) -> bool {
-        // Later duplicates win, like Go's map assignment.
+        // A later duplicate key replaces the earlier field.
         let actual_fields: HashMap<&str, &ShapeField> = value
             .fields()
             .iter()

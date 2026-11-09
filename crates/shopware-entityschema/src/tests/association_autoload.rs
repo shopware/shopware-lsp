@@ -1,4 +1,4 @@
-//! Port of Go `association_autoload_test.go`.
+//! Tests for association autoload.
 
 use super::inheritance::{field, field_by_property, php_ok, relation, require_issue_code};
 use crate::*;

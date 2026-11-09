@@ -1,4 +1,4 @@
-//! Asset, entrypoint and package references (port of `asset_reference.go`).
+//! Asset, entrypoint and package references.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -10,7 +10,7 @@ use swlsp_asset::{
 use swlsp_lsp::{Context, ProviderResult, ReferenceRequest, ReferencesProvider};
 use swlsp_lsp_protocol as protocol;
 use swlsp_php::PhpIndex;
-use swlsp_php_types::equal_fold;
+use swlsp_textutil::eq_ignore_case;
 
 use crate::{FileLines, document_location, lower_ext, php_context};
 
@@ -61,8 +61,8 @@ impl ReferencesProvider for AssetReferenceProvider {
         if let Some(root) = &request.root {
             for current in references(&current_path, root) {
                 if current.kind == reference.kind
-                    && equal_fold(&current.name, &reference.name)
-                    && equal_fold(&current.package, &reference.package)
+                    && eq_ignore_case(&current.name, &reference.name)
+                    && eq_ignore_case(&current.package, &reference.package)
                 {
                     filtered.push(Usage {
                         range: reference_range(&current),

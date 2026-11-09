@@ -1,4 +1,5 @@
-//! JavaScript/TypeScript syntax kinds (values identical to the Go implementation).
+//! JavaScript/TypeScript syntax kinds. Kind values are persisted in caches; do
+//! not renumber them.
 
 swlsp_syntax::language! {
     name: "javascript", base: 20480,

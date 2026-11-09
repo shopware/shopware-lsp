@@ -1,10 +1,11 @@
-//! Binary, unary and ternary operators (port of `expression_operator.go`).
+//! Binary, unary and ternary operators.
 
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;
 use swlsp_php_semantic::TypeSource;
-use swlsp_php_types::{Kind, Type, go_to_lower};
+use swlsp_php_types::{Kind, Type};
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::lowercase;
 
 use crate::analyzer::Fs;
 use crate::env::Env;
@@ -21,7 +22,7 @@ impl Fs<'_, '_, '_> {
             return Type::UNKNOWN;
         }
         let operator = direct_operator(node);
-        let normalized = go_to_lower(&operator);
+        let normalized = lowercase(&operator);
         let left_node = &nodes[0];
         let right_node = &nodes[nodes.len() - 1];
         match normalized.as_str() {

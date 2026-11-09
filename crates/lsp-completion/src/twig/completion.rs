@@ -1,4 +1,4 @@
-//! Go `twig_completion.go`: templates, filters, functions, variables,
+//! Completion of templates, filters, functions, variables,
 //! operators, icons and PHP member access in Twig, plus template-name
 //! completion in PHP.
 
@@ -13,16 +13,15 @@ use swlsp_parser_twig::syntax::{TWIG_ACCESSOR, TWIG_VAR};
 use swlsp_php::PhpIndex;
 use swlsp_php_resolver::MemberResolver;
 use swlsp_php_semantic::{Flags, Snapshot, Symbol, SymbolKind, Visibility};
-use swlsp_php_types::{Type, equal_fold};
+use swlsp_php_types::Type;
 use swlsp_syntax::TextRange;
+use swlsp_textutil::eq_ignore_case;
 use swlsp_theme::IconProvider;
 use swlsp_twig::{Global, PhpAccessResolver, TwigIndexer};
 
-use super::{
-    append_documentation, go_is_digit, go_is_letter, go_is_space, lower_ext, markdown,
-    request_offset,
-};
-use crate::common::{go_to_lower, php_context, protocol_range, text_edit};
+use super::{append_documentation, is_identifier_digit, lower_ext, markdown, request_offset};
+use crate::common::{php_context, protocol_range, text_edit};
+use swlsp_textutil::lowercase;
 
 pub struct TwigCompletionProvider {
     pub(crate) project_root: String,
@@ -217,8 +216,8 @@ impl TwigCompletionProvider {
         }
         let mut items: Vec<protocol::CompletionItem> = items_by_name.into_values().collect();
         items.sort_by(|left, right| {
-            go_to_lower(&left.label)
-                .cmp(&go_to_lower(&right.label))
+            lowercase(&left.label)
+                .cmp(&lowercase(&right.label))
                 .then_with(|| left.label.cmp(&right.label))
         });
         Some(items)
@@ -237,12 +236,12 @@ impl TwigCompletionProvider {
             .unwrap_or_default();
         let mut items = Vec::with_capacity(variables.len() + declarations.len());
         let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-        // Go sorts map keys by lowercase name only; ties between case variants
-        // are ordered by name here for determinism.
+        // Ordered by lowercase name; ties between case variants are ordered
+        // by name for determinism.
         let mut annotation_names: Vec<&String> = declarations.keys().collect();
         annotation_names.sort_by(|left, right| {
-            go_to_lower(left)
-                .cmp(&go_to_lower(right))
+            lowercase(left)
+                .cmp(&lowercase(right))
                 .then_with(|| left.cmp(right))
         });
         for name in annotation_names {
@@ -468,7 +467,7 @@ impl CompletionProvider for TwigCompletionProvider {
     }
 }
 
-/// Filter or function items (Go's two identical loops): one item per
+/// Filter or function items: one item per
 /// distinct name, deprecated only when every declaration is.
 fn callable_items(
     callables: &[(&str, &str, bool, &str)],
@@ -571,8 +570,8 @@ fn twig_operator_completion_position(request: &CompletionRequest) -> bool {
     let mut statement = &prefix[open + 2..];
     // TrimLeftFunc(unicode.IsSpace || '-' || '~') on the valid UTF-8 prefix.
     loop {
-        let (value, size) = decode_rune(statement);
-        if size == 0 || !(go_is_space(value) || value == '-' || value == '~') {
+        let (value, size) = decode_char(statement);
+        if size == 0 || !(value.is_whitespace() || value == '-' || value == '~') {
             break;
         }
         statement = &statement[size..];
@@ -591,9 +590,9 @@ fn twig_operator_completion_position(request: &CompletionRequest) -> bool {
     // When completion is requested while an operator fragment is being
     // typed, evaluate the expression before that fragment. A request
     // directly inside the first operand therefore remains excluded.
-    if !go_is_space(decode_last_rune(expression)) {
+    if !decode_last_char(expression).is_whitespace() {
         let mut index = expression.len() as isize - 1;
-        while index >= 0 && !go_is_space(char::from(expression[index as usize])) {
+        while index >= 0 && !char::from(expression[index as usize]).is_whitespace() {
             index -= 1;
         }
         if index < 0 {
@@ -609,7 +608,7 @@ fn twig_expression_can_accept_operator(expression: &[u8]) -> bool {
     if expression.is_empty() {
         return false;
     }
-    let lowered = go_to_lower(&String::from_utf8_lossy(expression));
+    let lowered = lowercase(&String::from_utf8_lossy(expression));
     let Some(last_field) = lowered.split_whitespace().last() else {
         return false;
     };
@@ -630,9 +629,9 @@ fn twig_expression_can_accept_operator(expression: &[u8]) -> bool {
     ) {
         return false;
     }
-    let last = decode_last_rune(expression);
-    go_is_letter(last)
-        || go_is_digit(last)
+    let last = decode_last_char(expression);
+    last.is_alphabetic()
+        || is_identifier_digit(last)
         || last == '_'
         || last == '\''
         || last == '"'
@@ -642,7 +641,7 @@ fn twig_expression_can_accept_operator(expression: &[u8]) -> bool {
 }
 
 fn is_twig_operator_word_rune(value: char) -> bool {
-    go_is_letter(value) || go_is_digit(value) || value == '_'
+    value.is_alphabetic() || is_identifier_digit(value) || value == '_'
 }
 
 fn rfind(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -651,9 +650,9 @@ fn rfind(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .rposition(|window| window == needle)
 }
 
-/// Go `utf8.DecodeRune`: `(RuneError, 1)` for invalid input, `(_, 0)` when
-/// empty.
-fn decode_rune(bytes: &[u8]) -> (char, usize) {
+/// The first UTF-8 character of `bytes` and its length: `(U+FFFD, 1)` for
+/// an invalid sequence, `(U+FFFD, 0)` when empty.
+fn decode_char(bytes: &[u8]) -> (char, usize) {
     if bytes.is_empty() {
         return ('\u{FFFD}', 0);
     }
@@ -667,8 +666,9 @@ fn decode_rune(bytes: &[u8]) -> (char, usize) {
     ('\u{FFFD}', 1)
 }
 
-/// Go `utf8.DecodeLastRune`: `RuneError` for invalid or empty input.
-fn decode_last_rune(bytes: &[u8]) -> char {
+/// The last UTF-8 character of `bytes`: U+FFFD for an invalid sequence or
+/// empty input.
+fn decode_last_char(bytes: &[u8]) -> char {
     for size in 1..=bytes.len().min(4) {
         if let Ok(value) = std::str::from_utf8(&bytes[bytes.len() - size..]) {
             let mut chars = value.chars();
@@ -680,18 +680,19 @@ fn decode_last_rune(bytes: &[u8]) -> char {
     '\u{FFFD}'
 }
 
-/// Go `strings.TrimSpace` on bytes (invalid bytes are not space).
+/// `bytes` without leading and trailing Unicode whitespace (invalid UTF-8
+/// bytes are not whitespace).
 fn trim_space(mut bytes: &[u8]) -> &[u8] {
     loop {
-        let (value, size) = decode_rune(bytes);
-        if size == 0 || !go_is_space(value) {
+        let (value, size) = decode_char(bytes);
+        if size == 0 || !value.is_whitespace() {
             break;
         }
         bytes = &bytes[size..];
     }
     while !bytes.is_empty() {
-        let value = decode_last_rune(bytes);
-        if !go_is_space(value) {
+        let value = decode_last_char(bytes);
+        if !value.is_whitespace() {
             break;
         }
         bytes = &bytes[..bytes.len() - value.len_utf8()];
@@ -799,17 +800,17 @@ pub(crate) fn twig_php_member_completions(
                     ..Default::default()
                 };
                 apply_twig_php_member_documentation(&mut item, symbol);
-                items.insert(go_to_lower(&name), item);
+                items.insert(lowercase(&name), item);
             }
             SymbolKind::Method => {
-                let lower_name = go_to_lower(&symbol.name);
+                let lower_name = lowercase(&symbol.name);
                 if lower_name.starts_with("set") || lower_name.starts_with("__") {
                     continue;
                 }
                 let attribute = swlsp_twig::twig_attribute_name(&symbol.name);
                 if !attribute.is_empty() {
                     if let std::collections::hash_map::Entry::Vacant(entry) =
-                        items.entry(go_to_lower(&attribute))
+                        items.entry(lowercase(&attribute))
                     {
                         let mut item = protocol::CompletionItem {
                             label: attribute,
@@ -844,7 +845,7 @@ pub(crate) fn twig_php_member_completions(
                 } else {
                     CompletionItemKind::CONSTANT
                 };
-                let key = go_to_lower(&symbol.name);
+                let key = lowercase(&symbol.name);
                 if items.contains_key(&key) {
                     continue;
                 }
@@ -889,13 +890,13 @@ pub(crate) fn twig_member_type(snapshot: &Snapshot, receiver: &Type, name: &str)
         }
         match symbol.kind {
             SymbolKind::Property
-                if equal_fold(symbol.name.strip_prefix('$').unwrap_or(&symbol.name), name) =>
+                if eq_ignore_case(symbol.name.strip_prefix('$').unwrap_or(&symbol.name), name) =>
             {
                 return member.ty;
             }
             SymbolKind::Method
-                if equal_fold(&symbol.name, name)
-                    || equal_fold(&swlsp_twig::twig_attribute_name(&symbol.name), name) =>
+                if eq_ignore_case(&symbol.name, name)
+                    || eq_ignore_case(&swlsp_twig::twig_attribute_name(&symbol.name), name) =>
             {
                 return member.ty;
             }
@@ -908,7 +909,7 @@ pub(crate) fn twig_member_type(snapshot: &Snapshot, receiver: &Type, name: &str)
 pub(crate) fn compact_twig_accessor(source: &str) -> String {
     source
         .chars()
-        .filter(|value| !go_is_space(*value))
+        .filter(|value| !value.is_whitespace())
         .collect()
 }
 
@@ -918,10 +919,10 @@ pub(crate) fn is_twig_identifier(value: &str) -> bool {
     }
     for (index, current) in value.chars().enumerate() {
         if index == 0 {
-            if current != '_' && !go_is_letter(current) {
+            if current != '_' && !current.is_alphabetic() {
                 return false;
             }
-        } else if current != '_' && !go_is_letter(current) && !go_is_digit(current) {
+        } else if current != '_' && !current.is_alphabetic() && !is_identifier_digit(current) {
             return false;
         }
     }

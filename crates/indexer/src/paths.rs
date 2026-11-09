@@ -1,16 +1,16 @@
-//! String path helpers with Go `path/filepath` semantics.
+//! Lexical helpers for UTF-8 string paths.
 //!
 //! The scanner, its SQLite state and every indexer exchange paths as UTF-8
-//! strings (like Go). These helpers keep the lexical behaviour of
-//! `filepath.Clean`, `filepath.Ext` and the scanner's root containment checks
-//! identical to the Go implementation.
+//! strings. These helpers clean, join and split them purely lexically (no
+//! filesystem access), so persisted paths and the scanner's root containment
+//! checks stay stable.
 
 use std::path::MAIN_SEPARATOR;
 
 pub(crate) const SEPARATOR: char = MAIN_SEPARATOR;
 pub(crate) const SEPARATOR_STR: &str = std::path::MAIN_SEPARATOR_STR;
 
-/// Whether `path` is already in `filepath.Clean` form on a `/`-separated
+/// Whether `path` is already in [`clean`] form on a `/`-separated
 /// platform: non-empty, no empty, `.` or `..` elements, and no trailing
 /// separator except for the root. Lets [`clean`] skip rebuilding the most
 /// common input, an already clean absolute path.
@@ -30,8 +30,10 @@ fn is_clean_slash_path(path: &str) -> bool {
         .all(|segment| !segment.is_empty() && segment != b"." && segment != b"..")
 }
 
-/// Go `filepath.Clean` for the platform separator (volume names are not
-/// interpreted).
+/// The shortest lexically equivalent path for the platform separator: drops
+/// empty and `.` elements, resolves `..` against the preceding element (never
+/// above a root) and returns `.` for an empty result. Volume names are not
+/// interpreted.
 pub fn clean(path: &str) -> String {
     if SEPARATOR == '/' && is_clean_slash_path(path) {
         return path.to_owned();
@@ -68,7 +70,7 @@ fn clean_general(path: &str) -> String {
     }
 }
 
-/// Go `filepath.Ext`: the suffix starting at the final dot of the last path
+/// The extension: the suffix starting at the final dot of the last path
 /// element, or an empty string.
 pub fn ext(path: &str) -> &str {
     for (index, character) in path.char_indices().rev() {
@@ -82,7 +84,8 @@ pub fn ext(path: &str) -> &str {
     ""
 }
 
-/// Go `filepath.Join` (cleaned, empty elements ignored).
+/// Joins non-empty elements with the separator and cleans the result; empty
+/// when every element is empty.
 pub fn join(parts: &[&str]) -> String {
     let joined: Vec<&str> = parts
         .iter()
@@ -120,7 +123,7 @@ pub(crate) fn relative_path_within(root: &str, candidate: &str) -> Option<String
         );
     }
     // A relative root of "." contains every relative path that does not
-    // escape it (the filepath.Rel fallback of the Go implementation).
+    // escape it.
     if root == "."
         && !is_absolute(&candidate)
         && candidate != ".."
@@ -144,7 +147,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn clean_matches_go() {
+    fn clean_normalizes_lexically() {
         for (input, expected) in [
             ("", "."),
             ("/", "/"),
@@ -163,7 +166,7 @@ mod tests {
     }
 
     #[test]
-    fn ext_matches_go() {
+    fn ext_is_suffix_of_last_element() {
         assert_eq!(ext("a/b.php"), ".php");
         assert_eq!(ext("a.d/b"), "");
         assert_eq!(ext("a/.env"), ".env");

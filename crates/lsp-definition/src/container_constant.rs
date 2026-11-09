@@ -1,5 +1,5 @@
-//! Go `container_constant_definition.go`: `!php/const`, `!php/enum` and XML
-//! `type="constant"` values navigate to the PHP constant or enum.
+//! `!php/const`, `!php/enum` and XML `type="constant"` values navigate to the
+//! PHP constant or enum.
 
 use std::collections::HashSet;
 

@@ -1,4 +1,4 @@
-//! Port of Go `extension_test.go`.
+//! Tests for extension.
 
 use super::inheritance::{backfill_free, field, php_ok, relation, require_issue_code, s, stored};
 use crate::*;

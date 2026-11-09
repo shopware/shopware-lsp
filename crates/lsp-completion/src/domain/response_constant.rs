@@ -1,5 +1,4 @@
-//! Symfony `Response::HTTP_*` status constants (Go
-//! `response_constant_completion.go`).
+//! Symfony `Response::HTTP_*` status constants.
 
 use swlsp_lsp::{CompletionProvider, CompletionRequest, Context};
 use swlsp_lsp_protocol::{self as protocol, CompletionItemKind};
@@ -8,8 +7,9 @@ use swlsp_parser_php::syntax::PHP_BINARY_EXPRESSION;
 use swlsp_php::PhpIndex;
 use swlsp_php_resolver::{ImportKind, MemberResolver, parse_use_declaration};
 use swlsp_php_semantic::{Document, SymbolKind, Visibility};
-use swlsp_php_types::{Type, equal_fold};
+use swlsp_php_types::Type;
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::eq_ignore_case;
 
 use super::markdown;
 use crate::common::php_context;
@@ -32,7 +32,7 @@ impl ResponseConstantCompletionProvider {
         offset: u32,
     ) -> bool {
         if let Some(call) = query::call_at(node)
-            && equal_fold(&query::call_method_name(&call), "setStatusCode")
+            && eq_ignore_case(&query::call_method_name(&call), "setStatusCode")
             && response_active_argument(&call, offset) == 0
             && php.is_method_called_on_class(Some(context), &call, SYMFONY_RESPONSE_CLASS)
         {
@@ -46,7 +46,7 @@ impl ResponseConstantCompletionProvider {
                 return false;
             };
             if u32::from(left.text_range().end()) > offset
-                || !equal_fold(&query::call_method_name(&left), "getStatusCode")
+                || !eq_ignore_case(&query::call_method_name(&left), "getStatusCode")
             {
                 return false;
             }
@@ -71,7 +71,7 @@ fn response_class_qualifier(document: &Document, root: &SyntaxNode, offset: u32)
     for declaration in query::use_declarations(root) {
         for imported in parse_use_declaration(&declaration.text().to_string()) {
             if imported.kind == ImportKind::Class
-                && equal_fold(
+                && eq_ignore_case(
                     imported
                         .target
                         .strip_prefix('\\')
@@ -84,7 +84,7 @@ fn response_class_qualifier(document: &Document, root: &SyntaxNode, offset: u32)
         }
     }
     if let Some(scope) = document.scope_at(offset)
-        && equal_fold(&scope.namespace, "Symfony\\Component\\HttpFoundation")
+        && eq_ignore_case(&scope.namespace, "Symfony\\Component\\HttpFoundation")
     {
         return "Response".to_string();
     }

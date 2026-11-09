@@ -9,7 +9,7 @@ publish.workspace = true
 path = "src/lib.rs"
 
 [features]
-# `-profile.cpu` writes a pprof CPU profile (read it with `go tool pprof`).
+# `--profile-cpu` writes a pprof CPU profile (read it with any pprof viewer).
 # Without the feature the flag only creates an empty file, as before.
 cpu-profile = ["dep:pprof"]
 
@@ -21,6 +21,7 @@ path = "src/main.rs"
 tokio.workspace = true
 tokio-util.workspace = true
 rmcp.workspace = true
+thiserror.workspace = true
 swlsp-syntax.workspace = true
 swlsp-app = { path = "../app" }
 swlsp-lsp = { path = "../lsp" }

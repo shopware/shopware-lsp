@@ -43,7 +43,8 @@ impl CodeLensProvider for SerializerCodeLensProvider {
             if usages.is_empty() {
                 continue;
             }
-            // Go keeps the zero-based line here, unlike the other lenses.
+            // Serializer targets keep the zero-based line, unlike the other
+            // lenses.
             let targets: Vec<Value> = usages
                 .iter()
                 .map(|usage| {

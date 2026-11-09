@@ -1,4 +1,4 @@
-//! Go `controller.go`: the `symfony.routing` inspection.
+//! The `symfony.routing` inspection.
 
 use std::sync::Arc;
 
@@ -14,7 +14,6 @@ use crate::{BoundInspection, SuggestionFix, suggestion_bound_fixes};
 
 pub const CONTROLLER_METHOD_FIX_ID: &str = "create-controller-method";
 
-/// Go `NewController`.
 pub fn new_controller(
     route_index: Option<Arc<RouteIndexer>>,
     service_index: Option<Arc<ServiceIndex>>,

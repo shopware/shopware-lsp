@@ -1,4 +1,4 @@
-//! Declaration migration fix (Go `shopware_migration_declarations.go`).
+//! Declaration migration fix.
 
 use swlsp_lsp::{BoxError, Context, FixContext, FixId, FixPresentation, QuickFix, RewriteQuickFix};
 use swlsp_lsp_diagnostics::ShopwareMigrationPayload;
@@ -124,8 +124,7 @@ impl RewriteQuickFix for DeclarationMigrationFix {
     }
 }
 
-/// Go `migrationTypeReference`: imports a class type (keeping `?`) and
-/// returns native types unchanged.
+/// Imports a class type (keeping `?`) and returns native types unchanged.
 fn migration_type_reference(editor: &mut Editor, type_text: &str) -> Result<String, BoxError> {
     let type_text = type_text.trim();
     if type_text.is_empty() {

@@ -206,22 +206,23 @@ fn element_handle_survives_untyped_json_round_trip() {
 }
 
 #[test]
-fn element_handle_range_uses_go_field_names() {
+fn element_handle_range_round_trips_with_capitalized_keys() {
     let source = r#"{"value": "transport-hash"}"#;
     let tree = json_document(source);
     let element = tree.root().covering_element(range(10, 26));
     let handle = ElementHandle::new("file:///project/test.json", 3, LanguageId::Json, element);
 
     let mut untyped = serde_json::to_value(&handle).unwrap();
-    // Go's cst.TextRange has no JSON tags, so clients see "Start"/"End".
+    // Clients see the anchor range as "Start"/"End" and echo it back.
     assert_eq!(
         untyped["range"],
         serde_json::json!({"Start": 10, "End": 26})
     );
-    // Go decodes keys case-insensitively; accept the lowercase spelling too.
-    untyped["range"] = serde_json::json!({"start": 10, "end": 26});
-    let decoded: ElementHandle = serde_json::from_value(untyped).unwrap();
+    let decoded: ElementHandle = serde_json::from_value(untyped.clone()).unwrap();
     assert_eq!(handle, decoded);
+    // Only the spelling the server produces is accepted.
+    untyped["range"] = serde_json::json!({"start": 10, "end": 26});
+    assert!(serde_json::from_value::<ElementHandle>(untyped).is_err());
 }
 
 #[test]

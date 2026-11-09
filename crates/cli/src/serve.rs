@@ -1,5 +1,4 @@
-//! `serve`: the language server over stdio or one remote client (Go
-//! `serve.go`).
+//! `serve`: the language server over stdio or one remote client.
 
 use std::io::{self, Read, Write};
 use std::pin::Pin;
@@ -75,7 +74,7 @@ async fn serve(runner: &Runner, flags: &Serve, timeout: Duration) -> Result<(), 
         accepted = listener.accept() => accepted,
         () = runner.cancel.cancelled() => {
             listener.cleanup(&address);
-            return Err(CliError::canceled());
+            return Err(CliError::cancelled());
         }
         () = sleep_until(deadline) => {
             listener.cleanup(&address);
@@ -127,11 +126,11 @@ async fn serve_streams(
     let serving = application.serve(input, output, cancel.cancelled());
     tokio::pin!(serving);
     tokio::select! {
-        result = &mut serving => return result.map_err(CliError::fail),
+        result = &mut serving => return result.map_err(|error| CliError::fail(error.to_string())),
         () = runner.cancel.cancelled() => {}
     }
     let _ = tokio::time::timeout(CANCEL_GRACE, serving).await;
-    Err(CliError::canceled())
+    Err(CliError::cancelled())
 }
 
 fn parse_listen_address(value: &str) -> (&'static str, String) {
@@ -150,44 +149,61 @@ enum Listener {
     Unix(tokio::net::UnixListener),
 }
 
+/// Why a listener could not be bound.
+#[derive(Debug, thiserror::Error)]
+enum ListenError {
+    #[error("listen {network} {address}: {source}")]
+    Bind {
+        network: &'static str,
+        address: String,
+        #[source]
+        source: io::Error,
+    },
+    /// The standard library has no Unix domain sockets on this platform.
+    #[cfg(not(unix))]
+    #[error("listen unix {0}: unix domain sockets are not supported on this platform")]
+    UnixUnsupported(String),
+}
+
 #[cfg(unix)]
-fn bind_unix(address: &str) -> Result<Listener, String> {
-    let listener = std::os::unix::net::UnixListener::bind(address)
-        .map_err(|error| format!("listen unix {address}: bind: {error}"))?;
-    listener
-        .set_nonblocking(true)
-        .map_err(|error| error.to_string())?;
+fn bind_unix(address: &str) -> Result<Listener, ListenError> {
+    let bind_error = |source| ListenError::Bind {
+        network: "unix",
+        address: address.to_owned(),
+        source,
+    };
+    let listener = std::os::unix::net::UnixListener::bind(address).map_err(bind_error)?;
+    listener.set_nonblocking(true).map_err(bind_error)?;
     tokio::net::UnixListener::from_std(listener)
         .map(Listener::Unix)
-        .map_err(|error| error.to_string())
+        .map_err(bind_error)
 }
 
-/// Rust's standard library has no Unix domain sockets on this platform.
 #[cfg(not(unix))]
-fn bind_unix(address: &str) -> Result<Listener, String> {
-    Err(format!(
-        "listen unix {address}: unix domain sockets are not supported on this platform"
-    ))
+fn bind_unix(address: &str) -> Result<Listener, ListenError> {
+    Err(ListenError::UnixUnsupported(address.to_owned()))
 }
 
-/// Binds a TCP address the way Go's `net.Listen` reads it (`:port` means
-/// every interface), on the current runtime.
-fn bind_tcp(address: &str) -> Result<tokio::net::TcpListener, String> {
+/// Binds a TCP address on the current runtime; `:port` means every
+/// interface.
+fn bind_tcp(address: &str) -> Result<tokio::net::TcpListener, ListenError> {
+    let bind_error = |source| ListenError::Bind {
+        network: "tcp",
+        address: address.to_owned(),
+        source,
+    };
     let resolved = if address.starts_with(':') {
         format!("0.0.0.0{address}")
     } else {
         address.to_owned()
     };
-    let listener = std::net::TcpListener::bind(&resolved)
-        .map_err(|error| tcp_listen_error(address, &error))?;
-    listener
-        .set_nonblocking(true)
-        .map_err(|error| error.to_string())?;
-    tokio::net::TcpListener::from_std(listener).map_err(|error| error.to_string())
+    let listener = std::net::TcpListener::bind(&resolved).map_err(bind_error)?;
+    listener.set_nonblocking(true).map_err(bind_error)?;
+    tokio::net::TcpListener::from_std(listener).map_err(bind_error)
 }
 
 impl Listener {
-    fn bind(network: &str, address: &str) -> Result<Self, String> {
+    fn bind(network: &str, address: &str) -> Result<Self, ListenError> {
         if network == "unix" {
             bind_unix(address)
         } else {
@@ -259,7 +275,7 @@ fn trace_chunk(trace: &Output, direction: &[u8], data: &[u8]) {
 const CLIENT_TO_SERVER: &[u8] = b"\n[client -> server]\n";
 const SERVER_TO_CLIENT: &[u8] = b"\n[server -> client]\n";
 
-/// Go `rpcTraceWriter` on the read side (`io.TeeReader`).
+/// Copies what the client sends to the trace output.
 struct TraceReader {
     inner: Box<dyn Read + Send>,
     trace: Output,
@@ -275,7 +291,7 @@ impl Read for TraceReader {
     }
 }
 
-/// Go `tracedWriter`.
+/// Copies what the server sends to the trace output.
 struct TraceWriter {
     inner: Box<dyn Write + Send>,
     trace: Output,
@@ -345,8 +361,8 @@ impl AsyncWrite for AsyncTraceWriter {
     }
 }
 
-/// Go serves `net/http/pprof` here. The Rust runtime has no equivalent
-/// profiler, so the address is bound (with Go's error text) and every request
+/// The `--debug` server. No runtime profiling endpoints are available,
+/// so the address is bound (failing like `--listen` would) and every request
 /// receives `501 Not Implemented`.
 fn start_debug_server(address: &str) -> Result<(), CliError> {
     let listener = bind_tcp(address)
@@ -371,21 +387,4 @@ fn start_debug_server(address: &str) -> Result<(), CliError> {
         }
     });
     Ok(())
-}
-
-/// Go's `net.Listen("tcp", address)` error text for the common failures.
-fn tcp_listen_error(address: &str, error: &io::Error) -> String {
-    if error.kind() == io::ErrorKind::InvalidInput {
-        match address.rsplit_once(':') {
-            Some((_, port)) if error.to_string().contains("invalid port") => {
-                return format!("listen tcp: address {port}: invalid port");
-            }
-            None => return format!("listen tcp: address {address}: missing port in address"),
-            _ => {}
-        }
-    }
-    if error.raw_os_error().is_some() {
-        return format!("listen tcp {address}: bind: {error}");
-    }
-    format!("listen tcp {address}: {error}")
 }

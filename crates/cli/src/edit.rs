@@ -1,11 +1,11 @@
-//! Applying LSP workspace edits from the CLI and MCP (Go `edit.go`): a diff
+//! Applying LSP workspace edits from the CLI and MCP: a diff
 //! preview by default, files written only in write mode.
 
 use std::collections::HashMap;
 use std::io::Write;
 
 use swlsp_lsp_protocol::{
-    CREATE_FILE_OPERATION, DELETE_FILE_OPERATION, DocumentChange, TextEdit, WorkspaceEdit,
+    CREATE_FILE_OPERATION, DELETE_FILE_OPERATION, DocumentChange, Range, TextEdit, WorkspaceEdit,
 };
 
 use crate::CliError;
@@ -28,7 +28,7 @@ struct PendingDocumentEdit {
     deleted: bool,
 }
 
-/// Applies (or previews) `edit` (Go `applyWorkspaceEdit`).
+/// Applies (or previews) `edit`.
 pub fn apply_workspace_edit(
     writer: &mut dyn Write,
     edit: Option<&WorkspaceEdit>,
@@ -227,7 +227,8 @@ fn finish_document(
     Ok(())
 }
 
-/// Go `os.WriteFile`: create with `mode` (before umask) or truncate.
+/// Writes `content`, creating the file with `mode` (before umask) or
+/// truncating an existing one.
 fn write_file(path: &str, content: &[u8], mode: u32) -> std::io::Result<()> {
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
@@ -242,21 +243,34 @@ fn write_file(path: &str, content: &[u8], mode: u32) -> std::io::Result<()> {
     file.write_all(content)
 }
 
-/// Applies UTF-16 positioned edits to `source` (Go `applyProtocolTextEdits`).
-pub fn apply_protocol_text_edits(source: &str, edits: &[TextEdit]) -> Result<String, String> {
+/// Why protocol text edits could not be applied.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum TextEditError {
+    /// The range is reversed or ends past the end of the document.
+    #[error(
+        "invalid edit range {}:{}-{}:{}",
+        .0.start.line,
+        .0.start.character,
+        .0.end.line,
+        .0.end.character
+    )]
+    InvalidRange(Range),
+    #[error("overlapping text edits")]
+    Overlapping,
+}
+
+/// Applies UTF-16 positioned edits to `source`.
+pub fn apply_protocol_text_edits(
+    source: &str,
+    edits: &[TextEdit],
+) -> Result<String, TextEditError> {
     let line_index = swlsp_syntax::LineIndex::new(source);
     let mut offsets: Vec<(u32, u32, &str)> = Vec::with_capacity(edits.len());
     for edit in edits {
         let start = line_index.offset_utf16(edit.range.start.line, edit.range.start.character);
         let end = line_index.offset_utf16(edit.range.end.line, edit.range.end.character);
         if start > end || end as usize > source.len() {
-            return Err(format!(
-                "invalid edit range {{{{{} {}}} {{{} {}}}}}",
-                edit.range.start.line,
-                edit.range.start.character,
-                edit.range.end.line,
-                edit.range.end.character
-            ));
+            return Err(TextEditError::InvalidRange(edit.range));
         }
         offsets.push((start, end, edit.new_text.as_str()));
     }
@@ -272,7 +286,7 @@ pub fn apply_protocol_text_edits(source: &str, edits: &[TextEdit]) -> Result<Str
     let mut result = source.as_bytes().to_vec();
     for (start, end, text) in offsets {
         if end > last_start {
-            return Err("overlapping text edits".into());
+            return Err(TextEditError::Overlapping);
         }
         result.splice(start as usize..end as usize, text.bytes());
         last_start = start;

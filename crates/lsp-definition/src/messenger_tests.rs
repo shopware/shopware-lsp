@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use swlsp_uriutil::file_uri;
 
 use super::*;
@@ -33,7 +31,7 @@ interface MessageSubscriberInterface {
     let document = document(&file_uri(&path), source);
     let offset = index_of(source, "'handle'") + 2;
     let locations = definitions(
-        &MessengerDefinitionProvider::new(Some(php), None),
+        &MessengerDefinitionProvider::new(Some(php)),
         &request_at(&document, offset),
     );
     assert_eq!(locations.len(), 1);
@@ -61,10 +59,8 @@ class Handler {
     write(&config_path, config_source);
     let php = php_index(&root.path().join("cache"));
     index(&php, &p(&handler_path), handler_source);
-    let messenger =
-        Arc::new(swlsp_messenger::Index::new(root.path().join("messenger"), None).unwrap());
     let document = document(&file_uri(&p(&config_path)), config_source);
-    let provider = MessengerDefinitionProvider::new(Some(php), Some(messenger));
+    let provider = MessengerDefinitionProvider::new(Some(php));
     for (marker, line) in [("App\\Message", 2), ("consume", 4)] {
         let offset = index_of(config_source, marker) + 1;
         let locations = definitions(&provider, &request_at(&document, offset));

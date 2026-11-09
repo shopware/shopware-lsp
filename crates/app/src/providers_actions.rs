@@ -1,5 +1,4 @@
-//! Code actions and command providers (port of Go
-//! `internal/app/providers_actions.go`).
+//! Code actions and command providers.
 
 use std::sync::Arc;
 

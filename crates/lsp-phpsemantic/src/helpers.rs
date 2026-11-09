@@ -1,4 +1,4 @@
-//! Shared helpers (port of `helpers.go`).
+//! Helpers shared by the PHP semantic providers.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,8 +14,9 @@ use swlsp_parser_php::syntax::{
 use swlsp_php::PhpContext;
 use swlsp_php_resolver::NameContext;
 use swlsp_php_semantic::{Document, Flags, Parameter, Symbol, SymbolKind, Visibility};
-use swlsp_php_types::{Type, go_to_lower};
+use swlsp_php_types::Type;
 use swlsp_syntax::{Kind, LineIndex, SyntaxNode, TextRange, TextSize};
+use swlsp_textutil::lowercase;
 
 /// The member access or call enclosing `node` and whether it is static.
 pub(crate) fn member_expression(node: Option<&SyntaxNode>) -> Option<(SyntaxNode, bool)> {
@@ -73,7 +74,7 @@ pub(crate) fn name_context_at(document: &Document, offset: u32) -> NameContext {
 }
 
 pub(crate) fn static_receiver_type(context: &PhpContext, name: &str, offset: u32) -> Type {
-    match go_to_lower(name).as_str() {
+    match lowercase(name).as_str() {
         "self" | "static" => {
             if let Some(class) = &context.inside_class {
                 return Type::named(&class.fully_qualified, Vec::new());
@@ -412,7 +413,7 @@ impl<'a> LocationCache<'a> {
     }
 }
 
-/// Removes all Unicode white space (Go `strings.Fields` joined).
+/// Removes all Unicode white space (splitting on white space and joining the parts).
 pub(crate) fn compact_name(source: &str) -> String {
     source.split_whitespace().collect()
 }
@@ -435,7 +436,7 @@ pub(crate) fn is_implicit_variable(name: &str) -> bool {
     )
 }
 
-/// Whether the URI has a `.php` extension (Go `filepath.Ext` + EqualFold).
+/// Whether the URI's file name ends in a `.php` extension, ignoring case.
 pub(crate) fn is_php(uri: &str) -> bool {
     let name = uri.rsplit('/').next().unwrap_or(uri);
     name.rfind('.')

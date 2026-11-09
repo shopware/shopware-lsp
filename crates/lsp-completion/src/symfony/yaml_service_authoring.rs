@@ -1,5 +1,5 @@
 //! Symfony service option, YAML tag and keyword completion in service YAML
-//! files (port of Go `yaml_service_authoring_completion.go`).
+//! files.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -10,7 +10,8 @@ use swlsp_php_project::{Model, Version};
 use swlsp_syntax::{LineIndex, TextRange, TextSize};
 
 use super::{lower_ext, request_offset};
-use crate::common::{go_to_lower, leading_yaml_indent, protocol_range, text_edit};
+use crate::common::{leading_yaml_indent, protocol_range, text_edit};
+use swlsp_textutil::lowercase;
 
 use protocol::CompletionItemKind as Kind;
 
@@ -73,8 +74,7 @@ const YAML_SERVICE_OPTIONS: &[YamlServiceOption] = &[
     option("tags", "service tags"),
 ];
 
-/// Completes Symfony service options, YAML value tags and keywords (Go
-/// `YAMLServiceAuthoringCompletionProvider`).
+/// Completes Symfony service options, YAML value tags and keywords.
 pub struct YamlServiceAuthoringCompletionProvider {
     project: Option<Arc<Model>>,
 }
@@ -267,7 +267,7 @@ pub(super) fn yaml_parent_mapping_line(
     None
 }
 
-/// Go `yamlMappingKeyLine`: the key and whether the value is empty.
+/// The key of a YAML mapping line and whether its value is empty.
 pub(super) fn yaml_mapping_key_line(line: &str) -> Option<(String, bool)> {
     let trimmed = line.trim();
     if trimmed.is_empty() || trimmed.starts_with('-') {
@@ -285,7 +285,7 @@ pub(super) fn yaml_mapping_key_line(line: &str) -> Option<(String, bool)> {
     Some((key.to_string(), rest.is_empty() || rest.starts_with('#')))
 }
 
-/// Go `strings.Trim(value, "'\"")`.
+/// `value` without surrounding single and double quotes.
 pub(super) fn trim_quotes(value: &str) -> &str {
     value.trim_matches(|c| c == '\'' || c == '"')
 }
@@ -411,10 +411,7 @@ fn yaml_value_delimiter(source: &str, line_start: usize, cursor: usize) -> Optio
                     delimiter = Some(position);
                 }
             }
-            b'-' if !in_single
-                && !in_double
-                && go_trim_space_empty(&source[line_start..position]) =>
-            {
+            b'-' if !in_single && !in_double && source[line_start..position].trim().is_empty() => {
                 delimiter = Some(position);
             }
             _ => {}
@@ -424,11 +421,6 @@ fn yaml_value_delimiter(source: &str, line_start: usize, cursor: usize) -> Optio
         return None;
     }
     delimiter
-}
-
-/// `strings.TrimSpace(value) == ""`.
-fn go_trim_space_empty(value: &str) -> bool {
-    value.trim().is_empty()
 }
 
 fn yaml_value_token_character(value: u8) -> bool {
@@ -480,7 +472,7 @@ impl YamlServiceAuthoringCompletionProvider {
                 );
             }
         }
-        // Labels are unique, so a stable sort matches Go's sort.Slice.
+        // Labels are unique, so the order is total.
         items.sort_by(|left, right| left.label.cmp(&right.label));
         items
     }
@@ -542,7 +534,7 @@ fn yaml_inside_service_arguments(source: &str, cursor: usize) -> bool {
 
 fn yaml_configuration_file(path: &str) -> bool {
     let slash_path = swlsp_uriutil::filepath::to_slash(path);
-    let base = go_to_lower(&swlsp_uriutil::filepath::base(path));
+    let base = lowercase(&swlsp_uriutil::filepath::base(path));
     slash_path.contains("/config/") || base.starts_with("config.") || base.starts_with("services.")
 }
 

@@ -1,4 +1,4 @@
-//! Go `live_component_event_diagnostics.go`.
+//! Live component event diagnostics.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -6,7 +6,7 @@ use std::sync::Arc;
 use swlsp_language::LanguageId;
 use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_lsp_protocol as protocol;
-use swlsp_php_types::{equal_fold, go_to_lower};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 use swlsp_twigcomponent::{Index, LiveListener};
 
 use super::component::suggestions_payload;
@@ -16,7 +16,6 @@ use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 const MISSING_LIVE_EVENT_CODE: &str = "twig.component.live_event.missing";
 const MISSING_LIVE_EVENT_ARGUMENT_CODE: &str = "twig.component.live_event_argument.missing";
 
-/// Go `LiveComponentEventAnalyzer`.
 pub struct LiveComponentEventAnalyzer {
     index: Option<Arc<Index>>,
 }
@@ -103,7 +102,7 @@ impl ProblemAnalyzer for LiveComponentEventAnalyzer {
             let parameter_names = unique_fold(
                 listeners
                     .iter()
-                    .filter(|listener| equal_fold(&listener.name, &reference.event))
+                    .filter(|listener| eq_ignore_case(&listener.name, &reference.event))
                     .flat_map(|listener| listener.parameters.iter())
                     .filter(|parameter| parameter.live_arg)
                     .map(|parameter| parameter.name.as_str()),
@@ -151,12 +150,12 @@ fn merge_live_event_listeners(
     result
 }
 
-/// Go `uniqueLiveEventListenerNames` / `uniqueLiveEventArgumentNames`.
+/// Distinct values ignoring case, in first-seen order.
 fn unique_fold<'a>(values: impl Iterator<Item = &'a str>) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut result = Vec::new();
     for value in values {
-        if value.is_empty() || !seen.insert(go_to_lower(value)) {
+        if value.is_empty() || !seen.insert(lowercase(value)) {
             continue;
         }
         result.push(value.to_owned());

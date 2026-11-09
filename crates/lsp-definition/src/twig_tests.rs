@@ -15,7 +15,7 @@ fn definitions(
     provider.get_definition(&Context::background(), request)
 }
 
-/// Go `documentOffsetForPosition`.
+/// The byte offset of `position` in `source`.
 fn document_offset_for_position(source: &str, position: protocol::Position) -> usize {
     let document = TextDocument::new("file:///source.php", source, 1);
     document
@@ -80,7 +80,7 @@ fn twig_template_definition_ignores_template_annotation() {
     let path = format!("{root_path}/src/PageController.php");
     let offset = offset_of(source, "page.html.twig") + 2;
     let mut request = request_at(TextDocument::new(file_uri(&path), source, 1), offset);
-    // Go leaves the language unset in this request.
+    // The language is deliberately left unset in this request.
     request.syntax.language = None;
     let locations = definitions(
         &TwigDefinitionProvider::new(root_path, Some(twig), None, None),
@@ -420,7 +420,7 @@ class ProductController {
     let template_path = format!("{root_path}/templates/product/show.html.twig");
     let source = "{{ product }}";
     let offset = offset_of(source, "product") + 1;
-    // Go leaves the cursor position at 0:0 here.
+    // The cursor position deliberately stays at 0:0 here.
     let request = request_with_position(
         TextDocument::new(file_uri(&template_path), source, 1),
         offset,

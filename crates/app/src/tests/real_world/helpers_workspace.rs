@@ -1,9 +1,10 @@
-//! Port of Go `real_world_helpers_workspace_test.go`.
+//! Workspace-level helpers of the real-world suite: command responses and
+//! asset catalog snapshots.
 
 #[allow(unused_imports)]
 use super::indexing_main::record_failure as soft;
 
-/// Records a soft failure (Go `t.Errorf` in the soft oracle run) and
+/// Records a soft failure and
 /// continues with the zero value.
 #[allow(dead_code)]
 fn soft_default<T: Default>(message: String) -> T {
@@ -188,13 +189,13 @@ pub fn require_semantic_token_text(
     ));
 }
 
-/// Go `realWorldDecodeCommandResponse`: JSON round trip into `T`.
+/// Decodes a command response through a JSON round trip into `T`.
 pub fn real_world_decode_command_response<T: DeserializeOwned>(value: &Value) -> T {
     serde_json::from_value(value.clone()).expect("decode command response")
 }
 
-/// Go `workspaceAssetSnapshot` with readable fields (the portable test's
-/// copy keeps them private).
+/// The asset catalog state of a workspace, comparable between the cold and
+/// the restored workspace.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssetSnapshot {
     pub names: Vec<String>,
@@ -210,7 +211,7 @@ pub struct AssetSnapshot {
     pub vite_administration_usages: Vec<swlsp_asset::Usage>,
 }
 
-/// Go `captureWorkspaceAssets`.
+/// Captures the asset catalog state of `workspace`.
 pub fn capture_workspace_assets(workspace: &Workspace) -> AssetSnapshot {
     use swlsp_asset::ReferenceKind;
     let index = &workspace.services().assets;

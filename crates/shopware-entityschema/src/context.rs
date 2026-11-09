@@ -1,5 +1,4 @@
-//! Plugin discovery and class-based schema scanning (port of Go
-//! `context.go`).
+//! Plugin discovery and class-based schema scanning.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::ErrorKind;
@@ -107,7 +106,7 @@ pub fn find_plugin_context(
 }
 
 fn parse_plugin_context(root: &str, selected: &str, content: &[u8]) -> Result<PluginContext> {
-    let composer: ComposerFile = crate::gojson::from_slice(content)
+    let composer: ComposerFile = crate::canonical_json::from_slice(content)
         .map_err(|error| errorf!("parse plugin composer.json: {error}"))?;
     if composer.name.is_empty() {
         return Err(errorf!("plugin composer.json has no package name"));
@@ -409,7 +408,7 @@ fn hydrate_class_based_sources(
     let mut sources: HashMap<String, String> = HashMap::new();
     for declaration in declarations.iter_mut() {
         let kind = kinds
-            .get(&go_to_lower(&declaration.class))
+            .get(&lowercase(&declaration.class))
             .map(String::as_str)
             .unwrap_or_default();
         if declaration.abstract_class || kind.is_empty() || !declaration.source.is_empty() {
@@ -445,7 +444,7 @@ fn hydrate_class_based_sources(
 
 fn kind_of<'a>(kinds: &'a HashMap<String, String>, class: &str) -> &'a str {
     kinds
-        .get(&go_to_lower(class))
+        .get(&lowercase(class))
         .map(String::as_str)
         .unwrap_or_default()
 }
@@ -588,7 +587,7 @@ fn attach_scanned_translations(
             .translation
             .as_ref()
             .is_some_and(|parent| {
-                equal_fold(
+                eq_ignore_case(
                     trim_backslash(&parent.definition_class),
                     trim_backslash(&translation.spec.definition_class),
                 )
@@ -634,7 +633,7 @@ pub(crate) fn resolve_class_based_kinds(
 ) -> HashMap<String, String> {
     let mut by_class: HashMap<String, &ClassBasedDeclaration> = HashMap::new();
     for declaration in declarations {
-        by_class.insert(go_to_lower(trim_backslash(&declaration.class)), declaration);
+        by_class.insert(lowercase(trim_backslash(&declaration.class)), declaration);
     }
     let mut result: HashMap<String, String> = HashMap::new();
     let mut resolving: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -645,7 +644,7 @@ pub(crate) fn resolve_class_based_kinds(
         result: &mut HashMap<String, String>,
         resolving: &mut std::collections::HashSet<String>,
     ) -> String {
-        let key = go_to_lower(trim_backslash(class));
+        let key = lowercase(trim_backslash(class));
         if let Some(kind) = result.get(&key) {
             return kind.clone();
         }
@@ -697,7 +696,7 @@ pub(crate) fn resolve_class_based_kinds(
 
     for declaration in declarations {
         let kind = resolve(&declaration.class, &by_class, &mut result, &mut resolving);
-        result.insert(go_to_lower(trim_backslash(&declaration.class)), kind);
+        result.insert(lowercase(trim_backslash(&declaration.class)), kind);
     }
     result
 }
@@ -727,10 +726,7 @@ fn import_class_based_spec(
         }
         CLASS_BASED_EXTENSION => import_extension_parsed(parsed, lookup, class),
         CLASS_BASED_BULK_EXTENSION => import_bulk_extension_parsed(parsed, lookup, class),
-        _ => Err(errorf!(
-            "unsupported class-based DAL kind {}",
-            go_quote(kind)
-        )),
+        _ => Err(errorf!("unsupported class-based DAL kind {:?}", kind)),
     }
 }
 

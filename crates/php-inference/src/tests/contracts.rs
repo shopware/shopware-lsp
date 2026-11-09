@@ -1,5 +1,3 @@
-//! Port of `attribute_contracts_test.go`.
-
 use swlsp_php_semantic::{Attribute, Document, Snapshot, Str, Symbol, SymbolId, SymbolKind};
 use swlsp_php_types::Type;
 

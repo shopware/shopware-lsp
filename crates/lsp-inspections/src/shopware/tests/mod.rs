@@ -1,4 +1,4 @@
-//! Ports of the Shopware group's inspection tests.
+//! Tests of the Shopware inspection group.
 
 mod app_script;
 mod dal_entity;

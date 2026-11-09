@@ -6,8 +6,8 @@ use crate::packed::{PackedParameter, PackedSymbol, SymbolDetail};
 use crate::snapshot::{NameIndexKind, Snapshot, SymRef};
 
 /// Cardinality and approximate retained size of the immutable declaration
-/// and reference graph of the base generation. The fields describe the Rust
-/// layout and differ from Go's `WorkspaceStorageStats`.
+/// and reference graph of the base generation. The fields describe the in-memory
+/// layout.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct WorkspaceStorageStats {
     pub documents: usize,

@@ -1,4 +1,4 @@
-//! Array literals and array access (port of `expression_array.go`).
+//! Array literals and array access.
 
 use std::collections::HashMap;
 
@@ -11,7 +11,7 @@ use crate::env::Env;
 use crate::syntax::{class_constant_receiver, direct_nodes, has_direct_token, trim_quotes};
 use crate::types_util::{
     MAX_INFERRED_TUPLE_FIELDS, array_literal_key, array_shape_iterable_types,
-    array_type_known_non_empty, join_types, parse_go_int,
+    array_type_known_non_empty, join_types,
 };
 
 pub(crate) const SHAPE_FIELD_LINEAR_LIMIT: usize = 16;
@@ -109,7 +109,7 @@ impl ArrayLiteralInference<'_> {
             for field in source.fields() {
                 let mut field = field.clone();
                 let name = trim_quotes(&field.name).to_owned();
-                if parse_go_int(&name).is_some() {
+                if name.parse::<i64>().is_ok() {
                     field.name = self.next_key.to_string().as_str().into();
                     self.next_key += 1;
                 } else {
@@ -130,7 +130,7 @@ impl ArrayLiteralInference<'_> {
         if key.kind() != Kind::LiteralInt {
             return;
         }
-        if let Some(numeric) = parse_go_int(key.name())
+        if let Ok(numeric) = key.name().parse::<i64>()
             && numeric >= self.next_key
         {
             self.next_key = numeric + 1;

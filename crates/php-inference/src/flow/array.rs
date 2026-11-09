@@ -1,11 +1,11 @@
-//! Empty-array comparisons and `has*()`/`get*()` accessor conventions (port
-//! of `flow_array.go`).
+//! Empty-array comparisons and `has*()`/`get*()` accessor conventions.
 
 use swlsp_parser_php::query;
 use swlsp_php_resolver::resolve_signature;
 use swlsp_php_semantic::TypeSource;
-use swlsp_php_types::{Joiner, Kind, Type, equal_fold};
+use swlsp_php_types::{Joiner, Kind, Type};
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::eq_ignore_case;
 
 use super::Branches;
 use crate::analyzer::Fs;
@@ -114,9 +114,9 @@ impl Fs<'_, '_, '_> {
     /// `has()`/`hasX()` returning true proves the matching getter non-null.
     pub(crate) fn narrow_has_accessor(&mut self, call: &SyntaxNode, env: &Env) -> Option<Branches> {
         let name = query::call_method_name(call);
-        let (target_name, reuse_arguments) = if equal_fold(&name, "has") {
+        let (target_name, reuse_arguments) = if eq_ignore_case(&name, "has") {
             ("get".to_owned(), true)
-        } else if name.len() > 3 && name.is_char_boundary(3) && equal_fold(&name[..3], "has") {
+        } else if name.len() > 3 && name.is_char_boundary(3) && eq_ignore_case(&name[..3], "has") {
             if query::arguments(call).next().is_some() {
                 return None;
             }

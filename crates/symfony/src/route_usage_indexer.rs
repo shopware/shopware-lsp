@@ -57,8 +57,8 @@ pub struct ControllerUsageGroup {
     pub usages: Vec<ControllerUsage>,
 }
 
-/// Keyed records in insertion order (Go uses maps; order is irrelevant to
-/// queries, which sort).
+/// Keyed records in insertion order; queries sort, so the order does not
+/// reach callers.
 type Keyed<T> = Vec<(String, T)>;
 
 struct PreparedRouteUsages {
@@ -245,13 +245,13 @@ impl RouteUsageIndexer {
             };
             let resolution = resolve_controller_reference(&reference, services, php_index)?;
             let class_matches = resolution.class.as_ref().is_some_and(|class| {
-                swlsp_php_types::equal_fold(
+                swlsp_textutil::eq_ignore_case(
                     class.fully_qualified.as_str().trim_start_matches('\\'),
                     class_name,
                 )
             });
             let method_matches = resolution.method.as_ref().is_some_and(|method| {
-                swlsp_php_types::equal_fold(method.name.as_str(), method_name)
+                swlsp_textutil::eq_ignore_case(method.name.as_str(), method_name)
             });
             if !resolution.method_declared || !class_matches || !method_matches {
                 continue;

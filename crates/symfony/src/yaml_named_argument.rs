@@ -5,7 +5,7 @@ use swlsp_parser_yaml::query as yamlquery;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
 
 use crate::service_index::ServiceIndex;
-use crate::util::{go_trim_space, yaml_scalar_content_range};
+use crate::util::yaml_scalar_content_range;
 use crate::yaml_context::static_php_class_name;
 use crate::yaml_services::{yaml_property, yaml_scalar};
 
@@ -191,23 +191,23 @@ pub(crate) fn yaml_service_class_name(service_id: &str, config: &SyntaxNode) -> 
 }
 
 pub(crate) fn static_yaml_service_class_name(value: &str) -> bool {
-    let value = go_trim_space(value.strip_prefix('\\').unwrap_or(value));
+    let value = value.strip_prefix('\\').unwrap_or(value).trim();
     !value.is_empty() && !value.contains(['%', '$', '{', '}', '@', ' ', '\t'])
 }
 
 fn is_yaml_named_argument(name: &str) -> bool {
-    let name = go_trim_space(name);
+    let name = name.trim();
     name.len() > 1 && name.starts_with('$') && !name[1..].contains([' ', '\t', ':', '$'])
 }
 
 fn parse_yaml_service_default_binding_key(value: &str) -> Option<(String, String)> {
-    let value = go_trim_space(value);
+    let value = value.trim();
     let dollar = value.rfind('$')?;
-    let name = go_trim_space(&value[dollar..]);
+    let name = value[dollar..].trim();
     if !is_yaml_named_argument(name) {
         return None;
     }
-    let type_name = go_trim_space(&value[..dollar]);
+    let type_name = value[..dollar].trim();
     if type_name.contains('$') {
         return None;
     }

@@ -7,8 +7,8 @@ use swlsp_indexer::{
     DataIndexer, Indexer, Mutation, ParsedFile, Result, Store, TransactionalClearer,
     TransactionalRemover,
 };
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_syntax::TextRange;
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::parser::{normalize_class, usages_in_document};
 
@@ -82,7 +82,7 @@ impl Index {
         let mut result: Vec<Usage> = records
             .iter()
             .flat_map(|record| &record.usages)
-            .filter(|usage| equal_fold(&usage.class, normalized))
+            .filter(|usage| eq_ignore_case(&usage.class, normalized))
             .cloned()
             .collect();
         result.sort_by(|left, right| {
@@ -100,7 +100,7 @@ impl Index {
         let mut seen: BTreeMap<String, String> = BTreeMap::new();
         for usage in records.iter().flat_map(|record| &record.usages) {
             if !usage.class.is_empty() {
-                seen.insert(go_to_lower(&usage.class), usage.class.clone());
+                seen.insert(lowercase(&usage.class), usage.class.clone());
             }
         }
         Ok(seen.into_values().collect())

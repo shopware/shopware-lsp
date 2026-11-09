@@ -173,7 +173,7 @@ pub(crate) fn parameter_optional(node: &SyntaxNode) -> bool {
     first_token_text(&node.green(), TK_EQUALS).is_some()
 }
 
-/// Removes white space and comment-like regions (Go `compactExpression`).
+/// Removes white space and comment-like regions.
 fn compact_expression(text: &str) -> String {
     let bytes = text.as_bytes();
     let needs_slow = bytes.iter().enumerate().any(|(index, &byte)| match byte {

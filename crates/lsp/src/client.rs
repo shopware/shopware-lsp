@@ -10,6 +10,15 @@ use crate::server::{ClientState, Server, read, write};
 /// The client contract version this server speaks.
 pub const CLIENT_PROTOCOL_VERSION: i32 = swlsp_integration::PROTOCOL_VERSION;
 
+/// A rejected `initializationOptions.shopwareClient` contract.
+#[derive(Debug, thiserror::Error)]
+pub enum ClientContractError {
+    #[error("unsupported Shopware client protocol version {client}; server supports {server}")]
+    ProtocolVersion { client: i32, server: i32 },
+    #[error("unsupported Shopware presentation profile {0:?}")]
+    PresentationProfile(String),
+}
+
 /// How much generic presentation a host IDE wants from the server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PresentationProfile {
@@ -31,7 +40,7 @@ impl Server {
     pub(crate) fn configure_client_integration(
         &self,
         options: Option<&protocol::ShopwareClientOptions>,
-    ) -> Result<(), String> {
+    ) -> Result<(), ClientContractError> {
         let mut state = ClientState {
             protocol_version: CLIENT_PROTOCOL_VERSION,
             presentation_profile: PresentationProfile::Full.as_str().to_owned(),
@@ -42,19 +51,16 @@ impl Server {
                 return Ok(());
             };
             if options.protocol_version != CLIENT_PROTOCOL_VERSION {
-                return Err(format!(
-                    "unsupported Shopware client protocol version {}; server supports {}",
-                    options.protocol_version, CLIENT_PROTOCOL_VERSION
-                ));
+                return Err(ClientContractError::ProtocolVersion {
+                    client: options.protocol_version,
+                    server: CLIENT_PROTOCOL_VERSION,
+                });
             }
             let profile = match options.presentation_profile.trim() {
                 "" | "full" => PresentationProfile::Full,
                 "framework" => PresentationProfile::Framework,
                 other => {
-                    return Err(format!(
-                        "unsupported Shopware presentation profile {}",
-                        swlsp_uriutil::go_quote(other)
-                    ));
+                    return Err(ClientContractError::PresentationProfile(other.to_owned()));
                 }
             };
             state.presentation_profile = profile.as_str().to_owned();
@@ -67,7 +73,7 @@ impl Server {
             }
             Ok(())
         })();
-        // Like Go, a rejected contract keeps the fields written so far.
+        // A rejected contract still records the fields validated so far.
         write(&self.session).client = state;
         result
     }
@@ -212,17 +218,16 @@ impl Server {
             return;
         }
         for hint in hints {
-            let Value::Array(parts) = &mut hint.label else {
+            let protocol::InlayHintLabel::Parts(parts) = &mut hint.label else {
                 continue;
             };
             for part in parts {
                 let unsupported = part
-                    .get("command")
-                    .and_then(|command| command.get("command"))
-                    .and_then(Value::as_str)
-                    .is_some_and(|command| !self.supports_client_command(command));
-                if unsupported && let Value::Object(part) = part {
-                    part.remove("command");
+                    .command
+                    .as_ref()
+                    .is_some_and(|command| !self.supports_client_command(&command.command));
+                if unsupported {
+                    part.command = None;
                 }
             }
         }

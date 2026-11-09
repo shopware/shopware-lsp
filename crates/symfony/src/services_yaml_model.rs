@@ -1,8 +1,6 @@
-//! The parsed representation of a Symfony `services.xml` file (Go
-//! `services_yaml_model.go`).
+//! The parsed representation of a Symfony `services.xml` file.
 //!
-//! Go decodes the file with `encoding/xml` struct tags. Rust decodes the
-//! native XML CST into a small element tree with the same semantics: names
+//! The native XML CST is decoded into a small element tree: names
 //! match by local name, `,any` fields collect unmatched children, `,any,attr`
 //! fields collect unmatched attributes with their namespace resolved,
 //! `,chardata` concatenates direct character data with entities decoded and
@@ -706,7 +704,7 @@ fn deprecated(target: &mut XmlDeprecated, element: Element) {
     target.message = element.chardata;
 }
 
-/// `unknownElementError`.
+/// Rejects the first child element the conversion does not understand.
 pub(crate) fn unknown_element_error(parent: &str, unknown: &[String]) -> Result<(), ConvertError> {
     match unknown.first() {
         Some(name) => Err(ConvertError(format!(
@@ -716,16 +714,16 @@ pub(crate) fn unknown_element_error(parent: &str, unknown: &[String]) -> Result<
     }
 }
 
-/// `unknownAttributeError`; namespace declarations and schema locations
-/// carry no configuration.
+/// Rejects the first attribute the conversion does not understand;
+/// namespace declarations and schema locations carry no configuration.
 pub(crate) fn unknown_attribute_error(parent: &str, attrs: &[XmlAttr]) -> Result<(), ConvertError> {
     for attr in attrs {
         if attr.space == "xmlns" || attr.local == "xmlns" || attr.space == XSI_NAMESPACE {
             continue;
         }
         return Err(ConvertError(format!(
-            "unsupported attribute {} on <{parent}>",
-            crate::services_yaml_convert::go_quote(&attr.local)
+            "unsupported attribute {:?} on <{parent}>",
+            attr.local
         )));
     }
     Ok(())

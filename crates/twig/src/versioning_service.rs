@@ -1,5 +1,5 @@
 //! Shopware block versioning: upstream block resolution and version
-//! comments (port of `versioning_service.go` and `block_override.go`).
+//! comments.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -87,8 +87,7 @@ impl VersioningService {
         let file = parse_twig(file_path, source);
         let Some(block) = file.blocks.get(block_name).cloned() else {
             return Err(swlsp_indexer::Error::msg(format!(
-                "twig block {} is no longer available",
-                swlsp_php_types::go_quote(block_name)
+                "twig block {block_name:?} is no longer available"
             )));
         };
         let resolution = self.resolve(&file, block_name)?;
@@ -105,8 +104,7 @@ impl VersioningService {
         let (_, block, resolution) = self.resolve_document(file_path, source, block_name)?;
         let Some(upstream) = resolution.candidates.first() else {
             return Err(swlsp_indexer::Error::msg(format!(
-                "upstream Twig block {} is unavailable",
-                swlsp_php_types::go_quote(block_name)
+                "upstream Twig block {block_name:?} is unavailable"
             )));
         };
         let comment = format_version_comment(
@@ -373,7 +371,7 @@ fn template_namespace(reference: &str) -> String {
 }
 
 fn normalized_bundle_name(value: &str) -> String {
-    swlsp_php_types::go_to_lower(value).replace(['-', '_', '\\', '/'], "")
+    swlsp_textutil::lowercase(value).replace(['-', '_', '\\', '/'], "")
 }
 
 fn template_view_path(value: &str) -> String {
@@ -389,7 +387,8 @@ fn template_view_path(value: &str) -> String {
     value.strip_prefix('/').unwrap_or(value).to_owned()
 }
 
-/// Go `filepath.Rel` containment.
+/// Whether `candidate` is `root` or lies below it, compared lexically after
+/// cleaning both.
 fn path_inside(root: &str, candidate: &str) -> bool {
     let root = clean(root);
     let candidate = clean(candidate);

@@ -1,4 +1,4 @@
-//! Go `twig_component_diagnostics.go` and `twig_component_live_diagnostics.go`.
+//! Twig component and live component diagnostics.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -10,11 +10,11 @@ use swlsp_lsp_protocol as protocol;
 use swlsp_parser_twig::ast::{AstNode, HtmlTag, TwigBlock};
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::{TWIG_BLOCK, TWIG_COMPONENT, TWIG_FROM, TWIG_LITERAL_NAME};
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 use swlsp_twigcomponent::{Index, LiveAction};
 
-use super::{contains_fold, live_argument_attribute_segment, nil_strings, uri_path};
+use super::{contains_fold, live_argument_attribute_segment, strings_value, uri_path};
 use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 const MISSING_TWIG_COMPONENT_CODE: &str = "twig.component.missing";
@@ -24,7 +24,6 @@ const MISSING_LIVE_ARGUMENT_CODE: &str = "twig.component.live_argument.missing";
 const MIXED_COMPONENT_SYNTAX_CODE: &str = "twig.component.mixed_syntax";
 const COMPONENT_SELF_IMPORT_CODE: &str = "twig.component.self_macro_import";
 
-/// Go `TwigComponentAnalyzer`.
 pub struct TwigComponentAnalyzer {
     index: Option<Arc<Index>>,
 }
@@ -37,7 +36,7 @@ impl TwigComponentAnalyzer {
 
 pub(crate) fn suggestions_payload(suggestions: Vec<String>) -> Option<Value> {
     let mut payload = Map::new();
-    payload.insert("suggestions".into(), nil_strings(suggestions));
+    payload.insert("suggestions".into(), strings_value(suggestions));
     Some(Value::Object(payload))
 }
 
@@ -73,7 +72,7 @@ impl ProblemAnalyzer for TwigComponentAnalyzer {
         let (Some(index), Some(root)) = (&self.index, document.root()) else {
             return Ok(Vec::new());
         };
-        if !go_to_lower(&document.uri).ends_with(".twig") {
+        if !lowercase(&document.uri).ends_with(".twig") {
             return Ok(Vec::new());
         }
         let names = index.names()?;
@@ -222,7 +221,7 @@ impl Run<'_> {
             }
             let names: Vec<String> = actions
                 .iter()
-                .filter(|action| equal_fold(&action.name, &reference.action))
+                .filter(|action| eq_ignore_case(&action.name, &reference.action))
                 .flat_map(|action| action.parameters.iter().map(|p| p.name.clone()))
                 .collect();
             if names.is_empty() || contains_fold(&names, &reference.name) {

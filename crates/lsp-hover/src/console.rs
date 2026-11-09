@@ -19,7 +19,7 @@ pub struct ConsoleHoverProvider {
 }
 
 impl ConsoleHoverProvider {
-    /// `php` stands in for Go's request-context PHP enrichment.
+    /// `php` supplies the request's PHP semantic context.
     pub fn new(root: impl Into<String>, index: Option<Arc<Index>>, php: Option<PhpIndex>) -> Self {
         Self {
             root: root.into(),

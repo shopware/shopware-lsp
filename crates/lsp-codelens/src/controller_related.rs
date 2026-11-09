@@ -8,9 +8,9 @@ use swlsp_lsp::{CodeLensProvider, CodeLensRequest, Context, ProviderResult};
 use swlsp_lsp_protocol as protocol;
 use swlsp_php::PhpIndex;
 use swlsp_php_semantic::{Symbol, SymbolKind, Visibility};
-use swlsp_php_types::go_to_lower;
 use swlsp_symfony::{ControllerReference, RouteUsageIndexer, ServiceIndex};
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::lowercase;
 
 use crate::{
     by_line, cancelled, lower_ext, related_lens, related_protocol_range, related_source_line,
@@ -203,7 +203,7 @@ impl ControllerRelatedCodeLensProvider {
 }
 
 fn controller_method_key(class_name: &str, method_name: &str) -> String {
-    go_to_lower(&format!(
+    lowercase(&format!(
         "{}::{method_name}",
         class_name.trim_start_matches('\\')
     ))

@@ -1,4 +1,4 @@
-//! Ports of the Go `*_test.go` suites, one module per Go file.
+//! Entity schema tests, one module per feature area.
 #![allow(clippy::all)]
 
 mod association_autoload;

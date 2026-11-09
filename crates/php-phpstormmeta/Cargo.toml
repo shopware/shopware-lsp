@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+swlsp-textutil = { path = "../textutil" }
 swlsp-syntax.workspace = true
 swlsp-parser-php = { path = "../parser-php" }
 swlsp-php-semantic = { path = "../php-semantic" }

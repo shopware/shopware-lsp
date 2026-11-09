@@ -1,5 +1,4 @@
-//! PHP semantic diagnostics (port of `diagnostics.go` and
-//! `diagnostics_run.go`).
+//! PHP semantic diagnostics.
 
 use std::collections::HashSet;
 
@@ -26,8 +25,9 @@ use swlsp_php_semantic::{
     deprecation_of,
 };
 use swlsp_php_suppression::Set as Suppressions;
-use swlsp_php_types::{Kind, Type, equal_fold, go_to_lower};
+use swlsp_php_types::{Kind, Type};
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::Provider;
 use crate::helpers::{
@@ -66,7 +66,7 @@ pub const DIAGNOSTIC_IDS: &[&str] = &[
 ];
 
 impl Provider {
-    /// Semantic PHP diagnostics of an open document (Go `Analyze`).
+    /// Semantic PHP diagnostics of an open document.
     pub fn analyze(
         &self,
         ctx: &Context,
@@ -428,8 +428,8 @@ impl DiagnosticRun<'_> {
     }
 }
 
-/// Whether at least two classes are declared under `name` (Go
-/// `len(snapshot.Classes(name)) >= 2` without materializing).
+/// Whether at least two classes are declared under `name`, without
+/// materializing the class views.
 fn has_duplicate_class(snapshot: &Snapshot, name: &str) -> bool {
     let mut count = 0;
     snapshot.visit_class_views(name, |_| {
@@ -500,7 +500,7 @@ fn late_static_member_may_be_declared_by_subclass(
             late_static = current
                 .children()
                 .next()
-                .is_some_and(|first| equal_fold(first.text().to_string().trim(), "static"));
+                .is_some_and(|first| eq_ignore_case(first.text().to_string().trim(), "static"));
         }
         if late_static {
             break;
@@ -727,7 +727,7 @@ fn compose_condition(
     }
     let left = guarantees(&nodes[0], truth);
     let right = guarantees(&nodes[nodes.len() - 1], truth);
-    match go_to_lower(&diagnostic_direct_operator(node)).as_str() {
+    match lowercase(&diagnostic_direct_operator(node)).as_str() {
         "&&" | "and" => Some(if truth { left || right } else { left && right }),
         "||" | "or" => Some(if truth { left && right } else { left || right }),
         _ => None,
@@ -777,7 +777,7 @@ fn class_existence_predicate(node: &SyntaxNode) -> bool {
     }
     let name = query::call_method_name(node);
     matches!(
-        go_to_lower(name.strip_prefix('\\').unwrap_or(&name)).as_str(),
+        lowercase(name.strip_prefix('\\').unwrap_or(&name)).as_str(),
         "class_exists" | "interface_exists" | "trait_exists" | "enum_exists"
     )
 }
@@ -803,7 +803,7 @@ fn guarded_class_name(document: &Document, expression: Option<&SyntaxNode>) -> S
     }
     let nodes = direct_nodes(expression);
     if nodes.len() < 2
-        || !equal_fold(
+        || !eq_ignore_case(
             &compact_name(&nodes[nodes.len() - 1].text().to_string()),
             "class",
         )
@@ -820,7 +820,7 @@ fn guarded_class_name(document: &Document, expression: Option<&SyntaxNode>) -> S
 }
 
 fn normalize_diagnostic_class_name(name: &str) -> String {
-    go_to_lower(name.trim().trim_matches('\\'))
+    lowercase(name.trim().trim_matches('\\'))
 }
 
 fn diagnostic_php_string_value(node: &SyntaxNode) -> String {
@@ -837,7 +837,8 @@ fn diagnostic_php_string_value(node: &SyntaxNode) -> String {
     }
 }
 
-/// Go `strings.NewReplacer("\\\\", "\\", "\\"+quote, quote)`.
+/// Unescapes `\\` and an escaped `quote` in a single pass, left to right;
+/// every other backslash stays as written.
 fn unescape(value: &str, quote: char) -> String {
     let mut result = String::with_capacity(value.len());
     let mut characters = value.chars().peekable();
@@ -903,7 +904,7 @@ fn condition_guarantees_method(
         return false;
     }
     let name = query::call_method_name(node);
-    if !equal_fold(name.strip_prefix('\\').unwrap_or(&name), "method_exists") {
+    if !eq_ignore_case(name.strip_prefix('\\').unwrap_or(&name), "method_exists") {
         return false;
     }
     let (Some(target), Some(name)) = (
@@ -913,7 +914,7 @@ fn condition_guarantees_method(
         return false;
     };
     normalized_guard_expression(&target.text().to_string()) == receiver
-        && equal_fold(&query::string_value(&name), method)
+        && eq_ignore_case(&query::string_value(&name), method)
 }
 
 fn statement_terminates(node: Option<&SyntaxNode>) -> bool {
@@ -1074,7 +1075,7 @@ fn class_allows_dynamic_properties(
     class: &Symbol,
     visited: &mut HashSet<SymbolId>,
 ) -> bool {
-    if equal_fold(&class.fully_qualified, "stdClass") || has_allow_dynamic_properties(class) {
+    if eq_ignore_case(&class.fully_qualified, "stdClass") || has_allow_dynamic_properties(class) {
         return true;
     }
     if !visited.insert(class.id.clone()) {
@@ -1096,8 +1097,8 @@ fn class_allows_dynamic_properties(
 fn has_allow_dynamic_properties(class: &Symbol) -> bool {
     class.attributes().iter().any(|attribute| {
         let name = attribute.name.strip_prefix('\\').unwrap_or(&attribute.name);
-        equal_fold(name, "AllowDynamicProperties")
-            || go_to_lower(name).ends_with("\\allowdynamicproperties")
+        eq_ignore_case(name, "AllowDynamicProperties")
+            || lowercase(name).ends_with("\\allowdynamicproperties")
     })
 }
 
@@ -1129,7 +1130,7 @@ fn is_implicit_trait_requirement(
         .unwrap_or(&current.fully_qualified);
     fn contains_trait(value: &Type, trait_name: &str) -> bool {
         match value.kind() {
-            Kind::Object => equal_fold(
+            Kind::Object => eq_ignore_case(
                 value.name().strip_prefix('\\').unwrap_or(value.name()),
                 trait_name,
             ),
@@ -1241,7 +1242,7 @@ fn closure_binding_classes(
         };
         if call.kind() != PHP_SCOPED_CALL
             || query::argument_index(&call, &current) != Some(0)
-            || !equal_fold(&query::call_method_name(&call), "bind")
+            || !eq_ignore_case(&query::call_method_name(&call), "bind")
         {
             return Vec::new();
         }
@@ -1249,7 +1250,7 @@ fn closure_binding_classes(
             return Vec::new();
         };
         if receiver.kind() != PHP_NAME
-            || !equal_fold(
+            || !eq_ignore_case(
                 &name_context_at(document, receiver.text_range().start().into())
                     .resolve_class(&query::name_value(&receiver)),
                 "Closure",
@@ -1260,7 +1261,7 @@ fn closure_binding_classes(
 
         let mut scope_expression = query::argument_expression(&call, 2);
         for (index, argument) in query::arguments(&call).enumerate() {
-            if equal_fold(&query::argument_name(&argument), "newScope") {
+            if eq_ignore_case(&query::argument_name(&argument), "newScope") {
                 scope_expression = query::argument_expression(&call, index);
                 break;
             }
@@ -1320,7 +1321,7 @@ fn receiver_classes(snapshot: &Snapshot, receiver: &Type) -> Vec<Symbol> {
 }
 
 fn trait_name_matches(used: &str, trait_name: &str) -> bool {
-    equal_fold(
+    eq_ignore_case(
         used.strip_prefix('\\').unwrap_or(used),
         trait_name.strip_prefix('\\').unwrap_or(trait_name),
     )
@@ -1335,7 +1336,7 @@ fn class_uses_trait(
     if class_name.is_empty() || trait_name.is_empty() {
         return false;
     }
-    if !visited.insert(go_to_lower(
+    if !visited.insert(lowercase(
         class_name.strip_prefix('\\').unwrap_or(class_name),
     )) {
         return false;
@@ -1371,7 +1372,7 @@ fn class_directly_uses_trait(
     if class_name.is_empty() || trait_name.is_empty() {
         return false;
     }
-    if !visited.insert(go_to_lower(
+    if !visited.insert(lowercase(
         class_name.strip_prefix('\\').unwrap_or(class_name),
     )) {
         return false;

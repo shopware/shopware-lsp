@@ -6,7 +6,7 @@ use swlsp_syntax::{LineIndex, Tree};
 
 use crate::model::{Service, ServicePrototype};
 use crate::service_index::{ServiceIndex, prototype_matches_class};
-use crate::util::{GoLower, extension};
+use crate::util::{Lowercase, extension};
 
 /// The statically knowable navigation model of one open Symfony service
 /// configuration document.
@@ -26,7 +26,7 @@ pub fn service_configuration_in_document(
     let Some(tree) = tree else {
         return ServiceConfiguration::default();
     };
-    let (services, prototypes) = match extension(path).to_go_lower().as_str() {
+    let (services, prototypes) = match extension(path).lowercase().as_str() {
         ".php" => {
             let config = crate::php_service_config(path, &tree.root(), line_index);
             (config.services, config.prototypes)
@@ -60,7 +60,7 @@ impl ServiceIndex {
         result.extend(
             self.expanded_prototype_services()?
                 .iter()
-                .filter(|service| swlsp_php_types::equal_fold(&service.id, id))
+                .filter(|service| swlsp_textutil::eq_ignore_case(&service.id, id))
                 .cloned(),
         );
         sort_services_by_source(&mut result);
@@ -98,9 +98,8 @@ impl ServiceIndex {
 }
 
 fn sort_services_by_source(services: &mut [Service]) {
-    services.sort_by_cached_key(|service| {
-        (service.path.clone(), service.line, service.id.to_go_lower())
-    });
+    services
+        .sort_by_cached_key(|service| (service.path.clone(), service.line, service.id.lowercase()));
 }
 
 #[cfg(test)]

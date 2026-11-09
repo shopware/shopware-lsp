@@ -1,4 +1,4 @@
-//! Effective component assembly (port of Go `indexer_effective.go`).
+//! Effective component assembly.
 
 use std::sync::Arc;
 

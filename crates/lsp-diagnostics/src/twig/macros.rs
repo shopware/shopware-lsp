@@ -1,4 +1,4 @@
-//! Go `twig_macro_diagnostics.go`.
+//! Missing Twig macros.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -6,7 +6,7 @@ use std::sync::Arc;
 use swlsp_language::LanguageId;
 use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_lsp_protocol as protocol;
-use swlsp_php_types::go_to_lower;
+use swlsp_textutil::lowercase;
 use swlsp_twig::{Macro, MacroReference, MacroReferenceRole, TwigIndexer};
 
 use super::component::suggestions_payload;
@@ -15,7 +15,6 @@ use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 const MISSING_TWIG_MACRO_CODE: &str = "twig.macro.missing";
 
-/// Go `TwigMacroAnalyzer`.
 pub struct TwigMacroAnalyzer {
     index: Option<Arc<TwigIndexer>>,
 }
@@ -99,15 +98,15 @@ fn resolve(
             if item.file_path == path && is_current {
                 continue;
             }
-            names.insert(go_to_lower(&item.name), item.name);
+            names.insert(lowercase(&item.name), item.name);
         }
         if is_current {
             for item in current_macros {
-                names.insert(go_to_lower(&item.name), item.name.clone());
+                names.insert(lowercase(&item.name), item.name.clone());
             }
         }
     }
-    let found = names.contains_key(&go_to_lower(&reference.name));
+    let found = names.contains_key(&lowercase(&reference.name));
     let mut candidates: Vec<(String, String)> = names.into_iter().collect();
     candidates.sort_by(|left, right| left.0.cmp(&right.0));
     Ok((

@@ -1,4 +1,4 @@
-//! SCSS syntax kinds (values identical to the Go implementation).
+//! SCSS syntax kinds. Kind values are persisted in caches; do not renumber them.
 
 swlsp_syntax::language! {
     name: "scss", base: 12288,

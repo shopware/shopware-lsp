@@ -1,5 +1,4 @@
-//! Language-agnostic event parser (port of Go `parsekit`, itself a port of
-//! ludtwig's parser): a trivia-skipping token cursor, markers that record
+//! Language-agnostic event parser: a trivia-skipping token cursor, markers that record
 //! start/finish events, forward parents for left-recursive wrapping, a
 //! recovery loop, and a sink that replays events into a lossless green tree.
 

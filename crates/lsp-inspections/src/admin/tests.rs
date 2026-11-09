@@ -1,5 +1,4 @@
-//! Ports of the Administration tests of `inspection_test.go` and
-//! `admin_block_override_test.go`.
+//! Tests of the Administration inspections and block override fixes.
 
 use std::path::PathBuf;
 use std::sync::Arc;

@@ -199,24 +199,13 @@ fn collect_template_names<'a>(value: &'a Type, result: &mut BTreeSet<&'a str>) {
 pub(crate) const PERSISTED_TEMPLATE_PREFIX: &str = "\0shopware-lsp-templates:";
 
 /// Errors restoring a persisted type.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum PersistedError {
+    #[error("parse persisted PHP type: missing template separator")]
     MissingTemplateSeparator,
-    Parse(ParseError),
+    #[error(transparent)]
+    Parse(#[from] ParseError),
 }
-
-impl std::fmt::Display for PersistedError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PersistedError::MissingTemplateSeparator => {
-                formatter.write_str("parse persisted PHP type: missing template separator")
-            }
-            PersistedError::Parse(error) => error.fmt(formatter),
-        }
-    }
-}
-
-impl std::error::Error for PersistedError {}
 
 impl Type {
     /// Canonical text plus a private header preserving template identity:
@@ -318,9 +307,6 @@ impl Interner {
 
 /// Rebuilds type graphs with interned names while preserving node sharing
 /// within one semantic document. Inline builtins are returned unchanged.
-///
-/// Go uses this to copy source-backed substrings; in Rust strings are already
-/// owned, so the remaining value is name interning and node deduplication.
 pub struct Detacher<'a> {
     intern: Box<dyn FnMut(&str) -> Name + Send + 'a>,
     /// Keyed by source node address; the source is retained so the address

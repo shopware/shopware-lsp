@@ -1,4 +1,4 @@
-//! Go `invokable_command_migration_codeaction.go`: ports the Symfony 7.3
+//! Ports the Symfony 7.3
 //! `CommandToInvokableIntention` as a conservative whole-document rewrite.
 //! It is offered only when `configure()` consists entirely of statically
 //! convertible `addArgument()`/`addOption()` calls.
@@ -17,8 +17,8 @@ use swlsp_parser_php::syntax::{
 };
 use swlsp_php::{NameResolver, PhpIndex};
 use swlsp_php_resolver::{ImportKind, parse_use_declaration};
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_syntax::{Kind, SyntaxNode, TextRange};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::command_invoke_parameter::CONSOLE_COMMAND_CLASS;
 use crate::shared::{
@@ -91,7 +91,7 @@ fn migration_action(
     let extends = phpquery::direct_child(&class, PHP_EXTENDS_CLAUSE)?;
     let extends_names = phpquery::class_extends(&class);
     if extends_names.len() != 1
-        || !equal_fold(
+        || !eq_ignore_case(
             trim_backslashes(&resolver.resolve(&extends_names[0])),
             CONSOLE_COMMAND_CLASS,
         )
@@ -181,7 +181,7 @@ fn migration_action(
 fn php_own_method(class: &SyntaxNode, name: &str) -> Option<SyntaxNode> {
     phpquery::methods(class)
         .into_iter()
-        .find(|method| equal_fold(&phpquery::method_name(method), name))
+        .find(|method| eq_ignore_case(&phpquery::method_name(method), name))
 }
 
 fn function_like_is(call: &SyntaxNode, method: &SyntaxNode) -> bool {
@@ -207,7 +207,7 @@ fn safe_invokable_command_configure(method: &SyntaxNode) -> bool {
             if call.kind() != PHP_MEMBER_CALL || !invokable_command_call_rooted_at_this(&call) {
                 return false;
             }
-            match go_to_lower(&phpquery::call_method_name(&call)).as_str() {
+            match lowercase(&phpquery::call_method_name(&call)).as_str() {
                 "addargument" | "addoption" => statement_calls += 1,
                 _ => return false,
             }
@@ -224,7 +224,7 @@ fn invokable_command_call_rooted_at_this(call: &SyntaxNode) -> bool {
     while let Some(current) = receiver {
         let kind = current.kind();
         if kind == PHP_VARIABLE {
-            return equal_fold(&phpquery::variable_name(&current), "this");
+            return eq_ignore_case(&phpquery::variable_name(&current), "this");
         } else if kind == PHP_MEMBER_CALL || kind == PHP_SCOPED_CALL {
             receiver = phpquery::call_receiver(&current);
         } else if kind == PHP_MEMBER_ACCESS || kind == PHP_SCOPED_ACCESS {
@@ -245,7 +245,7 @@ fn invokable_configure_input_count(configure: Option<&SyntaxNode>) -> usize {
         .filter(|call| function_like_is(call, configure))
         .filter(|call| {
             matches!(
-                go_to_lower(&phpquery::call_method_name(call)).as_str(),
+                lowercase(&phpquery::call_method_name(call)).as_str(),
                 "addargument" | "addoption"
             )
         })
@@ -254,7 +254,7 @@ fn invokable_configure_input_count(configure: Option<&SyntaxNode>) -> usize {
 
 fn safe_invokable_command_defaults(arguments: &[Input], options: &[Input]) -> bool {
     arguments.iter().chain(options).all(|input| {
-        let value = go_to_lower(input.default.trim());
+        let value = lowercase(input.default.trim());
         value.is_empty() || !(value.contains("new ") || value.contains(['(', ')', ';']))
     })
 }
@@ -294,7 +294,7 @@ fn build_invokable_command_migration(
     let mut used_names: HashSet<String> = HashSet::new();
     for input in arguments {
         let variable = invokable_command_variable_name(&input.name);
-        if variable.is_empty() || !used_names.insert(go_to_lower(&variable)) {
+        if variable.is_empty() || !used_names.insert(lowercase(&variable)) {
             return None;
         }
         input_variables.insert(format!("argument:{}", input.name), variable.clone());
@@ -307,7 +307,7 @@ fn build_invokable_command_migration(
     }
     for input in options {
         let variable = invokable_command_variable_name(&input.name);
-        if variable.is_empty() || !used_names.insert(go_to_lower(&variable)) {
+        if variable.is_empty() || !used_names.insert(lowercase(&variable)) {
             return None;
         }
         input_variables.insert(format!("option:{}", input.name), variable.clone());
@@ -342,7 +342,7 @@ fn build_invokable_command_migration(
     let input_used = invokable_variable_used_outside_ranges(execute, &input_name, &replaced_ranges);
     let output_used = invokable_variable_used_outside_ranges(execute, &output_name, &[]);
     if input_used && !input_name.is_empty() {
-        if !used_names.insert(go_to_lower(&input_name)) {
+        if !used_names.insert(lowercase(&input_name)) {
             return None;
         }
         required.insert(
@@ -354,7 +354,7 @@ fn build_invokable_command_migration(
         );
     }
     if output_used && !output_name.is_empty() {
-        if !used_names.insert(go_to_lower(&output_name)) {
+        if !used_names.insert(lowercase(&output_name)) {
             return None;
         }
         let position = usize::from(input_used);
@@ -369,10 +369,13 @@ fn build_invokable_command_migration(
     for parameter in phpquery::parameters(execute) {
         let parameter_name = phpquery::parameter_name(&parameter);
         let name = parameter_name.strip_prefix('$').unwrap_or(&parameter_name);
-        if name.is_empty() || equal_fold(name, &input_name) || equal_fold(name, &output_name) {
+        if name.is_empty()
+            || eq_ignore_case(name, &input_name)
+            || eq_ignore_case(name, &output_name)
+        {
             continue;
         }
-        if !used_names.insert(go_to_lower(name)) {
+        if !used_names.insert(lowercase(name)) {
             return None;
         }
         let candidate = CommandParameter {
@@ -431,7 +434,7 @@ fn invokable_command_interface_parameter(
     for parameter in phpquery::parameters(method) {
         let parameter_type = phpquery::parameter_type(&parameter);
         for candidate in split_type_names(&parameter_type) {
-            if equal_fold(
+            if eq_ignore_case(
                 trim_backslashes(&resolver.resolve(candidate)),
                 interface_name,
             ) {
@@ -463,11 +466,11 @@ fn invokable_input_calls(
             continue;
         };
         if receiver.kind() != PHP_VARIABLE
-            || !equal_fold(&phpquery::variable_name(&receiver), input_name)
+            || !eq_ignore_case(&phpquery::variable_name(&receiver), input_name)
         {
             continue;
         }
-        let kind = match go_to_lower(&phpquery::call_method_name(&call)).as_str() {
+        let kind = match lowercase(&phpquery::call_method_name(&call)).as_str() {
             "getargument" => "argument:",
             "getoption" => "option:",
             _ => continue,
@@ -496,7 +499,7 @@ fn invokable_input_calls(
 
 fn invokable_redundant_input_assignment(item: &InputCall) -> Option<SyntaxNode> {
     let statement = php_ancestor_of_kind(&item.replacement, PHP_EXPRESSION_STATEMENT)?;
-    if !equal_fold(
+    if !eq_ignore_case(
         &phpquery::assigned_variable(&statement),
         &format!("${}", item.variable_name),
     ) {
@@ -527,7 +530,7 @@ fn invokable_variable_used_outside_ranges(
     phpquery::nodes(&block, &[PHP_VARIABLE])
         .iter()
         .any(|variable| {
-            if !equal_fold(&phpquery::variable_name(variable), name) {
+            if !eq_ignore_case(&phpquery::variable_name(variable), name) {
                 return false;
             }
             let range = variable.text_range();
@@ -622,24 +625,15 @@ fn invokable_option_parameter(input: &Input, variable: &str, qualifier: &str) ->
     }
 }
 
-fn is_go_letter(value: char) -> bool {
-    value.is_alphabetic()
-}
-
-fn is_go_digit(value: char) -> bool {
-    value.is_numeric()
-}
-
-/// Go `invokableCommandVariableName`.
 fn invokable_command_variable_name(name: &str) -> String {
     if name.is_empty() {
         return String::new();
     }
     let valid = name.chars().enumerate().all(|(index, value)| {
         if index == 0 {
-            value == '_' || is_go_letter(value)
+            value == '_' || value.is_alphabetic()
         } else {
-            value == '_' || is_go_letter(value) || is_go_digit(value)
+            value == '_' || value.is_alphabetic() || value.is_numeric()
         }
     });
     if valid {
@@ -648,12 +642,12 @@ fn invokable_command_variable_name(name: &str) -> String {
     let mut builder = String::new();
     let mut upper_next = false;
     for value in name.chars() {
-        if is_go_letter(value) || is_go_digit(value) || value == '_' {
-            if builder.is_empty() && is_go_digit(value) {
+        if value.is_alphabetic() || value.is_numeric() || value == '_' {
+            if builder.is_empty() && value.is_numeric() {
                 builder.push('_');
             }
-            if upper_next && is_go_letter(value) {
-                builder.push(go_to_upper_char(value));
+            if upper_next && value.is_alphabetic() {
+                builder.push(swlsp_textutil::uppercase_char(value));
             } else {
                 builder.push(value);
             }
@@ -668,15 +662,6 @@ fn invokable_command_variable_name(name: &str) -> String {
     builder
 }
 
-/// Go `unicode.ToUpper` for one rune (simple case mapping).
-fn go_to_upper_char(value: char) -> char {
-    let mut upper = value.to_uppercase();
-    match (upper.next(), upper.next()) {
-        (Some(single), None) => single,
-        _ => value,
-    }
-}
-
 fn invokable_command_signature_replacement(
     source: &str,
     class: &SyntaxNode,
@@ -686,7 +671,7 @@ fn invokable_command_signature_replacement(
     let start = child_tokens(method)
         .find(|token| {
             matches!(
-                go_to_lower(token.text()).as_str(),
+                lowercase(token.text()).as_str(),
                 "public" | "protected" | "private" | "function"
             )
         })
@@ -730,14 +715,14 @@ fn invokable_parent_constructor_replacements(class: &SyntaxNode) -> Vec<PhpSourc
     let mut result = Vec::new();
     for call in phpquery::nodes(&constructor, &[PHP_SCOPED_CALL]) {
         if !function_like_is(&call, &constructor)
-            || !equal_fold(&phpquery::call_method_name(&call), "__construct")
+            || !eq_ignore_case(&phpquery::call_method_name(&call), "__construct")
         {
             continue;
         }
         let Some(receiver) = phpquery::call_receiver(&call) else {
             continue;
         };
-        if !equal_fold(&phpquery::name_value(&receiver), "parent") {
+        if !eq_ignore_case(&phpquery::name_value(&receiver), "parent") {
             continue;
         }
         if let Some(statement) = php_ancestor_of_kind(&call, PHP_EXPRESSION_STATEMENT) {
@@ -765,7 +750,8 @@ fn invokable_self_exit_constant_replacements(
             .filter(|child| child.kind() == PHP_NAME)
             .map(|child| phpquery::name_value(&child))
             .collect();
-        if names.len() != 2 || (!equal_fold(&names[0], "self") && !equal_fold(&names[0], "static"))
+        if names.len() != 2
+            || (!eq_ignore_case(&names[0], "self") && !eq_ignore_case(&names[0], "static"))
         {
             continue;
         }
@@ -805,7 +791,7 @@ fn php_text_edit_replacement(
     })
 }
 
-/// Go `cleanupInvokableCommandImports`: drops now-unused console imports.
+/// Drops now-unused console imports.
 fn cleanup_invokable_command_imports(uri: &str, source: &str) -> String {
     let document = TextDocument::new(uri, source, 1);
     let Some(root) = document.root() else {
@@ -820,7 +806,7 @@ fn cleanup_invokable_command_imports(uri: &str, source: &str) -> String {
         "Symfony\\Component\\Console\\Input\\InputOption",
     ]
     .iter()
-    .map(|target| go_to_lower(target))
+    .map(|target| lowercase(target))
     .collect();
     let mut replacements = Vec::new();
     for declaration in phpquery::use_declarations(&root) {
@@ -829,7 +815,7 @@ fn cleanup_invokable_command_imports(uri: &str, source: &str) -> String {
             continue;
         }
         let target = trim_backslashes(&imports[0].target);
-        if !targets.contains(&go_to_lower(target)) {
+        if !targets.contains(&lowercase(target)) {
             continue;
         }
         if php_class_name_used_outside(&root, &resolver, target, &[Some(&declaration)]) {

@@ -112,10 +112,10 @@ Sent when indexing finishes. Parameters:
 
 ## Using with Neovim
 
-The server produces a single binary. Build it using:
+The server is a single binary. Build it with:
 
 ```bash
-go build -o shopware-lsp
+cargo build --release -p swlsp-cli   # writes target/release/shopware-lsp
 ```
 
 In Neovim, configure the language server using `lspconfig`:

@@ -1,5 +1,4 @@
-//! `Shopware.Utils` value declarations (port of Go
-//! `shopware_utils_index.go`).
+//! `Shopware.Utils` value declarations.
 
 use crate::*;
 

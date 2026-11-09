@@ -1,4 +1,4 @@
-//! Go `admin_diagnostics_registry.go`: registry and module-route lookups.
+//! Registry and module-route lookups.
 
 use std::collections::HashSet;
 
@@ -16,10 +16,10 @@ use swlsp_syntax::TextRange;
 
 use super::analyzer::AdminAnalyzer;
 use super::twig::AdminTwigDiagnosticDocument;
-use super::{go_string_list, payload, text};
+use super::{payload, string_array, text};
 use crate::common::{admin_nearby_suggestions, javascript_string_content_range};
 
-/// Distinct non-empty names in first-seen order (Go `uniqueAdmin*Names`).
+/// Distinct non-empty names in first-seen order.
 fn unique_names<'a>(names: impl Iterator<Item = &'a str>) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut result = Vec::new();
@@ -170,7 +170,7 @@ impl AdminAnalyzer {
                 id: code.into(),
                 payload: Some(payload(vec![
                     (payload_key, text(name)),
-                    ("suggestions", go_string_list(suggestions)),
+                    ("suggestions", string_array(suggestions)),
                 ])),
                 ..Problem::default()
             });
@@ -214,7 +214,7 @@ impl AdminAnalyzer {
                 id: code.into(),
                 payload: Some(payload(vec![
                     (payload_key, text(name)),
-                    ("suggestions", go_string_list(similar(name, names))),
+                    ("suggestions", string_array(similar(name, names))),
                 ])),
                 ..Problem::default()
             });
@@ -280,7 +280,7 @@ fn module_route_problem(name: &str, range: TextRange, names: &[String]) -> Probl
         id: "admin.module-route.not-found".into(),
         payload: Some(payload(vec![
             ("routeName", text(name)),
-            ("suggestions", go_string_list(similar(name, names))),
+            ("suggestions", string_array(similar(name, names))),
         ])),
         ..Problem::default()
     }

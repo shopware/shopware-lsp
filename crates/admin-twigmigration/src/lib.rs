@@ -1,5 +1,4 @@
-//! Versioned Administration Twig component migrations (port of Go
-//! `internal/admin/twigmigration`).
+//! Versioned Administration Twig component migrations.
 //!
 //! Immutable Twig CST nodes are compiled to lossless source edits; callers
 //! decide whether to expose those edits as an LSP quick fix.
@@ -8,60 +7,35 @@ mod entities;
 mod html;
 
 use std::collections::HashMap;
-use std::fmt;
 
 use swlsp_parser_twig::ast::{AstNode, HtmlAttribute, HtmlStartingTag, HtmlTag, TwigVar};
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::{HTML_ATTRIBUTE_LIST, HTML_TEXT, TWIG_VAR};
 use swlsp_rewrite::{Builder, Edit, RewriteError};
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::lowercase;
 
 pub use html::unescape_string;
 
 /// Why a migration could not be compiled.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MigrationError {
-    /// Go `ErrUnsafe`: the legacy API carries behavior without a
-    /// deterministic target equivalent.
+    /// The legacy API carries behavior without a deterministic target
+    /// equivalent; the migration must be done by hand.
+    #[error("administration Twig migration is not safely automatable: {0}")]
     Unsafe(String),
     /// The edits could not be built.
-    Rewrite(RewriteError),
+    #[error(transparent)]
+    Rewrite(#[from] RewriteError),
     /// The node or rule does not describe a valid migration.
+    #[error("{0}")]
     Invalid(String),
 }
 
 impl MigrationError {
-    /// Go `errors.Is(err, ErrUnsafe)`.
+    /// Whether the migration was refused as not safely automatable.
     pub fn is_unsafe(&self) -> bool {
         matches!(self, Self::Unsafe(_))
-    }
-}
-
-impl fmt::Display for MigrationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unsafe(reason) => write!(
-                f,
-                "administration Twig migration is not safely automatable: {reason}"
-            ),
-            Self::Rewrite(error) => error.fmt(f),
-            Self::Invalid(message) => f.write_str(message),
-        }
-    }
-}
-
-impl std::error::Error for MigrationError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Rewrite(error) => Some(error),
-            _ => None,
-        }
-    }
-}
-
-impl From<RewriteError> for MigrationError {
-    fn from(error: RewriteError) -> Self {
-        Self::Rewrite(error)
     }
 }
 
@@ -342,8 +316,7 @@ fn compile_rule(editor: &mut TagEditor<'_>, id: &str) -> Result<()> {
         }
         "popover" => migrate_popover(editor),
         _ => Err(MigrationError::Invalid(format!(
-            "unknown Administration Twig migration {}",
-            go_quote(id)
+            "unknown Administration Twig migration {id:?}"
         ))),
     }
 }
@@ -368,7 +341,7 @@ fn migrate_button(editor: &mut TagEditor<'_>) -> Result<()> {
         let Some(value) = attribute_value(&variant) else {
             return Err(unsafe_("button variant has no static value"));
         };
-        match go_to_lower(&value).as_str() {
+        match lowercase(&value).as_str() {
             "ghost" => {
                 editor.delete("variant")?;
                 editor.add_boolean("ghost");
@@ -683,7 +656,7 @@ impl<'s> TagEditor<'s> {
         let Some(value) = attribute_value(&attribute) else {
             return Err(unsafe_(format!("{name} has no static value")));
         };
-        let key = go_to_lower(value.trim());
+        let key = lowercase(value.trim());
         let Some((_, replacement)) = values.iter().find(|(candidate, _)| *candidate == key) else {
             return Ok(());
         };
@@ -881,7 +854,8 @@ struct SlotValue {
     empty: bool,
 }
 
-/// Go `templateSlotValue`; `None` when the content is too complex.
+/// The value a slot `<template>` passes on; `None` when the content is too
+/// complex.
 fn template_slot_value(tag: &HtmlTag) -> Option<SlotValue> {
     let empty = SlotValue {
         value: String::new(),
@@ -977,28 +951,6 @@ fn escape_javascript_single_quoted(value: &str) -> String {
         }
     }
     result
-}
-
-/// Go `strings.ToLower`: simple per-character lower-case mapping.
-fn go_to_lower(value: &str) -> String {
-    value
-        .chars()
-        .map(|character| {
-            if character == '\u{130}' {
-                return 'i';
-            }
-            let mut lower = character.to_lowercase();
-            match (lower.next(), lower.next()) {
-                (Some(single), None) => single,
-                _ => character,
-            }
-        })
-        .collect()
-}
-
-/// Go `%q` for the plain ASCII identifiers used as rule ids.
-fn go_quote(value: &str) -> String {
-    format!("{value:?}")
 }
 
 #[cfg(test)]

@@ -160,7 +160,10 @@ fn decode_rejects_unknown_and_invalid_values() {
             r#"{"version":1,"diagnostics":{"rules":{"php.arguments":"loud"}}}"#,
             "invalid severity",
         ),
-        (r#"{"version":1,"unknown":true}"#, "field unknown not found"),
+        (
+            r#"{"version":1,"unknown":true}"#,
+            r#"unknown field "unknown""#,
+        ),
         (
             r#"{"version":1,"shopware":{"targetVersion":"next"}}"#,
             "invalid Shopware target version",
@@ -183,33 +186,32 @@ fn decode_rejects_unknown_and_invalid_values() {
     }
 }
 
-/// Expected messages were produced by the Go implementation.
 #[test]
-fn decode_errors_match_go() {
+fn decode_errors_describe_the_problem() {
     for (source, expected) in [
-        ("", "decode configuration: EOF"),
-        ("# only\n", "decode configuration: EOF"),
+        ("", "decode configuration: no YAML document"),
+        ("# only\n", "decode configuration: no YAML document"),
         ("---\n", "configuration version is required"),
         (
             "version: 1\n---\nversion: 1\n",
-            "decode configuration: multiple JSON values",
+            "decode configuration: multiple YAML documents",
         ),
         ("version: 2\n", "unsupported configuration version 2"),
         (
             "version: x\n",
-            "decode configuration: yaml: unmarshal errors:\n  line 1: cannot unmarshal !!str `x` into int",
+            "decode configuration: line 1: expected an integer, found string `x`",
         ),
         (
             "version: 1\nfeatures: [1]\n",
-            "decode configuration: yaml: unmarshal errors:\n  line 2: cannot unmarshal !!seq into map[string]bool",
+            "decode configuration: line 2: expected a map of booleans, found sequence",
         ),
         (
             "version: 1\nunknown: 1\nother: 2\n",
-            "decode configuration: yaml: unmarshal errors:\n  line 2: field unknown not found in type projectconfig.Partial\n  line 3: field other not found in type projectconfig.Partial",
+            "decode configuration: line 2: unknown field \"unknown\" in the configuration\nline 3: unknown field \"other\" in the configuration",
         ),
         (
             "version: 1\nfeatures:\n  hover: maybe\n",
-            "decode configuration: yaml: unmarshal errors:\n  line 3: cannot unmarshal !!str `maybe` into bool",
+            "decode configuration: line 3: expected a boolean, found string `maybe`",
         ),
         (
             "version: 1\nindexing:\n  exclude: ['/abs']\n",
@@ -245,7 +247,7 @@ fn decode_errors_match_go() {
         ),
         (
             "5",
-            "decode configuration: yaml: unmarshal errors:\n  line 1: cannot unmarshal !!int `5` into projectconfig.Partial",
+            "decode configuration: line 1: expected a mapping, found integer `5`",
         ),
         (
             "version: 1\ndiagnostics:\n  overrides: [{files: ['a'], rules: {x: bad}}]\n",
@@ -254,9 +256,9 @@ fn decode_errors_match_go() {
     ] {
         assert_eq!(error_of(source), expected, "{source:?}");
     }
-    // Syntax errors and duplicate keys are rejected; the wording comes from
-    // the YAML library and differs from yaml.v3.
-    assert!(error_of("version: 1\na: [\n").starts_with("decode configuration: yaml: line "));
+    // Syntax errors and duplicate keys are rejected with the YAML library's
+    // wording.
+    assert!(error_of("version: 1\na: [\n").starts_with("decode configuration: line "));
     assert!(error_of("version: 1\nversion: 1\n").starts_with("decode configuration: "));
 }
 
@@ -462,7 +464,7 @@ fn load_scopes_follows_symlinks_without_loops() {
 
     let scopes = load_scopes(root).unwrap();
     let roots: Vec<&str> = scopes.iter().map(|scope| scope.root.as_str()).collect();
-    // Like Go, only symlink targets are deduplicated: the real directory and
+    // Only symlink targets are deduplicated: the real directory and
     // its symlinked alias are both walked, while the loop back to the root
     // is skipped.
     assert_eq!(
@@ -544,9 +546,10 @@ fn structural_fingerprint_ignores_live_settings() {
     );
 }
 
-/// Digests were produced by the Go implementation.
+/// The digests are stored with existing index caches; a change here
+/// invalidates every cache.
 #[test]
-fn structural_fingerprint_matches_go() {
+fn structural_fingerprint_is_stable() {
     let mut value = Effective::default();
     assert_eq!(
         value.structural_fingerprint(),
@@ -561,7 +564,7 @@ fn structural_fingerprint_matches_go() {
 }
 
 #[test]
-fn effective_json_matches_go() {
+fn effective_json_wire_shape() {
     let encoded = serde_json::to_string(&Effective::default()).unwrap();
     assert!(encoded.starts_with(
         r#"{"php":{"extensions":null,"disabledExtensions":null},"shopware":{"targetVersion":""},"features":{"callHierarchy":true,"#
@@ -590,7 +593,7 @@ fn partial_json_round_trip_tolerates_nulls() {
 }
 
 #[test]
-fn catalog_entries_serialize_like_go() {
+fn catalog_entries_serialize_compactly() {
     let twig = DOMAIN_CATALOG
         .iter()
         .find(|entry| entry.id == "twig")

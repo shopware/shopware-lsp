@@ -1,4 +1,4 @@
-//! Spec validation (port of Go `validate_spec.go` and `validate_migration.go`).
+//! Spec validation.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
@@ -65,7 +65,7 @@ pub(crate) struct SpecValidator {
     translated_storage_names: HashMap<String, String>,
     existing_column_references: Vec<ExistingColumnReference>,
     reference_version_targets: HashMap<String, Vec<FieldSpec>>,
-    /// Go iterates a map here; insertion order keeps issue order stable.
+    /// Kept in insertion order so issues are reported in a stable order.
     required_relation_targets: Vec<(String, String)>,
     id_count: usize,
     auto_increment_count: usize,
@@ -520,27 +520,24 @@ fn validate_bulk_extension_spec(validator: &mut SpecValidator) {
         if !seen_ids.insert(id.clone()) {
             validator.add(
                 "entity.bulkExtension.target.id.duplicate",
-                format!("Bulk target ID {} is duplicated", go_quote(&id)),
+                format!("Bulk target ID {:?} is duplicated", id),
                 &id,
             );
         }
-        if !seen_entities.insert(go_to_lower(&target.entity_name)) {
+        if !seen_entities.insert(lowercase(&target.entity_name)) {
             validator.add(
                 "entity.bulkExtension.target.entity.duplicate",
-                format!(
-                    "Entity {} is extended more than once",
-                    go_quote(&target.entity_name)
-                ),
+                format!("Entity {:?} is extended more than once", target.entity_name),
                 &id,
             );
         }
-        let definition_key = go_to_lower(trim_class(&target.extended_definition_class));
+        let definition_key = lowercase(trim_class(&target.extended_definition_class));
         if !definition_key.is_empty() && !seen_definitions.insert(definition_key) {
             validator.add(
                 "entity.bulkExtension.target.definition.duplicate",
                 format!(
-                    "Definition {} is extended more than once",
-                    go_quote(&target.extended_definition_class)
+                    "Definition {:?} is extended more than once",
+                    target.extended_definition_class
                 ),
                 &id,
             );
@@ -571,7 +568,7 @@ impl SpecValidator {
         if !supported_field_kind(&field.kind) {
             self.add(
                 "entity.field.kind.unsupported",
-                format!("Unsupported field kind {}", go_quote(&field.kind)),
+                format!("Unsupported field kind {:?}", field.kind),
                 &field.id,
             );
             return;
@@ -751,7 +748,7 @@ fn valid_entity_type_expression(value: &str) -> bool {
         {
             return false;
         }
-        if !seen.insert(go_to_lower(part)) {
+        if !seen.insert(lowercase(part)) {
             return false;
         }
     }
@@ -786,8 +783,8 @@ impl SpecValidator {
                 | FIELD_VERSION | FIELD_HIERARCHY => self.add(
                     "entity.extension.field.unsupported",
                     format!(
-                        "Field kind {} cannot be added by an EntityExtension",
-                        go_quote(&field.kind)
+                        "Field kind {:?} cannot be added by an EntityExtension",
+                        field.kind
                     ),
                     &field.id,
                 ),
@@ -1328,7 +1325,7 @@ impl SpecValidator {
                 );
                 return;
             }
-            if !seen.insert(go_to_lower(normalized)) {
+            if !seen.insert(lowercase(normalized)) {
                 self.add(
                     code,
                     "API source restrictions cannot contain duplicates",
@@ -1525,7 +1522,7 @@ impl SpecValidator {
         if !is_translatable_kind(&field.kind) {
             self.add(
                 "entity.translation.kind.unsupported",
-                format!("Field kind {} cannot be translated", go_quote(&field.kind)),
+                format!("Field kind {:?} cannot be translated", field.kind),
                 &field.id,
             );
             return;
@@ -1540,10 +1537,7 @@ impl SpecValidator {
         if !STORAGE_PATTERN.is_match(&field.storage_name) {
             self.add(
                 "entity.field.storage.invalid",
-                format!(
-                    "Invalid translated storage name {}",
-                    go_quote(&field.storage_name)
-                ),
+                format!("Invalid translated storage name {:?}", field.storage_name),
                 &field.id,
             );
             return;
@@ -1558,8 +1552,8 @@ impl SpecValidator {
         }
         if let Some(previous) = self.translated_storage_names.get(&field.storage_name) {
             let message = format!(
-                "Translated storage column {} is already used by field {previous}",
-                go_quote(&field.storage_name)
+                "Translated storage column {:?} is already used by field {previous}",
+                field.storage_name
             );
             self.add("entity.field.storage.duplicate", message, &field.id);
             return;
@@ -1593,7 +1587,7 @@ impl SpecValidator {
         if !PROPERTY_PATTERN.is_match(&field.property_name) {
             self.add(
                 "entity.field.property.invalid",
-                format!("Invalid property name {}", go_quote(&field.property_name)),
+                format!("Invalid property name {:?}", field.property_name),
                 &field.id,
             );
             return;
@@ -1603,9 +1597,8 @@ impl SpecValidator {
                 return;
             }
             let message = format!(
-                "Property {} is already used by field {}",
-                go_quote(&field.property_name),
-                previous.id
+                "Property {:?} is already used by field {}",
+                field.property_name, previous.id
             );
             self.add("entity.field.property.duplicate", message, &field.id);
             return;
@@ -1702,10 +1695,7 @@ impl SpecValidator {
         if !ASSOCIATION_STORAGE_PATTERN.is_match(&field.storage_name) {
             self.add(
                 "entity.field.storage.invalid",
-                format!(
-                    "Invalid existing storage name {}",
-                    go_quote(&field.storage_name)
-                ),
+                format!("Invalid existing storage name {:?}", field.storage_name),
                 &field.id,
             );
         } else if field.storage_name.contains('.') {
@@ -1738,9 +1728,8 @@ impl SpecValidator {
         }
         if let Some(previous) = self.properties.get(&field.foreign_key_property_name) {
             let message = format!(
-                "Property {} is already used by field {}",
-                go_quote(&field.foreign_key_property_name),
-                previous.id
+                "Property {:?} is already used by field {}",
+                field.foreign_key_property_name, previous.id
             );
             self.add("entity.field.property.duplicate", message, &field.id);
             return;
@@ -1892,10 +1881,7 @@ impl SpecValidator {
             if !PROPERTY_PATTERN.is_match(&field.storage_name) {
                 self.add(
                     "entity.field.storage.invalid",
-                    format!(
-                        "Invalid runtime field name {}",
-                        go_quote(&field.storage_name)
-                    ),
+                    format!("Invalid runtime field name {:?}", field.storage_name),
                     &field.id,
                 );
             }
@@ -1904,7 +1890,7 @@ impl SpecValidator {
         if !STORAGE_PATTERN.is_match(&field.storage_name) {
             self.add(
                 "entity.field.storage.invalid",
-                format!("Invalid storage name {}", go_quote(&field.storage_name)),
+                format!("Invalid storage name {:?}", field.storage_name),
                 &field.id,
             );
             return;
@@ -1919,9 +1905,8 @@ impl SpecValidator {
         }
         if let Some(target) = self.extended_storage_names.get(&field.storage_name) {
             let message = format!(
-                "Extension field {} conflicts with existing target field {}",
-                go_quote(&field.storage_name),
-                target.property_name
+                "Extension field {:?} conflicts with existing target field {}",
+                field.storage_name, target.property_name
             );
             self.add("entity.extension.column.duplicate", message, &field.id);
             return;
@@ -1931,9 +1916,8 @@ impl SpecValidator {
                 return;
             }
             let message = format!(
-                "Storage column {} is already used by field {}",
-                go_quote(&field.storage_name),
-                previous.id
+                "Storage column {:?} is already used by field {}",
+                field.storage_name, previous.id
             );
             self.add("entity.field.storage.duplicate", message, &field.id);
             return;
@@ -2009,8 +1993,8 @@ impl SpecValidator {
                     self.add(
                         "entity.relation.existingColumn.missing",
                         format!(
-                            "Association references unknown local or target column {}",
-                            go_quote(&reference.name)
+                            "Association references unknown local or target column {:?}",
+                            reference.name
                         ),
                         &reference.field_id,
                     );
@@ -2021,8 +2005,8 @@ impl SpecValidator {
                 self.add(
                     "entity.relation.existingColumn.missing",
                     format!(
-                        "Association references unknown local column {}",
-                        go_quote(&reference.name)
+                        "Association references unknown local column {:?}",
+                        reference.name
                     ),
                     &reference.field_id,
                 );
@@ -2043,13 +2027,13 @@ impl SpecValidator {
         if !INDEX_NAME_PATTERN.is_match(&index.name) {
             self.add(
                 "entity.index.name.invalid",
-                format!("Invalid index name {}", go_quote(&index.name)),
+                format!("Invalid index name {:?}", index.name),
                 "",
             );
         } else if index.name.len() > 64 {
             self.add(
                 "entity.index.name.tooLong",
-                format!("Index name {} exceeds 64 bytes", go_quote(&index.name)),
+                format!("Index name {:?} exceeds 64 bytes", index.name),
                 "",
             );
         }
@@ -2061,7 +2045,7 @@ impl SpecValidator {
         if !index_names.insert(format!("{scope}\0{}", index.name)) {
             self.add(
                 "entity.index.name.duplicate",
-                format!("Index {} is duplicated", go_quote(&index.name)),
+                format!("Index {:?} is duplicated", index.name),
                 "",
             );
         }
@@ -2074,8 +2058,8 @@ impl SpecValidator {
             self.add(
                 "entity.index.translation.missing",
                 format!(
-                    "Index {} targets a disabled translation table",
-                    go_quote(&index.name)
+                    "Index {:?} targets a disabled translation table",
+                    index.name
                 ),
                 "",
             );
@@ -2083,14 +2067,14 @@ impl SpecValidator {
         if index.kind != INDEX_NORMAL && index.kind != INDEX_UNIQUE {
             self.add(
                 "entity.index.kind.invalid",
-                format!("Unsupported index kind {}", go_quote(&index.kind)),
+                format!("Unsupported index kind {:?}", index.kind),
                 "",
             );
         }
         if index.columns.is_empty() {
             self.add(
                 "entity.index.columns.empty",
-                format!("Index {} has no columns", go_quote(&index.name)),
+                format!("Index {:?} has no columns", index.name),
                 "",
             );
         }
@@ -2124,9 +2108,9 @@ impl SpecValidator {
                     self.add(
                         "entity.index.column.translated",
                         format!(
-                            "Index {} cannot reference translated column {} on the parent table",
-                            go_quote(&index.name),
-                            go_quote(column)
+                            "Index {:?} cannot reference translated column {:?} on the parent table",
+                            index.name,
+                            column
                         ),
                         "",
                     );
@@ -2134,9 +2118,8 @@ impl SpecValidator {
                     self.add(
                         "entity.index.column.unknown",
                         format!(
-                            "Index {} references unknown column {}",
-                            go_quote(&index.name),
-                            go_quote(column)
+                            "Index {:?} references unknown column {:?}",
+                            index.name, column
                         ),
                         "",
                     );
@@ -2145,11 +2128,7 @@ impl SpecValidator {
             if !seen_columns.insert(column.as_str()) {
                 self.add(
                     "entity.index.column.duplicate",
-                    format!(
-                        "Index {} repeats column {}",
-                        go_quote(&index.name),
-                        go_quote(column)
-                    ),
+                    format!("Index {:?} repeats column {:?}", index.name, column),
                     "",
                 );
             }
@@ -2164,8 +2143,8 @@ impl SpecValidator {
             self.add(
                 "entity.extension.index.ownedColumn.required",
                 format!(
-                    "Extension index {} must include at least one column contributed by this extension",
-                    go_quote(&index.name)
+                    "Extension index {:?} must include at least one column contributed by this extension",
+                    index.name
                 ),
                 "",
             );

@@ -1,4 +1,4 @@
-//! Native type edits (port of `type.go`).
+//! Native type edits.
 
 use swlsp_parser_php::query::direct_child;
 use swlsp_parser_php::syntax::{

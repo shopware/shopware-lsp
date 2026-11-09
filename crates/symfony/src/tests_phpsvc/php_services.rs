@@ -499,7 +499,7 @@ return FrameworkConfig::config([
     }
 }
 
-// -- ServiceIndex with PHP configuration (Go php_services_indexer_test.go) --
+// -- ServiceIndex with PHP configuration --
 
 fn temp_path(dir: &tempfile::TempDir) -> String {
     dir.path().to_str().unwrap().to_owned()

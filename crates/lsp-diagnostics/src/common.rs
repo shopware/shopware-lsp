@@ -1,31 +1,30 @@
-//! Helpers shared by several analyzer groups (each mirrors one unexported Go
-//! helper of `internal/lsp/diagnostics`).
+//! Helpers shared by several analyzer groups.
 
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::{
     PHP_ARGUMENT_LIST, PHP_NAME, PHP_NAMED_ARGUMENT, PHP_PARENTHESIZED,
 };
 use swlsp_php_semantic::Snapshot;
-use swlsp_php_types::{Kind as TypeKind, Type, equal_fold, go_to_lower};
+use swlsp_php_types::{Kind as TypeKind, Type};
 use swlsp_syntax::{Kind, SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
-/// Go `adminNearbySuggestions`: candidates within edit distance 2
-/// (case-insensitive), ranked by `suggestion.Similar`.
+/// Candidates within edit distance 2 (case-insensitive), ranked by
+/// `suggestion.Similar`.
 pub fn admin_nearby_suggestions<S: AsRef<str>>(input: &str, candidates: &[S]) -> Vec<String> {
-    let lowered_input = go_to_lower(input);
+    let lowered_input = lowercase(input);
     let nearby: Vec<&str> = candidates
         .iter()
         .map(AsRef::as_ref)
         .filter(|candidate| {
-            bounded_admin_edit_distance(&lowered_input, &go_to_lower(candidate), 2) <= 2
+            bounded_admin_edit_distance(&lowered_input, &lowercase(candidate), 2) <= 2
         })
         .collect();
     swlsp_suggestion::similar(input, &nearby)
 }
 
-/// Go `boundedAdminEditDistance`: Levenshtein distance over chars, capped at
-/// `limit + 1`. Pairs whose lengths alone differ by more than `limit` skip
-/// the distance computation.
+/// Levenshtein distance over chars, capped at `limit + 1`. Pairs whose lengths
+/// alone differ by more than `limit` skip the distance computation.
 pub fn bounded_admin_edit_distance(left: &str, right: &str, limit: usize) -> usize {
     if left.chars().count().abs_diff(right.chars().count()) > limit {
         return limit + 1;
@@ -33,8 +32,7 @@ pub fn bounded_admin_edit_distance(left: &str, right: &str, limit: usize) -> usi
     strsim::levenshtein(left, right).min(limit + 1)
 }
 
-/// Go `javaScriptStringContentRange`: the trimmed range of a JavaScript
-/// string literal without its quotes.
+/// The trimmed range of a JavaScript string literal without its quotes.
 pub fn javascript_string_content_range(node: &SyntaxNode, source: &str) -> TextRange {
     let range = node.range_trimmed_trivia();
     let (start, end) = (
@@ -55,12 +53,11 @@ pub fn javascript_string_content_range(node: &SyntaxNode, source: &str) -> TextR
     range
 }
 
-/// Go `ancestorPHPNode`: `node` or its nearest ancestor of `kind`.
+/// `node` or its nearest ancestor of `kind`.
 pub fn ancestor_php_node(node: &SyntaxNode, kind: Kind) -> Option<SyntaxNode> {
     node.ancestors().find(|current| current.kind() == kind)
 }
 
-/// Go `shortPHPName`.
 pub fn short_php_name(name: &str) -> &str {
     let name = name.trim();
     let name = name.strip_prefix('\\').unwrap_or(name);
@@ -70,7 +67,7 @@ pub fn short_php_name(name: &str) -> &str {
     }
 }
 
-/// Go `callTargetName`: the last direct `PHP_NAME` before the argument list.
+/// The last direct `PHP_NAME` before the argument list.
 pub fn call_target_name(call: &SyntaxNode) -> Option<SyntaxNode> {
     let mut target = None;
     for child in call.children() {
@@ -84,8 +81,8 @@ pub fn call_target_name(call: &SyntaxNode) -> Option<SyntaxNode> {
     target
 }
 
-/// Go `phpTypeIsSubtype`: whether `value` or one of its type arguments is an
-/// object type that is a subtype of `target`.
+/// Whether `value` or one of its type arguments is an object type that is a
+/// subtype of `target`.
 pub fn php_type_is_subtype(value: &Type, snapshot: Option<&Snapshot>, target: &str) -> bool {
     let Some(snapshot) = snapshot else {
         return false;
@@ -99,8 +96,8 @@ pub fn php_type_is_subtype(value: &Type, snapshot: Option<&Snapshot>, target: &s
         .any(|argument| php_type_is_subtype(argument, Some(snapshot), target))
 }
 
-/// Go `localCallArgument`: the expression passed for `parameter_name`
-/// (named) or at `position` (positional).
+/// The expression passed for `parameter_name` (named) or at `position`
+/// (positional).
 pub fn local_call_argument(
     call: &SyntaxNode,
     parameter_name: &str,
@@ -110,7 +107,7 @@ pub fn local_call_argument(
     for argument in phpquery::arguments(call) {
         let name = phpquery::argument_name(&argument);
         if !name.is_empty() {
-            if equal_fold(&name, parameter_name) {
+            if eq_ignore_case(&name, parameter_name) {
                 return local_argument_expression(&argument);
             }
             continue;
@@ -123,8 +120,8 @@ pub fn local_call_argument(
     None
 }
 
-/// Go `localArgumentExpression`: the first child node of an argument,
-/// skipping the parameter name of a named argument.
+/// The first child node of an argument, skipping the parameter name of a named
+/// argument.
 pub fn local_argument_expression(argument: &SyntaxNode) -> Option<SyntaxNode> {
     let mut skip_named_parameter = argument.kind() == PHP_NAMED_ARGUMENT;
     for child in argument.children() {
@@ -137,7 +134,6 @@ pub fn local_argument_expression(argument: &SyntaxNode) -> Option<SyntaxNode> {
     None
 }
 
-/// Go `unwrapPHPParentheses`.
 pub fn unwrap_php_parentheses(node: &SyntaxNode) -> SyntaxNode {
     let mut node = node.clone();
     while node.kind() == PHP_PARENTHESIZED {
@@ -149,13 +145,13 @@ pub fn unwrap_php_parentheses(node: &SyntaxNode) -> SyntaxNode {
     node
 }
 
-/// Go `directReturnExpression`: the first child node of a return statement.
+/// The first child node of a return statement.
 pub fn direct_return_expression(php_return: &SyntaxNode) -> Option<SyntaxNode> {
     php_return.children().next()
 }
 
-/// Go `valueNodeTextRange`: the range of `value` inside the trimmed node
-/// text, or the trimmed node range.
+/// The range of `value` inside the trimmed node text, or the trimmed node
+/// range.
 pub fn value_node_text_range(node: Option<&SyntaxNode>, value: &str) -> TextRange {
     let Some(node) = node else {
         return TextRange::default();

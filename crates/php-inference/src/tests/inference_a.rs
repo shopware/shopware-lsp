@@ -1,5 +1,3 @@
-//! Port of `inference_test.go` (lines 1-1152).
-
 use std::collections::HashMap;
 use std::sync::Arc;
 

@@ -1,5 +1,4 @@
-//! Symfony `#[AsCommand]` `__invoke()` return type and value inspections
-//! (Go `invokable_command_diagnostics.go`).
+//! Symfony `#[AsCommand]` `__invoke()` return type and value inspections.
 
 use std::sync::Arc;
 
@@ -8,8 +7,9 @@ use swlsp_lsp_protocol::DiagnosticSeverity;
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::{PHP_NAME, PHP_RETURN_STATEMENT};
 use swlsp_php::{NameResolver, PhpIndex};
-use swlsp_php_types::{Kind as TypeKind, Type, equal_fold};
+use swlsp_php_types::{Kind as TypeKind, Type};
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
+use swlsp_textutil::eq_ignore_case;
 
 use super::{lower_ext, problem};
 use crate::ProblemAnalyzer;
@@ -25,8 +25,8 @@ pub const INVOKABLE_COMMAND_RETURN_VALUE_MESSAGE: &str =
 
 const AS_COMMAND_ATTRIBUTE: &str = "Symfony\\Component\\Console\\Attribute\\AsCommand";
 
-/// Go `InvokableCommandAnalyzer`: ports Symfony's AsCommand `__invoke()`
-/// return-type and return-value inspections.
+/// Ports Symfony's AsCommand `__invoke()` return-type and return-value
+/// inspections.
 pub struct InvokableCommandAnalyzer {
     php_index: Option<PhpIndex>,
 }
@@ -69,7 +69,7 @@ impl ProblemAnalyzer for InvokableCommandAnalyzer {
                 continue;
             }
             for method in phpquery::methods(&class) {
-                if !equal_fold(&phpquery::method_name(&method), "__invoke") {
+                if !eq_ignore_case(&phpquery::method_name(&method), "__invoke") {
                     continue;
                 }
                 if native_return_includes_int(&phpquery::method_return_type(&method)) {
@@ -111,7 +111,7 @@ impl ProblemAnalyzer for InvokableCommandAnalyzer {
 fn has_resolved_as_command_attribute(class: &SyntaxNode, resolver: &NameResolver) -> bool {
     phpquery::attributes(class).iter().any(|attribute| {
         let name = resolver.resolve(&phpquery::attribute_name(attribute));
-        equal_fold(
+        eq_ignore_case(
             name.strip_prefix('\\').unwrap_or(&name),
             AS_COMMAND_ATTRIBUTE,
         )
@@ -124,7 +124,7 @@ fn native_return_includes_int(source: &str) -> bool {
             character != '\\' && character != '_' && !character.is_alphabetic()
         })
         .filter(|part| !part.is_empty())
-        .any(|part| equal_fold(part, "int") || equal_fold(part, "integer"))
+        .any(|part| eq_ignore_case(part, "int") || eq_ignore_case(part, "integer"))
 }
 
 fn type_includes_int(value: &Type) -> bool {

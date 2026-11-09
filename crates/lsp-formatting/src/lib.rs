@@ -1,4 +1,4 @@
-//! Document formatting providers (port of `internal/lsp/formatting`).
+//! Document formatting providers.
 
 use swlsp_language::LanguageId;
 use swlsp_lsp::{Context, DocumentFormattingProvider, DocumentFormattingRequest, ProviderResult};

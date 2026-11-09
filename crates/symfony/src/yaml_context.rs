@@ -5,7 +5,6 @@ use swlsp_parser_yaml::syntax as yamlsyntax;
 use swlsp_syntax::SyntaxNode;
 
 use crate::reference::normalize_service_reference;
-use crate::util::go_trim_space;
 use crate::yaml_services::{yaml_is_mapping, yaml_property, yaml_scalar};
 
 pub fn is_yaml_service_id(node: &SyntaxNode) -> bool {
@@ -51,7 +50,7 @@ pub fn yaml_service_reference_name(node: &SyntaxNode) -> Option<String> {
         return None;
     }
     let scalar = yamlquery::scalar_value(node);
-    let value = go_trim_space(&scalar);
+    let value = scalar.trim();
     if value == "@" || value == "@?" || value == "@!" {
         return Some(String::new());
     }
@@ -59,7 +58,7 @@ pub fn yaml_service_reference_name(node: &SyntaxNode) -> Option<String> {
         return Some(service);
     }
     if path.len() >= 3 && matches!(path[2].as_str(), "alias" | "decorates" | "parent") {
-        let value = go_trim_space(value.strip_prefix('@').unwrap_or(value));
+        let value = value.strip_prefix('@').unwrap_or(value).trim();
         return (!value.is_empty() && !value.contains(['%', '$', '{', '}']))
             .then(|| value.to_owned());
     }

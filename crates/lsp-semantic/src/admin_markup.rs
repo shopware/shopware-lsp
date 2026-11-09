@@ -1,9 +1,7 @@
-//! Registry-backed Vue component markup in Administration templates (port of
-//! Go `admin_markup_provider.go`, `admin_markup_tags.go`,
-//! `admin_markup_scope.go` and `admin_markup_helpers.go`).
+//! Registry-backed Vue component markup in Administration templates.
 //!
-//! The provider deliberately stays out of JavaScript and TypeScript, where
-//! the client's native language service remains authoritative.
+//! The provider deliberately stays out of JavaScript and TypeScript, where the
+//! client's native language service remains authoritative.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

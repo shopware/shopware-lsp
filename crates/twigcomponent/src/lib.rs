@@ -1,4 +1,4 @@
-//! Symfony UX Twig and Live components (port of Go `internal/twigcomponent`):
+//! Symfony UX Twig and Live components:
 //! component declarations from PHP attributes, service tags, the compiled
 //! container and anonymous templates; props; Live actions, listeners and
 //! events; and their usages in Twig templates.

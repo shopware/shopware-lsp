@@ -14,12 +14,11 @@ use swlsp_parser_yaml::query as yamlquery;
 use swlsp_parser_yaml::syntax::YAML_SCALAR;
 use swlsp_php::PhpIndex;
 use swlsp_php_semantic::Symbol;
-use swlsp_php_types::go_quote;
 use swlsp_symfony::{ControllerReference, ServiceIndex};
 use swlsp_syntax::{LineIndex, SyntaxNodeExt};
 use swlsp_uriutil::file_uri;
 
-use crate::{inlay_hint_byte_range, parts_label, position};
+use crate::{inlay_hint_byte_range, position};
 
 pub struct RouteControllerProvider {
     services: Option<Arc<ServiceIndex>>,
@@ -89,7 +88,7 @@ impl InlayHintProvider for RouteControllerProvider {
             let label = format!("→ {}::{method_name}", short_controller_class(&class_name));
             result.push(protocol::InlayHint {
                 position: position(document, candidate.position),
-                label: parts_label(vec![protocol::InlayHintLabelPart {
+                label: protocol::InlayHintLabel::Parts(vec![protocol::InlayHintLabelPart {
                     value: label,
                     tooltip: format!("Open {class_name}::{method_name}"),
                     location: Some(route_controller_method_location(method)),
@@ -204,5 +203,5 @@ fn route_controller_hint_tooltip(
     if candidate.route_name.is_empty() {
         return detail;
     }
-    format!("Route {}\n{detail}", go_quote(&candidate.route_name))
+    format!("Route {:?}\n{detail}", candidate.route_name)
 }

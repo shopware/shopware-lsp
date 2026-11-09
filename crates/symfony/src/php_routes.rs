@@ -178,7 +178,8 @@ fn php_route_constant_reference(argument: &SyntaxNode, resolver: &NameResolver) 
         }
         let class = &text[..separator];
         let member = &text[separator + 2..];
-        if class.is_empty() || member.is_empty() || swlsp_php_types::equal_fold(member, "class") {
+        if class.is_empty() || member.is_empty() || swlsp_textutil::eq_ignore_case(member, "class")
+        {
             continue;
         }
         let resolved = resolver.resolve(class);
@@ -190,7 +191,7 @@ fn php_route_constant_reference(argument: &SyntaxNode, resolver: &NameResolver) 
     String::new()
 }
 
-/// Go `strings.Join(strings.Fields(text), "")`.
+/// `text` with all whitespace removed.
 fn collapse_route_expression(text: &str) -> String {
     text.split_whitespace().collect()
 }
@@ -287,7 +288,7 @@ fn is_routing_configurator_type(value: &str, resolver: &NameResolver) -> bool {
     value.split(['|', '&', '(', ')']).any(|member| {
         let member = member.strip_prefix('?').unwrap_or(member).trim();
         !member.is_empty()
-            && swlsp_php_types::equal_fold(&resolver.resolve(member), ROUTING_CONFIGURATOR_CLASS)
+            && swlsp_textutil::eq_ignore_case(&resolver.resolve(member), ROUTING_CONFIGURATOR_CLASS)
     })
 }
 
@@ -563,7 +564,7 @@ fn php_route_method_values(node: Option<&SyntaxNode>) -> Vec<String> {
     let mut seen = HashSet::new();
     for item in phpquery::array_items(&array) {
         let method = php_route_method_value(phpquery::array_item_value(&item).as_ref());
-        if method.is_empty() || !seen.insert(swlsp_php_types::go_to_lower(&method)) {
+        if method.is_empty() || !seen.insert(swlsp_textutil::lowercase(&method)) {
             continue;
         }
         methods.push(method);

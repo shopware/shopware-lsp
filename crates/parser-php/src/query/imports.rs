@@ -1,9 +1,9 @@
-//! Native import declarations (port of Go `imports.go`).
+//! Native import declarations.
 
 use swlsp_syntax::{SyntaxNode, SyntaxToken, TextRange};
 
 use super::child_tokens;
-use crate::equal_fold;
+use crate::eq_ignore_case;
 use crate::syntax::*;
 
 /// One imported item with exact source ranges and normalized text for the
@@ -31,7 +31,7 @@ pub fn use_items(node: &SyntaxNode) -> Option<UseList> {
         .filter(|token| !token.kind().is_trivia())
         .collect();
     if all.len() < 3
-        || !equal_fold(all[0].text(), "use")
+        || !eq_ignore_case(all[0].text(), "use")
         || all[all.len() - 1].kind() != TK_SEMICOLON
     {
         return None;
@@ -95,7 +95,7 @@ fn use_item(mut tokens: &[SyntaxToken], prefix: &str, mut kind: &str) -> Option<
     let mut alias = "";
     if let Some(index) = tokens
         .iter()
-        .position(|token| equal_fold(token.text(), "as"))
+        .position(|token| eq_ignore_case(token.text(), "as"))
     {
         if index + 2 != tokens.len() || !import_identifier(&tokens[index + 1]) {
             return None;
@@ -131,9 +131,9 @@ fn use_item(mut tokens: &[SyntaxToken], prefix: &str, mut kind: &str) -> Option<
 }
 
 fn import_kind(text: &str) -> Option<&'static str> {
-    if equal_fold(text, "function") {
+    if eq_ignore_case(text, "function") {
         Some("function")
-    } else if equal_fold(text, "const") {
+    } else if eq_ignore_case(text, "const") {
         Some("const")
     } else {
         None
@@ -143,7 +143,7 @@ fn import_kind(text: &str) -> Option<&'static str> {
 fn import_identifier(token: &SyntaxToken) -> bool {
     matches!(token.kind(), TK_IDENTIFIER | TK_KEYWORD)
         && import_kind(token.text()).is_none()
-        && !equal_fold(token.text(), "as")
+        && !eq_ignore_case(token.text(), "as")
 }
 
 fn import_name(tokens: &[SyntaxToken], trailing_slash: bool) -> Option<String> {

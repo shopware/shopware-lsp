@@ -1,12 +1,11 @@
-//! AbstractMessageHandler migration (Go
-//! `shopware_migration_message_handler.go`).
+//! AbstractMessageHandler migration.
 
 use super::scan;
 use swlsp_lsp::{Context, Problem};
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::{PHP_EXTENDS_CLAUSE, PHP_NAME};
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::eq_ignore_case;
 
 use super::{
     ShopwareMigrationAnalyzer, ShopwareMigrationPayload, class_name_range, migration_problem,
@@ -34,7 +33,7 @@ impl ShopwareMigrationAnalyzer {
             else {
                 continue;
             };
-            if !equal_fold(
+            if !eq_ignore_case(
                 resolver
                     .resolve(node_text(&parent).trim())
                     .trim_matches('\\'),

@@ -1,5 +1,4 @@
-//! The Shopware Administration inspections and their quick fixes (Go
-//! `admin.go`, `admin_i18n.go`, `admin_slot.go`, `admin_twig_migration.go`).
+//! The Shopware Administration inspections and their quick fixes.
 
 mod fixes;
 
@@ -40,7 +39,7 @@ use fixes::{
     REPLACE_ADMIN_COMPONENT_TAG_FIX_ID,
 };
 
-/// Go `mapString`: a string value of a decoded payload, or empty.
+/// A string value of a decoded payload, or empty.
 fn map_string(values: &Map<String, Value>, key: &str) -> String {
     match values.get(key) {
         Some(Value::String(value)) => value.clone(),
@@ -135,10 +134,10 @@ fn severity(code: &str) -> DiagnosticSeverity {
     }
 }
 
-/// The Administration inspections (Go `NewAdmin`, split by concern). The
-/// component, component API, member and module inspections share one run of
-/// [`AdminAnalyzer`] per document. From Shopware 6.7 the version-aware
-/// `sw-*` → `mt-*` migrations own their component tags.
+/// The Administration inspections, split by concern. The component, component
+/// API, member and module inspections share one run of [`AdminAnalyzer`] per
+/// document. From Shopware 6.7 the version-aware `sw-*` → `mt-*` migrations own
+/// their component tags.
 pub fn new_admin_inspections(
     index: Option<Arc<AdminComponentIndexer>>,
     version: ResolvedVersion,
@@ -333,8 +332,7 @@ fn bind_admin_problem(code: &DiagnosticId, payload: &Map<String, Value>) -> Vec<
     }
 }
 
-/// Go `adminComponentTagBoundFixes`: one tag replacement per distinct
-/// suggestion other than the component itself.
+/// One tag replacement per distinct suggestion other than the component itself.
 fn admin_component_tag_bound_fixes(payload: &Map<String, Value>) -> Vec<BoundFix> {
     let component = map_string(payload, "componentName");
     if component.is_empty() {

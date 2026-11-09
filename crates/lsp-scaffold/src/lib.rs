@@ -1,4 +1,4 @@
-//! Scaffolding commands (port of Go `internal/lsp/scaffold`).
+//! Scaffolding commands.
 //!
 //! Symfony scaffolds return generated content for the client to create;
 //! Shopware scaffolds and the entity designer return validated
@@ -35,7 +35,7 @@ pub(crate) type Result<T, E = BoxError> = std::result::Result<T, E>;
 
 type Handler = fn(&Provider, &Context, Option<&Value>) -> Result<Value>;
 
-/// Builds a plain error (Go `fmt.Errorf` without `%w`).
+/// Builds a message-only error from format arguments.
 macro_rules! errorf {
     ($($arg:tt)*) => { $crate::BoxError::from(format!($($arg)*)) };
 }
@@ -126,8 +126,8 @@ fn to_value<T: Serialize>(value: T) -> Result<Value> {
     Ok(serde_json::to_value(value)?)
 }
 
-/// Decodes command arguments like Go `json.Unmarshal`: `null` members keep
-/// their zero value and a `null` payload decodes to the zero struct.
+/// Decodes command arguments: `null` members keep their default value and a
+/// `null` payload decodes to the default struct.
 pub(crate) fn decode_args<T: DeserializeOwned + Default>(
     args: Option<&Value>,
     missing: &str,
@@ -155,7 +155,7 @@ fn strip_nulls(value: &mut Value) {
     }
 }
 
-/// Serializes a JSON value with object keys sorted like Go's map encoding.
+/// Serializes a JSON value with object keys sorted.
 pub(crate) struct Sorted<'a>(pub &'a Value);
 
 impl Serialize for Sorted<'_> {
@@ -183,20 +183,6 @@ impl Serialize for Sorted<'_> {
     }
 }
 
-/// Go `unicode.ToUpper` (simple case mapping).
-pub(crate) fn to_upper(character: char) -> char {
-    let mut upper = character.to_uppercase();
-    match (upper.next(), upper.next()) {
-        (Some(single), None) => single,
-        _ => character,
-    }
-}
-
-/// Go `unicode.ToLower` (simple case mapping).
-pub(crate) fn to_lower(character: char) -> char {
-    character.to_lowercase().next().unwrap_or(character)
-}
-
 pub(crate) fn pascal_name(name: &str) -> String {
     let mut result = String::with_capacity(name.len());
     let mut upper = true;
@@ -206,17 +192,13 @@ pub(crate) fn pascal_name(name: &str) -> String {
             continue;
         }
         if upper {
-            result.push(to_upper(current));
+            result.push(swlsp_textutil::uppercase_char(current));
             upper = false;
         } else {
             result.push(current);
         }
     }
     result
-}
-
-fn is_go_digit(character: char) -> bool {
-    character.is_ascii_digit() || (!character.is_ascii() && character.is_numeric())
 }
 
 pub(crate) fn snake_case(value: &str) -> String {
@@ -226,12 +208,12 @@ pub(crate) fn snake_case(value: &str) -> String {
         if current.is_uppercase()
             && index > 0
             && (characters[index - 1].is_lowercase()
-                || is_go_digit(characters[index - 1])
+                || characters[index - 1].is_numeric()
                 || index + 1 < characters.len() && characters[index + 1].is_lowercase())
         {
             result.push('_');
         }
-        result.push(to_lower(current));
+        result.push(swlsp_textutil::lowercase_char(current));
     }
     result.trim_matches('_').to_owned()
 }

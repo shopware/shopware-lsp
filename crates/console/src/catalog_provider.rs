@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use swlsp_lsp::{BoxError, Context};
-use swlsp_php_types::go_to_lower;
+use swlsp_textutil::lowercase;
 use swlsp_uriutil::filepath;
 
 use crate::index::Index;
@@ -92,7 +92,7 @@ impl CatalogProvider {
     ) -> Result<Vec<CatalogEntry>, BoxError> {
         context.check()?;
         let commands = self.index.get_commands()?;
-        let query = go_to_lower(request.query.trim());
+        let query = lowercase(request.query.trim());
         let file_glob = request.file_glob.trim();
         let mut entries: HashMap<String, CatalogEntry> = HashMap::new();
         for command in &commands {
@@ -107,7 +107,7 @@ impl CatalogProvider {
                 continue;
             }
             let entry = catalog_entry(command, file_path);
-            let key = go_to_lower(&command.name);
+            let key = lowercase(&command.name);
             match entries.get(&key) {
                 Some(current) if entry_score(&entry) <= entry_score(current) => {}
                 _ => {
@@ -126,7 +126,7 @@ fn command_matches(command: &Command, query: &str) -> bool {
     if query.is_empty() {
         return true;
     }
-    let haystack = go_to_lower(
+    let haystack = lowercase(
         &[
             command.name.as_str(),
             &command.canonical,

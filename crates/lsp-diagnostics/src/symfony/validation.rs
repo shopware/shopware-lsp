@@ -1,4 +1,4 @@
-//! Go `validation_diagnostics.go`.
+//! Unknown Symfony validation constraint options.
 
 use std::sync::Arc;
 
@@ -7,7 +7,7 @@ use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, Tex
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::PHP_STRING;
 use swlsp_php::PhpIndex;
-use swlsp_php_types::go_to_lower;
+use swlsp_textutil::lowercase;
 use swlsp_validation::{
     constraint_properties_in_context, find_constraint_property, option_reference_at,
 };
@@ -53,7 +53,7 @@ impl ProblemAnalyzer for ValidationAnalyzer {
         let (Some(php_index), Some(root)) = (&self.php_index, document.root()) else {
             return Ok(Vec::new());
         };
-        if !go_to_lower(&document.uri).ends_with(".php") {
+        if !lowercase(&document.uri).ends_with(".php") {
             return Ok(Vec::new());
         }
         let context = swlsp_lsp_phpanalysis::context_for_document(php_index, document)?;

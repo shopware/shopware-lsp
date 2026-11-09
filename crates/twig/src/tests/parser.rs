@@ -240,7 +240,7 @@ fn compare_fold_matches_lowercase_ordering() {
     for left in values {
         for right in values {
             assert_eq!(
-                swlsp_php_types::go_to_lower(left).cmp(&swlsp_php_types::go_to_lower(right)),
+                swlsp_textutil::lowercase(left).cmp(&swlsp_textutil::lowercase(right)),
                 compare_fold(left, right),
                 "{left} / {right}"
             );

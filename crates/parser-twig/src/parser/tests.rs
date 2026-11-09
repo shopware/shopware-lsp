@@ -1,5 +1,3 @@
-//! Port of `internal/parser/twig/parser/{parser,regression,fuzz}_test.go`.
-
 use swlsp_syntax::{SyntaxNode, debug_tree};
 
 use super::*;
@@ -134,7 +132,7 @@ fn function_call_accepts_modern_colon_named_arguments() {
     }
 }
 
-// -- regression_test.go ------------------------------------------------------
+// -- regressions ---------------------------------------------------------------
 
 /// Raw-text elements followed by an unknown twig-open that recovers to EOF
 /// must not panic (totality invariant).
@@ -198,7 +196,7 @@ fn parse_twig_documentation_comments_on_bindings() {
     assert_eq!(find_nodes(&root, TWIG_COMMENT).len(), 6);
 }
 
-// -- fuzz_test.go seeds ------------------------------------------------------
+// -- fuzz seeds --------------------------------------------------------------
 
 const NASTY_SEEDS: &[&str] = &[
     "",

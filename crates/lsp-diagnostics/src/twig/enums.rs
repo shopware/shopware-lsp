@@ -1,4 +1,4 @@
-//! Go `twig_enum_diagnostics.go`.
+//! Missing and invalid enums referenced from Twig.
 
 use std::sync::Arc;
 
@@ -15,7 +15,6 @@ use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 const MISSING_TWIG_ENUM_CODE: &str = "twig.enum.missing";
 const INVALID_TWIG_ENUM_CODE: &str = "twig.enum.invalid";
 
-/// Go `TwigEnumAnalyzer`.
 pub struct TwigEnumAnalyzer {
     php_index: Option<PhpIndex>,
 }

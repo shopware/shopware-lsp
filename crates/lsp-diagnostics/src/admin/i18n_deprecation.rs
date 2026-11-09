@@ -1,4 +1,4 @@
-//! Go `admin_i18n_deprecation.go`.
+//! Deprecated Administration i18n calls.
 
 use std::sync::Arc;
 
@@ -7,18 +7,18 @@ use swlsp_lsp_protocol::DiagnosticSeverity;
 use swlsp_parser_js::query as jsquery;
 use swlsp_parser_twig::ast::{AstNode, TwigFunctionCall, TwigLiteralName};
 use swlsp_parser_twig::{query as twigquery, syntax as twigsyntax};
-use swlsp_php_types::go_to_lower;
 use swlsp_syntax::{SyntaxElement, SyntaxNodeExt};
+use swlsp_textutil::lowercase;
+use swlsp_uriutil::filepath;
 
-use super::{go_ext, payload, text};
+use super::{payload, text};
 use crate::ProblemAnalyzer;
 
 const DEPRECATED_ADMIN_I18N_TC_CODE: &str = "admin.vue-i18n.tc-deprecated";
 
 /// Mirrors Shopware Administration's `no-tc-translation` ESLint rule for the
 /// native JavaScript, Twig and mixed Vue CSTs. It targets calls only, so
-/// declarations and references to a property named `$tc` are left untouched
-/// (Go `AdminI18nDeprecationAnalyzer`).
+/// declarations and references to a property named `$tc` are left untouched.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AdminI18nDeprecationAnalyzer;
 
@@ -44,7 +44,7 @@ impl ProblemAnalyzer for AdminI18nDeprecationAnalyzer {
         if !document.uri.contains("Resources/app/administration") {
             return Ok(Vec::new());
         }
-        let ext = go_to_lower(go_ext(&document.uri));
+        let ext = lowercase(filepath::ext(&document.uri));
         if !matches!(ext.as_str(), ".js" | ".ts" | ".twig" | ".vue") {
             return Ok(Vec::new());
         }

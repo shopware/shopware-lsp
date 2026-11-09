@@ -1,5 +1,4 @@
-//! Prop declarations, JSDoc metadata and closed validator domains (port of
-//! Go `definition_parser_props.go`).
+//! Prop declarations, JSDoc metadata and closed validator domains.
 
 use crate::*;
 

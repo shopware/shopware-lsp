@@ -11,7 +11,7 @@ pub(crate) fn line_at(line_index: &LineIndex, offset: TextSize) -> u32 {
     line_index.position(offset.into()).0 + 1
 }
 
-/// One-based line of a node start (Go `xmlLine`: untrimmed range start).
+/// One-based line of a node start.
 pub(crate) fn node_line(line_index: &LineIndex, node: &SyntaxNode) -> u32 {
     line_at(line_index, node.text_range().start())
 }
@@ -44,8 +44,8 @@ pub(crate) fn deprecation_message(value: &str) -> String {
     value.to_owned()
 }
 
-/// Strips one pair of matching quotes from a trimmed range (shared by
-/// `xmlAttributeContentRange` and `yamlScalarContentRange`).
+/// Strips one pair of matching quotes from a trimmed range (shared by XML
+/// attribute and YAML scalar content ranges).
 fn unquoted_range(mut range: TextRange, text: &str) -> TextRange {
     let text = text.trim();
     let bytes = text.as_bytes();
@@ -94,19 +94,19 @@ pub(crate) fn xml_element_text(node: &SyntaxNode) -> (String, TextRange) {
             range.start() + TextSize::from(left as u32),
             range.end() - TextSize::from(right as u32),
         );
-        return (go_trim_space(&raw).to_owned(), range);
+        return (raw.trim().to_owned(), range);
     }
     (String::new(), TextRange::default())
 }
 
-/// The XML attribute value or "" (Go `xmlquery.AttributeValue(Attribute(..))`).
+/// The value of attribute `name`, or an empty string.
 pub(crate) fn xml_attr(node: &SyntaxNode, name: &str) -> String {
     xmlquery::attribute(node, name)
         .and_then(|attribute| xmlquery::attribute_value(&attribute))
         .unwrap_or_default()
 }
 
-/// The scalar range without quotes (Go `yamlScalarContentRange`).
+/// The scalar range without quotes.
 pub(crate) fn yaml_scalar_content_range(node: Option<&SyntaxNode>) -> TextRange {
     let Some(node) = node else {
         return TextRange::default();
@@ -114,12 +114,8 @@ pub(crate) fn yaml_scalar_content_range(node: Option<&SyntaxNode>) -> TextRange 
     unquoted_range(node.range_trimmed_trivia(), &node.text().to_string())
 }
 
-/// Go `strings.TrimSpace` (ASCII whitespace plus Unicode White_Space).
-pub(crate) fn go_trim_space(value: &str) -> &str {
-    value.trim_matches(|c: char| c.is_whitespace())
-}
-
-/// Go `filepath.Clean` for slash-separated paths.
+/// The shortest lexically equivalent slash-separated path: `.` and empty
+/// elements dropped, `..` resolved where possible; `.` for an empty result.
 pub(crate) fn clean_path(path: &str) -> String {
     if path.is_empty() {
         return ".".to_owned();
@@ -149,7 +145,7 @@ pub(crate) fn clean_path(path: &str) -> String {
     }
 }
 
-/// Go `filepath.Dir`.
+/// The cleaned directory part of a slash-separated path; `.` without one.
 pub(crate) fn dir_path(path: &str) -> String {
     match path.rfind('/') {
         Some(index) => clean_path(&path[..=index]),
@@ -157,7 +153,8 @@ pub(crate) fn dir_path(path: &str) -> String {
     }
 }
 
-/// Go `filepath.Base`.
+/// The last element of a slash-separated path, ignoring trailing slashes;
+/// `.` for an empty path and `/` for the root.
 pub(crate) fn base_name(path: &str) -> &str {
     let trimmed = path.trim_end_matches('/');
     if trimmed.is_empty() {
@@ -169,7 +166,8 @@ pub(crate) fn base_name(path: &str) -> &str {
     }
 }
 
-/// Go `filepath.Join` + `Clean`.
+/// The non-empty `parts` joined with `/` and cleaned; empty when all parts
+/// are empty.
 pub(crate) fn join_path(parts: &[&str]) -> String {
     let joined: Vec<&str> = parts
         .iter()
@@ -182,7 +180,8 @@ pub(crate) fn join_path(parts: &[&str]) -> String {
     clean_path(&joined.join("/"))
 }
 
-/// Go `filepath.Ext` (lowercased by callers when needed).
+/// The extension of the last element including its dot (`.xml`); empty
+/// without one. Callers lowercase it when needed.
 #[allow(dead_code)]
 pub(crate) fn extension(path: &str) -> &str {
     let base_start = path.rfind('/').map_or(0, |index| index + 1);
@@ -192,9 +191,9 @@ pub(crate) fn extension(path: &str) -> &str {
     }
 }
 
-/// Resolves a configuration-relative path (Go `serviceConfigPath`).
+/// Resolves a configuration-relative path.
 pub(crate) fn service_config_path(config_path: &str, value: &str) -> String {
-    let value = go_trim_space(value);
+    let value = value.trim();
     if value.is_empty() {
         return String::new();
     }
@@ -204,7 +203,9 @@ pub(crate) fn service_config_path(config_path: &str, value: &str) -> String {
     join_path(&[&dir_path(config_path), value])
 }
 
-/// Go `filepath.Rel` for cleaned absolute or relative slash paths.
+/// `target` relative to `base` after cleaning both; `None` when one is
+/// absolute and the other is not, or when `base` climbs above the common
+/// prefix.
 pub(crate) fn relative_path(base: &str, target: &str) -> Option<String> {
     let base = clean_path(base);
     let target = clean_path(target);
@@ -244,25 +245,24 @@ pub(crate) fn relative_path(base: &str, target: &str) -> Option<String> {
     Some(result.join("/"))
 }
 
-/// Go `strings.ToLower` as a method.
-pub(crate) trait GoLower {
-    fn to_go_lower(&self) -> String;
+/// [`swlsp_textutil::lowercase`] as a method, for case-insensitive keys.
+pub(crate) trait Lowercase {
+    fn lowercase(&self) -> String;
 }
 
-impl GoLower for str {
-    fn to_go_lower(&self) -> String {
-        swlsp_php_types::go_to_lower(self)
+impl Lowercase for str {
+    fn lowercase(&self) -> String {
+        swlsp_textutil::lowercase(self)
     }
 }
 
-impl GoLower for String {
-    fn to_go_lower(&self) -> String {
-        swlsp_php_types::go_to_lower(self)
+impl Lowercase for String {
+    fn lowercase(&self) -> String {
+        swlsp_textutil::lowercase(self)
     }
 }
 
-/// Go `numericIndex`: `strconv.Atoi` restricted to non-negative indexes;
-/// -1 otherwise.
+/// A non-negative decimal index (optional sign); -1 otherwise.
 pub(crate) fn numeric_index(value: &str) -> i32 {
     match value.parse::<i64>() {
         Ok(index) if (0..=i64::from(i32::MAX)).contains(&index) => index as i32,
@@ -270,7 +270,7 @@ pub(crate) fn numeric_index(value: &str) -> i32 {
     }
 }
 
-/// Go `containsFoldASCIIBytes`: ASCII case-insensitive substring search.
+/// ASCII case-insensitive substring search.
 pub(crate) fn contains_fold_ascii(content: &[u8], needle: &str) -> bool {
     let needle = needle.as_bytes();
     let Some((&first, _)) = needle.split_first() else {

@@ -45,19 +45,10 @@ impl fmt::Debug for TextDocument {
 }
 
 /// Parses `source` with the built-in language registry, choosing the parser
-/// by the extension of `path` (Go `Registry.ParsePath`).
+/// by the extension of the last element of `path`.
 pub fn parse_path(path: &str, source: &str) -> Option<(LanguageId, Parse)> {
-    let language = LanguageId::from_path(&go_ext(path))?;
+    let language = LanguageId::from_path(swlsp_uriutil::filepath::ext(path))?;
     Some((language, language.parse(source)?))
-}
-
-/// Go `filepath.Ext` used as a pseudo path for [`LanguageId::from_path`].
-fn go_ext(path: &str) -> String {
-    let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
-    match name.rfind('.') {
-        Some(index) => format!("x{}", &name[index..]),
-        None => String::new(),
-    }
 }
 
 impl TextDocument {
@@ -372,9 +363,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn go_ext_matches_filepath_ext() {
-        assert_eq!(go_ext("file:///tmp/a.html.twig"), "x.twig");
-        assert_eq!(go_ext("file:///tmp/dir.php/file"), "");
-        assert_eq!(go_ext("noext"), "");
+    fn parse_path_uses_the_last_path_element_extension() {
+        let (language, _) = parse_path("file:///tmp/a.html.twig", "").unwrap();
+        assert_eq!(language, LanguageId::Twig);
+        assert!(parse_path("file:///tmp/dir.php/file", "").is_none());
+        assert!(parse_path("noext", "").is_none());
     }
 }

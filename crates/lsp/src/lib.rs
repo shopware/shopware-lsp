@@ -1,4 +1,4 @@
-//! The LSP core (port of Go `internal/lsp`): JSON-RPC transport and ordered
+//! The LSP core: JSON-RPC transport and ordered
 //! dispatch, open-document snapshots, provider interfaces and fan-out,
 //! layered configuration, diagnostics scheduling, typed inspections with
 //! bound quick fixes, and validated code-action edits.
@@ -44,10 +44,10 @@ mod vue_context;
 mod workspace;
 mod workspace_diagnostics;
 
-pub use client::{CLIENT_PROTOCOL_VERSION, PresentationProfile};
+pub use client::{CLIENT_PROTOCOL_VERSION, ClientContractError, PresentationProfile};
 pub use code_action::{
-    DocumentError, WorkspaceEditHost, add_document_replacement, is_stale_error,
-    resolve_optional_document,
+    DocumentError, PlanValidationError, WorkspaceEditHost, add_document_replacement,
+    is_stale_error, resolve_optional_document,
 };
 pub use comment_suppression::comment_suppression_reader;
 pub use configuration::{
@@ -69,10 +69,10 @@ pub use inspection::{
     SuppressionReader, Suppressions, bind_fix,
 };
 pub use providers::*;
-pub use server::{Server, WeakServer};
+pub use server::{CloseError, Server, WeakServer};
 pub use transport::CallError;
 pub use vue_context::effective_syntax_language;
-pub use workspace::{WorkspaceFactory, WorkspaceRuntime};
+pub use workspace::{InitializeError, WorkspaceFactory, WorkspaceRuntime};
 
 #[cfg(test)]
 mod tests;

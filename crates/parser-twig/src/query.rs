@@ -1,9 +1,6 @@
-//! Semantic Twig CST queries shared by LSP features and indexers (port of
-//! `internal/parser/twig/query`). Queries use syntax kinds and typed AST
-//! accessors instead of grammar-specific parent depths.
-//!
-//! Unlike Go, absent names and indexes are reported as `None` instead of `""`
-//! or `-1`.
+//! Semantic Twig CST queries shared by LSP features and indexers. Queries use
+//! syntax kinds and typed AST accessors instead of grammar-specific parent
+//! depths. Absent names and indexes are `None`.
 
 use std::collections::BTreeMap;
 

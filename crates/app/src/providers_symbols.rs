@@ -1,5 +1,4 @@
-//! Workspace/document symbols and document-level editor providers (port of
-//! Go `internal/app/providers_symbols.go`).
+//! Workspace/document symbols and document-level editor providers.
 
 use std::sync::Arc;
 
@@ -48,7 +47,7 @@ pub(crate) fn register_symbol_and_document_providers(server: &Registrar<'_>, ser
         };
         server.workspace_symbol(catalog_provider(fallbacks));
     }
-    // TODO(app): Go registers the workspace symbol provider first; it stays
+    // The workspace symbol provider is registered first; it stays
     // unregistered while the `symbol` feature is off.
     if let Some(admin) = &admin {
         #[cfg(feature = "symbol")]

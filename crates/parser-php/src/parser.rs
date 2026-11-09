@@ -1,13 +1,12 @@
-//! PHP grammar (port of Go `internal/parser/php/parser/parse.go`). Control
-//! flow intentionally mirrors the Go implementation so trees and errors are
-//! byte-for-byte identical.
+//! PHP grammar. Tree shapes and error messages are a contract with persisted
+//! caches and CST dumps, so changes to them must be deliberate.
 
 use std::sync::Arc;
 
 use swlsp_syntax::{CompletedMarker, Config, ErrorBuilder, Kind, Parse, Parser, Token};
 
 use crate::syntax::*;
-use crate::{equal_fold_ascii, lexer};
+use crate::{eq_ignore_case_keyword, lexer};
 
 type P<'a> = Parser<'a>;
 
@@ -112,7 +111,7 @@ fn next_kind(p: &P<'_>) -> Kind {
 }
 
 fn next_text_is(p: &P<'_>, word: &str) -> bool {
-    nth(p, 1).is_some_and(|token| equal_fold_ascii(token.text, word))
+    nth(p, 1).is_some_and(|token| eq_ignore_case_keyword(token.text, word))
 }
 
 /// Skips an attribute group starting at `index` (a `#[` token); returns the
@@ -161,9 +160,9 @@ fn at_kw(p: &P<'_>, word: &str) -> bool {
 
 fn at_word(p: &P<'_>, words: &[&str]) -> bool {
     match p.peek_token() {
-        Some(token) if token.kind == TK_KEYWORD || token.kind == TK_IDENTIFIER => {
-            words.iter().any(|word| equal_fold_ascii(token.text, word))
-        }
+        Some(token) if token.kind == TK_KEYWORD || token.kind == TK_IDENTIFIER => words
+            .iter()
+            .any(|word| eq_ignore_case_keyword(token.text, word)),
         _ => false,
     }
 }
@@ -186,7 +185,7 @@ fn is_modifier(text: &str) -> bool {
 fn is_visibility(text: &str) -> bool {
     ["public", "protected", "private"]
         .iter()
-        .any(|word| equal_fold_ascii(text, word))
+        .any(|word| eq_ignore_case_keyword(text, word))
 }
 
 #[inline]
@@ -1512,7 +1511,7 @@ fn consume_modifiers(p: &mut P<'_>) {
                 .skip(1);
             let set = ahead
                 .next()
-                .is_some_and(|token| equal_fold_ascii(token.text, "set"));
+                .is_some_and(|token| eq_ignore_case_keyword(token.text, "set"));
             let close = ahead
                 .next()
                 .is_some_and(|token| token.kind == TK_CLOSE_PAREN);
@@ -1552,7 +1551,7 @@ fn starts_function_declaration(p: &P<'_>) -> bool {
             index = close + 1;
             continue;
         }
-        if !equal_fold_ascii(token.text, "function") {
+        if !eq_ignore_case_keyword(token.text, "function") {
             return false;
         }
         let mut next = skip_trivia(tokens, at + 1);
@@ -1626,7 +1625,7 @@ fn starts_property_declaration(p: &P<'_>) -> bool {
                 let close = next.and_then(|next| skip_trivia(tokens, next + 1));
                 let asymmetric = previous
                     .is_some_and(|previous| is_visibility(tokens[previous].text))
-                    && next.is_some_and(|next| equal_fold_ascii(tokens[next].text, "set"))
+                    && next.is_some_and(|next| eq_ignore_case_keyword(tokens[next].text, "set"))
                     && close.is_some_and(|close| tokens[close].kind == TK_CLOSE_PAREN);
                 if let (true, Some(close)) = (asymmetric, close) {
                     index = close + 1;
@@ -1676,7 +1675,9 @@ fn token_after_prefix(p: &P<'_>, words: &[&str]) -> bool {
         if token.kind == TK_KEYWORD && is_modifier(token.text) {
             continue;
         }
-        return words.iter().any(|word| equal_fold_ascii(token.text, word));
+        return words
+            .iter()
+            .any(|word| eq_ignore_case_keyword(token.text, word));
     }
 }
 

@@ -283,7 +283,7 @@ pub(crate) fn shrink(range: TextRange) -> TextRange {
     )
 }
 
-// -- JSON queries (Go `internal/parser/json/query`) ----------------------------
+// -- JSON queries ----------------------------
 
 fn json_is_value(node: &SyntaxNode) -> bool {
     matches!(

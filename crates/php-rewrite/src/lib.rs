@@ -1,5 +1,5 @@
 //! Lossless, composable PHP source rewrites on top of the immutable PHP CST
-//! (port of `internal/php/rewrite`).
+//!.
 //!
 //! An [`Editor`] collects related edits against one source snapshot: class
 //! references with automatic imports, argument/parameter list edits, class

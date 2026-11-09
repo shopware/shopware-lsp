@@ -1,8 +1,9 @@
-//! Semantic decoding of the native CST (port of Go `query.Decode`).
+//! Semantic decoding of the native CST.
 //!
 //! The tree is converted into YAML representation nodes (with anchors,
 //! aliases and tags) without invoking another parser, then resolved with the
-//! YAML 1.2 core schema the way `gopkg.in/yaml.v3` resolves untyped values.
+//! YAML 1.2 core schema: integers with an optional base prefix (`0x`, `0o`,
+//! `0b`, or a leading `0` for octal), floats, booleans, null, and strings.
 //! [`Value`] implements [`serde::Deserializer`], so [`decode`] works for any
 //! `DeserializeOwned` target.
 
@@ -11,6 +12,7 @@ use std::fmt;
 
 use serde::de::{self, DeserializeOwned, IntoDeserializer, Visitor};
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::{parse_int_literal, parse_uint_literal};
 
 use super::*;
 
@@ -50,16 +52,9 @@ impl Value {
 }
 
 /// A decoding failure (unresolvable tagged scalar or a target type mismatch).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("{0}")]
 pub struct DecodeError(pub String);
-
-impl fmt::Display for DecodeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for DecodeError {}
 
 impl de::Error for DecodeError {
     fn custom<T: fmt::Display>(message: T) -> Self {
@@ -362,10 +357,10 @@ fn resolve_plain(text: &str) -> Value {
         return Value::String(text.to_owned());
     }
     let plain = text.replace('_', "");
-    if let Some(int) = parse_go_int(&plain) {
+    if let Some(int) = parse_int_literal(&plain) {
         return Value::Int(int);
     }
-    if let Some(uint) = parse_go_uint(&plain) {
+    if let Some(uint) = parse_uint_literal(&plain) {
         return Value::Uint(uint);
     }
     if is_yaml_float(&plain)
@@ -375,34 +370,6 @@ fn resolve_plain(text: &str) -> Value {
         return Value::Float(float);
     }
     Value::String(text.to_owned())
-}
-
-/// `strconv.ParseInt(text, 0, 64)`.
-pub fn parse_go_int(text: &str) -> Option<i64> {
-    let (negative, digits) = match text.as_bytes().first()? {
-        b'-' => (true, &text[1..]),
-        b'+' => (false, &text[1..]),
-        _ => (false, text),
-    };
-    let magnitude = parse_go_uint(digits)? as i128;
-    let value = if negative { -magnitude } else { magnitude };
-    i64::try_from(value).ok()
-}
-
-/// `strconv.ParseUint(text, 0, 64)` (without underscores).
-pub fn parse_go_uint(text: &str) -> Option<u64> {
-    let lower = text.get(..2).map(str::to_ascii_lowercase);
-    let (radix, digits) = match lower.as_deref() {
-        Some("0x") => (16, &text[2..]),
-        Some("0o") => (8, &text[2..]),
-        Some("0b") => (2, &text[2..]),
-        _ if text.len() > 1 && text.starts_with('0') => (8, &text[1..]),
-        _ => (10, text),
-    };
-    if digits.is_empty() || !digits.chars().all(|c| c.is_digit(radix)) {
-        return None;
-    }
-    u64::from_str_radix(digits, radix).ok()
 }
 
 /// `^[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?$`
@@ -559,7 +526,7 @@ pub fn decode_block_scalar(text: &str, base_indent: usize) -> String {
     format!("{}\n", value.trim_end_matches('\n'))
 }
 
-/// Go `strings.TrimSpace(line) == ""`.
+/// Whether `line` holds only white space.
 pub fn is_blank(line: &[u8]) -> bool {
     String::from_utf8_lossy(line).trim().is_empty()
 }

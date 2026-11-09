@@ -1,4 +1,4 @@
-//! Go `twig_macro_completion.go`: imported macro names.
+//! Completion of imported macro names.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -7,12 +7,13 @@ use swlsp_lsp::{CompletionProvider, CompletionRequest, Context};
 use swlsp_lsp_protocol::{self as protocol, CompletionItemKind, InsertTextFormat};
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::TWIG_VAR;
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::eq_ignore_case;
 use swlsp_twig::{Macro, MacroImport, TwigIndexer};
 
 use super::{lower_ext, markdown};
-use crate::common::{go_to_lower, sort_completion_items};
+use crate::common::sort_completion_items;
+use swlsp_textutil::lowercase;
 
 pub struct TwigMacroCompletionProvider {
     index: Option<Arc<TwigIndexer>>,
@@ -40,7 +41,7 @@ impl TwigMacroCompletionProvider {
         let mut seen = HashSet::new();
         let mut items = Vec::new();
         for current in &macros {
-            if !seen.insert(go_to_lower(&current.name)) {
+            if !seen.insert(lowercase(&current.name)) {
                 continue;
             }
             items.push(macro_completion_item(&current.name, current));
@@ -67,7 +68,7 @@ impl TwigMacroCompletionProvider {
             let definitions = overlay_current_macros(path, root, &current.templates, definitions);
             let definition = definitions
                 .into_iter()
-                .find(|candidate| equal_fold(&candidate.name, &current.name))
+                .find(|candidate| eq_ignore_case(&candidate.name, &current.name))
                 .unwrap_or_default();
             items.push(macro_completion_item(&current.alias, &definition));
         }

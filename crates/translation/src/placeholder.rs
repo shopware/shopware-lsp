@@ -1,4 +1,4 @@
-//! Translation placeholder extraction (port of Go `placeholder.go`).
+//! Translation placeholder extraction.
 
 use std::collections::BTreeSet;
 use std::sync::LazyLock;
@@ -8,7 +8,7 @@ use swlsp_indexer::Result;
 
 use crate::Index;
 
-// Go RE2 `\s` and `\w` are ASCII-only.
+// Whitespace and word characters are ASCII only.
 static PLACEHOLDER_PATTERNS: LazyLock<[Regex; 4]> = LazyLock::new(|| {
     [
         r"%[^%\t\n\x0C\r ]+%",

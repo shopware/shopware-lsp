@@ -1,5 +1,5 @@
 //! Centralizes the PHP version required by syntax understood by the
-//! permissive PHP parser (port of `internal/php/languagelevel`).
+//! permissive PHP parser.
 
 mod detect;
 

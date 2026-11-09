@@ -1,5 +1,4 @@
-//! Go `twig_include_parameter_completion.go`: input names in include and
-//! embed parameter hashes.
+//! Completion of input names in include and embed parameter hashes.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -11,7 +10,7 @@ use swlsp_syntax::SyntaxNode;
 use swlsp_twig::TwigIndexer;
 
 use super::{markdown, request_offset};
-use crate::common::go_to_lower;
+use swlsp_textutil::lowercase;
 
 pub struct TwigIncludeParameterCompletionProvider {
     twig_index: Option<Arc<TwigIndexer>>,
@@ -72,7 +71,7 @@ impl TwigIncludeParameterCompletionProvider {
         // By lowercase name; the (unique) map key orders case variants.
         let mut keyed: Vec<(String, String, IncludeParameterCandidate)> = candidates
             .into_iter()
-            .map(|(name, candidate)| (go_to_lower(&candidate.name), name, candidate))
+            .map(|(name, candidate)| (lowercase(&candidate.name), name, candidate))
             .collect();
         keyed.sort_unstable_by(|left, right| {
             left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1))
@@ -96,7 +95,7 @@ impl CompletionProvider for TwigIncludeParameterCompletionProvider {
         let Some(root) = request.root.as_ref() else {
             return Vec::new();
         };
-        if !go_to_lower(&request.params.text_document.uri).ends_with(".twig") {
+        if !lowercase(&request.params.text_document.uri).ends_with(".twig") {
             return Vec::new();
         }
         let Some(offset) = request_offset(request) else {

@@ -1,4 +1,4 @@
-//! Port of Go `import_association_test.go` (benchmarks omitted).
+//! Tests for import association.
 
 use super::inheritance::{field_by_property, php_ok, s};
 use crate::*;

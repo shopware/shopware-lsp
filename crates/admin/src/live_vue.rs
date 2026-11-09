@@ -1,4 +1,4 @@
-//! Open-document overlays (port of Go `live_vue.go`).
+//! Open-document overlays.
 
 use std::sync::Arc;
 
@@ -538,7 +538,7 @@ impl AdminComponentIndexer {
     }
 
     /// Open type files plus request-local files by cleaned path; empty when
-    /// there are none (Go `nil`).
+    /// there are none.
     pub(crate) fn live_type_file_overlays(
         &self,
         request_files: &[AdminTypeFile],

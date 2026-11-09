@@ -1,8 +1,6 @@
-//! Ports of the provider fan-out tests (`color_test.go`,
-//! `call_hierarchy_test.go`, `document_*_test.go`, `folding_range_test.go`,
-//! `inlay_hint_test.go`, `formatting_test.go`, `linked_editing_test.go`,
-//! `selection_range_test.go`, `semantic_tokens_test.go`,
-//! `workspace_symbol_test.go`).
+//! Provider fan-out tests (colors, call hierarchy, document features,
+//! folding ranges, inlay hints, formatting, linked editing, selection ranges,
+//! semantic tokens and workspace symbols).
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -490,7 +488,7 @@ impl InlayHintProvider for TestInlayHintProvider {
     ) -> ProviderResult<Vec<protocol::InlayHint>> {
         self.0.store(true, Ordering::SeqCst);
         Ok(vec![protocol::InlayHint {
-            label: json!("test"),
+            label: "test".into(),
             kind: Some(protocol::InlayHintKind::PARAMETER),
             ..Default::default()
         }])
@@ -517,7 +515,7 @@ fn server_collects_inlay_hints_for_open_document() {
         .unwrap();
     assert!(provider.0.load(Ordering::SeqCst));
     assert_eq!(hints.len(), 1);
-    assert_eq!(hints[0].label, json!("test"));
+    assert_eq!(hints[0].label, "test".into());
     server.close_all().unwrap();
 }
 
@@ -864,7 +862,7 @@ fn workspace_symbols_aggregate_sort_and_deduplicate_providers() {
 }
 
 #[test]
-fn empty_fan_out_results_marshal_like_go_nil_slices() {
+fn empty_fan_out_results_are_null_and_empty_command_lists_are_arrays() {
     let server = Server::new(None, "", "test");
     let params =
         json!({"textDocument": {"uri": "file:///a.twig"}, "position": {"line": 0, "character": 0}});

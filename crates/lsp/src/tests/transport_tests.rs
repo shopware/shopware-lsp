@@ -1,5 +1,4 @@
-//! Ports of `request_dispatcher_test.go`, `progress_test.go` and
-//! `execute_command_test.go`.
+//! Request dispatch, progress reporting and command execution tests.
 
 use std::sync::Arc;
 

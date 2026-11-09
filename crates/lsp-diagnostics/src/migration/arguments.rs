@@ -1,12 +1,12 @@
-//! Removed and added call arguments (Go `shopware_migration_arguments.go`).
+//! Removed and added call arguments.
 
 use super::scan;
 use swlsp_lsp::{Context, Problem};
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::PHP_NAMED_ARGUMENT;
 use swlsp_php_semantic::{Document, Snapshot};
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::eq_ignore_case;
 
 use super::api::valid_source_range;
 use super::{
@@ -58,7 +58,7 @@ fn removed_call_argument_problems(
         if ctx.is_cancelled() {
             return result;
         }
-        if !equal_fold(&phpquery::call_method_name(&call), "merge") {
+        if !eq_ignore_case(&phpquery::call_method_name(&call), "merge") {
             continue;
         }
         let Some(receiver) = phpquery::call_receiver(&call) else {
@@ -166,7 +166,7 @@ fn thumbnail_argument_problems(
             continue;
         }
         let method = phpquery::call_method_name(&call);
-        if equal_fold(&method, "updateThumbnails") {
+        if eq_ignore_case(&method, "updateThumbnails") {
             let arguments: Vec<SyntaxNode> = phpquery::arguments(&call).collect();
             if arguments.len() != 2 {
                 continue;
@@ -180,7 +180,7 @@ fn thumbnail_argument_problems(
                 "false",
                 php_arguments_are_positional(&arguments),
             ));
-        } else if equal_fold(&method, "generateThumbnails") {
+        } else if eq_ignore_case(&method, "generateThumbnails") {
             let arguments: Vec<SyntaxNode> = phpquery::arguments(&call).collect();
             let first = phpquery::argument(&call, 0)
                 .and_then(|argument| php_argument_expression(&argument));

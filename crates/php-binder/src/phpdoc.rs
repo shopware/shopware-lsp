@@ -2,6 +2,8 @@
 
 use std::collections::HashMap;
 
+use swlsp_textutil::eq_ignore_case;
+
 use crate::fast::Fast;
 use rustc_hash::FxHashSet;
 use swlsp_php_phpdoc::{Assertion, Document as PhpDoc, Template};
@@ -10,9 +12,7 @@ use swlsp_php_semantic::{
     Flags, Parameter, ScopeId, Str, Symbol, SymbolId, SymbolKind, TemplateParameter, TypeAssertion,
     Visibility, new_symbol_id,
 };
-use swlsp_php_types::{
-    Kind as TypeKind, Relations, Type, contains_template, equal_fold, phpdoc_alias,
-};
+use swlsp_php_types::{Kind as TypeKind, Relations, Type, contains_template, phpdoc_alias};
 use swlsp_syntax::SyntaxNode;
 
 use crate::builder::Builder;
@@ -176,8 +176,8 @@ pub(crate) fn apply_document_flags(symbol: &mut Symbol, documentation: &PhpDoc) 
 pub(crate) fn apply_attribute_flags(symbol: &mut Symbol) {
     let deprecated = symbol.attributes().iter().any(|attribute| {
         let name = attribute.name.strip_prefix('\\').unwrap_or(&attribute.name);
-        equal_fold(name, "Deprecated")
-            || swlsp_php_types::go_to_lower(name).ends_with("\\deprecated")
+        eq_ignore_case(name, "Deprecated")
+            || swlsp_textutil::lowercase(name).ends_with("\\deprecated")
     });
     if deprecated {
         symbol.flags |= Flags::DEPRECATED;
@@ -185,7 +185,11 @@ pub(crate) fn apply_attribute_flags(symbol: &mut Symbol) {
 }
 
 pub(crate) fn append_unique(values: &mut Vec<Str>, value: &str) {
-    if value.is_empty() || values.iter().any(|existing| equal_fold(existing, value)) {
+    if value.is_empty()
+        || values
+            .iter()
+            .any(|existing| eq_ignore_case(existing, value))
+    {
         return;
     }
     values.push(Str::from(value));
@@ -379,7 +383,9 @@ impl Builder<'_> {
         // Members are always added after their container.
         let start = self.symbol_index(container).unwrap_or(0) as usize;
         self.doc.symbols[start..].iter().any(|symbol| {
-            symbol.container == *container && symbol.kind == kind && equal_fold(&symbol.name, name)
+            symbol.container == *container
+                && symbol.kind == kind
+                && eq_ignore_case(&symbol.name, name)
         })
     }
 }

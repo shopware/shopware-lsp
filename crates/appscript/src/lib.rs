@@ -1,5 +1,4 @@
-//! Shopware app-script hooks and facade availability (port of Go
-//! `internal/appscript`).
+//! Shopware app-script hooks and facade availability.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
@@ -225,8 +224,8 @@ fn extract_scripts(file: &ParsedFile) -> PreparedScripts {
     PreparedScripts(Some(ExtractedScripts { hooks, facades }))
 }
 
-/// Inserts or replaces `key`, keeping first-insertion order (Go map semantics
-/// for the persisted key set).
+/// Inserts or replaces `key`, keeping first-insertion order; the persisted
+/// key set has one value per key.
 fn upsert<T>(items: &mut Vec<(String, T)>, key: String, value: T) {
     match items.iter_mut().find(|(existing, _)| *existing == key) {
         Some(item) => item.1 = value,
@@ -334,7 +333,9 @@ fn short_class(name: &str) -> &str {
     }
 }
 
-/// Go `\bHOOK_NAME\s*=\s*['"]([^'"]+)['"]` on the class text.
+/// The value of the first `HOOK_NAME = '…'` (or `"…"`) assignment in the
+/// class text: `HOOK_NAME` at a word boundary, optional ASCII whitespace
+/// around `=`, and a non-empty quoted value.
 fn hook_name_constant(text: &str) -> Option<&str> {
     const NAME: &str = "HOOK_NAME";
     let bytes = text.as_bytes();
@@ -451,7 +452,7 @@ mod tests {
     }
 
     #[test]
-    fn hook_name_constant_matches_go_pattern() {
+    fn hook_name_constant_reads_the_quoted_assignment() {
         assert_eq!(hook_name_constant("const HOOK_NAME = 'a-b';"), Some("a-b"));
         assert_eq!(hook_name_constant("const HOOK_NAME=\"x\""), Some("x"));
         assert_eq!(

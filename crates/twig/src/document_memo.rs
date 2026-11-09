@@ -1,8 +1,8 @@
 //! Per-tree memoization for request-time document scans.
 //!
 //! Providers such as definition, hover and references ask "which reference
-//! is at this offset?" once per request, and Go answers it by rescanning the
-//! whole document every time. A `DocumentMemo` computes the full scan once
+//! is at this offset?" once per request. Rather than rescanning the whole
+//! document every time, a `DocumentMemo` computes the full scan once
 //! per immutable tree snapshot and reuses it for later requests on the same
 //! snapshot.
 //!

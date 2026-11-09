@@ -1,5 +1,4 @@
-//! Duplicate service, parameter and route names (Go
-//! `duplicate_diagnostics.go`).
+//! Duplicate service, parameter and route names.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -22,7 +21,6 @@ const DUPLICATE_ROUTE_CODE: &str = "symfony.route.duplicate";
 const DUPLICATE_SERVICE_CODE: &str = "symfony.service.duplicate";
 const DUPLICATE_PARAMETER_CODE: &str = "symfony.parameter.duplicate";
 
-/// Go `DuplicateAnalyzer`.
 #[derive(Debug, Default)]
 pub struct DuplicateAnalyzer;
 

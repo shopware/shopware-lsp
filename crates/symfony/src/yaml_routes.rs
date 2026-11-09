@@ -71,7 +71,7 @@ fn yaml_route_methods(node: Option<&SyntaxNode>) -> Vec<String> {
     split_methods(&yamlquery::scalar_value(node))
 }
 
-/// Go `strings.FieldsFunc` on `|`, `,` and space.
+/// The non-empty fields of `value` separated by `|`, `,` or space.
 pub(crate) fn split_methods(value: &str) -> Vec<String> {
     value
         .split(['|', ',', ' '])

@@ -1,5 +1,4 @@
-//! Twig template variable catalog (port of
-//! `twig_template_variable_catalog.go`).
+//! Twig template variable catalog.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -14,16 +13,14 @@ use swlsp_twig::{Global, TwigFile, TwigIndexer};
 use swlsp_twigcomponent::Index as ComponentIndex;
 use swlsp_uriutil::filepath;
 
-use crate::profiler::go_lossy;
+use crate::profiler::utf8_lossy_per_byte;
 use crate::request::{Field, decode, present};
 use crate::twig_template_usage_catalog::{
     TwigTemplateSourceLocation, template_files_match_glob, template_names_for_path_input,
     unique_twig_files,
 };
-use crate::{
-    Result, SourceLineResolver, check, errorf, is_zero, lower, optional_file_uri, range_start,
-    trim_space,
-};
+use crate::{Result, SourceLineResolver, check, errorf, is_zero, optional_file_uri, range_start};
+use swlsp_textutil::lowercase;
 
 pub const LIST_TWIG_TEMPLATE_VARIABLES_COMMAND: &str =
     "shopware/symfony/analytics/twig/templateVariables";
@@ -106,14 +103,14 @@ struct Variables {
 
 impl Variables {
     fn add(&mut self, name: &str, type_name: &str, source: TwigTemplateVariableSource) {
-        let name = trim_space(name);
+        let name = name.trim();
         let name = name.strip_prefix('$').unwrap_or(name);
         if name.is_empty() {
             return;
         }
         let current = self
             .values
-            .entry(lower(name))
+            .entry(lowercase(name))
             .or_insert_with(|| Accumulator {
                 name: name.to_owned(),
                 types: HashMap::new(),
@@ -145,7 +142,6 @@ impl TwigTemplateVariableCatalogProvider {
         };
         let members = decode(
             value,
-            "TwigTemplateVariableCatalogRequest",
             &[("template", Field::String), ("fileGlob", Field::String)],
         )
         .map_err(|error| errorf!("invalid twig template variable request: {error}"))?;
@@ -165,7 +161,7 @@ impl TwigTemplateVariableCatalogProvider {
             return Err(errorf!("twig template variable catalog is unavailable"));
         };
         check(ctx)?;
-        if trim_space(&request.template).is_empty() && trim_space(&request.file_glob).is_empty() {
+        if request.template.trim().is_empty() && request.file_glob.trim().is_empty() {
             return Err(errorf!("{TEMPLATE_REQUIRED}"));
         }
         let names = self.resolve_template_variable_names(twig, request)?;
@@ -187,7 +183,7 @@ impl TwigTemplateVariableCatalogProvider {
     ) -> Result<Vec<String>> {
         let mut selected: HashSet<String> = HashSet::new();
         for input in request.template.split(',') {
-            let input = trim_space(input);
+            let input = input.trim();
             if input.is_empty() {
                 continue;
             }
@@ -196,7 +192,7 @@ impl TwigTemplateVariableCatalogProvider {
             }
             selected.extend(template_names_for_path_input(&self.root, twig, input));
         }
-        let file_glob = filepath::to_slash(trim_space(&request.file_glob));
+        let file_glob = filepath::to_slash(request.file_glob.trim());
         if !file_glob.is_empty() {
             for name in twig.get_all_template_files()? {
                 let files = unique_twig_files(twig.get_twig_files_by_rel_path(&name)?);
@@ -206,7 +202,7 @@ impl TwigTemplateVariableCatalogProvider {
             }
         }
         let mut result: Vec<String> = selected.into_iter().collect();
-        result.sort_by_cached_key(|name| lower(name));
+        result.sort_by_cached_key(|name| lowercase(name));
         Ok(result)
     }
 
@@ -299,7 +295,7 @@ impl TwigTemplateVariableCatalogProvider {
         }
         entry
             .variables
-            .sort_by_cached_key(|variable| lower(&variable.name));
+            .sort_by_cached_key(|variable| lowercase(&variable.name));
         Ok(entry)
     }
 }
@@ -322,7 +318,7 @@ fn source(kind: &str, path: &str, line: i64) -> TwigTemplateVariableSource {
 
 fn twig_template_annotations(path: &str) -> Result<HashMap<String, String>> {
     let source = std::fs::read(path).map_err(|error| errorf!("open {path}: {error}"))?;
-    let parsed = swlsp_parser_twig::parse(&go_lossy(&source));
+    let parsed = swlsp_parser_twig::parse(&utf8_lossy_per_byte(&source));
     Ok(swlsp_twig::twig_type_annotations(&parsed.tree.root())
         .into_iter()
         .map(|(name, value)| (name, value.to_string()))
@@ -330,7 +326,7 @@ fn twig_template_annotations(path: &str) -> Result<HashMap<String, String>> {
 }
 
 fn add_variable_types(target: &mut HashMap<String, String>, value: &str) {
-    if let Ok(parsed) = swlsp_php_types::parse(trim_space(value))
+    if let Ok(parsed) = swlsp_php_types::parse(value.trim())
         && !parsed.is_unknown()
     {
         let mut members = Vec::new();
@@ -338,15 +334,15 @@ fn add_variable_types(target: &mut HashMap<String, String>, value: &str) {
         for member in members {
             let rendered = member.to_string();
             if !rendered.is_empty() && rendered != "unknown" {
-                target.insert(lower(&rendered), rendered);
+                target.insert(lowercase(&rendered), rendered);
             }
         }
         return;
     }
     for member in value.split('|') {
-        let member = trim_space(member);
-        if !member.is_empty() && !swlsp_php_types::equal_fold(member, "unknown") {
-            target.insert(lower(member), member.to_owned());
+        let member = member.trim();
+        if !member.is_empty() && !swlsp_textutil::eq_ignore_case(member, "unknown") {
+            target.insert(lowercase(member), member.to_owned());
         }
     }
 }
@@ -363,7 +359,7 @@ fn flatten_variable_types(value: &Type, out: &mut Vec<Type>) {
 
 fn sorted_variable_types(values: &HashMap<String, String>) -> Vec<String> {
     let mut result: Vec<String> = values.values().cloned().collect();
-    result.sort_by_cached_key(|value| lower(value));
+    result.sort_by_cached_key(|value| lowercase(value));
     result
 }
 
@@ -372,8 +368,8 @@ fn variable_properties(
     type_names: &[String],
     lines: &mut SourceLineResolver,
 ) -> Vec<TwigTemplateVariableProperty> {
-    // Go iterates a map here, so classes sharing a member name resolve in a
-    // random order; Rust keeps the order of first appearance in the type.
+    // Classes sharing a member name resolve in the order of their first
+    // appearance in the type, keeping the result deterministic.
     let mut classes: Vec<(String, String)> = Vec::new();
     let mut shapes = Vec::new();
     for type_name in type_names {
@@ -385,7 +381,7 @@ fn variable_properties(
     for shape in &shapes {
         for field in shape.fields() {
             entries.insert(
-                lower(&field.name),
+                lowercase(&field.name),
                 TwigTemplateVariableProperty {
                     name: field.name.to_string(),
                     kind: "shapeField".to_owned(),
@@ -402,7 +398,7 @@ fn variable_properties(
             }
             let name = property.name.strip_prefix('$').unwrap_or(&property.name);
             entries.insert(
-                lower(name),
+                lowercase(name),
                 TwigTemplateVariableProperty {
                     name: name.to_owned(),
                     kind: "property".to_owned(),
@@ -418,7 +414,7 @@ fn variable_properties(
             if method.visibility != Visibility::Public || method.flags.has(Flags::STATIC) {
                 continue;
             }
-            let lowered = lower(&method.name);
+            let lowered = lowercase(&method.name);
             if lowered.starts_with("set") || lowered.starts_with("__") {
                 continue;
             }
@@ -428,7 +424,7 @@ fn variable_properties(
                 name = method.name.to_string();
                 kind = "method";
             }
-            let key = lower(&name);
+            let key = lowercase(&name);
             if entries.contains_key(&key) {
                 continue;
             }
@@ -447,7 +443,7 @@ fn variable_properties(
         }
     }
     let mut result: Vec<TwigTemplateVariableProperty> = entries.into_values().collect();
-    result.sort_by_cached_key(|entry| lower(&entry.name));
+    result.sort_by_cached_key(|entry| lowercase(&entry.name));
     result
 }
 
@@ -459,7 +455,7 @@ fn collect_variable_classes(
     match value.kind() {
         Kind::Object => {
             if !value.name().is_empty() {
-                let key = lower(value.name());
+                let key = lowercase(value.name());
                 match classes.iter_mut().find(|(existing, _)| *existing == key) {
                     Some((_, name)) => *name = value.name().to_owned(),
                     None => classes.push((key, value.name().to_owned())),

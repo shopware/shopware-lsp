@@ -1,10 +1,9 @@
-//! MessagePack encoding identical to the Go generator
-//! (`github.com/vmihailenco/msgpack/v5` with the catalog struct tags).
+//! MessagePack encoding of the embedded stub catalog.
 //!
-//! Go encodes typed integers with their fixed width (`uint8` as `0xcc`,
-//! `uint16` as `0xcd`, `uint32` as `0xce`), catalog structs as arrays and
-//! shared semantic structs as maps keyed by Go field name (including the
-//! zeroed `Range` fields).
+//! Typed integers keep their fixed width (`u8` as `0xcc`, `u16` as `0xcd`,
+//! `u32` as `0xce`), catalog structs are arrays, and shared semantic structs
+//! are maps keyed by their PascalCase field names (including zeroed `Range`
+//! fields). [`swlsp_php_stubs::catalog`] decodes this layout.
 
 use swlsp_php_semantic::{
     Attribute, AttributeValue, CallContract, CallValue, ExpectedArgumentContract, Flags, SymbolKind,
@@ -12,7 +11,7 @@ use swlsp_php_semantic::{
 use swlsp_php_stubs::catalog::{Catalog, Parameter, Symbol};
 use swlsp_php_types::Type;
 
-/// How lists that Go may hold as `nil` or as an empty slice are written.
+/// Whether optional lists are written as an empty array or as `nil`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum EmptyListPolicy {
     /// The committed `phpstorm-stubs.msgpack`: class-like declarations keep
@@ -21,8 +20,8 @@ pub enum EmptyListPolicy {
     /// empty `throws` list.
     #[default]
     Committed,
-    /// The current Go generator: those lists are `nil` when empty.
-    GoHead,
+    /// Those lists are written as `nil` when empty.
+    OmitEmpty,
 }
 
 #[derive(Default)]
@@ -97,7 +96,7 @@ impl Writer {
         self.str(&value.persisted_string());
     }
 
-    /// A Go slice: `nil` when empty unless `keep_empty`.
+    /// A list: `nil` when empty unless `keep_empty`.
     fn list<T>(&mut self, items: &[T], keep_empty: bool, mut encode: impl FnMut(&mut Self, &T)) {
         if items.is_empty() && !keep_empty {
             self.nil();
@@ -110,7 +109,7 @@ impl Writer {
     }
 }
 
-/// Encodes a packed catalog exactly as Go `catalog.Encode`.
+/// Encodes a packed catalog.
 pub fn encode(catalog: &Catalog, policy: EmptyListPolicy) -> Vec<u8> {
     let mut writer = Writer::default();
     writer.array(9);
@@ -142,8 +141,7 @@ pub fn encode(catalog: &Catalog, policy: EmptyListPolicy) -> Vec<u8> {
     writer.data
 }
 
-/// The encoding of a one-symbol catalog that Go uses as the cross-version
-/// identity of a record.
+/// The encoding of one symbol record, used as its cross-version identity.
 pub fn encode_symbol_record(symbol: &Symbol, policy: EmptyListPolicy) -> Vec<u8> {
     let mut writer = Writer::default();
     symbol_record(&mut writer, symbol, policy);
@@ -192,7 +190,7 @@ fn symbol_record(writer: &mut Writer, symbol: &Symbol, policy: EmptyListPolicy) 
     writer.ty(&symbol.native_type);
     writer.ty(&symbol.doc_type);
     writer.ty(&symbol.return_type);
-    // Go allocates both slices with make, so they are never nil.
+    // Parameters and templates are always written as arrays, even empty.
     writer.list(&symbol.parameters, true, parameter);
     writer.list(&symbol.templates, true, |writer, template| {
         writer.array(5);

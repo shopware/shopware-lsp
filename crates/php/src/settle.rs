@@ -23,7 +23,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use swlsp_indexer::{CancelToken, Error, Result};
 use swlsp_php_semantic::{Document, Flags, NameKind, WorkspaceGraph, WorkspaceGraphDetacher};
-use swlsp_php_types::go_to_lower;
+use swlsp_textutil::lowercase;
 
 use crate::persistence::{PersistedWorkspaceGraph, encode_workspace_graph};
 use crate::twig_context::{TwigTemplateContext, extract_twig_template_contexts};
@@ -291,7 +291,7 @@ fn persist_and_publish(
 /// The case-insensitive unqualified name, as functions and methods resolve.
 fn name_key(name: &str) -> u64 {
     let name = name.rsplit('\\').next().unwrap_or(name);
-    hash(go_to_lower(name).as_bytes())
+    hash(lowercase(name).as_bytes())
 }
 
 fn storage_hash(storage: &PersistedWorkspaceGraph) -> u64 {

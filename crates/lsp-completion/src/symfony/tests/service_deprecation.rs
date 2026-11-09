@@ -1,4 +1,4 @@
-//! Port of Go `service_deprecation_completion_test.go`.
+//! Tests for service deprecation details in completion.
 
 use std::sync::Arc;
 

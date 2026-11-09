@@ -1,5 +1,4 @@
-//! Doctrine DBAL type registration references (port of
-//! `doctrine_reference.go`).
+//! Doctrine DBAL type registration references.
 
 use std::sync::Arc;
 
@@ -7,8 +6,8 @@ use swlsp_doctrine::{Index, type_registration_reference_at, type_registrations_i
 use swlsp_lsp::{Context, ProviderResult, ReferenceRequest, ReferencesProvider};
 use swlsp_lsp_protocol as protocol;
 use swlsp_php::PhpIndex;
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::TextSize;
+use swlsp_textutil::eq_ignore_case;
 
 use crate::{FileLines, document_location, request_offset, request_path, unique_locations};
 
@@ -57,7 +56,7 @@ impl ReferencesProvider for DoctrineReferenceProvider {
         }
         for registration in type_registrations_in_document(&path, root) {
             ctx.check()?;
-            if equal_fold(&registration.name, &reference.name) {
+            if eq_ignore_case(&registration.name, &reference.name) {
                 result.push(document_location(
                     request,
                     line_index,
@@ -70,7 +69,7 @@ impl ReferencesProvider for DoctrineReferenceProvider {
         {
             for declaration in index.type_declarations(php) {
                 ctx.check()?;
-                if equal_fold(&declaration.name, &reference.name) {
+                if eq_ignore_case(&declaration.name, &reference.name) {
                     result.extend(files.location(&declaration.file, declaration.range));
                 }
             }

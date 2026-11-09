@@ -1,4 +1,4 @@
-//! Port of `document_test.go`.
+//! Open-document lifecycle and snapshot tests.
 
 use std::sync::{Arc, Mutex};
 

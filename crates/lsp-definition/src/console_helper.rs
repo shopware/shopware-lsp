@@ -1,5 +1,5 @@
-//! Go `console_helper_definition.go`: `HelperSet::get('name')` and
-//! `Command::getHelper('name')` navigate to the helper class.
+//! `HelperSet::get('name')` and `Command::getHelper('name')` navigate to the
+//! helper class.
 
 use std::collections::HashSet;
 

@@ -27,6 +27,7 @@ swlsp-style = { path = "../style" }
 swlsp-symfony = { path = "../symfony" }
 swlsp-twig = { path = "../twig" }
 swlsp-twigcomponent = { path = "../twigcomponent" }
+swlsp-textutil = { path = "../textutil" }
 swlsp-uriutil = { path = "../uriutil" }
 
 [dev-dependencies]

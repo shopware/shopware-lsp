@@ -1,4 +1,4 @@
-//! JavaScript usage extraction (port of Go `usage_javascript.go`).
+//! JavaScript usage extraction.
 
 use crate::*;
 

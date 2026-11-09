@@ -1,4 +1,4 @@
-//! Port of Go `internal/app/providers_context_test.go`.
+//! The PHP context enricher reuses the document's analysis.
 
 use std::sync::Arc;
 

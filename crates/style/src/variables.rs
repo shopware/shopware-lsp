@@ -176,7 +176,7 @@ fn has_important_flag(root: &SyntaxNode, name: &str) -> bool {
         if token.kind().is_trivia() {
             continue;
         }
-        if previous_bang && token.kind() == TK_IDENTIFIER && equal_fold(token.text(), name) {
+        if previous_bang && token.kind() == TK_IDENTIFIER && eq_ignore_case(token.text(), name) {
             return true;
         }
         previous_bang = token.kind() == TK_OPERATOR && token.text() == "!";
@@ -230,7 +230,7 @@ fn direct_variable_before_identifier(
         return false;
     }
     tokens(at_rule)
-        .find(|token| token.kind() == TK_IDENTIFIER && equal_fold(token.text(), identifier))
+        .find(|token| token.kind() == TK_IDENTIFIER && eq_ignore_case(token.text(), identifier))
         .is_some_and(|token| variable.text_range().end() <= token.text_range().start())
 }
 
@@ -249,7 +249,7 @@ fn function_name(variable: &SyntaxNode, name: &str) -> bool {
     variable
         .ancestor_or_self_of_kind(SCSS_FUNCTION_CALL)
         .and_then(|call| swlsp_parser_scss::query::function_name(&call))
-        .is_some_and(|function| equal_fold(&function, name))
+        .is_some_and(|function| eq_ignore_case(&function, name))
 }
 
 fn is_module_variable(variable: &SyntaxNode) -> bool {
@@ -264,9 +264,9 @@ fn is_module_variable(variable: &SyntaxNode) -> bool {
     false
 }
 
-/// Go `strings.EqualFold` against a lowercase ASCII target: besides ASCII
+/// Case-insensitive comparison against an ASCII `target`: besides ASCII
 /// case, `ſ` (U+017F) folds to `s` and the Kelvin sign (U+212A) to `k`.
-pub(crate) fn equal_fold(value: &str, target: &str) -> bool {
+pub(crate) fn eq_ignore_case(value: &str, target: &str) -> bool {
     let mut chars = value.chars();
     for expected in target.chars() {
         let Some(actual) = chars.next() else {

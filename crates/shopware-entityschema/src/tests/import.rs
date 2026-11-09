@@ -1,4 +1,4 @@
-//! Port of Go `import_test.go`.
+//! Tests for import.
 
 use super::inheritance::{field, field_by_property, relation, s};
 use crate::*;

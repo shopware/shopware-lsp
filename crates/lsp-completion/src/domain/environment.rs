@@ -1,4 +1,4 @@
-//! Symfony environment variable names (Go `environment_completion.go`).
+//! Symfony environment variable names.
 
 use std::sync::Arc;
 

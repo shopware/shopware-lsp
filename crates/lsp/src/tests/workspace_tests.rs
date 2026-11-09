@@ -1,4 +1,4 @@
-//! Port of `workspace_test.go`.
+//! Initialization and workspace construction tests.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -13,7 +13,9 @@ use crate::workspace::workspace_root;
 use crate::*;
 
 fn initialize(server: &Server, params: &protocol::InitializeParams) -> Result<Value, String> {
-    server.initialize(&Context::background(), params)
+    server
+        .initialize(&Context::background(), params)
+        .map_err(|error| error.to_string())
 }
 
 #[test]
@@ -26,7 +28,9 @@ fn workspace_root_uses_initialize_uri() {
 
 #[test]
 fn workspace_root_rejects_missing_and_multiple_roots() {
-    let error = workspace_root(&protocol::InitializeParams::default()).unwrap_err();
+    let error = workspace_root(&protocol::InitializeParams::default())
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("workspace root is required"), "{error}");
     let params = protocol::InitializeParams {
         workspace_folders: vec![
@@ -41,7 +45,7 @@ fn workspace_root_rejects_missing_and_multiple_roots() {
         ],
         ..Default::default()
     };
-    let error = workspace_root(&params).unwrap_err();
+    let error = workspace_root(&params).unwrap_err().to_string();
     assert!(error.contains("multiple workspace folders"), "{error}");
 }
 

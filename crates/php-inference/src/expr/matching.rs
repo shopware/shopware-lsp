@@ -1,4 +1,4 @@
-//! `match` expressions (port of `expression_match.go`).
+//! `match` expressions.
 
 use swlsp_parser_php::syntax::*;
 use swlsp_php_types::Type;

@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use swlsp_lsp::{Context, HoverProvider, HoverRequest, ProviderResult};
 use swlsp_lsp_protocol as protocol;
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::{LineIndex, TextRange};
+use swlsp_textutil::eq_ignore_case;
 use swlsp_twigcomponent::{Index, LiveEventArgumentReference, LiveListener};
 
 use crate::{
@@ -78,7 +78,7 @@ fn event_hover(
     let listeners = index.live_listeners()?;
     let matching: Vec<&LiveListener> = listeners
         .iter()
-        .filter(|listener| equal_fold(&listener.name, event))
+        .filter(|listener| eq_ignore_case(&listener.name, event))
         .collect();
     if matching.is_empty() {
         return Ok(None);
@@ -113,11 +113,11 @@ fn argument_hover(
     line_index: &LineIndex,
 ) -> HoverResult {
     for listener in index.live_listeners()? {
-        if !equal_fold(&listener.name, &reference.event) {
+        if !eq_ignore_case(&listener.name, &reference.event) {
             continue;
         }
         for parameter in &listener.parameters {
-            if !parameter.live_arg || !equal_fold(&parameter.name, &reference.name) {
+            if !parameter.live_arg || !eq_ignore_case(&parameter.name, &reference.name) {
                 continue;
             }
             let mut value = format!(

@@ -21,7 +21,7 @@ pub struct RouteHoverProvider {
 }
 
 impl RouteHoverProvider {
-    /// `php` stands in for Go's request-context PHP enrichment.
+    /// `php` supplies the request's PHP semantic context.
     pub fn new(route_index: Option<Arc<RouteIndexer>>, php: Option<PhpIndex>) -> Self {
         Self { route_index, php }
     }

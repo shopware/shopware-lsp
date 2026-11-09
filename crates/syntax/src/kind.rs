@@ -5,8 +5,8 @@
 //! registry materializes flat lookup tables on first use so `Kind::name`,
 //! `Kind::token_text`, `Kind::is_trivia` and `Kind::is_token` are O(1).
 //!
-//! Kind values and debug names are kept identical to the Go implementation so
-//! debug trees can be compared byte-for-byte during the migration.
+//! Kind values and debug names are persisted in caches and CST dumps, so they
+//! must stay stable.
 
 use std::fmt;
 use std::sync::OnceLock;

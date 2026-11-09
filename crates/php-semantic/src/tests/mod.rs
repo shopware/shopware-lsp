@@ -1,5 +1,3 @@
-//! Ports of the Go `internal/php/semantic` tests plus Rust layout tests.
-
 mod document;
 mod hierarchy;
 mod lazy_returns;

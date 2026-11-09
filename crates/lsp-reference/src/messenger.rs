@@ -1,5 +1,4 @@
-//! Symfony Messenger message and handler references (port of
-//! `messenger_reference.go`).
+//! Symfony Messenger message and handler references.
 
 use std::sync::Arc;
 
@@ -8,8 +7,8 @@ use swlsp_lsp_protocol as protocol;
 use swlsp_messenger::{Index, OccurrenceKind, ReferenceRole, reference_at};
 use swlsp_php::{PhpIndex, symbol_at};
 use swlsp_php_semantic::SymbolKind;
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::SyntaxNodeExt;
+use swlsp_textutil::eq_ignore_case;
 
 use crate::{FileLines, lower_ext, php_context, symbol_range, unique_locations};
 
@@ -128,8 +127,8 @@ fn handler_locations(
         for occurrence in &message.occurrences {
             let mut range = occurrence.message_range;
             if occurrence.kind == OccurrenceKind::Handler
-                && equal_fold(&occurrence.class, class_name)
-                && equal_fold(&occurrence.method, method_name)
+                && eq_ignore_case(&occurrence.class, class_name)
+                && eq_ignore_case(&occurrence.method, method_name)
                 && !occurrence.handler_range.is_empty()
             {
                 range = occurrence.handler_range;

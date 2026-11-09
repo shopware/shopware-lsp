@@ -17,7 +17,7 @@ pub fn uri(path: &Path) -> String {
     swlsp_uriutil::file_uri(&p(path))
 }
 
-/// A request like the Go tests build by hand: the node at `offset`, no
+/// A hand-built request: the node at `offset`, no
 /// token, and the hover position at `offset`.
 pub fn request_at(document: TextDocument, offset: usize) -> HoverRequest {
     let document = Arc::new(document);

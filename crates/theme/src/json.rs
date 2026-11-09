@@ -1,4 +1,4 @@
-//! The JSON queries theme configuration needs (Go `internal/parser/json/query`).
+//! The JSON queries theme configuration needs.
 
 use swlsp_parser_json::syntax::{
     JSON_ARRAY, JSON_BOOLEAN, JSON_NULL_VALUE, JSON_NUMBER, JSON_OBJECT, JSON_PAIR, JSON_STRING,
@@ -51,7 +51,8 @@ pub(crate) fn string_value(node: &SyntaxNode) -> String {
     text.strip_suffix('"').unwrap_or(text).to_owned()
 }
 
-/// Go `strconv.ParseBool` of a JSON boolean.
+/// The value of a JSON boolean; also accepts `1`/`0`, `t`/`f` and the
+/// all-caps and capitalized spellings.
 pub(crate) fn boolean_value(node: &SyntaxNode) -> Option<bool> {
     if node.kind() != JSON_BOOLEAN {
         return None;
@@ -63,16 +64,10 @@ pub(crate) fn boolean_value(node: &SyntaxNode) -> Option<bool> {
     }
 }
 
-/// Go `strconv.Atoi` of a JSON number.
+/// The value of a JSON number that is a decimal integer in `i64` range.
 pub(crate) fn integer_value(node: &SyntaxNode) -> Option<i64> {
     if node.kind() != JSON_NUMBER {
         return None;
     }
-    let text = node.text().to_string();
-    let text = text.trim();
-    let digits = text.strip_prefix(['+', '-']).unwrap_or(text);
-    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    text.parse().ok()
+    node.text().to_string().trim().parse().ok()
 }

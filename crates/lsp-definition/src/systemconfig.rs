@@ -65,19 +65,13 @@ fn entry_locations<'a>(
         .collect()
 }
 
-/// Go `filepath.Ext` (case-sensitive).
-fn ext(uri: &str) -> &str {
-    let base = uri.rsplit('/').next().unwrap_or(uri);
-    base.rfind('.').map_or("", |index| &base[index..])
-}
-
 impl GotoDefinitionProvider for SystemConfigDefinitionProvider {
     fn get_definition(
         &self,
         _ctx: &Context,
         request: &DefinitionRequest,
     ) -> Vec<protocol::Location> {
-        match ext(request_uri(request)) {
+        match swlsp_uriutil::filepath::ext(request_uri(request)) {
             ".twig" => {
                 let Some(node) = request.node.as_ref() else {
                     return Vec::new();

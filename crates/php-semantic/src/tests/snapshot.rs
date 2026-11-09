@@ -267,9 +267,9 @@ fn snapshot_indexes_only_winning_duplicate_declaration() {
 }
 
 #[test]
-fn shared_declaration_id_resolves_to_the_last_document_like_go() {
+fn shared_declaration_id_resolves_to_the_last_document() {
     // A runtime stub and a phar polyfill both declare `\Attribute` with the
-    // same ID; Go resolves name and global lookups through `SymbolView(id)`,
+    // same ID; name and global lookups resolve through the symbol view of that ID,
     // so the declaration of the later document wins everywhere.
     let declaration = |path: &str, flags: Flags| Symbol {
         flags,

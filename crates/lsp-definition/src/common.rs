@@ -6,8 +6,7 @@ use swlsp_php_semantic::Symbol;
 use swlsp_syntax::{LineIndex, TextRange};
 use swlsp_uriutil::file_uri;
 
-/// Lowercased extension of a URI or path including the dot (Go
-/// `strings.ToLower(filepath.Ext(...))`).
+/// Lowercased extension of a URI or path including the dot.
 pub(crate) fn ext_lower(uri: &str) -> String {
     let base = uri.rsplit('/').next().unwrap_or(uri);
     match base.rfind('.') {
@@ -42,7 +41,7 @@ pub(crate) fn protocol_range(lines: &LineIndex, range: TextRange) -> protocol::R
 }
 
 /// Reads `path` and converts a byte range to a location; `None` when the
-/// file cannot be read (Go `consoleLocation`).
+/// file cannot be read.
 pub(crate) fn file_range_location(path: &str, range: TextRange) -> Option<protocol::Location> {
     let source = std::fs::read(path).ok()?;
     let lines = LineIndex::new(String::from_utf8_lossy(&source).into_owned());
@@ -53,7 +52,7 @@ pub(crate) fn file_range_location(path: &str, range: TextRange) -> Option<protoc
 }
 
 /// Like [`file_range_location`] but falls back to an empty range at the file
-/// URI (Go `phpSymbolLocation`).
+/// URI.
 pub(crate) fn file_range_location_or_uri(path: &str, range: TextRange) -> protocol::Location {
     file_range_location(path, range).unwrap_or_else(|| protocol::Location {
         uri: file_uri(path),
@@ -61,12 +60,12 @@ pub(crate) fn file_range_location_or_uri(path: &str, range: TextRange) -> protoc
     })
 }
 
-/// Go `phpSymbolLocation`: the symbol's selection range.
+/// The location of the symbol's selection range.
 pub(crate) fn php_symbol_location(symbol: &Symbol) -> protocol::Location {
     file_range_location_or_uri(&symbol.path, symbol.selection_range)
 }
 
-/// Go `lineLocation`/`serviceLocation`: a zero-width location at the start
+/// A zero-width location at the start
 /// of a one-based line (clamped to 1).
 pub(crate) fn line_location(path: &str, line: i64) -> protocol::Location {
     let line = line.max(1) as u32 - 1;

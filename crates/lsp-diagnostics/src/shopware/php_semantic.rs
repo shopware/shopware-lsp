@@ -1,5 +1,5 @@
-//! Port of Go `shopware_php_semantic.go`: type-aware Shopware checks over
-//! one shared linked semantic document and one CST traversal.
+//! Type-aware Shopware checks over one shared linked semantic document and one
+//! CST traversal.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -13,12 +13,11 @@ use swlsp_php_resolver::MemberResolver;
 use swlsp_php_semantic::{
     Attribute, Document, Flags, NameKind, Reference, Snapshot, Symbol, SymbolId, SymbolKind,
 };
-use swlsp_php_types::{Kind as TypeKind, Type, equal_fold, go_to_lower};
+use swlsp_php_types::{Kind as TypeKind, Type};
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
-use super::util::{
-    equal_php_name, go_parse_int, range_contains, ranges_touch, trim_php_name, warning,
-};
+use super::util::{equal_php_name, range_contains, ranges_touch, trim_php_name, warning};
 use crate::common::{
     call_target_name, local_call_argument, php_type_is_subtype, unwrap_php_parentheses,
 };
@@ -49,7 +48,6 @@ const SESSION_INTERFACE_CLASS: &str =
 const ROUTE_ANNOTATION_CLASS: &str = "Symfony\\Component\\Routing\\Annotation\\Route";
 const ROUTE_ATTRIBUTE_CLASS: &str = "Symfony\\Component\\Routing\\Attribute\\Route";
 
-/// Go `ShopwarePHPSemanticAnalyzer`.
 #[derive(Clone)]
 pub struct ShopwarePhpSemanticAnalyzer {
     php_index: Option<PhpIndex>,
@@ -203,7 +201,7 @@ impl Run<'_> {
         for method in &semantic.symbols {
             if method.kind != SymbolKind::Method
                 || method.container != class.id
-                || !equal_fold(&method.name, "getDefaultInterval")
+                || !eq_ignore_case(&method.name, "getDefaultInterval")
             {
                 continue;
             }
@@ -211,7 +209,9 @@ impl Run<'_> {
                 if returned.ty.kind() != TypeKind::LiteralInt {
                     continue;
                 }
-                let Some(interval) = go_parse_int(&returned.value.replace('_', "")) else {
+                let Some(interval) =
+                    swlsp_textutil::parse_int_literal(&returned.value.replace('_', ""))
+                else {
                     continue;
                 };
                 if interval >= 300 {
@@ -250,7 +250,7 @@ impl Run<'_> {
                 "EntityRepository method calls inside loops cause N+1 database queries".to_owned(),
             );
         }
-        if equal_fold(&method_name, "getStoreToken")
+        if eq_ignore_case(&method_name, "getStoreToken")
             && php_type_is_subtype(&receiver_type, snapshot, USER_ENTITY_CLASS)
         {
             self.add(
@@ -288,7 +288,7 @@ impl Run<'_> {
 
     fn check_session_call(&mut self, call: &SyntaxNode, range: TextRange) {
         if let Some(method_node) = phpquery::method_at(call)
-            && equal_fold(&phpquery::method_name(&method_node), "__construct")
+            && eq_ignore_case(&phpquery::method_name(&method_node), "__construct")
         {
             self.add(
                 SHOPWARE_PHP_SESSION_CONSTRUCTOR_CODE,
@@ -434,7 +434,7 @@ impl Run<'_> {
             concrete.extends().iter().map(ToString::to_string).collect();
         let mut seen = HashSet::new();
         while let Some(name) = queue.pop_front() {
-            let key = go_to_lower(trim_php_name(&name));
+            let key = lowercase(trim_php_name(&name));
             if !seen.insert(key) {
                 continue;
             }
@@ -501,7 +501,7 @@ impl Run<'_> {
         false
     }
 
-    /// Go `arrayStringEntry`: `Some(value)` when a key matches.
+    /// `Some(value)` when a key matches.
     #[allow(clippy::option_option)]
     fn array_string_entry(
         &self,
@@ -529,13 +529,13 @@ impl Run<'_> {
             return false;
         };
         if node.kind() == PHP_STRING {
-            return equal_fold(&phpquery::string_value(&node), expected);
+            return eq_ignore_case(&phpquery::string_value(&node), expected);
         }
         self.resolved_symbols(Some(&node), SymbolKind::ClassConstant)
             .iter()
             .any(|constant| {
                 constant.ty.kind() == TypeKind::LiteralString
-                    && equal_fold(constant.ty.name(), expected)
+                    && eq_ignore_case(constant.ty.name(), expected)
             })
     }
 }
@@ -599,8 +599,8 @@ fn php_namespace(name: &str) -> String {
     }
 }
 
-/// Go `samePHPNamespacePackage`: whether two namespaces belong to the same
-/// Composer package (prefix relation or same `Vendor\Package` root).
+/// Whether two namespaces belong to the same Composer package (prefix relation
+/// or same `Vendor\Package` root).
 pub(crate) fn same_php_namespace_package(left: &str, right: &str) -> bool {
     let left = trim_php_name(left);
     let right = trim_php_name(right);

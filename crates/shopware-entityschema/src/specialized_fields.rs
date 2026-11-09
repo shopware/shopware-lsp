@@ -1,5 +1,4 @@
-//! Native Shopware storage-aware Field subclasses (port of Go
-//! `specialized_fields.go`).
+//! Native Shopware storage-aware Field subclasses.
 
 use serde::{Deserialize, Serialize};
 use swlsp_parser_php::query as phpquery;

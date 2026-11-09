@@ -197,7 +197,7 @@ pub fn php_route_resource_completion_range_at(node: &SyntaxNode) -> Option<TextR
 fn php_route_resource_call_at(node: &SyntaxNode) -> Option<(SyntaxNode, SyntaxNode)> {
     let literal = phpquery::string_at(node)?;
     let call = phpquery::call_at(&literal)?;
-    if !swlsp_php_types::equal_fold(&phpquery::call_method_name(&call), "import")
+    if !swlsp_textutil::eq_ignore_case(&phpquery::call_method_name(&call), "import")
         || phpquery::argument_index(&call, &literal) != Some(0)
     {
         return None;
@@ -245,7 +245,7 @@ fn same_route_node(left: Option<&SyntaxNode>, right: Option<&SyntaxNode>) -> boo
 }
 
 fn route_config_resource_path(path: &str) -> bool {
-    let lower = swlsp_php_types::go_to_lower(path);
+    let lower = swlsp_textutil::lowercase(path);
     [".yaml", ".yml", ".xml", ".php"]
         .iter()
         .any(|extension| lower.contains(extension))
@@ -337,7 +337,7 @@ pub(crate) fn route_resource_matches_target(
         .is_some_and(|relative| relative != "." && relative != ".." && !relative.starts_with("../"))
 }
 
-/// Walks `root` in lexical order like Go `filepath.WalkDir`, collecting
+/// Walks `root` depth-first in lexical order of entry names, collecting
 /// accepted files (optionally filtered by `expressions`) up to the limit.
 fn route_resource_directory_files(
     root: &str,
@@ -401,8 +401,8 @@ fn route_resource_glob_files(pattern: &str, reference: &RouteResourceReference) 
 }
 
 fn route_resource_file_accepted(path: &str, reference: &RouteResourceReference) -> bool {
-    let extension = swlsp_php_types::go_to_lower(extension(path));
-    match swlsp_php_types::go_to_lower(&reference.loader).as_str() {
+    let extension = swlsp_textutil::lowercase(extension(path));
+    match swlsp_textutil::lowercase(&reference.loader).as_str() {
         "annotation" | "attribute" | "attributes" => return extension == ".php",
         "yaml" | "yml" => return extension == ".yaml" || extension == ".yml",
         "xml" => return extension == ".xml",
@@ -484,9 +484,8 @@ fn expand_route_resource_braces(pattern: &str, depth: usize) -> Vec<String> {
     result
 }
 
-/// Translates a Symfony glob into a regular expression. Like Go, bytes are
-/// copied one by one; the result is compiled with the `regex` crate (Go uses
-/// RE2, which shares the syntax used here).
+/// Translates a Symfony glob into a regular expression for the `regex`
+/// crate, copying the pattern byte by byte.
 fn route_resource_glob_regexp(pattern: &str) -> String {
     let bytes = pattern.as_bytes();
     let mut result: Vec<u8> = vec![b'^'];

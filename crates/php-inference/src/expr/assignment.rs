@@ -1,5 +1,4 @@
-//! Assignments, destructuring and array element updates (port of
-//! `expression_assignment.go`).
+//! Assignments, destructuring and array element updates.
 
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;

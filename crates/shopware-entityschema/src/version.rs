@@ -1,6 +1,6 @@
-//! Shopware version gates for generated DAL constructs (port of Go
-//! `version.go`). Unknown versions stay permissive because the generator
-//! cannot prove a framework class is unavailable.
+//! Shopware version gates for generated DAL constructs. Unknown versions stay
+//! permissive because the generator cannot prove a framework class is
+//! unavailable.
 
 use swlsp_php_project::{Version, parse_version_constraint};
 

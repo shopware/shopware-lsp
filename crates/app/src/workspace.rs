@@ -1,5 +1,4 @@
-//! Workspace construction (port of Go `internal/app/workspace.go`): opens the
-//! shared store, constructs every domain index with its dependencies,
+//! Workspace construction: opens the shared store, constructs every domain index with its dependencies,
 //! registers the domain-enabled indexers with the file scanner and hands the
 //! indexes to provider registration.
 
@@ -14,8 +13,7 @@ use swlsp_shopware::ResolvedVersion;
 use crate::cache;
 use crate::registrar::{Registrar, Registration};
 
-/// Every domain index and service the providers are built from (Go
-/// `workspaceServices`). Indexes of disabled structural domains (`scss`,
+/// Every domain index and service the providers are built from. Indexes of disabled structural domains (`scss`,
 /// `administration`) are `None`.
 #[derive(Clone)]
 pub struct Services {
@@ -62,7 +60,7 @@ pub struct Workspace {
     services: Services,
     registrations: Vec<Registration>,
     initial_force: bool,
-    close_result: Mutex<Option<Result<(), String>>>,
+    close_result: Mutex<Option<Result<(), CloseError>>>,
 }
 
 /// Resources created so far; closed in reverse order when construction
@@ -102,15 +100,39 @@ fn close_indexers(indexers: &[Arc<dyn Indexer>]) -> Vec<String> {
     errors
 }
 
-fn context<E: std::fmt::Display>(message: &str) -> impl FnOnce(E) -> String + '_ {
-    move |error| format!("{message}: {error}")
+/// Why a workspace could not be built.
+#[derive(Debug, thiserror::Error)]
+pub enum WorkspaceError {
+    #[error("resolve cache directory: {0}")]
+    CacheDir(#[from] cache::CacheDirError),
+    /// One construction step failed; `operation` names it.
+    #[error("{operation}: {source}")]
+    Build {
+        operation: &'static str,
+        #[source]
+        source: BoxError,
+    },
+}
+
+/// Failures while closing a workspace, one entry per resource that failed.
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("{}", .failures.join("\n"))]
+pub struct CloseError {
+    pub failures: Vec<String>,
+}
+
+fn context<E: Into<BoxError>>(operation: &'static str) -> impl FnOnce(E) -> WorkspaceError {
+    move |error| WorkspaceError::Build {
+        operation,
+        source: error.into(),
+    }
 }
 
 impl Workspace {
     /// Builds the workspace for `root` with the cache below the user cache
     /// directory (or `SHOPWARE_LSP_CACHE_DIR`).
-    pub fn new(ctx: &Context, root: &str, server: &Server) -> Result<Workspace, String> {
-        let cache_base = cache::user_cache_dir().map_err(context("resolve cache directory"))?;
+    pub fn new(ctx: &Context, root: &str, server: &Server) -> Result<Workspace, WorkspaceError> {
+        let cache_base = cache::user_cache_dir()?;
         Self::new_in(ctx, root, server, &cache_base)
     }
 
@@ -121,9 +143,8 @@ impl Workspace {
         root: &str,
         server: &Server,
         cache_base: &Path,
-    ) -> Result<Workspace, String> {
-        let cache_dir = cache::project_cache_folder_in(cache_base, root)
-            .map_err(context("resolve cache directory"))?;
+    ) -> Result<Workspace, WorkspaceError> {
+        let cache_dir = cache::project_cache_folder_in(cache_base, root)?;
         let mut partial = Partial::default();
         match build(root, &cache_dir, server, &mut partial) {
             Ok(built) => Ok(built),
@@ -169,7 +190,7 @@ impl Workspace {
 
     /// Closes the scanner, the indexers in reverse construction order and
     /// the store. Idempotent; later calls return the first result.
-    pub fn close_workspace(&self) -> Result<(), String> {
+    pub fn close_workspace(&self) -> Result<(), CloseError> {
         let mut result = self
             .close_result
             .lock()
@@ -188,7 +209,7 @@ impl Workspace {
         let closed = if errors.is_empty() {
             Ok(())
         } else {
-            Err(errors.join("\n"))
+            Err(CloseError { failures: errors })
         };
         *result = Some(closed.clone());
         closed
@@ -236,7 +257,7 @@ fn build(
     cache_dir: &Path,
     server: &Server,
     partial: &mut Partial,
-) -> Result<Workspace, String> {
+) -> Result<Workspace, WorkspaceError> {
     let mut cache_cleared = swlsp_indexer::check_and_migrate_cache(cache_dir)
         .map_err(context("migrate index cache"))?;
     let configuration = server.effective_configuration();
@@ -261,7 +282,7 @@ fn build(
         let scanner = partial.scanner.as_mut().expect("scanner was just created");
         scanner
             .set_excluded_paths(&configuration.indexing.exclude)
-            .map_err(|error| error.to_string())?;
+            .map_err(context("configure excluded paths"))?;
         scanner.set_max_file_size_bytes(configuration.indexing.max_file_size_mib << 20);
         scanner.set_workspace_symbol_catalog(symbols.clone());
     }
@@ -477,8 +498,8 @@ fn build(
         app_scripts,
         shopware_version,
     };
-    // Registration panics only on invalid inspection definitions (a
-    // programming error), which Go's composition also treats as fatal.
+    // Registration panics only on invalid inspection definitions, which are
+    // programming errors rather than workspace conditions.
     let registrar = Registrar::new(server);
     crate::providers::register_features(&registrar, &services);
     let registrations = registrar.into_log();
@@ -498,7 +519,7 @@ fn build(
     })
 }
 
-/// The structural domain that gates an indexer (Go `domainForIndexer`).
+/// The structural domain that gates an indexer.
 pub fn domain_for_indexer(id: &str) -> &'static str {
     match id {
         "extension.config" => "shopware",

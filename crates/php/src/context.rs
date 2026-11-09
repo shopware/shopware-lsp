@@ -1,5 +1,4 @@
-//! Request-scoped PHP analysis state (port of `ctx.go`, `syntax.go` and
-//! `name_resolver.go`).
+//! Request-scoped PHP analysis state.
 
 use std::sync::{Arc, Mutex};
 

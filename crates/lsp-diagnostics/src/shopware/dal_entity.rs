@@ -1,4 +1,4 @@
-//! Port of Go `dal_entity_diagnostics.go`.
+//! Misspelled DAL entity names.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -14,9 +14,9 @@ use super::util::warning;
 use crate::common::{admin_nearby_suggestions, javascript_string_content_range};
 use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
-/// Go `DALEntityAnalyzer`: only close misspellings of statically named DAL
-/// entities are reported. Runtime custom entities are valid, so an unknown
-/// name without a strong indexed suggestion stays untouched.
+/// Only close misspellings of statically named DAL entities are reported.
+/// Runtime custom entities are valid, so an unknown name without a strong
+/// indexed suggestion stays untouched.
 #[derive(Clone)]
 pub struct DalEntityAnalyzer {
     index: Option<Arc<dal::Index>>,

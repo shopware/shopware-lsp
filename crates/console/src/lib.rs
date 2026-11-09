@@ -1,8 +1,7 @@
-//! Symfony Console commands, their arguments/options, and Console helpers
-//! (port of Go `internal/console`).
+//! Symfony Console commands, their arguments/options, and Console helpers.
 //!
-//! Go reads the request's PHP analysis from `context.Context`; Rust takes an
-//! explicit [`swlsp_php::PhpContext`].
+//! Request-time lookups take the request's PHP analysis as an explicit
+//! [`swlsp_php::PhpContext`].
 
 mod catalog_provider;
 mod helper;
@@ -24,10 +23,6 @@ pub use parser::{legacy_command_inputs, parse_php_commands_tree};
 pub use reference::{
     Reference, ReferenceRole, inputs_for_reference, reference_at, validate_reference,
 };
-
-pub(crate) fn equal_fold(left: &str, right: &str) -> bool {
-    swlsp_php_types::equal_fold(left, right)
-}
 
 #[cfg(test)]
 mod tests;

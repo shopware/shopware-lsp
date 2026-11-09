@@ -1,4 +1,4 @@
-//! Debug rendering compatible with the Go `cst.DebugTree` (rowan format).
+//! Debug rendering of syntax trees in rowan's `KIND@start..end` format.
 
 use std::fmt::Write;
 

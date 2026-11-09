@@ -1,7 +1,6 @@
 //! Indexer traits.
 //!
-//! Go composes optional capabilities through interface assertions. Rust
-//! indexers implement [`Indexer`] and opt into further capabilities by
+//! Indexers implement [`Indexer`] and opt into further capabilities by
 //! overriding the `as_*` accessors.
 
 use std::any::Any;

@@ -1,5 +1,4 @@
-//! Template input contracts and include parameters (port of
-//! `template_variable.go`).
+//! Template input contracts and include parameters.
 
 use std::collections::{HashMap, HashSet};
 
@@ -137,8 +136,8 @@ pub fn template_input_variables_in_document(
     }
 
     let mut result: Vec<TemplateVariable> = variables.into_values().collect();
-    // Go sorts case-insensitively only; names equal under case folding fall
-    // back to byte order here so the persisted order is deterministic.
+    // Case-insensitive order; names equal under case folding fall back to
+    // byte order so the persisted order is deterministic.
     result.sort_by(|left, right| {
         compare_fold(&left.name, &right.name)
             .then_with(|| left.name.cmp(&right.name))
@@ -180,7 +179,7 @@ pub fn template_dependencies_in_document(root: &SyntaxNode) -> Vec<TemplateDepen
     }
     for call in twigquery::iterate_nodes(root, &[TWIG_FUNCTION_CALL]) {
         if !twigquery::function_name(&call)
-            .is_some_and(|name| swlsp_php_types::equal_fold(&name, "include"))
+            .is_some_and(|name| swlsp_textutil::eq_ignore_case(&name, "include"))
         {
             continue;
         }
@@ -383,7 +382,7 @@ fn include_context_for_hash(hash: &SyntaxNode) -> Option<IncludeParameterContext
     if let Some(call) = twigquery::closest_node_of_kind(hash, &[TWIG_FUNCTION_CALL])
         && twigquery::function_argument_index(hash) == Some(1)
         && twigquery::function_name(&call)
-            .is_some_and(|name| swlsp_php_types::equal_fold(&name, "include"))
+            .is_some_and(|name| swlsp_textutil::eq_ignore_case(&name, "include"))
         && let Some(template) = twigquery::string_argument(&call, 0)
         && twigquery::string_is_static(&template)
     {
@@ -541,14 +540,14 @@ fn include_function_propagates_context(call: &SyntaxNode) -> bool {
     };
     for (index, child) in arguments.syntax().children().enumerate() {
         let text = child.text().to_string().replace([' ', '\t'], "");
-        let lower = swlsp_php_types::go_to_lower(&text);
+        let lower = swlsp_textutil::lowercase(&text);
         if child.kind() == TWIG_NAMED_ARGUMENT
             && (lower.starts_with("with_context=") || lower.starts_with("with_context:"))
         {
             return !lower.ends_with("false");
         }
         if index == 2 {
-            return swlsp_php_types::go_to_lower(&child.text().to_string()).trim() != "false";
+            return swlsp_textutil::lowercase(&child.text().to_string()).trim() != "false";
         }
     }
     true

@@ -52,8 +52,8 @@ fn next(source: &[u8], position: usize) -> (Kind, usize) {
     }
 }
 
-/// Go lexes one byte for unknown input; Rust tokens must stay on character
-/// boundaries, so an unknown non-ASCII character is consumed whole.
+/// Tokens must stay on character boundaries, so an unknown non-ASCII
+/// character is consumed whole.
 fn utf8_len(first: u8) -> usize {
     match first {
         0xF0..=0xF7 => 4,

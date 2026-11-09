@@ -1,4 +1,4 @@
-//! `Shopware.Utils` member intelligence (port of Go `shopware_utils.go`).
+//! `Shopware.Utils` member intelligence.
 
 use crate::*;
 
@@ -581,7 +581,7 @@ impl AdminComponentIndexer {
         Ok(result)
     }
 
-    /// Go `(VueTypeShape, string, bool, error)`.
+    /// `(shape, context_path, found)` of a `Shopware.Utils` value.
     pub(crate) fn resolve_shopware_utility_value(
         &self,
         value: &str,

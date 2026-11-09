@@ -1,4 +1,4 @@
-//! Schema drift detection and rename resolution (port of Go `diff.go`).
+//! Schema drift detection and rename resolution.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -30,8 +30,8 @@ pub struct RenameQuestion {
     pub entity: String,
     pub added: String,
     #[serde(
-        deserialize_with = "crate::gojson::nullable",
-        serialize_with = "crate::gojson::null_if_empty"
+        deserialize_with = "crate::canonical_json::nullable",
+        serialize_with = "crate::canonical_json::null_if_empty"
     )]
     pub candidates: Vec<RenameCandidate>,
 }
@@ -41,8 +41,8 @@ pub struct RenameQuestion {
 pub struct EntityRenameQuestion {
     pub added: String,
     #[serde(
-        deserialize_with = "crate::gojson::nullable",
-        serialize_with = "crate::gojson::null_if_empty"
+        deserialize_with = "crate::canonical_json::nullable",
+        serialize_with = "crate::canonical_json::null_if_empty"
     )]
     pub candidates: Vec<RenameCandidate>,
 }
@@ -564,8 +564,8 @@ pub(crate) fn column_similarity(left: &Column, right: &Column) -> i64 {
     score
 }
 
-/// Greedy column matching. Go iterates both maps in random order; this port
-/// iterates them sorted by column name.
+/// Greedy column matching, iterating both column maps sorted by column name
+/// so the score is deterministic.
 pub(crate) fn entity_similarity(left: &Entity, right: &Entity) -> i64 {
     if left.columns.is_empty() || right.columns.is_empty() {
         return 0;

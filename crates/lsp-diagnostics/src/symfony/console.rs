@@ -1,4 +1,4 @@
-//! Go `console_diagnostics.go`.
+//! Missing console commands, arguments and options.
 
 use std::sync::Arc;
 

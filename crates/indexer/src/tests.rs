@@ -1,4 +1,4 @@
-//! Crate-level tests ported from the Go `internal/indexer` suite.
+//! Crate-level tests for stores, repositories and the scanner.
 
 mod dataindex;
 mod scanner;

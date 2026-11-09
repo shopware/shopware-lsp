@@ -1,11 +1,9 @@
 //! Version-aware semantic declarations for PHP runtime symbols that do not
-//! exist in project source (port of `internal/php/stubs`).
+//! exist in project source.
 //!
-//! Declarations come from the catalog generated from JetBrains'
-//! phpstorm-stubs by the Go generator (`cmd/generate_phpstorm_stubs`, which
-//! needs the not-yet-ported binder). Rust embeds the same
-//! `phpstorm-stubs.msgpack` artifact and overlays a small hand-written set
-//! of refined declarations, exactly like Go.
+//! Declarations come from the `phpstorm-stubs.msgpack` catalog that
+//! `swlsp-php-stubs-generate` builds from JetBrains' phpstorm-stubs, overlaid
+//! with a small hand-written set of refined declarations.
 
 pub mod catalog;
 mod extensions;
@@ -22,15 +20,14 @@ use swlsp_php_semantic::{
     Document, Flags, Parameter, Str, Symbol, SymbolId, SymbolKind, TemplateParameter, Visibility,
     new_symbol_id,
 };
-use swlsp_php_types::{Type, equal_fold, go_to_lower};
+use swlsp_php_types::Type;
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 pub use extensions::selected_extensions;
 
 use catalog::Catalog;
 
-/// The embedded generator output. Keep this path in sync with the Go
-/// `go:embed`; move the artifact into this crate before deleting the Go
-/// tree.
+/// The embedded generator output (see `generate-phpstorm-stubs`).
 static CATALOG_DATA: &[u8] = include_bytes!("../data/phpstorm-stubs.msgpack");
 
 static CATALOG: LazyLock<Catalog> = LazyLock::new(|| {
@@ -46,7 +43,7 @@ static EXTENSION_SYMBOLS: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
             continue;
         }
         result.insert(
-            go_to_lower(&symbol.name),
+            lowercase(&symbol.name),
             swlsp_php_project::normalize_extension(&symbol.extension),
         );
     }
@@ -73,7 +70,7 @@ pub fn generated_contracts() -> Vec<swlsp_php_semantic::CallContract> {
 /// The generated runtime bundle owning a global or class-member symbol, even
 /// when that bundle is not materialized for the current project.
 pub fn extension_for_symbol(name: &str) -> Option<&'static str> {
-    let key = go_to_lower(name.strip_prefix('\\').unwrap_or(name));
+    let key = lowercase(name.strip_prefix('\\').unwrap_or(name));
     let extensions = &*EXTENSION_SYMBOLS;
     if let Some(extension) = extensions.get(&key) {
         return Some(extension.as_str());
@@ -140,7 +137,7 @@ pub(crate) struct StubBuilder {
 fn stub_symbol_key(kind: SymbolKind, fully_qualified: &str) -> (SymbolKind, String) {
     (
         kind,
-        go_to_lower(
+        lowercase(
             fully_qualified
                 .strip_prefix('\\')
                 .unwrap_or(fully_qualified),
@@ -205,7 +202,10 @@ impl StubBuilder {
             let symbol = &mut self.symbols[position];
             let mut implemented = symbol.implements().to_vec();
             for name in names {
-                if !implemented.iter().any(|current| equal_fold(current, name)) {
+                if !implemented
+                    .iter()
+                    .any(|current| eq_ignore_case(current, name))
+                {
                     implemented.push((*name).into());
                 }
             }

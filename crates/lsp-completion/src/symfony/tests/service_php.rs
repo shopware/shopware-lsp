@@ -1,4 +1,4 @@
-//! Port of Go `service_completion_php_test.go`.
+//! Tests for service completion in PHP configuration.
 
 use std::sync::Arc;
 

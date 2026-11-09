@@ -1,4 +1,4 @@
-//! Messenger references at a cursor (port of Go `messenger/reference.go`).
+//! Messenger references at a cursor.
 
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::{PHP_ARRAY, PHP_RETURN_STATEMENT, PHP_YIELD_EXPRESSION};
@@ -8,8 +8,9 @@ use swlsp_parser_yaml::syntax::YAML_SCALAR;
 use swlsp_php::{NameResolver, PhpContext, PhpIndex, name_resolver_for};
 use swlsp_php_resolver::MemberResolver;
 use swlsp_php_semantic::{Symbol, SymbolKind, Visibility};
-use swlsp_php_types::{Type, equal_fold, go_to_lower};
+use swlsp_php_types::Type;
 use swlsp_syntax::{Kind, SyntaxNode};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::index::normalize_name;
 use crate::parser::{
@@ -50,7 +51,7 @@ pub fn reference_at(
     root: &SyntaxNode,
     node: &SyntaxNode,
 ) -> Option<Reference> {
-    match go_to_lower(go_extension(path)).as_str() {
+    match lowercase(extension_with_dot(path)).as_str() {
         ".php" => php_reference_at(context, root, node),
         ".yaml" | ".yml" => yaml_reference_at(root, node),
         ".xml" => xml_reference_at(node),
@@ -84,7 +85,7 @@ pub fn php_reference_at(
             if !node_contains(&expression, node) {
                 continue;
             }
-            let mut name = go_to_lower(&phpquery::argument_name(&argument));
+            let mut name = lowercase(&phpquery::argument_name(&argument));
             if name.is_empty() {
                 match index {
                     2 => name = "handles".to_owned(),
@@ -118,7 +119,7 @@ pub fn php_reference_at(
     }
 
     let call = phpquery::call_at(node)?;
-    if !equal_fold(&phpquery::call_method_name(&call), "tag")
+    if !eq_ignore_case(&phpquery::call_method_name(&call), "tag")
         || string_argument(phpquery::argument_expression(&call, 0).as_ref())
             != "messenger.message_handler"
     {
@@ -130,7 +131,7 @@ pub fn php_reference_at(
     if !node_contains(&options, &item) {
         return None;
     }
-    let key = go_to_lower(
+    let key = lowercase(
         &phpquery::array_item_key(&item)
             .map(|key| phpquery::string_value(&key))
             .unwrap_or_default(),
@@ -168,7 +169,7 @@ pub fn yaml_reference_at(root: &SyntaxNode, node: &SyntaxNode) -> Option<Referen
     if yamlquery::pair_value(&pair).as_ref() != Some(&scalar) {
         return None;
     }
-    let property = go_to_lower(
+    let property = lowercase(
         &yamlquery::pair_key(&pair)
             .map(|key| yamlquery::scalar_value(&key))
             .unwrap_or_default(),
@@ -207,7 +208,7 @@ pub fn yaml_reference_at(root: &SyntaxNode, node: &SyntaxNode) -> Option<Referen
 
 pub fn xml_reference_at(node: &SyntaxNode) -> Option<Reference> {
     let attribute = xmlquery::attribute_at(node)?;
-    let property = go_to_lower(&xmlquery::attribute_name(&attribute).unwrap_or_default());
+    let property = lowercase(&xmlquery::attribute_name(&attribute).unwrap_or_default());
     if property != "handles" && property != "method" {
         return None;
     }
@@ -273,7 +274,7 @@ pub fn handler_method_reference_at(
 ) -> Option<HandlerMethodReference> {
     let literal = phpquery::string_at(node)?;
     let method = phpquery::method_at(&literal)?;
-    if !equal_fold(&phpquery::method_name(&method), "getHandledMessages")
+    if !eq_ignore_case(&phpquery::method_name(&method), "getHandledMessages")
         || phpquery::function_like_at(&literal).as_ref() != Some(&method)
     {
         return None;
@@ -316,17 +317,17 @@ pub fn public_handler_methods(index: Option<&PhpIndex>, class_name: &str) -> Vec
         let symbol = member.symbol;
         if symbol.kind != SymbolKind::Method
             || symbol.visibility != Visibility::Public
-            || equal_fold(&symbol.name, "getHandledMessages")
+            || eq_ignore_case(&symbol.name, "getHandledMessages")
             || symbol.name.starts_with("__")
         {
             continue;
         }
-        if !seen.insert(go_to_lower(&symbol.name)) {
+        if !seen.insert(lowercase(&symbol.name)) {
             continue;
         }
         result.push(symbol);
     }
-    result.sort_by_cached_key(|symbol| go_to_lower(&symbol.name));
+    result.sort_by_cached_key(|symbol| lowercase(&symbol.name));
     result
 }
 
@@ -389,7 +390,7 @@ fn is_named_method_option(literal: &SyntaxNode, value: &SyntaxNode) -> bool {
         phpquery::array_item_value(&item),
     ) {
         (Some(key), Some(item_value)) => {
-            equal_fold(&phpquery::string_value(&key), "method")
+            eq_ignore_case(&phpquery::string_value(&key), "method")
                 && node_contains(&item_value, literal)
         }
         _ => false,
@@ -416,7 +417,7 @@ fn is_message_subscriber(
     }
     phpquery::class_implements(class).iter().any(|implemented| {
         let resolved = resolver.resolve(implemented);
-        equal_fold(
+        eq_ignore_case(
             resolved.strip_prefix('\\').unwrap_or(&resolved),
             MESSAGE_SUBSCRIBER_INTERFACE,
         )
@@ -467,8 +468,9 @@ fn yaml_service_at(root: &SyntaxNode, node: &SyntaxNode) -> (String, String) {
     (class_name, service_id)
 }
 
-/// Go `filepath.Ext`: the suffix from the final `.` of the last element.
-fn go_extension(path: &str) -> &str {
+/// The suffix of the last slash-separated element from its final `.`
+/// (`.xml`); empty when there is none.
+fn extension_with_dot(path: &str) -> &str {
     let name = &path[path.rfind('/').map_or(0, |index| index + 1)..];
     name.rfind('.').map_or("", |index| &name[index..])
 }

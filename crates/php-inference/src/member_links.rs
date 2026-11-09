@@ -1,11 +1,12 @@
-//! Member reference linking after inference (port of `member_links.go`).
+//! Member reference linking after inference.
 
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;
 use swlsp_php_resolver::{MemberResolver, NameContext};
 use swlsp_php_semantic::{Document, NameKind, Reference, Snapshot, Str, Symbol, SymbolKind};
-use swlsp_php_types::{Type, go_to_lower};
+use swlsp_php_types::Type;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::lowercase;
 
 use crate::syntax::{direct_nodes, direct_operator, first_node, has_direct_token, start};
 use crate::types_util::NamedTypeCache;
@@ -63,7 +64,7 @@ pub fn link_members_owned(
                 return true;
             }
             let name = query::name_value(name_node);
-            if name.is_empty() || (is_static && swlsp_php_types::equal_fold(&name, "class")) {
+            if name.is_empty() || (is_static && swlsp_textutil::eq_ignore_case(&name, "class")) {
                 return true;
             }
             let dynamic_class_property = node.kind() == PHP_SCOPED_CALL
@@ -116,9 +117,9 @@ fn declared_variable_type(document: &Document, snapshot: &Snapshot, node: &Synta
     };
     loop {
         for id in scope.symbol_ids(&document.symbols, &name) {
-            // Go's overlay snapshot aliases the analyzed document's symbol
-            // slice, so it observes local types inferred in place. Prefer the
-            // document's current declaration for IDs the snapshot knows.
+            // Local types are inferred into the analyzed document, not the
+            // snapshot. Prefer the document's current declaration for IDs the
+            // snapshot knows.
             if snapshot.symbol_view(id).is_none() {
                 continue;
             }
@@ -171,7 +172,7 @@ fn static_receiver_type(
     offset: u32,
     named_types: &mut NamedTypeCache,
 ) -> Type {
-    match go_to_lower(name).as_str() {
+    match lowercase(name).as_str() {
         "self" | "static" => {
             if let Some(class) = enclosing_class_at(document, snapshot, offset) {
                 return named_types.type_for(&class.fully_qualified);

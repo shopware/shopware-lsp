@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use swlsp_lsp::{Context, HoverProvider, HoverRequest, ProviderResult};
 use swlsp_lsp_protocol as protocol;
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::eq_ignore_case;
 use swlsp_twig::{Macro, MacroReference, TwigIndexer};
 use swlsp_uriutil::filepath;
 
@@ -48,7 +48,7 @@ fn macros(
     {
         result.retain(|current| current.file_path != path);
         for current in swlsp_twig::macros_in_document(path, root) {
-            if equal_fold(&current.name, &reference.name) {
+            if eq_ignore_case(&current.name, &reference.name) {
                 result.push(current);
             }
         }

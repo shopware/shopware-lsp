@@ -1,5 +1,4 @@
-//! `<script setup>` compiler macros and bindings (port of Go
-//! `script_setup.go`).
+//! `<script setup>` compiler macros and bindings.
 
 use crate::*;
 

@@ -1,11 +1,11 @@
-//! Copy-on-write variable frames used by flow analysis (port of the Go
-//! `environment` handle).
+//! Copy-on-write variable frames used by flow analysis.
 //!
 //! An [`Env`] is a handle. Cloning the handle (`Env::clone`) shares the frame,
-//! preserving Go's reference semantics while one expression is evaluated;
+//! so writes are visible through every clone while one expression is
+//! evaluated;
 //! [`Env::fork`] creates an independent handle that shares the immutable
 //! storage until either side writes. Small frames are linear vectors and
-//! larger ones graduate to a hash map, like Go's hybrid frame.
+//! larger ones graduate to a hash map.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -114,8 +114,8 @@ impl Env {
         }
     }
 
-    /// Visits every binding. The order is unspecified for large frames (as
-    /// in Go); callers only use it for order-independent updates.
+    /// Visits every binding. The order is unspecified for large frames;
+    /// callers only use it for order-independent updates.
     pub(crate) fn visit(&self, mut visitor: impl FnMut(&str, &Type)) {
         let frame = self.0.borrow().clone();
         match &*frame {

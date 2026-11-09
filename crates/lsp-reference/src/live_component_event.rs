@@ -1,11 +1,10 @@
-//! Live component event references (port of
-//! `live_component_event_reference.go`).
+//! Live component event references.
 
 use std::sync::Arc;
 
 use swlsp_lsp::{Context, ProviderResult, ReferenceRequest, ReferencesProvider};
 use swlsp_lsp_protocol as protocol;
-use swlsp_php_types::equal_fold;
+use swlsp_textutil::eq_ignore_case;
 use swlsp_twigcomponent::{
     Index, LiveListener, live_event_reference_at_php, live_event_reference_at_twig,
     live_event_references_in_php, live_event_references_in_twig, live_listener_at_php,
@@ -68,7 +67,7 @@ impl ReferencesProvider for LiveComponentEventReferenceProvider {
             live_event_references_in_twig(&path, root)
         };
         for reference in current {
-            if equal_fold(&reference.name, &event) {
+            if eq_ignore_case(&reference.name, &event) {
                 result.push(document_location(request, line_index, reference.range));
             }
         }
@@ -79,7 +78,7 @@ impl ReferencesProvider for LiveComponentEventReferenceProvider {
                     merge_current_live_listeners(listeners, live_listeners_in_php(&path, root));
             }
             for listener in &listeners {
-                if !equal_fold(&listener.name, &event) {
+                if !eq_ignore_case(&listener.name, &event) {
                     continue;
                 }
                 if listener.file == path {

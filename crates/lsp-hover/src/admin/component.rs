@@ -54,7 +54,7 @@ impl AdminHoverProvider {
         }
     }
 
-    /// The prop section shown for template prop hovers (Go `adminPropMarkdown`).
+    /// The prop section shown for template prop hovers.
     #[doc(hidden)]
     pub fn prop_markdown(component_name: &str, prop: &VueComponentProp) -> String {
         admin_prop_markdown(component_name, prop)

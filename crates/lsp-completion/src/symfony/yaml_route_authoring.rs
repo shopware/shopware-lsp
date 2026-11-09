@@ -1,5 +1,5 @@
 //! Symfony route option, path and requirement completion in YAML routing
-//! files (port of Go `yaml_route_authoring_completion.go`).
+//! files.
 
 use std::collections::HashSet;
 use std::sync::{Arc, LazyLock};
@@ -16,7 +16,8 @@ use super::yaml_service_authoring::{
     yaml_next_line_start, yaml_option_prefix, yaml_parent_mapping_line,
 };
 use super::{lower_ext, request_offset};
-use crate::common::{go_to_lower, leading_yaml_indent, protocol_range, text_edit};
+use crate::common::{leading_yaml_indent, protocol_range, text_edit};
+use swlsp_textutil::lowercase;
 
 use protocol::CompletionItemKind as Kind;
 
@@ -37,8 +38,7 @@ const YAML_ROUTE_OPTIONS: &[(&str, &str, bool)] = &[
 static YAML_ROUTE_PLACEHOLDER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\{([A-Za-z0-9_]+)(?:<[^{}]*>)?\}").expect("valid regex"));
 
-/// Completes route options, indexed route paths and requirement keys (Go
-/// `YAMLRouteAuthoringCompletionProvider`).
+/// Completes route options, indexed route paths and requirement keys.
 pub struct YamlRouteAuthoringCompletionProvider {
     route_index: Option<Arc<RouteIndexer>>,
 }
@@ -185,9 +185,8 @@ impl YamlRouteAuthoringCompletionProvider {
             return Vec::new();
         };
         let mut routes: Vec<&Route> = view.iter().collect();
-        // Go sort.Slice by (path, name); equal pairs are interchangeable
-        // only when the rest of the route does not matter, which holds here
-        // because only path and name are emitted.
+        // By (path, name); routes equal on both are interchangeable because
+        // only path and name are emitted.
         routes.sort_by(|left, right| {
             left.path
                 .cmp(&right.path)
@@ -226,9 +225,8 @@ struct AuthoringKey {
     complete: bool,
 }
 
-/// Go `yamlAuthoringKeyAt`. Go indexes `source[start]` even when the key
-/// starts at the end of the source (and panics); Rust treats that byte as
-/// absent.
+/// The YAML mapping key at the cursor. A key starting at the end of the
+/// source has no first byte; that byte is treated as absent.
 fn yaml_authoring_key_at(
     source: &str,
     line_start: usize,
@@ -560,8 +558,8 @@ fn yaml_route_placeholders(path: &str) -> Vec<String> {
 }
 
 fn yaml_routing_file(path: &str) -> bool {
-    let slash_path = go_to_lower(&swlsp_uriutil::filepath::to_slash(path));
-    let base = go_to_lower(&swlsp_uriutil::filepath::base(path));
+    let slash_path = lowercase(&swlsp_uriutil::filepath::to_slash(path));
+    let base = lowercase(&swlsp_uriutil::filepath::base(path));
     base.contains("routing")
         || slash_path.contains("/routing")
         || base == "routes.yaml"
@@ -702,7 +700,7 @@ fn yaml_flow_segments(source: &str) -> Vec<&str> {
     result
 }
 
-/// Go `yamlUnquotedColon`; `None` for -1.
+/// The byte index of the first colon outside quotes, if any.
 fn yaml_unquoted_colon(value: &str) -> Option<usize> {
     let bytes = value.as_bytes();
     let mut quotes = Quotes::new();

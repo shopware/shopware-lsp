@@ -1,4 +1,4 @@
-//! Ports of `mcp_test.go`.
+//! The MCP server: tool listing, argument validation and tool results.
 
 use serde_json::{Value, json};
 use swlsp_lsp_protocol::{DocumentChange, WorkspaceEdit};
@@ -238,8 +238,7 @@ fn mcp_configuration_uses_project_and_editor_layers() {
 
 #[test]
 fn mcp_editor_configuration_reads_diagnostic_overrides() {
-    // Go decodes the variable directly; here the decoded overrides are
-    // observed through the server: the tool switch and a diagnostics
+    // The decoded overrides are observed through the server: the tool switch and a diagnostics
     // override that disables a file that otherwise reports a finding.
     let root = temp_dir();
     let relative = "custom/plugins/Test/src/Resources/app/administration/src/component.js";
@@ -346,8 +345,8 @@ fn write_plugin_composer(plugin: &std::path::Path, name: &str, namespace: &str, 
     );
 }
 
-/// Go builds typed `FieldSpec` values, so every non-omitempty member is
-/// present when marshaled; round-trip through the typed spec likewise.
+/// Round-trips a field through the typed `FieldSpec`, so every member that is
+/// always serialized is present in the expectation.
 fn field(value: Value) -> Value {
     let mut field = value;
     field["editable"] = json!(true);
@@ -943,7 +942,6 @@ fn mcp_rejects_unsafe_workspace_edits() {
     );
 }
 
-/// Go `TestCompactEntitySchemaDiffKeepsTableRenameQuestions`.
 #[test]
 fn compact_entity_schema_diff_keeps_table_rename_questions() {
     use swlsp_shopware_entityschema::{EntityRenameQuestion, RenameCandidate, SchemaDiff};

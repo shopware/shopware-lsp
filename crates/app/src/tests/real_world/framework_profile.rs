@@ -1,4 +1,4 @@
-//! Port of Go `framework_profile_integration_test.go`.
+//! The framework client profile against a real Shopware checkout.
 
 use std::time::Duration;
 

@@ -1,4 +1,4 @@
-//! Ports of `store_compliance_test.go`.
+//! `check` with the store-compliance inspections and extension configuration.
 
 use super::common::{path, run, temp_dir, write};
 

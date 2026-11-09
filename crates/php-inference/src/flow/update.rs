@@ -1,5 +1,4 @@
-//! `unset()` and flow-sensitive array field updates (port of
-//! `flow_update.go`).
+//! `unset()` and flow-sensitive array field updates.
 
 use swlsp_parser_php::query;
 use swlsp_php_semantic::TypeSource;

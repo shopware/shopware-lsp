@@ -1,4 +1,4 @@
-//! Workspace-symbol publication (port of Go `workspace_symbols.go`).
+//! Workspace-symbol publication.
 
 use swlsp_indexer::{
     WORKSPACE_SYMBOL_PRIORITY_FRAMEWORK, WORKSPACE_SYMBOL_PRIORITY_FRAMEWORK_MEMBER,

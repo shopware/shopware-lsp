@@ -1,4 +1,4 @@
-//! Go-to-definition providers (port of Go `internal/lsp/definition`).
+//! Go-to-definition providers.
 
 mod common;
 mod php_common;

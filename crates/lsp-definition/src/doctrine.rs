@@ -1,5 +1,4 @@
-//! Go `doctrine_definition.go`: Doctrine type registrations and DBAL
-//! table/column strings.
+//! Doctrine type registrations and DBAL table/column strings.
 
 use std::sync::Arc;
 

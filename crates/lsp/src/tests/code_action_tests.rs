@@ -1,5 +1,5 @@
-//! Ports of `inspection_test.go`, `code_action_policy_test.go`,
-//! `code_action_legacy_test.go` and `command_edits_test.go`.
+//! Inspection registration, code-action policy, legacy code actions and
+//! command edit tests.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;

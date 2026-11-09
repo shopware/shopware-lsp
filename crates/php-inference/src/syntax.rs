@@ -1,13 +1,13 @@
-//! Syntax helpers shared by the evaluator (port of the node helpers in
-//! `helpers.go` and `flow_helpers.go`).
+//! Syntax helpers shared by the evaluator.
 
 use std::borrow::Cow;
 
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;
-use swlsp_php_types::{Type, equal_fold, go_to_lower};
+use swlsp_php_types::Type;
 use swlsp_syntax::rowan::NodeOrToken;
 use swlsp_syntax::{Kind, SyntaxNode, SyntaxNodeExt, TextRange};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 /// Source text of a node. Trees are parsed from one source snapshot whose
 /// root starts at offset zero, so node ranges index the source directly.
@@ -70,7 +70,7 @@ pub(crate) fn direct_operator(node: &SyntaxNode) -> String {
                 let text = token.text();
                 if ["instanceof", "and", "or", "xor"]
                     .iter()
-                    .any(|keyword| equal_fold(text, keyword))
+                    .any(|keyword| eq_ignore_case(text, keyword))
                 {
                     return text.to_owned();
                 }
@@ -90,7 +90,7 @@ pub(crate) fn has_direct_token_text(node: &SyntaxNode, text: &str) -> bool {
     node.children_with_tokens().any(|element| {
         element
             .as_token()
-            .is_some_and(|token| equal_fold(token.text(), text))
+            .is_some_and(|token| eq_ignore_case(token.text(), text))
     })
 }
 
@@ -137,9 +137,9 @@ pub(crate) fn compact(source: &str) -> Cow<'_, str> {
     swlsp_textutil::compact_whitespace(source)
 }
 
-/// Go `strings.ToLower(strings.TrimPrefix(name, "\\"))`.
+/// `name` lowercased, without its leading `\\`.
 pub(crate) fn lower_trimmed(name: &str) -> String {
-    go_to_lower(name.strip_prefix('\\').unwrap_or(name))
+    lowercase(name.strip_prefix('\\').unwrap_or(name))
 }
 
 pub(crate) fn trim_backslash(name: &str) -> &str {
@@ -151,7 +151,7 @@ pub(crate) fn trim_quotes(name: &str) -> &str {
 }
 
 pub(crate) fn cast_type(source: Source<'_>, node: &SyntaxNode) -> Type {
-    let text = go_to_lower(&compact(source.text(node)));
+    let text = lowercase(&compact(source.text(node)));
     let starts = |prefixes: &[&str]| prefixes.iter().any(|prefix| text.starts_with(prefix));
     if starts(&["(int)", "(integer)"]) {
         Type::INT
@@ -172,7 +172,7 @@ pub(crate) fn cast_type(source: Source<'_>, node: &SyntaxNode) -> Type {
 
 pub(crate) fn is_call_named(node: &SyntaxNode, name: &str) -> bool {
     query::call_at(node).is_some_and(|call| {
-        equal_fold(
+        eq_ignore_case(
             trim_backslash(&query::call_method_name(&call)),
             trim_backslash(name),
         )
@@ -193,7 +193,7 @@ pub(crate) fn is_null_node(source: Source<'_>, node: Option<&SyntaxNode>) -> boo
         return false;
     };
     node.kind() == PHP_NULL
-        || node.kind() == PHP_NAME && equal_fold(&compact(source.text(node)), "null")
+        || node.kind() == PHP_NAME && eq_ignore_case(&compact(source.text(node)), "null")
 }
 
 /// The stable environment key of a repeated variable, member or array
@@ -270,7 +270,7 @@ pub(crate) fn is_true_condition(source: Source<'_>, node: &SyntaxNode) -> bool {
         current = first_node(node);
     }
     current.is_some_and(|node| {
-        node.kind() == PHP_BOOLEAN && equal_fold(&compact(source.text(&node)), "true")
+        node.kind() == PHP_BOOLEAN && eq_ignore_case(&compact(source.text(&node)), "true")
     })
 }
 
@@ -284,7 +284,7 @@ pub(crate) fn direct_foreach_variables(
     for element in node.children_with_tokens() {
         match element {
             NodeOrToken::Token(token) => {
-                if equal_fold(token.text(), "as") {
+                if eq_ignore_case(token.text(), "as") {
                     in_targets = true;
                 } else if in_targets && token.kind() == TK_CLOSE_PAREN {
                     return (key, value);
@@ -326,7 +326,7 @@ pub(crate) fn match_arm_is_default(node: &SyntaxNode) -> bool {
     node.children_with_tokens().any(|element| {
         element
             .as_token()
-            .is_some_and(|token| equal_fold(token.text().trim(), "default"))
+            .is_some_and(|token| eq_ignore_case(token.text().trim(), "default"))
     })
 }
 
@@ -394,7 +394,7 @@ pub(crate) fn class_constant_receiver(
         return None;
     }
     let nodes = direct_nodes(node);
-    if nodes.len() < 2 || !equal_fold(&query::name_value(&nodes[nodes.len() - 1]), "class") {
+    if nodes.len() < 2 || !eq_ignore_case(&query::name_value(&nodes[nodes.len() - 1]), "class") {
         return None;
     }
     let _ = source;

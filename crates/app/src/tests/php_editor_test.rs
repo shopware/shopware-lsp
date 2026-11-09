@@ -1,4 +1,4 @@
-//! Port of Go `internal/app/php_editor_test.go`.
+//! PHP editor basics through the server: lifecycle and configuration.
 
 use serde_json::{Value, json};
 

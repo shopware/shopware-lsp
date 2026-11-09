@@ -1,4 +1,4 @@
-//! Go `twig_deprecation_diagnostics.go`.
+//! Deprecated Twig functions, filters, tests and tags.
 
 use std::sync::Arc;
 
@@ -7,10 +7,11 @@ use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, Tex
 use swlsp_lsp_protocol as protocol;
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::{TWIG_FILTER, TWIG_FUNCTION_CALL, TWIG_LITERAL_NAME};
-use swlsp_php_types::{go_quote, go_to_lower};
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::lowercase;
 use swlsp_twig::TwigIndexer;
 
+use crate::LookupError;
 use crate::common::value_node_text_range;
 use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
@@ -19,7 +20,6 @@ const DEPRECATED_TWIG_FILTER_CODE: &str = "twig.filter.deprecated";
 const DEPRECATED_TWIG_TEST_CODE: &str = "twig.test.deprecated";
 const DEPRECATED_TWIG_TAG_CODE: &str = "twig.tag.deprecated";
 
-/// Go `TwigDeprecationAnalyzer`.
 pub struct TwigDeprecationAnalyzer {
     twig_index: Option<Arc<TwigIndexer>>,
 }
@@ -60,7 +60,7 @@ impl ProblemAnalyzer for TwigDeprecationAnalyzer {
         let Some(index) = &self.twig_index else {
             return Ok(Vec::new());
         };
-        if !go_to_lower(&document.uri).ends_with(".twig") {
+        if !lowercase(&document.uri).ends_with(".twig") {
             return Ok(Vec::new());
         }
         let Some(root) = document.root() else {
@@ -76,10 +76,7 @@ impl ProblemAnalyzer for TwigDeprecationAnalyzer {
             }
             let name = twigquery::function_name(&call).unwrap_or_default();
             let Some(message) = index.twig_function_deprecation(&name).map_err(|error| {
-                format!(
-                    "query Twig function {} deprecation: {error}",
-                    go_quote(&name)
-                )
+                LookupError::new(format!("query Twig function {:?} deprecation", name), error)
             })?
             else {
                 continue;
@@ -99,7 +96,7 @@ impl ProblemAnalyzer for TwigDeprecationAnalyzer {
             }
             let name = twigquery::filter_name(&filter).unwrap_or_default();
             let Some(message) = index.twig_filter_deprecation(&name).map_err(|error| {
-                format!("query Twig filter {} deprecation: {error}", go_quote(&name))
+                LookupError::new(format!("query Twig filter {:?} deprecation", name), error)
             })?
             else {
                 continue;
@@ -120,9 +117,9 @@ impl ProblemAnalyzer for TwigDeprecationAnalyzer {
             let Some(message) = index
                 .twig_test_deprecation(&expression.name)
                 .map_err(|error| {
-                    format!(
-                        "query Twig test {} deprecation: {error}",
-                        go_quote(&expression.name)
+                    LookupError::new(
+                        format!("query Twig test {:?} deprecation", expression.name),
+                        error,
                     )
                 })?
             else {
@@ -141,9 +138,9 @@ impl ProblemAnalyzer for TwigDeprecationAnalyzer {
                 return Ok(Vec::new());
             }
             let Some(message) = index.twig_tag_deprecation(&usage.name).map_err(|error| {
-                format!(
-                    "query Twig tag {} deprecation: {error}",
-                    go_quote(&usage.name)
+                LookupError::new(
+                    format!("query Twig tag {:?} deprecation", usage.name),
+                    error,
                 )
             })?
             else {
@@ -168,7 +165,6 @@ impl ProblemAnalyzer for TwigDeprecationAnalyzer {
     }
 }
 
-/// Go `twigCallableNameNode`.
 fn twig_callable_name_node(container: &SyntaxNode, name: &str, last: bool) -> SyntaxNode {
     let mut result = None;
     for candidate in twigquery::iterate_nodes(container, &[TWIG_LITERAL_NAME]) {

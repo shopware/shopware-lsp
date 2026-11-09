@@ -1,5 +1,4 @@
-//! Ports of the route, service, Twig extension/component/template catalog
-//! tests.
+//! Tests for the route, service, Twig extension/component/template catalogs.
 
 use super::*;
 use crate::*;
@@ -768,7 +767,7 @@ final class LayoutComponent {}
         .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "invalid twig template usage request: json: cannot unmarshal array into Go value of type analytics.TwigTemplateUsageCatalogRequest"
+        "invalid twig template usage request: expected a JSON object, found array"
     );
 
     indexes.close();

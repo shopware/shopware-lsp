@@ -1,4 +1,4 @@
-//! Go `command_invoke_parameter_codeaction.go`: adds Symfony console
+//! Adds Symfony console
 //! parameters to an `#[AsCommand]` class's `__invoke`.
 
 use crate::shared::document_snapshot;
@@ -9,8 +9,8 @@ use swlsp_lsp::{ActionProvider, CodeActionRequest, Context};
 use swlsp_lsp_protocol::{self as protocol, CodeActionKind};
 use swlsp_parser_php::query as phpquery;
 use swlsp_php::{NameResolver, PhpIndex};
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::shared::{
     PhpSuggestedParameter, has_resolved_php_attribute, php_class_qualifier, php_class_short_name,
@@ -64,7 +64,7 @@ impl CommandInvokeParameterCodeActionProvider {
         resolver: &NameResolver,
     ) -> bool {
         for parent in phpquery::class_extends(class) {
-            if equal_fold(
+            if eq_ignore_case(
                 trim_backslashes(&resolver.resolve(&parent)),
                 CONSOLE_COMMAND_CLASS,
             ) {
@@ -121,14 +121,14 @@ impl ActionProvider for CommandInvokeParameterCodeActionProvider {
         }
         let Some(invoke_method) = phpquery::methods(&class)
             .into_iter()
-            .find(|method| equal_fold(&phpquery::method_name(method), "__invoke"))
+            .find(|method| eq_ignore_case(&phpquery::method_name(method), "__invoke"))
         else {
             return Vec::new();
         };
         let existing_types = php_existing_parameter_types(&invoke_method, &resolver);
         let mut result = Vec::new();
         for parameter in COMMAND_INVOKE_PARAMETERS {
-            if existing_types.contains(&go_to_lower(parameter.class_name)) {
+            if existing_types.contains(&lowercase(parameter.class_name)) {
                 continue;
             }
             let (qualifier, import_edit) = php_class_qualifier(request, parameter.class_name);

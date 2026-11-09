@@ -306,7 +306,7 @@ CACHE_PATH = ""
 def response_hash(response: dict) -> str:
     payload = response.get("result") if "error" not in response else {"error": response["error"].get("message")}
     if isinstance(payload, dict) and "items" in payload and payload["items"] is None:
-        # Go encodes an empty completion list as `items: null`.
+        # Treat `items: null` as an empty completion list.
         payload = dict(payload, items=[])
     if isinstance(payload, dict) and "resultId" in payload:
         payload = {k: v for k, v in payload.items() if k != "resultId"}

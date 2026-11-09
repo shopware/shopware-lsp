@@ -1,5 +1,4 @@
-//! By-reference argument outputs and variable reference relinking (port of
-//! `by_reference.go`).
+//! By-reference argument outputs and variable reference relinking.
 
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;

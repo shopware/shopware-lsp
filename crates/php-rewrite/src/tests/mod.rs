@@ -1,5 +1,3 @@
-//! Ports of the Go `internal/php/rewrite` tests.
-
 use swlsp_parser_php::query::{classes, functions, methods, nodes, parameters, properties};
 use swlsp_parser_php::syntax::PHP_FUNCTION_CALL;
 use swlsp_syntax::SyntaxNode;

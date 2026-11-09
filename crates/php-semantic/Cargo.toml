@@ -6,9 +6,11 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+thiserror.workspace = true
 swlsp-syntax.workspace = true
 swlsp-php-types = { path = "../php-types" }
 swlsp-php-literal = { path = "../php-literal" }
+swlsp-textutil = { path = "../textutil" }
 hashbrown = { version = "0.15", default-features = false }
 rustc-hash = "2"
 smallvec = "1"

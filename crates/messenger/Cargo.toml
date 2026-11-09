@@ -16,6 +16,7 @@ swlsp-php = { path = "../php" }
 swlsp-php-resolver = { path = "../php-resolver" }
 swlsp-php-semantic = { path = "../php-semantic" }
 swlsp-php-types = { path = "../php-types" }
+swlsp-textutil = { path = "../textutil" }
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]

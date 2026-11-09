@@ -1,6 +1,4 @@
-//! Definition, hover, references, rename and signature help (port of
-//! `definition.go`, `hover.go`, `reference.go`, `rename.go` and
-//! `signature.go`).
+//! Definition, hover, references, rename and signature help.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -16,8 +14,9 @@ use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::{PHP_FUNCTION_CALL, PHP_MEMBER_CALL, PHP_NAME, PHP_SCOPED_CALL};
 use swlsp_php_resolver::MemberResolver;
 use swlsp_php_semantic::{Flags, Symbol};
-use swlsp_php_types::{Type, equal_fold};
+use swlsp_php_types::Type;
 use swlsp_syntax::{SyntaxNodeExt, TextRange, TextSize};
+use swlsp_textutil::eq_ignore_case;
 
 use crate::Provider;
 use crate::completion::{assistant_class_kind_allowed, assistant_class_reference, request_offset};
@@ -168,8 +167,8 @@ impl Provider {
         let new_name = trimmed.strip_prefix('$').unwrap_or(trimmed);
         if !valid_php_identifier(new_name) {
             return Err(format!(
-                "{} is not a valid PHP identifier",
-                go_quote(&request.params.new_name)
+                "{:?} is not a valid PHP identifier",
+                request.params.new_name
             )
             .into());
         }
@@ -289,7 +288,7 @@ impl Provider {
             let mut active_parameter = active_argument;
             if !active_name.is_empty()
                 && let Some(index) = candidate.parameters.iter().position(|parameter| {
-                    equal_fold(
+                    eq_ignore_case(
                         parameter.name.strip_prefix('$').unwrap_or(&parameter.name),
                         &active_name,
                     )
@@ -314,9 +313,4 @@ impl Provider {
         }
         Some(result)
     }
-}
-
-/// Go `%q` for the identifier error message.
-fn go_quote(value: &str) -> String {
-    swlsp_php_types::go_quote(value)
 }

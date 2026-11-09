@@ -1,5 +1,4 @@
-//! Services, stores, directives, filters and CMS registrations (port of Go
-//! `runtime_registry.go`).
+//! Services, stores, directives, filters and CMS registrations.
 
 use std::sync::LazyLock;
 

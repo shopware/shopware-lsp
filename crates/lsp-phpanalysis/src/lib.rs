@@ -1,8 +1,8 @@
 //! Linked PHP semantic state shared by LSP features operating on the same
-//! immutable text document (port of Go `internal/lsp/phpanalysis`).
+//! immutable text document.
 //!
-//! Go enriches `context.Context`; Rust returns an explicit [`PhpContext`]
-//! (it holds syntax nodes and cannot travel in `swlsp_lsp::Context`).
+//! The analysis is returned as an explicit [`PhpContext`]: it holds syntax
+//! nodes and cannot travel in `swlsp_lsp::Context`.
 
 use std::sync::Arc;
 
@@ -69,7 +69,7 @@ pub fn context_for_document(
     )))
 }
 
-/// The PHP request context of `syntax` (Go's PHP context enricher): the
+/// The PHP request context of `syntax`: the
 /// memoized document analysis linked to the request node, or a fresh unnamed
 /// analysis when the document URI has no file path. `None` outside PHP
 /// documents or without a tree.

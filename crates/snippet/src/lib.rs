@@ -1,5 +1,4 @@
-//! Storefront and Administration translation snippets (port of Go
-//! `internal/snippet`).
+//! Storefront and Administration translation snippets.
 
 mod admin_javascript_reference;
 mod admin_twig_reference;

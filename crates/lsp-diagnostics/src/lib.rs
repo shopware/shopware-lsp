@@ -1,13 +1,12 @@
-//! Domain diagnostics (port of Go `internal/lsp/diagnostics`).
+//! Domain diagnostics.
 //!
 //! Every analyzer implements [`ProblemAnalyzer`]: it walks the document's
 //! syntax tree through the language query helpers and returns byte-oriented
 //! [`Problem`]s. Analyzers know nothing about the reporter, the diagnostic
-//! envelope or protocol conversion. An analyzer that forms an inspection on
-//! its own declares it through [`DeclaredAnalyzer`]; a rule about the whole
-//! project is a [`ProjectAnalysis`] run through [`Project`].
-//! `swlsp-lsp-inspections` wraps analyzers into inspections and binds quick
-//! fixes.
+//! envelope or protocol conversion. An analyzer that forms an inspection on its
+//! own declares it through [`DeclaredAnalyzer`]; a rule about the whole project
+//! is a [`ProjectAnalysis`] run through [`Project`]. `swlsp-lsp-inspections`
+//! wraps analyzers into inspections and binds quick fixes.
 
 use std::sync::Arc;
 
@@ -15,6 +14,9 @@ pub use swlsp_indexer::Revisioned;
 use swlsp_lsp::{BoxError, Context, InspectionSpec, Problem, TextDocument};
 
 pub mod common;
+
+mod error;
+pub use error::LookupError;
 
 mod admin;
 pub use admin::*;
@@ -49,8 +51,7 @@ mod tests_project;
 #[cfg(test)]
 mod tests_shared;
 
-/// Domain analysis producing byte-oriented problems (Go
-/// `inspections.ProblemAnalyzer`).
+/// Domain analysis producing byte-oriented problems.
 pub trait ProblemAnalyzer: Send + Sync {
     fn analyze(
         &self,

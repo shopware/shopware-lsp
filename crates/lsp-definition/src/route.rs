@@ -1,5 +1,5 @@
-//! Go `route_definition.go`: route names, route parameters, route paths and
-//! routing resources navigate to route declarations and imported files.
+//! Route names, route parameters, route paths and routing resources navigate to
+//! route declarations and imported files.
 
 use std::sync::Arc;
 

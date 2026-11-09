@@ -1,4 +1,5 @@
-//! Port of Go `admin_completion_scope.go`.
+//! Template scope completions: component members, `v-for` locals, event
+//! bindings and scoped-slot contracts visible at the cursor.
 
 use std::collections::{HashMap, HashSet};
 
@@ -24,8 +25,8 @@ fn range_len(range: TextRange) -> u32 {
 }
 
 impl AdminCompletionProvider {
-    /// Go `twigVueMemberCompletionsAt`; the flag reports whether the member
-    /// context was handled.
+    /// Member completions after a Vue expression in Twig; the flag reports
+    /// whether the member context was handled.
     pub(super) fn twig_vue_member_completions_at(
         &self,
         request: &CompletionRequest,
@@ -209,7 +210,7 @@ impl AdminCompletionProvider {
         (Vec::new(), true)
     }
 
-    /// Go `twigVueBindingsAtCompletion`.
+    /// Lexical bindings (`v-for`, event and slot locals) visible at `offset`.
     pub(super) fn twig_vue_bindings_at_completion(
         &self,
         request: &CompletionRequest,
@@ -237,7 +238,7 @@ impl AdminCompletionProvider {
             .unwrap_or_default()
     }
 
-    /// Go `scopedSlotsAtCompletion`.
+    /// The scoped slots whose bindings enclose the request position.
     pub(super) fn scoped_slots_at_completion(
         &self,
         request: &CompletionRequest,
@@ -264,7 +265,7 @@ impl AdminCompletionProvider {
             .unwrap_or_default()
     }
 
-    /// Go `getTemplateMemberCompletions`.
+    /// Component member completions for the template at `uri`.
     #[cfg(test)]
     pub(super) fn get_template_member_completions(
         &self,
@@ -273,7 +274,8 @@ impl AdminCompletionProvider {
         self.get_template_member_completions_at(uri, None, None)
     }
 
-    /// Go `getTemplateMemberCompletionsAt`.
+    /// Component member completions for the template at `uri`, including the
+    /// bindings in scope at `node`.
     pub(super) fn get_template_member_completions_at(
         &self,
         uri: &str,
@@ -389,7 +391,7 @@ impl AdminCompletionProvider {
     }
 }
 
-/// Go `adminCompletionOffset`: the byte offset of the request position.
+/// The byte offset of the request position.
 pub(super) fn admin_completion_offset(request: &CompletionRequest) -> Option<u32> {
     let line_index = request.line_index()?;
     Some(line_index.offset_utf16(
@@ -398,12 +400,12 @@ pub(super) fn admin_completion_offset(request: &CompletionRequest) -> Option<u32
     ))
 }
 
-/// Go `adminTemplatePath`: the file path of `uri`, empty when invalid.
+/// The file path of `uri`, empty when invalid.
 pub(super) fn admin_template_path(uri: &str) -> String {
     swlsp_uriutil::path(uri).unwrap_or_default()
 }
 
-/// Go `adminTwigVueExpressionAtCompletion`.
+/// Whether the request position is inside a Vue expression in Twig.
 pub(super) fn admin_twig_vue_expression_at_completion(request: &CompletionRequest) -> bool {
     let (Some(node), Some(offset)) = (request.node.as_ref(), admin_completion_offset(request))
     else {
@@ -412,7 +414,7 @@ pub(super) fn admin_twig_vue_expression_at_completion(request: &CompletionReques
     is_twig_vue_expression_at(node, offset)
 }
 
-/// Go `scopedSlotContractCompletions`.
+/// Completions for the binding names a scoped slot exposes.
 pub(super) fn scoped_slot_contract_completions(
     resolved: &ResolvedTwigScopedSlot,
 ) -> Vec<protocol::CompletionItem> {
@@ -525,12 +527,12 @@ fn twig_vue_binding_completions(bindings: &[&TwigVueBinding]) -> Vec<protocol::C
     items
 }
 
-/// Go `mergeAdminLexicalCompletions`: Vue's lexical shadowing. Outer
+/// Applies Vue's lexical shadowing. Outer
 /// component members come first, then increasingly smaller v-for, event and
 /// v-slot scopes, so the innermost binding owns a duplicate label.
 ///
-/// Go groups bindings through maps and orders equally sized scopes by map
-/// iteration (random); Rust keeps the binding order for those ties.
+/// Equally sized scopes keep their binding order, so the result is
+/// deterministic.
 pub(super) fn merge_admin_lexical_completions(
     base: Vec<protocol::CompletionItem>,
     slots: &[ResolvedTwigScopedSlot],
@@ -564,7 +566,7 @@ pub(super) fn merge_admin_lexical_completions(
     result
 }
 
-/// Go `mergeAdminCompletions`: overlays `right` by label.
+/// Overlays `right` on `left` by label.
 pub(super) fn merge_admin_completions(
     left: Vec<protocol::CompletionItem>,
     right: Vec<protocol::CompletionItem>,
@@ -579,7 +581,8 @@ pub(super) fn merge_admin_completions(
     items
 }
 
-/// Go `adminTwigRegistryReferenceAtCompletion`.
+/// The Administration registry reference (component, store, service) at the
+/// request position in Twig.
 pub(super) fn admin_twig_registry_reference_at_completion(
     request: &CompletionRequest,
 ) -> Option<AdminTwigRegistryReference> {
@@ -588,7 +591,7 @@ pub(super) fn admin_twig_registry_reference_at_completion(
     twig_registry_reference_at_offset(root, offset)
 }
 
-/// Go `adminMemberCompletionKind`.
+/// The completion kind of a component member kind.
 pub(super) fn admin_member_completion_kind(
     kind: VueComponentMemberKind,
 ) -> protocol::CompletionItemKind {
@@ -600,7 +603,7 @@ pub(super) fn admin_member_completion_kind(
     }
 }
 
-/// Go `adminMemberDetail`.
+/// The completion detail of a component member: its kind and type.
 pub(super) fn admin_member_detail(member: &VueComponentMember) -> String {
     let mut detail = member.kind.as_str().to_owned();
     if !member.type_.is_empty() {

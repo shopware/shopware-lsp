@@ -1,4 +1,4 @@
-//! Go `twig_constant_completion.go`: PHP constants inside `constant()`.
+//! Completion of PHP constants inside `constant()`.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -10,7 +10,8 @@ use swlsp_php_semantic::{Flags, Symbol, SymbolKind, Visibility};
 use swlsp_twig::{ConstantCompletionContext, PhpAccessResolver, TwigIndexer};
 
 use super::{lower_ext, markdown};
-use crate::common::{compare_completion_items, go_to_lower, protocol_range, text_edit};
+use crate::common::{compare_completion_items, protocol_range, text_edit};
+use swlsp_textutil::lowercase;
 
 pub struct TwigConstantCompletionProvider {
     php_index: Option<PhpIndex>,
@@ -34,17 +35,17 @@ impl TwigConstantCompletionProvider {
         object_relative: bool,
         request: &CompletionRequest,
     ) -> Vec<protocol::CompletionItem> {
-        let partial = go_to_lower(partial);
+        let partial = lowercase(partial);
         let mut items = Vec::new();
         let mut seen = HashSet::new();
         for class in classes {
             for symbol in php.constants(class) {
                 if symbol.visibility != Visibility::Public
-                    || !go_to_lower(&symbol.name).starts_with(&partial)
+                    || !lowercase(&symbol.name).starts_with(&partial)
                 {
                     continue;
                 }
-                let key = format!("{}\0{}", go_to_lower(class), go_to_lower(&symbol.name));
+                let key = format!("{}\0{}", lowercase(class), lowercase(&symbol.name));
                 if !seen.insert(key) {
                     continue;
                 }
@@ -77,7 +78,7 @@ impl TwigConstantCompletionProvider {
         completion: &ConstantCompletionContext,
         request: &CompletionRequest,
     ) -> Vec<protocol::CompletionItem> {
-        let prefix = go_to_lower(
+        let prefix = lowercase(
             completion
                 .value
                 .strip_prefix('\\')
@@ -91,7 +92,7 @@ impl TwigConstantCompletionProvider {
                 continue;
             }
             let display = php.constant_symbol_name(&symbol);
-            let lower = go_to_lower(&display);
+            let lower = lowercase(&display);
             if matches!(lower.as_str(), "true" | "false" | "null") || !lower.starts_with(&prefix) {
                 continue;
             }
@@ -222,10 +223,10 @@ fn twig_constant_short_label(display: &str) -> String {
 fn sort_twig_constant_items(items: &mut Vec<protocol::CompletionItem>) {
     let mut keyed: Vec<(String, String, protocol::CompletionItem)> = std::mem::take(items)
         .into_iter()
-        .map(|item| (go_to_lower(&item.label), go_to_lower(&item.detail), item))
+        .map(|item| (lowercase(&item.label), lowercase(&item.detail), item))
         .collect();
-    // Go compares with EqualFold first; full case folding and lowercase
-    // equality agree for these identifiers.
+    // Lowercase comparison stands in for case folding; both agree for
+    // these identifiers.
     keyed.sort_unstable_by(|left, right| {
         left.0
             .cmp(&right.0)

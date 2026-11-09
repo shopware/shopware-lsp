@@ -1,4 +1,4 @@
-//! Twig's static-analysis `{% types %}` tag (port of `types_tag.go`).
+//! Twig's static-analysis `{% types %}` tag.
 
 use swlsp_syntax::TextRange;
 

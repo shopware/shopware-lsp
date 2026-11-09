@@ -1,5 +1,4 @@
-//! Include/embed hash keys to the variables the target template reads
-//! (port of Go `twig_include_parameter_definition.go`).
+//! Include/embed hash keys to the variables the target template reads.
 
 use std::sync::Arc;
 

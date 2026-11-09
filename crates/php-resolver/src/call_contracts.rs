@@ -1,8 +1,9 @@
 //! `.phpstorm.meta.php` return contracts evaluated at the signature boundary
-//! (port of `resolver/call_contracts.go`).
+//!.
 
 use swlsp_php_semantic::{CallReturnContract, CallReturnKind, CallValue, CallValueKind};
-use swlsp_php_types::{Joiner, Kind, Relations, Type, equal_fold, go_to_lower};
+use swlsp_php_types::{Joiner, Kind, Relations, Type};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::signatures::{Argument, shape_iterable_types};
 
@@ -70,9 +71,9 @@ fn value_matches(value: &CallValue, argument: &Argument) -> bool {
         CallValueKind::Number => argument.ty.text() == normalize_expression(&value.expression),
         CallValueKind::ClassConstant => {
             let expected = class_constant_name(&value.expression);
-            equal_fold(&expected, argument_class_name(&argument.ty))
+            eq_ignore_case(&expected, argument_class_name(&argument.ty))
         }
-        _ => equal_fold(
+        _ => eq_ignore_case(
             &normalize_expression(&value.expression),
             &normalize_expression(&argument.expression),
         ),
@@ -168,7 +169,7 @@ pub fn iterable_types(value: &Type, relations: Relations<'_>) -> (Type, Type) {
                 let name = value.name();
                 let name = name.strip_prefix('\\').unwrap_or(name);
                 if matches!(
-                    go_to_lower(name).as_str(),
+                    lowercase(name).as_str(),
                     "iterator" | "iteratoraggregate" | "traversable"
                 ) {
                     return (Type::array_key(), value.argument(0));

@@ -1,4 +1,5 @@
 use swlsp_php_semantic::{Symbol, SymbolKind};
+use swlsp_textutil::eq_ignore_case;
 
 use crate::types::{ShopwareExtension, ShopwareExtensionType};
 
@@ -67,26 +68,8 @@ fn has_excluded_bundle_path_component(path: &str) -> bool {
     path.split(['/', '\\']).any(|component| {
         ["tests", "test", "fixtures", "_fixture", "_fixtures"]
             .iter()
-            .any(|excluded| equal_fold_ascii(component, excluded))
+            .any(|excluded| eq_ignore_case(component, excluded))
     })
-}
-
-/// Go `strings.EqualFold` against a lowercase ASCII target: besides ASCII
-/// case, `ſ` (U+017F) folds to `s` and the Kelvin sign (U+212A) to `k`.
-fn equal_fold_ascii(value: &str, target: &str) -> bool {
-    let mut chars = value.chars();
-    for expected in target.chars() {
-        let Some(actual) = chars.next() else {
-            return false;
-        };
-        let matches = actual.to_ascii_lowercase() == expected
-            || (actual == '\u{17f}' && expected == 's')
-            || (actual == '\u{212a}' && expected == 'k');
-        if !matches {
-            return false;
-        }
-    }
-    chars.next().is_none()
 }
 
 fn contains_fold(source: &str, needle: &str) -> bool {

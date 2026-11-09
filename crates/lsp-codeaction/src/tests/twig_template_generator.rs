@@ -1,4 +1,4 @@
-//! Go `twig_template_generator_codeaction_test.go`.
+//! Twig Extends and Block Overwrite generator tests.
 
 use std::sync::Arc;
 
@@ -10,7 +10,7 @@ use swlsp_twig::TwigIndexer;
 use super::*;
 use crate::test_support::request_at;
 
-/// Go `symfonyGeneratorCodeActionRequest`: a caret at `needle`.
+/// A caret at `needle`.
 fn caret_request(uri: &str, source: &str, needle: &str) -> CodeActionRequest {
     let offset = source.find(needle).unwrap_or(0) as u32;
     request_at(uri, source, offset, offset)

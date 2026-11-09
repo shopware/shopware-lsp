@@ -4,8 +4,8 @@ use swlsp_parser_php::query as php;
 use swlsp_parser_php::syntax::{PHP_ARRAY, PHP_FUNCTION_CALL, PHP_MEMBER_CALL, PHP_SCOPED_CALL};
 use swlsp_parser_xml::query as xml;
 use swlsp_parser_yaml::query as yaml;
-use swlsp_php_types::go_to_lower;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
+use swlsp_textutil::lowercase;
 
 use crate::model::{Package, normalize_name};
 use crate::parser::{php_string_content_range, shrink};
@@ -49,7 +49,7 @@ pub fn packages_in_xml(path: &str, root: &SyntaxNode) -> Vec<Package> {
 pub fn packages_in_php(path: &str, root: &SyntaxNode) -> Vec<Package> {
     let mut result = Vec::new();
     for call in php::nodes(root, &[PHP_MEMBER_CALL, PHP_SCOPED_CALL, PHP_FUNCTION_CALL]) {
-        if !swlsp_php_types::equal_fold(&php::call_method_name(&call), "tag") {
+        if !swlsp_textutil::eq_ignore_case(&php::call_method_name(&call), "tag") {
             continue;
         }
         let option_name =
@@ -132,7 +132,7 @@ fn inferred_bundle_package(path: &str) -> Vec<Package> {
     if bundle.is_empty() || bundle == "." {
         return Vec::new();
     }
-    let lower = go_to_lower(&bundle);
+    let lower = lowercase(&bundle);
     let public_name = lower.strip_suffix("bundle").unwrap_or(&lower);
     if public_name.is_empty() {
         return Vec::new();
@@ -160,8 +160,8 @@ fn scalar_content_range(node: Option<&SyntaxNode>) -> TextRange {
 }
 
 fn compare_packages(left: &Package, right: &Package) -> std::cmp::Ordering {
-    go_to_lower(&left.name)
-        .cmp(&go_to_lower(&right.name))
+    lowercase(&left.name)
+        .cmp(&lowercase(&right.name))
         .then_with(|| left.inferred.cmp(&right.inferred))
 }
 
@@ -185,8 +185,8 @@ pub(crate) fn deduplicate_packages(mut packages: Vec<Package>) -> Vec<Package> {
         }
         let mut key = format!(
             "{}\0{}",
-            go_to_lower(&current.name),
-            go_to_lower(&current.base_path)
+            lowercase(&current.name),
+            lowercase(&current.base_path)
         );
         if !current.inferred {
             key.push_str(&format!(

@@ -1,4 +1,5 @@
-//! PHP syntax kinds (values, names and texts identical to the Go implementation).
+//! PHP syntax kinds. Kind values, names and texts are persisted in caches and
+//! CST dumps; do not change them.
 
 swlsp_syntax::language! {
     name: "php", base: 24576,

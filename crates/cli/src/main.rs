@@ -1,4 +1,4 @@
-//! The `shopware-lsp` executable (port of Go `main.go`).
+//! The `shopware-lsp` executable.
 
 use std::io::Write;
 
@@ -37,8 +37,7 @@ fn main() {
     std::process::exit(swlsp_cli::exit_code(&result));
 }
 
-/// Go `signal.NotifyContext(ctx, os.Interrupt)`: the first SIGINT cancels
-/// the command; later ones are absorbed until exit. SIGINT is blocked in
+/// The first SIGINT cancels the command; later ones are absorbed until exit. SIGINT is blocked in
 /// every thread and received by a dedicated `sigwait` thread.
 #[cfg(unix)]
 fn install_interrupt_handler(cancel: swlsp_cli::Cancel) {
@@ -62,7 +61,7 @@ fn install_interrupt_handler(cancel: swlsp_cli::Cancel) {
     }
 }
 
-/// Windows: Ctrl+C / Ctrl+Break cancel the command (Go `os.Interrupt`).
+/// Windows: Ctrl+C / Ctrl+Break cancel the command.
 #[cfg(windows)]
 fn install_interrupt_handler(cancel: swlsp_cli::Cancel) {
     use std::sync::OnceLock;

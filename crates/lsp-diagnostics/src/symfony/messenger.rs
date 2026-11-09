@@ -1,4 +1,4 @@
-//! Go `messenger_diagnostics.go`.
+//! Missing Messenger messages and handler methods.
 
 use std::sync::Arc;
 

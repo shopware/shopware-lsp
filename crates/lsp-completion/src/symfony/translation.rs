@@ -1,5 +1,4 @@
-//! Translation domain, key and placeholder completion in PHP and Twig (port
-//! of Go `translation_completion.go`).
+//! Translation domain, key and placeholder completion in PHP and Twig.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -11,7 +10,8 @@ use swlsp_syntax::TextRange;
 use swlsp_translation::{Index, Message, ReferenceRole};
 
 use super::{lower_ext, markdown};
-use crate::common::{go_to_lower, php_context, protocol_range, text_edit, truncate_text};
+use crate::common::{php_context, protocol_range, text_edit, truncate_text};
+use swlsp_textutil::lowercase;
 
 use protocol::CompletionItemKind as Kind;
 
@@ -175,11 +175,11 @@ fn key_completions(index: &Index, domain: &str) -> Vec<protocol::CompletionItem>
 
 fn message_priority(message: &Message) -> i32 {
     let mut priority = 0;
-    let locale = go_to_lower(&message.locale.replace('_', "-"));
+    let locale = lowercase(&message.locale.replace('_', "-"));
     if locale == "en" || locale.starts_with("en-") {
         priority += 2;
     }
-    let normalized = go_to_lower(&swlsp_uriutil::filepath::to_slash(&message.file));
+    let normalized = lowercase(&swlsp_uriutil::filepath::to_slash(&message.file));
     if !normalized.contains("/var/cache/") && !normalized.contains("/app/cache/") {
         priority += 1;
     }

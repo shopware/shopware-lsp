@@ -1,5 +1,4 @@
-//! Cheap byte-level screening of files that may register DBAL types (port of
-//! Go `candidate.go`): an ASCII case-folding Aho-Corasick automaton.
+//! Cheap byte-level screening of files that may register DBAL types: an ASCII case-folding Aho-Corasick automaton.
 
 use std::sync::LazyLock;
 

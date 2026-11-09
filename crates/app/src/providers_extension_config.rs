@@ -1,9 +1,8 @@
-//! Live extension configuration overlays (port of Go
-//! `internal/app/providers_extension_config.go`).
+//! Live extension configuration overlays.
 
 use std::sync::Arc;
 
-use swlsp_extension::{ConfigIndex, configuration_root, dir};
+use swlsp_extension::{ConfigIndex, configuration_root};
 use swlsp_lsp::{DocumentObserver, TextDocument};
 use swlsp_uriutil::filepath;
 
@@ -25,7 +24,8 @@ pub(crate) fn register_extension_config_document_observer(
                 return false;
             };
             filepath::base(&path) == "composer.json"
-                && (configuration.is_empty() || root.as_deref() == Some(dir(&path).as_str()))
+                && (configuration.is_empty()
+                    || root.as_deref() == Some(filepath::dir(&path).as_str()))
         });
     })));
     let open_lsp = server.server.downgrade();
@@ -47,8 +47,7 @@ pub(crate) fn register_extension_config_document_observer(
                 if !ConfigIndex::is_configuration(&path) {
                     return;
                 }
-                // Configuration files are YAML and always carry a tree; Go's
-                // nil-root case cannot occur.
+                // Configuration files are YAML and always carry a tree.
                 if let Some(root) = document.root() {
                     open_index.update_live_document(&path, &root);
                 }

@@ -1,4 +1,4 @@
-//! JavaScript symbol recognition (port of Go `usage_symbol_javascript.go`).
+//! JavaScript symbol recognition.
 
 use crate::*;
 

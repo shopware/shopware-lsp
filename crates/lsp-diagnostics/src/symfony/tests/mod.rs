@@ -1,4 +1,4 @@
-//! Ports of the symfony group's Go tests.
+//! Tests of the Symfony analyzer group.
 
 mod asset_tests;
 mod console_tests;

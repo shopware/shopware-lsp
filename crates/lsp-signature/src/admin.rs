@@ -19,7 +19,6 @@ use swlsp_lsp::{
 use swlsp_lsp_protocol as protocol;
 use swlsp_parser_js::query as jsquery;
 use swlsp_parser_js::syntax::{JS_ARGUMENT_LIST, JS_CALL_EXPRESSION, TK_COMMA};
-use swlsp_php_types::go_quote;
 use swlsp_syntax::{Kind, SyntaxNode, SyntaxNodeExt, TextSize};
 use swlsp_uriutil::filepath;
 
@@ -241,7 +240,7 @@ impl AdminSignatureProvider {
         if payload_type.is_empty() {
             payload_type = "unknown".to_string();
         }
-        let event_type = go_quote(&event_name);
+        let event_type = format!("{event_name:?}");
         let callable_type = match operation.as_str() {
             "emit" => {
                 let optional = if swlsp_admin::vue_type_allows_undefined(&payload_type) {

@@ -1,5 +1,7 @@
-//! `shopware/twig/extendBlock` and `shopware/twig/getBlockDiff` (port of Go
-//! `twig_command.go`).
+//! `shopware/twig/extendBlock` and `shopware/twig/getBlockDiff`: add an
+//! override block to an extension's Storefront template, and diff an
+//! overridden core block against the version recorded in its versioning
+//! comment.
 
 use std::collections::BTreeMap;
 use std::process::Command;
@@ -45,6 +47,41 @@ struct DiffParams {
     text_uri: String,
     #[serde(rename = "blockName")]
     block_name: String,
+}
+
+/// Why the historical content of a core block could not be loaded.
+#[derive(Debug, thiserror::Error)]
+enum BlockHistoryError {
+    #[error("storefront package not found")]
+    StorefrontNotFound,
+    #[error("block {block} not found at version {version}")]
+    BlockNotFound { block: String, version: String },
+    #[error(transparent)]
+    Fetch(#[from] FetchError),
+}
+
+/// Why `git show` could not provide a file.
+#[derive(Debug, thiserror::Error)]
+enum GitShowError {
+    #[error("run git show")]
+    Spawn(#[source] std::io::Error),
+    #[error("git show failed: {stderr}")]
+    Failed { stderr: String },
+}
+
+/// Why a Storefront file could not be fetched from GitHub.
+#[derive(Debug, thiserror::Error)]
+enum FetchError {
+    #[error("configure TLS")]
+    Tls(#[source] rustls::Error),
+    #[error("create HTTP client")]
+    Client(#[source] reqwest::Error),
+    #[error("failed to fetch from GitHub")]
+    Request(#[source] reqwest::Error),
+    #[error("GitHub returned status {status} for version {version}")]
+    Status { status: u16, version: String },
+    #[error("failed to read GitHub response")]
+    Body(#[source] reqwest::Error),
 }
 
 fn lsp_error(message: impl Into<String>, code: &str) -> Result<Value, BoxError> {
@@ -196,8 +233,9 @@ impl Inner {
             Err(error) => {
                 return lsp_error(
                     format!(
-                        "Failed to get block at version {}: {error}",
-                        version_comment.version
+                        "Failed to get block at version {}: {}",
+                        version_comment.version,
+                        error_chain(&error)
                     ),
                     "git.failed",
                 );
@@ -217,10 +255,10 @@ impl Inner {
         absolute_path: &str,
         block_name: &str,
         version: &str,
-    ) -> Result<String, String> {
+    ) -> Result<String, BlockHistoryError> {
         let storefront = self.storefront_package_path();
         if storefront.is_empty() {
-            return Err("storefront package not found".to_owned());
+            return Err(BlockHistoryError::StorefrontNotFound);
         }
         let relative = absolute_path
             .strip_prefix(storefront.as_str())
@@ -244,7 +282,10 @@ impl Inner {
         };
         let file = parse_twig(relative, &content);
         let Some(block) = file.blocks.get(block_name) else {
-            return Err(format!("block {block_name} not found at version {version}"));
+            return Err(BlockHistoryError::BlockNotFound {
+                block: block_name.to_owned(),
+                version: version.to_owned(),
+            });
         };
         Ok(block.text.clone())
     }
@@ -262,47 +303,42 @@ impl Inner {
     }
 }
 
-fn git_show(repository: &str, path: &str, git_ref: &str) -> Result<String, String> {
+fn git_show(repository: &str, path: &str, git_ref: &str) -> Result<String, GitShowError> {
     let output = Command::new("git")
         .arg("show")
         .arg(format!("{git_ref}:{path}"))
         .current_dir(repository)
         .output()
-        .map_err(|error| error.to_string())?;
+        .map_err(GitShowError::Spawn)?;
     if !output.status.success() {
-        return Err(format!(
-            "git show failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
+        return Err(GitShowError::Failed {
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-/// Fetches the Storefront file from GitHub (Go `getFileContentFromGitHub`).
-fn github_content(relative: &str, version: &str) -> Result<String, String> {
+/// Fetches a Storefront file at `version` from the Shopware GitHub
+/// repository, the fallback when the project has no git history for it.
+fn github_content(relative: &str, version: &str) -> Result<String, FetchError> {
     let url = format!(
         "https://raw.githubusercontent.com/shopware/shopware/{version}/src/Storefront/{relative}"
     );
     let client = http_client()?;
-    let response = client
-        .get(&url)
-        .send()
-        .map_err(|error| format!("failed to fetch from GitHub: {}", error_chain(&error)))?;
+    let response = client.get(&url).send().map_err(FetchError::Request)?;
     let status = response.status();
     if status != reqwest::StatusCode::OK {
-        return Err(format!(
-            "GitHub returned status {} for version {version}",
-            status.as_u16()
-        ));
+        return Err(FetchError::Status {
+            status: status.as_u16(),
+            version: version.to_owned(),
+        });
     }
-    response
-        .text()
-        .map_err(|error| format!("failed to read GitHub response: {}", error_chain(&error)))
+    response.text().map_err(FetchError::Body)
 }
 
 /// A blocking client with a 30 second timeout that trusts the bundled
 /// Mozilla roots. Must not be built or dropped on an async task.
-fn http_client() -> Result<reqwest::blocking::Client, String> {
+fn http_client() -> Result<reqwest::blocking::Client, FetchError> {
     let roots = rustls::RootCertStore {
         roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
     };
@@ -310,17 +346,17 @@ fn http_client() -> Result<reqwest::blocking::Client, String> {
         rustls::crypto::ring::default_provider(),
     ))
     .with_safe_default_protocol_versions()
-    .map_err(|error| format!("configure TLS: {error}"))?
+    .map_err(FetchError::Tls)?
     .with_root_certificates(roots)
     .with_no_client_auth();
     reqwest::blocking::Client::builder()
         .use_preconfigured_tls(tls)
         .timeout(std::time::Duration::from_secs(30))
         .build()
-        .map_err(|error| format!("create HTTP client: {}", error_chain(&error)))
+        .map_err(FetchError::Client)
 }
 
-/// `error` with its causes, as reqwest's own message omits them.
+/// `error` followed by each of its causes, separated by `: `.
 fn error_chain(error: &dyn std::error::Error) -> String {
     let mut message = error.to_string();
     let mut source = error.source();
@@ -352,7 +388,7 @@ mod github_tests {
         )
         .unwrap_err();
         assert_eq!(
-            error,
+            error.to_string(),
             "GitHub returned status 404 for version v0.0.0-missing"
         );
     }

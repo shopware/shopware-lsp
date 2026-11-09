@@ -1,4 +1,4 @@
-//! Port of Go `internal/app/providers_store_compliance_test.go`.
+//! Store-compliance diagnostics refreshed by extension configuration overlays.
 
 use std::sync::Arc;
 

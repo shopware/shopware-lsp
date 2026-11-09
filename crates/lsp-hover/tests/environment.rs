@@ -22,7 +22,7 @@ fn environment_hover_shows_processors_and_redacts_secrets() {
     index_file(index.as_ref(), &p(&path), source);
     let document = TextDocument::new(uri(&path), source, 1);
     let mut request: HoverRequest = request_at(document, source.find("APP_SECRET").unwrap() + 2);
-    // Go passes only the source and line index.
+    // The request carries only the source and line index, no tree.
     request.syntax = SyntaxContext {
         document: request.syntax.document.clone(),
         language: None,

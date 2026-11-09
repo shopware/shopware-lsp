@@ -1,5 +1,5 @@
-//! Go `twig_statement_completion.go`: `if member` / `for item in member`
-//! statements from typed PHP members.
+//! Completion of `if member` / `for item in member` statements built from
+//! typed PHP members.
 
 use std::collections::HashMap;
 
@@ -7,13 +7,14 @@ use swlsp_lsp::CompletionRequest;
 use swlsp_lsp_protocol::{self as protocol, CompletionItemKind};
 use swlsp_php_resolver::MemberResolver;
 use swlsp_php_semantic::{Flags, Symbol, SymbolKind, Visibility};
-use swlsp_php_types::{Kind as TypeKind, Type, equal_fold};
+use swlsp_php_types::{Kind as TypeKind, Type};
+use swlsp_textutil::eq_ignore_case;
 use swlsp_twig::PhpAccessResolver;
 
 use super::completion::{TwigCompletionProvider, effective_twig_globals};
 use super::request_offset;
 use super::tag::twig_tag_completion_prefix;
-use crate::common::go_to_lower;
+use swlsp_textutil::lowercase;
 
 impl TwigCompletionProvider {
     pub(crate) fn twig_statement_completions(
@@ -24,8 +25,8 @@ impl TwigCompletionProvider {
         request.root.as_ref()?;
         let offset = request_offset(request)?;
         let prefix = twig_tag_completion_prefix(request.source().as_bytes(), offset)?;
-        let if_completions = equal_fold(&prefix, "if");
-        let for_completions = !prefix.is_empty() && "for".starts_with(&go_to_lower(&prefix));
+        let if_completions = eq_ignore_case(&prefix, "if");
+        let for_completions = !prefix.is_empty() && "for".starts_with(&lowercase(&prefix));
         if !if_completions && !for_completions {
             return None;
         }
@@ -33,10 +34,10 @@ impl TwigCompletionProvider {
         let snapshot = php.semantic_snapshot();
         let variable_types = self.typed_twig_root_types(request);
         let mut variable_names: Vec<&String> = variable_types.keys().collect();
-        // Go sorts map keys by lowercase only; ties are ordered by name.
+        // Ordered by lowercase name; ties between case variants by name.
         variable_names.sort_by(|left, right| {
-            go_to_lower(left)
-                .cmp(&go_to_lower(right))
+            lowercase(left)
+                .cmp(&lowercase(right))
                 .then_with(|| left.cmp(right))
         });
         let mut items: HashMap<String, protocol::CompletionItem> = HashMap::new();
@@ -72,7 +73,7 @@ impl TwigCompletionProvider {
                     deprecated: member.symbol.flags.has(Flags::DEPRECATED),
                     ..Default::default()
                 };
-                items.insert(go_to_lower(&label), item);
+                items.insert(lowercase(&label), item);
             }
         }
         if items.is_empty() {
@@ -143,7 +144,7 @@ fn twig_statement_member_name(symbol: &Symbol) -> Option<String> {
             (!name.is_empty()).then(|| name.to_string())
         }
         SymbolKind::Method => {
-            if go_to_lower(&symbol.name).starts_with("set") || symbol.name.starts_with("__") {
+            if lowercase(&symbol.name).starts_with("set") || symbol.name.starts_with("__") {
                 return None;
             }
             if symbol
@@ -185,7 +186,7 @@ fn twig_statement_boolean_type(value: &Type) -> bool {
 
 fn singular_twig_variable(name: &str) -> String {
     let name = name.strip_suffix("()").unwrap_or(name);
-    let lower = go_to_lower(name);
+    let lower = lowercase(name);
     let bytes = name.as_bytes();
     let cut = |end: usize| String::from_utf8_lossy(&bytes[..end]).into_owned();
     if lower.ends_with("ies") && name.len() > 3 {

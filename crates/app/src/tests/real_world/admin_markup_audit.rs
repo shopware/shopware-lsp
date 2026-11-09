@@ -1,4 +1,4 @@
-//! Port of Go `admin_markup_audit_test.go`: a development audit for typed
+//! A development audit for typed
 //! Administration markup diagnostics. It reports rather than fails on
 //! findings so a changing local checkout stays usable as a discovery fixture.
 
@@ -41,7 +41,7 @@ pub(super) fn walk_files(root: &Path, extension: &str) -> Vec<PathBuf> {
     result
 }
 
-/// Go `topAdminAuditCounts`, formatted like Go's `%v` of a string slice.
+/// The `limit` most frequent entries (ties by name) as `[name=count ...]`.
 fn top_admin_audit_counts(counts: &HashMap<String, usize>, limit: usize) -> String {
     let mut entries: Vec<(&String, &usize)> = counts.iter().collect();
     entries.sort_by(|left, right| right.1.cmp(left.1).then_with(|| left.0.cmp(right.0)));

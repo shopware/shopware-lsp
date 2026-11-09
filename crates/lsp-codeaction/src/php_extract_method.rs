@@ -1,4 +1,4 @@
-//! Go `php_extract_method.go`.
+//! The PHP "Extract method" and "Extract function" refactorings.
 
 use std::collections::HashSet;
 

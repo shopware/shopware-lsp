@@ -1,5 +1,5 @@
 //! Local expression and control-flow type analysis over bound PHP semantic
-//! documents (port of `internal/php/inference`).
+//! documents.
 //!
 //! [`Analyzer`] enriches a bound [`Document`] with type facts, inferred
 //! function returns, local variable types, and diagnostics. A bounded
@@ -9,45 +9,39 @@
 //! [`link_members`] resolves member references once receiver types are
 //! known.
 //!
-//! # Module map
+//! # Modules
 //!
-//! | Go file | Module |
+//! | Module | Responsibility |
 //! |---|---|
-//! | `analyzer.go` (state, statements, fixed point) | `analyzer` |
-//! | `analyzer.go` (environment) | `env` |
-//! | `helpers.go`, `flow_helpers.go` (syntax) | `syntax` |
-//! | `helpers.go` (types), shared type predicates | `types_util` |
-//! | `declarations.go` | `declarations` |
-//! | `expression_*.go` | `expr` |
-//! | `flow_*.go` | `flow` |
-//! | `by_reference.go` | `by_reference` |
-//! | `extensions.go`, `builtins.go`, `call_contracts.go`, `attribute_contracts.go`, `faker.go` | `extensions` |
-//! | `member_links.go` | `member_links` |
+//! | `analyzer` | analysis state, statements, fixed-point scheduling |
+//! | `env` | copy-on-write variable frames |
+//! | `syntax` | CST helpers shared by expressions and flow |
+//! | `types_util` | shared type predicates and joins |
+//! | `declarations` | final parents, overrides, abstract methods |
+//! | `expr` | expression evaluation |
+//! | `flow` | condition narrowing and flow-sensitive updates |
+//! | `by_reference` | by-reference argument outputs |
+//! | `extensions` | builtin, call-contract, attribute-contract and Faker inference |
+//! | `member_links` | member reference linking after inference |
 //!
-//! # Differences from Go
+//! # Design notes
 //!
-//! - The environment is an `Rc` copy-on-write frame instead of Go's
-//!   override/detach handle; observable semantics (fork isolation, shared
-//!   handles while evaluating one expression) are identical.
-//! - Extensions are values implementing [`Extension`]; Go's package-level
-//!   `Builtins`, `CallContracts`, `AttributeContracts` and `FakerTypes`
-//!   variables are the unit structs [`Builtins`], [`CallContracts`],
-//!   [`AttributeContracts`] and [`FakerTypes`].
+//! - An `Env` handle is an `Rc` copy-on-write frame: forks are
+//!   isolated, while clones taken during one expression share the frame.
+//! - Extensions are values implementing [`Extension`]; the built-in ones are
+//!   the unit structs [`Builtins`], [`CallContracts`], [`AttributeContracts`]
+//!   and [`FakerTypes`].
 //! - [`CallContext`] carries the analyzed source text so extensions can read
 //!   argument text without allocating.
-//! - Go's `AnalyzeOwned` runs against an overlay snapshot that aliases the
-//!   owned document's symbol slice, so a return type inferred for one
-//!   function is visible to later functions of the same pass.
-//!   [`Analyzer::analyze_owned`] reproduces this by overriding each changed
-//!   return in its snapshot (in place, via [`Snapshot::override_symbol`]);
-//!   [`Analyzer::analyze`] (Go `Analyze`, which clones) publishes them only
-//!   between passes.
+//! - [`Analyzer::analyze_owned`] overrides each changed return type in its
+//!   snapshot in place (via [`Snapshot::override_symbol`]), so a return type
+//!   inferred for one function is visible to later functions of the same
+//!   pass. [`Analyzer::analyze`] leaves its snapshot untouched and publishes
+//!   inferred returns only between passes.
+//! - [`link_members`] reads local variable types from the analyzed document
+//!   itself, so locals appended by by-reference outputs resolve too.
 //!
 //! [`Snapshot::override_symbol`]: swlsp_php_semantic::Snapshot::override_symbol
-//! - [`link_members`] reads local variable types from the analyzed document
-//!   (Go reads them through that aliased overlay). Go loses the alias when a
-//!   by-reference output appends a local and the slice reallocates; Rust
-//!   always uses the current document, which resolves a few more receivers.
 
 mod analyzer;
 mod by_reference;

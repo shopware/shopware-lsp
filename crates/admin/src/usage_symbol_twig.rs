@@ -1,4 +1,4 @@
-//! Twig template symbol recognition (port of Go `usage_symbol_twig.go`).
+//! Twig template symbol recognition.
 
 use crate::*;
 
@@ -27,7 +27,8 @@ pub fn twig_symbol_at_offset(root: &SyntaxNode, offset: u32) -> Option<AdminSymb
     twig_ending_tag_symbol_at_offset(root, offset)
 }
 
-/// Go `TwigDynamicComponentSelector` as a `(selector, dynamic)` pair.
+/// The dynamic component selector of `node` as a `(selector, dynamic)` pair;
+/// the default selector and `false` when `node` has none.
 pub(crate) fn twig_dynamic_component_selector_or_default(
     node: &SyntaxNode,
 ) -> (VueDynamicComponentSelector, bool) {

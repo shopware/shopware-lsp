@@ -1,5 +1,4 @@
-//! Go `service_argument_rewrite.go`: inserts missing service arguments into
-//! XML and YAML service definitions.
+//! Inserts missing service arguments into XML and YAML service definitions.
 
 use serde_json::Value;
 use swlsp_parser_xml::query as xmlquery;
@@ -15,7 +14,6 @@ pub(crate) struct MissingServiceArgument {
     service: String,
 }
 
-/// Go `missingServiceArguments`.
 pub(crate) fn missing_service_arguments(value: Option<&Value>) -> Vec<MissingServiceArgument> {
     let Some(Value::Array(values)) = value else {
         return Vec::new();
@@ -50,7 +48,6 @@ fn end(node: &SyntaxNode) -> u32 {
     u32::from(node.text_range().end())
 }
 
-/// Go `serviceArgumentRewrite`.
 pub(crate) fn service_argument_rewrite(
     content: &str,
     node: &SyntaxNode,

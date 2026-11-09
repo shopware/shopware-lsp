@@ -1,4 +1,4 @@
-//! Template usage extraction (port of Go `usage_twig.go`).
+//! Template usage extraction.
 
 use crate::*;
 

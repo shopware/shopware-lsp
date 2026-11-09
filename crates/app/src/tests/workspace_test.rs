@@ -1,4 +1,4 @@
-//! Port of Go `internal/app/workspace_test.go`.
+//! Workspace construction, indexing, restart restoration and close.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -8,7 +8,7 @@ use swlsp_lsp::{Context, Server};
 
 use crate::Workspace;
 
-/// Go `NewWorkspace(ctx, root, lsp.NewServer(nil, root, "test"))` with an
+/// The production workspace for `root` on a fresh test server, with an
 /// isolated cache base.
 pub(super) fn open_workspace(root: &Path, cache: &Path) -> Workspace {
     let root = root.to_string_lossy();

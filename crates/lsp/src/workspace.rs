@@ -10,6 +10,7 @@ use swlsp_lsp_protocol as protocol;
 use swlsp_projectconfig as projectconfig;
 use swlsp_uriutil::filepath;
 
+use crate::client::ClientContractError;
 use crate::context::{BoxError, Context, RpcError, codes, lock};
 use crate::diagnostics::DiagnosticsSuspension;
 use crate::server::{Server, decode_params, read, write};
@@ -33,12 +34,47 @@ pub type WorkspaceFactory = Arc<
 /// Completes an indexing progress report with the elapsed time and error.
 type FinishProgress = Box<dyn FnOnce(Duration, Option<&str>) + Send>;
 
+/// Failure of the `initialize` request.
+#[derive(Debug, thiserror::Error)]
+pub enum InitializeError {
+    #[error("server is already initialized")]
+    AlreadyInitialized,
+    #[error(
+        "multiple workspace folders are not supported; start one Shopware LSP process per workspace"
+    )]
+    MultipleWorkspaceFolders,
+    #[error("a workspace root is required")]
+    MissingWorkspaceRoot,
+    #[error("resolve workspace root: {0}")]
+    ResolveWorkspaceRoot(#[source] swlsp_uriutil::UriError),
+    #[error("make workspace root absolute: {0}")]
+    AbsoluteWorkspaceRoot(#[source] std::io::Error),
+    #[error(transparent)]
+    ClientContract(#[from] ClientContractError),
+    #[error("detect project type: {0}")]
+    DetectProject(#[source] swlsp_projectdetect::DetectError),
+    #[error(
+        "unsupported project root {root}: no Shopware or Symfony project markers found; add {marker} or allow unsupported projects explicitly"
+    )]
+    UnsupportedProject { root: String, marker: &'static str },
+    #[error("load configuration: {0}")]
+    LoadConfiguration(String),
+    #[error("initialize workspace: {0}")]
+    CreateWorkspace(#[source] BoxError),
+    #[error("initialize workspace: factory returned no scanner")]
+    MissingScanner,
+    #[error("load scoped configuration: {0}")]
+    LoadScopedConfiguration(String),
+    #[error("validate configuration: {0}")]
+    ValidateConfiguration(String),
+}
+
 /// Resolves the single workspace root from `initialize` params.
-pub(crate) fn workspace_root(params: &protocol::InitializeParams) -> Result<String, String> {
+pub(crate) fn workspace_root(
+    params: &protocol::InitializeParams,
+) -> Result<String, InitializeError> {
     if params.workspace_folders.len() > 1 {
-        return Err(
-            "multiple workspace folders are not supported; start one Shopware LSP process per workspace".into(),
-        );
+        return Err(InitializeError::MultipleWorkspaceFolders);
     }
     let value = if let Some(folder) = params.workspace_folders.first() {
         folder.uri.as_str()
@@ -47,12 +83,10 @@ pub(crate) fn workspace_root(params: &protocol::InitializeParams) -> Result<Stri
     } else if !params.root_path.is_empty() {
         params.root_path.as_str()
     } else {
-        return Err("a workspace root is required".into());
+        return Err(InitializeError::MissingWorkspaceRoot);
     };
-    let path =
-        swlsp_uriutil::path(value).map_err(|error| format!("resolve workspace root: {error}"))?;
-    let absolute =
-        filepath::abs(&path).map_err(|error| format!("make workspace root absolute: {error}"))?;
+    let path = swlsp_uriutil::path(value).map_err(InitializeError::ResolveWorkspaceRoot)?;
+    let absolute = filepath::abs(&path).map_err(InitializeError::AbsoluteWorkspaceRoot)?;
     Ok(filepath::clean(&absolute))
 }
 
@@ -65,17 +99,17 @@ impl Server {
         let params: protocol::InitializeParams = decode_params(params)
             .map_err(|error| RpcError::new(codes::PARSE_ERROR, error.message))?;
         self.initialize(ctx, &params)
-            .map_err(|error| RpcError::new(codes::INVALID_PARAMS, error))
+            .map_err(|error| RpcError::new(codes::INVALID_PARAMS, error.to_string()))
     }
 
     pub(crate) fn initialize(
         &self,
         ctx: &Context,
         params: &protocol::InitializeParams,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, InitializeError> {
         let _initializing = lock(&self.initialize_lock);
         if read(&self.session).initialized {
-            return Err("server is already initialized".into());
+            return Err(InitializeError::AlreadyInitialized);
         }
         let root = workspace_root(params)?;
         let options = params.initialization_options.clone();
@@ -100,13 +134,13 @@ impl Server {
             )
         };
         if detection_required && !allow_unsupported && !options.allow_unsupported_project {
-            let detection = swlsp_projectdetect::detect(&root)
-                .map_err(|error| format!("detect project type: {error}"))?;
+            let detection =
+                swlsp_projectdetect::detect(&root).map_err(InitializeError::DetectProject)?;
             if !detection.supported {
-                let unsupported = format!(
-                    "unsupported project root {root}: no Shopware or Symfony project markers found; add {} or allow unsupported projects explicitly",
-                    projectconfig::PROJECT_RELATIVE_PATH
-                );
+                let unsupported = InitializeError::UnsupportedProject {
+                    root: root.clone(),
+                    marker: projectconfig::PROJECT_RELATIVE_PATH,
+                };
                 if options.cli_mode {
                     return Err(unsupported);
                 }
@@ -124,7 +158,7 @@ impl Server {
             projectconfig::load_scopes(&scope_root).map_err(|error| error.to_string())
         });
         self.initialize_configuration(&root, &options)
-            .map_err(|error| format!("load configuration: {error}"))?;
+            .map_err(InitializeError::LoadConfiguration)?;
         {
             let mut session = write(&self.session);
             session.code_action_resolve_support = params
@@ -146,11 +180,10 @@ impl Server {
         if let Some(factory) = factory
             && lock(&self.workspace).is_none()
         {
-            let workspace = factory(ctx, &root, self)
-                .map_err(|error| format!("initialize workspace: {error}"))?;
+            let workspace = factory(ctx, &root, self).map_err(InitializeError::CreateWorkspace)?;
             let Some(scanner) = workspace.scanner() else {
                 let _ = workspace.close();
-                return Err("initialize workspace: factory returned no scanner".into());
+                return Err(InitializeError::MissingScanner);
             };
             scanner.set_on_update(self.index_update_callback());
             *write(&self.scanner) = Some(scanner);
@@ -161,12 +194,12 @@ impl Server {
             .unwrap_or_else(|_| Err("load configuration scopes panicked".to_owned()));
         if let Err(error) = self.install_initial_configuration_scopes(loaded) {
             self.discard_workspace();
-            return Err(format!("load scoped configuration: {error}"));
+            return Err(InitializeError::LoadScopedConfiguration(error));
         }
         if let Err(error) = self.validate_configured_diagnostic_ids() {
             if options.cli_mode {
                 self.discard_workspace();
-                return Err(format!("validate configuration: {error}"));
+                return Err(InitializeError::ValidateConfiguration(error));
             }
             self.join_configuration_error(&error);
             log::warn!("Invalid Shopware LSP configuration: {error}");
@@ -372,7 +405,7 @@ impl Server {
 
     pub(crate) fn handle_force_reindex(&self) -> Result<Value, RpcError> {
         if !self.effective_configuration().indexing.enabled {
-            return Err(RpcError::new(0, "indexing is disabled by configuration"));
+            return Err(RpcError::internal("indexing is disabled by configuration"));
         }
         let suspension = DiagnosticsSuspension::new(self, !self.cli_mode());
         let server = self.clone();
@@ -390,11 +423,11 @@ impl Server {
 
     pub(crate) fn handle_index_stats(&self) -> Result<Value, RpcError> {
         let Some(scanner) = self.scanner() else {
-            return Err(RpcError::new(0, "workspace is not initialized"));
+            return Err(RpcError::internal("workspace is not initialized"));
         };
         let stats = scanner
             .stats()
-            .map_err(|error| RpcError::new(0, error.to_string()))?;
+            .map_err(|error| RpcError::internal(error.to_string()))?;
         crate::server::to_value(&stats)
     }
 

@@ -1,4 +1,4 @@
-//! Route annotation fix (Go `shopware_migration_annotations.go`).
+//! Route annotation fix.
 
 use swlsp_lsp::{BoxError, Context, FixContext, FixId, FixPresentation, QuickFix, RewriteQuickFix};
 use swlsp_lsp_diagnostics::ShopwareMigrationPayload;

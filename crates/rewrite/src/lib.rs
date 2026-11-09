@@ -1,6 +1,6 @@
 //! Validated, lossless source edits compiled from immutable syntax trees.
 //!
-//! Port of Go `internal/rewrite`. Trees are never mutated: callers resolve an
+//! Trees are never mutated: callers resolve an
 //! element in one document snapshot and compile the requested change to byte
 //! edits for that same snapshot. Ranges are byte offsets; conversion to LSP
 //! UTF-16 positions happens only in [`WorkspacePlan::workspace_edit`], which
@@ -20,10 +20,10 @@ pub use handle::{ElementHandle, HandleError};
 /// Errors produced while building or compiling rewrites.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RewriteError {
-    /// Go `ErrInvalidRange`.
+    /// A range outside the source or not on character boundaries.
     #[error("rewrite range is outside the source: {range:?} for source length {source_len}")]
     InvalidRange { range: TextRange, source_len: u32 },
-    /// Go `ErrOverlap`.
+    /// Two edits touch overlapping ranges.
     #[error("rewrite edits overlap: {left:?} and {right:?}")]
     Overlap { left: TextRange, right: TextRange },
     #[error("rewrite {what} URI is empty")]
@@ -39,7 +39,7 @@ pub enum RewriteError {
 }
 
 impl RewriteError {
-    /// The innermost error, unwrapping document scopes (Go `errors.Is`).
+    /// The innermost error, unwrapping document scopes so callers can classify scoped errors.
     pub fn root(&self) -> &RewriteError {
         match self {
             RewriteError::InDocument { source, .. } => source.root(),
@@ -237,8 +237,8 @@ pub fn apply(source: &str, edits: &[Edit]) -> Result<String> {
         builder.replace_range(edit.range, edit.new_text.clone())?;
     }
     let validated = builder.finish()?;
-    // Go slices bytes and would emit invalid UTF-8 for a range inside a
-    // character; Rust strings cannot, so such a range is rejected.
+    // A range inside a character would split it and produce invalid UTF-8,
+    // so such a range is rejected.
     if let Some(edit) = validated.iter().find(|edit| {
         !source.is_char_boundary(usize::from(edit.range.start()))
             || !source.is_char_boundary(usize::from(edit.range.end()))

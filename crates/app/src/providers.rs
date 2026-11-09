@@ -1,5 +1,4 @@
-//! The adapter layer from domain indexes to LSP capabilities (port of Go
-//! `internal/app/providers.go`). Construction stays in `workspace.rs`;
+//! The adapter layer from domain indexes to LSP capabilities. Construction stays in `workspace.rs`;
 //! protocol wiring stays here and in the `providers_*` modules.
 
 use std::sync::Arc;
@@ -14,7 +13,7 @@ use crate::registrar::Registrar;
 use crate::workspace::Services;
 
 /// Registers every provider, inspection, context enricher and document
-/// observer of the workspace, in Go's order.
+/// observer of the workspace in a fixed, deterministic order.
 pub(crate) fn register_features(server: &Registrar<'_>, services: &Services) {
     if server.domain_enabled("administration") {
         register_administration_document_observer(
@@ -44,10 +43,9 @@ pub(crate) fn register_features(server: &Registrar<'_>, services: &Services) {
     crate::providers_actions::register_action_and_command_providers(server, versioning, services);
 }
 
-/// The request's linked PHP analysis (Go `enrichPHPContext`). Rust providers
-/// read the memoized analysis from the document themselves; the enricher
-/// runs it once per request up front, like Go, and publishes the state as a
-/// context value.
+/// The request's linked PHP analysis. Providers read the memoized analysis
+/// from the document themselves; the enricher runs it once per request up
+/// front and publishes the state as a context value.
 pub(crate) fn enrich_php_context(
     ctx: &Context,
     index: &PhpIndex,

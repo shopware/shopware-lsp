@@ -59,7 +59,7 @@ impl StringOrStrings {
     }
 }
 
-/// JSON `null` decodes to the zero value, as in Go.
+/// JSON `null` decodes to the default value.
 fn null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: serde::Deserializer<'de>,

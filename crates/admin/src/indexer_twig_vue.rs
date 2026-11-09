@@ -1,12 +1,10 @@
-//! Twig/Vue template scope resolution against the index (port of Go
-//! `indexer_twig_vue.go`).
+//! Twig/Vue template scope resolution against the index.
 //!
-//! Go's variadic `templatePath ...string` parameters become a plain
-//! `template_path: &str` where an empty string means "no template".
+//! A `template_path` of `""` means "no template".
 
 use crate::*;
 
-/// One resolved receiver step (Go returns this as a 5-tuple).
+/// One resolved receiver step.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ResolvedReceiverSegment {
     pub type_: String,
@@ -230,7 +228,7 @@ pub(crate) fn common_twig_scoped_slot_contract(
     };
     result.file_path = first.slot.file_path.clone();
     result.line = first.slot.line;
-    // `None` mirrors Go's nil slice once any payload type is missing.
+    // `None` once any payload type is missing.
     let mut payload_types: Option<Vec<String>> = Some(Vec::with_capacity(contracts.len()));
     for contract in contracts {
         result.members_complete = result.members_complete && contract.slot.members_complete;
@@ -244,7 +242,7 @@ pub(crate) fn common_twig_scoped_slot_contract(
             types.push(contract.slot.payload_type.clone());
         }
     }
-    // Go: len(nil) == len(contracts) is false for any non-empty set.
+    // Merge only when every contract declares a payload type.
     if let Some(types) = payload_types
         && types.len() == contracts.len()
     {
@@ -1143,7 +1141,7 @@ impl AdminComponentIndexer {
     }
 }
 
-/// Go's recursive `resolve` closure in `resolveTwigVueIndexExpressionType`.
+/// Resolves an index expression recursively against `known` variable types.
 fn resolve_index_expression(value: &str, known: &HashMap<String, String>) -> String {
     let value = unwrap_vue_expression_parentheses(value.trim());
     if value.is_empty() {

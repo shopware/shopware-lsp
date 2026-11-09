@@ -1,5 +1,5 @@
-//! Go-to-definition for Shopware Administration Vue components, registries
-//! and template members (port of Go `admin_definition.go`).
+//! Go-to-definition for Shopware Administration Vue components, registries and
+//! template members.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -247,8 +247,7 @@ impl AdminDefinitionProvider {
         result
     }
 
-    /// `None` when the cursor is not on a Vue expression member access
-    /// (Go `handled == false`).
+    /// `None` when the cursor is not on a Vue expression member access.
     fn twig_vue_member_definition(
         &self,
         request: &DefinitionRequest,
@@ -1149,8 +1148,8 @@ fn line_location(file_path: &str, line: u32) -> Location {
     start_of_line_location(file_path, line.max(1))
 }
 
-/// Go converts `line - 1` without clamping; a zero line would be -1 there and
-/// saturates to 0 here (lines are unsigned in the protocol types).
+/// A location at the start of a one-based line. Line 0 saturates to the
+/// first line because protocol lines are unsigned.
 fn start_of_line_location(file_path: &str, line: u32) -> Location {
     let position = Position {
         line: line.saturating_sub(1),

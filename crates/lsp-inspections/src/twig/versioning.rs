@@ -1,5 +1,4 @@
-//! Go `twig_versioning.go`: Shopware Twig block versioning inspection and its
-//! quick fixes.
+//! Shopware Twig block versioning inspection and its quick fixes.
 
 use std::sync::Arc;
 
@@ -16,7 +15,6 @@ use swlsp_lsp_diagnostics::{
     TWIG_VERSIONING_OUTDATED_CODE, TwigVersioningAnalyzer, TwigVersioningPayload,
 };
 use swlsp_lsp_protocol as protocol;
-use swlsp_php_types::go_quote;
 use swlsp_rewrite::{Builder, DocumentPlan, WorkspacePlan};
 use swlsp_syntax::{TextRange, TextSize};
 use swlsp_twig::VersioningService;
@@ -27,7 +25,6 @@ pub(crate) const TWIG_VERSION_COMMENT_FIX_ID: &str = "twig-version-comment";
 pub(crate) const TWIG_BLOCK_DIFF_FIX_ID: &str = "twig-block-diff";
 pub(crate) const TWIG_PARENT_DELEGATION_FIX_ID: &str = "twig-parent-delegation";
 
-/// Go `NewTwigVersioning`.
 pub fn new_twig_versioning(versioning: Option<Arc<VersioningService>>) -> Arc<dyn Inspection> {
     let problem = |id: &str, severity, disabled_by_default| ProblemDefinition {
         id: id.into(),
@@ -207,8 +204,8 @@ impl RewriteQuickFix for TwigParentDelegationFix {
             versioning.resolve_document(&path, source, &payload.block_name)?;
         if swlsp_twig::redundant_block_override(&block, &resolution).is_none() {
             return Err(format!(
-                "twig block {} no longer duplicates its resolved parent",
-                go_quote(&payload.block_name)
+                "twig block {:?} no longer duplicates its resolved parent",
+                payload.block_name
             )
             .into());
         }
@@ -217,8 +214,8 @@ impl RewriteQuickFix for TwigParentDelegationFix {
             .filter(|(body, _)| !body.trim().is_empty() && !swlsp_twig::is_parent_delegation(body))
         else {
             return Err(format!(
-                "twig block {} no longer has replaceable duplicate content",
-                go_quote(&payload.block_name)
+                "twig block {:?} no longer has replaceable duplicate content",
+                payload.block_name
             )
             .into());
         };
@@ -226,8 +223,8 @@ impl RewriteQuickFix for TwigParentDelegationFix {
         let end = u32::from(block.range.start()) + u32::from(relative.end());
         if start > end || end as usize > source.len() {
             return Err(format!(
-                "twig block {} body is outside the document",
-                go_quote(&payload.block_name)
+                "twig block {:?} body is outside the document",
+                payload.block_name
             )
             .into());
         }
@@ -249,8 +246,7 @@ impl RewriteQuickFix for TwigParentDelegationFix {
     }
 }
 
-/// Go `twigCommentRemovalRange`: the whole line when the comment is alone on
-/// it, otherwise the comment.
+/// The whole line when the comment is alone on it, otherwise the comment.
 fn twig_comment_removal_range(source: &str, range: TextRange) -> TextRange {
     let start = u32::from(range.start()) as usize;
     let end = u32::from(range.end()) as usize;

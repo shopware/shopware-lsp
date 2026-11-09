@@ -46,7 +46,7 @@ impl<'a> Occurrences<'a> {
     }
 
     /// `expression` and every node beneath it (the expression itself twice,
-    /// like Go, which is harmless).
+    /// which is harmless).
     fn add_tree(&mut self, expression: &SyntaxNode) {
         self.add(expression);
         for node in expression.descendants() {

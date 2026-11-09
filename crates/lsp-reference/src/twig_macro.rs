@@ -1,10 +1,10 @@
-//! Twig macro references (port of `twig_macro_reference.go`).
+//! Twig macro references.
 
 use std::sync::Arc;
 
 use swlsp_lsp::{Context, ProviderResult, ReferenceRequest, ReferencesProvider};
 use swlsp_lsp_protocol as protocol;
-use swlsp_php_types::equal_fold;
+use swlsp_textutil::eq_ignore_case;
 use swlsp_twig::{
     MacroReference, MacroReferenceRole, TwigIndexer, macro_reference_at,
     macro_references_in_document,
@@ -79,7 +79,7 @@ impl ReferencesProvider for TwigMacroReferenceProvider {
 }
 
 fn same_macro_reference(left: &MacroReference, right: &MacroReference) -> bool {
-    equal_fold(&left.name, &right.name)
+    eq_ignore_case(&left.name, &right.name)
         && left
             .templates
             .iter()

@@ -1,4 +1,4 @@
-//! Shopware feature-flag declarations (port of Go `internal/feature`).
+//! Shopware feature-flag declarations.
 
 mod indexer;
 
@@ -18,19 +18,12 @@ pub struct Feature {
     pub line: u32,
 }
 
-/// A feature file without any `name:` entry (Go: "could not find flags node").
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// A feature file without any `name:` entry.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("could not find flags node in file: {file}")]
 pub struct MissingFeatures {
     pub file: String,
 }
-
-impl std::fmt::Display for MissingFeatures {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "could not find flags node in file: {}", self.file)
-    }
-}
-
-impl std::error::Error for MissingFeatures {}
 
 /// Parses `document` and extracts its feature flags.
 pub fn parse_feature_file(
@@ -43,7 +36,7 @@ pub fn parse_feature_file(
 }
 
 /// Collects every non-null scalar value of a `name:` pair, in source order.
-/// A file without any is an error, like Go.
+/// A file without any is an error.
 pub fn parse_feature_tree(
     tree: &Tree,
     line_index: &LineIndex,

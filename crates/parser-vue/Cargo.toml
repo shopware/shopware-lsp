@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 swlsp-syntax.workspace = true
+swlsp-textutil = { path = "../textutil" }
 rowan.workspace = true
 swlsp-parser-js = { path = "../parser-js" }
 swlsp-parser-scss = { path = "../parser-scss" }

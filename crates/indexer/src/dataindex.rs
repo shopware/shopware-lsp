@@ -1,5 +1,4 @@
-//! Generic namespaced repository over the shared workspace store
-//! (Go `DataIndexer[T]`).
+//! Generic namespaced repository over the shared workspace store.
 //!
 //! Values are MessagePack-encoded with field names (so `#[serde(default)]`
 //! and `skip_serializing_if` keep working) and stored per `(namespace,

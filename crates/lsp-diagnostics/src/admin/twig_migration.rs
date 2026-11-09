@@ -1,5 +1,4 @@
-//! Go `admin_twig_migration.go`: Shopware 6.7 `sw-*` → `mt-*` component
-//! migrations.
+//! Shopware 6.7 `sw-*` → `mt-*` component migrations.
 
 use std::sync::Arc;
 
@@ -10,11 +9,11 @@ use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
 use swlsp_lsp_protocol::{DiagnosticSeverity, DiagnosticTag};
 use swlsp_parser_twig::ast::{AstNode, HtmlTag};
 use swlsp_parser_twig::{query as twigquery, syntax as twigsyntax};
-use swlsp_php_types::go_to_lower;
 use swlsp_shopware::ResolvedVersion;
 use swlsp_syntax::SyntaxElement;
+use swlsp_textutil::lowercase;
+use swlsp_uriutil::filepath;
 
-use super::go_ext;
 use crate::ProblemAnalyzer;
 
 /// The payload of an `admin.twig.migration.*` problem.
@@ -31,7 +30,6 @@ pub struct AdminTwigMigrationPayload {
     pub safe: bool,
 }
 
-/// Go `AdminTwigMigrationAnalyzer`.
 #[derive(Clone, Debug, Default)]
 pub struct AdminTwigMigrationAnalyzer {
     version: ResolvedVersion,
@@ -60,7 +58,7 @@ impl ProblemAnalyzer for AdminTwigMigrationAnalyzer {
             return Ok(Vec::new());
         };
         if !document.uri.contains("Resources/app/administration")
-            || go_to_lower(go_ext(&document.uri)) != ".twig"
+            || lowercase(filepath::ext(&document.uri)) != ".twig"
         {
             return Ok(Vec::new());
         }

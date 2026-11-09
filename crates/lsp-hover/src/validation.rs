@@ -12,7 +12,7 @@ pub struct ValidationHoverProvider {
 }
 
 impl ValidationHoverProvider {
-    /// `php` stands in for Go's request-context PHP enrichment.
+    /// `php` supplies the request's PHP semantic context.
     pub fn new(php: Option<PhpIndex>) -> Self {
         Self { php }
     }

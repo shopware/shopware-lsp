@@ -1,5 +1,4 @@
-//! Missing and deprecated route names in PHP and Twig (Go
-//! `route_diagnostics.go`).
+//! Missing and deprecated route names in PHP and Twig.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -16,10 +15,10 @@ use swlsp_syntax::{SyntaxNode, TextRange};
 
 use super::controller::DEPRECATED_CONTROLLER_CODE;
 use super::{deprecated_tags, lower_ext, problem, similar_value};
+use crate::LookupError;
 use crate::ProblemAnalyzer;
 use crate::common::value_node_text_range;
 
-/// Go `RouteAnalyzer`.
 pub struct RouteAnalyzer {
     route_index: Option<Arc<RouteIndexer>>,
     service_index: Option<Arc<ServiceIndex>>,
@@ -126,9 +125,9 @@ impl RouteAnalyzer {
             if !swlsp_symfony::is_static_route_name(&name) {
                 continue;
             }
-            let routes = route_index
-                .get_route(&name)
-                .map_err(|error| format!("query Symfony route {name:?}: {error}"))?;
+            let routes = route_index.get_route(&name).map_err(|error| {
+                LookupError::new(format!("query Symfony route {name:?}"), error)
+            })?;
             if !routes.is_empty() {
                 if self.route_controller_deprecated(&routes)? {
                     let mut problem = problem(
@@ -153,7 +152,7 @@ impl RouteAnalyzer {
                     .map(|php| php as &dyn ClassConstantLookup);
                 let all_routes = route_index
                     .resolved_routes(lookup)
-                    .map_err(|error| format!("query Symfony routes: {error}"))?;
+                    .map_err(|error| LookupError::new("query Symfony routes", error))?;
                 let mut seen = HashSet::new();
                 for route in all_routes {
                     if route.name.is_empty() || !seen.insert(route.name.clone()) {
@@ -194,7 +193,10 @@ impl RouteAnalyzer {
             let resolution =
                 swlsp_symfony::resolve_controller_reference(&reference, Some(services), Some(php))
                     .map_err(|error| {
-                        format!("resolve controller for route {:?}: {error}", route.name)
+                        LookupError::new(
+                            format!("resolve controller for route {:?}", route.name),
+                            error,
+                        )
                     })?;
             if resolution.deprecated() {
                 return Ok(true);

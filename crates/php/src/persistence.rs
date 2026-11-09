@@ -1,13 +1,10 @@
-//! Persisted compact workspace graphs (port of `persistence.go`).
+//! Persisted compact workspace graphs.
 //!
 //! A repository value is a small MessagePack envelope `{format, payload}`
 //! whose payload is the LZ4-compressed binary encoding of one
 //! [`WorkspaceGraph`] (`swlsp-php-semantic`'s own cache format). Restoration
 //! parses the envelope in place, so the compressed payload is borrowed from
 //! the SQLite row instead of copied.
-//!
-//! Rust caches are never shared with Go (the cache version marker differs),
-//! so only the Rust format is accepted.
 
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -78,20 +75,44 @@ impl<'de> Deserialize<'de> for Payload {
     }
 }
 
-/// A persistence failure with operation context.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PersistError(pub String);
-
-impl fmt::Display for PersistError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
+/// A failure persisting or restoring a workspace graph.
+#[derive(Debug, thiserror::Error)]
+pub enum PersistError {
+    #[error("workspace graph is required")]
+    MissingGraph,
+    #[error("unsupported workspace graph format {0}")]
+    UnsupportedFormat(u8),
+    #[error("workspace graph exceeds {MAX_PERSISTED_SEMANTIC_VALUE_SIZE} bytes")]
+    TooLarge,
+    #[error("open workspace graph: {0}")]
+    Decompress(#[from] lz4_flex::block::DecompressError),
+    #[error("open workspace graph: unexpected end of compressed data")]
+    Truncated,
+    #[error(transparent)]
+    Decode(#[from] swlsp_php_semantic::DecodeError),
+    #[error("decode workspace graph envelope: {0}")]
+    Envelope(#[from] EnvelopeError),
 }
 
-impl std::error::Error for PersistError {}
-
-fn persist_error<T>(message: impl Into<String>) -> Result<T, PersistError> {
-    Err(PersistError(message.into()))
+/// A malformed `{format, payload}` repository envelope.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum EnvelopeError {
+    #[error("unexpected end of data")]
+    UnexpectedEnd,
+    #[error("expected {expected}, got code 0x{code:x}")]
+    UnexpectedCode { expected: &'static str, code: u8 },
+    #[error("expected 2 fields, got {0}")]
+    FieldCount(u64),
+    #[error("duplicate {0}")]
+    DuplicateField(&'static str),
+    #[error("format {0} exceeds uint8")]
+    FormatOutOfRange(u64),
+    #[error("unknown field {0:?}")]
+    UnknownField(String),
+    #[error("missing required field")]
+    MissingField,
+    #[error("{0} trailing bytes")]
+    TrailingBytes(usize),
 }
 
 thread_local! {
@@ -131,19 +152,15 @@ fn compress(input: &[u8]) -> Vec<u8> {
 /// Decompresses into `buffer`, rejecting payloads whose declared size
 /// exceeds [`MAX_PERSISTED_SEMANTIC_VALUE_SIZE`] before allocating.
 fn decompress<'a>(buffer: &'a mut Vec<u8>, payload: &[u8]) -> Result<&'a [u8], PersistError> {
-    let (size, compressed) = lz4_flex::block::uncompressed_size(payload)
-        .map_err(|err| PersistError(format!("open workspace graph: {err}")))?;
+    let (size, compressed) = lz4_flex::block::uncompressed_size(payload)?;
     if size > MAX_PERSISTED_SEMANTIC_VALUE_SIZE {
-        return persist_error(format!(
-            "workspace graph exceeds {MAX_PERSISTED_SEMANTIC_VALUE_SIZE} bytes"
-        ));
+        return Err(PersistError::TooLarge);
     }
     buffer.clear();
     buffer.resize(size, 0);
-    let written = lz4_flex::block::decompress_into(compressed, buffer)
-        .map_err(|err| PersistError(format!("open workspace graph: {err}")))?;
+    let written = lz4_flex::block::decompress_into(compressed, buffer)?;
     if written != size {
-        return persist_error("open workspace graph: unexpected end of compressed data");
+        return Err(PersistError::Truncated);
     }
     Ok(buffer)
 }
@@ -153,7 +170,7 @@ pub fn encode_workspace_graph(
     graph: &WorkspaceGraph,
 ) -> Result<PersistedWorkspaceGraph, PersistError> {
     if graph.path().is_empty() {
-        return persist_error("workspace graph is required");
+        return Err(PersistError::MissingGraph);
     }
     let encoded = graph.encode();
     let payload = compress(&encoded);
@@ -195,10 +212,7 @@ impl BorrowedWorkspaceGraph<'_> {
         loader: Option<std::sync::Arc<dyn swlsp_php_semantic::WorkspaceGraphLoader>>,
     ) -> Result<WorkspaceGraph, PersistError> {
         if self.format != PERSISTED_WORKSPACE_GRAPH_FORMAT {
-            return persist_error(format!(
-                "unsupported workspace graph format {}",
-                self.format
-            ));
+            return Err(PersistError::UnsupportedFormat(self.format));
         }
         with_buffer(|buffer| {
             let bytes = decompress(buffer, self.payload)?;
@@ -206,7 +220,7 @@ impl BorrowedWorkspaceGraph<'_> {
                 Some(loader) => decoder.decode_summary(bytes, loader),
                 None => decoder.decode(bytes),
             };
-            result.map_err(|err| PersistError(err.to_string()))
+            Ok(result?)
         })
     }
 }
@@ -229,55 +243,46 @@ impl PersistedWorkspaceGraph {
 pub fn decode_persisted_workspace_graph_borrowed(
     data: &[u8],
 ) -> Result<BorrowedWorkspaceGraph<'_>, PersistError> {
+    Ok(read_envelope(data)?)
+}
+
+fn read_envelope(data: &[u8]) -> Result<BorrowedWorkspaceGraph<'_>, EnvelopeError> {
     let mut cursor = Cursor { data, offset: 0 };
-    let context =
-        |message: String| PersistError(format!("decode workspace graph envelope: {message}"));
-    let field_count = cursor.map_length().map_err(context)?;
+    let field_count = cursor.map_length()?;
     if field_count != 2 {
-        return Err(context(format!("expected 2 fields, got {field_count}")));
+        return Err(EnvelopeError::FieldCount(field_count));
     }
     let mut format = None;
     let mut payload = None;
     for _ in 0..field_count {
-        let key = cursor
-            .bytes(false)
-            .map_err(|err| PersistError(format!("decode workspace graph envelope key: {err}")))?;
-        match key {
+        match cursor.bytes(false)? {
             b"format" => {
                 if format.is_some() {
-                    return Err(context("duplicate format".to_owned()));
+                    return Err(EnvelopeError::DuplicateField("format"));
                 }
-                let value = cursor.uint().map_err(|err| {
-                    PersistError(format!("decode workspace graph envelope format: {err}"))
-                })?;
-                let value = u8::try_from(value)
-                    .map_err(|_| context(format!("format {value} exceeds uint8")))?;
+                let value = cursor.uint()?;
+                let value =
+                    u8::try_from(value).map_err(|_| EnvelopeError::FormatOutOfRange(value))?;
                 format = Some(value);
             }
             b"payload" => {
                 if payload.is_some() {
-                    return Err(context("duplicate payload".to_owned()));
+                    return Err(EnvelopeError::DuplicateField("payload"));
                 }
-                payload = Some(cursor.bytes(true).map_err(|err| {
-                    PersistError(format!("decode workspace graph envelope payload: {err}"))
-                })?);
+                payload = Some(cursor.bytes(true)?);
             }
             other => {
-                return Err(context(format!(
-                    "unknown field {:?}",
-                    String::from_utf8_lossy(other)
-                )));
+                return Err(EnvelopeError::UnknownField(
+                    String::from_utf8_lossy(other).into_owned(),
+                ));
             }
         }
     }
     let (Some(format), Some(payload)) = (format, payload) else {
-        return Err(context("missing required field".to_owned()));
+        return Err(EnvelopeError::MissingField);
     };
     if cursor.offset != data.len() {
-        return Err(context(format!(
-            "{} trailing bytes",
-            data.len() - cursor.offset
-        )));
+        return Err(EnvelopeError::TrailingBytes(data.len() - cursor.offset));
     }
     Ok(BorrowedWorkspaceGraph { format, payload })
 }
@@ -288,42 +293,45 @@ struct Cursor<'a> {
 }
 
 impl<'a> Cursor<'a> {
-    fn byte(&mut self) -> Result<u8, String> {
+    fn byte(&mut self) -> Result<u8, EnvelopeError> {
         let value = *self
             .data
             .get(self.offset)
-            .ok_or_else(|| "unexpected EOF".to_owned())?;
+            .ok_or(EnvelopeError::UnexpectedEnd)?;
         self.offset += 1;
         Ok(value)
     }
 
-    fn take(&mut self, length: u64) -> Result<&'a [u8], String> {
+    fn take(&mut self, length: u64) -> Result<&'a [u8], EnvelopeError> {
         let remaining = self.data.len() - self.offset;
         if length > remaining as u64 {
-            return Err("unexpected EOF".to_owned());
+            return Err(EnvelopeError::UnexpectedEnd);
         }
         let start = self.offset;
         self.offset += length as usize;
         Ok(&self.data[start..self.offset])
     }
 
-    fn fixed(&mut self, width: usize) -> Result<u64, String> {
+    fn fixed(&mut self, width: usize) -> Result<u64, EnvelopeError> {
         let bytes = self.take(width as u64)?;
         Ok(bytes
             .iter()
             .fold(0u64, |value, byte| (value << 8) | u64::from(*byte)))
     }
 
-    fn map_length(&mut self) -> Result<u64, String> {
+    fn map_length(&mut self) -> Result<u64, EnvelopeError> {
         match self.byte()? {
             code @ 0x80..=0x8f => Ok(u64::from(code & 0x0f)),
             0xde => self.fixed(2),
             0xdf => self.fixed(4),
-            code => Err(format!("expected map, got code 0x{code:x}")),
+            code => Err(EnvelopeError::UnexpectedCode {
+                expected: "map",
+                code,
+            }),
         }
     }
 
-    fn bytes(&mut self, allow_binary: bool) -> Result<&'a [u8], String> {
+    fn bytes(&mut self, allow_binary: bool) -> Result<&'a [u8], EnvelopeError> {
         let code = self.byte()?;
         let length = match code {
             0xc0 if allow_binary => return Ok(&[]),
@@ -334,19 +342,27 @@ impl<'a> Cursor<'a> {
             0xc4 if allow_binary => self.fixed(1)?,
             0xc5 if allow_binary => self.fixed(2)?,
             0xc6 if allow_binary => self.fixed(4)?,
-            _ => return Err(format!("expected string or binary, got code 0x{code:x}")),
+            _ => {
+                return Err(EnvelopeError::UnexpectedCode {
+                    expected: "string or binary",
+                    code,
+                });
+            }
         };
         self.take(length)
     }
 
-    fn uint(&mut self) -> Result<u64, String> {
+    fn uint(&mut self) -> Result<u64, EnvelopeError> {
         match self.byte()? {
             code @ 0x00..=0x7f => Ok(u64::from(code)),
             0xcc => self.fixed(1),
             0xcd => self.fixed(2),
             0xce => self.fixed(4),
             0xcf => self.fixed(8),
-            code => Err(format!("expected unsigned integer, got code 0x{code:x}")),
+            code => Err(EnvelopeError::UnexpectedCode {
+                expected: "unsigned integer",
+                code,
+            }),
         }
     }
 }

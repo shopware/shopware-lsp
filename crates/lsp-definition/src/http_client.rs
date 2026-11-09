@@ -1,5 +1,4 @@
-//! Go `http_client_definition.go`: HttpClient option keys navigate to
-//! `HttpClientInterface::OPTIONS_DEFAULTS`.
+//! HttpClient option keys navigate to `HttpClientInterface::OPTIONS_DEFAULTS`.
 
 use std::collections::HashSet;
 

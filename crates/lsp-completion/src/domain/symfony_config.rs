@@ -1,4 +1,4 @@
-//! Symfony configuration root names (Go `symfony_config_completion.go`).
+//! Symfony configuration root names.
 
 use std::sync::Arc;
 

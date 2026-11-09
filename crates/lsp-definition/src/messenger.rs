@@ -1,7 +1,5 @@
-//! Go `messenger_definition.go`: Messenger message classes and handler
-//! methods referenced from PHP and service configuration.
-
-use std::sync::Arc;
+//! Messenger message classes and handler methods referenced from PHP and
+//! service configuration.
 
 use swlsp_lsp::{Context, DefinitionRequest, GotoDefinitionProvider};
 use swlsp_lsp_protocol as protocol;
@@ -13,15 +11,12 @@ use crate::php_common::php_context;
 
 pub struct MessengerDefinitionProvider {
     php: Option<PhpIndex>,
-    /// Accepted for parity with Go's optional index argument; definitions
-    /// are resolved from the PHP index alone.
-    #[allow(dead_code)]
-    index: Option<Arc<swlsp_messenger::Index>>,
 }
 
 impl MessengerDefinitionProvider {
-    pub fn new(php: Option<PhpIndex>, index: Option<Arc<swlsp_messenger::Index>>) -> Self {
-        Self { php, index }
+    /// Definitions are resolved from the PHP index alone.
+    pub fn new(php: Option<PhpIndex>) -> Self {
+        Self { php }
     }
 }
 

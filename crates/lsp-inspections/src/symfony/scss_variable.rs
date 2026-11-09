@@ -1,4 +1,4 @@
-//! Go `scss_variable.go`.
+//! Unknown SCSS variable inspection.
 
 use std::sync::Arc;
 
@@ -15,8 +15,8 @@ use swlsp_lsp_protocol::DiagnosticSeverity;
 
 use crate::BoundInspection;
 
-/// Go `NewSCSSVariable`: unknown SCSS variables, checked only once the
-/// workspace symbol catalog reports a complete index.
+/// Unknown SCSS variables, checked only once the workspace symbol catalog
+/// reports a complete index.
 pub fn new_scss_variable(
     index: Option<Arc<swlsp_style::Index>>,
     readiness: Option<Arc<WorkspaceSymbolCatalog>>,

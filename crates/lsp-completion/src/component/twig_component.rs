@@ -1,5 +1,4 @@
-//! Twig component names, props, blocks and Live actions (Go
-//! `twig_component_completion.go`).
+//! Twig component names, props, blocks and Live actions.
 
 use std::collections::{BTreeMap, HashSet};
 use std::sync::{Arc, LazyLock};
@@ -7,34 +6,31 @@ use std::sync::{Arc, LazyLock};
 use regex::Regex;
 use swlsp_lsp::{CompletionProvider, CompletionRequest, Context};
 use swlsp_lsp_protocol as protocol;
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::{LineIndex, TextRange, TextSize};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 use swlsp_twigcomponent::Index;
 
 use super::util::{
-    go_regex, go_to_upper, kind, last_index_whitespace, request_offset, request_path, snippet,
-    source_before,
+    ascii_regex, kind, last_index_whitespace, request_offset, request_path, snippet, source_before,
 };
-use crate::common::{
-    component_prop_detail, go_to_lower, protocol_range, sort_completion_items, text_edit,
-};
+use crate::common::{component_prop_detail, protocol_range, sort_completion_items, text_edit};
 
 static COMPONENT_FUNCTION: LazyLock<Regex> =
-    LazyLock::new(|| go_regex(r#"(?is)\bcomponent\s*\(\s*['"][A-Za-z0-9_:-]*$"#));
+    LazyLock::new(|| ascii_regex(r#"(?is)\bcomponent\s*\(\s*['"][A-Za-z0-9_:-]*$"#));
 static COMPONENT_BLOCK: LazyLock<Regex> =
-    LazyLock::new(|| go_regex(r#"(?is)\{%-?\s*component\s+(?:['"])?[A-Za-z0-9_:-]*$"#));
+    LazyLock::new(|| ascii_regex(r#"(?is)\{%-?\s*component\s+(?:['"])?[A-Za-z0-9_:-]*$"#));
 static COMPONENT_HTML: LazyLock<Regex> =
-    LazyLock::new(|| go_regex(r"(?is)</?twig:[A-Za-z0-9_:-]*$"));
+    LazyLock::new(|| ascii_regex(r"(?is)</?twig:[A-Za-z0-9_:-]*$"));
 static COMPONENT_HTML_PROPS: LazyLock<Regex> =
-    LazyLock::new(|| go_regex(r"(?is)<twig:([A-Za-z_][A-Za-z0-9_:-]*)\s+([^>]*)$"));
+    LazyLock::new(|| ascii_regex(r"(?is)<twig:([A-Za-z_][A-Za-z0-9_:-]*)\s+([^>]*)$"));
 static COMPONENT_HTML_ATTRIBUTE: LazyLock<Regex> =
-    LazyLock::new(|| go_regex(r"(?:^|\s):?([A-Za-z_][A-Za-z0-9_-]*)\s*="));
+    LazyLock::new(|| ascii_regex(r"(?:^|\s):?([A-Za-z_][A-Za-z0-9_-]*)\s*="));
 static COMPONENT_BLOCK_NAME: LazyLock<Regex> =
-    LazyLock::new(|| go_regex(r#"(?is)<twig:block\s+[^>]*\bname\s*=\s*['"][A-Za-z0-9_-]*$"#));
+    LazyLock::new(|| ascii_regex(r#"(?is)<twig:block\s+[^>]*\bname\s*=\s*['"][A-Za-z0-9_-]*$"#));
 static LIVE_ACTION_ATTRIBUTE: LazyLock<Regex> =
-    LazyLock::new(|| go_regex(r#"(?is)\bdata-live-action-param\s*=\s*["']([^"']*)["']"#));
+    LazyLock::new(|| ascii_regex(r#"(?is)\bdata-live-action-param\s*=\s*["']([^"']*)["']"#));
 pub(super) static LIVE_ARGUMENT_ATTRIBUTE: LazyLock<Regex> =
-    LazyLock::new(|| go_regex(r"(?i)\bdata-live-([a-z0-9_-]+)-param\s*="));
+    LazyLock::new(|| ascii_regex(r"(?i)\bdata-live-([a-z0-9_-]+)-param\s*="));
 
 pub struct TwigComponentCompletionProvider {
     index: Option<Arc<Index>>,
@@ -58,7 +54,7 @@ impl CompletionProvider for TwigComponentCompletionProvider {
         let Some(line_index) = request.line_index() else {
             return Vec::new();
         };
-        if !go_to_lower(&request.params.text_document.uri).ends_with(".twig") {
+        if !lowercase(&request.params.text_document.uri).ends_with(".twig") {
             return Vec::new();
         }
         let Some(offset) = request_offset(request) else {
@@ -145,7 +141,7 @@ fn live_action_completions(index: &Index, path: &str) -> Vec<protocol::Completio
     let mut items = Vec::with_capacity(actions.len());
     let mut seen = HashSet::new();
     for action in actions {
-        if !seen.insert(go_to_lower(&action.name)) {
+        if !seen.insert(lowercase(&action.name)) {
             continue;
         }
         let mut detail = format!("{}::{}()", action.class, action.method);
@@ -191,15 +187,15 @@ fn live_action_hash_argument_completions(
     let Ok(actions) = index.live_actions_for_template(path) else {
         return Vec::new();
     };
-    let configured: HashSet<String> = present.iter().map(|name| go_to_lower(name)).collect();
+    let configured: HashSet<String> = present.iter().map(|name| lowercase(name)).collect();
     let mut seen = HashSet::new();
     let mut items = Vec::new();
     for action in &actions {
-        if !equal_fold(&action.name, action_name) {
+        if !eq_ignore_case(&action.name, action_name) {
             continue;
         }
         for parameter in &action.parameters {
-            let key = go_to_lower(&parameter.name);
+            let key = lowercase(&parameter.name);
             if configured.contains(&key) || !seen.insert(key) {
                 continue;
             }
@@ -241,7 +237,7 @@ fn live_action_argument_completion_context(
     let fragment = &before[open..];
     let current_start = last_index_whitespace(fragment)? + 1;
     let current = &fragment[current_start..];
-    if !go_to_lower(current).starts_with("data-live-") || current.contains('=') {
+    if !lowercase(current).starts_with("data-live-") || current.contains('=') {
         return None;
     }
     let action_match = LIVE_ACTION_ATTRIBUTE.captures(fragment)?;
@@ -257,10 +253,10 @@ fn live_action_argument_completion_context(
         let Some(name) = captures.get(1) else {
             continue;
         };
-        if equal_fold(name.as_str(), "action") {
+        if eq_ignore_case(name.as_str(), "action") {
             continue;
         }
-        present.insert(go_to_lower(&live_argument_name(name.as_str())));
+        present.insert(lowercase(&live_argument_name(name.as_str())));
     }
     Some(LiveArgumentContext {
         name: action.to_string(),
@@ -287,11 +283,11 @@ fn live_action_argument_completions(
     let mut seen = HashSet::new();
     let mut items = Vec::new();
     for action in &actions {
-        if !equal_fold(&action.name, &context.name) {
+        if !eq_ignore_case(&action.name, &context.name) {
             continue;
         }
         for parameter in &action.parameters {
-            let key = go_to_lower(&parameter.name);
+            let key = lowercase(&parameter.name);
             if seen.contains(&key) || context.present.contains(&key) {
                 continue;
             }
@@ -318,7 +314,7 @@ fn live_action_argument_completions(
     items
 }
 
-/// Go `liveArgumentName`: `item-id`/`item_id` → `itemId`.
+/// The Live action argument name of an attribute segment: `item-id`/`item_id` → `itemId`.
 pub(super) fn live_argument_name(value: &str) -> String {
     let segments: Vec<&str> = value
         .split(['-', '_'])
@@ -327,18 +323,18 @@ pub(super) fn live_argument_name(value: &str) -> String {
     let Some(first) = segments.first() else {
         return String::new();
     };
-    let mut result = go_to_lower(first);
+    let mut result = lowercase(first);
     for segment in &segments[1..] {
         let mut chars = segment.chars();
         if let Some(head) = chars.next() {
-            result.push_str(&go_to_upper(head.encode_utf8(&mut [0; 4])));
-            result.push_str(&go_to_lower(chars.as_str()));
+            result.push_str(&swlsp_textutil::uppercase(head.encode_utf8(&mut [0; 4])));
+            result.push_str(&lowercase(chars.as_str()));
         }
     }
     result
 }
 
-/// Go `liveArgumentAttributeSegment`: `itemId` → `item-id`.
+/// The attribute segment of a Live action argument name: `itemId` → `item-id`.
 pub(super) fn live_argument_attribute_segment(value: &str) -> String {
     let mut result = String::with_capacity(value.len() + 4);
     for (index, char) in value.char_indices() {
@@ -395,7 +391,7 @@ fn html_prop_completion_context(before: &str) -> Option<HtmlPropContext> {
     let present = COMPONENT_HTML_ATTRIBUTE
         .captures_iter(attributes)
         .filter_map(|attribute| attribute.get(1))
-        .map(|name| go_to_lower(name.as_str()))
+        .map(|name| lowercase(name.as_str()))
         .collect();
     Some(HtmlPropContext {
         component: captures.get(1)?.as_str().to_string(),
@@ -416,7 +412,7 @@ fn prop_completions(index: &Index, context: &HtmlPropContext) -> Vec<protocol::C
     };
     let mut items = Vec::new();
     for prop in &props {
-        if context.present.contains(&go_to_lower(&prop.name)) {
+        if context.present.contains(&lowercase(&prop.name)) {
             continue;
         }
         let label = if context.dynamic {

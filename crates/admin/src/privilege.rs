@@ -1,4 +1,4 @@
-//! ACL privileges (port of Go `privilege.go`).
+//! ACL privileges.
 
 use crate::*;
 

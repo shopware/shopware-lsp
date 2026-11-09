@@ -1,4 +1,4 @@
-//! Port of `internal/lsp/*_test.go`.
+//! Tests for the LSP core.
 
 mod client_tests;
 mod code_action_tests;

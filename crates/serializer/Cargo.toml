@@ -11,6 +11,7 @@ swlsp-indexer = { path = "../indexer" }
 swlsp-parser-php = { path = "../parser-php" }
 swlsp-php = { path = "../php" }
 swlsp-php-types = { path = "../php-types" }
+swlsp-textutil = { path = "../textutil" }
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]

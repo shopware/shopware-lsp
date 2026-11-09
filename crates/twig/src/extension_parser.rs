@@ -1,5 +1,4 @@
-//! Twig extension functions, filters, tests and operators declared in PHP
-//! (port of `extension_parser.go`).
+//! Twig extension functions, filters, tests and operators declared in PHP.
 
 use std::collections::HashMap;
 
@@ -7,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::*;
 use swlsp_php::NameResolver;
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::{LineIndex, SyntaxNode, SyntaxNodeExt, TextRange};
+use swlsp_textutil::eq_ignore_case;
 
 use crate::global::is_twig_extension_class;
 
@@ -266,7 +265,7 @@ fn argument_expression_by_name_or_position(
         return phpquery::argument_expression(container, position);
     }
     for (index, argument) in arguments.iter().enumerate() {
-        if equal_fold(&phpquery::argument_name(argument), name) {
+        if eq_ignore_case(&phpquery::argument_name(argument), name) {
             return phpquery::argument_expression(container, index);
         }
     }
@@ -318,9 +317,9 @@ fn parse_attribute_twig_callables(
                     .resolve(&phpquery::attribute_name(&attribute))
                     .trim_matches('\\')
                     .to_owned();
-                let is_function = equal_fold(&attribute_name, AS_TWIG_FUNCTION);
-                let is_filter = equal_fold(&attribute_name, AS_TWIG_FILTER);
-                if !is_function && !is_filter && !equal_fold(&attribute_name, AS_TWIG_TEST) {
+                let is_function = eq_ignore_case(&attribute_name, AS_TWIG_FUNCTION);
+                let is_filter = eq_ignore_case(&attribute_name, AS_TWIG_FILTER);
+                if !is_function && !is_filter && !eq_ignore_case(&attribute_name, AS_TWIG_TEST) {
                     continue;
                 }
                 let name = twig_callable_attribute_name(&attribute);
@@ -374,7 +373,7 @@ fn twig_callable_attribute_name(attribute: &SyntaxNode) -> String {
     let mut positional = 0;
     for argument in phpquery::arguments(attribute) {
         let name = phpquery::argument_name(&argument);
-        if !name.is_empty() && !equal_fold(&name, "name") {
+        if !name.is_empty() && !eq_ignore_case(&name, "name") {
             continue;
         }
         if name.is_empty() && positional > 0 {
@@ -402,7 +401,7 @@ fn twig_attribute_callable_deprecation(
     let mut option = CallableDeprecation::default();
     let mut alternative = String::new();
     for argument in phpquery::arguments(attribute) {
-        let name = swlsp_php_types::go_to_lower(&phpquery::argument_name(&argument));
+        let name = swlsp_textutil::lowercase(&phpquery::argument_name(&argument));
         if name.is_empty() {
             continue;
         }
@@ -430,7 +429,7 @@ fn twig_attribute_callable_deprecation(
                 }
                 option.deprecated = true;
                 option.source_range = argument.range_trimmed_trivia();
-                if equal_fold(
+                if eq_ignore_case(
                     last_name_part(&phpquery::object_class_name(&expression)),
                     "DeprecatedCallableInfo",
                 ) {
@@ -461,7 +460,7 @@ fn twig_attribute_callable_deprecation(
 }
 
 fn raw_lower(node: &SyntaxNode) -> String {
-    swlsp_php_types::go_to_lower(node.text().to_string().trim())
+    swlsp_textutil::lowercase(node.text().to_string().trim())
 }
 
 fn twig_attribute_argument_expression(argument: &SyntaxNode) -> Option<SyntaxNode> {
@@ -768,7 +767,7 @@ fn build_method_deprecation_map(class_node: &SyntaxNode) -> DeprecationMap {
         }
         let mut deprecation = CallableDeprecation::default();
         for call in phpquery::calls(&method, &[]) {
-            let call_name = swlsp_php_types::go_to_lower(&phpquery::call_method_name(&call));
+            let call_name = swlsp_textutil::lowercase(&phpquery::call_method_name(&call));
             if call_name != "trigger_deprecation" && !call_name.contains("triggerdeprecation") {
                 continue;
             }
@@ -863,7 +862,7 @@ fn callable_option_deprecation(object: &SyntaxNode) -> CallableDeprecation {
                 }
                 result.deprecated = true;
                 result.source_range = item.range_trimmed_trivia();
-                if equal_fold(
+                if eq_ignore_case(
                     last_name_part(&phpquery::object_class_name(&value)),
                     "DeprecatedCallableInfo",
                 ) {
@@ -912,7 +911,7 @@ fn deprecated_method_alternative(call: &SyntaxNode) -> Option<String> {
     phpquery::calls(call, &[])
         .into_iter()
         .find(|nested| {
-            equal_fold(
+            eq_ignore_case(
                 &phpquery::call_method_name(nested),
                 "deprecatedMethodMessage",
             )
@@ -921,8 +920,8 @@ fn deprecated_method_alternative(call: &SyntaxNode) -> Option<String> {
 }
 
 fn message_deprecates_twig_callable(message: &str, callable: &str) -> bool {
-    let message = swlsp_php_types::go_to_lower(message.trim());
-    let callable = swlsp_php_types::go_to_lower(callable.trim());
+    let message = swlsp_textutil::lowercase(message.trim());
+    let callable = swlsp_textutil::lowercase(callable.trim());
     if message.is_empty()
         || callable.is_empty()
         || !message.contains("deprecated")

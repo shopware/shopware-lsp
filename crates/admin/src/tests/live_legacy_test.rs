@@ -12,7 +12,7 @@ fn s(path: &Path) -> String {
     path.to_str().expect("utf-8 path").to_owned()
 }
 
-/// Go `index.UpdateLiveDocument(path, file.SyntaxTree().Root, source, file.LineIndex())`.
+/// Publishes `source` as the open document at `path`.
 fn update_live(index: &AdminComponentIndexer, path: &str, source: &str) {
     let file = ParsedFile::new(path, source.as_bytes().to_vec());
     let root = file.syntax_tree().expect("syntax tree").root();

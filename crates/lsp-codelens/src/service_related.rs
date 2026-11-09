@@ -6,9 +6,9 @@ use std::sync::Arc;
 use swlsp_lsp::{CodeLensProvider, CodeLensRequest, Context, ProviderResult};
 use swlsp_lsp_protocol::{self as protocol, Range};
 use swlsp_php::PhpIndex;
-use swlsp_php_types::equal_fold;
 use swlsp_symfony::{Service, ServiceIndex};
 use swlsp_syntax::{LineIndex, TextRange};
+use swlsp_textutil::eq_ignore_case;
 
 use crate::{
     cancelled, line_range, lower_ext, related_lens, related_protocol_range, related_source_line,
@@ -139,10 +139,10 @@ fn service_reverse_lenses(
     let mut decorators = Vec::new();
     let mut children = Vec::new();
     for candidate in definitions {
-        if equal_fold(&candidate.decorates, &service.id) {
+        if eq_ignore_case(&candidate.decorates, &service.id) {
             decorators.push(service_source_target(candidate));
         }
-        if equal_fold(&candidate.parent, &service.id) {
+        if eq_ignore_case(&candidate.parent, &service.id) {
             children.push(service_source_target(candidate));
         }
     }
@@ -175,7 +175,7 @@ fn service_definition_targets(definitions: &[Service], id: &str) -> Vec<String> 
     unique_related_targets(
         definitions
             .iter()
-            .filter(|service| equal_fold(&service.id, id))
+            .filter(|service| eq_ignore_case(&service.id, id))
             .map(service_source_target)
             .collect(),
     )

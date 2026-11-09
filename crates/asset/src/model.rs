@@ -15,7 +15,7 @@ pub enum Kind {
 }
 
 impl Kind {
-    /// The Go enum value, used in persisted keys.
+    /// The stable numeric value used in persisted keys.
     pub(crate) fn ordinal(self) -> u8 {
         self as u8
     }

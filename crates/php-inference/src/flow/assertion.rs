@@ -1,5 +1,4 @@
-//! PHPDoc assertion contracts and class identity narrowing (port of
-//! `flow_assertion.go`).
+//! PHPDoc assertion contracts and class identity narrowing.
 
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;

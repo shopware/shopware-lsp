@@ -1,4 +1,4 @@
-//! Port of Go `internal/lsp/hover/admin_hover_test.go`.
+//! Administration hover: components, props, registries and template members.
 
 use std::sync::Arc;
 
@@ -61,11 +61,11 @@ impl Fixture {
     }
 }
 
-/// Mirrors the Go tests' hand-built `lsp.HoverRequest`.
+/// A hand-built hover request.
 struct Probe {
-    /// Byte offset of `params.Position`; `None` leaves Go's zero position.
+    /// Byte offset of `params.Position`; `None` leaves the position at 0:0.
     position: Option<u32>,
-    /// Byte offset used for `NodeAtOffset`/`TokenAtOffset`.
+    /// Byte offset of the request's node and token.
     node: u32,
     token: bool,
     language: bool,

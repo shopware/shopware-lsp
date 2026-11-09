@@ -1,8 +1,8 @@
-//! Document color provider for SCSS (port of `internal/lsp/color`).
+//! Document color provider for SCSS.
 //!
 //! Supplies editor swatches and color-picker edits for statically known SCSS
-//! colors. Dynamic Sass expressions are intentionally omitted because
-//! reporting a guessed color is worse than reporting none.
+//! colors. Dynamic Sass expressions are intentionally omitted because reporting
+//! a guessed color is worse than reporting none.
 
 use swlsp_language::LanguageId;
 use swlsp_lsp::{
@@ -267,7 +267,7 @@ fn color_function_parts(body: &str) -> Option<(Vec<&str>, f64)> {
     }
     let mut fields: Vec<&str> = Vec::new();
     for field in body.split_whitespace() {
-        // Go: strings.Fields(strings.ReplaceAll(body, "/", " / ")).
+        // Split on whitespace and around every `/`, keeping `/` as a field.
         let mut rest = field;
         while let Some(index) = rest.find('/') {
             if index > 0 {
@@ -331,7 +331,7 @@ fn parse_bounded(value: &str, minimum: f64, maximum: f64) -> Option<f64> {
     parse_float(value).filter(|parsed| (minimum..=maximum).contains(parsed))
 }
 
-/// A finite decimal float (Go `strconv.ParseFloat` without NaN/Inf).
+/// A finite decimal float (no NaN or infinity).
 fn parse_float(value: &str) -> Option<f64> {
     value
         .parse::<f64>()
@@ -382,7 +382,7 @@ fn rgb_to_hsl(red: f64, green: f64, blue: f64) -> (f64, f64, f64) {
     (hue, saturation, lightness)
 }
 
-/// One decimal place without a trailing `.0` (Go `FormatFloat(v, 'f', 1)`).
+/// One decimal place without a trailing `.0`.
 fn format_number(value: f64) -> String {
     let value = if value.abs() < 0.0005 { 0.0 } else { value };
     let formatted = format!("{value:.1}");

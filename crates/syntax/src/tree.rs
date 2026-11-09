@@ -89,7 +89,7 @@ impl Tree {
     }
 }
 
-/// Convenience queries mirroring the Go `cst.Node` API.
+/// Convenience queries over syntax nodes.
 pub trait SyntaxNodeExt {
     /// First direct child element of the given kind.
     fn child_of_kind(&self, kind: Kind) -> Option<SyntaxElement>;

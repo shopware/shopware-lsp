@@ -1,8 +1,10 @@
-//! Persisted component contracts (port of Go `component.go`).
+//! Persisted component contracts.
+
+use swlsp_textutil::eq_ignore_case;
 
 use crate::*;
 
-/// A Shopware Administration Vue component (Go `VueComponent`).
+/// A Shopware Administration Vue component.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct VueComponent {
@@ -90,35 +92,13 @@ impl VueComponent {
     pub fn local_directive(&self, name: &str) -> Option<&VueLocalDirective> {
         self.local_directives
             .iter()
-            .find(|local| go_equal_fold(&local.name, name))
+            .find(|local| eq_ignore_case(&local.name, name))
     }
 
     pub fn local_component(&self, name: &str) -> Option<&VueLocalComponent> {
         self.local_components
             .iter()
-            .find(|local| go_equal_fold(&local.name, name))
-    }
-}
-
-/// Go `strings.EqualFold` (simple Unicode case folding).
-pub(crate) fn go_equal_fold(left: &str, right: &str) -> bool {
-    let mut left = left.chars();
-    let mut right = right.chars();
-    loop {
-        match (left.next(), right.next()) {
-            (None, None) => return true,
-            (Some(a), Some(b)) => {
-                if a == b {
-                    continue;
-                }
-                let la: Vec<char> = a.to_lowercase().collect();
-                let lb: Vec<char> = b.to_lowercase().collect();
-                if la != lb {
-                    return false;
-                }
-            }
-            _ => return false,
-        }
+            .find(|local| eq_ignore_case(&local.name, name))
     }
 }
 

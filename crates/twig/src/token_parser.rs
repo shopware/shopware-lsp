@@ -1,5 +1,4 @@
-//! Custom Twig tags supplied by token parsers and a lossless tag scanner
-//! (port of `token_parser.go`).
+//! Custom Twig tags supplied by token parsers and a lossless tag scanner.
 
 use serde::{Deserialize, Serialize};
 use swlsp_parser_php::query as phpquery;
@@ -196,7 +195,7 @@ fn is_token_parser_class(class: &SyntaxNode, resolver: Option<&NameResolver>) ->
             }
             // Custom intermediate token-parser base classes are common; the
             // conventional name retains transitive parsers on a cold index.
-            swlsp_php_types::go_to_lower(part).contains("tokenparser")
+            swlsp_textutil::lowercase(part).contains("tokenparser")
         })
 }
 
@@ -212,7 +211,7 @@ fn token_parser_deprecation(class: &SyntaxNode) -> CallableDeprecation {
         };
     }
     for attribute in phpquery::attributes(class) {
-        if !swlsp_php_types::equal_fold(
+        if !swlsp_textutil::eq_ignore_case(
             last_name_part(&phpquery::attribute_name(&attribute)),
             "Deprecated",
         ) {
@@ -230,7 +229,7 @@ fn token_parser_deprecation(class: &SyntaxNode) -> CallableDeprecation {
     for call in phpquery::calls(&parse, &[]) {
         let name = phpquery::call_method_name(&call);
         if call.kind() != PHP_FUNCTION_CALL
-            || !swlsp_php_types::equal_fold(
+            || !swlsp_textutil::eq_ignore_case(
                 name.strip_prefix('\\').unwrap_or(&name),
                 "trigger_deprecation",
             )

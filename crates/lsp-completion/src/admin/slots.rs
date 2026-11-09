@@ -1,4 +1,4 @@
-//! Port of Go `admin_completion_slots.go`.
+//! Slot name completions for Administration components.
 
 use std::collections::{HashMap, HashSet};
 
@@ -10,7 +10,7 @@ use super::AdminCompletionProvider;
 use super::components::{item, set_markdown};
 
 impl AdminCompletionProvider {
-    /// Slot names of `component_name` (Go `getSlotCompletions`).
+    /// Slot names of `component_name`.
     #[cfg(test)]
     pub(super) fn get_slot_completions(
         &self,
@@ -96,7 +96,7 @@ impl AdminCompletionProvider {
     }
 }
 
-/// Go `uniqueSortedStrings`: distinct non-empty values, sorted.
+/// Distinct non-empty values, sorted.
 pub(super) fn unique_sorted_strings(values: Vec<String>) -> Vec<String> {
     let mut result: Vec<String> = values
         .into_iter()

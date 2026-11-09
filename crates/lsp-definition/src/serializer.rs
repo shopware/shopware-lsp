@@ -1,5 +1,4 @@
-//! Go `serializer_definition.go`: serializer string targets such as
-//! `'App\Model[]'` navigate to the class.
+//! Serializer string targets such as `'App\Model[]'` navigate to the class.
 
 use std::sync::Arc;
 

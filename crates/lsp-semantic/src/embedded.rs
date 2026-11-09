@@ -1,6 +1,4 @@
-//! Embedded JSON, CSS selector and XPath tokens in PHP string arguments
-//! (port of Go `embedded_language.go`, `embedded_json.go`, `embedded_css.go`
-//! and `embedded_xpath.go`).
+//! Embedded JSON, CSS selector and XPath tokens in PHP string arguments.
 
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -207,9 +205,9 @@ impl SemanticTokensProvider for EmbeddedXPathProvider {
 }
 
 /// The decoded value as lexer input. PHP escapes can produce invalid UTF-8,
-/// whose bytes are each replaced with U+FFFD (Go lexers treat a raw byte >=
-/// 0x80 like any other non-ASCII character); `raw_offsets` maps every text
-/// byte offset back to the decoded value.
+/// whose bytes are each replaced with U+FFFD, so the lexers treat a raw byte >=
+/// 0x80 like any other non-ASCII character; `raw_offsets` maps every text byte
+/// offset back to the decoded value.
 pub(crate) struct EmbeddedText<'a> {
     pub(crate) text: Cow<'a, str>,
     raw_offsets: Option<Vec<u32>>,

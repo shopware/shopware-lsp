@@ -9,7 +9,7 @@ pub enum OccurrenceKind {
 }
 
 impl OccurrenceKind {
-    /// The Go enum value, used in persisted keys.
+    /// The stable numeric value used in persisted keys.
     pub(crate) fn ordinal(self) -> u8 {
         match self {
             OccurrenceKind::Handler => 0,

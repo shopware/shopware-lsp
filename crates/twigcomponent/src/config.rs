@@ -1,5 +1,4 @@
-//! `twig_component` bundle configuration in YAML and PHP (port of
-//! `parser_config.go` and `parser_config_php.go`).
+//! `twig_component` bundle configuration in YAML and PHP.
 
 use std::collections::HashSet;
 
@@ -7,8 +6,8 @@ use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::*;
 use swlsp_parser_yaml::query as yamlquery;
 use swlsp_parser_yaml::syntax::YAML_PAIR;
-use swlsp_php_types::go_to_lower;
 use swlsp_syntax::{Kind, SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
+use swlsp_textutil::lowercase;
 
 use crate::model::{Namespace, normalize_class, normalize_component_name, normalize_directory};
 
@@ -81,7 +80,7 @@ pub(crate) fn configuration_in_yaml(
 }
 
 /// The trimmed node range without one pair of matching single or double
-/// quotes (Go `scalarValueRange`/`stringValueRange`).
+/// quotes.
 pub(crate) fn quoted_value_range(node: &SyntaxNode) -> TextRange {
     let range = node.range_trimmed_trivia();
     let text = node.text().to_string();
@@ -106,7 +105,7 @@ pub(crate) fn unique_namespaces(values: Vec<Namespace>) -> Vec<Namespace> {
         .filter(|value| {
             seen.insert(format!(
                 "{}\0{}\0{}",
-                go_to_lower(&value.class_prefix),
+                lowercase(&value.class_prefix),
                 value.template_directory,
                 value.name_prefix
             ))
@@ -366,7 +365,7 @@ pub(crate) fn php_config_string(node: Option<&SyntaxNode>) -> Option<String> {
 }
 
 fn is_php_app_config_call(call: &SyntaxNode) -> bool {
-    let name = go_to_lower(phpquery::call_name(call).trim());
+    let name = lowercase(phpquery::call_name(call).trim());
     let name = name.strip_prefix('\\').unwrap_or(&name);
     name == "app::config" || name.ends_with("\\app::config")
 }

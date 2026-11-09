@@ -1,7 +1,15 @@
 //! Small, allocation-conscious text transforms shared by language frontends
-//! and semantic analysis (port of `internal/textutil`).
+//! and semantic analysis.
 
 use std::borrow::Cow;
+
+pub mod case;
+pub mod number;
+
+pub use case::{
+    eq_ignore_case, lowercase, lowercase_char, uppercase, uppercase_char, uppercase_first,
+};
+pub use number::{parse_int_literal, parse_uint_literal};
 
 #[inline]
 fn is_compact_whitespace(byte: u8) -> bool {
@@ -56,7 +64,7 @@ impl FoldAsciiMatcher {
     ///
     /// # Panics
     /// Panics when a pattern contains non-ASCII bytes or the automaton would
-    /// exceed 65 536 states, like the Go implementation.
+    /// exceed 65 536 states.
     pub fn new<S: AsRef<str>>(patterns: &[S]) -> Self {
         let capacity = 1 + patterns
             .iter()
@@ -189,7 +197,7 @@ mod tests {
     #[test]
     fn fold_ascii_matcher_scans_without_allocation() {
         // Scanning takes `&self` and only reads the precomputed automaton, so
-        // it cannot allocate; this mirrors the Go allocation test functionally.
+        // it cannot allocate.
         let matcher = FoldAsciiMatcher::new(&["generate", "redirecttoroute"]);
         assert!(matcher.contains_str("$this->ReDiReCtToRoUtE('route')"));
         assert!(!matcher.contains_bytes(b"ordinary application source"));
@@ -202,7 +210,7 @@ mod tests {
     }
 }
 
-/// Go `html.EscapeString`: escapes `<`, `>`, `&`, `'` and `"`.
+/// Escapes `<`, `>`, `&`, `'` and `"` for HTML text and attributes.
 pub fn html_escape(value: &str) -> String {
     let mut result = String::with_capacity(value.len());
     for character in value.chars() {
@@ -221,7 +229,7 @@ pub fn html_escape(value: &str) -> String {
 #[cfg(test)]
 mod html_escape_tests {
     #[test]
-    fn escapes_like_go() {
+    fn escapes_markup_and_quotes() {
         assert_eq!(
             super::html_escape(r#"<a href="x">Tom & 'Jerry'</a>"#),
             "&lt;a href=&#34;x&#34;&gt;Tom &amp; &#39;Jerry&#39;&lt;/a&gt;"

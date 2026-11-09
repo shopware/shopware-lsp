@@ -1,4 +1,4 @@
-//! Tree queries over SCSS syntax (port of Go `internal/parser/scss/query`).
+//! Tree queries over SCSS syntax.
 //!
 //! The `*_at` functions accept any node inside the construct (including the
 //! construct itself) and walk up to the nearest enclosing one. Start from a

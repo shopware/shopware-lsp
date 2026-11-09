@@ -1,11 +1,11 @@
-//! Ports of the Go `internal/event` tests.
+//! Listener, dispatch, index and reference tests.
 
 use std::sync::Arc;
 
 use swlsp_indexer::{Indexer, ParsedFile, PreparingIndexer};
 use swlsp_parser_php::query as phpquery;
 use swlsp_php::PhpIndex;
-use swlsp_php_types::equal_fold;
+use swlsp_textutil::eq_ignore_case;
 
 use crate::{Event, Index, Occurrence, PhpTypeExtension};
 
@@ -226,7 +226,7 @@ function publish(EventDispatcherInterface $dispatcher): void {
     let document = php_index.analyze_document(parsed.path(), 1, &root, source);
     let mut dispatches = 0;
     for call in phpquery::calls(&root, &[]) {
-        if !equal_fold(&phpquery::call_method_name(&call), "dispatch") {
+        if !eq_ignore_case(&phpquery::call_method_name(&call), "dispatch") {
             continue;
         }
         dispatches += 1;

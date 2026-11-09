@@ -1,5 +1,4 @@
-//! Symfony Serializer `deserialize()` target classes (port of Go
-//! `internal/serializer`).
+//! Symfony Serializer `deserialize()` target classes.
 
 mod index;
 mod parser;

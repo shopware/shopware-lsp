@@ -1,5 +1,4 @@
-//! Definition, implementation and type hierarchy providers (port of Go
-//! `internal/app/providers_definition.go`).
+//! Definition, implementation and type hierarchy providers.
 
 use std::sync::Arc;
 
@@ -54,10 +53,7 @@ fn register_domain_definition_providers(server: &Registrar<'_>, s: &Services) {
         php(),
         Some(s.services.clone()),
     )));
-    server.definition(Arc::new(MessengerDefinitionProvider::new(
-        php(),
-        Some(s.messenger.clone()),
-    )));
+    server.definition(Arc::new(MessengerDefinitionProvider::new(php())));
     server.definition(Arc::new(EnvironmentDefinitionProvider::new(Some(
         s.environment.clone(),
     ))));
@@ -74,7 +70,7 @@ fn register_domain_definition_providers(server: &Registrar<'_>, s: &Services) {
         php(),
         Some(s.twig.clone()),
     )));
-    // Go `NewServiceXMLDefinitionProvider`.
+    // Service definitions from XML service references.
     server.definition(Arc::new(ServiceDefinitionProvider::new(
         Some(s.services.clone()),
         php(),

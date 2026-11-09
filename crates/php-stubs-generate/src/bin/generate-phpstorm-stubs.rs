@@ -1,5 +1,5 @@
 //! Regenerates the embedded PHP runtime catalog from a phpstorm-stubs
-//! checkout (port of `cmd/generate_phpstorm_stubs`).
+//! checkout.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -7,14 +7,14 @@ use std::process::ExitCode;
 use swlsp_php_stubs_generate::{EmptyListPolicy, build, encode, load_lock, verify_source};
 
 const USAGE: &str = "usage: generate-phpstorm-stubs [-source DIR] [-lock FILE] [-output FILE] \
-[-skip-revision-check] [-go-head]
+[-skip-revision-check] [-omit-empty-lists]
 
   -source DIR            path to a phpstorm-stubs checkout (default ../phpstorm-stubs)
   -lock FILE             pinned source manifest (default crates/php-stubs/data/phpstorm-stubs.lock.json)
   -output FILE           generated catalog path (default crates/php-stubs/data/phpstorm-stubs.msgpack)
   -skip-revision-check   allow a source tree without the locked Git revision
-  -go-head               write empty lists like the current Go generator instead of
-                         the committed artifact";
+  -omit-empty-lists      write empty hierarchy and @throws lists as nil instead of
+                         keeping them like the committed artifact";
 
 struct Options {
     source: PathBuf,
@@ -34,7 +34,7 @@ fn parse_options() -> Result<Options, String> {
     };
     let mut arguments = std::env::args().skip(1);
     while let Some(argument) = arguments.next() {
-        // Accept Go flag syntax: -name, --name, -name=value.
+        // Accept -name, --name and -name=value.
         let trimmed = argument.trim_start_matches('-');
         let (name, inline) = match trimmed.split_once('=') {
             Some((name, value)) => (name, Some(value.to_owned())),
@@ -51,7 +51,7 @@ fn parse_options() -> Result<Options, String> {
             "lock" => options.lock = value(name)?.into(),
             "output" => options.output = value(name)?.into(),
             "skip-revision-check" => options.skip_revision_check = true,
-            "go-head" => options.policy = EmptyListPolicy::GoHead,
+            "omit-empty-lists" => options.policy = EmptyListPolicy::OmitEmpty,
             "h" | "help" => return Err(USAGE.to_owned()),
             _ => {
                 return Err(format!(

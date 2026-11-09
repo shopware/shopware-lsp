@@ -1,24 +1,40 @@
-//! The MessagePack subset written by Go's `vmihailenco/msgpack` for the stub
-//! catalog: nil, booleans, integers, strings, binary blobs, arrays, and maps.
-//! The reader borrows strings and blobs from its input.
+//! The MessagePack subset used by the stub catalog: nil, booleans,
+//! integers, strings, binary blobs, arrays, and maps. The reader borrows
+//! strings and blobs from its input.
 
-use std::fmt;
+use swlsp_php_types::PersistedError;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Error(pub String);
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
+/// A malformed stub catalog.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum Error {
+    #[error("unexpected end of data")]
+    UnexpectedEnd,
+    #[error("expected {expected}, found 0x{code:02x}")]
+    UnexpectedCode { expected: &'static str, code: u8 },
+    #[error("invalid msgpack code 0xc1")]
+    ReservedCode,
+    #[error("integer {0} out of range")]
+    IntegerOutOfRange(i64),
+    #[error(transparent)]
+    InvalidUtf8(#[from] std::str::Utf8Error),
+    #[error("invalid {field} {value}")]
+    InvalidEnum { field: &'static str, value: u8 },
+    #[error("parse persisted PHP type {text:?}: {source}")]
+    Type {
+        text: String,
+        #[source]
+        source: PersistedError,
+    },
+    #[error("decode PHP stub catalog: unsupported format {0}")]
+    UnsupportedFormat(u8),
+    #[error("decode PHP stub catalog: invalid version count {0}")]
+    VersionCount(usize),
 }
-
-impl std::error::Error for Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-fn error<T>(message: impl Into<String>) -> Result<T> {
-    Err(Error(message.into()))
+fn unexpected<T>(expected: &'static str, code: u8) -> Result<T> {
+    Err(Error::UnexpectedCode { expected, code })
 }
 
 pub struct Reader<'a> {
@@ -36,7 +52,7 @@ impl<'a> Reader<'a> {
             .position
             .checked_add(count)
             .filter(|end| *end <= self.data.len())
-            .ok_or_else(|| Error("unexpected end of data".into()))?;
+            .ok_or(Error::UnexpectedEnd)?;
         let bytes = &self.data[self.position..end];
         self.position = end;
         Ok(bytes)
@@ -50,7 +66,7 @@ impl<'a> Reader<'a> {
         self.data
             .get(self.position)
             .copied()
-            .ok_or_else(|| Error("unexpected end of data".into()))
+            .ok_or(Error::UnexpectedEnd)
     }
 
     fn be(&mut self, count: usize) -> Result<u64> {
@@ -73,7 +89,7 @@ impl<'a> Reader<'a> {
         match self.byte()? {
             0xc2 | 0xc0 => Ok(false),
             0xc3 => Ok(true),
-            code => error(format!("expected bool, found 0x{code:02x}")),
+            code => unexpected("bool", code),
         }
     }
 
@@ -91,13 +107,13 @@ impl<'a> Reader<'a> {
             0xd1 => i64::from(self.be(2)? as u16 as i16),
             0xd2 => i64::from(self.be(4)? as u32 as i32),
             0xd3 => self.be(8)? as i64,
-            _ => return error(format!("expected integer, found 0x{code:02x}")),
+            _ => return unexpected("integer", code),
         })
     }
 
     pub fn uint<T: TryFrom<i64>>(&mut self) -> Result<T> {
         let value = self.int()?;
-        T::try_from(value).map_err(|_| Error(format!("integer {value} out of range")))
+        T::try_from(value).map_err(|_| Error::IntegerOutOfRange(value))
     }
 
     pub fn str(&mut self) -> Result<&'a str> {
@@ -111,9 +127,9 @@ impl<'a> Reader<'a> {
             0xc5 => self.be(2)? as usize,
             0xc6 => self.be(4)? as usize,
             0xc0 => 0,
-            _ => return error(format!("expected string, found 0x{code:02x}")),
+            _ => return unexpected("string", code),
         };
-        std::str::from_utf8(self.take(length)?).map_err(|error| Error(error.to_string()))
+        Ok(std::str::from_utf8(self.take(length)?)?)
     }
 
     pub fn bin(&mut self) -> Result<&'a [u8]> {
@@ -124,7 +140,7 @@ impl<'a> Reader<'a> {
             0xc6 | 0xdb => self.be(4)? as usize,
             0xa0..=0xbf => usize::from(code & 0x1f),
             0xc0 => 0,
-            _ => return error(format!("expected binary, found 0x{code:02x}")),
+            _ => return unexpected("binary", code),
         };
         self.take(length)
     }
@@ -137,7 +153,7 @@ impl<'a> Reader<'a> {
             0xdc => self.be(2)? as usize,
             0xdd => self.be(4)? as usize,
             0xc0 => 0,
-            _ => return error(format!("expected array, found 0x{code:02x}")),
+            _ => return unexpected("array", code),
         })
     }
 
@@ -149,7 +165,7 @@ impl<'a> Reader<'a> {
             0xde => self.be(2)? as usize,
             0xdf => self.be(4)? as usize,
             0xc0 => 0,
-            _ => return error(format!("expected map, found 0x{code:02x}")),
+            _ => return unexpected("map", code),
         })
     }
 
@@ -215,7 +231,7 @@ impl<'a> Reader<'a> {
                 let length = self.be(4)? as usize;
                 self.take(length + 1)?;
             }
-            0xc1 => return error("invalid msgpack code 0xc1"),
+            0xc1 => return Err(Error::ReservedCode),
         }
         Ok(())
     }

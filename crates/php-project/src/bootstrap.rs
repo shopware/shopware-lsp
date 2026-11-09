@@ -101,7 +101,7 @@ fn string_value(
                 .trim()
                 .eq_ignore_ascii_case("__DIR__")
             {
-                Some(go_dir(&bootstrap.to_string_lossy()))
+                Some(dirname(&bootstrap.to_string_lossy()))
             } else {
                 None
             }
@@ -141,7 +141,7 @@ fn string_value(
                 levels = parsed as usize;
             }
             for _ in 0..levels {
-                value = go_dir(&value);
+                value = dirname(&value);
             }
             Some(value)
         }
@@ -149,8 +149,9 @@ fn string_value(
     }
 }
 
-/// Go `filepath.Dir` on a string path.
-fn go_dir(path: &str) -> String {
+/// The directory part of a `/`-separated path, cleaned; `.` when there is
+/// none (PHP `dirname()` and `__DIR__`).
+fn dirname(path: &str) -> String {
     let separator = path.rfind('/').map_or(0, |index| index + 1);
     let directory = clean(Path::new(&path[..separator]));
     let directory = directory.to_string_lossy().into_owned();
@@ -175,8 +176,7 @@ fn php_string_value(node: &SyntaxNode) -> String {
     }
 }
 
-/// Go `strings.NewReplacer("\\\\", "\\", "\\"+quote, quote)`: a single
-/// left-to-right pass replacing `\\` and `\<quote>`.
+/// Unescapes `\\` and `\<quote>` in a single left-to-right pass.
 fn unescape(value: &str, quote: char) -> String {
     let mut result = String::with_capacity(value.len());
     let mut chars = value.chars().peekable();
@@ -274,9 +274,9 @@ mod tests {
     }
 
     #[test]
-    fn go_dir_matches_filepath_dir() {
-        assert_eq!(go_dir("/a/b/c.php"), "/a/b");
-        assert_eq!(go_dir("/a"), "/");
-        assert_eq!(go_dir("file"), ".");
+    fn dirname_returns_the_cleaned_parent() {
+        assert_eq!(dirname("/a/b/c.php"), "/a/b");
+        assert_eq!(dirname("/a"), "/");
+        assert_eq!(dirname("file"), ".");
     }
 }

@@ -6,7 +6,7 @@ use swlsp_parser_xml::query as xmlquery;
 use swlsp_syntax::{TextRange, Tree};
 
 use crate::model::ContainerTwigComponent;
-use crate::util::{go_trim_space, xml_attr, xml_attribute_content_range, xml_element_text};
+use crate::util::{xml_attr, xml_attribute_content_range, xml_element_text};
 
 const TWIG_COMPONENT_FACTORY_SERVICE: &str = "ux.twig_component.component_factory";
 
@@ -33,13 +33,13 @@ pub fn parse_xml_twig_components_tree(
             continue;
         }
         for component in xmlquery::child_elements(&arguments[4], &["argument"]) {
-            let mut name = go_trim_space(&xml_attr(&component, "key")).to_owned();
+            let mut name = xml_attr(&component, "key").trim().to_owned();
             let mut name_range =
                 xml_attribute_content_range(xmlquery::attribute(&component, "key").as_ref());
             let mut values: HashMap<String, String> = HashMap::new();
             let mut ranges: HashMap<String, TextRange> = HashMap::new();
             for value in xmlquery::child_elements(&component, &["argument"]) {
-                let key = go_trim_space(&xml_attr(&value, "key")).to_owned();
+                let key = xml_attr(&value, "key").trim().to_owned();
                 if key.is_empty() {
                     continue;
                 }
@@ -49,7 +49,7 @@ pub fn parse_xml_twig_components_tree(
             }
             let value = |key: &str| values.get(key).map(String::as_str).unwrap_or("");
             let range = |key: &str| ranges.get(key).copied().unwrap_or_default();
-            let configured = go_trim_space(value("key"));
+            let configured = value("key").trim();
             if !configured.is_empty() {
                 name = configured.to_owned();
                 name_range = range("key");
@@ -60,8 +60,8 @@ pub fn parse_xml_twig_components_tree(
             let entry = ContainerTwigComponent {
                 name: name.clone(),
                 class: normalize_container_component_class(value("class")),
-                template: go_trim_space(value("template")).to_owned(),
-                template_from_method: go_trim_space(value("template_from_method")).to_owned(),
+                template: value("template").trim().to_owned(),
+                template_from_method: value("template_from_method").trim().to_owned(),
                 path: path.to_owned(),
                 name_range,
                 class_range: range("class"),
@@ -108,5 +108,5 @@ pub fn parse_xml_twig_components_tree(
 }
 
 fn normalize_container_component_class(value: &str) -> String {
-    go_trim_space(value).trim_matches('\\').to_owned()
+    value.trim().trim_matches('\\').to_owned()
 }

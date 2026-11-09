@@ -1,4 +1,4 @@
-//! Event references at a cursor (port of Go `event/reference.go`).
+//! Event references at a cursor.
 
 use std::collections::HashSet;
 
@@ -10,8 +10,9 @@ use swlsp_parser_yaml::syntax::YAML_SCALAR;
 use swlsp_php::{NameResolver, PhpContext, PhpIndex, name_resolver_for};
 use swlsp_php_resolver::MemberResolver;
 use swlsp_php_semantic::{Symbol, SymbolKind, Visibility};
-use swlsp_php_types::{Type, equal_fold, go_to_lower};
+use swlsp_php_types::Type;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::index::{Index, normalize_name};
 use crate::model::{Occurrence, OccurrenceKind};
@@ -54,7 +55,7 @@ pub fn reference_at(
     root: &SyntaxNode,
     node: &SyntaxNode,
 ) -> Option<Reference> {
-    match go_to_lower(go_extension(path)).as_str() {
+    match lowercase(extension_with_dot(path)).as_str() {
         ".php" => php_reference_at(context, root, node),
         ".yaml" | ".yml" => yaml_reference_at(node),
         ".xml" => xml_reference_at(node),
@@ -80,11 +81,11 @@ pub fn php_reference_at(
             .and_then(|index| phpquery::argument(&attribute, index))
             .map(|argument| phpquery::argument_name(&argument))
             .unwrap_or_default();
-        let role = if equal_fold(&argument_name, "event")
+        let role = if eq_ignore_case(&argument_name, "event")
             || argument_name.is_empty() && argument == Some(0)
         {
             Some(ReferenceRole::Event)
-        } else if equal_fold(&argument_name, "method")
+        } else if eq_ignore_case(&argument_name, "method")
             || argument_name.is_empty() && argument == Some(1)
         {
             Some(ReferenceRole::ListenerMethod)
@@ -109,7 +110,7 @@ pub fn php_reference_at(
     }
 
     if let Some(call) = phpquery::call_at(&literal)
-        && equal_fold(&phpquery::call_method_name(&call), "dispatch")
+        && eq_ignore_case(&phpquery::call_method_name(&call), "dispatch")
     {
         let index = phpquery::argument_index(&call, &literal);
         let argument_name = index
@@ -118,7 +119,7 @@ pub fn php_reference_at(
             .unwrap_or_default();
         let first = phpquery::argument_expression(&call, 0);
         let is_legacy_first = index == Some(0) && first.as_ref() == Some(&literal);
-        let is_modern_name = index == Some(1) || equal_fold(&argument_name, "eventName");
+        let is_modern_name = index == Some(1) || eq_ignore_case(&argument_name, "eventName");
         if (is_legacy_first || is_modern_name) && validate_dispatch_reference(context, &call) {
             return Some(Reference {
                 role: ReferenceRole::Event,
@@ -133,7 +134,7 @@ pub fn php_reference_at(
     }
 
     let method = phpquery::method_at(&literal)?;
-    if !equal_fold(&phpquery::method_name(&method), "getSubscribedEvents")
+    if !eq_ignore_case(&phpquery::method_name(&method), "getSubscribedEvents")
         || !validate_subscriber_class(context, phpquery::class_at(&method).as_ref(), &resolver)
     {
         return None;
@@ -143,7 +144,7 @@ pub fn php_reference_at(
 
 fn php_service_tag_reference(literal: &SyntaxNode, resolver: &NameResolver) -> Option<Reference> {
     let call = phpquery::call_at(literal)?;
-    if !equal_fold(&phpquery::call_method_name(&call), "tag")
+    if !eq_ignore_case(&phpquery::call_method_name(&call), "tag")
         || php_string_value(phpquery::argument_expression(&call, 0).as_ref())
             != "kernel.event_listener"
     {
@@ -299,24 +300,23 @@ pub fn public_methods(index: Option<&PhpIndex>, class_name: &str) -> Vec<Symbol>
         let name: &str = &symbol.name;
         if symbol.kind != SymbolKind::Method
             || symbol.visibility != Visibility::Public
-            || equal_fold(name, "getSubscribedEvents")
+            || eq_ignore_case(name, "getSubscribedEvents")
             || name.starts_with("__") && name != "__invoke"
-            || go_to_lower(name).starts_with("set")
+            || lowercase(name).starts_with("set")
         {
             continue;
         }
-        if !seen.insert(go_to_lower(name)) {
+        if !seen.insert(lowercase(name)) {
             continue;
         }
         result.push(symbol);
     }
-    result.sort_by_cached_key(|symbol| go_to_lower(&symbol.name));
+    result.sort_by_cached_key(|symbol| lowercase(&symbol.name));
     result
 }
 
 /// The listener a reference points at: the reference's own class and method
-/// name, else the indexed listener declared at the reference node. (Go also
-/// takes a cursor offset, which a reference node always overrides.)
+/// name, else the indexed listener declared at the reference node.
 pub fn resolve_listener(
     index: Option<&Index>,
     path: &str,
@@ -383,7 +383,9 @@ fn node_contains(parent: &SyntaxNode, child: &SyntaxNode) -> bool {
     parent.text_range().contains_range(child.text_range())
 }
 
-fn go_extension(path: &str) -> &str {
+/// The suffix of the last slash-separated element from its final `.`
+/// (`.xml`); empty when there is none.
+fn extension_with_dot(path: &str) -> &str {
     let name = &path[path.rfind('/').map_or(0, |index| index + 1)..];
     name.rfind('.').map_or("", |index| &name[index..])
 }

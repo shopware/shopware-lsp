@@ -1,4 +1,4 @@
-//! Port of Go `write_protected_test.go`.
+//! Tests for write protected.
 
 use super::inheritance::{
     field, field_by_property, php_ok, relation, require_issue_code, s, stored,

@@ -14,7 +14,7 @@ pub(crate) fn path_string(path: &Path) -> String {
     path.to_str().expect("utf-8 path").to_owned()
 }
 
-/// Go `adminRenameRequest`-style request: the cursor sits at `offset`.
+/// A rename request for `path` with the cursor at `offset`.
 pub(crate) fn rename_request(
     path: &str,
     source: &str,
@@ -44,7 +44,7 @@ pub(crate) fn rename_request(
     }
 }
 
-/// Applies edits in their listed order (Go `applyAdminRenameEdits`).
+/// Applies edits in their listed order .
 pub(crate) fn apply_edits(source: &str, edits: Option<&Vec<protocol::TextEdit>>) -> String {
     let line_index = LineIndex::new(source.to_owned());
     let mut result = source.to_owned();

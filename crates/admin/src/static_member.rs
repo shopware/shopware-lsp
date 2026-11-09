@@ -1,5 +1,4 @@
-//! Static member chains rooted at a fixed global (port of Go
-//! `static_member.go`).
+//! Static member chains rooted at a fixed global.
 
 use crate::*;
 

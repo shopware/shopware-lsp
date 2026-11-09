@@ -1,5 +1,5 @@
-//! Go `translation.go`: missing Symfony translation inspection with a fix
-//! inserting the key into a writable resource.
+//! Missing Symfony translation inspection with a fix inserting the key into a
+//! writable resource.
 
 use std::sync::Arc;
 
@@ -31,7 +31,6 @@ pub(crate) struct AddTranslationPayload {
     pub(crate) file: String,
 }
 
-/// Go `NewTranslation`.
 pub fn new_translation(
     index: Option<Arc<Index>>,
     php_index: Option<PhpIndex>,

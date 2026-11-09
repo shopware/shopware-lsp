@@ -114,7 +114,7 @@ fn initialize_params_decode_leniently() {
 }
 
 #[test]
-fn workspace_edit_matches_go_shape() {
+fn workspace_edit_serializes_to_protocol_shape() {
     let range = Range::new(Position::new(0, 1), Position::new(0, 2));
     let edit = WorkspaceEdit {
         changes: [
@@ -175,7 +175,7 @@ fn code_action_round_trips_through_resolve() {
 }
 
 #[test]
-fn diagnostics_match_go_shape() {
+fn diagnostics_serialize_to_protocol_shape() {
     let diagnostic = Diagnostic {
         severity: Some(DiagnosticSeverity::WARNING),
         code: Some(json!("php.arguments")),
@@ -206,7 +206,7 @@ fn diagnostics_match_go_shape() {
 }
 
 #[test]
-fn symbols_and_hierarchy_items_match_go_shape() {
+fn symbols_and_hierarchy_items_serialize_to_protocol_shape() {
     let symbol = SymbolInformation {
         name: "Product".to_owned(),
         kind: SymbolKind::CLASS,
@@ -234,7 +234,7 @@ fn symbols_and_hierarchy_items_match_go_shape() {
 }
 
 #[test]
-fn misc_shapes_match_go() {
+fn misc_shapes_serialize_compactly() {
     assert_eq!(
         encode(&new_lsp_error("boom", "E1")),
         json!({"code": "E1", "message": "boom"})
@@ -242,7 +242,7 @@ fn misc_shapes_match_go() {
     let hint = InlayHint::default();
     assert_eq!(
         encode(&hint),
-        json!({"position": {"line": 0, "character": 0}, "label": null})
+        json!({"position": {"line": 0, "character": 0}, "label": ""})
     );
     let folding = FoldingRange {
         start_line: 1,

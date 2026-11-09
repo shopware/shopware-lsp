@@ -1,9 +1,8 @@
-//! Symfony analytics catalogs (port of Go `internal/lsp/analytics`):
+//! Symfony analytics catalogs:
 //! routes, services, Twig extensions, template usages and variables, Twig
 //! components, and the local Symfony profiler request index.
 //!
-//! Every catalog is exposed as a custom LSP command whose JSON response
-//! matches the Go provider field for field.
+//! Every catalog is exposed as a custom LSP command with a JSON response.
 
 use std::collections::HashMap;
 
@@ -61,33 +60,23 @@ mod tests;
 
 pub type Result<T, E = BoxError> = std::result::Result<T, E>;
 
-/// Builds a plain error (Go `fmt.Errorf` without `%w`).
+/// Builds a [`BoxError`] from a formatted message.
 macro_rules! errorf {
     ($($arg:tt)*) => { $crate::BoxError::from(format!($($arg)*)) };
 }
 pub(crate) use errorf;
 
-/// Go `ctx.Err()`.
+/// Fails with the cancellation error once the request is cancelled.
 pub(crate) fn check(ctx: &Context) -> Result<()> {
     ctx.check()
         .map_err(|cancelled| BoxError::from(cancelled.to_string()))
-}
-
-/// Go `strings.TrimSpace` (both trim Unicode `White_Space`).
-pub(crate) fn trim_space(value: &str) -> &str {
-    value.trim()
-}
-
-/// Go `strings.ToLower`.
-pub(crate) fn lower(value: &str) -> String {
-    swlsp_php_types::go_to_lower(value)
 }
 
 pub(crate) fn is_zero<T: Default + PartialEq>(value: &T) -> bool {
     *value == T::default()
 }
 
-/// Go `uriutil.FileURI` guarded against empty paths.
+/// The `file://` URI of `path`, or an empty string for an empty path.
 pub(crate) fn optional_file_uri(path: &str) -> String {
     if path.is_empty() {
         return String::new();
@@ -107,8 +96,8 @@ fn range_contains(range: TextRange, offset: u32) -> bool {
     offset >= u32::from(range.start()) && offset < u32::from(range.end())
 }
 
-/// Go `filepath.Rel(root, path)` rejecting results outside `root`; returns
-/// the slash-separated relative path.
+/// `path` relative to `root` with slash separators, or `None` when `path`
+/// lies outside `root`.
 pub(crate) fn relative_inside(root: &str, path: &str) -> Option<String> {
     let relative = swlsp_uriutil::filepath::rel(root, path).ok()?;
     if relative == ".." || relative.starts_with("../") {
@@ -117,7 +106,7 @@ pub(crate) fn relative_inside(root: &str, path: &str) -> Option<String> {
     Some(swlsp_uriutil::filepath::to_slash(&relative))
 }
 
-/// Go `pathmatch.Ant`.
+/// Whether `candidate` matches the Ant-style `pattern` (`*`, `**`, `?`).
 pub fn ant_path_match(pattern: &str, candidate: &str) -> bool {
     swlsp_pathmatch::ant(pattern, candidate)
 }
@@ -204,7 +193,7 @@ impl<'a> RouteTemplateResolver<'a> {
             self.by_path.insert(method.path.to_string(), loaded);
         }
         Ok(self.by_path[method.path.as_str()]
-            .get(&lower(&method.fully_qualified))
+            .get(&swlsp_textutil::lowercase(&method.fully_qualified))
             .cloned()
             .unwrap_or_default())
     }
@@ -229,7 +218,7 @@ fn load_route_templates(
             continue;
         };
         values
-            .entry(lower(&method.fully_qualified))
+            .entry(swlsp_textutil::lowercase(&method.fully_qualified))
             .or_default()
             .insert(reference.template);
     }

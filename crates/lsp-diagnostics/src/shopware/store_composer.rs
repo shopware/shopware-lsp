@@ -1,4 +1,4 @@
-//! Port of Go `shopware_store_composer.go`.
+//! Shopware Store requirements for an extension `composer.json`.
 
 use std::sync::Arc;
 
@@ -7,12 +7,12 @@ use swlsp_language::LanguageId;
 use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_parser_json::syntax::{JSON_OBJECT, JSON_PAIR, JSON_STRING, TK_STRING};
 use swlsp_syntax::{SyntaxNode, TextRange, TextSize};
+use swlsp_uriutil::filepath;
 
-use super::util::{go_dir, warning};
+use super::util::warning;
 use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
-/// Supplies the extension's explicit Store validation setting (Go
-/// `StoreComplianceResolver`).
+/// Supplies the extension's explicit Store validation setting.
 pub trait StoreComplianceResolver: Send + Sync {
     fn store_compliance_enabled(&self, dir: &str) -> Result<bool, BoxError>;
     /// Advances whenever an answer may change; `None` when unknown.
@@ -34,7 +34,6 @@ impl StoreComplianceResolver for swlsp_extension::ConfigIndex {
     }
 }
 
-/// Go `ShopwareStoreComposerAnalyzer`.
 #[derive(Clone)]
 pub struct ShopwareStoreComposerAnalyzer {
     compliance: Option<Arc<dyn StoreComplianceResolver>>,
@@ -50,7 +49,7 @@ impl ShopwareStoreComposerAnalyzer {
             return false;
         };
         compliance
-            .store_compliance_enabled(&go_dir(&path))
+            .store_compliance_enabled(&filepath::dir(&path))
             .unwrap_or(false)
     }
 }
@@ -166,8 +165,7 @@ impl ProblemAnalyzer for ShopwareStoreComposerAnalyzer {
         let core_missing = match composer.get("require") {
             Some(Value::Object(requirements)) => match requirements.get("shopware/core") {
                 None | Some(Value::Null) => true,
-                // Go `strings.TrimSpace(fmt.Sprint(value)) == ""` only holds
-                // for blank strings.
+                // Only a blank string counts as a missing constraint.
                 Some(Value::String(value)) => value.trim().is_empty(),
                 Some(_) => false,
             },

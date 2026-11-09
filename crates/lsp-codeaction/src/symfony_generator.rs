@@ -1,4 +1,4 @@
-//! Go `symfony_generator_codeaction.go`: the reference plugin's interactive
+//! The reference plugin's interactive
 //! service and compiler-pass generators. Code actions hand off editor input
 //! to a client command; the server commands keep inference and source
 //! rewriting editor-independent.
@@ -21,8 +21,9 @@ use swlsp_parser_php::syntax::{PHP_BLOCK, PHP_CLASS_DECLARATION};
 use swlsp_php::PhpIndex;
 use swlsp_php_resolver::MemberResolver;
 use swlsp_php_semantic::{Flags, Snapshot, SymbolKind, Visibility};
-use swlsp_php_types::{Kind, Type, equal_fold, go_quote, go_to_lower};
+use swlsp_php_types::{Kind, Type};
 use swlsp_symfony::{Service, ServiceIndex, suggested_service_tags};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 use swlsp_uriutil::filepath;
 
 use crate::service_tag::{SnapshotHierarchy, html_escape};
@@ -43,7 +44,8 @@ pub const CREATE_COMPILER_PASS_ACTION: &str = "shopware.symfony.createCompilerPa
 const BUNDLE_INTERFACE_CLASS: &str = "Symfony\\Component\\HttpKernel\\Bundle\\BundleInterface";
 const CONTAINER_BUILDER_CLASS: &str = "Symfony\\Component\\DependencyInjection\\ContainerBuilder";
 
-/// Go matches Unicode code points U+0080..U+00FF, not bytes.
+/// A PHP class identifier. PHP allows the bytes 0x80..0xFF in names; this
+/// accepts the code points U+0080..U+00FF, since the input is a `str`.
 static PHP_CLASS_IDENTIFIER_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^[A-Za-z_\x{80}-\x{ff}][A-Za-z0-9_\x{80}-\x{ff}]*$").expect("valid regex")
 });
@@ -254,7 +256,6 @@ fn cancelled(ctx: &Context) -> Result<(), BoxError> {
     ctx.check().map_err(|error| Box::new(error) as BoxError)
 }
 
-/// Go `strings.Trim(value, "\\ ")`.
 fn trim_backslash_space(value: &str) -> &str {
     value.trim_matches(|character| character == '\\' || character == ' ')
 }
@@ -276,7 +277,6 @@ impl SymfonyGeneratorProvider {
         Ok(serde_json::to_value(self.generate_service(ctx, &params)?)?)
     }
 
-    /// Go `generateService`.
     pub fn generate_service(
         &self,
         ctx: &Context,
@@ -303,15 +303,11 @@ impl SymfonyGeneratorProvider {
             .first()
             .is_none_or(|class| class.kind != SymbolKind::Class)
         {
-            return Err(format!("PHP class {} was not found", go_quote(class_name)).into());
+            return Err(format!("PHP class {:?} was not found", class_name).into());
         }
-        let output = go_to_lower(params.output.trim());
+        let output = lowercase(params.output.trim());
         if !supported_output(&output) {
-            return Err(format!(
-                "unsupported service output format {}",
-                go_quote(&params.output)
-            )
-            .into());
+            return Err(format!("unsupported service output format {:?}", params.output).into());
         }
         let mut service_id = params.service_id.trim().to_owned();
         if params.class_as_id {
@@ -337,7 +333,6 @@ impl SymfonyGeneratorProvider {
         })
     }
 
-    /// Go `CollectServiceDefinitions`.
     pub fn collect_service_definitions(
         &self,
         ctx: &Context,
@@ -349,13 +344,9 @@ impl SymfonyGeneratorProvider {
             return Err("symfony service generator is unavailable".into());
         };
         cancelled(ctx)?;
-        let output = go_to_lower(request.output.trim());
+        let output = lowercase(request.output.trim());
         if !supported_output(&output) {
-            return Err(format!(
-                "unsupported service output format {}",
-                go_quote(&request.output)
-            )
-            .into());
+            return Err(format!("unsupported service output format {:?}", request.output).into());
         }
         let class_names = unique_symfony_generator_class_names(&request.class_names);
         if class_names.is_empty() {
@@ -377,7 +368,7 @@ impl SymfonyGeneratorProvider {
                 .first()
                 .is_none_or(|class| class.kind != SymbolKind::Class)
             {
-                entry.error = format!("PHP class {} was not found", go_quote(&class_name));
+                entry.error = format!("PHP class {:?} was not found", class_name);
                 response.definitions.push(entry);
                 continue;
             }
@@ -419,7 +410,6 @@ impl SymfonyGeneratorProvider {
         )?)
     }
 
-    /// Go `createCompilerPass`.
     pub fn create_compiler_pass(
         &self,
         ctx: &Context,
@@ -432,11 +422,7 @@ impl SymfonyGeneratorProvider {
         params.bundle_class = trim_backslash_space(&params.bundle_class).to_owned();
         params.class_name = params.class_name.trim().to_owned();
         if !PHP_CLASS_IDENTIFIER_PATTERN.is_match(&params.class_name) {
-            return Err(format!(
-                "invalid compiler-pass class name {}",
-                go_quote(&params.class_name)
-            )
-            .into());
+            return Err(format!("invalid compiler-pass class name {:?}", params.class_name).into());
         }
         let parsed_bundle = swlsp_parser_php::parse(&params.source);
         let bundle_path = swlsp_uriutil::path(&params.bundle_uri)
@@ -453,7 +439,7 @@ impl SymfonyGeneratorProvider {
         if !snapshot.is_subtype_of(&params.bundle_class, BUNDLE_INTERFACE_CLASS) {
             return Err(format!("{} is not a Symfony bundle", params.bundle_class).into());
         }
-        let bundle_dir = filepath_dir(&bundle_path);
+        let bundle_dir = filepath::dir(&bundle_path);
         let mut relative_directory = filepath::join(&["DependencyInjection", "Compiler"]);
         let compiler_directory =
             filepath::join(&[bundle_dir.as_str(), relative_directory.as_str()]);
@@ -531,17 +517,6 @@ impl SymfonyGeneratorProvider {
     }
 }
 
-/// Go `filepath.Dir`.
-fn filepath_dir(path: &str) -> String {
-    let volume = filepath::volume_name_len(path);
-    let mut index = path.len();
-    while index > volume && !filepath::is_path_separator(path.as_bytes()[index - 1]) {
-        index -= 1;
-    }
-    let dir = filepath::clean(&path[volume..index]);
-    format!("{}{dir}", &path[..volume])
-}
-
 fn generated_service_methods(
     ctx: &Context,
     service_index: &ServiceIndex,
@@ -583,11 +558,11 @@ fn generated_service_methods(
         }
     }
     methods.sort_by(|left, right| {
-        let left_constructor = equal_fold(&left.name, "__construct");
-        let right_constructor = equal_fold(&right.name, "__construct");
+        let left_constructor = eq_ignore_case(&left.name, "__construct");
+        let right_constructor = eq_ignore_case(&right.name, "__construct");
         right_constructor
             .cmp(&left_constructor)
-            .then_with(|| go_to_lower(&left.name).cmp(&go_to_lower(&right.name)))
+            .then_with(|| lowercase(&left.name).cmp(&lowercase(&right.name)))
     });
     Ok(methods)
 }
@@ -604,7 +579,7 @@ fn services_for_type(
     let relations = snapshot.relations();
     for type_name in type_names {
         for service in service_index.get_services_by_type(&type_name)? {
-            let key = go_to_lower(&service.id);
+            let key = lowercase(&service.id);
             if seen.contains(&key) {
                 continue;
             }
@@ -626,7 +601,7 @@ fn services_for_type(
         let right_class_id = right.id.contains('\\');
         right_class_id
             .cmp(&left_class_id)
-            .then_with(|| go_to_lower(&left.id).cmp(&go_to_lower(&right.id)))
+            .then_with(|| lowercase(&left.id).cmp(&lowercase(&right.id)))
     });
     Ok(services.into_iter().map(|service| service.id).collect())
 }
@@ -665,13 +640,13 @@ fn generated_service_suggestions(
         }
     }
     result.sort_by(|left, right| {
-        let left_constructor = equal_fold(&left.method, "__construct");
-        let right_constructor = equal_fold(&right.method, "__construct");
+        let left_constructor = eq_ignore_case(&left.method, "__construct");
+        let right_constructor = eq_ignore_case(&right.method, "__construct");
         right_constructor.cmp(&left_constructor).then_with(|| {
-            if !equal_fold(&left.method, &right.method) {
-                go_to_lower(&left.method).cmp(&go_to_lower(&right.method))
+            if !eq_ignore_case(&left.method, &right.method) {
+                lowercase(&left.method).cmp(&lowercase(&right.method))
             } else {
-                go_to_lower(&left.parameter).cmp(&go_to_lower(&right.parameter))
+                lowercase(&left.parameter).cmp(&lowercase(&right.parameter))
             }
         })
     });
@@ -686,7 +661,7 @@ fn unique_symfony_generator_class_names(value: &str) -> Vec<String> {
         if class_name.is_empty() {
             continue;
         }
-        if !seen.insert(go_to_lower(class_name)) {
+        if !seen.insert(lowercase(class_name)) {
             continue;
         }
         result.push(class_name.to_owned());
@@ -729,7 +704,7 @@ fn append_service_suggestion_comments(
             })
             .collect();
         let mut label = format!("${}", suggestion.parameter);
-        if !equal_fold(&suggestion.method, "__construct") {
+        if !eq_ignore_case(&suggestion.method, "__construct") {
             label.push_str(&format!(" ({})", suggestion.method));
         }
         let line = format!(
@@ -765,7 +740,7 @@ fn collect_service_type_names(value: &Type, result: &mut Vec<String>) {
 }
 
 fn default_symfony_service_id(class_name: &str) -> String {
-    go_to_lower(&trim_backslash_space(class_name).replace('\\', "_"))
+    lowercase(&trim_backslash_space(class_name).replace('\\', "_"))
 }
 
 fn render_symfony_service_definition(
@@ -816,7 +791,7 @@ fn render_yaml_service_definition(
             .iter()
             .map(|argument| format!("'@{}'", argument.replace('\'', "''")))
             .collect();
-        if equal_fold(&method.name, "__construct") {
+        if eq_ignore_case(&method.name, "__construct") {
             lines.push(format!("    arguments: [{}]", arguments.join(", ")));
         } else {
             if !lines.iter().any(|line| line == "    calls:") {
@@ -874,7 +849,7 @@ fn render_xml_service_definition(
     }
     builder.push_str(">\n");
     for method in methods {
-        if equal_fold(&method.name, "__construct") {
+        if eq_ignore_case(&method.name, "__construct") {
             for argument in &method.arguments {
                 builder.push_str("  <argument type=\"service\" id=\"");
                 builder.push_str(&html_escape(argument));
@@ -921,7 +896,7 @@ fn render_fluent_service_definition(
     first.push(')');
     let mut lines = vec![first];
     for method in methods {
-        if equal_fold(&method.name, "__construct") {
+        if eq_ignore_case(&method.name, "__construct") {
             lines.push("    ->args([".to_owned());
         } else {
             lines.push(format!(
@@ -965,7 +940,7 @@ fn render_php_array_service_definition(
         lines.push(format!("    'class' => \\{class_name}::class,"));
     }
     for method in methods {
-        if equal_fold(&method.name, "__construct") {
+        if eq_ignore_case(&method.name, "__construct") {
             lines.push("    'arguments' => [".to_owned());
             for argument in &method.arguments {
                 lines.push(format!(
@@ -1015,7 +990,6 @@ fn php_service_argument(value: &str, php_index: Option<&PhpIndex>) -> String {
     format!("service('{}')", escape_php_single_quoted(value))
 }
 
-/// Go `addCompilerPassToBundle`.
 pub(crate) fn add_compiler_pass_to_bundle(
     uri: &str,
     source: &str,
@@ -1030,15 +1004,15 @@ pub(crate) fn add_compiler_pass_to_bundle(
         .into_iter()
         .find(|candidate| {
             candidate.kind() == PHP_CLASS_DECLARATION
-                && equal_fold(
+                && eq_ignore_case(
                     &php_class_fully_qualified_name(&root, candidate),
                     bundle_class,
                 )
         })
         .ok_or_else(|| {
             format!(
-                "bundle class {} was not found in the document",
-                go_quote(bundle_class)
+                "bundle class {:?} was not found in the document",
+                bundle_class
             )
         })?;
     let document = Arc::new(TextDocument::new(uri, source, version as i32));
@@ -1064,8 +1038,8 @@ pub(crate) fn add_compiler_pass_to_bundle(
     if compiler_import.is_some() {
         imports.push(compiler_class.to_owned());
     }
-    // Go shadows the container qualifier inside the `build == nil` branch, so
-    // the generated method always spells `ContainerBuilder`.
+    // The generated `build()` method always spells `ContainerBuilder`; the
+    // resolved qualifier only decides whether an import is added.
     let container_qualifier = "ContainerBuilder";
     if build.is_none() {
         imports.clear();
@@ -1074,8 +1048,8 @@ pub(crate) fn add_compiler_pass_to_bundle(
         if inner_container_qualifier.is_empty() {
             return Err("resolve ContainerBuilder import".into());
         }
-        if equal_fold(&inner_container_qualifier, &compiler_qualifier)
-            && !equal_fold(CONTAINER_BUILDER_CLASS, compiler_class)
+        if eq_ignore_case(&inner_container_qualifier, &compiler_qualifier)
+            && !eq_ignore_case(CONTAINER_BUILDER_CLASS, compiler_class)
         {
             compiler_qualifier = format!("\\{compiler_class}");
             compiler_import = None;
@@ -1141,9 +1115,9 @@ pub(crate) fn add_compiler_pass_to_bundle(
             if container_variable.is_empty() {
                 return Err("bundle build method has no container parameter".into());
             }
-            let build_text = go_to_lower(&build.text().to_string());
-            if build_text.contains(&go_to_lower(&format!("new {compiler_short_name}")))
-                || build_text.contains(&go_to_lower(&format!("new \\{compiler_class}")))
+            let build_text = lowercase(&build.text().to_string());
+            if build_text.contains(&lowercase(&format!("new {compiler_short_name}")))
+                || build_text.contains(&lowercase(&format!("new \\{compiler_class}")))
             {
                 return Err(
                     format!("compiler pass {compiler_short_name} is already registered").into(),

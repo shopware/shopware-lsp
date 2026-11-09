@@ -1,11 +1,11 @@
-//! DAL entity and field workspace symbols (port of `dal_symbol.go`).
+//! DAL entity and field workspace symbols.
 
 use std::sync::Arc;
 
 use swlsp_lsp::{Context, ProviderResult, WorkspaceSymbolProvider};
 use swlsp_lsp_protocol as protocol;
-use swlsp_php_types::go_to_lower;
 use swlsp_shopware_dal::Index;
+use swlsp_textutil::lowercase;
 
 use crate::{line_location, lower_contains};
 
@@ -31,7 +31,7 @@ impl WorkspaceSymbolProvider for DalWorkspaceSymbolProvider {
             return Ok(Vec::new());
         };
         let definitions = index.definitions()?;
-        let query = go_to_lower(query.trim());
+        let query = lowercase(query.trim());
         let mut result = Vec::new();
         for definition in &definitions {
             ctx.check()?;

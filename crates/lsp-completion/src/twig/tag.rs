@@ -1,4 +1,4 @@
-//! Go `twig_tag_completion.go`: custom tag names after `{%`.
+//! Completion of custom tag names after `{%`.
 
 use std::collections::HashMap;
 
@@ -7,7 +7,7 @@ use swlsp_lsp_protocol::{self as protocol, CompletionItemKind, InsertTextFormat}
 
 use super::completion::TwigCompletionProvider;
 use super::{markdown, request_offset, sort_by_lower_label};
-use crate::common::go_to_lower;
+use swlsp_textutil::lowercase;
 
 #[derive(Default)]
 struct TwigTagCompletionStatus {
@@ -42,15 +42,15 @@ impl TwigCompletionProvider {
                 status.class = tag.class;
             }
         }
-        let lower_prefix = go_to_lower(&prefix);
-        // Go iterates a map here; names are visited in byte order so case
-        // variants sharing a lowercase label keep a stable order.
+        let lower_prefix = lowercase(&prefix);
+        // Names are visited in byte order so case variants sharing a
+        // lowercase label keep a stable order.
         let mut names: Vec<&String> = statuses.keys().collect();
         names.sort();
         let mut items = Vec::with_capacity(statuses.len() + 3);
         for name in names {
             let status = &statuses[name];
-            if !prefix.is_empty() && !go_to_lower(name).starts_with(&lower_prefix) {
+            if !prefix.is_empty() && !lowercase(name).starts_with(&lower_prefix) {
                 continue;
             }
             let mut item = protocol::CompletionItem {
@@ -103,7 +103,7 @@ impl TwigCompletionProvider {
     }
 }
 
-/// Go `twigTagCompletionPrefix`: the partial tag name when the cursor ends
+/// The partial tag name when the cursor ends
 /// a tag name right after `{%`.
 pub(crate) fn twig_tag_completion_prefix(content: &[u8], offset: u32) -> Option<String> {
     let offset = offset as usize;

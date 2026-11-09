@@ -1,5 +1,3 @@
-//! Port of `flow_test.go`.
-
 use std::borrow::Cow;
 
 use crate::syntax::normalize_flow_expression;

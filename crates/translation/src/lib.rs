@@ -1,11 +1,7 @@
-//! Symfony translation catalogues and references (port of Go
-//! `internal/translation`).
+//! Symfony translation catalogues and references.
 //!
-//! # Differences from Go
-//!
-//! - Go passes the request PHP context through `context.Context`; Rust takes
-//!   an explicit `Option<&PhpContext>` in [`validate_php_reference`].
-//! - Go reports missing argument indexes as `-1`; Rust uses `Option`.
+//! Request-time PHP analysis is passed explicitly as `Option<&PhpContext>`
+//! to [`validate_php_reference`]; missing argument indexes are `None`.
 
 mod index;
 mod insertion;
@@ -26,8 +22,8 @@ pub use reference::{
 };
 
 use serde::{Deserialize, Serialize};
-use swlsp_php_types::go_to_lower;
 use swlsp_syntax::{LineIndex, SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::lowercase;
 
 const STORAGE_SEPARATOR: &str = "\x00";
 
@@ -88,7 +84,7 @@ pub(crate) fn normalize_domain(value: &str) -> &str {
 }
 
 pub(crate) fn storage_key(domain: &str, key: &str) -> String {
-    let mut result = go_to_lower(normalize_domain(domain));
+    let mut result = lowercase(normalize_domain(domain));
     result.push_str(STORAGE_SEPARATOR);
     result.push_str(key);
     result
@@ -107,7 +103,8 @@ pub(crate) fn sort_messages(messages: &mut [Message]) {
     });
 }
 
-/// Go `filepath.Base` for slash-separated paths.
+/// The last element of a slash-separated path, ignoring trailing slashes;
+/// `.` for an empty path and `/` for the root.
 pub(crate) fn base_name(path: &str) -> &str {
     let trimmed = path.trim_end_matches('/');
     if trimmed.is_empty() {
@@ -116,7 +113,8 @@ pub(crate) fn base_name(path: &str) -> &str {
     trimmed.rsplit('/').next().unwrap_or(trimmed)
 }
 
-/// Go `filepath.Ext`: the suffix from the final dot of the last element.
+/// The suffix of the last slash-separated element from its final dot
+/// (`.yaml`); empty when there is none.
 pub(crate) fn extension(path: &str) -> &str {
     let bytes = path.as_bytes();
     for index in (0..bytes.len()).rev() {
@@ -130,5 +128,5 @@ pub(crate) fn extension(path: &str) -> &str {
 }
 
 pub(crate) fn lower_extension(path: &str) -> String {
-    go_to_lower(extension(path))
+    lowercase(extension(path))
 }

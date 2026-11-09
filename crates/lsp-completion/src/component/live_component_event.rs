@@ -1,5 +1,4 @@
-//! Live Component event names and listener arguments (Go
-//! `live_component_event_completion.go`).
+//! Live Component event names and listener arguments.
 
 use std::collections::{BTreeMap, HashSet};
 use std::sync::{Arc, LazyLock};
@@ -9,8 +8,8 @@ use swlsp_lsp::{CompletionProvider, CompletionRequest, Context};
 use swlsp_lsp_protocol as protocol;
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::PHP_MEMBER_CALL;
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::{LineIndex, SyntaxNode};
+use swlsp_textutil::eq_ignore_case;
 use swlsp_twigcomponent::{Index, LiveActionParameter, LiveListener};
 
 use super::twig_component::{
@@ -18,16 +17,17 @@ use super::twig_component::{
     live_argument_name,
 };
 use super::util::{
-    go_regex, kind, last_index_whitespace, request_offset, request_path, snippet, source_before,
+    ascii_regex, kind, last_index_whitespace, request_offset, request_path, snippet, source_before,
 };
-use crate::common::{go_to_lower, protocol_range, sort_completion_items, text_edit};
+use crate::common::{protocol_range, sort_completion_items, text_edit};
+use swlsp_textutil::lowercase;
 
 static LIVE_EVENT_VALUE_COMPLETION: LazyLock<Regex> =
-    LazyLock::new(|| go_regex(r#"(?is)\bdata-live-event-param\s*=\s*["']([^"']*)$"#));
+    LazyLock::new(|| ascii_regex(r#"(?is)\bdata-live-event-param\s*=\s*["']([^"']*)$"#));
 static LIVE_EVENT_VALUE: LazyLock<Regex> =
-    LazyLock::new(|| go_regex(r#"(?is)\bdata-live-event-param\s*=\s*["']([^"']*)["']"#));
+    LazyLock::new(|| ascii_regex(r#"(?is)\bdata-live-event-param\s*=\s*["']([^"']*)["']"#));
 static LIVE_EVENT_ACTION: LazyLock<Regex> = LazyLock::new(|| {
-    go_regex(r#"(?is)\bdata-action\s*=\s*["'][^"']*live#emit(?:self|up)?[^"']*["']"#)
+    ascii_regex(r#"(?is)\bdata-action\s*=\s*["'][^"']*live#emit(?:self|up)?[^"']*["']"#)
 });
 
 pub struct LiveComponentEventCompletionProvider {
@@ -56,7 +56,7 @@ impl CompletionProvider for LiveComponentEventCompletionProvider {
             return Vec::new();
         };
         let path = request_path(request);
-        match go_to_lower(swlsp_uriutil::filepath::ext(&path)).as_str() {
+        match lowercase(swlsp_uriutil::filepath::ext(&path)).as_str() {
             ".php" => {
                 let Some(node) = request.node.as_ref() else {
                     return Vec::new();
@@ -98,7 +98,7 @@ fn event_completions(index: &Index) -> Vec<protocol::CompletionItem> {
     let mut by_name: BTreeMap<String, Vec<LiveListener>> = BTreeMap::new();
     for listener in listeners {
         by_name
-            .entry(go_to_lower(&listener.name))
+            .entry(lowercase(&listener.name))
             .or_default()
             .push(listener);
     }
@@ -131,18 +131,18 @@ fn php_argument_completions(
     let Ok(listeners) = index.live_listeners() else {
         return Vec::new();
     };
-    let configured: HashSet<String> = present.iter().map(|value| go_to_lower(value)).collect();
+    let configured: HashSet<String> = present.iter().map(|value| lowercase(value)).collect();
     let mut seen = HashSet::new();
     let mut items = Vec::new();
     for listener in &listeners {
-        if !equal_fold(&listener.name, event) {
+        if !eq_ignore_case(&listener.name, event) {
             continue;
         }
         for parameter in &listener.parameters {
             if !parameter.live_arg {
                 continue;
             }
-            let key = go_to_lower(&parameter.name);
+            let key = lowercase(&parameter.name);
             if configured.contains(&key) || !seen.insert(key) {
                 continue;
             }
@@ -172,14 +172,14 @@ fn twig_argument_completions(
     let mut seen = HashSet::new();
     let mut items = Vec::new();
     for listener in &listeners {
-        if !equal_fold(&listener.name, &context.name) {
+        if !eq_ignore_case(&listener.name, &context.name) {
             continue;
         }
         for parameter in &listener.parameters {
             if !parameter.live_arg {
                 continue;
             }
-            let key = go_to_lower(&parameter.name);
+            let key = lowercase(&parameter.name);
             if context.present.contains(&key) || !seen.insert(key) {
                 continue;
             }
@@ -214,10 +214,10 @@ fn live_event_name_context_php(node: &SyntaxNode) -> bool {
     let Some(receiver) = phpquery::call_receiver(&call) else {
         return false;
     };
-    if !equal_fold(receiver.text().to_string().trim(), "$this") {
+    if !eq_ignore_case(receiver.text().to_string().trim(), "$this") {
         return false;
     }
-    match go_to_lower(&phpquery::call_method_name(&call)).as_str() {
+    match lowercase(&phpquery::call_method_name(&call)).as_str() {
         "emit" | "emitup" | "emitself" => {}
         _ => return false,
     }
@@ -227,7 +227,9 @@ fn live_event_name_context_php(node: &SyntaxNode) -> bool {
     let name = phpquery::argument(&call, index)
         .map(|argument| phpquery::argument_name(&argument))
         .unwrap_or_default();
-    (index == 0 && name.is_empty()) || equal_fold(&name, "event") || equal_fold(&name, "eventName")
+    (index == 0 && name.is_empty())
+        || eq_ignore_case(&name, "event")
+        || eq_ignore_case(&name, "eventName")
 }
 
 fn live_event_name_completion_context(source: &str, offset: u32) -> bool {
@@ -255,7 +257,7 @@ fn live_event_argument_completion_context(
     let fragment = &before[open..];
     let current_start = last_index_whitespace(fragment)? + 1;
     let current = &fragment[current_start..];
-    if !go_to_lower(current).starts_with("data-live-")
+    if !lowercase(current).starts_with("data-live-")
         || current.contains('=')
         || !LIVE_EVENT_ACTION.is_match(fragment)
     {
@@ -274,10 +276,10 @@ fn live_event_argument_completion_context(
         let Some(name) = captures.get(1) else {
             continue;
         };
-        if equal_fold(name.as_str(), "action") || equal_fold(name.as_str(), "event") {
+        if eq_ignore_case(name.as_str(), "action") || eq_ignore_case(name.as_str(), "event") {
             continue;
         }
-        present.insert(go_to_lower(&live_argument_name(name.as_str())));
+        present.insert(lowercase(&live_argument_name(name.as_str())));
     }
     Some(LiveArgumentContext {
         name: event.to_string(),

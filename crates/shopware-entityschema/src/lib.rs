@@ -1,4 +1,4 @@
-//! Shopware DAL entity schema (port of Go `internal/shopware/entityschema`).
+//! Shopware DAL entity schema.
 //!
 //! The normalized [`EntitySpec`]/[`Schema`] model drives entity-designer
 //! previews, generated PHP classes, source-preserving rewrites, MySQL
@@ -6,12 +6,12 @@
 //! definitions are imported losslessly: anything the typed model cannot prove
 //! stays a locked raw expression.
 
+pub mod canonical_json;
 mod context;
 mod definition_behavior;
 mod definition_metadata;
 mod diff;
 mod field_modification;
-pub mod gojson;
 mod import;
 mod indexed_catalog;
 mod model;

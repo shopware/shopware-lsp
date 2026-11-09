@@ -1,4 +1,4 @@
-//! Go `twig_render_block_completion.go`: block names in
+//! Completion of block names in
 //! `renderBlock()`/`renderBlockView()` calls.
 
 use std::collections::HashMap;
@@ -10,7 +10,8 @@ use swlsp_php::PhpIndex;
 use swlsp_twig::{TemplateBlock, TwigIndexer};
 
 use super::{lower_ext, markdown, request_offset, sort_by_lower_label};
-use crate::common::{go_to_lower, php_context};
+use crate::common::php_context;
+use swlsp_textutil::lowercase;
 
 pub struct TwigRenderBlockCompletionProvider {
     twig_index: Option<Arc<TwigIndexer>>,
@@ -56,7 +57,7 @@ impl CompletionProvider for TwigRenderBlockCompletionProvider {
         };
         let mut by_name: HashMap<String, TemplateBlock> = HashMap::new();
         for block in blocks {
-            by_name.entry(go_to_lower(&block.name)).or_insert(block);
+            by_name.entry(lowercase(&block.name)).or_insert(block);
         }
         let mut items: Vec<protocol::CompletionItem> = by_name
             .into_values()

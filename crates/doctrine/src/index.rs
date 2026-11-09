@@ -1,4 +1,4 @@
-//! DBAL type registration persistence and queries (port of Go `index.go`).
+//! DBAL type registration persistence and queries.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -9,10 +9,10 @@ use swlsp_indexer::{
     TransactionalClearer, TransactionalRemover,
 };
 use swlsp_php::PhpIndex;
-use swlsp_php_types::{equal_fold, go_to_lower};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::candidate::{TYPE_CANDIDATE, doctrine_candidates};
-use crate::helpers::{go_trim_space, normalize_class};
+use crate::helpers::normalize_class;
 use crate::type_config::{TypeRegistration, type_registrations_in_document};
 use crate::types::{TypeDeclaration, sort_declarations, type_declarations};
 
@@ -87,7 +87,7 @@ impl Index {
                     continue;
                 }
                 values.push((
-                    format!("{}#{position}", go_to_lower(&registration.name)),
+                    format!("{}#{position}", lowercase(&registration.name)),
                     registration,
                 ));
             }
@@ -207,13 +207,13 @@ impl Index {
 
     /// Registrations named `name` (case-insensitive), by file and position.
     pub fn type_registrations(&self, name: &str) -> Result<Vec<TypeRegistration>> {
-        if go_trim_space(name).is_empty() {
+        if name.trim().is_empty() {
             return Ok(Vec::new());
         }
         let values = self.type_registrations.get_all_values_view()?;
         let mut result: Vec<TypeRegistration> = values
             .iter()
-            .filter(|registration| equal_fold(&registration.name, name))
+            .filter(|registration| eq_ignore_case(&registration.name, name))
             .cloned()
             .collect();
         result.sort_by(|left, right| {
@@ -224,16 +224,16 @@ impl Index {
         Ok(result)
     }
 
-    /// Every persisted registration (diagnostics and oracle use).
+    /// Every persisted registration (diagnostics and tests).
     pub fn all_type_registrations(&self) -> Result<Vec<TypeRegistration>> {
         self.type_registrations.get_all_values()
     }
 }
 
 fn type_declaration_key(declaration: &TypeDeclaration) -> String {
-    go_to_lower(&format!(
+    lowercase(&format!(
         "{}|{}",
-        go_trim_space(&declaration.name),
+        declaration.name.trim(),
         normalize_class(&declaration.class)
     ))
 }

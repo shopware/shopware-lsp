@@ -1,4 +1,4 @@
-//! Go `admin_diagnostics_twig.go`: template diagnostics.
+//! Template diagnostics.
 
 use std::collections::{HashMap, HashSet};
 
@@ -19,11 +19,10 @@ use swlsp_suggestion::similar;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
 
 use super::analyzer::AdminAnalyzer;
-use super::{go_string_list, payload, string_array, text};
+use super::{payload, string_array, text};
 use crate::common::admin_nearby_suggestions;
 
-/// Per-document facts shared by the Twig diagnostics (Go
-/// `adminTwigDiagnosticDocument`).
+/// Per-document facts shared by the Twig diagnostics.
 pub(super) struct AdminTwigDiagnosticDocument {
     pub template_path: String,
     pub live_owner: Option<VueComponent>,
@@ -46,8 +45,7 @@ impl AdminAnalyzer {
             return Ok(Vec::new());
         };
         let Some(indexer) = self.indexer() else {
-            // Go dereferences the nil indexer while building the document
-            // analysis; without an index nothing can be validated.
+            // Without an index nothing can be validated.
             return Ok(Vec::new());
         };
         let template_path = swlsp_uriutil::path(&document.uri)?;
@@ -94,7 +92,6 @@ impl AdminAnalyzer {
         Ok(diagnostics)
     }
 
-    /// Go `diagnosticComponentForTemplateTag`.
     pub(super) fn diagnostic_component_for_template_tag(
         &self,
         analysis: &mut AdminTwigDiagnosticDocument,
@@ -182,7 +179,7 @@ impl AdminAnalyzer {
                 id: "admin.component.unknown-template-member".into(),
                 payload: Some(payload(vec![
                     ("memberName", text(&identifier.name)),
-                    ("suggestions", go_string_list(suggestions)),
+                    ("suggestions", string_array(suggestions)),
                 ])),
                 ..Problem::default()
             });
@@ -346,7 +343,7 @@ impl AdminAnalyzer {
                         ("memberName", text(&binding.member_name)),
                         (
                             "suggestions",
-                            go_string_list(similar(&binding.member_name, &member_names)),
+                            string_array(similar(&binding.member_name, &member_names)),
                         ),
                     ])),
                     ..Problem::default()
@@ -401,7 +398,7 @@ impl AdminAnalyzer {
                 id: "admin.directive.not-found".into(),
                 payload: Some(payload(vec![
                     ("directiveName", text(&reference.name)),
-                    ("suggestions", go_string_list(suggestions)),
+                    ("suggestions", string_array(suggestions)),
                 ])),
                 ..Problem::default()
             });
@@ -562,7 +559,7 @@ impl AdminAnalyzer {
                     ("memberName", text(&access.member)),
                     (
                         "suggestions",
-                        go_string_list(similar(&access.member, &member_names)),
+                        string_array(similar(&access.member, &member_names)),
                     ),
                 ])),
                 ..Problem::default()
@@ -572,8 +569,8 @@ impl AdminAnalyzer {
     }
 }
 
-/// Go `commonDeprecatedAdminMember`: the joined deprecation when every
-/// component deprecates the member, else empty.
+/// The joined deprecation when every component deprecates the member, else
+/// empty.
 fn common_deprecated_admin_member(components: &[VueComponent], name: &str) -> String {
     let mut messages: Vec<String> = Vec::new();
     for component in components {
@@ -626,7 +623,7 @@ fn unknown_typed_vue_member_problem(
             ("memberName", text(&access.member)),
             (
                 "suggestions",
-                go_string_list(similar(&access.member, &members)),
+                string_array(similar(&access.member, &members)),
             ),
         ])),
         ..Problem::default()

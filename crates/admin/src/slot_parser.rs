@@ -1,4 +1,4 @@
-//! Template slot and block extraction (port of Go `slot_parser.go`).
+//! Template slot and block extraction.
 
 use swlsp_parser_twig::ast::AstNode;
 
@@ -180,9 +180,8 @@ pub(crate) fn parse_template_tree(
     result
 }
 
-/// Lexical inputs of the block at `offset` (Go `twigBlockScopeMembers`)
-/// over template scopes scanned once. Filtering every binding by offset
-/// equals Go's offset-pruned scan.
+/// Lexical inputs of the block at `offset` over template scopes scanned
+/// once; every binding is filtered by offset.
 pub(crate) fn twig_block_scope_members_in(
     bindings: &[TwigVueBinding],
     scoped_slots: &[TwigScopedSlot],

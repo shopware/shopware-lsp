@@ -1,4 +1,4 @@
-//! Twig symbol entry points (port of Go `usage_symbol_twig_base.go`).
+//! Twig symbol entry points.
 
 use crate::*;
 

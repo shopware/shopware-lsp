@@ -49,8 +49,8 @@ impl VendorPackages {
         let Ok(manifest) = serde_json::from_slice::<VendorManifest>(&content) else {
             return packages;
         };
-        // Go decodes into typed fields and rejects the whole manifest when a
-        // field has the wrong type.
+        // A field of the wrong type makes the whole manifest unusable, so no
+        // package is derived from a half-understood `composer.json`.
         let name = match &manifest.name {
             serde_json::Value::Null => String::new(),
             serde_json::Value::String(name) => name.clone(),

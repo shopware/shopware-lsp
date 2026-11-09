@@ -1,5 +1,5 @@
-//! Entity designer commands (port of Go `entity_schema.go`): bootstrap,
-//! relation search, load, preview, apply and snapshot reconciliation.
+//! Entity designer commands: bootstrap, relation search, load, preview, apply
+//! and snapshot reconciliation.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -396,7 +396,7 @@ impl Provider {
             limit = 50;
         }
         results.truncate(limit as usize);
-        // Go returns a nil slice (JSON null) when nothing matches.
+        // No match is reported as `null`.
         Ok((!results.is_empty()).then_some(results))
     }
 
@@ -1221,7 +1221,7 @@ fn finalize_entity_schema_preview(
         #[serde(rename = "Files")]
         files: Option<&'a [EntitySchemaFilePreview]>,
     }
-    let revision_content = es::gojson::to_vec(&RevisionContent {
+    let revision_content = es::canonical_json::to_vec(&RevisionContent {
         request: &revision_request,
         files: (!response.files.is_empty()).then_some(response.files.as_slice()),
     })
@@ -1682,19 +1682,10 @@ pub(crate) fn entity_schema_revision_timestamp(revision: &str) -> Option<i64> {
     if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return None;
     }
-    go_parse_int(timestamp_text).filter(|timestamp| *timestamp > 0)
-}
-
-/// Go `strconv.ParseInt(text, 10, 64)`.
-fn go_parse_int(text: &str) -> Option<i64> {
-    let digits = text
-        .strip_prefix('+')
-        .or_else(|| text.strip_prefix('-'))
-        .unwrap_or(text);
-    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    text.parse().ok()
+    timestamp_text
+        .parse::<i64>()
+        .ok()
+        .filter(|timestamp| *timestamp > 0)
 }
 
 fn prepare_entity_schema_history(
@@ -1960,24 +1951,7 @@ fn same_string_set(left: &[String], right: &[String]) -> bool {
 }
 
 fn same_php_class(left: &str, right: &str) -> bool {
-    go_equal_fold(left.trim_matches('\\'), right.trim_matches('\\'))
-}
-
-/// Go `strings.EqualFold` (simple Unicode folding).
-fn go_equal_fold(left: &str, right: &str) -> bool {
-    let mut left = left.chars();
-    let mut right = right.chars();
-    loop {
-        match (left.next(), right.next()) {
-            (None, None) => return true,
-            (Some(a), Some(b)) => {
-                if a != b && crate::to_lower(a) != crate::to_lower(b) {
-                    return false;
-                }
-            }
-            _ => return false,
-        }
-    }
+    swlsp_textutil::eq_ignore_case(left.trim_matches('\\'), right.trim_matches('\\'))
 }
 
 fn entity_schema_sources_for(
@@ -2085,7 +2059,7 @@ fn source_for_path(
     if let Some(document) = documents.get(&file_uri(path)) {
         return Ok((document.text.clone(), document.version, true));
     }
-    match paths::read_file(path).map_err(|error| errorf!("{error}"))? {
+    match paths::read_file(path)? {
         Some(content) => Ok((content, None, true)),
         None => Ok((String::new(), None, false)),
     }
@@ -2145,7 +2119,7 @@ fn resolved_path_through_existing_ancestor(path: &str) -> String {
     let mut suffix: Vec<String> = Vec::new();
     loop {
         if std::fs::symlink_metadata(&probe).is_ok() {
-            if let Some(mut resolved) = paths::eval_symlinks(&probe) {
+            if let Some(mut resolved) = paths::canonical_path(&probe) {
                 for part in suffix.iter().rev() {
                     resolved = paths::join(&[&resolved, part]);
                 }
@@ -2164,7 +2138,8 @@ fn resolved_path_through_existing_ancestor(path: &str) -> String {
 }
 
 fn same_entity_schema(left: &es::Schema, right: &es::Schema) -> bool {
-    es::gojson::to_vec(&left.normalize()).ok() == es::gojson::to_vec(&right.normalize()).ok()
+    es::canonical_json::to_vec(&left.normalize()).ok()
+        == es::canonical_json::to_vec(&right.normalize()).ok()
 }
 
 fn language_for_path(path: &str) -> &'static str {

@@ -1,5 +1,6 @@
-//! `github.com/tidwall/pretty` v1.2.1 `Pretty` with its default options
-//! (width 80, two-space indent, no prefix, unsorted keys).
+//! Pretty-prints JSON for snippet files: two-space indentation, keys in
+//! document order, one member per line, and arrays kept on one line while
+//! they fit within 80 columns.
 
 const WIDTH: i64 = 80;
 

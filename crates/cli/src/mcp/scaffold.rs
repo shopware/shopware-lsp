@@ -1,4 +1,4 @@
-//! Scaffold and entity-schema tools (Go `mcp_scaffold.go`). Generators run
+//! Scaffold and entity-schema tools. Generators run
 //! through the production LSP commands; their workspace edits are validated
 //! against the root and previewed (or written when requested).
 
@@ -276,7 +276,8 @@ struct WriteOutput {
     diff: String,
 }
 
-/// Go `callMCPCommand`: errors read `command: method: cause`.
+/// Runs a server command; a `null` result becomes the default response and
+/// errors read `command: method: cause`.
 fn call_command<Request: Serialize, Response: serde::de::DeserializeOwned + Default>(
     session: &CliSession,
     command: &str,
@@ -819,7 +820,8 @@ pub(crate) fn compact_diff(diff: &es::SchemaDiff) -> DiffSummary {
 }
 
 impl McpRuntime {
-    /// Go `inputURI`: a validated workspace path as a file URI.
+    /// A validated workspace path as a file URI (empty when optional and
+    /// not given).
     fn input_uri(&self, value: &str, required: bool) -> Result<String, CliError> {
         if value.trim().is_empty() {
             if required {

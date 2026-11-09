@@ -1,4 +1,4 @@
-//! Registry references in Twig templates (port of Go `twig_reference.go`).
+//! Registry references in Twig templates.
 
 use crate::*;
 

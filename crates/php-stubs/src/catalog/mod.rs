@@ -1,11 +1,9 @@
-//! The compact, generated PHP runtime stub format (port of
-//! `internal/php/stubs/catalog`).
+//! The compact, generated PHP runtime stub format.
 //!
-//! The wire format is the MessagePack layout written by the Go generator
-//! (`cmd/generate_phpstorm_stubs`), so Rust embeds the very same
-//! `phpstorm-stubs.msgpack` artifact. Catalog structs are encoded as arrays;
-//! the shared semantic records (`Attribute`, `CallContract`, ...) as maps
-//! keyed by Go field name; types as their persisted strings.
+//! The wire format is the MessagePack layout written by
+//! `generate-phpstorm-stubs`. Catalog structs are encoded as arrays; the
+//! shared semantic records (`Attribute`, `CallContract`, ...) as maps keyed
+//! by PascalCase field name; types as their persisted strings.
 //!
 //! Decoding a `'static` artifact borrows every string from it, so names in
 //! materialized symbols never allocate.
@@ -24,7 +22,8 @@ use swlsp_php_semantic::{
     ExpectedArgumentContract, Flags, Parameter as SemanticParameter, Str, Symbol as SemanticSymbol,
     SymbolId, SymbolKind, TemplateParameter as SemanticTemplate, Visibility, new_symbol_id,
 };
-use swlsp_php_types::{Type, go_to_lower, parse_persisted};
+use swlsp_php_types::{Type, parse_persisted};
+use swlsp_textutil::lowercase;
 
 pub use msgpack::Error;
 
@@ -156,7 +155,7 @@ impl Catalog {
             if symbol.container.is_empty()
                 && !symbol.fully_qualified.is_empty()
                 && !extension.is_empty()
-                && seen_names.insert((go_to_lower(&symbol.fully_qualified), extension.clone()))
+                && seen_names.insert((lowercase(&symbol.fully_qualified), extension.clone()))
             {
                 self.extension_symbols.push(ExtensionSymbol {
                     name: symbol.fully_qualified.clone(),
@@ -300,16 +299,10 @@ impl Catalog {
 
 fn validate(catalog: Catalog) -> Result<Catalog, Error> {
     if catalog.format != FORMAT_VERSION {
-        return Err(Error(format!(
-            "decode PHP stub catalog: unsupported format {}",
-            catalog.format
-        )));
+        return Err(Error::UnsupportedFormat(catalog.format));
     }
     if catalog.versions.is_empty() || catalog.versions.len() > 16 {
-        return Err(Error(format!(
-            "decode PHP stub catalog: invalid version count {}",
-            catalog.versions.len()
-        )));
+        return Err(Error::VersionCount(catalog.versions.len()));
     }
     Ok(catalog)
 }
@@ -395,14 +388,14 @@ fn materialize_symbols(
     let mut owners: HashMap<String, SymbolId> = HashMap::new();
     for symbol in &result {
         if symbol.is_class_like() {
-            owners.insert(go_to_lower(&symbol.fully_qualified), symbol.id.clone());
+            owners.insert(lowercase(&symbol.fully_qualified), symbol.id.clone());
         }
     }
     for (symbol, container) in result.iter_mut().zip(&container_names) {
         if container.is_empty() {
             continue;
         }
-        if let Some(owner) = owners.get(&go_to_lower(container)) {
+        if let Some(owner) = owners.get(&lowercase(container)) {
             symbol.container = owner.clone();
         }
     }
@@ -426,9 +419,9 @@ fn extension_selection(extensions: &[String]) -> HashSet<String> {
         .collect()
 }
 
-/// Go `normalizeExtension`: lowercase, without `ext-`, `-` as `_`.
+/// A Composer/PHP extension name lowercased, without `ext-`, with `-` as `_`.
 pub fn normalize_extension(extension: &str) -> String {
-    let extension = go_to_lower(extension.trim());
+    let extension = lowercase(extension.trim());
     extension
         .strip_prefix("ext-")
         .unwrap_or(&extension)
@@ -475,8 +468,10 @@ impl<'a, F: Fn(&'a str) -> Str> Decoder<'a, F> {
         if let Some(value) = self.types.get(text) {
             return Ok(value.clone());
         }
-        let value = parse_persisted(text)
-            .map_err(|error| Error(format!("parse persisted PHP type {text:?}: {error}")))?;
+        let value = parse_persisted(text).map_err(|source| Error::Type {
+            text: text.to_owned(),
+            source,
+        })?;
         self.types.insert(text, value.clone());
         Ok(value)
     }
@@ -514,7 +509,7 @@ impl<'a, F: Fn(&'a str) -> Str> Decoder<'a, F> {
         Ok(())
     }
 
-    /// Reads a map-encoded struct keyed by Go field name; unknown fields are
+    /// Reads a map-encoded struct keyed by field name; unknown fields are
     /// skipped.
     fn record(
         &mut self,
@@ -713,8 +708,10 @@ impl<'a, F: Fn(&'a str) -> Str> Decoder<'a, F> {
             match key {
                 "Kind" => {
                     let kind: u8 = decoder.reader.uint()?;
-                    value.kind = AttributeValueKind::from_u8(kind)
-                        .ok_or_else(|| Error(format!("invalid attribute value kind {kind}")))?;
+                    value.kind = AttributeValueKind::from_u8(kind).ok_or(Error::InvalidEnum {
+                        field: "attribute value kind",
+                        value: kind,
+                    })?;
                 }
                 "Value" => value.value = decoder.str()?,
                 "Expression" => value.expression = decoder.str()?,
@@ -753,9 +750,10 @@ impl<'a, F: Fn(&'a str) -> Str> Decoder<'a, F> {
                                     0 => CallTargetKind::Function,
                                     1 => CallTargetKind::Method,
                                     kind => {
-                                        return Err(Error(format!(
-                                            "invalid call target kind {kind}"
-                                        )));
+                                        return Err(Error::InvalidEnum {
+                                            field: "call target kind",
+                                            value: kind,
+                                        });
                                     }
                                 }
                             }
@@ -777,9 +775,10 @@ impl<'a, F: Fn(&'a str) -> Str> Decoder<'a, F> {
                                     2 => CallReturnKind::ArgumentElementType,
                                     3 => CallReturnKind::ArgumentMap,
                                     kind => {
-                                        return Err(Error(format!(
-                                            "invalid call return kind {kind}"
-                                        )));
+                                        return Err(Error::InvalidEnum {
+                                            field: "call return kind",
+                                            value: kind,
+                                        });
                                     }
                                 }
                             }
@@ -844,7 +843,12 @@ impl<'a, F: Fn(&'a str) -> Str> Decoder<'a, F> {
                         2 => CallValueKind::Number,
                         3 => CallValueKind::Constant,
                         4 => CallValueKind::ClassConstant,
-                        kind => return Err(Error(format!("invalid call value kind {kind}"))),
+                        kind => {
+                            return Err(Error::InvalidEnum {
+                                field: "call value kind",
+                                value: kind,
+                            });
+                        }
                     }
                 }
                 "Value" => value.value = decoder.str()?,
@@ -858,11 +862,17 @@ impl<'a, F: Fn(&'a str) -> Str> Decoder<'a, F> {
 }
 
 fn symbol_kind(value: u8) -> Result<SymbolKind, Error> {
-    SymbolKind::from_u8(value).ok_or_else(|| Error(format!("invalid symbol kind {value}")))
+    SymbolKind::from_u8(value).ok_or(Error::InvalidEnum {
+        field: "symbol kind",
+        value,
+    })
 }
 
 fn visibility(value: u8) -> Result<Visibility, Error> {
-    Visibility::from_u8(value).ok_or_else(|| Error(format!("invalid visibility {value}")))
+    Visibility::from_u8(value).ok_or(Error::InvalidEnum {
+        field: "visibility",
+        value,
+    })
 }
 
 // -- encoding ------------------------------------------------------------------

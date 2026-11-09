@@ -1,5 +1,4 @@
-//! Custom `shopware/...` workspace commands (port of Go
-//! `internal/lsp/commands`).
+//! Custom `shopware/...` workspace commands.
 //!
 //! Command IDs and JSON shapes are client contracts used by the editors.
 //! Commands never write files: edits are compiled from a validated
@@ -8,8 +7,8 @@
 
 mod console;
 mod extension;
+mod json_edit;
 mod pretty;
-mod sjson;
 mod snippet;
 mod twig;
 
@@ -31,7 +30,7 @@ pub use snippet::{SnippetCommandProvider, SnippetFile};
 pub use twig::TwigCommandProvider;
 
 /// Resolves snapshots, lists tracked resources and validates the edits
-/// commands produce (Go `EditHost`).
+/// commands produce.
 pub trait EditHost: WorkspaceEditHost {
     fn resource_paths(
         &self,
@@ -97,8 +96,8 @@ fn to_value<T: Serialize>(value: &T) -> Result<Value, BoxError> {
     Ok(serde_json::to_value(value)?)
 }
 
-/// Decodes command arguments like Go's `json.Unmarshal(*args, &params)`;
-/// absent arguments decode as `null` (zero values).
+/// Decodes command arguments; absent or `null` arguments decode as the
+/// parameters' defaults.
 fn decode_args<T: serde::de::DeserializeOwned + Default>(
     args: Option<&Value>,
 ) -> Result<T, serde_json::Error> {
@@ -106,19 +105,4 @@ fn decode_args<T: serde::de::DeserializeOwned + Default>(
         None | Some(Value::Null) => Ok(T::default()),
         Some(value) => serde_json::from_value(value.clone()),
     }
-}
-
-/// Go `filepath.Dir`.
-fn dir(path: &str) -> String {
-    use swlsp_uriutil::filepath;
-    let volume = filepath::volume_name_len(path);
-    let mut index = path.len();
-    while index > volume && !filepath::is_path_separator(path.as_bytes()[index - 1]) {
-        index -= 1;
-    }
-    let directory = filepath::clean(&path[volume..index]);
-    if directory == "." && volume > 0 {
-        return path[..volume].to_owned();
-    }
-    format!("{}{}", &path[..volume], directory)
 }

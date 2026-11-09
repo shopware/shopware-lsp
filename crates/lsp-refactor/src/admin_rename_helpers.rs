@@ -1,5 +1,5 @@
 //! Administration rename handlers for document-local symbols, targets and
-//! validation (port of Go `admin_rename_helpers.go`).
+//! validation.
 
 use swlsp_admin::{
     AdminComponentIndexer, AdminNameStyle, AdminSourceRange, AdminSymbolKind, AdminSymbolTarget,
@@ -16,13 +16,12 @@ use swlsp_parser_twig::ast::{AstNode, HtmlAttribute, HtmlEndingTag, HtmlStarting
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::{HTML_ENDING_TAG, HTML_STARTING_TAG};
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
-use swlsp_uriutil::{file_uri, filepath, go_quote};
+use swlsp_uriutil::{file_uri, filepath};
 
 use crate::admin_rename::{AdminRenameProvider, Changes, Handled};
 use crate::{lower_ext, protocol_range};
 
-/// A rename request with its document, tree and params unpacked (Go reads
-/// these from the request's syntax context).
+/// A rename request with its document, tree and params unpacked.
 pub(crate) struct Request<'a> {
     pub params: &'a protocol::RenameParams,
     pub document: &'a TextDocument,
@@ -58,7 +57,8 @@ impl<'a> Request<'a> {
         effective_syntax_language(Some(LanguageId::Vue), self.node)
     }
 
-    /// Go `adminRenameTemplate`.
+    /// Whether the request is in a Twig template (`.twig`, or Vue with a
+    /// Twig template block at the cursor).
     pub fn is_template(&self) -> bool {
         if self.uri().is_empty() {
             return false;
@@ -67,7 +67,7 @@ impl<'a> Request<'a> {
         ext == ".twig" || ext == ".vue" && self.effective() == Some(LanguageId::Twig)
     }
 
-    /// Go `adminRenameScript`.
+    /// Whether the request is in a JavaScript or TypeScript script.
     fn is_script(&self) -> bool {
         if self.uri().is_empty() {
             return false;
@@ -182,8 +182,8 @@ impl AdminRenameProvider {
             Err(error) => return handled_error(error),
             Ok(Some(member)) => {
                 return err(format!(
-                    "cannot rename scoped-slot contract member {} from a consumer template",
-                    go_quote(&member.access.member)
+                    "cannot rename scoped-slot contract member {:?} from a consumer template",
+                    member.access.member
                 ));
             }
             Ok(None) => {}
@@ -206,8 +206,8 @@ impl AdminRenameProvider {
             && binding.member_name != binding.local_name
         {
             return err(format!(
-                "cannot rename scoped-slot contract member {} from a consumer template",
-                go_quote(&binding.member_name)
+                "cannot rename scoped-slot contract member {:?} from a consumer template",
+                binding.member_name
             ));
         }
         let new_name = request.params.new_name.trim();
@@ -216,8 +216,8 @@ impl AdminRenameProvider {
         }
         if !is_identifier(new_name) {
             return err(format!(
-                "{} is not a valid scoped-slot local identifier",
-                go_quote(new_name)
+                "{:?} is not a valid scoped-slot local identifier",
+                new_name
             ));
         }
         if resolved
@@ -228,8 +228,8 @@ impl AdminRenameProvider {
             .any(|other| other.local_name == new_name && other.local_range != binding.local_range)
         {
             return err(format!(
-                "scoped-slot local {} already exists in this slot scope",
-                go_quote(new_name)
+                "scoped-slot local {:?} already exists in this slot scope",
+                new_name
             ));
         }
         let ranges = twig_scoped_slot_binding_references(request.root, content, &resolved);
@@ -312,8 +312,8 @@ impl AdminRenameProvider {
             }
             if targets.len() > 1 {
                 return Err(format!(
-                    "cannot safely rename Administration slot {} because the dynamic component candidates expose distinct declarations",
-                    go_quote(&reference.name)
+                    "cannot safely rename Administration slot {:?} because the dynamic component candidates expose distinct declarations",
+                    reference.name
                 )
                 .into());
             }
@@ -453,7 +453,7 @@ impl AdminRenameProvider {
         target: &AdminSymbolTarget,
         new_name: &str,
     ) -> Result<(), BoxError> {
-        let quoted = go_quote(new_name);
+        let quoted = format!("{new_name:?}");
         if new_name.is_empty()
             || new_name
                 .chars()
@@ -497,8 +497,8 @@ impl AdminRenameProvider {
             && index.is_dynamic_component_slot(target)?
         {
             return Err(format!(
-                "cannot rename Administration component slot {} because it is provided by a dynamic slot family",
-                go_quote(&target.name)
+                "cannot rename Administration component slot {:?} because it is provided by a dynamic slot family",
+                target.name
             )
             .into());
         }
@@ -529,7 +529,7 @@ impl AdminRenameProvider {
         Ok(())
     }
 
-    /// Go `targetAt`.
+    /// The Administration symbol under the cursor, if any.
     pub(crate) fn target_at(
         &self,
         index: &AdminComponentIndexer,
@@ -585,8 +585,8 @@ fn validate_local_component(
     }
     if !is_component_name(new_name) {
         return Some(Err(format!(
-            "{} is not a valid Administration component name",
-            go_quote(new_name)
+            "{:?} is not a valid Administration component name",
+            new_name
         )
         .into()));
     }
@@ -595,8 +595,8 @@ fn validate_local_component(
         .is_some_and(|conflict| conflict.name != local.name)
     {
         return Some(Err(format!(
-            "local Administration component {} already exists",
-            go_quote(new_name)
+            "local Administration component {:?} already exists",
+            new_name
         )
         .into()));
     }
@@ -608,8 +608,8 @@ fn validate_local_component(
             && range.start_character == 0)
     {
         return Some(Err(format!(
-            "cannot safely rename local Administration component {} because its declaration range is not indexed",
-            go_quote(&local.name)
+            "cannot safely rename local Administration component {:?} because its declaration range is not indexed",
+            local.name
         )
         .into()));
     }
@@ -697,7 +697,8 @@ fn dynamic_twig_slot_rename_ranges(
     Ok(result)
 }
 
-/// Go `renameAdminVueLocal`.
+/// Renames a Vue template-local symbol (such as a slot-scope or `v-for`
+/// binding) within its template.
 pub(crate) fn rename_vue_local(request: &Request<'_>) -> Handled {
     if !request.is_template() {
         return None;
@@ -713,8 +714,8 @@ pub(crate) fn rename_vue_local(request: &Request<'_>) -> Handled {
     }
     if !is_identifier(new_name) {
         return err(format!(
-            "{} is not a valid Vue template identifier",
-            go_quote(new_name)
+            "{:?} is not a valid Vue template identifier",
+            new_name
         ));
     }
     if twig_vue_bindings(request.root, content)
@@ -727,8 +728,8 @@ pub(crate) fn rename_vue_local(request: &Request<'_>) -> Handled {
         })
     {
         return err(format!(
-            "vue template identifier {} already exists in this v-for scope",
-            go_quote(new_name)
+            "vue template identifier {:?} already exists in this v-for scope",
+            new_name
         ));
     }
     let ranges = twig_vue_binding_references(request.root, content, &binding);
@@ -797,7 +798,7 @@ pub(crate) fn admin_rename_replacement(
         && occurrence.identifier
         && !is_identifier(&replacement)
     {
-        return go_quote(&replacement);
+        return format!("{replacement:?}");
     }
     replacement
 }

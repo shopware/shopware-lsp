@@ -5,8 +5,9 @@ use std::borrow::Cow;
 
 use swlsp_php_inference::{CallContext, Extension};
 use swlsp_php_semantic::{Confidence, TypeFact, TypeSource};
-use swlsp_php_types::{Joiner, Kind, Relations, Type, equal_fold};
+use swlsp_php_types::{Joiner, Kind, Relations, Type};
 use swlsp_syntax::TextRange;
+use swlsp_textutil::eq_ignore_case;
 
 const SYSTEM_CONFIG_SERVICE: &str = "Shopware\\Core\\System\\SystemConfig\\SystemConfigService";
 const ENTITY_COLLECTION: &str = "Shopware\\Core\\Framework\\DataAbstractionLayer\\EntityCollection";
@@ -23,7 +24,8 @@ fn named(name: &str) -> Type {
     Type::named(name, Vec::new())
 }
 
-/// Shopware framework call inference (Go `shopware.PHPTypeExtension`).
+/// Infers return types of Shopware framework calls (such as repository
+/// searches, collections, system config and feature flags).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PhpTypeExtension;
 
@@ -84,7 +86,7 @@ fn canonical_shopware_method(name: &str) -> Option<&'static str> {
     ];
     METHODS
         .iter()
-        .find(|method| method.len() == name.len() && equal_fold(name, method))
+        .find(|method| method.len() == name.len() && eq_ignore_case(name, method))
         .copied()
 }
 
@@ -199,7 +201,7 @@ fn direct_collection_element_type(receiver: &Type) -> Type {
 }
 
 fn is_receiver(context: &CallContext<'_>, receiver: &Type, target: &str) -> bool {
-    if receiver.kind() == Kind::Object && equal_fold(receiver.name(), target) {
+    if receiver.kind() == Kind::Object && eq_ignore_case(receiver.name(), target) {
         return true;
     }
     context

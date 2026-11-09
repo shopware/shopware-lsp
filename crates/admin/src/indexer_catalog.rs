@@ -1,4 +1,4 @@
-//! Registry catalog queries (port of Go `indexer_catalog.go`).
+//! Registry catalog queries.
 
 use crate::*;
 

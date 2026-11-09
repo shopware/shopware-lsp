@@ -1,5 +1,4 @@
-//! Component definition parsing entry points (port of Go
-//! `definition_parser_component.go`).
+//! Component definition parsing entry points.
 
 use crate::*;
 

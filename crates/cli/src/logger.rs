@@ -1,6 +1,6 @@
-//! A process-wide logger matching Go's `log` package with no flags: one
-//! message per line, written to a switchable sink (stderr, a log file, or
-//! nowhere). Info and above correspond to Go's `log.Printf` calls.
+//! A process-wide logger: one plain message per line (no timestamp or level
+//! prefix), written to a switchable sink (stderr, a log file, or nowhere).
+//! Records at info level and above are written.
 
 use std::io::Write;
 use std::sync::{Mutex, Once};

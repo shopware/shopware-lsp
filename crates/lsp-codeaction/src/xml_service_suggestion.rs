@@ -1,4 +1,4 @@
-//! Go `xml_service_suggestion_codeaction.go`: the Symfony plugin's "Suggest
+//! The Symfony plugin's "Suggest
 //! Service" XML intention, one rewrite per compatible constructor service.
 
 use std::collections::{BTreeMap, HashMap};
@@ -10,9 +10,10 @@ use swlsp_lsp_protocol::{self as protocol, CodeActionKind};
 use swlsp_parser_xml::query as xmlquery;
 use swlsp_php::PhpIndex;
 use swlsp_php_semantic::Parameter;
-use swlsp_php_types::{Kind, Type, equal_fold, go_to_lower};
+use swlsp_php_types::{Kind, Type};
 use swlsp_symfony::{Service, ServiceIndex};
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::service_tag::{html_escape, xml_attribute_value, xml_element_named};
 use crate::shared::{end_of, offset_range, start_of};
@@ -105,7 +106,7 @@ impl ActionProvider for XmlServiceSuggestionCodeActionProvider {
                 return Vec::new();
             }
             if candidate.id == owner_id
-                || (candidate.id == current_id && equal_fold(&current_type, "service"))
+                || (candidate.id == current_id && eq_ignore_case(&current_type, "service"))
             {
                 continue;
             }
@@ -153,7 +154,7 @@ fn xml_constructor_argument_parameter(
             .iter()
             .find(|parameter| {
                 let name: &str = &parameter.name;
-                equal_fold(name.strip_prefix('$').unwrap_or(name), key)
+                eq_ignore_case(name.strip_prefix('$').unwrap_or(name), key)
             })
             .cloned();
     }
@@ -210,11 +211,11 @@ fn xml_compatible_services(
             {
                 continue;
             }
-            by_id.insert(go_to_lower(&service.id), service);
+            by_id.insert(lowercase(&service.id), service);
         }
     }
     let mut result: Vec<Service> = by_id.into_values().collect();
-    result.sort_by_key(|service| go_to_lower(&service.id));
+    result.sort_by_key(|service| lowercase(&service.id));
     Ok(result)
 }
 

@@ -34,9 +34,8 @@ JSON, JavaScript/TypeScript, SCSS, and Vue.
 
 The server is a Cargo workspace under `crates/`: one `swlsp-<name>` crate per
 subsystem in `crates/<name>`, and `swlsp-cli` produces the `shopware-lsp`
-executable. It was ported from an earlier Go implementation;
-`crates/PORTING.md` records the conventions and the intentional behavior
-differences from that implementation.
+executable. `crates/CONVENTIONS.md` records the conventions the crates
+share.
 
 The same binary is three frontends over one engine:
 

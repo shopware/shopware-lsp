@@ -1,13 +1,8 @@
-//! Symfony EventDispatcher listeners and dispatches (port of Go
-//! `internal/event`).
+//! Symfony EventDispatcher listeners and dispatches.
 //!
-//! # Differences from Go
-//!
-//! - Go passes the request PHP context through `context.Context`; Rust takes
-//!   an explicit `Option<&PhpContext>`.
-//! - Occurrences with equal file and start offset keep their discovery order
-//!   (stable sort); Go's `sort.Slice` leaves it unspecified for more than 12
-//!   elements.
+//! Request-time PHP analysis is passed explicitly as `Option<&PhpContext>`.
+//! Occurrences with equal file and start offset keep their discovery order
+//! (stable sort).
 
 mod index;
 mod model;

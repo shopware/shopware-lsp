@@ -1,8 +1,7 @@
-//! Find-references providers (port of Go `internal/lsp/reference`).
+//! Find-references providers.
 //!
-//! Go reads the request's PHP semantic state from the enriched
-//! `context.Context`; Rust providers holding a PHP index derive the same
-//! memoized state with [`php_context`] for PHP documents.
+//! Providers holding a PHP index derive the request's memoized PHP semantic
+//! state with [`php_context`] for PHP documents.
 
 mod admin;
 mod asset;
@@ -61,18 +60,17 @@ pub(crate) fn request_offset(request: &ReferenceRequest) -> Option<u32> {
     ))
 }
 
-/// The request document's file path (Go `uriutil.Path`).
+/// The request document's file path.
 pub(crate) fn request_path(request: &ReferenceRequest) -> Result<String, swlsp_uriutil::UriError> {
     swlsp_uriutil::path(&request.params.text_document.uri)
 }
 
-/// Lowercased Go `filepath.Ext`.
+/// The lowercase extension of `path`, including the leading dot.
 pub(crate) fn lower_ext(path: &str) -> String {
     filepath::ext(path).to_lowercase()
 }
 
-/// The request's PHP semantic context, as the Go server's PHP context
-/// enricher attaches it to every PHP request.
+/// The request's PHP semantic context for PHP documents.
 pub(crate) fn php_context(php: Option<&PhpIndex>, syntax: &SyntaxContext) -> Option<PhpContext> {
     if syntax.language != Some(LanguageId::Php) {
         return None;

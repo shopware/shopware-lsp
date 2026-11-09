@@ -1,7 +1,5 @@
 //! Conventional Symfony service tags and the types they require.
 
-use crate::util::go_trim_space;
-
 const REQUIRED_SERVICE_TAG_TYPES: &[(&str, &[&str])] = &[
     ("assetic.asset", &["Assetic\\Filter\\FilterInterface"]),
     (
@@ -136,7 +134,7 @@ pub fn suggested_service_tags(
     class_name: &str,
     hierarchy: Option<&dyn ServiceTagTypeHierarchy>,
 ) -> Vec<String> {
-    let class_name = go_trim_space(class_name).trim_matches('\\');
+    let class_name = class_name.trim().trim_matches('\\');
     let Some(hierarchy) = hierarchy.filter(|_| !class_name.is_empty()) else {
         return Vec::new();
     };

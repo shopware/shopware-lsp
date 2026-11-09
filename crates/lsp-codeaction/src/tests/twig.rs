@@ -1,5 +1,5 @@
-//! Go `twig_versioning_codeaction_test.go` and
-//! `TestStorefrontTwigActionsDoNotLeakIntoAdministrationTemplates`.
+//! Twig versioning action tests, and Storefront Twig actions staying out of
+//! Administration templates.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -33,7 +33,6 @@ fn twig_index(root: &Path, cache: &str, files: &[(&str, &str)]) -> Arc<TwigIndex
     index
 }
 
-/// Go `twigVersioningActionFixture`.
 fn fixture() -> (tempfile::TempDir, Arc<VersioningService>, String) {
     let dir = tempfile::tempdir().unwrap();
     let upstream = path_of(
@@ -75,8 +74,7 @@ fn fixture() -> (tempfile::TempDir, Arc<VersioningService>, String) {
     (dir, service, current)
 }
 
-/// A request whose node and token are taken at `offset` (Go
-/// `NodeAtOffset`/`TokenAtOffset`), with an empty range at that offset.
+/// A request whose node and token are taken at `offset`, with an empty range at that offset.
 fn offset_request(
     uri: &str,
     source: &str,
@@ -116,7 +114,6 @@ fn offset_request(
     }
 }
 
-/// Go `twigVersioningActionRequest`.
 fn versioning_request(
     path: &str,
     source: &str,

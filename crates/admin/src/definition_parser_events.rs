@@ -1,5 +1,4 @@
-//! Event declarations and legacy `@event` annotations (port of Go
-//! `definition_parser_events.go`).
+//! Event declarations and legacy `@event` annotations.
 
 use crate::*;
 

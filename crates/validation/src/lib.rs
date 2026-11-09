@@ -1,8 +1,6 @@
-//! Symfony Validator constraint options and constraint/validator pairs
-//! (port of Go `internal/validation`).
+//! Symfony Validator constraint options and constraint/validator pairs.
 //!
-//! Go reads the request's PHP analysis from `context.Context`; Rust takes an
-//! explicit [`PhpContext`].
+//! Request-time PHP analysis is passed explicitly as a [`PhpContext`].
 
 use std::collections::HashSet;
 
@@ -11,8 +9,9 @@ use swlsp_parser_php::syntax::PHP_OBJECT_CREATION;
 use swlsp_php::{PhpContext, PhpIndex};
 use swlsp_php_resolver::MemberResolver;
 use swlsp_php_semantic::{Snapshot, Symbol, SymbolKind, Visibility};
-use swlsp_php_types::{Type, equal_fold, go_to_lower};
+use swlsp_php_types::Type;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 pub const CONSTRAINT_CLASS: &str = "Symfony\\Component\\Validator\\Constraint";
 pub const CONSTRAINT_VALIDATOR_CLASS: &str =
@@ -106,21 +105,20 @@ fn properties_in(snapshot: &Snapshot, class_name: &str) -> Vec<Symbol> {
         if symbol.kind != SymbolKind::Property || symbol.visibility != Visibility::Public {
             continue;
         }
-        if !seen.insert(go_to_lower(&symbol.name)) {
+        if !seen.insert(lowercase(&symbol.name)) {
             continue;
         }
         result.push(symbol);
     }
-    // Go uses an unstable sort; names equal under case folding keep their
-    // member order here.
-    result.sort_by_cached_key(|symbol| go_to_lower(&symbol.name));
+    // Names equal under case folding keep their member order.
+    result.sort_by_cached_key(|symbol| lowercase(&symbol.name));
     result
 }
 
 pub fn find_constraint_property<'a>(properties: &'a [Symbol], name: &str) -> Option<&'a Symbol> {
     properties
         .iter()
-        .find(|property| equal_fold(&property.name, name))
+        .find(|property| eq_ignore_case(&property.name, name))
 }
 
 /// The validator of a constraint (`FooValidator`) or the constraint of a

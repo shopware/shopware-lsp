@@ -1,5 +1,4 @@
-//! The translation catalogue index (port of Go `indexer.go` and
-//! `workspace_symbols.go`).
+//! The translation catalogue index.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
@@ -10,7 +9,7 @@ use swlsp_indexer::{
     WORKSPACE_SYMBOL_PRIORITY_FRAMEWORK_MEMBER, WorkspaceSymbol, WorkspaceSymbolKind,
     WorkspaceSymbolPosition, WorkspaceSymbolRange,
 };
-use swlsp_php_types::{equal_fold, go_to_lower};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::parser::{
     catalogue_metadata, parse_compiled_php_catalogue, parse_php_resource, parse_xml_resource,
@@ -62,7 +61,7 @@ impl Index {
                 continue;
             }
             unique
-                .entry(go_to_lower(&message.domain))
+                .entry(lowercase(&message.domain))
                 .or_insert(&message.domain);
         }
         let mut domains: Vec<(String, String)> = unique
@@ -79,7 +78,7 @@ impl Index {
             return Ok(Vec::new());
         }
         let keys = self.messages.get_all_keys_view()?;
-        let domain = go_to_lower(normalize_domain(domain));
+        let domain = lowercase(normalize_domain(domain));
         let mut result: Vec<String> = keys
             .iter()
             .filter_map(|value| split_storage_key(value))
@@ -98,7 +97,7 @@ impl Index {
         let domain = normalize_domain(domain);
         let mut result: Vec<Message> = values
             .iter()
-            .filter(|message| equal_fold(&message.domain, domain))
+            .filter(|message| eq_ignore_case(&message.domain, domain))
             .cloned()
             .collect();
         sort_messages(&mut result);
@@ -168,7 +167,7 @@ fn extract_messages(file: &ParsedFile) -> PreparedMessages {
         _ => Vec::new(),
     };
     let symbols = message_workspace_symbols(&messages);
-    // A repeated storage key keeps the last message (Go map semantics).
+    // A repeated storage key keeps the last message.
     let mut items: BTreeMap<String, Message> = BTreeMap::new();
     for message in messages {
         if message.domain.is_empty() || message.key.is_empty() {

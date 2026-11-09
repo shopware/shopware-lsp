@@ -15,6 +15,7 @@ swlsp-parser-yaml = { path = "../parser-yaml" }
 swlsp-php = { path = "../php" }
 swlsp-php-semantic = { path = "../php-semantic" }
 swlsp-php-types = { path = "../php-types" }
+swlsp-textutil = { path = "../textutil" }
 swlsp-shopware-dal = { path = "../shopware-dal" }
 serde = { version = "1", features = ["derive"] }
 

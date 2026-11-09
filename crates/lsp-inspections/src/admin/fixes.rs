@@ -14,9 +14,9 @@ use swlsp_lsp_diagnostics::AdminTwigMigrationPayload;
 use swlsp_lsp_protocol as protocol;
 use swlsp_parser_twig::ast::{AstNode, HtmlTag};
 use swlsp_parser_twig::{query as twigquery, syntax as twigsyntax};
-use swlsp_php_types::go_to_lower;
 use swlsp_rewrite::{Builder, DocumentPlan, Edit, HandleError, WorkspacePlan};
 use swlsp_syntax::{SyntaxElement, SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::lowercase;
 
 use crate::{protocol_text_range, resolve_anchor};
 
@@ -95,8 +95,8 @@ fn anchor_node(fix: &FixContext) -> Result<Option<SyntaxNode>, BoxError> {
     })
 }
 
-/// Go `adminComponentTagFix`: replaces a misspelled component tag (and its
-/// end tag) or a dynamic component candidate.
+/// Replaces a misspelled component tag (and its end tag) or a dynamic component
+/// candidate.
 pub(super) struct AdminComponentTagFix;
 
 impl QuickFix for AdminComponentTagFix {
@@ -176,7 +176,7 @@ impl RewriteQuickFix for AdminComponentTagFix {
     }
 }
 
-/// Go `adminStaticPropFix`: binds a static attribute with `:`.
+/// Binds a static attribute with `:`.
 pub(super) struct AdminStaticPropFix;
 
 impl QuickFix for AdminStaticPropFix {
@@ -221,7 +221,7 @@ impl RewriteQuickFix for AdminStaticPropFix {
     }
 }
 
-/// Go `adminPropFix`: inserts a missing required prop as an editor snippet.
+/// Inserts a missing required prop as an editor snippet.
 pub(super) struct AdminPropFix {
     pub index: Option<Arc<AdminComponentIndexer>>,
 }
@@ -286,8 +286,7 @@ impl CommandQuickFix for AdminPropFix {
     }
 }
 
-/// Go `adminPropFormat`: the attribute spelling and default value inserted
-/// for a prop.
+/// The attribute spelling and default value inserted for a prop.
 fn admin_prop_format(
     index: Option<&AdminComponentIndexer>,
     component: &str,
@@ -315,7 +314,7 @@ fn admin_prop_format(
             prop.default.clone()
         }
     };
-    match go_to_lower(&prop.type_).as_str() {
+    match lowercase(&prop.type_).as_str() {
         "boolean" => (format!(":{attribute}"), default("false")),
         "number" => (format!(":{attribute}"), default("0")),
         "array" => (format!(":{attribute}"), default("[]")),
@@ -325,7 +324,6 @@ fn admin_prop_format(
     }
 }
 
-/// Go `adminSlotMigrationFix`.
 pub(super) struct AdminSlotMigrationFix;
 
 impl QuickFix for AdminSlotMigrationFix {
@@ -364,7 +362,6 @@ impl RewriteQuickFix for AdminSlotMigrationFix {
     }
 }
 
-/// Go `adminI18nTCFix`.
 pub(super) struct AdminI18nTcFix;
 
 impl QuickFix for AdminI18nTcFix {
@@ -412,7 +409,6 @@ impl RewriteQuickFix for AdminI18nTcFix {
     }
 }
 
-/// Go `adminTwigComponentMigrationFix`.
 pub(super) struct AdminTwigComponentMigrationFix;
 
 impl QuickFix for AdminTwigComponentMigrationFix {

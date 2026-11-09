@@ -34,8 +34,7 @@ pub(crate) fn node_at(document: &TextDocument, offset: usize) -> Option<SyntaxNo
     document.root()?.node_at(TextSize::from(offset as u32))
 }
 
-/// A request at byte `offset` with the node Go tests select through
-/// `NodeAtOffset`.
+/// A request at byte `offset` with the deepest node at that offset.
 pub(crate) fn request(
     document: &Arc<TextDocument>,
     offset: usize,
@@ -95,7 +94,7 @@ pub(crate) fn count_uri(locations: &[protocol::Location], uri: &str) -> usize {
         .count()
 }
 
-/// Go `assert.ElementsMatch` over URIs.
+/// Asserts that the location URIs equal `expected`, ignoring order.
 pub(crate) fn assert_uris_match(locations: &[protocol::Location], expected: &[String]) {
     let mut actual = uris(locations);
     let mut expected = expected.to_vec();

@@ -1,4 +1,4 @@
-//! Go `twig_render_block_diagnostics.go`.
+//! Missing blocks referenced by Twig `render_block`.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -7,16 +7,15 @@ use swlsp_language::LanguageId;
 use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_lsp_protocol as protocol;
 use swlsp_php::PhpIndex;
-use swlsp_php_types::{equal_fold, go_to_lower};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 use swlsp_twig::TwigIndexer;
+use swlsp_uriutil::filepath;
 
 use super::component::suggestions_payload;
-use super::go_ext;
 use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 const MISSING_TWIG_RENDER_BLOCK_CODE: &str = "twig.template.block.missing";
 
-/// Go `TwigRenderBlockAnalyzer`.
 pub struct TwigRenderBlockAnalyzer {
     twig_index: Option<Arc<TwigIndexer>>,
     php_index: Option<PhpIndex>,
@@ -58,7 +57,7 @@ impl ProblemAnalyzer for TwigRenderBlockAnalyzer {
         else {
             return Ok(Vec::new());
         };
-        if !equal_fold(go_ext(&document.uri), ".php") {
+        if !eq_ignore_case(filepath::ext(&document.uri), ".php") {
             return Ok(Vec::new());
         }
         let references = swlsp_twig::render_block_references_in_php(&root);
@@ -85,8 +84,8 @@ impl ProblemAnalyzer for TwigRenderBlockAnalyzer {
             let mut found = false;
             let mut names: HashMap<String, String> = HashMap::new();
             for block in &blocks {
-                names.insert(go_to_lower(&block.name), block.name.clone());
-                if equal_fold(&block.name, &reference.block) {
+                names.insert(lowercase(&block.name), block.name.clone());
+                if eq_ignore_case(&block.name, &reference.block) {
                     found = true;
                 }
             }

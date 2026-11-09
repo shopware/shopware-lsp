@@ -1,4 +1,4 @@
-//! Port of Go `translation_completion_test.go`.
+//! Tests for translation completion.
 
 use std::sync::Arc;
 
@@ -29,7 +29,7 @@ fn fixture(dir: &Path) -> Arc<Index> {
     Arc::new(index)
 }
 
-/// Go `translationCompletionRequest`: the node at `offset`, position zero.
+/// A translation completion request: the node at `offset`, position zero.
 fn translation_request(
     uri: &str,
     source: &str,

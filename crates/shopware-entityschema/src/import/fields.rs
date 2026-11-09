@@ -1,6 +1,4 @@
-//! FieldCollection import (port of Go `import_fields.go`,
-//! `import_simple_fields.go`, `import_associations.go` and
-//! `import_hierarchy.go`).
+//! FieldCollection import.
 
 use std::collections::{BTreeMap, HashMap};
 

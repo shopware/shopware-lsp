@@ -1,4 +1,4 @@
-//! The PHP workspace index (port of the `internal/php` root package).
+//! The PHP workspace index.
 //!
 //! [`PhpIndex`] ties the PHP engine together: it binds, links and analyzes
 //! files ([`PhpIndex::analyze_document`]), persists one compact workspace
@@ -8,17 +8,11 @@
 //! semantic queries, Twig template contexts, assistant-tag and embedded
 //! language lookups used by LSP features.
 //!
-//! # Differences from Go
-//!
-//! - Go passes request state through `context.Context`; Rust passes an
-//!   explicit [`PhpContext`].
-//! - The persisted graph payload is `swlsp-php-semantic`'s binary codec
-//!   compressed as a size-prefixed LZ4 block, inside the same `{format, payload}`
-//!   envelope; Go's MessagePack graph formats are not readable (Rust and Go
-//!   caches are never shared).
-//! - Member listings sorted by case-insensitive name use a stable sort; Go's
-//!   `sort.Slice` leaves the order of names equal under case folding
-//!   unspecified.
+//! Request state is passed explicitly as a [`PhpContext`]. The persisted
+//! graph payload is `swlsp-php-semantic`'s binary codec compressed as a
+//! size-prefixed LZ4 block inside a `{format, payload}` MessagePack envelope.
+//! Member listings sorted by case-insensitive name use a stable sort, so
+//! names equal under case folding keep their declaration order.
 
 mod assistant;
 mod context;
@@ -70,7 +64,7 @@ pub use embedded::{
 };
 pub use loader::WORKSPACE_GRAPH_DETAIL_CACHE_SIZE;
 pub use persistence::{
-    BorrowedWorkspaceGraph, PersistError, PersistedWorkspaceGraph,
+    BorrowedWorkspaceGraph, EnvelopeError, PersistError, PersistedWorkspaceGraph,
     decode_persisted_workspace_graph_borrowed, encode_workspace_graph, inflate_payload,
 };
 pub use semantic_api::{compare_fold, reference_at, symbol_at};
@@ -213,7 +207,7 @@ fn load_project<S: AsRef<str>>(
 }
 
 fn persist_error(error: PersistError) -> Error {
-    Error::msg(error.0)
+    Error::other(error)
 }
 
 impl PhpIndex {
@@ -370,7 +364,7 @@ impl PhpIndex {
     }
 
     /// A stable identity of this index, shared by its clones. Use it to key
-    /// per-index memoized analysis (Go keys by the `*PHPIndex` pointer).
+    /// per-index memoized analysis.
     pub fn identity(&self) -> usize {
         Arc::as_ptr(&self.inner) as usize
     }
@@ -754,7 +748,7 @@ fn clean_within(root: &str, path: &str) -> bool {
     path_within_root(root, path)
 }
 
-/// Whether `path` is `root` or below it (Go `pathWithinRoot`).
+/// Whether `path` is `root` or below it, comparing cleaned paths.
 fn path_within_root(root: &str, path: &str) -> bool {
     let root = clean_str(root);
     let path = clean_str(path);
@@ -775,7 +769,7 @@ fn path_within_root(root: &str, path: &str) -> bool {
     if root_path.is_absolute() != path_path.is_absolute() {
         return false;
     }
-    // Both relative: Go `filepath.Rel` succeeds unless the path escapes.
+    // Both relative: `path` is below `root` unless it escapes it with `..`.
     let root_parts: Vec<_> = root_path.components().collect();
     let path_parts: Vec<_> = path_path.components().collect();
     let common = root_parts
@@ -1035,8 +1029,7 @@ impl BatchIndexer for PhpIndex {
     }
 }
 
-/// Parses a PHP file and returns its CST debug tree and parse errors (Go
-/// `DebugAST`, which prints them to stdout and stderr).
+/// Parses a PHP file and returns its CST debug tree and parse errors.
 pub fn debug_ast(path: &Path) -> std::io::Result<(String, Vec<String>)> {
     let content = std::fs::read(path)?;
     let source = String::from_utf8_lossy(&content);

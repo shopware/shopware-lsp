@@ -1,5 +1,4 @@
-//! Ports of `admin_block_override_test.go`, `admin_i18n_deprecation_test.go`
-//! and `admin_slot_migration_test.go`.
+//! Tests of the block override, i18n deprecation and slot migration analyzers.
 
 use swlsp_syntax::SyntaxElement;
 

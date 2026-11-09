@@ -1,6 +1,5 @@
 //! Reports live heap bytes retained by the decoded catalog and by
-//! materialized stub documents (compare with the Go `runtime.MemStats`
-//! measurement of `internal/php/stubs`).
+//! materialized stub documents.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicIsize, Ordering};

@@ -1,4 +1,4 @@
-//! Port of Go `yaml_route_authoring_completion_test.go`.
+//! Tests for YAML route authoring completion.
 
 use std::sync::Arc;
 

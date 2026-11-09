@@ -1,4 +1,4 @@
-//! Ports of `extraction_selection_test.go`.
+//! Selection handling of the extraction refactors.
 
 use serde_json::{Value, json};
 use swlsp_lsp_protocol::Position;

@@ -1,4 +1,4 @@
-//! Go `twig_template_generator_codeaction.go`: the Twig Extends and Block
+//! The Twig Extends and Block
 //! Overwrite generators backed by the template and inheritance indexes.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -11,7 +11,7 @@ use swlsp_lsp::{
     ActionProvider, BoxError, CodeActionRequest, CommandFunc, CommandProvider, Context,
 };
 use swlsp_lsp_protocol::{self as protocol, CodeActionKind};
-use swlsp_php_types::{equal_fold, go_to_lower};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 use swlsp_twig::{TwigFile, TwigIndexer};
 
 use crate::admin_twig_override::nullable;
@@ -187,21 +187,15 @@ impl TwigTemplateGeneratorProvider {
         let path = twig_generator_path(&params.file_uri);
         let current = swlsp_twig::parse_twig(&path, &params.source);
         if !current.extends_file.is_empty() {
-            return Err(format!(
-                "template already extends {}",
-                swlsp_uriutil::go_quote(&current.extends_file)
-            )
-            .into());
+            return Err(format!("template already extends {:?}", current.extends_file).into());
         }
         let templates = self.twig_extends_candidates(&path)?;
         let trimmed = params.template.trim();
         let selected = trimmed.strip_prefix('/').unwrap_or(trimmed);
         if !templates.iter().any(|template| template == selected) {
-            return Err(format!(
-                "twig template {} is no longer available",
-                swlsp_uriutil::go_quote(&params.template)
-            )
-            .into());
+            return Err(
+                format!("twig template {:?} is no longer available", params.template).into(),
+            );
         }
         Ok(TwigTemplateGenerationResponse {
             content: format!(
@@ -237,20 +231,19 @@ impl TwigTemplateGeneratorProvider {
         let available = self.twig_block_candidates(&current)?;
         let available_set: HashMap<String, &String> = available
             .iter()
-            .map(|name| (go_to_lower(name), name))
+            .map(|name| (lowercase(name), name))
             .collect();
         let mut seen = HashSet::new();
         let mut selected: Vec<String> = Vec::new();
         for name in &params.selected_blocks {
-            let key = go_to_lower(name.trim());
+            let key = lowercase(name.trim());
             if seen.contains(&key) {
                 continue;
             }
             let Some(canonical) = available_set.get(&key) else {
                 return Err(format!(
-                    "twig block {} is no longer available from {}",
-                    swlsp_uriutil::go_quote(name),
-                    current.extends_file
+                    "twig block {:?} is no longer available from {}",
+                    name, current.extends_file
                 )
                 .into());
             };
@@ -260,7 +253,7 @@ impl TwigTemplateGeneratorProvider {
         if selected.is_empty() {
             return Err("select at least one Twig block".into());
         }
-        selected.sort_by_key(|name| go_to_lower(name));
+        selected.sort_by_key(|name| lowercase(name));
         let blocks: Vec<String> = selected
             .iter()
             .enumerate()
@@ -281,7 +274,7 @@ impl TwigTemplateGeneratorProvider {
         let templates = twig_index.get_all_template_files()?;
         let current_names: HashSet<String> = swlsp_twig::template_names(current_path)
             .iter()
-            .map(|name| go_to_lower(name))
+            .map(|name| lowercase(name))
             .collect();
         let mut unique: HashMap<String, String> = HashMap::new();
         for template in templates {
@@ -290,7 +283,7 @@ impl TwigTemplateGeneratorProvider {
             if template.is_empty() {
                 continue;
             }
-            let key = go_to_lower(template);
+            let key = lowercase(template);
             if current_names.contains(&key) {
                 continue;
             }
@@ -314,11 +307,11 @@ impl TwigTemplateGeneratorProvider {
             if current
                 .blocks
                 .keys()
-                .any(|name| equal_fold(name, &block.name))
+                .any(|name| eq_ignore_case(name, &block.name))
             {
                 continue;
             }
-            unique.entry(go_to_lower(&block.name)).or_insert(block.name);
+            unique.entry(lowercase(&block.name)).or_insert(block.name);
         }
         let mut result: Vec<(String, String)> = unique.into_iter().collect();
         result.sort_by(|left, right| left.0.cmp(&right.0));
@@ -326,7 +319,6 @@ impl TwigTemplateGeneratorProvider {
     }
 }
 
-/// Go `decodeTwigTemplateGeneratorRequest`.
 fn decode_twig_template_generator_request(
     ctx: &Context,
     raw: Option<&Value>,
@@ -339,8 +331,8 @@ fn decode_twig_template_generator_request(
     Ok(params)
 }
 
-/// Go `decodeSymfonyGeneratorRequest`, where a JSON `null` decodes to the
-/// zero value like `encoding/json`.
+/// Decodes a generator request; a JSON `null` decodes to the default
+/// request.
 pub(crate) fn decode_request<T: serde::de::DeserializeOwned + Default>(
     raw: Option<&Value>,
 ) -> Result<T, BoxError> {

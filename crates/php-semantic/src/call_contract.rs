@@ -153,9 +153,9 @@ pub(crate) fn clone_call_contracts(contracts: &[CallContract]) -> Vec<CallContra
 }
 
 pub(crate) fn function_contract_key(name: &str) -> String {
-    swlsp_php_types::go_to_lower(normalize_name(name))
+    swlsp_textutil::lowercase(normalize_name(name))
 }
 
 pub(crate) fn method_contract_key(name: &str) -> String {
-    swlsp_php_types::go_to_lower(name.trim())
+    swlsp_textutil::lowercase(name.trim())
 }

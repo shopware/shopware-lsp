@@ -1,4 +1,4 @@
-//! Inlay hint providers (port of Go `internal/lsp/inlay`).
+//! Inlay hint providers.
 
 mod admin_parameter;
 mod phpunit_provider;
@@ -41,8 +41,4 @@ pub(crate) fn position(document: &TextDocument, offset: u32) -> protocol::Positi
 
 pub(crate) fn line_position(line: u32) -> protocol::Position {
     protocol::Position { line, character: 0 }
-}
-
-pub(crate) fn parts_label(parts: Vec<protocol::InlayHintLabelPart>) -> serde_json::Value {
-    serde_json::to_value(parts).unwrap_or_default()
 }

@@ -1,4 +1,4 @@
-//! MySQL migration statements (port of Go `sql.go`).
+//! MySQL migration statements.
 
 use std::collections::{HashMap, HashSet};
 

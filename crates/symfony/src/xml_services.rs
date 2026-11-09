@@ -5,8 +5,8 @@ use swlsp_syntax::{LineIndex, SyntaxNode, SyntaxNodeExt, TextRange, Tree};
 
 use crate::model::{Parameter, Service, ServicePrototype, TagMap};
 use crate::util::{
-    configured_service_bool, deprecated_config_value, deprecation_message, go_trim_space,
-    node_line, service_config_path, xml_attr, xml_attribute_content_range, xml_element_text,
+    configured_service_bool, deprecated_config_value, deprecation_message, node_line,
+    service_config_path, xml_attr, xml_attribute_content_range, xml_element_text,
 };
 
 /// Parses Symfony XML service definitions. Malformed editor input is
@@ -218,10 +218,11 @@ fn process_xml_prototype(
     default_autowire: bool,
     default_autowire_set: bool,
 ) -> ServicePrototype {
-    let namespace = go_trim_space(&xml_attr(node, "namespace"))
+    let namespace = xml_attr(node, "namespace")
+        .trim()
         .strip_prefix('\\')
         .map(str::to_owned)
-        .unwrap_or_else(|| go_trim_space(&xml_attr(node, "namespace")).to_owned());
+        .unwrap_or_else(|| xml_attr(node, "namespace").trim().to_owned());
     let resource = service_config_path(path, &xml_attr(node, "resource"));
     let mut prototype = ServicePrototype {
         namespace,
@@ -241,7 +242,7 @@ fn process_xml_prototype(
         prototype.autowire_set = true;
     }
     let exclude = xml_attr(node, "exclude");
-    let exclude = go_trim_space(&exclude);
+    let exclude = exclude.trim();
     if !exclude.is_empty() {
         prototype.excludes = vec![service_config_path(path, exclude)];
     }
@@ -274,7 +275,7 @@ fn process_xml_parameter(node: &SyntaxNode, line_index: &LineIndex, path: &str) 
     } else if !get("value").is_empty() {
         get("value")
     } else {
-        go_trim_space(&xmlquery::text_content(node)).to_owned()
+        xmlquery::text_content(node).trim().to_owned()
     };
     Parameter {
         name,

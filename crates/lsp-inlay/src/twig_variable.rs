@@ -3,8 +3,6 @@ use swlsp_lsp::{Context, InlayHintProvider, InlayHintRequest, ProviderResult};
 use swlsp_lsp_protocol::{self as protocol, InlayHintKind};
 use swlsp_php::PhpIndex;
 
-use crate::parts_label;
-
 pub const BROWSE_TWIG_VARIABLES_COMMAND: &str = "shopware.symfony.twigVariables";
 
 pub struct TwigVariableProvider {
@@ -58,7 +56,7 @@ impl InlayHintProvider for TwigVariableProvider {
         }
         Ok(vec![protocol::InlayHint {
             position: protocol::Position::default(),
-            label: parts_label(vec![protocol::InlayHintLabelPart {
+            label: protocol::InlayHintLabel::Parts(vec![protocol::InlayHintLabelPart {
                 value: format!("Variables ({})", variables.len()),
                 tooltip: "Browse typed Twig variables and insert expressions".to_string(),
                 command: Some(protocol::Command {

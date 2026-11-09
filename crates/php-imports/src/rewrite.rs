@@ -1,10 +1,10 @@
-//! Import removal and organization (port of `imports/rewrite.go`).
+//! Import removal and organization.
 
 use swlsp_parser_php::syntax::{TK_BLOCK_COMMENT, TK_LINE_COMMENT};
 use swlsp_php_resolver::{Import, ImportKind};
-use swlsp_php_types::go_to_lower;
 use swlsp_rewrite::{Builder, Edit, RewriteError};
 use swlsp_syntax::{SyntaxNodeExt, TextRange, TextSize};
+use swlsp_textutil::lowercase;
 
 use crate::OrganizeError;
 use crate::analyze::{Analysis, Declaration, Item};
@@ -214,7 +214,7 @@ fn organized_text(source: &str, run: TextRange, declarations: &[Declaration]) ->
     items.sort_by(|left, right| {
         (left.import.kind as u8)
             .cmp(&(right.import.kind as u8))
-            .then_with(|| go_to_lower(&left.import.target).cmp(&go_to_lower(&right.import.target)))
+            .then_with(|| lowercase(&left.import.target).cmp(&lowercase(&right.import.target)))
             .then_with(|| left.import.alias.cmp(&right.import.alias))
     });
     let newline = if source.contains("\r\n") {

@@ -1,5 +1,4 @@
-//! Late type inference for effective components (port of Go
-//! `component_type_inference.go`).
+//! Late type inference for effective components.
 
 use std::sync::LazyLock;
 
@@ -30,8 +29,8 @@ pub(crate) struct ResolvedVueExpressionType {
     pub open_runtime_shape: bool,
 }
 
-/// Go `(resolvedVueExpressionType, bool, error)`. The value is kept even
-/// when not found because Go merges partial chain results for `??`.
+/// A resolved expression type and whether it was found. The value is kept
+/// even when not found because `??` merges partial chain results.
 pub(crate) type ResolvedExpression = IndexResult<(ResolvedVueExpressionType, bool)>;
 
 fn resolved(type_: String, context_path: &str) -> ResolvedVueExpressionType {
@@ -542,7 +541,7 @@ impl AdminComponentIndexer {
         Ok((current, found))
     }
 
-    /// Go `(type, context, found, error)`; `None` when not found.
+    /// `(type, context_path)` of an indexed access; `None` when not found.
     pub(crate) fn resolve_vue_indexed_access_type(
         &self,
         receiver_type: &str,
@@ -768,7 +767,8 @@ impl AdminComponentIndexer {
     }
 }
 
-/// Go `vueStaticObjectTransformExpression`: `(method, argument, segments)`.
+/// A static `Object.<method>(argument)` call followed by member segments:
+/// `(method, argument, segments)`.
 pub(crate) fn vue_static_object_transform_expression(
     expression: &str,
 ) -> Option<(String, String, Vec<VueStaticExpressionSegment>)> {
@@ -856,7 +856,7 @@ impl AdminComponentIndexer {
     }
 }
 
-/// Go `vueStaticArrowCallback`: `(parameter, body, declaredReturn)`.
+/// A single-parameter arrow callback: `(parameter, body, declared_return)`.
 pub(crate) fn vue_static_arrow_callback(value: &str) -> Option<(String, String, String)> {
     let value = value.trim();
     let arrow = index_vue_top_level_operator(value, "=>")?;
@@ -908,7 +908,7 @@ pub(crate) fn vue_static_arrow_callback(value: &str) -> Option<(String, String, 
 }
 
 impl AdminComponentIndexer {
-    /// Go `(type, found, error)`.
+    /// The type of `expression` and whether it was found.
     pub(crate) fn resolve_vue_bound_expression_type(
         &self,
         expression: &str,
@@ -1141,7 +1141,8 @@ pub(crate) fn index_vue_top_level_operator(value: &str, operator: &str) -> Optio
     None
 }
 
-/// Go `splitVueTopLevelOperator`; `None` unless both sides are non-empty.
+/// Splits `value` at the first top-level `operator`; `None` unless both sides
+/// are non-empty.
 pub(crate) fn split_vue_top_level_operator(
     value: &str,
     operator: &str,
@@ -1219,7 +1220,8 @@ pub(crate) fn vue_static_this_expression(
     expression[end..].trim().is_empty().then_some(segments)
 }
 
-/// Go `vueStaticStoreExpression`: `(storeName, segments)`.
+/// A static `Shopware.Store.get('name')` access followed by member segments:
+/// `(store_name, segments)`.
 pub(crate) fn vue_static_store_expression(
     expression: &str,
 ) -> Option<(String, Vec<VueStaticExpressionSegment>)> {
@@ -1245,7 +1247,7 @@ pub(crate) fn vue_static_store_expression(
     Some((store_name, segments))
 }
 
-/// Go `vueStaticExpressionSegments`: `(segments, end)` when `ok`.
+/// Static member segments starting at `cursor`: `(segments, end)`.
 pub(crate) fn vue_static_expression_segments(
     value: &str,
     cursor: usize,

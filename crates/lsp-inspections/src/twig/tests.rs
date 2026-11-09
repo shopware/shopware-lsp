@@ -1,5 +1,4 @@
-//! Ports of Go `twig_versioning_test.go`, `translation_snapshot_test.go` and
-//! `TestTemplateInspectionCreatesAValidatedFilePlan`.
+//! Tests of the Twig versioning, translation and template inspections.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -54,8 +53,7 @@ fn versioning_fixture(block: &str, version: &str) -> (tempfile::TempDir, Arc<Ver
     (root, service)
 }
 
-/// A fix context carrying only the document, diagnostic code and fix
-/// payload (the Go tests build `lsp.FixContext` literals the same way).
+/// A fix context carrying only the document, diagnostic code and fix payload.
 fn bare_fix_context(document: Arc<TextDocument>, code: &str, payload: Value) -> FixContext {
     let root = document.root().unwrap();
     let anchor = ElementHandle::new(

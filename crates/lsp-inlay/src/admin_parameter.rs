@@ -11,8 +11,8 @@ use swlsp_lsp::{Context, InlayHintProvider, InlayHintRequest, ProviderResult, Te
 use swlsp_lsp_protocol::{self as protocol, InlayHintKind};
 use swlsp_lsp_signature::AdminSignatureProvider;
 use swlsp_parser_js::query as jsquery;
-use swlsp_php_types::go_to_lower;
 use swlsp_syntax::{SyntaxNodeExt, TextRange};
+use swlsp_textutil::lowercase;
 use unicode_general_category::{GeneralCategory, get_general_category};
 
 use crate::{inlay_hint_byte_range, position};
@@ -44,7 +44,7 @@ impl AdminParameterProvider {
             return Ok(deduplicate_admin_parameter_hints(hints));
         }
         let path = swlsp_uriutil::path(&document.uri)?;
-        if !go_to_lower(&path.replace('\\', "/")).contains("/resources/app/administration/") {
+        if !lowercase(&path.replace('\\', "/")).contains("/resources/app/administration/") {
             return Ok(Vec::new());
         }
         let (range_start, range_end) = inlay_hint_byte_range(document, range);
@@ -194,7 +194,7 @@ fn append_admin_parameter_hint(
     }
     result.push(protocol::InlayHint {
         position: position(document, start),
-        label: serde_json::Value::String(format!("{name}:")),
+        label: format!("{name}:").into(),
         kind: Some(InlayHintKind::PARAMETER),
         tooltip,
         padding_right: true,
@@ -303,6 +303,9 @@ fn deduplicate_admin_parameter_hints(hints: Vec<protocol::InlayHint>) -> Vec<pro
         .collect()
 }
 
-fn inlay_label_text(label: &serde_json::Value) -> &str {
-    label.as_str().unwrap_or_default()
+fn inlay_label_text(label: &protocol::InlayHintLabel) -> &str {
+    match label {
+        protocol::InlayHintLabel::String(text) => text,
+        protocol::InlayHintLabel::Parts(_) => "",
+    }
 }

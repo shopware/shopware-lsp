@@ -17,6 +17,7 @@ swlsp-php-inference = { path = "../php-inference" }
 swlsp-php-resolver = { path = "../php-resolver" }
 swlsp-php-semantic = { path = "../php-semantic" }
 swlsp-php-types = { path = "../php-types" }
+swlsp-textutil = { path = "../textutil" }
 regex = "1"
 serde = { version = "1", features = ["derive"] }
 

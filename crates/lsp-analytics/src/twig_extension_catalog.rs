@@ -1,5 +1,4 @@
-//! Twig filter/function/test/tag catalog (port of
-//! `twig_extension_catalog.go`).
+//! Twig filter/function/test/tag catalog.
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashSet};
@@ -9,11 +8,12 @@ use serde::Serialize;
 use serde_json::Value;
 use swlsp_lsp::{CommandFunc, CommandProvider, Context};
 use swlsp_php::PhpIndex;
-use swlsp_php_types::equal_fold;
+use swlsp_textutil::eq_ignore_case;
 use swlsp_twig::{TwigIndexer, TwigParameter};
 
-use crate::request::{Field, decode, present};
-use crate::{Result, check, errorf, is_zero, lower, optional_file_uri, trim_space};
+use crate::request::{Field, RequestError, decode, present};
+use crate::{Result, check, errorf, is_zero, optional_file_uri};
+use swlsp_textutil::lowercase;
 
 pub const LIST_TWIG_EXTENSIONS_COMMAND: &str = "shopware/symfony/analytics/twig/extensions";
 
@@ -33,10 +33,9 @@ pub struct TwigExtensionCatalogRequest {
 }
 
 impl TwigExtensionCatalogRequest {
-    fn decode(value: &Value) -> Result<Self, String> {
+    fn decode(value: &Value) -> Result<Self, RequestError> {
         let members = decode(
             value,
-            "TwigExtensionCatalogRequest",
             &[
                 ("search", Field::String),
                 ("includeFilters", Field::OptionalBool),
@@ -140,7 +139,7 @@ impl TwigExtensionCatalogProvider {
             return Err(errorf!("twig extension catalog is unavailable"));
         };
         check(ctx)?;
-        let search = lower(trim_space(&request.search));
+        let search = lowercase(request.search.trim());
         let mut result = Vec::new();
         if request.include_filters.unwrap_or(true) {
             for filter in twig.get_all_twig_filters()? {
@@ -193,10 +192,10 @@ impl TwigExtensionCatalogProvider {
             type_order(&left.ty)
                 .cmp(&type_order(&right.ty))
                 .then_with(|| {
-                    if equal_fold(&left.name, &right.name) {
+                    if eq_ignore_case(&left.name, &right.name) {
                         Ordering::Equal
                     } else {
-                        lower(&left.name).cmp(&lower(&right.name))
+                        lowercase(&left.name).cmp(&lowercase(&right.name))
                     }
                 })
                 .then_with(|| left.class_name.cmp(&right.class_name))
@@ -264,7 +263,7 @@ fn parameters(parameters: &[TwigParameter]) -> Vec<TwigExtensionCatalogParameter
     parameters
         .iter()
         .filter_map(|parameter| {
-            let name = trim_space(&parameter.name);
+            let name = parameter.name.trim();
             let name = name.strip_prefix('$').unwrap_or(name);
             if name.is_empty() || name.starts_with('_') {
                 return None;
@@ -279,7 +278,7 @@ fn parameters(parameters: &[TwigParameter]) -> Vec<TwigExtensionCatalogParameter
 }
 
 fn name_matches(name: &str, search: &str) -> bool {
-    search.is_empty() || lower(name).contains(search)
+    search.is_empty() || lowercase(name).contains(search)
 }
 
 fn unique_entries(entries: Vec<TwigExtensionCatalogEntry>) -> Vec<TwigExtensionCatalogEntry> {
@@ -290,7 +289,7 @@ fn unique_entries(entries: Vec<TwigExtensionCatalogEntry>) -> Vec<TwigExtensionC
             seen.insert(
                 [
                     entry.ty.clone(),
-                    lower(&entry.name),
+                    lowercase(&entry.name),
                     entry.callable.clone(),
                     entry.class_name.clone(),
                     entry.file_uri.clone(),

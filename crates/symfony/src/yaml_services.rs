@@ -26,12 +26,12 @@ pub fn parse_yaml_services_tree(
     (services, parameters)
 }
 
-/// Go `yamlquery.Property` tolerating a missing mapping.
+/// The value node of `name` in `mapping`; `None` without a mapping.
 pub(crate) fn yaml_property(mapping: Option<&SyntaxNode>, name: &str) -> Option<SyntaxNode> {
     mapping.and_then(|mapping| yamlquery::property(mapping, name))
 }
 
-/// Go `yamlquery.ScalarValue` tolerating a missing node.
+/// The scalar text of `node`; empty without a node.
 pub(crate) fn yaml_scalar(node: Option<&SyntaxNode>) -> String {
     node.map(yamlquery::scalar_value).unwrap_or_default()
 }

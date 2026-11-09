@@ -1,5 +1,4 @@
-//! Messenger message names and handler methods (Go
-//! `messenger_completion.go`).
+//! Messenger message names and handler methods.
 
 use std::sync::Arc;
 

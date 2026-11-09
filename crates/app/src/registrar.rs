@@ -1,5 +1,5 @@
-//! Records every registration the composition root makes, so tests and the
-//! Go oracle can compare what is registered, in which order, per method.
+//! Records every registration the composition root makes, so tests can
+//! check what is registered, in which order, per method.
 
 use std::sync::{Arc, Mutex};
 
@@ -22,7 +22,7 @@ pub(crate) struct Registrar<'a> {
     log: Mutex<Vec<Registration>>,
 }
 
-/// `package.Type` like Go's `%T` without the pointer: the defining crate
+/// A short `crate.Type` name: the defining crate
 /// without its `swlsp_lsp_`/`swlsp_` prefix and the type's last segment.
 pub(crate) fn short_type_name<T: ?Sized>() -> String {
     let full = std::any::type_name::<T>();

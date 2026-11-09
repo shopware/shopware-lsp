@@ -151,8 +151,7 @@ fn service_argument_diagnostics_suggest_unique_typed_service() {
     assert_eq!(arguments[0]["suggestedService"], "app.logger");
     assert_eq!(arguments[1]["name"], "$name");
     assert_eq!(arguments[1]["suggestedService"], "?");
-    // Go encodes a nil candidate list as null.
-    assert_eq!(arguments[1]["candidates"], Value::Null);
+    assert_eq!(arguments[1]["candidates"], serde_json::json!([]));
 }
 
 #[test]

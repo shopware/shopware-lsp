@@ -11,10 +11,10 @@ use swlsp_lsp_protocol::{self as protocol, InlayHintKind};
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::{PHP_ARRAY, PHP_YIELD_EXPRESSION};
 use swlsp_php::PhpIndex;
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
-use crate::{inlay_hint_byte_range, line_position, parts_label, position};
+use crate::{inlay_hint_byte_range, line_position, position};
 
 const PHPUNIT_TEST_CASE_CLASS: &str = "PHPUnit\\Framework\\TestCase";
 
@@ -83,7 +83,7 @@ impl InlayHintProvider for PhpUnitProviderProvider {
                 continue;
             }
             for method in phpquery::methods(&class) {
-                let Some(contract) = providers.get(&go_to_lower(&phpquery::method_name(&method)))
+                let Some(contract) = providers.get(&lowercase(&phpquery::method_name(&method)))
                 else {
                     continue;
                 };
@@ -129,7 +129,7 @@ impl InlayHintProvider for PhpUnitProviderProvider {
                         };
                         result.push(protocol::InlayHint {
                             position: position(document, offset),
-                            label: parts_label(vec![part]),
+                            label: protocol::InlayHintLabel::Parts(vec![part]),
                             kind: Some(InlayHintKind::PARAMETER),
                             tooltip: format!(
                                 "PHPUnit data provider for {}()",
@@ -167,7 +167,7 @@ fn phpunit_provider_contracts(class: &SyntaxNode) -> HashMap<String, Contract> {
             position: method.range_trimmed_trivia().start().into(),
         };
         for provider_name in provider_names {
-            let key = go_to_lower(&provider_name);
+            let key = lowercase(&provider_name);
             if let Some(existing) = result.get(&key)
                 && existing.parameters != contract.parameters
             {
@@ -188,14 +188,14 @@ fn phpunit_method_providers(method: &SyntaxNode) -> Vec<String> {
     let mut result = Vec::new();
     for captures in DATA_PROVIDER_PATTERN.captures_iter(&leading_phpunit_doc_comment(method)) {
         if let Some(name) = captures.get(1) {
-            seen.insert(go_to_lower(name.as_str()));
+            seen.insert(lowercase(name.as_str()));
             result.push(name.as_str().to_string());
         }
     }
     for attribute in phpquery::attributes(method) {
         let name = phpquery::attribute_name(&attribute);
         let name = name.strip_prefix('\\').unwrap_or(&name);
-        if !equal_fold(name, "DataProvider") && !go_to_lower(name).ends_with("\\dataprovider") {
+        if !eq_ignore_case(name, "DataProvider") && !lowercase(name).ends_with("\\dataprovider") {
             continue;
         }
         let provider_name = phpquery::argument_expression(&attribute, 0)
@@ -204,7 +204,7 @@ fn phpunit_method_providers(method: &SyntaxNode) -> Vec<String> {
         if provider_name.is_empty() {
             continue;
         }
-        if !seen.insert(go_to_lower(&provider_name)) {
+        if !seen.insert(lowercase(&provider_name)) {
             continue;
         }
         result.push(provider_name);

@@ -1,4 +1,4 @@
-//! API rename fix (Go `shopware_migration_api.go`).
+//! API rename fix.
 
 use swlsp_lsp::{BoxError, Context, FixContext, FixId, FixPresentation, QuickFix, RewriteQuickFix};
 use swlsp_lsp_diagnostics::{ShopwareMigrationEdit, ShopwareMigrationPayload};

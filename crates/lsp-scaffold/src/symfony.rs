@@ -1,5 +1,4 @@
-//! Symfony class and service-configuration scaffolds (port of Go
-//! `symfony_scaffold.go`).
+//! Symfony class and service-configuration scaffolds.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -9,9 +8,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use swlsp_lsp::Context;
 use swlsp_php_project::Model;
-use swlsp_uriutil::{file_uri, go_quote};
+use swlsp_uriutil::file_uri;
 
-use crate::paths::{self, Stat};
+use crate::paths::{self, FileError, Stat};
 use crate::{Provider, Result, errorf, snake_case};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,17 +48,14 @@ impl Provider {
         let directory = self.validated_directory(&directory)?;
         let kind = params.kind.trim().to_lowercase();
         if !is_php_scaffold(&kind) && !is_service_scaffold(&kind) {
-            return Err(errorf!(
-                "unsupported Symfony scaffold kind {}",
-                go_quote(&kind)
-            ));
+            return Err(errorf!("unsupported Symfony scaffold kind {:?}", kind));
         }
         if is_service_scaffold(&kind) {
             return self.service_scaffold(&directory, &kind, &params.name);
         }
         let class_name = apply_scaffold_suffix(params.name.trim(), scaffold_class_suffix(&kind));
         if !valid_php_class_name(&class_name) {
-            return Err(errorf!("invalid PHP class name {}", go_quote(&params.name)));
+            return Err(errorf!("invalid PHP class name {:?}", params.name));
         }
         let namespace = namespace_for_directory(php.project().as_deref(), &directory)?;
         let content = self.php_scaffold(&kind, &namespace, &class_name)?;
@@ -79,28 +75,22 @@ impl Provider {
 
     pub(crate) fn validated_directory(&self, path: &str) -> Result<String> {
         let root = paths::abs(&self.root)
-            .map_err(|error| errorf!("resolve workspace root: {}", paths::errno_text(&error)))?;
-        let directory = paths::abs(path).map_err(|error| {
-            errorf!("resolve scaffold directory: {}", paths::errno_text(&error))
-        })?;
+            .map_err(|error| errorf!("cannot resolve workspace root: {error}"))?;
+        let directory = paths::abs(path)
+            .map_err(|error| errorf!("cannot resolve scaffold directory: {error}"))?;
         let canonical_root = paths::resolved_directory_path(&root);
         let canonical_directory = paths::resolved_directory_path(&directory);
         if paths::rel_within(&canonical_root, &canonical_directory).is_none() {
             return Err(errorf!(
-                "scaffold directory {} is outside the workspace",
-                go_quote(path)
+                "scaffold directory {:?} is outside the workspace",
+                path
             ));
         }
         match paths::stat(&directory) {
             Stat::Exists(metadata) if metadata.is_dir() => Ok(directory),
             Stat::Exists(_) => Err(errorf!("scaffold target is not a directory")),
-            Stat::Missing => Err(errorf!(
-                "inspect scaffold directory: stat {directory}: no such file or directory"
-            )),
-            Stat::Failed(error) => Err(errorf!(
-                "inspect scaffold directory: {}",
-                paths::path_error("stat", &directory, &error)
-            )),
+            Stat::Missing => Err(errorf!("scaffold directory {directory} does not exist")),
+            Stat::Failed(error) => Err(FileError::new("inspect", &directory, error).into()),
         }
     }
 
@@ -113,10 +103,7 @@ impl Provider {
             "kernel-test" => kernel_test_template(namespace, class_name),
             "web-test" => web_test_template(namespace, class_name),
             _ => {
-                return Err(errorf!(
-                    "unsupported Symfony scaffold kind {}",
-                    go_quote(kind)
-                ));
+                return Err(errorf!("unsupported Symfony scaffold kind {:?}", kind));
             }
         })
     }
@@ -393,10 +380,7 @@ final class {class_name} extends AbstractExtension
             name = "services".to_owned();
         }
         if !valid_file_name(&name) {
-            return Err(errorf!(
-                "invalid service configuration name {}",
-                go_quote(&name)
-            ));
+            return Err(errorf!("invalid service configuration name {:?}", name));
         }
         let extension = kind.strip_prefix("services-").unwrap_or(kind);
         let current_ext = paths::ext(&name).to_owned();
@@ -441,10 +425,7 @@ final class {class_name} extends AbstractExtension
                 content
             }
             _ => {
-                return Err(errorf!(
-                    "unsupported service scaffold kind {}",
-                    go_quote(kind)
-                ));
+                return Err(errorf!("unsupported service scaffold kind {:?}", kind));
             }
         };
         Ok(Response {
@@ -544,10 +525,7 @@ pub(crate) fn ensure_scaffold_target_available(target: &str) -> Result<()> {
     match paths::stat(target) {
         Stat::Exists(_) => Err(errorf!("scaffold file already exists: {target}")),
         Stat::Missing => Ok(()),
-        Stat::Failed(error) => Err(errorf!(
-            "inspect scaffold target: {}",
-            paths::path_error("stat", target, &error)
-        )),
+        Stat::Failed(error) => Err(FileError::new("inspect", target, error).into()),
     }
 }
 

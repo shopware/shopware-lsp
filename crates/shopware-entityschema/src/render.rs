@@ -1,4 +1,4 @@
-//! Spec completion and PHP class generation (port of Go `render.go`).
+//! Spec completion and PHP class generation.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -10,10 +10,7 @@ use crate::specialized_fields::{CONSTRUCTOR_FIXED, CONSTRUCTOR_STORAGE_PROPERTY}
 use crate::util::*;
 use crate::validate_spec::{is_builtin_entity_type, valid_spec};
 
-pub use crate::util::go_quote;
-
-/// Fills derived identities, IDs and defaults. Go mutates slices shared with
-/// the caller; this port is pure.
+/// Fills derived identities, IDs and defaults, returning the completed spec.
 pub fn complete_spec(mut spec: EntitySpec) -> EntitySpec {
     if spec.definition_kind.is_empty() {
         spec.definition_kind = DEFINITION_ENTITY.to_owned();
@@ -1240,7 +1237,7 @@ pub(crate) fn render_definition_field(
             &[&association_api, &association_ranking],
             &property,
         ),
-        _ => return Err(errorf!("unsupported field kind {}", go_quote(&field.kind))),
+        _ => return Err(errorf!("unsupported field kind {:?}", field.kind)),
     })
 }
 
@@ -1382,8 +1379,8 @@ fn render_specialized_definition_field(
         .filter(|implementation| !implementation.class.is_empty())
     else {
         return Err(errorf!(
-            "specialized field {} has no implementation class",
-            go_quote(&field.id)
+            "specialized field {:?} has no implementation class",
+            field.id
         ));
     };
     let mut arguments = Vec::new();
@@ -1406,9 +1403,9 @@ fn render_specialized_definition_field(
         CONSTRUCTOR_FIXED => arguments.extend(implementation.fixed_arguments.iter().cloned()),
         _ => {
             return Err(errorf!(
-                "specialized field {} has unsupported constructor mode {}",
-                go_quote(&field.id),
-                go_quote(&implementation.constructor_mode)
+                "specialized field {:?} has unsupported constructor mode {:?}",
+                field.id,
+                implementation.constructor_mode
             ));
         }
     }
@@ -1877,7 +1874,7 @@ fn behavior_accessors(
 }
 
 fn accessors(property: &str, php_type: &str, boolean: bool) -> Vec<String> {
-    let name = exported(property);
+    let name = uppercase_first(property);
     let method = if boolean {
         format!("is{name}")
     } else {
@@ -1903,10 +1900,7 @@ fn entity_php_type(kind: &str) -> Result<(String, bool)> {
         FIELD_DATE | FIELD_DATE_TIME => ("\\DateTimeInterface".to_owned(), false),
         FIELD_JSON | FIELD_LIST | FIELD_OBJECT => ("array".to_owned(), false),
         _ => {
-            return Err(errorf!(
-                "field kind {} has no PHP entity type",
-                go_quote(kind)
-            ));
+            return Err(errorf!("field kind {:?} has no PHP entity type", kind));
         }
     })
 }
@@ -1915,8 +1909,8 @@ fn entity_field_php_type(field: &FieldSpec, imports: &ImportTable) -> Result<(St
     if field.kind == FIELD_ENUM {
         if field.enum_class.trim().is_empty() {
             return Err(errorf!(
-                "enum field {} has no enum class",
-                go_quote(&field.property_name)
+                "enum field {:?} has no enum class",
+                field.property_name
             ));
         }
         return Ok((imports.reference(&field.enum_class), false));
@@ -2420,7 +2414,7 @@ pub(crate) fn entity_implementation_traits(
             continue;
         };
         let trait_name = trim_class(&implementation.entity_trait);
-        if trait_name.is_empty() || !seen.insert(go_to_lower(trait_name)) {
+        if trait_name.is_empty() || !seen.insert(lowercase(trait_name)) {
             continue;
         }
         result.push(trait_name.to_owned());
@@ -2489,7 +2483,7 @@ impl ImportTable {
             table.classes.push(class.to_owned());
             *table
                 .short_count
-                .entry(go_to_lower(short_class(class)))
+                .entry(lowercase(short_class(class)))
                 .or_default() += 1;
         }
         table.classes.sort();
@@ -2498,7 +2492,7 @@ impl ImportTable {
 
     fn ambiguous(&self, class: &str) -> bool {
         self.short_count
-            .get(&go_to_lower(short_class(class)))
+            .get(&lowercase(short_class(class)))
             .is_some_and(|count| *count > 1)
     }
 

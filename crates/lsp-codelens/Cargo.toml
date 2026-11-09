@@ -18,7 +18,7 @@ swlsp-parser-php = { path = "../parser-php" }
 swlsp-parser-yaml = { path = "../parser-yaml" }
 swlsp-php = { path = "../php" }
 swlsp-php-semantic = { path = "../php-semantic" }
-swlsp-php-types = { path = "../php-types" }
+swlsp-textutil = { path = "../textutil" }
 swlsp-serializer = { path = "../serializer" }
 swlsp-symfony = { path = "../symfony" }
 swlsp-symfonyconfig = { path = "../symfonyconfig" }

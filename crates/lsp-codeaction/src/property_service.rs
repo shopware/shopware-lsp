@@ -1,4 +1,4 @@
-//! Go `property_service_codeaction.go`: ports the Symfony plugin's "Add
+//! Ports the Symfony plugin's "Add
 //! Property Service" intention. It infers an injection type from an
 //! undefined `$this->property` reference and updates the constructor using
 //! the class's existing promoted or traditional injection style.
@@ -18,9 +18,10 @@ use swlsp_php::PhpIndex;
 use swlsp_php_languagelevel::{Feature, supports};
 use swlsp_php_resolver::MemberResolver;
 use swlsp_php_semantic::{Flags, Symbol, SymbolKind};
-use swlsp_php_types::{Type, equal_fold, go_to_lower};
+use swlsp_php_types::Type;
 use swlsp_symfony::ServiceIndex;
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::shared::{
     child_tokens, php_block_delimiters, php_class_constructor, php_class_fully_qualified_name,
@@ -218,7 +219,7 @@ impl ActionProvider for PropertyServiceCodeActionProvider {
     }
 }
 
-/// Go `phpThisPropertyAccess`: the nearest `$this->name` access around
+/// The nearest `$this->name` access around
 /// `node`, its property name and the method called on it.
 fn php_this_property_access(node: &SyntaxNode) -> Option<(SyntaxNode, String, String)> {
     for current in node.ancestors() {
@@ -226,7 +227,7 @@ fn php_this_property_access(node: &SyntaxNode) -> Option<(SyntaxNode, String, St
             continue;
         }
         let receiver = phpquery::direct_child(&current, PHP_VARIABLE);
-        if !equal_fold(
+        if !eq_ignore_case(
             &receiver
                 .as_ref()
                 .map(phpquery::variable_name)
@@ -252,14 +253,12 @@ fn php_this_property_access(node: &SyntaxNode) -> Option<(SyntaxNode, String, St
     None
 }
 
-/// Go `propertyServiceCandidate`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PropertyServiceCandidate {
     pub class_name: String,
     pub score: i32,
 }
 
-/// Go `propertyServiceCandidates`.
 pub(crate) fn property_service_candidates(
     php_index: Option<&PhpIndex>,
     property_name: &str,
@@ -273,8 +272,8 @@ pub(crate) fn property_service_candidates(
         return Vec::new();
     }
     let mut search_names: HashSet<String> = HashSet::from([normalized_property.clone()]);
-    if !equal_fold(&normalized_property, "logger")
-        && go_to_lower(property_name.trim_matches('_')).ends_with("logger")
+    if !eq_ignore_case(&normalized_property, "logger")
+        && lowercase(property_name.trim_matches('_')).ends_with("logger")
     {
         search_names.insert("logger".to_owned());
     }
@@ -306,10 +305,10 @@ pub(crate) fn property_service_candidates(
         }
         let mut score = 0;
         for search_name in &search_names {
-            if equal_fold(&normalized_class, search_name) {
+            if eq_ignore_case(&normalized_class, search_name) {
                 score = score.max(3);
             } else if allow_suffix
-                && go_to_lower(&normalized_class).ends_with(&go_to_lower(search_name))
+                && lowercase(&normalized_class).ends_with(&lowercase(search_name))
             {
                 score = score.max(1);
             }
@@ -339,7 +338,7 @@ pub(crate) fn property_service_candidates(
         match symbol.kind {
             SymbolKind::Interface => {
                 score += 2;
-                let lower = go_to_lower(&class_name);
+                let lower = lowercase(&class_name);
                 if lower.contains("\\symfony\\") && lower.contains("\\contracts\\") {
                     score += 2;
                 } else if lower.starts_with("psr\\") {
@@ -349,7 +348,7 @@ pub(crate) fn property_service_candidates(
             SymbolKind::Class if symbol.flags.has(Flags::ABSTRACT) => score += 1,
             _ => {}
         }
-        if go_to_lower(php_class_short_name(&class_name)).contains("decorator") {
+        if lowercase(php_class_short_name(&class_name)).contains("decorator") {
             score -= 3;
         }
         if score < 0 {
@@ -361,15 +360,14 @@ pub(crate) fn property_service_candidates(
         right
             .score
             .cmp(&left.score)
-            .then_with(|| go_to_lower(&left.class_name).cmp(&go_to_lower(&right.class_name)))
+            .then_with(|| lowercase(&left.class_name).cmp(&lowercase(&right.class_name)))
     });
     result.truncate(MAXIMUM_PROPERTY_SERVICE_CANDIDATES);
     result
 }
 
-/// Go `normalizePropertyServiceName`.
 fn normalize_property_service_name(value: &str) -> String {
-    let mut value = go_to_lower(&value.trim_matches('_').replace('_', ""));
+    let mut value = lowercase(&value.trim_matches('_').replace('_', ""));
     loop {
         let original = value.clone();
         for keyword in ["interface", "abstract", "decorator"] {
@@ -386,7 +384,6 @@ fn normalize_property_service_name(value: &str) -> String {
     }
 }
 
-/// Go `propertyServiceWordCount`.
 fn property_service_word_count(value: &str) -> usize {
     let value = value.trim_matches('_');
     if value.is_empty() {
@@ -416,10 +413,9 @@ fn property_service_word_count(value: &str) -> usize {
     count
 }
 
-/// Go `propertyServiceGarbageClass`.
 fn property_service_garbage_class(class_name: &str, path: &str) -> bool {
-    let lower_name = go_to_lower(class_name);
-    let lower_path = go_to_lower(&path.replace('\\', "/"));
+    let lower_name = lowercase(class_name);
+    let lower_path = lowercase(&path.replace('\\', "/"));
     lower_name.ends_with("test")
         || lower_name.contains("\\test\\")
         || lower_name.contains("_phpstan_")
@@ -429,19 +425,17 @@ fn property_service_garbage_class(class_name: &str, path: &str) -> bool {
         || lower_path.contains("/tests/")
 }
 
-/// Go `phpConstructorUsesPromotion`.
 fn php_constructor_uses_promotion(constructor: &SyntaxNode) -> bool {
     phpquery::parameters(constructor).any(|parameter| {
         child_tokens(&parameter).any(|token| {
             matches!(
-                go_to_lower(token.text()).as_str(),
+                lowercase(token.text()).as_str(),
                 "public" | "protected" | "private"
             )
         })
     })
 }
 
-/// Go `phpTraditionalPropertyEdit`.
 fn php_traditional_property_edit(
     request: &CodeActionRequest,
     constructor: &SyntaxNode,
@@ -459,7 +453,6 @@ fn php_traditional_property_edit(
     ))
 }
 
-/// Go `phpConstructorAssignmentEdit`.
 fn php_constructor_assignment_edit(
     request: &CodeActionRequest,
     class: &SyntaxNode,

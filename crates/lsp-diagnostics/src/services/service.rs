@@ -1,5 +1,4 @@
-//! Missing and deprecated service, parameter and class references (Go
-//! `service_diagnostics.go`).
+//! Missing and deprecated service, parameter and class references.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -17,11 +16,13 @@ use swlsp_parser_yaml::query as yamlquery;
 use swlsp_parser_yaml::syntax::YAML_SCALAR;
 use swlsp_php::PhpIndex;
 use swlsp_php_semantic::{Flags, Symbol, SymbolKind};
-use swlsp_php_types::{Type, go_to_lower};
+use swlsp_php_types::Type;
 use swlsp_symfony::{Parameter, PhpConfigReferenceKind, Service, ServiceIndex};
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::lowercase;
 
 use super::{deprecated_tags, lower_ext, problem, similar_value};
+use crate::LookupError;
 use crate::common::value_node_text_range;
 use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
@@ -37,7 +38,6 @@ const CONTAINER_TYPES: &[&str] = &[
     "Symfony\\Contracts\\Service\\ServiceProviderInterface",
 ];
 
-/// Go `ServiceAnalyzer`.
 pub struct ServiceAnalyzer {
     service_index: Option<Arc<ServiceIndex>>,
     php_index: Option<PhpIndex>,
@@ -335,7 +335,7 @@ impl Collector<'_> {
         let service = self
             .services
             .get_service_by_id(&name)
-            .map_err(|error| format!("query Symfony service {name:?}: {error}"))?;
+            .map_err(|error| LookupError::new(format!("query Symfony service {name:?}"), error))?;
         if let Some(service) = service {
             self.check_service_deprecations(node, &service);
             return Ok(());
@@ -428,13 +428,12 @@ impl Collector<'_> {
         if name.is_empty() || name.contains(['$', '{', '}']) {
             return Ok(());
         }
-        if self.local_parameters.contains(&go_to_lower(name)) {
+        if self.local_parameters.contains(&lowercase(name)) {
             return Ok(());
         }
-        let found = self
-            .services
-            .get_parameter_by_name(name)
-            .map_err(|error| format!("query Symfony parameter {name:?}: {error}"))?;
+        let found = self.services.get_parameter_by_name(name).map_err(|error| {
+            LookupError::new(format!("query Symfony parameter {name:?}"), error)
+        })?;
         if found.is_none() {
             let candidates = self.all_parameter_names()?;
             let suggestions = similar_value(name, candidates);
@@ -510,7 +509,7 @@ impl Collector<'_> {
                     }
                     let fqn = candidate.fully_qualified.as_str();
                     let fqn = fqn.strip_prefix('\\').unwrap_or(fqn);
-                    if fqn.is_empty() || !seen.insert(go_to_lower(fqn)) {
+                    if fqn.is_empty() || !seen.insert(lowercase(fqn)) {
                         continue;
                     }
                     candidates.push(fqn.to_owned());
@@ -541,7 +540,7 @@ impl Collector<'_> {
             let names = self
                 .services
                 .get_all_services()
-                .map_err(|error| format!("query Symfony services: {error}"))?;
+                .map_err(|error| LookupError::new("query Symfony services", error))?;
             self.service_names = Some(names);
         }
         Ok(self.service_names.as_deref().unwrap_or_default())
@@ -552,7 +551,7 @@ impl Collector<'_> {
             let parameters = self
                 .services
                 .get_all_parameters()
-                .map_err(|error| format!("query Symfony parameters: {error}"))?;
+                .map_err(|error| LookupError::new("query Symfony parameters", error))?;
             self.parameter_names = Some(parameters.into_iter().map(|p| p.name).collect());
         }
         Ok(self.parameter_names.as_deref().unwrap_or_default())
@@ -563,7 +562,7 @@ impl Collector<'_> {
             self.local_services.insert(service.id.clone(), service);
         }
         for parameter in parameters {
-            self.local_parameters.insert(go_to_lower(&parameter.name));
+            self.local_parameters.insert(lowercase(&parameter.name));
         }
     }
 
@@ -573,7 +572,7 @@ impl Collector<'_> {
             u32::from(range.start()),
             u32::from(range.end()),
             code,
-            go_to_lower(name),
+            lowercase(name),
         ))
     }
 

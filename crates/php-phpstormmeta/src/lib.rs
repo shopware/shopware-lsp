@@ -1,5 +1,5 @@
 //! Parses the declarative subset of `.phpstorm.meta.php` files into typed
-//! semantic call contracts (port of `internal/php/phpstormmeta`).
+//! semantic call contracts.
 
 use std::collections::HashMap;
 
@@ -12,7 +12,8 @@ use swlsp_php_semantic::{
     CallContract, CallMapEntry, CallReturnContract, CallReturnKind, CallTarget, CallValue,
     CallValueKind, ExpectedArgumentContract,
 };
-use swlsp_php_types::{equal_fold, go_to_lower};
+use swlsp_textutil::{eq_ignore_case, lowercase};
+
 use swlsp_syntax::SyntaxNode;
 
 #[cfg(test)]
@@ -24,7 +25,7 @@ const NAMESPACE: &str = "PHPSTORM_META";
 /// malformed directives are ignored so a newer PhpStorm metadata dialect
 /// never prevents the containing PHP file from being indexed.
 pub fn parse(root: &SyntaxNode) -> Vec<CallContract> {
-    if !equal_fold(&query::namespace(root), NAMESPACE) {
+    if !eq_ignore_case(&query::namespace(root), NAMESPACE) {
         return Vec::new();
     }
     let mut extractor = ContractExtractor::default();
@@ -44,7 +45,7 @@ struct ContractExtractor {
 /// The lowercased callee name without a leading namespace separator.
 fn callee(call: &SyntaxNode) -> String {
     let name = query::call_method_name(call);
-    go_to_lower(name.strip_prefix('\\').unwrap_or(&name))
+    lowercase(name.strip_prefix('\\').unwrap_or(&name))
 }
 
 impl ContractExtractor {
@@ -154,7 +155,7 @@ impl ContractExtractor {
     fn expression_values(&self, expression: &SyntaxNode) -> Vec<CallValue> {
         if expression.kind() == PHP_FUNCTION_CALL {
             let name = query::call_method_name(expression);
-            if equal_fold(name.strip_prefix('\\').unwrap_or(&name), "argumentsSet") {
+            if eq_ignore_case(name.strip_prefix('\\').unwrap_or(&name), "argumentsSet") {
                 return match query::argument_expression(expression, 0) {
                     Some(name_node) if name_node.kind() == PHP_STRING => self
                         .argument_sets

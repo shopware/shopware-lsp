@@ -1,4 +1,4 @@
-//! Ports of the Go `internal/lsp/analytics` tests.
+//! Analytics catalog tests.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -64,7 +64,7 @@ pub(crate) fn close(indexer: &dyn Indexer) {
     indexer.close().unwrap();
 }
 
-/// Parses an expected Go wire response for comparison with a command result.
+/// Parses an expected wire response for comparison with a command result.
 pub(crate) fn json_value(text: &str) -> serde_json::Value {
     serde_json::from_str(text).unwrap()
 }

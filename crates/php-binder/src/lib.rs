@@ -1,5 +1,4 @@
-//! Binds a parsed PHP file into an immutable semantic [`Document`]
-//! (port of `internal/php/binder`).
+//! Binds a parsed PHP file into an immutable semantic [`Document`].
 //!
 //! The binder walks the lossless CST once and produces declarations
 //! (classes, members, functions, parameters, locals, closures, PHPDoc
@@ -7,18 +6,14 @@
 //! declared type facts. Cross-file IDs are resolved afterwards by [`link`]
 //! against one workspace [`Snapshot`](swlsp_php_semantic::Snapshot).
 //!
-//! # Differences from Go
+//! # Imports and ordering
 //!
-//! - Go scopes share their namespace's import maps by reference, so a scope
-//!   created before a later `use` statement still observes it. The Rust
-//!   binder reproduces the resulting tables exactly by tracking map
-//!   identities and materializing each scope's [`ImportTable`] once at the
-//!   end of binding.
-//! - Go iterates PHPDoc `@phpstan-type` aliases in random map order; the
-//!   Rust PHPDoc parser keeps them sorted, so synthesized type-alias symbols
-//!   are emitted in name order.
-//! - The declaration set is a plain hash set of node identities instead of
-//!   Go's hand-rolled open-addressing table.
+//! - Every scope of a namespace sees the namespace's whole import table, so
+//!   a scope created before a later `use` statement still observes it. The
+//!   binder tracks which shared import map each scope uses and materializes
+//!   each scope's [`ImportTable`] once at the end of binding.
+//! - PHPDoc `@phpstan-type` aliases are kept sorted, so synthesized
+//!   type-alias symbols are emitted in name order.
 //!
 //! [`ImportTable`]: swlsp_php_semantic::ImportTable
 

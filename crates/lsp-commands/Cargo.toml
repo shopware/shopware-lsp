@@ -11,12 +11,14 @@ swlsp-console = { path = "../console" }
 swlsp-extension = { path = "../extension" }
 swlsp-lsp = { path = "../lsp" }
 swlsp-lsp-protocol = { path = "../lsp-protocol" }
+swlsp-parser-json = { path = "../parser-json" }
 swlsp-rewrite = { path = "../rewrite" }
 swlsp-snippet = { path = "../snippet" }
 swlsp-twig = { path = "../twig" }
 swlsp-uriutil = { path = "../uriutil" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+thiserror.workspace = true
 # Blocking HTTP with rustls on ring and the bundled Mozilla roots: no CMake
 # for aws-lc-rs in release builds, and no dependency on a system trust store.
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls-no-provider"] }

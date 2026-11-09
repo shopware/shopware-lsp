@@ -1,5 +1,4 @@
-//! Missing-key insertions into writable catalogue resources (port of Go
-//! `insertion.go`).
+//! Missing-key insertions into writable catalogue resources.
 
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
@@ -7,8 +6,8 @@ use std::collections::BTreeMap;
 use swlsp_indexer::{ParsedFile, Result};
 use swlsp_parser_xml::query as xmlquery;
 use swlsp_parser_yaml::query as yamlquery;
-use swlsp_php_types::go_to_lower;
 use swlsp_syntax::{LineIndex, SyntaxNode, Tree};
+use swlsp_textutil::lowercase;
 
 use crate::parser::{catalogue_metadata, parse_xml_resource, parse_yaml_resource};
 use crate::{Index, lower_extension, normalize_domain};
@@ -66,7 +65,7 @@ impl Index {
             let Some(metadata) = catalogue_metadata(path) else {
                 continue;
             };
-            if !swlsp_php_types::equal_fold(&metadata.domain, domain) {
+            if !swlsp_textutil::eq_ignore_case(&metadata.domain, domain) {
                 continue;
             }
             if !matches!(
@@ -129,7 +128,7 @@ pub fn insertion_for_source(file: &str, source: &str, key: &str, value: &str) ->
 
 fn insertion_file_priority(file: &str, locale: &str) -> u32 {
     let mut priority = 0;
-    let normalized = go_to_lower(file);
+    let normalized = lowercase(file);
     if !normalized.contains("/vendor/")
         && !normalized.contains("/var/cache/")
         && !normalized.contains("/app/cache/")
@@ -139,7 +138,7 @@ fn insertion_file_priority(file: &str, locale: &str) -> u32 {
     if normalized.contains("/src/") || normalized.contains("/app/") {
         priority += 2;
     }
-    let locale = go_to_lower(&locale.replace('_', "-"));
+    let locale = lowercase(&locale.replace('_', "-"));
     if locale == "en" || locale.starts_with("en-") {
         priority += 1;
     }

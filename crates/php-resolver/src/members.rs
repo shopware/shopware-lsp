@@ -1,11 +1,12 @@
 //! Effective member lookup across traits, parents, interfaces, trait aliases,
-//! and class templates (port of `resolver/members.go`).
+//! and class templates.
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use swlsp_php_semantic::{
     Snapshot, Str, Symbol, SymbolId, SymbolKind, SymbolView, TemplateParameter,
 };
-use swlsp_php_types::{Kind, Type, equal_fold, go_to_lower, substitute};
+use swlsp_php_types::{Kind, Type, substitute};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 /// Template name to bound type.
 pub type TemplateBindings = FxHashMap<Str, Type>;
@@ -331,7 +332,7 @@ impl<'a> MemberResolver<'a> {
                 let parent = parent_view.materialize();
                 let arguments: Vec<Type> = parent_types
                     .iter()
-                    .find(|parent_type| equal_fold(parent_type.name(), parent_name))
+                    .find(|parent_type| eq_ignore_case(parent_type.name(), parent_name))
                     .map(|parent_type| {
                         parent_type
                             .arguments()
@@ -487,7 +488,7 @@ impl<'a> MemberResolver<'a> {
             return true;
         }
         for alias in class.trait_aliases() {
-            if !equal_fold(&alias.alias, name) {
+            if !eq_ignore_case(&alias.alias, name) {
                 continue;
             }
             let key = member_resolution_key(&alias.alias, SymbolKind::Method, false);
@@ -695,7 +696,7 @@ impl<'a> MemberResolver<'a> {
                 if !parent.templates().is_empty()
                     && let Some(parent_type) = parent_types
                         .iter()
-                        .find(|parent_type| equal_fold(parent_type.name(), parent_name))
+                        .find(|parent_type| eq_ignore_case(parent_type.name(), parent_name))
                 {
                     arguments = parent_type
                         .arguments()
@@ -728,7 +729,7 @@ impl<'a> MemberResolver<'a> {
         walk: &mut MemberWalk<'_, 'a>,
     ) -> bool {
         for alias in class.trait_aliases() {
-            if !name.is_empty() && !equal_fold(&alias.alias, name) {
+            if !name.is_empty() && !eq_ignore_case(&alias.alias, name) {
                 continue;
             }
             if walk.seen_names.contains(&alias.alias, SymbolKind::Method) {
@@ -979,5 +980,5 @@ fn member_resolution_key(name: &str, kind: SymbolKind, mixed_kinds: bool) -> Str
         }
         return name.to_owned();
     }
-    go_to_lower(name)
+    lowercase(name)
 }

@@ -1,4 +1,4 @@
-//! `Shopware.Context` members (port of Go `shopware_context.go`).
+//! `Shopware.Context` members.
 
 use crate::*;
 

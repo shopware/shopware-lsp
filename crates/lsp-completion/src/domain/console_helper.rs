@@ -1,4 +1,4 @@
-//! Console helper names (Go `console_helper_completion.go`).
+//! Console helper names.
 
 use std::collections::HashSet;
 

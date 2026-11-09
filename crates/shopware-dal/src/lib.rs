@@ -1,4 +1,4 @@
-//! Shopware DAL entity definitions (port of Go `internal/shopware/dal`).
+//! Shopware DAL entity definitions.
 //!
 //! [`Index`] persists entity definitions independently of the PHP semantic
 //! index; [`context`] recognizes static DAL references in JavaScript, Twig

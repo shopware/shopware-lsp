@@ -1,15 +1,16 @@
-//! Canonical type rendering. Output is byte-identical to Go's `Type.String()`.
+//! Canonical type rendering. The text is persisted and parsed back, so it
+//! must stay stable.
 //! Composite children without cached text (an empty shape, a parameterless
 //! callable with a non-mixed result, or an uncached union) are rendered in
 //! full when nested, so the canonical text round-trips through the parser.
 
 use std::borrow::Cow;
 
-use crate::gostr::write_go_quote;
 use crate::kind::Kind;
+use crate::quote::{quote_literal, write_quoted_literal};
 use crate::ty::{CallableParameter, Type};
 
-/// Renders a type at the top level (Go's `Type.render`).
+/// Renders a type at the top level.
 pub(crate) fn render(value: &Type) -> String {
     match value.kind() {
         Kind::Unknown
@@ -29,7 +30,7 @@ pub(crate) fn render(value: &Type) -> String {
         Kind::SelfType | Kind::Static | Kind::Parent => {
             render_generic(value.kind().as_str(), value.arguments())
         }
-        Kind::LiteralString => crate::gostr::go_quote(value.name()),
+        Kind::LiteralString => quote_literal(value.name()),
         Kind::ClassString => {
             let arguments = value.arguments();
             if arguments.is_empty() || arguments[0] == Type::OBJECT {
@@ -185,7 +186,7 @@ fn render_shape(value: &Type) -> String {
 }
 
 /// Returns a shape key as rendered: already-quoted keys and plain type-name
-/// keys stay verbatim, every other key is Go-quoted.
+/// keys stay verbatim, every other key is quoted with [`quote_literal`].
 pub(crate) fn shape_field_name(name: &str) -> Cow<'_, str> {
     let bytes = name.as_bytes();
     if bytes.len() >= 2
@@ -197,7 +198,7 @@ pub(crate) fn shape_field_name(name: &str) -> Cow<'_, str> {
     if !name.is_empty() && bytes.iter().all(|&byte| is_type_name_byte(byte)) {
         return Cow::Borrowed(name);
     }
-    Cow::Owned(crate::gostr::go_quote(name))
+    Cow::Owned(quote_literal(name))
 }
 
 pub(crate) fn is_type_name_byte(value: u8) -> bool {
@@ -288,7 +289,7 @@ pub(crate) fn rendered_length_hint(value: &Type) -> usize {
     }
 }
 
-/// Writes a nested type (Go's `writeRenderedType`).
+/// Writes a nested type.
 pub(crate) fn write_rendered(out: &mut String, value: &Type) {
     if let Some(text) = value.cached_text() {
         out.push_str(text);
@@ -311,7 +312,7 @@ pub(crate) fn write_rendered(out: &mut String, value: &Type) {
             }
         }
         Kind::LiteralInt | Kind::LiteralFloat | Kind::Template => out.push_str(value.name()),
-        Kind::LiteralString => write_go_quote(out, value.name()),
+        Kind::LiteralString => write_quoted_literal(out, value.name()),
         Kind::Unknown
         | Kind::Error
         | Kind::Never

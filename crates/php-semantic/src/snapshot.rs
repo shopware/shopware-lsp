@@ -474,7 +474,7 @@ impl NameTableBuilder {
         }
     }
 
-    /// Go `symbolNameIndex.add`: reports whether the ID was newly recorded.
+    /// Records `id` under its name; reports whether the ID was newly recorded.
     fn add(
         &mut self,
         index: &PackedIndex,
@@ -679,7 +679,7 @@ fn lower_query(name: &str) -> Cow<'_, str> {
     {
         Cow::Borrowed(name)
     } else {
-        Cow::Owned(swlsp_php_types::go_to_lower(name))
+        Cow::Owned(swlsp_textutil::lowercase(name))
     }
 }
 

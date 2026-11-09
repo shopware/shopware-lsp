@@ -1,5 +1,4 @@
-//! `.phpstorm.meta.php` dynamic return metadata (port of
-//! `call_contracts.go`).
+//! `.phpstorm.meta.php` dynamic return metadata.
 
 use std::borrow::Cow;
 
@@ -10,8 +9,9 @@ use swlsp_php_semantic::{
     CallContract, CallReturnContract, CallReturnKind, CallValue, CallValueKind, Confidence, Symbol,
     TypeFact, TypeSource,
 };
-use swlsp_php_types::{Kind, Type, equal_fold};
+use swlsp_php_types::{Kind, Type};
 use swlsp_syntax::TextRange;
+use swlsp_textutil::eq_ignore_case;
 
 use super::{CallArgument, CallContext, Extension};
 use crate::types_util::join_types;
@@ -153,14 +153,14 @@ fn call_value_matches(value: &CallValue, argument: &Type, expression: &str) -> b
         CallValueKind::Number => {
             argument.to_string() == normalize_contract_expression(&value.expression)
         }
-        _ => equal_fold(
+        _ => eq_ignore_case(
             &normalize_contract_expression(&value.expression),
             expression,
         ),
     }
 }
 
-/// Removes all Unicode white space, like Go's `strings.Fields` join.
+/// Removes all Unicode white space.
 pub(crate) fn normalize_contract_expression(value: &str) -> String {
     value.split_whitespace().collect()
 }

@@ -1,5 +1,4 @@
-//! Entity definition indexing (port of Go `dal/index.go` and
-//! `dal/workspace_symbols.go`).
+//! Entity definition indexing.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -16,12 +15,10 @@ use swlsp_indexer::{
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax as php;
 use swlsp_php_resolver::{ImportKind, parse_use_declaration};
-use swlsp_php_types::{equal_fold as go_equal_fold, go_to_lower};
 use swlsp_syntax::{LineIndex, SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
-use crate::context::go_trim_space;
-
-// Go RE2: `\b` and `\s` are ASCII-only.
+// Word boundaries and whitespace are ASCII-only.
 static ENTITY_NAME_CONSTANT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?m)(?-u:\b)ENTITY_NAME[\t\n\x0C\r ]*=[\t\n\x0C\r ]*['"]([^'"]+)['"]"#)
         .expect("valid ENTITY_NAME pattern")
@@ -205,7 +202,7 @@ fn extract_definitions(file: &ParsedFile) -> PreparedDefinitions {
             let Some(definition) = parse_definition(&class, &root, path, file.line_index()) else {
                 continue;
             };
-            // A repeated entity name keeps the last definition (Go map).
+            // A repeated entity name keeps the last definition.
             match definitions
                 .iter_mut()
                 .find(|existing| existing.name == definition.name)
@@ -412,7 +409,7 @@ fn literal_boolean_return_value(method: &SyntaxNode) -> Option<bool> {
         return None;
     };
     let text = value.text().to_string();
-    Some(go_equal_fold(go_trim_space(&text), "true"))
+    Some(eq_ignore_case(text.trim(), "true"))
 }
 
 fn parse_fields(method: &SyntaxNode, lines: &LineIndex, resolver: &ClassResolver) -> Vec<Field> {
@@ -507,8 +504,7 @@ fn returned_class_name(method: &SyntaxNode, resolver: &ClassResolver) -> String 
     String::new()
 }
 
-/// Resolves class names against the file's namespace and class imports
-/// (Go `definitionClassResolver`).
+/// Resolves class names against the file's namespace and class imports.
 struct ClassResolver {
     namespace: String,
     current_class: String,
@@ -530,7 +526,7 @@ impl ClassResolver {
             for imported in parse_use_declaration(&declaration.text().to_string()) {
                 if imported.kind == ImportKind::Class {
                     aliases.insert(
-                        go_to_lower(&imported.alias),
+                        lowercase(&imported.alias),
                         imported.target.trim_matches('\\').to_owned(),
                     );
                 }
@@ -544,18 +540,18 @@ impl ClassResolver {
     }
 
     fn resolve(&self, name: &str) -> String {
-        let name = go_trim_space(name).trim_matches('\\');
+        let name = name.trim().trim_matches('\\');
         if name.is_empty() {
             return String::new();
         }
-        if go_equal_fold(name, "self") || go_equal_fold(name, "static") {
+        if eq_ignore_case(name, "self") || eq_ignore_case(name, "static") {
             return self.current_class.clone();
         }
         let (head, rest) = match name.split_once('\\') {
             Some((head, rest)) => (head, Some(rest)),
             None => (name, None),
         };
-        if let Some(target) = self.aliases.get(&go_to_lower(head)) {
+        if let Some(target) = self.aliases.get(&lowercase(head)) {
             return match rest {
                 Some(rest) => format!("{target}\\{rest}"),
                 None => target.clone(),

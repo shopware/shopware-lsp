@@ -1,4 +1,4 @@
-//! Go `invokable_command.go`: the `symfony.console.invoke` inspection.
+//! The `symfony.console.invoke` inspection.
 
 use std::sync::Arc;
 
@@ -25,7 +25,6 @@ use crate::inspection::resolve_anchor;
 
 pub const INVOKABLE_RETURN_TYPE_FIX_ID: &str = "add-invokable-command-return-type";
 
-/// Go `NewInvokableCommand`.
 pub fn new_invokable_command(php_index: Option<PhpIndex>) -> Arc<dyn Inspection> {
     Arc::new(BoundInspection {
         definition: InspectionDefinition {

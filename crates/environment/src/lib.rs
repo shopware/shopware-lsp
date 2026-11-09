@@ -1,6 +1,5 @@
 //! Environment-variable declarations (`.env`, Dockerfile, Docker Compose) and
-//! Symfony `%env(...)%` / PHP `env()` references (port of Go
-//! `internal/environment`).
+//! Symfony `%env(...)%` / PHP `env()` references.
 
 mod index;
 mod model;

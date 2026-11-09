@@ -1,4 +1,4 @@
-//! Port of Go `internal/lsp/hover/utf16_range_test.go`.
+//! Hover ranges are UTF-16 positions for documents with non-ASCII text.
 //!
 //! The prefixes put a two-byte (ä) and a four-byte, two-UTF-16-unit (😀)
 //! character before the hovered name, so byte and UTF-16 columns differ. The

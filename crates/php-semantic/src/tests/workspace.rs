@@ -317,7 +317,7 @@ fn parameter_ids_derive_from_owner_with_exact_fallback() {
         Some("legacy-parameter-id".into())
     );
     assert!(detail.parameters[2].extras.is_none());
-    // Go semantics: an empty parameter ID materializes as the derived ID.
+    // An empty parameter ID materializes as the derived ID.
     let mut expected = document;
     expected.symbols[0].parameters[2].id = format!("9:{owner}:$noid").into();
     assert_eq!(graph.document(), expected);

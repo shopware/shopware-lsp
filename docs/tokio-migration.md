@@ -31,7 +31,7 @@ for a concrete crate or feature that needs them (see the open questions).
 |---|---|---|
 | LSP transport | `lsp-server` framing; a reader thread, **one ordered worker thread**, bounded crossbeam queue; `$/cancelRequest` handled on the reader; cooperative `CancellationToken` | `crates/lsp/src/transport.rs`, `crates/lsp/src/context.rs` |
 | Hosting | `serve` runs the server on a thread and polls for completion and socket accepts every 25 ms | `crates/cli/src/serve.rs` |
-| MCP | separate process (`shopware-lsp mcp`); **hand-rolled newline JSON-RPC** written to reproduce the Go SDK's texts byte for byte (the Go implementation is gone, so that constraint no longer applies); tools dispatched synchronously; one lazily created, mutex-serialized `CliSession` | `crates/cli/src/mcp/` (about 2,700 lines), `crates/cli/src/session.rs` |
+| MCP | separate process (`shopware-lsp mcp`); **hand-rolled newline JSON-RPC** with hand-built error texts; tools dispatched synchronously; one lazily created, mutex-serialized `CliSession` | `crates/cli/src/mcp/` (about 2,700 lines), `crates/cli/src/session.rs` |
 | MCP → analysis | the MCP process starts an in-process LSP server and talks to it over OS pipes with its own JSON-RPC client, the same path `check` uses | `crates/cli/src/session.rs` |
 | Indexing | `notify` watcher thread, scanner and settle workers on OS threads | `crates/indexer`, `crates/php/src/settle.rs` |
 | HTTP | blocking `ureq`, one call site | `crates/lsp-commands/src/twig.rs` |
@@ -85,7 +85,7 @@ Rejected:
   before the queue, as the reader thread does today.
 - **MCP: `rmcp` 3.9** with a hand-written `ServerHandler` (tools come from
   `tools.json` and are enabled by configuration), stdio only.
-- **MCP error texts** are the SDK's; the Go-parity texts go away.
+- **MCP error texts** are the SDK's.
 - **Responses bypass the `tower-lsp-server` writer.** The worker writes
   each response, and `Connection` each server-to-client request and
   notification, as one complete frame to the output thread that
@@ -183,7 +183,7 @@ inside the LSP transport.
 - **Session:** `CliSession` stays synchronous, behind a `tokio::sync::Mutex`
   acquired before `run_blocking`, so tool calls stay serialized and
   indexing-on-first-use is unchanged.
-- Delete the Go-parity code: hand-built error texts, `method_info`, the
+- Delete the hand-built protocol code: error texts, `method_info`, the
   params-type messages.
 - **Contracts:**
   - update `crates/cli/src/tests/mcp.rs` to the SDK's texts where they

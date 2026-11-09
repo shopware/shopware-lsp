@@ -1,13 +1,9 @@
-//! Symfony framework intelligence (port of Go `internal/symfony`): the
+//! Symfony framework intelligence: the
 //! service container from XML/YAML/PHP configuration and the compiled
 //! container, parameters, tags, routes, route and controller usages, and the
 //! static configuration contexts used by LSP providers.
 //!
-//! # Differences from Go
-//!
-//! - Go `map[string]string` tag sets are ordered `BTreeMap`s.
-//! - Lines are `u32` (Go `int`).
-//! - Go's `ServiceIndex.Close` drops the container catalog; Rust keeps it.
+//! Tag sets are ordered `BTreeMap`s so iteration is deterministic.
 
 mod compiled_catalog_index;
 mod compiled_route_catalog;
@@ -128,7 +124,9 @@ pub use crate::service_tag_contract::{
 };
 pub use crate::services_yaml_convert::{ConvertError, convert_container_to_yaml};
 pub use crate::services_yaml_model::{Container, XmlAttr, parse_services_xml};
-pub use crate::services_yaml_plan::{ServicesXmlConversion, plan_services_xml_conversion};
+pub use crate::services_yaml_plan::{
+    PlanError, ServicesXmlConversion, plan_services_xml_conversion,
+};
 pub use crate::twig_controller::{
     TwigControllerReference, TwigControllerValue, controller_reference_key,
     normalize_twig_controller_value, parse_twig_controller_reference, twig_controller_reference_at,
@@ -167,7 +165,7 @@ pub use twig_globals::{parse_xml_twig_globals, parse_xml_twig_globals_tree};
 pub use xml_services::{parse_xml_services, parse_xml_services_tree};
 pub use yaml_services::{parse_yaml_services, parse_yaml_services_tree};
 
-/// Parses a PHP service configuration file (Go `parsePHPServiceConfigTree`).
+/// Parses a PHP service configuration file.
 pub(crate) fn php_service_config(
     path: &str,
     root: &swlsp_syntax::SyntaxNode,

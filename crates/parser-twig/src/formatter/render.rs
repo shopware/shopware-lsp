@@ -1,5 +1,4 @@
-//! Formatting IR renderer (port of `formatter/format.go`, `tag_generic.go`,
-//! `tag_twigcomment.go`, `tag_verbatim.go` and `delimiters.go`).
+//! Formatting IR renderer.
 
 use super::{Block, Element, GenericBlock, If, Node, TwigTrim};
 

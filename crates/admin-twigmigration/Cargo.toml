@@ -12,3 +12,5 @@ name = "swlsp_admin_twigmigration"
 swlsp-syntax.workspace = true
 swlsp-parser-twig = { path = "../parser-twig" }
 swlsp-rewrite = { path = "../rewrite" }
+swlsp-textutil = { path = "../textutil" }
+thiserror.workspace = true

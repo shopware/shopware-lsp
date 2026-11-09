@@ -1,5 +1,4 @@
-//! Go `snippet_diagnostics.go`: missing Storefront and Administration
-//! snippets.
+//! Missing Storefront and Administration snippets.
 
 use std::sync::Arc;
 
@@ -8,18 +7,17 @@ use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
 use swlsp_lsp_protocol as protocol;
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::TWIG_LITERAL_STRING;
-use swlsp_php_types::go_quote;
 use swlsp_snippet::SnippetIndexer;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
 use swlsp_translation::Index as TranslationIndex;
 
 use super::lower_ext;
+use crate::LookupError;
 use crate::ProblemAnalyzer;
 
 const ADMIN_SNIPPET_MISSING: &str = "admin.snippet.missing";
 const FRONTEND_SNIPPET_MISSING: &str = "frontend.snippet.missing";
 
-/// Go `SnippetAnalyzer`.
 pub struct SnippetAnalyzer {
     snippet_index: Option<Arc<SnippetIndexer>>,
     translation_index: Option<Arc<TranslationIndex>>,
@@ -90,9 +88,9 @@ impl SnippetAnalyzer {
                 if key.is_empty() {
                     continue;
                 }
-                let snippets = index
-                    .admin_snippet(&key)
-                    .map_err(|error| format!("query admin snippet {}: {error}", go_quote(&key)))?;
+                let snippets = index.admin_snippet(&key).map_err(|error| {
+                    LookupError::new(format!("query admin snippet {:?}", key), error)
+                })?;
                 if snippets.is_empty() {
                     diagnostics.push(snippet_problem(
                         ADMIN_SNIPPET_MISSING,
@@ -121,16 +119,16 @@ impl SnippetAnalyzer {
             if key.is_empty() {
                 continue;
             }
-            let snippets = index
-                .frontend_snippet(&key)
-                .map_err(|error| format!("query frontend snippet {}: {error}", go_quote(&key)))?;
+            let snippets = index.frontend_snippet(&key).map_err(|error| {
+                LookupError::new(format!("query frontend snippet {:?}", key), error)
+            })?;
             if snippets.is_empty()
                 && let Some(translations) = &self.translation_index
             {
                 let exists = translations
                     .has_message("messages", &key)
                     .map_err(|error| {
-                        format!("query Symfony translation {}: {error}", go_quote(&key))
+                        LookupError::new(format!("query Symfony translation {:?}", key), error)
                     })?;
                 if exists {
                     continue;
@@ -165,7 +163,7 @@ fn js_diagnostics(
         }
         let snippets = index
             .admin_snippet(&key)
-            .map_err(|error| format!("query admin snippet {}: {error}", go_quote(&key)))?;
+            .map_err(|error| LookupError::new(format!("query admin snippet {:?}", key), error))?;
         if snippets.is_empty() {
             diagnostics.push(snippet_problem(
                 ADMIN_SNIPPET_MISSING,

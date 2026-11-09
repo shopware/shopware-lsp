@@ -207,7 +207,7 @@ impl Type {
         }
     }
 
-    // ----- builtin constructors (mirroring Go's functions) -----
+    // ----- builtin constructors -----
 
     pub fn unknown() -> Type {
         Type::UNKNOWN
@@ -563,7 +563,7 @@ impl Type {
         self.text()
     }
 
-    /// The canonical display text (Go's `String()`).
+    /// The canonical display text.
     pub fn text(&self) -> Cow<'_, str> {
         if let Some(text) = self.cached_text() {
             return Cow::Borrowed(text);
@@ -907,7 +907,10 @@ pub(crate) fn valid_integer_literal(value: &str) -> bool {
     digits > 0
 }
 
-/// Mirrors Go's `strconv.ParseFloat(value, 64) == nil`.
+/// Whether `value` is a float literal accepted by a literal-float type: an
+/// optional sign, then a decimal float, a hexadecimal float (`0x1p-2`),
+/// `inf`/`infinity`, or an unsigned `nan` (case-insensitive). Values that
+/// overflow `f64` are rejected.
 fn valid_float_literal(value: &str) -> bool {
     let (signed, unsigned) = match value.strip_prefix(['+', '-']) {
         Some(rest) => (true, rest),
@@ -920,15 +923,15 @@ fn valid_float_literal(value: &str) -> bool {
     if matches!(lower.as_str(), "inf" | "infinity") {
         return true;
     }
-    // Go accepts a sign before "inf" but not before "nan".
+    // A sign is allowed before "inf" but not before "nan".
     if lower == "nan" {
         return !signed;
     }
     if let Some(hex) = lower.strip_prefix("0x") {
         return valid_hex_float(hex);
     }
-    // Rust accepts the same decimal grammar but spells special values
-    // differently; those were handled above.
+    // `f64::from_str` also accepts other spellings of the special values;
+    // those were handled above, so only plain decimal syntax reaches it.
     if !unsigned
         .bytes()
         .all(|byte| byte.is_ascii_digit() || matches!(byte, b'.' | b'e' | b'E' | b'+' | b'-'))
@@ -936,14 +939,14 @@ fn valid_float_literal(value: &str) -> bool {
         return false;
     }
     match unsigned.parse::<f64>() {
-        // Go reports overflow to infinity as a range error.
+        // Overflow to infinity is out of range.
         Ok(parsed) => parsed.is_finite(),
         Err(_) => false,
     }
 }
 
-/// Go's hexadecimal float syntax: a mantissa with at least one hex digit and
-/// a mandatory binary exponent. Values overflowing `f64` are range errors.
+/// Hexadecimal float syntax: a mantissa with at least one hex digit and a
+/// mandatory binary exponent. Values overflowing `f64` are range errors.
 fn valid_hex_float(value: &str) -> bool {
     let Some((mantissa, exponent)) = value.split_once('p') else {
         return false;

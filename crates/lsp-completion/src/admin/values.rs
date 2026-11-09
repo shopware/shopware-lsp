@@ -1,4 +1,5 @@
-//! Port of Go `admin_completion_values.go`.
+//! Completions for Administration prop values, object bindings and dynamic
+//! component attributes.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -26,7 +27,7 @@ fn range(start: u32, end: u32) -> TextRange {
 }
 
 impl AdminCompletionProvider {
-    /// Go `getResolvedSlotCompletions`: the component contract owning a slot
+    /// Slot completions from the component contract owning a slot
     /// directive. Closed dynamic selectors contribute only shared slots.
     pub(super) fn get_resolved_slot_completions(
         &self,
@@ -52,7 +53,7 @@ impl AdminCompletionProvider {
         }
     }
 
-    /// Go `componentPropValueCompletions`.
+    /// Allowed values of the component prop whose value is at `offset`.
     pub(super) fn component_prop_value_completions(
         &self,
         request: &CompletionRequest,
@@ -150,7 +151,7 @@ impl AdminCompletionProvider {
         }
     }
 
-    /// Go `objectBindingPropCompletions`.
+    /// Prop name completions for keys of an object `v-bind`.
     pub(super) fn object_binding_prop_completions(
         &self,
         start_tag: &SyntaxNode,
@@ -244,7 +245,7 @@ impl AdminCompletionProvider {
         items
     }
 
-    /// Go `dynamicComponentAttributeCompletions`.
+    /// Attribute completions for a dynamic `<component :is>` tag.
     pub(super) fn dynamic_component_attribute_completions(
         &self,
         node: Option<&SyntaxNode>,
@@ -294,7 +295,7 @@ impl AdminCompletionProvider {
     }
 }
 
-/// Go `componentPropValueContext`: a static or bound string prop value
+/// A static or bound string prop value
 /// under `offset`.
 fn component_prop_value_context(
     root: &SyntaxNode,
@@ -378,7 +379,7 @@ fn component_prop_value_context(
     None
 }
 
-/// Go `adminDynamicComponentSelectorAtCompletion`.
+/// The dynamic component selector of the tag at the request position.
 pub(super) fn admin_dynamic_component_selector_at_completion(
     request: &CompletionRequest,
     offset: Option<u32>,

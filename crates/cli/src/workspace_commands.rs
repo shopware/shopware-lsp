@@ -1,4 +1,4 @@
-//! `index`, `stats` and `check` (Go `workspace_commands.go`).
+//! `index`, `stats` and `check`.
 
 use std::collections::HashSet;
 use std::fmt::Write as _;
@@ -111,8 +111,8 @@ struct CacheStats {
     bytes: i64,
 }
 
-/// Process memory figures. Go reports `runtime.MemStats`; Rust has no
-/// garbage-collected heap, so the fields come from `/proc/self/status`
+/// Process memory figures. There is no garbage-collected heap to report, so
+/// the fields come from `/proc/self/status`
 /// (resident set for the heap figures, peak virtual size as system bytes)
 /// and `collections` is always zero.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -160,7 +160,8 @@ pub(crate) fn run_stats(runner: &Runner) -> Result<(), CliError> {
     let scanner: ScannerStats = session
         .call::<Option<ScannerStats>>("shopware/index/stats", json!({}))?
         .unwrap_or_default();
-    let cache_dir = swlsp_app::project_cache_folder(&session.root).map_err(CliError::fail)?;
+    let cache_dir = swlsp_app::project_cache_folder(&session.root)
+        .map_err(|error| CliError::fail(error.to_string()))?;
     let cache = inspect_cache(&cache_dir.to_string_lossy())?;
     let memory = memory_stats();
     let root = session.root.clone();
@@ -262,7 +263,7 @@ fn inspect_cache(path: &str) -> Result<CacheStats, CliError> {
     Ok(result)
 }
 
-/// Go `formatBytes`.
+/// A byte count in binary units with one decimal (`1.5 MiB`).
 pub fn format_bytes(bytes: i64) -> String {
     const UNIT: i64 = 1024;
     if bytes < UNIT {
@@ -368,12 +369,7 @@ pub(crate) fn run_check(runner: &Runner, flags: &Check) -> Result<(), CliError> 
         )
     };
     if runner.json {
-        if findings.is_empty() {
-            // Go encodes a nil slice.
-            runner.write_text("null\n")?;
-        } else {
-            runner.write_json(&findings)?;
-        }
+        runner.write_json(&findings)?;
         if findings_at_severity(&findings, fail_on) {
             return Err(failed());
         }
@@ -409,7 +405,7 @@ pub(crate) fn run_check(runner: &Runner, flags: &Check) -> Result<(), CliError> 
     Ok(())
 }
 
-/// The raw severity (0 when absent), as Go's `severityLabel` sees it.
+/// The raw severity number, 0 when absent (labelled as a warning).
 fn diagnostic_severity_raw(diagnostic: &swlsp_lsp_protocol::Diagnostic) -> i32 {
     diagnostic
         .severity
@@ -418,7 +414,7 @@ fn diagnostic_severity_raw(diagnostic: &swlsp_lsp_protocol::Diagnostic) -> i32 {
 }
 
 /// Expands targets to scanned files, honoring exclusions below the
-/// workspace root (Go `resolveCheckFilesWithExclusions`).
+/// workspace root.
 pub fn resolve_check_files_with_exclusions(
     cancel: &Cancel,
     workspace_root: &str,
@@ -438,7 +434,7 @@ pub fn resolve_check_files_with_exclusions(
     };
     for target in targets {
         if cancel.is_cancelled() {
-            return Err(CliError::canceled());
+            return Err(CliError::cancelled());
         }
         let mut path = target.clone();
         if path.starts_with("file://") {
@@ -512,7 +508,7 @@ fn walk_check_directory(
             return;
         }
         if cancel.is_cancelled() {
-            *error = Some("context canceled".into());
+            *error = Some("cancelled".into());
             return;
         }
         let path = filepath::join(&[directory, name.as_str()]);
@@ -574,7 +570,7 @@ fn findings_at_severity(findings: &[DiagnosticOutput], cutoff: i32) -> bool {
         .any(|finding| diagnostic_severity_value(&finding.diagnostic) <= cutoff)
 }
 
-/// Go `diagnosticSeverity`.
+/// Parses a `--severity` / `--fail-on` name into an LSP severity number.
 pub(crate) fn diagnostic_severity(value: &str) -> Result<i32, CliError> {
     match value.trim().to_lowercase().as_str() {
         "hint" => Ok(4),
@@ -588,7 +584,7 @@ pub(crate) fn diagnostic_severity(value: &str) -> Result<i32, CliError> {
     }
 }
 
-/// Go `severityLabel`.
+/// The LSP name of a severity number; unknown values read as a warning.
 pub(crate) fn severity_label(severity: i32) -> &'static str {
     match severity {
         1 => "Error",

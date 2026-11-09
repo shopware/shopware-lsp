@@ -1,4 +1,4 @@
-//! Document and workspace symbol providers (port of Go `internal/lsp/symbol`).
+//! Document and workspace symbol providers.
 
 mod admin_document;
 mod admin_workspace;
@@ -43,8 +43,8 @@ pub(crate) fn line_location(path: &str, line: i64) -> protocol::Location {
     }
 }
 
-/// Go `strings.Contains(strings.ToLower(text), query)` for an already
-/// lowered query.
+/// Whether the lowercased `text` contains `lowered_query`, which the caller
+/// has already lowercased.
 pub(crate) fn lower_contains(text: &str, lowered_query: &str) -> bool {
-    swlsp_php_types::go_to_lower(text).contains(lowered_query)
+    swlsp_textutil::lowercase(text).contains(lowered_query)
 }

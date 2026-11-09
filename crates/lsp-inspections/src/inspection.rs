@@ -1,4 +1,4 @@
-//! The analyzer-backed inspection adapters (Go `inspection.go`).
+//! The analyzer-backed inspection adapters.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -14,8 +14,16 @@ use swlsp_syntax::{SyntaxElement, SyntaxNodeExt};
 
 use crate::suggestion::{SuggestionFix, suggestion_bound_fixes};
 
+/// An analyzer reported a problem its inspection does not declare.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("inspection {inspection:?} received undeclared problem {problem:?}")]
+pub struct UndeclaredProblemError {
+    pub inspection: String,
+    pub problem: String,
+}
+
 /// Binds quick fixes to a reported problem from its code and normalized
-/// payload (Go `bindProblems`).
+/// payload.
 pub type BindProblems =
     Arc<dyn Fn(&DiagnosticId, &Map<String, Value>) -> Vec<BoundFix> + Send + Sync>;
 
@@ -25,7 +33,7 @@ pub fn analyzer_inspection<A: DeclaredAnalyzer + 'static>(analyzer: A) -> Arc<dy
 }
 
 /// An inspection running `analyzers` under `spec`, offering the suggestion
-/// quick fix (Go `NewAnalyzerInspection`).
+/// quick fix.
 pub fn new_analyzer_inspection(
     spec: InspectionSpec,
     analyzers: Vec<Arc<dyn ProblemAnalyzer>>,
@@ -99,10 +107,10 @@ impl Inspection for AnalyzerInspection {
             let problems = analyzer.analyze(ctx, document)?;
             for mut problem in problems {
                 if !declared.contains(&problem.id) {
-                    return Err(format!(
-                        "inspection {:?} received undeclared problem {:?}",
-                        self.definition.id, problem.id.0
-                    )
+                    return Err(UndeclaredProblemError {
+                        inspection: self.definition.id.clone(),
+                        problem: problem.id.0.clone(),
+                    }
                     .into());
                 }
                 let payload = diagnostic_payload(problem.payload.take());
@@ -115,10 +123,9 @@ impl Inspection for AnalyzerInspection {
     }
 }
 
-/// Go `boundInspection`: runs analyzers in order and binds fixes through
-/// `bind`. Its input revision is its analyzers'; `bind` must read nothing
-/// they do not declare, since bound fixes are part of the reused
-/// diagnostics.
+/// Runs analyzers in order and binds fixes through `bind`. Its input revision
+/// is its analyzers'; `bind` must read nothing they do not declare, since bound
+/// fixes are part of the reused diagnostics.
 pub struct BoundInspection {
     pub definition: InspectionDefinition,
     pub analyzers: Vec<Arc<dyn ProblemAnalyzer>>,
@@ -175,10 +182,10 @@ impl BoundInspection {
         for mut problem in problems {
             ctx.check()?;
             if !declared.contains(&problem.id) {
-                return Err(format!(
-                    "inspection {:?} received undeclared problem {:?}",
-                    self.definition.id, problem.id.0
-                )
+                return Err(UndeclaredProblemError {
+                    inspection: self.definition.id.clone(),
+                    problem: problem.id.0.clone(),
+                }
                 .into());
             }
             if problem.element.is_none()
@@ -198,8 +205,8 @@ impl BoundInspection {
     }
 }
 
-/// Go `diagnosticPayload`: the problem payload as a JSON object. Absent and
-/// `null` payloads become `{}`, non-object payloads `{"payload": value}`.
+/// The problem payload as a JSON object. Absent and `null` payloads become
+/// `{}`, non-object payloads `{"payload": value}`.
 pub fn diagnostic_payload(value: Option<Value>) -> Map<String, Value> {
     match value {
         None | Some(Value::Null) => Map::new(),
@@ -212,8 +219,7 @@ pub fn diagnostic_payload(value: Option<Value>) -> Map<String, Value> {
     }
 }
 
-/// Resolves the fix anchor against the fix document (Go
-/// `fixContext.Anchor.Resolve(...)`).
+/// Resolves the fix anchor against the fix document.
 pub fn resolve_anchor(fix: &FixContext) -> Result<SyntaxElement, BoxError> {
     let document = &fix.document;
     let Some(language) = document.language else {

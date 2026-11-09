@@ -7,12 +7,13 @@ use swlsp_parser_twig::ast::{AstNode, HtmlString, TwigBinaryExpression};
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax as twigsyntax;
 use swlsp_php::PhpContext;
-use swlsp_php_types::{Type, equal_fold};
+use swlsp_php_types::Type;
 use swlsp_syntax::{Kind, SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
+use swlsp_textutil::eq_ignore_case;
 
 use crate::model::is_route_parameter_character;
 use crate::php_routes::is_route_attribute;
-use crate::util::{GoLower, go_trim_space};
+use crate::util::Lowercase;
 
 const PHP_ROUTE_GENERATOR_METHODS: &[&str] = &["redirectToRoute", "generateUrl", "generate"];
 const TWIG_ROUTE_GENERATOR_METHODS: &[&str] = &["seoUrl", "url", "path"];
@@ -54,9 +55,9 @@ pub fn is_php_route_name_in_context(context: Option<&PhpContext>, node: &SyntaxN
         return false;
     };
     let receiver_type = context.document.type_of(&receiver).ty;
-    let method = phpquery::call_method_name(&call).to_go_lower();
+    let method = phpquery::call_method_name(&call).lowercase();
     if receiver_type.is_unknown() {
-        return go_trim_space(&receiver.text().to_string()) == "$this"
+        return receiver.text().to_string().trim() == "$this"
             && (method == "generateurl" || method == "redirecttoroute");
     }
     let relations = context.snapshot.relations();
@@ -119,7 +120,7 @@ pub fn twig_route_comparison_reference_at(
                 && twig_expression_value(&right).is_some_and(|call| {
                     call.kind() == twigsyntax::TWIG_FUNCTION_CALL
                         && twigquery::function_name(&call)
-                            .is_some_and(|name| equal_fold(&name, "same as"))
+                            .is_some_and(|name| eq_ignore_case(&name, "same as"))
                         && twigquery::string_argument(&call, 0).as_ref() == Some(&literal)
                 })
         }
@@ -233,7 +234,7 @@ pub struct JsRouteUrlReference {
 pub fn js_route_url_reference_at(node: &SyntaxNode) -> Option<JsRouteUrlReference> {
     let literal = jsquery::string_at(node)?;
     let text = literal.text().to_string();
-    if go_trim_space(&text).starts_with('`') && text.contains("${") {
+    if text.trim().starts_with('`') && text.contains("${") {
         return None;
     }
     let mut accepted = false;
@@ -241,7 +242,7 @@ pub fn js_route_url_reference_at(node: &SyntaxNode) -> Option<JsRouteUrlReferenc
         && jsquery::string_argument_index(&literal) == Some(0)
         && jsquery::argument_expression(&call, 0).as_ref() == Some(&literal)
     {
-        let name = jsquery::call_name(&call).unwrap_or_default().to_go_lower();
+        let name = jsquery::call_name(&call).unwrap_or_default().lowercase();
         accepted = matches!(
             name.as_str(),
             "axios" | "axios.create" | "fetch" | "request"
@@ -253,7 +254,7 @@ pub fn js_route_url_reference_at(node: &SyntaxNode) -> Option<JsRouteUrlReferenc
     {
         match jsquery::property_name(&property)
             .unwrap_or_default()
-            .to_go_lower()
+            .lowercase()
             .as_str()
         {
             "url" => accepted = true,
@@ -262,7 +263,7 @@ pub fn js_route_url_reference_at(node: &SyntaxNode) -> Option<JsRouteUrlReferenc
                 accepted = object.as_ref().is_some_and(|object| {
                     jsquery::call_at(object).is_some_and(|call| {
                         jsquery::call_name(&call)
-                            .is_some_and(|name| equal_fold(&name, "axios.create"))
+                            .is_some_and(|name| eq_ignore_case(&name, "axios.create"))
                             && jsquery::argument_expression(&call, 0).as_ref() == Some(object)
                     })
                 });
@@ -327,7 +328,7 @@ fn route_attribute_string(node: &SyntaxNode) -> Option<(SyntaxNode, SyntaxNode, 
 /// attribute.
 pub fn php_route_path_reference_at(node: &SyntaxNode) -> Option<PhpRoutePathReference> {
     let (literal, _, index) = route_attribute_string(node)?;
-    let name = phpquery::argument_name(&literal).to_go_lower();
+    let name = phpquery::argument_name(&literal).lowercase();
     if name != "path" && (!name.is_empty() || index != 0) {
         return None;
     }
@@ -340,7 +341,7 @@ pub fn php_route_path_reference_at(node: &SyntaxNode) -> Option<PhpRoutePathRefe
 /// Only the named `name` argument of a PHP `Route` attribute.
 pub fn php_route_name_reference_at(node: &SyntaxNode) -> Option<PhpRoutePathReference> {
     let (literal, _, _) = route_attribute_string(node)?;
-    if !equal_fold(&phpquery::argument_name(&literal), "name") {
+    if !eq_ignore_case(&phpquery::argument_name(&literal), "name") {
         return None;
     }
     Some(PhpRoutePathReference {
@@ -493,9 +494,7 @@ fn php_route_annotation_path_argument(
     property: &str,
 ) -> bool {
     let prefix = String::from_utf8_lossy(prefix);
-    let prefix = go_trim_space(&prefix)
-        .replace([' ', '\t'], "")
-        .to_go_lower();
+    let prefix = prefix.trim().replace([' ', '\t'], "").lowercase();
     if property == "name" {
         return prefix == "name=";
     }
@@ -540,10 +539,10 @@ pub fn php_route_name_suggestion(root: &SyntaxNode, node: &SyntaxNode, offset: u
     qualified.push_str(&class_name);
     let mut parts: Vec<String> = Vec::new();
     for part in qualified.trim_matches('\\').split('\\') {
-        if part.is_empty() || equal_fold(part, "controller") {
+        if part.is_empty() || eq_ignore_case(part, "controller") {
             continue;
         }
-        let mut part = part.to_go_lower();
+        let mut part = part.lowercase();
         if part.ends_with("bundle") && part != "bundle" {
             part.truncate(part.len() - "bundle".len());
         }
@@ -561,7 +560,7 @@ pub fn php_route_name_suggestion(root: &SyntaxNode, node: &SyntaxNode, offset: u
     if !method_name.starts_with('_') {
         prefix.push('_');
     }
-    prefix + &method_name.to_go_lower()
+    prefix + &method_name.lowercase()
 }
 
 impl PhpRoutePathReference {
@@ -578,7 +577,9 @@ impl PhpRoutePathReference {
             .iter()
             .position(|&b| b == b'/')?;
         let prefix = &self.value[..relative + slash];
-        if prefix.len() < 3 || equal_fold(prefix.trim_matches('/'), self.value.trim_matches('/')) {
+        if prefix.len() < 3
+            || eq_ignore_case(prefix.trim_matches('/'), self.value.trim_matches('/'))
+        {
             return None;
         }
         Some(format!("/{}", prefix.trim_matches('/')))
@@ -593,17 +594,17 @@ pub fn twig_html_route_reference_at(node: &SyntaxNode) -> Option<TwigHtmlRouteRe
     let start_tag = twigquery::starting_html_tag_at(&attribute)?;
     let tag = twigquery::html_tag_name(&start_tag)
         .unwrap_or_default()
-        .to_go_lower();
+        .lowercase();
     let name = twigquery::html_attribute_name(&attribute)
         .unwrap_or_default()
-        .to_go_lower();
+        .lowercase();
     if !((tag == "a" && name == "href") || (tag == "form" && name == "action")) {
         return None;
     }
     let value_node = HtmlString::cast(html_string.clone())
         .and_then(|typed| typed.inner())
         .map_or_else(|| html_string.clone(), |inner| inner.syntax().clone());
-    let value = go_trim_space(&value_node.text().to_string()).to_owned();
+    let value = value_node.text().to_string().trim().to_owned();
     if value.contains("{{") || value.contains("{%") || value.contains("{#") {
         return None;
     }
@@ -625,7 +626,7 @@ pub fn twig_html_route_references(root: &SyntaxNode) -> Vec<TwigHtmlRouteReferen
 /// and protocol-relative URLs are reduced to their raw path; query strings
 /// and fragments are discarded; opaque values remain unchanged.
 pub fn normalize_route_search_path(value: &str) -> String {
-    let value = go_trim_space(value);
+    let value = value.trim();
     if value.is_empty() {
         return String::new();
     }
@@ -636,12 +637,12 @@ pub fn normalize_route_search_path(value: &str) -> String {
     {
         let path = parsed.path;
         if has_authority_prefix || parsed.has_host {
-            if go_trim_space(&path).is_empty() {
+            if path.trim().is_empty() {
                 return "/".to_owned();
             }
             return path;
         }
-        if !parsed.absolute && !go_trim_space(&path).is_empty() {
+        if !parsed.absolute && !path.trim().is_empty() {
             return path;
         }
     }
@@ -726,7 +727,7 @@ fn normalize_route_search_path_fallback(value: &str) -> String {
 /// Normalizes a static HTML URL for route matching; fragment-only links and
 /// opaque schemes (`mailto:`, `tel:`, ...) yield "".
 pub fn route_url_path(value: &str) -> String {
-    let value = go_trim_space(value);
+    let value = value.trim();
     if value.is_empty() || value.starts_with('#') {
         return String::new();
     }
@@ -804,8 +805,8 @@ pub fn twig_route_parameter_reference_at(node: &SyntaxNode) -> Option<(String, S
         }
         _ => {
             let text = key.text().to_string();
-            let text = go_trim_space(&text);
-            let text = go_trim_space(text.strip_suffix(':').unwrap_or(text));
+            let text = text.trim();
+            let text = text.strip_suffix(':').unwrap_or(text).trim();
             text.trim_matches(['\'', '"', '`']).to_owned()
         }
     };

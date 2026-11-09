@@ -1,4 +1,4 @@
-//! Tests of the migration inspections (Go `shopware_migration*_test.go`).
+//! Tests of the migration inspections.
 
 mod api;
 mod arguments;
@@ -29,14 +29,12 @@ impl TestIndex {
     }
 }
 
-/// Go `migrationInspectionPHPIndex`.
 pub(super) fn migration_inspection_php_index() -> TestIndex {
     let dir = tempfile::tempdir().expect("tempdir");
     let index = PhpIndex::open(dir.path(), None).expect("php index");
     TestIndex { _dir: dir, index }
 }
 
-/// Go `migrationInspectionVersion`.
 pub(super) fn migration_inspection_version(major: i64, minor: i64) -> ResolvedVersion {
     let mut resolved = ResolvedVersion {
         source: VersionSource::Explicit,
@@ -65,9 +63,8 @@ fn assert_parses(uri: &str, updated: &str) {
     );
 }
 
-/// Go `applyOnlyMigrationFix`: `before` marks exactly the reported
-/// problems, the single one binds only `fix_id`, and the fix turns `before`
-/// into `after`, which parses.
+/// `before` marks exactly the reported problems, the single one binds only
+/// `fix_id`, and the fix turns `before` into `after`, which parses.
 pub(super) fn check_only_migration_fix(
     inspection: &Arc<dyn Inspection>,
     uri: &str,
@@ -86,9 +83,8 @@ pub(super) fn check_only_migration_fix(
     presentation
 }
 
-/// Go `applyMigrationFixByID`: `before` marks exactly the reported
-/// problems, one of which binds `fix_id`, and the fix turns `before` into
-/// `after`, which parses.
+/// `before` marks exactly the reported problems, one of which binds `fix_id`,
+/// and the fix turns `before` into `after`, which parses.
 pub(super) fn check_migration_fix_by_id(
     inspection: &Arc<dyn Inspection>,
     uri: &str,

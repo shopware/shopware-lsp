@@ -1,5 +1,4 @@
-//! Ports of `admin_i18n_test.go` and `admin_twig_migration_test.go`, plus
-//! the static-prop, missing-prop and slot fixes.
+//! Tests of the i18n, Twig migration, static-prop, missing-prop and slot fixes.
 
 use std::sync::Arc;
 

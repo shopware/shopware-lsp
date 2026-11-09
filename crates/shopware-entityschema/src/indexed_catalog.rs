@@ -1,7 +1,6 @@
-//! Class-based schema discovery from the PHP semantic generation (port of
-//! Go `indexed_catalog.go`). It owns no watcher; it only memoizes the
-//! DAL subtype selection of the current immutable semantic generation and
-//! the import results of unchanged sources.
+//! Class-based schema discovery from the PHP semantic generation. It owns no
+//! watcher; it only memoizes the DAL subtype selection of the current immutable
+//! semantic generation and the import results of unchanged sources.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
@@ -19,9 +18,6 @@ use crate::context::{
 use crate::model::*;
 use crate::source_index::SourceIndex;
 use swlsp_uriutil::filepath;
-
-pub const ERR_INDEX_NOT_READY: &str =
-    "entity schema index is not ready; wait for workspace indexing to finish";
 
 pub struct IndexedCatalog {
     php: PhpIndex,
@@ -132,7 +128,7 @@ impl IndexedCatalog {
         if let Some(readiness) = &self.readiness
             && !readiness.ready()?
         {
-            return Err(errorf!("{ERR_INDEX_NOT_READY}"));
+            return Err(Error::IndexNotReady);
         }
         let root = filepath::clean(plugin_root);
         let candidates = self.candidates();

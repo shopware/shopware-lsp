@@ -14,7 +14,7 @@ use swlsp_syntax::SyntaxNode;
 
 use crate::model::Service;
 use crate::service_index::ServiceIndex;
-use crate::util::{GoLower, go_trim_space};
+use crate::util::Lowercase;
 
 /// A parsed controller reference.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -27,7 +27,7 @@ pub struct ControllerReference {
 /// Parses `Class::method`, `service:method`, and invokable `Class`
 /// references. Legacy `Bundle:Controller:action` shortcuts are rejected.
 pub fn parse_controller_reference(value: &str) -> Option<ControllerReference> {
-    let value = go_trim_space(value);
+    let value = value.trim();
     if value.is_empty() || value.contains(['%', '$', '{', '}']) {
         return None;
     }
@@ -40,8 +40,8 @@ pub fn parse_controller_reference(value: &str) -> Option<ControllerReference> {
     } else {
         return None;
     };
-    let target = go_trim_space(target);
-    let method = go_trim_space(method);
+    let target = target.trim();
+    let method = method.trim();
     if target.is_empty() || method.is_empty() {
         return None;
     }
@@ -106,7 +106,7 @@ pub fn xml_controller_reference(node: &SyntaxNode) -> Option<(ControllerReferenc
     if xmlquery::element_name(&route).as_deref() != Some("route") {
         return None;
     }
-    let reference = parse_controller_reference(go_trim_space(&xmlquery::text_content(&default)))?;
+    let reference = parse_controller_reference(xmlquery::text_content(&default).trim())?;
     Some((reference, attr_value(&route, "id")))
 }
 
@@ -234,14 +234,14 @@ pub fn resolve_controller_reference(
 
 fn resolve_legacy_twig_controller_class(target: &str, php_index: &PhpIndex) -> Option<Symbol> {
     let (bundle, controller) = target.split_once(':')?;
-    let bundle = go_trim_space(bundle).to_go_lower();
-    let controller = go_trim_space(controller).replace('/', "\\");
+    let bundle = bundle.trim().lowercase();
+    let controller = controller.trim().replace('/', "\\");
     let controller = controller.trim_matches('\\');
     let controller = controller.strip_suffix("Controller").unwrap_or(controller);
     if bundle.is_empty() || controller.is_empty() {
         return None;
     }
-    let expected_suffix = format!("\\Controller\\{controller}Controller").to_go_lower();
+    let expected_suffix = format!("\\Controller\\{controller}Controller").lowercase();
     let bundle_trimmed = bundle.strip_suffix("bundle").unwrap_or(&bundle);
     for class in php_index.class_symbols_view().iter() {
         if class.kind != SymbolKind::Class {
@@ -251,7 +251,7 @@ fn resolve_legacy_twig_controller_class(target: &str, php_index: &PhpIndex) -> O
             "\\{}",
             class.fully_qualified.as_str().trim_start_matches('\\')
         );
-        let lower = name.to_go_lower();
+        let lower = name.lowercase();
         let Some(prefix) = lower.strip_suffix(&expected_suffix) else {
             continue;
         };
@@ -274,7 +274,7 @@ fn resolve_controller_service(
     id: &str,
     visited: &mut HashSet<String>,
 ) -> Result<Option<Service>> {
-    if !visited.insert(id.to_go_lower()) {
+    if !visited.insert(id.lowercase()) {
         return Ok(None);
     }
     let Some(service) = index.get_service_by_id(id)? else {

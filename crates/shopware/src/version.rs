@@ -12,7 +12,7 @@ use swlsp_php_project::{Model, Version, parse_version_constraint};
 /// The evidence a version was resolved from.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum VersionSource {
-    /// No evidence (Go's empty string).
+    /// No evidence; reported as an empty string.
     #[default]
     None,
     Explicit,
@@ -23,7 +23,7 @@ pub enum VersionSource {
 }
 
 impl VersionSource {
-    /// The Go string value.
+    /// The source name reported to clients (empty for [`VersionSource::None`]).
     pub fn as_str(self) -> &'static str {
         match self {
             VersionSource::None => "",
@@ -170,7 +170,7 @@ impl<'a> VersionResolver<'a> {
             ))
         })?;
         let name = composer.name.unwrap_or_default();
-        if !swlsp_php_types::equal_fold(name.trim(), "shopware/platform") {
+        if !swlsp_textutil::eq_ignore_case(name.trim(), "shopware/platform") {
             return Ok(ResolvedVersion::default());
         }
         if let Some(version) = parse_version_constraint(composer.version.as_deref().unwrap_or("")) {

@@ -1,4 +1,4 @@
-//! Symfony service locator (port of `service_locator.go`).
+//! Symfony service locator.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -7,15 +7,14 @@ use serde::Serialize;
 use serde_json::Value;
 use swlsp_lsp::{CommandFunc, CommandProvider, Context};
 use swlsp_php::PhpIndex;
-use swlsp_php_types::{equal_fold, go_quote};
 use swlsp_symfony::{Service, ServiceIndex, TagMap};
 use swlsp_syntax::TextRange;
+use swlsp_textutil::eq_ignore_case;
 
-use crate::profiler::go_lossy;
+use crate::profiler::utf8_lossy_per_byte;
 use crate::request::{Field, decode, present};
-use crate::{
-    Result, SourceLineResolver, check, errorf, is_zero, lower, range_len, range_start, trim_space,
-};
+use crate::{Result, SourceLineResolver, check, errorf, is_zero, range_len, range_start};
+use swlsp_textutil::lowercase;
 
 pub const LOCATE_SERVICES_COMMAND: &str = "shopware/symfony/analytics/services/locate";
 
@@ -84,12 +83,8 @@ impl ServiceLocatorProvider {
         let Some(value) = present(args) else {
             return Err(errorf!("service identifier is required"));
         };
-        let members = decode(
-            value,
-            "ServiceLocatorRequest",
-            &[("identifier", Field::String)],
-        )
-        .map_err(|error| errorf!("invalid service locator request: {error}"))?;
+        let members = decode(value, &[("identifier", Field::String)])
+            .map_err(|error| errorf!("invalid service locator request: {error}"))?;
         let request = ServiceLocatorRequest {
             identifier: members.string("identifier"),
         };
@@ -105,7 +100,7 @@ impl ServiceLocatorProvider {
             return Err(errorf!("service locator is unavailable"));
         };
         check(ctx)?;
-        let identifier = trim_space(&request.identifier);
+        let identifier = request.identifier.trim();
         if identifier.is_empty() {
             return Err(errorf!("service identifier is required"));
         }
@@ -113,7 +108,7 @@ impl ServiceLocatorProvider {
         let mut by_id: HashMap<String, &Service> = HashMap::with_capacity(definitions.len());
         for service in &definitions {
             if !service.id.is_empty() {
-                by_id.insert(lower(&service.id), service);
+                by_id.insert(lowercase(&service.id), service);
             }
         }
         let class_query = identifier.contains('\\');
@@ -123,20 +118,20 @@ impl ServiceLocatorProvider {
             check(ctx)?;
             if class_query {
                 let resolved = resolve_catalog_service_class(service, &by_id);
-                if equal_fold(&resolved, normalized_class)
-                    || equal_fold(normalize_service_class(&service.class), normalized_class)
-                    || equal_fold(normalize_service_class(&service.id), normalized_class)
+                if eq_ignore_case(&resolved, normalized_class)
+                    || eq_ignore_case(normalize_service_class(&service.class), normalized_class)
+                    || eq_ignore_case(normalize_service_class(&service.id), normalized_class)
                 {
                     matched.push(service);
                 }
                 continue;
             }
-            if equal_fold(&service.id, identifier) {
+            if eq_ignore_case(&service.id, identifier) {
                 matched.push(service);
             }
         }
         if matched.is_empty() {
-            return Err(errorf!("service {} was not found", go_quote(identifier)));
+            return Err(errorf!("service {identifier:?} was not found"));
         }
         let explicit_sources: HashSet<String> = index
             .service_definitions()?
@@ -200,7 +195,7 @@ impl ServiceLocatorProvider {
             }
             result.push(entry);
         }
-        result.sort_by_cached_key(|entry| lower(&entry.id));
+        result.sort_by_cached_key(|entry| lowercase(&entry.id));
         Ok(result)
     }
 }
@@ -217,12 +212,12 @@ fn resolve_catalog_service_class(service: &Service, by_id: &HashMap<String, &Ser
     let mut visited = HashSet::new();
     let mut service = service;
     loop {
-        let key = lower(&service.id);
+        let key = lowercase(&service.id);
         if !key.is_empty() && !visited.insert(key) {
             return String::new();
         }
         if !service.alias_target.is_empty() {
-            let Some(target) = by_id.get(&lower(&service.alias_target)) else {
+            let Some(target) = by_id.get(&lowercase(&service.alias_target)) else {
                 return String::new();
             };
             service = target;
@@ -233,7 +228,7 @@ fn resolve_catalog_service_class(service: &Service, by_id: &HashMap<String, &Ser
             return class_name.to_owned();
         }
         if !service.parent.is_empty()
-            && let Some(parent) = by_id.get(&lower(&service.parent))
+            && let Some(parent) = by_id.get(&lowercase(&service.parent))
         {
             service = parent;
             continue;
@@ -250,7 +245,7 @@ fn resolve_catalog_service_class(service: &Service, by_id: &HashMap<String, &Ser
 }
 
 fn normalize_service_class(value: &str) -> &str {
-    let value = trim_space(value);
+    let value = value.trim();
     value.strip_prefix('\\').unwrap_or(value)
 }
 
@@ -268,7 +263,7 @@ fn range_string(range: TextRange) -> String {
 
 fn service_source_key(service: &Service) -> String {
     [
-        lower(&service.id),
+        lowercase(&service.id),
         service.path.clone(),
         service.line.to_string(),
         range_string(service.range),
@@ -300,7 +295,8 @@ fn service_definition_source(
     entry
 }
 
-/// Go `strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")` on bytes.
+/// The lines of `text` split on `\n` after normalizing `\r\n`; a trailing
+/// newline yields a final empty line.
 fn split_lines(text: &[u8]) -> Vec<Vec<u8>> {
     let mut lines = vec![Vec::new()];
     let mut index = 0;
@@ -359,5 +355,5 @@ fn truncate_service_preview_lines(mut lines: Vec<Vec<u8>>) -> String {
         }
     }
     let joined = lines.join(&b'\n');
-    trim_space(&go_lossy(&joined)).to_owned()
+    utf8_lossy_per_byte(&joined).trim().to_owned()
 }

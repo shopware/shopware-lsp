@@ -1,6 +1,6 @@
-//! Lossless, error-tolerant Twig + HTML parser (port of
-//! `internal/parser/twig`), plus typed AST wrappers, semantic queries and a
-//! formatter built on the resulting [`swlsp_syntax::SyntaxNode`] tree.
+//! Lossless, error-tolerant Twig + HTML parser, plus typed AST wrappers,
+//! semantic queries and a formatter built on the resulting
+//! [`swlsp_syntax::SyntaxNode`] tree.
 
 pub mod ast;
 pub mod formatter;

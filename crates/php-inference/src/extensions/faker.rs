@@ -1,10 +1,11 @@
-//! Faker generator magic-method return types (port of `faker.go`).
+//! Faker generator magic-method return types.
 
 use std::borrow::Cow;
 
 use swlsp_php_semantic::{Confidence, TypeFact, TypeSource};
-use swlsp_php_types::{Kind, Type, equal_fold};
+use swlsp_php_types::{Kind, Type};
 use swlsp_syntax::TextRange;
+use swlsp_textutil::eq_ignore_case;
 
 use super::{CallContext, Extension};
 use crate::types_util::iterable_types;
@@ -19,7 +20,7 @@ pub struct FakerTypes;
 impl Extension for FakerTypes {
     fn infer_call(&self, context: &CallContext<'_>) -> Option<TypeFact> {
         if context.is_static
-            || !equal_fold(context.name, "randomElement")
+            || !eq_ignore_case(context.name, "randomElement")
             || !is_faker_generator(context)
         {
             return None;
@@ -45,7 +46,8 @@ impl Extension for FakerTypes {
 
 fn is_faker_generator(context: &CallContext<'_>) -> bool {
     let target = Type::named(FAKER_GENERATOR_CLASS, Vec::new());
-    if context.receiver.kind() == Kind::Object && equal_fold(context.receiver.name(), target.name())
+    if context.receiver.kind() == Kind::Object
+        && eq_ignore_case(context.receiver.name(), target.name())
     {
         return true;
     }

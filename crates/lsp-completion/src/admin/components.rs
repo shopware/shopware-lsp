@@ -1,4 +1,4 @@
-//! Port of Go `admin_completion_components.go`.
+//! Administration component name, tag and prop completions.
 
 use std::collections::HashSet;
 
@@ -15,7 +15,8 @@ use swlsp_syntax::{SyntaxNode, SyntaxToken};
 
 use super::AdminCompletionProvider;
 use super::slots::unique_sorted_strings;
-use crate::common::{go_to_lower, sort_completion_items};
+use crate::common::sort_completion_items;
+use swlsp_textutil::lowercase;
 
 /// A completion item with a label, kind and detail.
 pub(super) fn item(
@@ -45,7 +46,7 @@ pub(super) fn documentation_value(item: &protocol::CompletionItem) -> &str {
         .map_or("", |documentation| documentation.value.as_str())
 }
 
-/// Appends to the documentation value (Go `item.Documentation.Value += ...`).
+/// Appends `suffix` to the item's documentation, if it has one.
 pub(super) fn append_documentation(item: &mut protocol::CompletionItem, suffix: &str) {
     if let Some(documentation) = item.documentation.as_mut() {
         documentation.value.push_str(suffix);
@@ -58,7 +59,7 @@ pub(super) fn snippet(item: &mut protocol::CompletionItem, insert_text: String) 
 }
 
 impl AdminCompletionProvider {
-    /// Go `isInHTMLTagName`.
+    /// Whether the position is in an HTML tag name.
     pub(super) fn is_in_html_tag_name(
         &self,
         node: Option<&SyntaxNode>,
@@ -105,7 +106,7 @@ impl AdminCompletionProvider {
         false
     }
 
-    /// Go `getComponentTagCompletions`.
+    /// Component tag completions for the template at `template_path`.
     #[cfg(test)]
     pub(super) fn get_component_tag_completions(
         &self,
@@ -191,7 +192,7 @@ impl AdminCompletionProvider {
         items
     }
 
-    /// Go `isInExtendParentArgument`: the parent argument of
+    /// Whether `node` is the parent argument of
     /// `Component.extend('name', '<caret>', ...)`.
     pub(super) fn is_in_extend_parent_argument(&self, node: &SyntaxNode) -> bool {
         if !self.is_second_string_argument(node) {
@@ -205,7 +206,7 @@ impl AdminCompletionProvider {
         jsquery::string_at(node).is_some() && jsquery::string_argument_index(node) == Some(1)
     }
 
-    /// Go `getComponentCompletions`.
+    /// Every registered component name.
     pub(super) fn get_component_completions(&self) -> Vec<protocol::CompletionItem> {
         let Some(index) = self.index.as_ref() else {
             return Vec::new();
@@ -239,7 +240,7 @@ impl AdminCompletionProvider {
         items
     }
 
-    /// Go `getDynamicComponentCompletions`.
+    /// Component names a dynamic `<component :is>` selector can resolve to.
     pub(super) fn get_dynamic_component_completions(
         &self,
         template_path: &str,
@@ -294,7 +295,7 @@ impl AdminCompletionProvider {
         items
     }
 
-    /// Go `getComponentNameForAttributeCompletion`.
+    /// The component name of the tag whose attribute is being completed.
     pub(super) fn get_component_name_for_attribute_completion(
         &self,
         node: Option<&SyntaxNode>,
@@ -312,7 +313,7 @@ impl AdminCompletionProvider {
         static_component_name_for_tag(&start_tag).unwrap_or_default()
     }
 
-    /// Go `isInHTMLAttributeCompletionPosition`.
+    /// Whether `node` is a position where an attribute name can be completed.
     pub(super) fn is_in_html_attribute_completion_position(
         &self,
         node: Option<&SyntaxNode>,
@@ -345,7 +346,7 @@ impl AdminCompletionProvider {
         true
     }
 
-    /// Go `getComponentPropCompletions`.
+    /// Prop completions of `component_name`.
     #[cfg(test)]
     pub(super) fn get_component_prop_completions(
         &self,
@@ -491,7 +492,8 @@ fn admin_completion_value_list(values: &[String]) -> String {
         .join(", ")
 }
 
-/// Go `markAdminCompletionDeprecated`.
+/// Marks `item` deprecated and appends the deprecation `message` to its
+/// documentation.
 pub(super) fn mark_admin_completion_deprecated(item: &mut protocol::CompletionItem, message: &str) {
     let message = message.trim();
     if message.is_empty() {
@@ -500,7 +502,7 @@ pub(super) fn mark_admin_completion_deprecated(item: &mut protocol::CompletionIt
     item.deprecated = true;
     if item.detail.is_empty() {
         item.detail = "Deprecated Administration API".to_owned();
-    } else if !go_to_lower(&item.detail).starts_with("deprecated") {
+    } else if !lowercase(&item.detail).starts_with("deprecated") {
         item.detail = format!("Deprecated • {}", item.detail);
     }
     let deprecation = format!("**Deprecated:** {message}");
@@ -511,7 +513,7 @@ pub(super) fn mark_admin_completion_deprecated(item: &mut protocol::CompletionIt
     }
 }
 
-/// Go `commonAdminPropDeprecation`.
+/// The deprecation message shared by every prop in `props`, or empty.
 pub(super) fn common_admin_prop_deprecation(props: &[VueComponentProp]) -> String {
     if props.is_empty() {
         return String::new();

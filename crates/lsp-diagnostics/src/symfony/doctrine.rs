@@ -1,4 +1,4 @@
-//! Go `doctrine_diagnostics.go` and `doctrine_document_diagnostics.go`.
+//! Missing Doctrine tables, columns and type classes.
 
 use std::sync::Arc;
 
@@ -8,9 +8,9 @@ use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, Tex
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::PHP_STRING;
 use swlsp_php::PhpIndex;
-use swlsp_php_types::equal_fold;
 use swlsp_shopware_dal::Index as DalIndex;
 use swlsp_syntax::{SyntaxNode, TextRange};
+use swlsp_textutil::eq_ignore_case;
 
 use super::dbal_schema::{DbalSchemaCatalog, has_dbal_schema_name};
 use super::{lower_ext, symfony_warning};
@@ -53,8 +53,9 @@ impl DoctrineAnalyzer {
             return Vec::new();
         }
         let snapshot = php_index.semantic_snapshot();
-        let is_type =
-            |name: &str| !equal_fold(name, DBAL_TYPE) && snapshot.is_subtype_of(name, DBAL_TYPE);
+        let is_type = |name: &str| {
+            !eq_ignore_case(name, DBAL_TYPE) && snapshot.is_subtype_of(name, DBAL_TYPE)
+        };
         let type_classes: Vec<String> = php_index
             .class_symbols_view()
             .iter()

@@ -1,16 +1,17 @@
-//! Normalized DAL entity model (port of Go `model.go`).
+//! Normalized DAL entity model.
 //!
 //! The same model drives previews, migrations, committed snapshots and drift
-//! detection. Go string enums stay strings so unknown client values survive
+//! detection. Enumerations are kept as strings so unknown client values survive
 //! until validation reports them.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::gojson::{
-    go_f64, go_opt_f64, is_false, is_zero_f64, is_zero_i64, null_if_empty, nullable,
+use crate::canonical_json::{
+    integral_f64, integral_opt_f64, is_false, is_zero_f64, is_zero_i64, null_if_empty, nullable,
 };
 use crate::render::complete_spec;
 
@@ -212,7 +213,7 @@ pub struct FieldFlagSpec {
     pub kind: FieldFlagKind,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub api_sources: Vec<String>,
-    #[serde(skip_serializing_if = "is_zero_f64", serialize_with = "go_f64")]
+    #[serde(skip_serializing_if = "is_zero_f64", serialize_with = "integral_f64")]
     pub search_ranking: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_tokenize: Option<bool>,
@@ -273,7 +274,7 @@ pub struct FieldSpec {
     pub api_aware: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub api_aware_sources: Vec<String>,
-    #[serde(skip_serializing_if = "is_zero_f64", serialize_with = "go_f64")]
+    #[serde(skip_serializing_if = "is_zero_f64", serialize_with = "integral_f64")]
     pub search_ranking: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_ranking_tokenize: Option<bool>,
@@ -316,7 +317,7 @@ pub struct FieldSpec {
     #[serde(
         rename = "associationSearchRanking",
         skip_serializing_if = "is_zero_f64",
-        serialize_with = "go_f64"
+        serialize_with = "integral_f64"
     )]
     pub association_search_rank: f64,
     #[serde(
@@ -372,7 +373,7 @@ pub struct FieldSpec {
     #[serde(
         rename = "hierarchyChildrenSearchRanking",
         skip_serializing_if = "is_zero_f64",
-        serialize_with = "go_f64"
+        serialize_with = "integral_f64"
     )]
     pub hierarchy_children_rank: f64,
     #[serde(
@@ -509,7 +510,7 @@ pub struct FieldSpec {
     #[serde(
         rename = "translationSearchRanking",
         skip_serializing_if = "Option::is_none",
-        serialize_with = "go_opt_f64"
+        serialize_with = "integral_opt_f64"
     )]
     pub translation_search_rank: Option<f64>,
     #[serde(
@@ -872,52 +873,50 @@ pub struct ImportedTranslation {
     pub fields: Vec<FieldSpec>,
 }
 
-/// Go `fmt.Errorf` style error carrying only a message.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Error(pub String);
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
+/// An entity schema error. Cloneable, because import results (errors
+/// included) are memoized per scan.
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum Error {
+    /// The workspace index has not finished; the catalog cannot be read yet.
+    #[error("entity schema index is not ready; wait for workspace indexing to finish")]
+    IndexNotReady,
+    /// A schema, specification or plugin layout problem.
+    #[error("{0}")]
+    Message(String),
+    #[error(transparent)]
+    Index(Arc<swlsp_indexer::Error>),
+    #[error(transparent)]
+    PhpRewrite(Arc<swlsp_php_rewrite::Error>),
+    #[error(transparent)]
+    Rewrite(Arc<swlsp_rewrite::RewriteError>),
+    #[error(transparent)]
+    Io(Arc<std::io::Error>),
+    #[error(transparent)]
+    Json(Arc<serde_json::Error>),
 }
 
-impl std::error::Error for Error {}
-
-impl From<swlsp_indexer::Error> for Error {
-    fn from(error: swlsp_indexer::Error) -> Self {
-        Error(error.to_string())
-    }
+macro_rules! from_source {
+    ($($source:ty => $variant:ident),* $(,)?) => {$(
+        impl From<$source> for Error {
+            fn from(error: $source) -> Self {
+                Error::$variant(Arc::new(error))
+            }
+        }
+    )*};
 }
 
-impl From<swlsp_php_rewrite::Error> for Error {
-    fn from(error: swlsp_php_rewrite::Error) -> Self {
-        Error(error.to_string())
-    }
-}
-
-impl From<swlsp_rewrite::RewriteError> for Error {
-    fn from(error: swlsp_rewrite::RewriteError) -> Self {
-        Error(error.to_string())
-    }
-}
-
-impl From<std::io::Error> for Error {
-    fn from(error: std::io::Error) -> Self {
-        Error(error.to_string())
-    }
-}
-
-impl From<serde_json::Error> for Error {
-    fn from(error: serde_json::Error) -> Self {
-        Error(error.to_string())
-    }
+from_source! {
+    swlsp_indexer::Error => Index,
+    swlsp_php_rewrite::Error => PhpRewrite,
+    swlsp_rewrite::RewriteError => Rewrite,
+    std::io::Error => Io,
+    serde_json::Error => Json,
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 macro_rules! errorf {
-    ($($arg:tt)*) => { $crate::model::Error(format!($($arg)*)) };
+    ($($arg:tt)*) => { $crate::model::Error::Message(format!($($arg)*)) };
 }
 pub(crate) use errorf;
 
@@ -926,8 +925,8 @@ pub fn empty_schema() -> Schema {
 }
 
 impl Schema {
-    /// Go keeps nil maps distinct; Rust maps are always present, so this
-    /// only returns an owned copy.
+    /// The schema in its comparable form; schemas are already normalized
+    /// on construction, so this is an owned copy.
     pub fn normalize(&self) -> Schema {
         self.clone()
     }
@@ -991,8 +990,8 @@ fn schema_from_completed_spec(spec: &EntitySpec) -> Result<Entity> {
         }
         if field.storage_name.is_empty() {
             return Err(errorf!(
-                "field {} has no storage name",
-                crate::render::go_quote(&field.property_name)
+                "field {:?} has no storage name",
+                field.property_name
             ));
         }
         let sql_type = sql_type(field)?;
@@ -1417,8 +1416,8 @@ fn translation_schema_from_spec(spec: &EntitySpec) -> Result<Entity> {
         }
         if field.storage_name.is_empty() {
             return Err(errorf!(
-                "translated field {} has no storage name",
-                crate::render::go_quote(&field.property_name)
+                "translated field {:?} has no storage name",
+                field.property_name
             ));
         }
         let sql_type = sql_type(field)?;
@@ -1687,8 +1686,8 @@ pub fn sql_type(field: &FieldSpec) -> Result<String> {
             "string" => "VARCHAR(255)".to_owned(),
             _ => {
                 return Err(errorf!(
-                    "enum field {} has no backing type",
-                    crate::render::go_quote(&field.property_name)
+                    "enum field {:?} has no backing type",
+                    field.property_name
                 ));
             }
         },
@@ -1702,10 +1701,7 @@ pub fn sql_type(field: &FieldSpec) -> Result<String> {
         FIELD_BLOB => "LONGBLOB".to_owned(),
         FIELD_AUTO_INCREMENT => "BIGINT UNSIGNED".to_owned(),
         _ => {
-            return Err(errorf!(
-                "unsupported stored field kind {}",
-                crate::render::go_quote(&field.kind)
-            ));
+            return Err(errorf!("unsupported stored field kind {:?}", field.kind));
         }
     })
 }
@@ -1724,7 +1720,8 @@ pub(crate) fn generated_database_object_name(prefix: &str, entity: &str, column:
     }
     let digest = Sha256::digest(name.as_bytes());
     let suffix = hex(&digest[..6]);
-    // Go slices bytes; the cut may split a multi-byte character.
+    // The name is cut at a byte length; a split multi-byte character
+    // becomes U+FFFD so the result stays stable for existing schemas.
     let cut = 64 - suffix.len() - 1;
     let head = String::from_utf8_lossy(&name.as_bytes()[..cut]).into_owned();
     format!("{head}.{suffix}")

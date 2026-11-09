@@ -45,7 +45,7 @@ impl ThemeConfigIndexer {
         self.repository.get_all_values_view()
     }
 
-    /// The underlying repository (oracle and diagnostics access).
+    /// The underlying repository (diagnostics and tests).
     pub fn repository(&self) -> &DataIndexer<ThemeConfigField> {
         &self.repository
     }
@@ -64,8 +64,9 @@ impl Indexer for ThemeConfigIndexer {
         let Some(tree) = file.syntax_tree() else {
             return Err(Error::msg("JSON root is not an object"));
         };
-        let fields = parse_theme_config_tree(tree, file.line_index(), path).map_err(Error::msg)?;
-        // Later duplicates of a key replace earlier ones, like Go's map.
+        let fields = parse_theme_config_tree(tree, file.line_index(), path)
+            .map_err(|error| Error::msg(error.to_string()))?;
+        // Later duplicates of a key replace earlier ones.
         let fields: BTreeMap<&str, &ThemeConfigField> = fields
             .iter()
             .map(|field| (field.key.as_str(), field))

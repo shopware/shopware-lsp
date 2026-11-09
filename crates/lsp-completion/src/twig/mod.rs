@@ -1,6 +1,5 @@
-//! Twig completion providers (port of Go `twig_*_completion.go`,
-//! `twig_component_variable_completion.go` and
-//! `container_constant_completion.go`).
+//! Twig completion providers, plus `!php/const` / `!php/enum` completion in
+//! Symfony YAML.
 
 mod completion;
 mod component_variable;
@@ -32,8 +31,6 @@ pub use render_block::TwigRenderBlockCompletionProvider;
 use swlsp_lsp::CompletionRequest;
 use swlsp_lsp_protocol as protocol;
 
-use crate::common::go_to_lower;
-
 /// A Markdown documentation value.
 pub(crate) fn markdown(value: impl Into<String>) -> Option<protocol::MarkupContent> {
     Some(protocol::MarkupContent {
@@ -42,8 +39,7 @@ pub(crate) fn markdown(value: impl Into<String>) -> Option<protocol::MarkupConte
     })
 }
 
-/// Appends to an existing documentation value (Go mutates
-/// `item.Documentation.Value` in place).
+/// Appends `suffix` to the item's documentation value in place.
 pub(crate) fn append_documentation(item: &mut protocol::CompletionItem, suffix: &str) {
     if let Some(documentation) = item.documentation.as_mut() {
         documentation.value.push_str(suffix);
@@ -62,28 +58,17 @@ pub(crate) fn request_offset(request: &CompletionRequest) -> Option<u32> {
     )
 }
 
-/// Go `strings.ToLower(filepath.Ext(uri))`.
-pub(crate) fn lower_ext(uri: &str) -> String {
-    go_to_lower(swlsp_uriutil::filepath::ext(uri))
-}
+/// The lowercase extension of `uri`, including the leading dot.
+pub(crate) use crate::common::lower_ext;
 
-/// Go `unicode.IsLetter`.
-pub(crate) fn go_is_letter(value: char) -> bool {
-    value.is_alphabetic()
-}
-
-/// Go `unicode.IsDigit` (decimal digits; Latin-1 superscripts and fractions
-/// are not digits).
-pub(crate) fn go_is_digit(value: char) -> bool {
+/// Whether `value` is a digit in an identifier: ASCII digits and numeric
+/// characters outside Latin-1 (so superscripts and fractions such as `²` and
+/// `½` are not digits).
+pub(crate) fn is_identifier_digit(value: char) -> bool {
     value.is_ascii_digit() || (u32::from(value) > 0xFF && value.is_numeric())
 }
 
-/// Go `unicode.IsSpace`.
-pub(crate) fn go_is_space(value: char) -> bool {
-    value.is_whitespace()
-}
-
-/// The lowercase-label comparison every Go `sort.Slice` in this group uses.
+/// Sorts items by lowercase label, the order every Twig provider uses.
 pub(crate) fn sort_by_lower_label(items: &mut [protocol::CompletionItem]) {
     crate::common::sort_completion_items(items);
 }

@@ -81,7 +81,10 @@ fn rejects_oversized_declared_length_before_allocating() {
     let mut payload = u32::MAX.to_le_bytes().to_vec();
     payload.extend_from_slice(b"tiny");
     let error = crate::persistence::inflate_payload(&payload).unwrap_err();
-    assert!(error.0.contains("exceeds"), "{error}");
+    assert!(
+        matches!(error, crate::persistence::PersistError::TooLarge),
+        "{error}"
+    );
 }
 
 #[test]

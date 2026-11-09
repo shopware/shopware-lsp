@@ -63,7 +63,7 @@ fn normalize_route_search_path_cases() {
         ("/edit/foo%2Ebar~v1?preview=1", "/edit/foo%2Ebar~v1"),
         ("/a b/é", "/a%20b/%C3%A9"),
         // The URL standard escapes the space while parsing, so `!` stays
-        // (Go: "/a%20b%21"); relative references escape like Go.
+        // unescaped; relative references escape it as `%21`.
         ("https://shop.example/a b!?x", "/a%20b!"),
         ("/a b!?x", "/a%20b%21"),
         ("//shop.example/[x]#y", "/[x]"),

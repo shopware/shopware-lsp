@@ -1,5 +1,4 @@
-//! Code actions, rename, custom commands and raw requests (Go
-//! `features_write.go`). Edits preview as a unified diff unless `-w` is set.
+//! Code actions, rename, custom commands and raw requests. Edits preview as a unified diff unless `-w` is set.
 
 use std::io::Read;
 
@@ -168,7 +167,7 @@ pub(crate) fn run_request(
     runner.write_json(&result)
 }
 
-/// Go `parseJSONArgument`: inline JSON, `-` for stdin or `@file`.
+/// Reads a JSON argument: inline JSON, `-` for stdin or `@file`.
 fn parse_json_argument(runner: &Runner, argument: Option<&str>) -> Result<Value, CliError> {
     let Some(argument) = argument else {
         return Ok(json!({}));

@@ -1,4 +1,4 @@
-//! Vue attribute and tag naming conventions (port of Go `patterns.go`).
+//! Vue attribute and tag naming conventions.
 
 use crate::*;
 
@@ -263,7 +263,7 @@ pub fn kebab_to_camel(s: &str) -> String {
             result.push_str(part);
             continue;
         }
-        // Go upper-cases the first byte only.
+        // Only an ASCII first byte is upper-cased.
         let first = part.as_bytes()[0];
         if first.is_ascii() {
             result.push(first.to_ascii_uppercase() as char);

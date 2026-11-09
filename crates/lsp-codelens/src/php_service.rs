@@ -20,7 +20,6 @@ pub struct PhpServiceCodeLensProvider {
 }
 
 impl PhpServiceCodeLensProvider {
-    /// Go `NewPHPCodeLensProvider`.
     pub fn new(php: Option<PhpIndex>, services: Option<Arc<ServiceIndex>>) -> Self {
         Self { php, services }
     }

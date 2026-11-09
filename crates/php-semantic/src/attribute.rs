@@ -1,9 +1,10 @@
 //! Attribute lookups shared by hover, diagnostics, and framework metadata.
 
+use swlsp_textutil::eq_ignore_case;
+
 use crate::str::Str;
 
 use crate::symbol::{Attribute, AttributeValue, AttributeValueKind};
-use crate::text::equal_fold;
 
 /// The first attribute matching a short or fully qualified class name.
 /// Attribute names are case-insensitive in PHP.
@@ -11,7 +12,7 @@ pub fn attribute_named<'a>(attributes: &'a [Attribute], expected: &str) -> Optio
     let expected = trim_attribute_name(expected);
     attributes.iter().find(|attribute| {
         let candidate = trim_attribute_name(&attribute.name);
-        equal_fold(candidate, expected) || has_short_name(candidate, expected)
+        eq_ignore_case(candidate, expected) || has_short_name(candidate, expected)
     })
 }
 
@@ -21,7 +22,7 @@ fn has_short_name(candidate: &str, expected: &str) -> bool {
     }
     candidate
         .rfind('\\')
-        .is_some_and(|separator| equal_fold(&candidate[separator + 1..], expected))
+        .is_some_and(|separator| eq_ignore_case(&candidate[separator + 1..], expected))
 }
 
 fn trim_attribute_name(name: &str) -> &str {
@@ -36,7 +37,7 @@ impl Attribute {
         if let Some(argument) = self
             .arguments
             .iter()
-            .find(|argument| !argument.name.is_empty() && equal_fold(&argument.name, name))
+            .find(|argument| !argument.name.is_empty() && eq_ignore_case(&argument.name, name))
         {
             return Some(&argument.value);
         }

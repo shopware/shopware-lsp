@@ -1,10 +1,10 @@
 //! PHP symbols, scopes, references, and immutable document/workspace
-//! generations (port of `internal/php/semantic`).
+//! generations.
 //!
 //! # Representation
 //!
 //! The retained workspace graph is the memory-critical structure of the
-//! language server, so it does not mirror Go's structs:
+//! language server, so it is laid out for size:
 //!
 //! - Published declarations and references store interned
 //!   [`atom`](crate) IDs (4 bytes) for identifiers, in a generational table

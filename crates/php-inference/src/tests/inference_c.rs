@@ -1,6 +1,3 @@
-//! Port of `inference_test.go` (TestClassTemplateRefinesNativeMethodReturn ..
-//! TestNestedClosureReturnUsesClosureDeclaration).
-
 use std::sync::Arc;
 
 use swlsp_parser_php::query;
@@ -863,8 +860,8 @@ function serializeFilter(Filter $filter): mixed {
     assert_no_issue(&analyzed, &["php.undefined"]);
 }
 
-/// Go also calls `functionState.infer` directly; the Rust analyzer state has
-/// no test constructor, so only the document-level derivation is asserted.
+/// The analyzer state has no test constructor, so only the document-level
+/// derivation is asserted.
 #[test]
 fn literal_inference_derives_without_recorded_fact() {
     let parsed = parse(r#"<?php "stable literal";"#);

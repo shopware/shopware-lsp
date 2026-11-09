@@ -1,5 +1,4 @@
-//! Read-only queries over YAML syntax trees (port of Go
-//! `internal/parser/yaml/query`).
+//! Read-only queries over YAML syntax trees.
 //!
 //! Functions take the node they inspect and return `None` (or an empty
 //! result) when it is not of the expected kind, so lookups chain with
@@ -9,7 +8,7 @@ mod decode;
 
 pub use decode::{
     DecodeError, Value, decode, decode_block_scalar, decode_double_quoted, decode_value, is_blank,
-    is_yaml_float, parse_go_int, parse_go_uint,
+    is_yaml_float,
 };
 
 use swlsp_syntax::{Kind, SyntaxNode, SyntaxToken};

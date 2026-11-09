@@ -1,11 +1,10 @@
-//! Live component events and their `LiveArg` arguments to the listeners
-//! (port of Go `live_component_event_definition.go`).
+//! Live component events and their `LiveArg` arguments to the listeners.
 
 use std::sync::Arc;
 
 use swlsp_lsp::{Context, DefinitionRequest, GotoDefinitionProvider};
 use swlsp_lsp_protocol as protocol;
-use swlsp_php_types::equal_fold;
+use swlsp_textutil::eq_ignore_case;
 use swlsp_twigcomponent::{Index, LiveEventArgumentReference};
 
 use crate::common::{ext_lower, request_offset, request_uri};
@@ -75,7 +74,7 @@ fn listener_definitions(index: &Index, event: &str) -> Vec<protocol::Location> {
     };
     let result = listeners
         .iter()
-        .filter(|listener| equal_fold(&listener.name, event))
+        .filter(|listener| eq_ignore_case(&listener.name, event))
         .filter_map(|listener| component_file_location(&listener.file, listener.range))
         .collect();
     unique_component_locations(result)
@@ -90,11 +89,11 @@ fn argument_definitions(
     };
     let mut result = Vec::new();
     for listener in &listeners {
-        if !equal_fold(&listener.name, &reference.event) {
+        if !eq_ignore_case(&listener.name, &reference.event) {
             continue;
         }
         for parameter in &listener.parameters {
-            if !parameter.live_arg || !equal_fold(&parameter.name, &reference.name) {
+            if !parameter.live_arg || !eq_ignore_case(&parameter.name, &reference.name) {
                 continue;
             }
             if let Some(location) = component_file_location(&listener.file, parameter.range) {

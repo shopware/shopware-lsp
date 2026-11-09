@@ -1,5 +1,4 @@
-//! Port of `internal/parser/twig/formatter/formatter_test.go`. The fixture
-//! corpus (adopted from shopware-cli) lives in `testdata/formatter`.
+//! The fixture corpus (adopted from shopware-cli) lives in `testdata/formatter`.
 
 use super::*;
 

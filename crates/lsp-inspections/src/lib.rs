@@ -1,18 +1,18 @@
-//! Diagnostic inspections (port of Go `internal/lsp/inspections`).
+//! Diagnostic inspections.
 //!
-//! An inspection declares its languages and every diagnostic code it can
-//! emit, runs one or more [`ProblemAnalyzer`]s from `swlsp-lsp-diagnostics`
-//! and binds quick fixes to each problem while it is reported.
+//! An inspection declares its languages and every diagnostic code it can emit,
+//! runs one or more [`ProblemAnalyzer`]s from `swlsp-lsp-diagnostics` and binds
+//! quick fixes to each problem while it is reported.
 
 mod inspection;
 mod range;
 mod suggestion;
 
 pub use inspection::{
-    AnalyzerInspection, BindProblems, BoundInspection, analyzer_inspection, diagnostic_payload,
-    new_analyzer_inspection, resolve_anchor,
+    AnalyzerInspection, BindProblems, BoundInspection, UndeclaredProblemError, analyzer_inspection,
+    diagnostic_payload, new_analyzer_inspection, resolve_anchor,
 };
-pub use range::protocol_text_range;
+pub use range::{InvertedRangeError, protocol_text_range};
 pub use suggestion::{SUGGESTION_FIX_ID, SuggestionFix, suggestion_bound_fixes};
 pub use swlsp_lsp_diagnostics::{DeclaredAnalyzer, ProblemAnalyzer};
 

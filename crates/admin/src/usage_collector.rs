@@ -1,4 +1,4 @@
-//! Per-file usage accumulation (port of Go `usage_collector.go`).
+//! Per-file usage accumulation.
 
 use crate::*;
 
@@ -6,8 +6,8 @@ use crate::*;
 pub(crate) struct AdminUsageCollector<'a> {
     file_path: String,
     pub(crate) line_index: &'a LineIndex,
-    /// Sets in insertion order plus a key index (Go map; the result order
-    /// is irrelevant because sets are persisted by key).
+    /// Sets in insertion order plus a key index; the result order is
+    /// irrelevant because sets are persisted by key.
     sets: Vec<AdminUsageSet>,
     positions: HashMap<String, usize>,
     seen: HashSet<String>,

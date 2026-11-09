@@ -1,4 +1,4 @@
-//! Symfony HttpClient option keys (Go `http_client_completion.go`).
+//! Symfony HttpClient option keys.
 
 use std::collections::HashSet;
 

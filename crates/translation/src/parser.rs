@@ -1,12 +1,12 @@
-//! Catalogue resource parsing (port of Go `parser.go`).
+//! Catalogue resource parsing.
 
 use swlsp_indexer::ParsedFile;
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::{PHP_ARRAY, PHP_RETURN_STATEMENT};
 use swlsp_parser_xml::query as xmlquery;
 use swlsp_parser_yaml::query as yamlquery;
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::{Message, base_name, lower_extension, new_message, normalize_domain};
 
@@ -41,13 +41,13 @@ pub(crate) fn catalogue_metadata(path: &str) -> Option<ResourceMetadata> {
         format: extension[1..].to_owned(),
         compiled: false,
     };
-    if equal_fold(&domain, "catalogue") && extension == ".php" {
+    if eq_ignore_case(&domain, "catalogue") && extension == ".php" {
         metadata.compiled = true;
         return Some(metadata);
     }
 
-    let in_translation_directory = go_to_lower(path).contains("/translations/");
-    let domain_lower = go_to_lower(&metadata.domain);
+    let in_translation_directory = lowercase(path).contains("/translations/");
+    let domain_lower = lowercase(&metadata.domain);
     let is_conventional_domain = domain_lower == "messages" || domain_lower == "validators";
     let is_xliff = extension == ".xlf" || extension == ".xliff";
     if !in_translation_directory
@@ -60,14 +60,15 @@ pub(crate) fn catalogue_metadata(path: &str) -> Option<ResourceMetadata> {
     Some(metadata)
 }
 
-/// Go `unicode.IsLower(rune(byte))` on the first two bytes.
+/// Whether the first two bytes, read as Latin-1 characters, are lowercase
+/// letters.
 fn looks_like_locale(value: &str) -> bool {
     let bytes = value.as_bytes();
     if bytes.len() < 2 {
         return false;
     }
     let is_lower = |byte: u8| {
-        // Feminine/masculine ordinals are Lo in Go, not Ll.
+        // The ordinal indicators `ª` and `º` are letters without case.
         byte != 0xAA && byte != 0xBA && char::from(byte).is_lowercase()
     };
     is_lower(bytes[0]) && is_lower(bytes[1])
@@ -219,7 +220,7 @@ pub(crate) fn parse_compiled_php_catalogue(
     };
     let mut result = Vec::new();
     for object in phpquery::object_creations(&tree.root(), &[]) {
-        if !equal_fold(
+        if !eq_ignore_case(
             last_name_part(&phpquery::object_class_name(&object)),
             "MessageCatalogue",
         ) {

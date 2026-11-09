@@ -1,5 +1,4 @@
-//! Shopware Administration completions (port of Go
-//! `admin_completion_*.go`): Vue component tags, props, events, slots,
+//! Shopware Administration completions: Vue component tags, props, events, slots,
 //! scoped-slot and `v-for` locals in Twig templates, and registry, store,
 //! `this` and runtime-container members in JavaScript/TypeScript.
 

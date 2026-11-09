@@ -4,7 +4,7 @@ use swlsp_parser_xml::query as xmlquery;
 use swlsp_syntax::SyntaxNode;
 
 use crate::reference::normalize_service_reference;
-use crate::util::{GoLower, go_trim_space, xml_attr};
+use crate::util::{Lowercase, xml_attr};
 
 const XML_TAGGED_ARGUMENT_TYPES: [&str; 3] = ["tagged_iterator", "tagged_locator", "tagged"];
 
@@ -47,14 +47,14 @@ pub fn xml_service_reference_name(node: &SyntaxNode) -> Option<String> {
         return None;
     }
     let raw = xmlquery::attribute_value(&attribute).unwrap_or_default();
-    let value = go_trim_space(&raw);
+    let value = raw.trim();
     if value.is_empty() || value == "@" || value == "@?" || value == "@!" {
         return Some(String::new());
     }
     if let Some(normalized) = normalize_service_reference(value) {
         return Some(normalized);
     }
-    let value = go_trim_space(value.strip_prefix('@').unwrap_or(value));
+    let value = value.strip_prefix('@').unwrap_or(value).trim();
     (!value.is_empty() && !value.contains(['%', '$', '{', '}'])).then(|| value.to_owned())
 }
 
@@ -64,7 +64,7 @@ pub fn xml_service_reference_optional(node: &SyntaxNode) -> bool {
         return false;
     };
     matches!(
-        xml_attr(&element, "on-invalid").to_go_lower().as_str(),
+        xml_attr(&element, "on-invalid").lowercase().as_str(),
         "ignore" | "null" | "ignore_uninitialized"
     )
 }
@@ -138,7 +138,7 @@ pub fn xml_class_reference_name(node: &SyntaxNode) -> Option<String> {
         return None;
     }
     let raw = xmlquery::attribute_value(&attribute).unwrap_or_default();
-    let value = go_trim_space(&raw);
+    let value = raw.trim();
     (!value.is_empty() && value.contains('\\') && !value.contains(['%', '$', '{', '}']))
         .then(|| value.to_owned())
 }

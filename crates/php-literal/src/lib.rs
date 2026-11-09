@@ -1,10 +1,10 @@
-//! Derives PHP literal types directly from lossless syntax (port of
-//! `internal/php/literal`).
+//! Derives PHP literal types directly from lossless syntax.
 
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::{PHP_BOOLEAN, PHP_NULL, PHP_NUMBER, PHP_STRING};
-use swlsp_php_types::{Type, equal_fold};
+use swlsp_php_types::Type;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::eq_ignore_case;
 
 /// Returns the intrinsic type of a scalar literal node. These types do not
 /// depend on flow state and therefore need no semantic side-table entry.
@@ -13,7 +13,7 @@ pub fn type_of(node: &SyntaxNode) -> Option<Type> {
         PHP_STRING => Some(Type::literal_string(&query::string_value(node))),
         PHP_NUMBER => Some(number_type(&trimmed_node_text(node))),
         PHP_BOOLEAN => {
-            if equal_fold(node.text().to_string().trim(), "true") {
+            if eq_ignore_case(node.text().to_string().trim(), "true") {
                 Some(Type::true_type())
             } else {
                 Some(Type::false_type())

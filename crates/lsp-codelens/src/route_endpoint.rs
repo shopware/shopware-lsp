@@ -95,7 +95,7 @@ fn endpoint_routes_in_document(path: &str, document: &TextDocument) -> Vec<Route
 fn endpoint_code_lens_title(route: &Route) -> String {
     let mut methods: Vec<String> = Vec::with_capacity(route.methods.len());
     for method in &route.methods {
-        let method = go_to_upper(method.trim());
+        let method = swlsp_textutil::uppercase(method.trim());
         if method.is_empty() || methods.contains(&method) {
             continue;
         }
@@ -137,18 +137,4 @@ fn endpoint_controller_target(
         related_source_line(&symbol.path, range.start().into())
     };
     Some(related_target(&symbol.path, line))
-}
-
-/// Go `strings.ToUpper`: per-rune simple case mapping.
-fn go_to_upper(value: &str) -> String {
-    value
-        .chars()
-        .map(|character| {
-            let mut upper = character.to_uppercase();
-            match (upper.next(), upper.next()) {
-                (Some(single), None) => single,
-                _ => character,
-            }
-        })
-        .collect()
 }

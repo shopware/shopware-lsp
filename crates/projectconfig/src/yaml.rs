@@ -1,24 +1,66 @@
-//! Strict YAML decoding with the semantics of `gopkg.in/yaml.v3` using
-//! `Decoder.KnownFields(true)`.
+//! Strict YAML decoding of the configuration model with unknown fields
+//! rejected.
 //!
 //! Scalars are kept in their source representation so string targets
-//! receive the exact text (`targetVersion: 6.10` stays `"6.10"`), and the
-//! type-mismatch / unknown-field messages carry yaml.v3's wording and line
-//! numbers. Errors are collected and reported together like yaml.v3.
+//! receive the exact text (`targetVersion: 6.10` stays `"6.10"`); plain
+//! scalars resolve by the YAML 1.1 core rules (`yes`/`on` are booleans for
+//! boolean settings). Type mismatches and unknown fields carry their line
+//! number and are collected so every problem is reported at once.
 
 use std::collections::BTreeMap;
 
 use saphyr::{MarkedYaml, ScalarStyle, YamlData, YamlLoader};
 use saphyr_parser::Parser;
+use swlsp_textutil::{parse_int_literal, parse_uint_literal};
 
 use crate::config::{
     CheckConfig, DiagnosticOverride, DiagnosticsConfig, IndexingConfig, McpConfig, Partial,
     PhpConfig, Severity, ShopwareConfig,
 };
 
+/// A YAML syntax error.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("line {line}: {message}")]
+pub struct SyntaxError {
+    pub line: usize,
+    pub message: String,
+}
+
+/// One problem found while decoding the configuration document.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum DecodeProblem {
+    /// A value has the wrong type; `found` names the YAML value kind and,
+    /// for scalars, a (possibly shortened) excerpt.
+    #[error("line {line}: expected {expected}, found {found}")]
+    Type {
+        line: usize,
+        expected: &'static str,
+        found: String,
+    },
+    #[error("line {line}: unknown field {name:?} in {section}")]
+    UnknownField {
+        line: usize,
+        name: String,
+        section: &'static str,
+    },
+}
+
+/// Every problem in a configuration document, one per line.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{}", join_lines(.0))]
+pub struct DecodeErrors(pub Vec<DecodeProblem>);
+
+fn join_lines(problems: &[DecodeProblem]) -> String {
+    problems
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 pub(crate) enum LoadOutcome<'a> {
     Documents(Vec<MarkedYaml<'a>>),
-    SyntaxError(String),
+    SyntaxError(SyntaxError),
 }
 
 pub(crate) fn load_documents(source: &str) -> LoadOutcome<'_> {
@@ -34,8 +76,11 @@ pub(crate) fn load_documents(source: &str) -> LoadOutcome<'_> {
     LoadOutcome::Documents(loader.into_documents())
 }
 
-fn scan_error(error: &saphyr::ScanError) -> String {
-    format!("yaml: line {}: {}", error.marker().line(), error.info())
+fn scan_error(error: &saphyr::ScanError) -> SyntaxError {
+    SyntaxError {
+        line: error.marker().line(),
+        message: error.info().to_owned(),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -48,42 +93,23 @@ enum Resolved {
 }
 
 impl Resolved {
-    fn tag(&self) -> &'static str {
+    fn kind(&self) -> &'static str {
         match self {
-            Resolved::Null => "!!null",
-            Resolved::Bool(_) => "!!bool",
-            Resolved::Int(_) => "!!int",
-            Resolved::Float(_) => "!!float",
-            Resolved::Str => "!!str",
+            Resolved::Null => "null",
+            Resolved::Bool(_) => "boolean",
+            Resolved::Int(_) => "integer",
+            Resolved::Float(_) => "float",
+            Resolved::Str => "string",
         }
     }
 }
 
-fn parse_go_int_base0(value: &str) -> Option<i128> {
-    let (negative, rest) = match value.as_bytes().first() {
-        Some(b'-') => (true, &value[1..]),
-        Some(b'+') => (false, &value[1..]),
-        _ => (false, value),
-    };
-    let lower = rest.to_ascii_lowercase();
-    let (radix, digits) = if let Some(digits) = lower.strip_prefix("0x") {
-        (16, digits.to_owned())
-    } else if let Some(digits) = lower.strip_prefix("0b") {
-        (2, digits.to_owned())
-    } else if let Some(digits) = lower.strip_prefix("0o") {
-        (8, digits.to_owned())
-    } else if lower.len() > 1 && lower.starts_with('0') {
-        (8, lower[1..].to_owned())
-    } else {
-        (10, lower)
-    };
-    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
-        return None;
-    }
-    let magnitude = i128::from_str_radix(&digits, radix).ok()?;
-    let value = if negative { -magnitude } else { magnitude };
-    // Go ParseInt (int64) or ParseUint (uint64) must accept the value.
-    (value >= i64::MIN as i128 && value <= u64::MAX as i128).then_some(value)
+/// An integer literal (sign, base prefixes) in the signed or unsigned
+/// 64-bit range.
+fn parse_integer(value: &str) -> Option<i128> {
+    parse_int_literal(value)
+        .map(i128::from)
+        .or_else(|| parse_uint_literal(value).map(i128::from))
 }
 
 fn is_yaml_style_float(value: &str) -> bool {
@@ -141,7 +167,7 @@ fn resolve_plain(text: &str) -> Resolved {
     if first.is_ascii_digit() || first == b'-' || first == b'+' || first == b'.' {
         let plain = text.replace('_', "");
         if first != b'.'
-            && let Some(value) = parse_go_int_base0(&plain)
+            && let Some(value) = parse_integer(&plain)
         {
             return Resolved::Int(value);
         }
@@ -200,7 +226,7 @@ fn untagged<'n, 'a>(node: &'n MarkedYaml<'a>) -> &'n MarkedYaml<'a> {
 }
 
 pub(crate) struct Decoder {
-    errors: Vec<String>,
+    errors: Vec<DecodeProblem>,
 }
 
 impl Decoder {
@@ -208,21 +234,18 @@ impl Decoder {
         Self { errors: Vec::new() }
     }
 
-    pub(crate) fn finish(self) -> Result<(), String> {
+    pub(crate) fn finish(self) -> Result<(), DecodeErrors> {
         if self.errors.is_empty() {
             return Ok(());
         }
-        Err(format!(
-            "yaml: unmarshal errors:\n  {}",
-            self.errors.join("\n  ")
-        ))
+        Err(DecodeErrors(self.errors))
     }
 
-    fn type_error(&mut self, node: &MarkedYaml<'_>, target: &str) {
+    fn type_error(&mut self, node: &MarkedYaml<'_>, expected: &'static str) {
         let node = untagged(node);
-        let (tag, value) = match &node.data {
-            YamlData::Mapping(_) => ("!!map", String::new()),
-            YamlData::Sequence(_) => ("!!seq", String::new()),
+        let (kind, value) = match &node.data {
+            YamlData::Mapping(_) => ("mapping", String::new()),
+            YamlData::Sequence(_) => ("sequence", String::new()),
             _ => match scalar(node) {
                 Some(view) => {
                     let value = if view.text.len() > 10 {
@@ -234,28 +257,30 @@ impl Decoder {
                     } else {
                         format!(" `{}`", view.text)
                     };
-                    (view.resolved.tag(), value)
+                    (view.resolved.kind(), value)
                 }
-                None => ("!!str", String::new()),
+                None => ("string", String::new()),
             },
         };
-        self.errors.push(format!(
-            "line {}: cannot unmarshal {tag}{value} into {target}",
-            line(node)
-        ));
+        self.errors.push(DecodeProblem::Type {
+            line: line(node),
+            expected,
+            found: format!("{kind}{value}"),
+        });
     }
 
-    /// Decodes a mapping into a struct-like target, reporting unknown keys.
+    /// Decodes a mapping into a record-like target, reporting unknown keys
+    /// as belonging to `section`.
     fn decode_struct(
         &mut self,
         node: &MarkedYaml<'_>,
-        type_name: &str,
+        section: &'static str,
         mut field: impl FnMut(&mut Self, &str, &MarkedYaml<'_>) -> bool,
     ) -> bool {
         let node = untagged(node);
         let YamlData::Mapping(mapping) = &node.data else {
             if !is_null(node) {
-                self.type_error(node, type_name);
+                self.type_error(node, "a mapping");
             }
             return false;
         };
@@ -264,26 +289,27 @@ impl Decoder {
                 continue;
             };
             if !field(self, &name, value) {
-                self.errors.push(format!(
-                    "line {}: field {name} not found in type {type_name}",
-                    line(key)
-                ));
+                self.errors.push(DecodeProblem::UnknownField {
+                    line: line(key),
+                    name,
+                    section,
+                });
             }
         }
         true
     }
 
-    /// Decodes into a Go `string`-kind target. Null yields an empty string.
+    /// Decodes any scalar as its source text. Null yields an empty string.
     fn string(&mut self, node: &MarkedYaml<'_>) -> Option<String> {
-        self.string_as(node, "string")
+        self.string_as(node, "a string")
     }
 
-    fn string_as(&mut self, node: &MarkedYaml<'_>, target: &str) -> Option<String> {
+    fn string_as(&mut self, node: &MarkedYaml<'_>, expected: &'static str) -> Option<String> {
         match scalar(node) {
             Some(view) if view.resolved == Resolved::Null => Some(String::new()),
             Some(view) => Some(view.text.to_owned()),
             None => {
-                self.type_error(node, target);
+                self.type_error(node, expected);
                 None
             }
         }
@@ -298,7 +324,7 @@ impl Decoder {
 
     fn bool_value(&mut self, node: &MarkedYaml<'_>) -> Option<bool> {
         let Some(view) = scalar(node) else {
-            self.type_error(node, "bool");
+            self.type_error(node, "a boolean");
             return None;
         };
         match view.resolved {
@@ -308,12 +334,12 @@ impl Decoder {
                 "y" | "Y" | "yes" | "Yes" | "YES" | "on" | "On" | "ON" => Some(true),
                 "n" | "N" | "no" | "No" | "NO" | "off" | "Off" | "OFF" => Some(false),
                 _ => {
-                    self.type_error(node, "bool");
+                    self.type_error(node, "a boolean");
                     None
                 }
             },
             _ => {
-                self.type_error(node, "bool");
+                self.type_error(node, "a boolean");
                 None
             }
         }
@@ -326,9 +352,9 @@ impl Decoder {
         self.bool_value(node).map(Some)
     }
 
-    fn optional_int(&mut self, node: &MarkedYaml<'_>, target: &str) -> Option<Option<i64>> {
+    fn optional_int(&mut self, node: &MarkedYaml<'_>) -> Option<Option<i64>> {
         let Some(view) = scalar(node) else {
-            self.type_error(node, target);
+            self.type_error(node, "an integer");
             return None;
         };
         match view.resolved {
@@ -338,7 +364,7 @@ impl Decoder {
             }
             Resolved::Float(value) if value <= i64::MAX as f64 => Some(Some(value as i64)),
             _ => {
-                self.type_error(node, target);
+                self.type_error(node, "an integer");
                 None
             }
         }
@@ -357,7 +383,7 @@ impl Decoder {
             if is_null(node) {
                 return Some(Vec::new());
             }
-            self.type_error(node, "[]string");
+            self.type_error(node, "a list of strings");
             return None;
         };
         Some(items.iter().filter_map(|item| self.string(item)).collect())
@@ -366,14 +392,14 @@ impl Decoder {
     fn map<T>(
         &mut self,
         node: &MarkedYaml<'_>,
-        type_name: &str,
+        expected: &'static str,
         mut value: impl FnMut(&mut Self, &MarkedYaml<'_>) -> Option<T>,
     ) -> BTreeMap<String, T> {
         let node = untagged(node);
         let mut result = BTreeMap::new();
         let YamlData::Mapping(mapping) = &node.data else {
             if !is_null(node) {
-                self.type_error(node, type_name);
+                self.type_error(node, expected);
             }
             return result;
         };
@@ -389,34 +415,28 @@ impl Decoder {
     }
 
     fn bool_map(&mut self, node: &MarkedYaml<'_>) -> BTreeMap<String, bool> {
-        self.map(node, "map[string]bool", |decoder, item| {
+        self.map(node, "a map of booleans", |decoder, item| {
             decoder.bool_value(item)
         })
     }
 
     fn severity_map(&mut self, node: &MarkedYaml<'_>) -> BTreeMap<String, Severity> {
-        self.map(
-            node,
-            "map[string]projectconfig.Severity",
-            |decoder, item| {
-                decoder
-                    .string_as(item, "projectconfig.Severity")
-                    .map(Severity::from)
-            },
-        )
+        self.map(node, "a map of severities", |decoder, item| {
+            decoder.string_as(item, "a severity").map(Severity::from)
+        })
     }
 
     fn optional_severity(&mut self, node: &MarkedYaml<'_>) -> Option<Option<Severity>> {
         if is_null(node) {
             return Some(None);
         }
-        self.string_as(node, "projectconfig.Severity")
+        self.string_as(node, "a severity")
             .map(|value| Some(Severity::from(value)))
     }
 
     pub(crate) fn partial(&mut self, node: &MarkedYaml<'_>) -> Partial {
         let mut result = Partial::default();
-        self.decode_struct(node, "projectconfig.Partial", |decoder, name, value| {
+        self.decode_struct(node, "the configuration", |decoder, name, value| {
             match name {
                 "$schema" => {
                     if let Some(schema) = decoder.string(value) {
@@ -424,7 +444,7 @@ impl Decoder {
                     }
                 }
                 "version" => {
-                    if let Some(version) = decoder.optional_int(value, "int") {
+                    if let Some(version) = decoder.optional_int(value) {
                         result.version = version;
                     }
                 }
@@ -445,7 +465,7 @@ impl Decoder {
 
     fn php(&mut self, node: &MarkedYaml<'_>) -> Option<PhpConfig> {
         let mut result = PhpConfig::default();
-        self.decode_struct(node, "projectconfig.PHPConfig", |decoder, name, value| {
+        self.decode_struct(node, "php", |decoder, name, value| {
             match name {
                 "extensions" => {
                     if let Some(values) = decoder.optional_string_list(value) {
@@ -466,57 +486,49 @@ impl Decoder {
 
     fn shopware(&mut self, node: &MarkedYaml<'_>) -> Option<ShopwareConfig> {
         let mut result = ShopwareConfig::default();
-        self.decode_struct(
-            node,
-            "projectconfig.ShopwareConfig",
-            |decoder, name, value| {
-                match name {
-                    "targetVersion" => {
-                        if let Some(version) = decoder.optional_string(value) {
-                            result.target_version = version;
-                        }
+        self.decode_struct(node, "shopware", |decoder, name, value| {
+            match name {
+                "targetVersion" => {
+                    if let Some(version) = decoder.optional_string(value) {
+                        result.target_version = version;
                     }
-                    _ => return false,
                 }
-                true
-            },
-        )
+                _ => return false,
+            }
+            true
+        })
         .then_some(result)
     }
 
     fn indexing(&mut self, node: &MarkedYaml<'_>) -> Option<IndexingConfig> {
         let mut result = IndexingConfig::default();
-        self.decode_struct(
-            node,
-            "projectconfig.IndexingConfig",
-            |decoder, name, value| {
-                match name {
-                    "enabled" => {
-                        if let Some(enabled) = decoder.optional_bool(value) {
-                            result.enabled = enabled;
-                        }
+        self.decode_struct(node, "indexing", |decoder, name, value| {
+            match name {
+                "enabled" => {
+                    if let Some(enabled) = decoder.optional_bool(value) {
+                        result.enabled = enabled;
                     }
-                    "exclude" => {
-                        if let Some(values) = decoder.optional_string_list(value) {
-                            result.exclude = values;
-                        }
-                    }
-                    "maxFileSizeMiB" => {
-                        if let Some(size) = decoder.optional_int(value, "int64") {
-                            result.max_file_size_mib = size;
-                        }
-                    }
-                    _ => return false,
                 }
-                true
-            },
-        )
+                "exclude" => {
+                    if let Some(values) = decoder.optional_string_list(value) {
+                        result.exclude = values;
+                    }
+                }
+                "maxFileSizeMiB" => {
+                    if let Some(size) = decoder.optional_int(value) {
+                        result.max_file_size_mib = size;
+                    }
+                }
+                _ => return false,
+            }
+            true
+        })
         .then_some(result)
     }
 
     fn mcp(&mut self, node: &MarkedYaml<'_>) -> Option<McpConfig> {
         let mut result = McpConfig::default();
-        self.decode_struct(node, "projectconfig.MCPConfig", |decoder, name, value| {
+        self.decode_struct(node, "mcp", |decoder, name, value| {
             match name {
                 "tools" => result.tools = decoder.bool_map(value),
                 _ => return false,
@@ -528,24 +540,20 @@ impl Decoder {
 
     fn diagnostics(&mut self, node: &MarkedYaml<'_>) -> Option<DiagnosticsConfig> {
         let mut result = DiagnosticsConfig::default();
-        self.decode_struct(
-            node,
-            "projectconfig.DiagnosticsConfig",
-            |decoder, name, value| {
-                match name {
-                    "enabled" => {
-                        if let Some(enabled) = decoder.optional_bool(value) {
-                            result.enabled = enabled;
-                        }
+        self.decode_struct(node, "diagnostics", |decoder, name, value| {
+            match name {
+                "enabled" => {
+                    if let Some(enabled) = decoder.optional_bool(value) {
+                        result.enabled = enabled;
                     }
-                    "inspections" => result.inspections = decoder.bool_map(value),
-                    "rules" => result.rules = decoder.severity_map(value),
-                    "overrides" => result.overrides = decoder.overrides(value),
-                    _ => return false,
                 }
-                true
-            },
-        )
+                "inspections" => result.inspections = decoder.bool_map(value),
+                "rules" => result.rules = decoder.severity_map(value),
+                "overrides" => result.overrides = decoder.overrides(value),
+                _ => return false,
+            }
+            true
+        })
         .then_some(result)
     }
 
@@ -553,7 +561,7 @@ impl Decoder {
         let node = untagged(node);
         let YamlData::Sequence(items) = &node.data else {
             if !is_null(node) {
-                self.type_error(node, "[]projectconfig.DiagnosticOverride");
+                self.type_error(node, "a list of overrides");
             }
             return Vec::new();
         };
@@ -561,28 +569,24 @@ impl Decoder {
             .iter()
             .map(|item| {
                 let mut result = DiagnosticOverride::default();
-                self.decode_struct(
-                    item,
-                    "projectconfig.DiagnosticOverride",
-                    |decoder, name, value| {
-                        match name {
-                            "files" => {
-                                if let Some(files) = decoder.string_list(value) {
-                                    result.files = files;
-                                }
+                self.decode_struct(item, "a diagnostics override", |decoder, name, value| {
+                    match name {
+                        "files" => {
+                            if let Some(files) = decoder.string_list(value) {
+                                result.files = files;
                             }
-                            "enabled" => {
-                                if let Some(enabled) = decoder.optional_bool(value) {
-                                    result.enabled = enabled;
-                                }
-                            }
-                            "inspections" => result.inspections = decoder.bool_map(value),
-                            "rules" => result.rules = decoder.severity_map(value),
-                            _ => return false,
                         }
-                        true
-                    },
-                );
+                        "enabled" => {
+                            if let Some(enabled) = decoder.optional_bool(value) {
+                                result.enabled = enabled;
+                            }
+                        }
+                        "inspections" => result.inspections = decoder.bool_map(value),
+                        "rules" => result.rules = decoder.severity_map(value),
+                        _ => return false,
+                    }
+                    true
+                });
                 result
             })
             .collect()
@@ -590,7 +594,7 @@ impl Decoder {
 
     fn check(&mut self, node: &MarkedYaml<'_>) -> Option<CheckConfig> {
         let mut result = CheckConfig::default();
-        self.decode_struct(node, "projectconfig.CheckConfig", |decoder, name, value| {
+        self.decode_struct(node, "check", |decoder, name, value| {
             match name {
                 "severity" => {
                     if let Some(severity) = decoder.optional_severity(value) {
@@ -615,7 +619,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn plain_scalar_resolution_matches_yaml_v3() {
+    fn plain_scalars_resolve_by_yaml_core_rules() {
         assert_eq!(resolve_plain("1"), Resolved::Int(1));
         assert_eq!(resolve_plain("0x1F"), Resolved::Int(31));
         assert_eq!(resolve_plain("017"), Resolved::Int(15));

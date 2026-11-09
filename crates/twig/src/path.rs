@@ -1,4 +1,4 @@
-//! Template names and loader roots (port of `path.go` and `version.go`).
+//! Template names and loader roots.
 
 /// The compiled storefront asset directory Shopware's
 /// `TwigLoaderConfigCompilerPass` registers as an extra path of the owning
@@ -12,8 +12,8 @@ const TEMPLATE_ROOT_MARKERS: [&str; 3] =
 
 pub const VERSION_COMMENT_PREFIX: &str = "shopware-block:";
 
-/// Go `filepath.ToSlash` on Unix is the identity; Windows separators are
-/// normalized for parity with drive-letter handling.
+/// `path` with `\` separators replaced by `/` on Windows; unchanged
+/// elsewhere.
 pub(crate) fn to_slash(path: &str) -> std::borrow::Cow<'_, str> {
     if cfg!(windows) && path.contains('\\') {
         std::borrow::Cow::Owned(path.replace('\\', "/"))
@@ -213,9 +213,9 @@ pub fn format_version_comment(hash: &str, version: &str) -> String {
     comment
 }
 
-// --- Go path/filepath helpers (slash-separated) ---
+// --- Lexical helpers for slash-separated paths ---
 
-/// Go `filepath.Ext`.
+/// The extension of the last element including its dot; empty without one.
 pub(crate) fn ext(path: &str) -> &str {
     for (index, byte) in path.bytes().enumerate().rev() {
         if byte == b'/' {
@@ -228,7 +228,8 @@ pub(crate) fn ext(path: &str) -> &str {
     ""
 }
 
-/// Go `filepath.Base`.
+/// The last element, ignoring trailing slashes; `.` for an empty path and
+/// `/` for the root.
 pub(crate) fn base(path: &str) -> &str {
     if path.is_empty() {
         return ".";
@@ -243,7 +244,7 @@ pub(crate) fn base(path: &str) -> &str {
     }
 }
 
-/// Go `filepath.Dir`.
+/// The cleaned directory part; `.` without one.
 pub(crate) fn dir(path: &str) -> String {
     let directory = match path.rfind('/') {
         Some(index) => &path[..=index],
@@ -252,7 +253,8 @@ pub(crate) fn dir(path: &str) -> String {
     clean(directory)
 }
 
-/// Go `filepath.Clean`.
+/// The shortest lexically equivalent path: `.` and empty elements dropped,
+/// `..` resolved where possible; `.` for an empty result.
 pub(crate) fn clean(path: &str) -> String {
     if path.is_empty() {
         return ".".to_owned();

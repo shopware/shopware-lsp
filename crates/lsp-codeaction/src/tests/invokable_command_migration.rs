@@ -1,4 +1,4 @@
-//! Go `invokable_command_migration_codeaction_test.go`.
+//! Invokable console command migration tests.
 
 use swlsp_indexer::{Indexer, ParsedFile};
 use swlsp_lsp::{ActionProvider, Context, TextDocument};

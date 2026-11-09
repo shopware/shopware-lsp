@@ -24,7 +24,8 @@ fn line_suffix() -> &'static Regex {
     PATTERN.get_or_init(|| Regex::new(r"^(?s)(.*):(\d+)$").expect("valid pattern"))
 }
 
-/// Go `parsePositionTarget`.
+/// Parses `FILE`, `FILE:LINE` or `FILE:LINE:COLUMN` (one-based) into a
+/// path and a zero-based position.
 pub fn parse_position_target(value: &str) -> Result<PositionTarget, CliError> {
     if value.is_empty() {
         return Err(CliError::fail("empty file position"));
@@ -63,8 +64,8 @@ pub fn parse_position_target(value: &str) -> Result<PositionTarget, CliError> {
     Ok(target)
 }
 
-/// Go `codeActionSelection`: an exclusive one-based end position that
-/// defaults to the start line / first column.
+/// The selection from `start` to an exclusive one-based end position; a zero
+/// line or column defaults to the start line / first column.
 pub fn code_action_selection(
     start: Position,
     end_line: i64,

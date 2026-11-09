@@ -1,5 +1,4 @@
-//! Mode-less, maximal-munch tokenizer for the combined HTML + Twig grammar
-//! (port of `internal/parser/twig/lexer`).
+//! Mode-less, maximal-munch tokenizer for the combined HTML + Twig grammar.
 //!
 //! The lexer is context free: the whole file is tokenized with one flat token
 //! set. The parser decides contextually what each token means and may re-label

@@ -1,5 +1,4 @@
-//! Global class completion qualification and import planning (port of
-//! `completion_imports.go`).
+//! Global class completion qualification and import planning.
 
 use std::collections::HashMap;
 
@@ -10,8 +9,8 @@ use swlsp_parser_php::syntax::{PHP_NAMESPACE, TK_OPEN_TAG};
 use swlsp_php_project::Model;
 use swlsp_php_resolver::{ImportKind, parse_use_declaration};
 use swlsp_php_semantic::{Document, Flags, Symbol};
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_syntax::{SyntaxNode, TextRange, TextSize};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::helpers::range_from_text;
 
@@ -66,7 +65,7 @@ impl<'a> GlobalCompletionContext<'a> {
                     continue;
                 }
                 context.local_classes.insert(
-                    go_to_lower(&symbol.name),
+                    lowercase(&symbol.name),
                     symbol
                         .fully_qualified
                         .strip_prefix('\\')
@@ -101,10 +100,10 @@ impl<'a> GlobalCompletionContext<'a> {
                 let target = imported.target.trim_matches('\\').to_owned();
                 context
                     .imports_by_target
-                    .insert(go_to_lower(&target), imported.alias.clone());
+                    .insert(lowercase(&target), imported.alias.clone());
                 context
                     .imports_by_alias
-                    .insert(go_to_lower(&imported.alias), target);
+                    .insert(lowercase(&imported.alias), target);
             }
         }
         if context.import_offset == 0 {
@@ -127,7 +126,7 @@ impl<'a> GlobalCompletionContext<'a> {
         if self.explicitly_scoped {
             return qualified();
         }
-        if let Some(alias) = self.imports_by_target.get(&go_to_lower(fqn))
+        if let Some(alias) = self.imports_by_target.get(&lowercase(fqn))
             && !alias.is_empty()
         {
             return ClassCompletionPlan {
@@ -137,19 +136,19 @@ impl<'a> GlobalCompletionContext<'a> {
             };
         }
         let namespace = namespace_name(fqn);
-        if equal_fold(namespace, &self.namespace) || namespace.is_empty() {
+        if eq_ignore_case(namespace, &self.namespace) || namespace.is_empty() {
             return ClassCompletionPlan {
                 qualifier: short,
                 ..ClassCompletionPlan::default()
             };
         }
-        if let Some(target) = self.imports_by_alias.get(&go_to_lower(&short))
-            && !equal_fold(target, fqn)
+        if let Some(target) = self.imports_by_alias.get(&lowercase(&short))
+            && !eq_ignore_case(target, fqn)
         {
             return qualified();
         }
-        if let Some(target) = self.local_classes.get(&go_to_lower(&short))
-            && !equal_fold(target, fqn)
+        if let Some(target) = self.local_classes.get(&lowercase(&short))
+            && !eq_ignore_case(target, fqn)
         {
             return qualified();
         }
@@ -183,7 +182,7 @@ impl<'a> GlobalCompletionContext<'a> {
         };
         let matched = completion_match(&self.prefix, name, &symbol.fully_qualified);
         let symbol_namespace = namespace_name(&symbol.fully_qualified);
-        let relation = if equal_fold(symbol_namespace, &self.namespace) {
+        let relation = if eq_ignore_case(symbol_namespace, &self.namespace) {
             0
         } else if imported {
             1
@@ -199,7 +198,7 @@ impl<'a> GlobalCompletionContext<'a> {
         let deprecated = u8::from(symbol.flags.has(Flags::DEPRECATED));
         format!(
             "10-{matched}-{relation}-{deprecated}-{}",
-            go_to_lower(&symbol.fully_qualified)
+            lowercase(&symbol.fully_qualified)
         )
     }
 }
@@ -253,9 +252,9 @@ fn completion_match(prefix: &str, name: &str, fully_qualified: &str) -> u8 {
     if prefix.is_empty() {
         return 3;
     }
-    let prefix = go_to_lower(prefix);
-    let name = go_to_lower(name);
-    let fully_qualified = go_to_lower(
+    let prefix = lowercase(prefix);
+    let name = lowercase(name);
+    let fully_qualified = lowercase(
         fully_qualified
             .strip_prefix('\\')
             .unwrap_or(fully_qualified),
@@ -285,14 +284,14 @@ pub(crate) fn short_name(name: &str) -> &str {
 fn same_namespace_package(left: &str, right: &str) -> bool {
     let left = left.split('\\').next().unwrap_or("");
     let right = right.split('\\').next().unwrap_or("");
-    !left.is_empty() && !right.is_empty() && equal_fold(left, right)
+    !left.is_empty() && !right.is_empty() && eq_ignore_case(left, right)
 }
 
 pub(crate) fn same_completion_package(model: Option<&Model>, left: &str, right: &str) -> bool {
     let left_package = completion_package(model, left);
     let right_package = completion_package(model, right);
     if !left_package.is_empty() && !right_package.is_empty() {
-        return equal_fold(&left_package, &right_package);
+        return eq_ignore_case(&left_package, &right_package);
     }
     same_namespace_package(namespace_name(left), namespace_name(right))
 }
@@ -330,5 +329,5 @@ fn namespace_has_prefix(name: &str, prefix: &str) -> bool {
     let (Some(head), Some(rest)) = (name.get(..prefix.len()), name.get(prefix.len()..)) else {
         return false;
     };
-    equal_fold(head, prefix) && (rest.is_empty() || rest.starts_with('\\'))
+    eq_ignore_case(head, prefix) && (rest.is_empty() || rest.starts_with('\\'))
 }

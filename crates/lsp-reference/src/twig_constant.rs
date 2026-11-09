@@ -1,5 +1,4 @@
-//! Twig `constant()` and enum references (port of
-//! `twig_constant_reference.go`).
+//! Twig `constant()` and enum references.
 
 use std::collections::HashSet;
 use std::sync::Arc;

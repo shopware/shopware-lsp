@@ -1,4 +1,4 @@
-//! Ports of the Shopware group's `*_test.go` files.
+//! Tests of the Shopware analyzer group.
 
 mod app_script;
 mod dal_entity;

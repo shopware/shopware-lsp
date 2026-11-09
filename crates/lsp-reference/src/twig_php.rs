@@ -1,12 +1,11 @@
-//! Twig usages of PHP declarations and Twig extension callables (port of
-//! `twig_php_reference.go`).
+//! Twig usages of PHP declarations and Twig extension callables.
 
 use std::sync::Arc;
 
 use swlsp_lsp::{Context, ProviderResult, ReferenceRequest, ReferencesProvider};
 use swlsp_lsp_protocol as protocol;
 use swlsp_php::{PhpIndex, symbol_at};
-use swlsp_php_types::equal_fold;
+use swlsp_textutil::eq_ignore_case;
 use swlsp_twig::{
     TwigIndexer, extension_usage_at, extension_usages_in_document, php_usage_target_for_symbol,
 };
@@ -105,7 +104,7 @@ fn twig_extension_references(
         locations.extend(files.location(&usage.file_path, usage.range));
     }
     for usage in extension_usages_in_document(path, root) {
-        if usage.kind != target.kind || !equal_fold(&usage.name, &target.name) {
+        if usage.kind != target.kind || !eq_ignore_case(&usage.name, &target.name) {
             continue;
         }
         if filepath::clean(&usage.file_path) == clean_path {

@@ -1,4 +1,4 @@
-//! Argument migration fixes (Go `shopware_migration_arguments.go`).
+//! Argument migration fixes.
 
 use swlsp_lsp::{BoxError, Context, FixContext, FixId, FixPresentation, QuickFix, RewriteQuickFix};
 use swlsp_lsp_diagnostics::ShopwareMigrationPayload;

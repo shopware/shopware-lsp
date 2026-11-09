@@ -5,11 +5,10 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use swlsp_syntax::TextRange;
 
-/// Tag name → value. Go uses a map; Rust keeps it ordered for deterministic
-/// iteration.
+/// Tag name → value, ordered for deterministic iteration.
 pub type TagMap = BTreeMap<String, String>;
 
-/// A Symfony service definition (Go `Service`).
+/// A Symfony service definition.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Service {
@@ -138,8 +137,7 @@ impl ServiceMethodReference {
     }
 }
 
-/// The statically knowable result of one PHP service configuration file
-/// (Go `phpServiceConfig`).
+/// The statically knowable result of one PHP service configuration file.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PhpServiceConfig {
     pub services: Vec<Service>,

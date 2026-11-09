@@ -88,7 +88,6 @@ configuration namespace, so they are translated rather than forwarded:
 |---|---|
 | `phpExtensions`, `disabledPhpExtensions`, `shopwareTargetVersion` | named `initializationOptions` fields |
 | `features`, `domains`, `indexing.*`, `diagnostics.*`, `mcp.tools` | `initializationOptions.configuration`, the `lsp.yaml` shape |
-| `memoryLimitMiB` | **ignored.** It set `GOMEMLIMIT` for the former Go server; the Rust server has no garbage collector |
 | `activationMode` | **not supported.** VS Code decides whether to start the server at all; Zed's extension API cannot. The server refuses to start outside a Shopware or Symfony project anyway |
 | `serverPath` | use `lsp.shopware-lsp.binary.path` |
 | `phpExecutable` | **not supported.** Only used by VS Code's Symfony console code lenses, which Zed cannot run |

@@ -1,4 +1,4 @@
-//! Controller action references (port of `controller_reference.go`).
+//! Controller action references.
 
 use std::sync::Arc;
 

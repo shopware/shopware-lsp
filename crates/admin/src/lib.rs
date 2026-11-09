@@ -1,8 +1,7 @@
-//! Shopware Administration intelligence (port of Go `internal/admin`).
+//! Shopware Administration intelligence.
 //!
-//! The Go package is flat; every Rust module mirrors one Go source file and
-//! is re-exported at the crate root, so modules share one namespace through
-//! `use crate::*`. Crate-private helpers use `pub(crate)`.
+//! Every module is re-exported at the crate root, so modules share one flat
+//! namespace through `use crate::*`. Crate-private helpers use `pub(crate)`.
 //!
 //! - Component, mixin, module, directive, filter, CMS, service, store,
 //!   privilege, usage and TypeScript-type repositories are persisted by
@@ -12,7 +11,7 @@
 #![allow(clippy::too_many_arguments)]
 
 // Shared crate-internal prelude: every module starts with `use crate::*;`,
-// which brings these into scope next to the flat Go-style namespace.
+// which brings these into scope next to the flat crate namespace.
 #[allow(unused_imports)]
 pub(crate) use serde::{Deserialize, Serialize};
 #[allow(unused_imports)]
@@ -29,8 +28,8 @@ pub(crate) use swlsp_syntax::{
     TextRange, TextSize,
 };
 
-/// Declares a Go string-typed enumeration. The `#[default]` `Unset` variant
-/// is Go's empty zero value and renders as `""`.
+/// Declares an enumeration that is stored and displayed as a string. The
+/// `#[default]` `Unset` variant stands for an absent value and renders as `""`.
 macro_rules! string_enum {
     ($(#[$meta:meta])* $vis:vis enum $name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
         $(#[$meta])*
@@ -49,9 +48,9 @@ macro_rules! string_enum {
                 }
             }
 
-            /// Parses the Go string value; unknown values are `None`.
+            /// Parses the string form; unknown values are `None`.
             #[allow(dead_code)]
-            pub fn from_go(value: &str) -> Option<Self> {
+            pub fn from_text(value: &str) -> Option<Self> {
                 match value {
                     "" => Some(Self::Unset),
                     $($text => Some(Self::$variant),)+
@@ -64,7 +63,7 @@ macro_rules! string_enum {
             }
         }
 
-        /// Persisted as the Go string value.
+        /// Persisted as the string form; unknown strings read back as `Unset`.
         impl serde::Serialize for $name {
             fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
                 serializer.serialize_str(self.as_str())
@@ -74,7 +73,7 @@ macro_rules! string_enum {
         impl<'de> serde::Deserialize<'de> for $name {
             fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
                 let value = <std::borrow::Cow<'de, str> as serde::Deserialize>::deserialize(deserializer)?;
-                Ok(Self::from_go(&value).unwrap_or_default())
+                Ok(Self::from_text(&value).unwrap_or_default())
             }
         }
 

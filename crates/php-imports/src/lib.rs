@@ -1,5 +1,4 @@
-//! Namespace import analysis and import rewrites (port of
-//! `internal/php/imports`).
+//! Namespace import analysis and import rewrites.
 //!
 //! [`analyze`] marks every `use` clause as used or unused from the lexical
 //! reference names of a bound document, constant-name expressions, and
@@ -20,39 +19,17 @@ pub use orphans::remove_orphaned_imports;
 pub use rewrite::{organize, remove};
 
 /// The operation was cancelled by its caller.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("import analysis cancelled")]
 pub struct Cancelled;
 
-impl std::fmt::Display for Cancelled {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("import analysis cancelled")
-    }
-}
-
-impl std::error::Error for Cancelled {}
-
 /// Errors from [`organize`].
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum OrganizeError {
+    #[error("import analysis cancelled")]
     Cancelled,
-    Rewrite(swlsp_rewrite::RewriteError),
-}
-
-impl std::fmt::Display for OrganizeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            OrganizeError::Cancelled => Cancelled.fmt(f),
-            OrganizeError::Rewrite(error) => error.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for OrganizeError {}
-
-impl From<swlsp_rewrite::RewriteError> for OrganizeError {
-    fn from(error: swlsp_rewrite::RewriteError) -> Self {
-        OrganizeError::Rewrite(error)
-    }
+    #[error(transparent)]
+    Rewrite(#[from] swlsp_rewrite::RewriteError),
 }
 
 impl From<Cancelled> for OrganizeError {

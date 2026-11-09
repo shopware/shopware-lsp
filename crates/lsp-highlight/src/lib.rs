@@ -1,4 +1,4 @@
-//! Document highlight providers (port of Go `internal/lsp/highlight`).
+//! Document highlight providers.
 
 use std::sync::Arc;
 

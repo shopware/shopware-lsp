@@ -1,5 +1,4 @@
-//! Member chains and root identifiers in evaluated Vue template expressions
-//! (port of Go `vue_scope_members.go`).
+//! Member chains and root identifiers in evaluated Vue template expressions.
 
 use swlsp_syntax::rowan::NodeOrToken;
 
@@ -21,7 +20,7 @@ pub fn twig_vue_expression_member_at_offset(
     let has_member = identifier.is_some();
     let (member, member_range) =
         identifier.unwrap_or_else(|| (String::new(), slot_text_range(offset, offset)));
-    // `dot` mirrors Go's signed cursor: `None` is "before the expression".
+    // `dot` is signed so it can step before `expression_start` (and 0).
     let mut dot: isize = if has_member {
         u32::from(member_range.start()) as isize - 1
     } else {

@@ -1,5 +1,4 @@
-//! Hand-written refinements layered over the generated catalog (the body of
-//! Go's `document`). Each declaration replaces a generated one with the same
+//! Hand-written refinements layered over the generated catalog. Each declaration replaces a generated one with the same
 //! kind and name.
 
 use swlsp_php_project::Version;

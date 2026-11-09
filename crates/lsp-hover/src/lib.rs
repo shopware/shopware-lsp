@@ -1,6 +1,6 @@
-//! Hover providers (port of Go `internal/lsp/hover`).
+//! Hover providers.
 //!
-//! Every provider builds Markdown byte-for-byte like Go and converts byte
+//! Every provider builds Markdown from byte ranges and converts byte
 //! ranges to UTF-16 positions only when building the protocol range.
 
 mod admin;
@@ -91,17 +91,18 @@ pub(crate) fn markdown_hover(value: String, range: Option<protocol::Range>) -> p
     }
 }
 
-/// Go `strings.ReplaceAll(value, "`", "\\`")`.
+/// Escapes backticks so `value` can sit inside Markdown inline code.
 pub(crate) fn escape_markdown(value: &str) -> String {
     value.replace('`', "\\`")
 }
 
-/// Lowercased Go `filepath.Ext`.
+/// The lowercase extension of `path`, including the leading dot.
 pub(crate) fn lower_ext(path: &str) -> String {
     filepath::ext(path).to_lowercase()
 }
 
-/// Go `filepath.Rel(base, target)`, falling back to `target` on error.
+/// `target` relative to `base`, or `target` unchanged when no relative path
+/// exists.
 pub(crate) fn rel_or(base: &str, target: &str) -> String {
     filepath::rel(base, target).unwrap_or_else(|_| target.to_owned())
 }
@@ -118,8 +119,7 @@ pub(crate) fn request_offset(request: &HoverRequest) -> Option<u32> {
     Some(line_index.offset_utf16(position.line, position.character))
 }
 
-/// The request's PHP semantic context, as the Go server's PHP context
-/// enricher attaches it to every PHP request.
+/// The request's PHP semantic context for PHP documents.
 pub(crate) fn php_context(php: Option<&PhpIndex>, syntax: &SyntaxContext) -> Option<PhpContext> {
     if syntax.language != Some(LanguageId::Php) {
         return None;

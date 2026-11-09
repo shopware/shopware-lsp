@@ -1,6 +1,6 @@
-//! Live hierarchical outline for Administration component definitions and
-//! their Twig templates (port of `admin_document_symbol.go`). The open CST is
-//! authoritative so unsaved declarations appear without a workspace reindex.
+//! Live hierarchical outline for Administration component definitions and their
+//! Twig templates. The open CST is authoritative so unsaved declarations appear
+//! without a workspace reindex.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -746,25 +746,11 @@ fn source_protocol_range(range: &AdminSourceRange) -> Option<protocol::Range> {
 fn administration_component_name_from_path(path: &str) -> String {
     let base = filepath::base(path);
     if base == "index.js" || base == "index.ts" {
-        return filepath::base(&dir(path));
+        return filepath::base(&filepath::dir(path));
     }
     base.strip_suffix(filepath::ext(&base))
         .unwrap_or(&base)
         .to_owned()
-}
-
-/// Go `filepath.Dir`.
-fn dir(path: &str) -> String {
-    let cut = path
-        .bytes()
-        .rposition(filepath::is_path_separator)
-        .map_or(0, |index| index + 1);
-    let directory = filepath::clean(&path[..cut]);
-    if directory.is_empty() {
-        ".".to_owned()
-    } else {
-        directory
-    }
 }
 
 fn administration_component_name_from_template_path(path: &str) -> String {

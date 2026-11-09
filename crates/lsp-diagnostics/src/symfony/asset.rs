@@ -1,4 +1,4 @@
-//! Go `asset_diagnostics.go` and `asset_diagnostics_run.go`.
+//! Missing Symfony assets.
 
 use std::sync::Arc;
 

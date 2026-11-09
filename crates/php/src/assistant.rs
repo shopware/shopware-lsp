@@ -1,5 +1,4 @@
-//! PHPDoc assistant tags on resolved call parameters (port of
-//! `assistant.go`), such as `#Route` or `#Service`.
+//! PHPDoc assistant tags on resolved call parameters, such as `#Route` or `#Service`.
 
 use std::collections::HashSet;
 
@@ -9,8 +8,9 @@ use swlsp_parser_php::syntax::{
 };
 use swlsp_php_resolver::{MemberResolver, NameContext};
 use swlsp_php_semantic::{Document, Flags, Parameter, Snapshot, Symbol, SymbolKind};
-use swlsp_php_types::{Type, equal_fold, go_to_lower};
+use swlsp_php_types::Type;
 use swlsp_syntax::{SyntaxNode, TextRange};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::PhpContext;
 
@@ -54,7 +54,7 @@ pub fn assistant_argument_tags(
             continue;
         };
         for tag in tags {
-            let key = go_to_lower(tag.trim());
+            let key = lowercase(tag.trim());
             if key.is_empty() || seen.contains(&key) {
                 continue;
             }
@@ -195,7 +195,7 @@ fn parameter_index(
     if !argument_name.is_empty() {
         let argument_name = argument_name.strip_prefix('$').unwrap_or(argument_name);
         return parameters.iter().position(|parameter| {
-            equal_fold(
+            eq_ignore_case(
                 parameter.name.strip_prefix('$').unwrap_or(&parameter.name),
                 argument_name,
             )
@@ -224,7 +224,7 @@ fn parameter_has_tag(
         && parameter
             .assistant_tags
             .iter()
-            .any(|candidate| equal_fold(candidate, tag))
+            .any(|candidate| eq_ignore_case(candidate, tag))
     {
         return true;
     }

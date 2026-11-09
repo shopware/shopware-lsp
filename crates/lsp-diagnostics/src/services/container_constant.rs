@@ -1,5 +1,4 @@
-//! Unresolved `!php/const` / `!php/enum` and XML constant arguments (Go
-//! `container_constant_diagnostics.go`).
+//! Unresolved `!php/const` / `!php/enum` and XML constant arguments.
 
 use std::sync::Arc;
 
@@ -14,7 +13,6 @@ use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 const MISSING_CONTAINER_CONSTANT_CODE: &str = "symfony.constant.missing";
 
-/// Go `ContainerConstantAnalyzer`.
 pub struct ContainerConstantAnalyzer {
     php_index: Option<PhpIndex>,
 }

@@ -1,4 +1,4 @@
-//! EntityTranslationDefinition import (port of Go `import_translation.go`).
+//! EntityTranslationDefinition import.
 
 use std::collections::{HashMap, HashSet};
 

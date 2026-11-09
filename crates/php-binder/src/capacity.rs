@@ -1,9 +1,9 @@
 //! Up-front capacity estimates derived from one census of the syntax tree.
 
 use swlsp_parser_php::syntax::*;
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::rowan::{GreenNodeData, NodeOrToken};
 use swlsp_syntax::{Kind, SyntaxNode};
+use swlsp_textutil::eq_ignore_case;
 
 const MAX_ESTIMATED_REFERENCES: usize = 4096;
 
@@ -174,7 +174,7 @@ fn parameter_is_promoted(node: &Green) -> bool {
             Kind(token.kind().0) == TK_KEYWORD
                 && ["public", "protected", "private"]
                     .iter()
-                    .any(|visibility| equal_fold(token.text(), visibility))
+                    .any(|visibility| eq_ignore_case(token.text(), visibility))
         })
 }
 
@@ -191,7 +191,7 @@ fn direct_constant_count(node: &Green) -> usize {
     for child in node.children() {
         match child {
             NodeOrToken::Token(token) => {
-                if equal_fold(token.text(), "const") || Kind(token.kind().0) == TK_COMMA {
+                if eq_ignore_case(token.text(), "const") || Kind(token.kind().0) == TK_COMMA {
                     expect_name = true;
                 } else if Kind(token.kind().0) == TK_EQUALS {
                     expect_name = false;
@@ -214,7 +214,7 @@ fn foreach_local_count(node: &Green) -> usize {
     for child in node.children() {
         match child {
             NodeOrToken::Token(token) => {
-                if equal_fold(token.text(), "as") {
+                if eq_ignore_case(token.text(), "as") {
                     in_targets = true;
                 } else if in_targets && Kind(token.kind().0) == TK_CLOSE_PAREN {
                     return count;

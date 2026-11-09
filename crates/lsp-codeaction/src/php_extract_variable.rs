@@ -1,4 +1,4 @@
-//! Go `php_extract_variable.go`.
+//! The PHP "Extract variable" refactoring.
 
 use swlsp_language::LanguageId;
 use swlsp_lsp::{ActionProvider, CodeActionRequest, Context};

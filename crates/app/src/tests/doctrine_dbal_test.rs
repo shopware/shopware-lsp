@@ -1,4 +1,4 @@
-//! Port of Go `internal/app/doctrine_dbal_test.go`.
+//! Doctrine DBAL completion and definitions against the Shopware schema.
 
 use std::sync::Arc;
 

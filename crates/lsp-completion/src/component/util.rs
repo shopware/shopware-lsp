@@ -4,7 +4,7 @@ use regex::Regex;
 use swlsp_lsp::CompletionRequest;
 use swlsp_lsp_protocol as protocol;
 
-/// The byte offset of the request position (Go `LineIndex.OffsetUTF16`).
+/// The byte offset of the request position.
 pub(crate) fn request_offset(request: &CompletionRequest) -> Option<u32> {
     let line_index = request.line_index()?;
     Some(line_index.offset_utf16(
@@ -18,7 +18,8 @@ pub(crate) fn request_path(request: &CompletionRequest) -> String {
     swlsp_uriutil::path(&request.params.text_document.uri).unwrap_or_default()
 }
 
-/// Go `string(source[:offset])` clamped to the source length.
+/// The source before `offset`, clamped to the source length and moved back
+/// to a character boundary.
 pub(crate) fn source_before(source: &str, offset: u32) -> &str {
     let mut offset = (offset as usize).min(source.len());
     while !source.is_char_boundary(offset) {
@@ -27,35 +28,19 @@ pub(crate) fn source_before(source: &str, offset: u32) -> &str {
     &source[..offset]
 }
 
-/// Compiles a Go RE2 pattern: `\b` is ASCII-only and `\s` is
-/// `[\t\n\f\r ]` in Go.
-pub(crate) fn go_regex(pattern: &str) -> Regex {
+/// Compiles a context pattern with ASCII semantics for `\b` and `\s`: word
+/// boundaries only consider ASCII word characters and `\s` matches
+/// `[\t\n\f\r ]`, so non-ASCII text next to an attribute cannot change a match.
+pub(crate) fn ascii_regex(pattern: &str) -> Regex {
     let translated = pattern
         .replace(r"\b", r"(?-u:\b)")
         .replace(r"\s", r"[\t\n\f\r ]");
-    Regex::new(&translated).expect("valid Go-compatible pattern")
+    Regex::new(&translated).expect("valid context pattern")
 }
 
-/// Go `strings.LastIndexAny(value, " \t\r\n")`.
+/// The byte index of the last space, tab, carriage return or newline.
 pub(crate) fn last_index_whitespace(value: &str) -> Option<usize> {
     value.rfind([' ', '\t', '\r', '\n'])
-}
-
-/// Go `strings.ToUpper` (one rune to one rune).
-pub(crate) fn go_to_upper(value: &str) -> String {
-    if value.is_ascii() {
-        return value.to_ascii_uppercase();
-    }
-    value
-        .chars()
-        .map(|c| {
-            let mut upper = c.to_uppercase();
-            match (upper.next(), upper.next()) {
-                (Some(first), None) => first,
-                _ => c,
-            }
-        })
-        .collect()
 }
 
 pub(crate) fn kind(kind: protocol::CompletionItemKind) -> Option<protocol::CompletionItemKind> {

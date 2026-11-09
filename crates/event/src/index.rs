@@ -1,4 +1,4 @@
-//! Event record persistence and queries (port of Go `event/index.go`).
+//! Event record persistence and queries.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -10,8 +10,9 @@ use swlsp_indexer::{
 };
 use swlsp_parser_php::query as phpquery;
 use swlsp_php::{NameResolver, PhpIndex};
-use swlsp_php_types::{Kind as TypeKind, Type, equal_fold, go_to_lower};
+use swlsp_php_types::{Kind as TypeKind, Type};
 use swlsp_syntax::{TextRange, TextSize};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::model::{Event, Occurrence, OccurrenceKind, Record};
 use crate::parser::{
@@ -150,7 +151,7 @@ impl Index {
             if name.is_empty() {
                 continue;
             }
-            let current = grouped.entry(go_to_lower(&name)).or_insert_with(|| Event {
+            let current = grouped.entry(lowercase(&name)).or_insert_with(|| Event {
                 name: name.clone(),
                 ..Event::default()
             });
@@ -178,7 +179,7 @@ impl Index {
                 (key, event)
             })
             .collect();
-        // Keys are the lowercased names, so this is Go's order.
+        // Keys are the lowercased names: case-insensitive name order.
         result.sort_by(|left, right| left.0.cmp(&right.0));
         Ok(result.into_iter().map(|(_, event)| event).collect())
     }
@@ -191,7 +192,7 @@ impl Index {
         Ok(self
             .events_view()?
             .iter()
-            .find(|event| equal_fold(&event.name, name))
+            .find(|event| eq_ignore_case(&event.name, name))
             .cloned())
     }
 
@@ -225,8 +226,8 @@ impl Index {
             .filter(|event| {
                 event.occurrences.iter().any(|listener| {
                     listener.kind == OccurrenceKind::Listener
-                        && equal_fold(&listener.class, class)
-                        && (method.is_empty() || equal_fold(&listener.method, method))
+                        && eq_ignore_case(&listener.class, class)
+                        && (method.is_empty() || eq_ignore_case(&listener.method, method))
                 })
             })
             .cloned()
@@ -247,7 +248,7 @@ impl Index {
             return String::new();
         }
         let revision = php_index.revision();
-        let key = go_to_lower(expression);
+        let key = lowercase(expression);
         let mut cache = self
             .constants
             .lock()
@@ -281,13 +282,13 @@ impl Index {
         let resolver = NameResolver::new(&root);
         for class in phpquery::classes(&root) {
             let resolved = resolved_class_name(Some(&class), &resolver);
-            if !equal_fold(&resolved, class_name) {
+            if !eq_ignore_case(&resolved, class_name) {
                 continue;
             }
             for constant in parse_class_constants(&class, &resolved, &path) {
                 cache
                     .values
-                    .insert(go_to_lower(&constant.expression), constant.value);
+                    .insert(lowercase(&constant.expression), constant.value);
             }
             break;
         }
@@ -342,7 +343,7 @@ impl Index {
             }
             _ => return PreparedRecords(None),
         };
-        // Go keys a map by record key; equal keys keep the last value.
+        // One item per record key; a repeated key keeps the last value.
         let mut items: Vec<(String, Record)> = Vec::with_capacity(records.len());
         let mut positions: HashMap<String, usize> = HashMap::with_capacity(records.len());
         for record in records {
@@ -462,10 +463,10 @@ impl TransactionalClearer for Index {
 
 pub(crate) fn record_key(record: &Record) -> String {
     if !record.name.is_empty() {
-        return format!("name:{}", go_to_lower(normalize_name(&record.name)));
+        return format!("name:{}", lowercase(normalize_name(&record.name)));
     }
     if !record.expression.is_empty() {
-        return format!("expression:{}", go_to_lower(&record.expression));
+        return format!("expression:{}", lowercase(&record.expression));
     }
     if let Some(occurrence) = record.occurrences.first() {
         let target = if occurrence.class.is_empty() {
@@ -476,7 +477,7 @@ pub(crate) fn record_key(record: &Record) -> String {
         if !target.is_empty() || !occurrence.method.is_empty() {
             return format!(
                 "inferred:{}",
-                go_to_lower(&format!("{target}::{}", occurrence.method))
+                lowercase(&format!("{target}::{}", occurrence.method))
             );
         }
     }

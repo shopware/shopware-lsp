@@ -1,4 +1,4 @@
-//! Console command and input names (Go `console_completion.go`).
+//! Console command and input names.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -11,8 +11,8 @@ use swlsp_php::PhpIndex;
 use super::{item, lower_ext, strings};
 use crate::common::php_context;
 
-/// Go takes only the console index and reads the PHP analysis from the
-/// request context; Rust builds it from `php`.
+/// Completes console command and input names; the PHP analysis of a
+/// request is built from `php`.
 pub struct ConsoleCompletionProvider {
     index: Arc<Index>,
     php: Option<PhpIndex>,

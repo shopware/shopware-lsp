@@ -9,7 +9,7 @@ fn php_errors(source: &str) -> usize {
     swlsp_parser_php::parse(source).errors.len()
 }
 
-/// Appends a custom member before the final class brace (Go `source[:len-2]`).
+/// Appends a custom member before the final class brace (dropping the trailing `}\n`).
 fn with_custom_member(source: &str, member: &str) -> String {
     format!("{}\n    {member}\n}}\n", &source[..source.len() - 2])
 }

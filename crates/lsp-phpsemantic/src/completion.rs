@@ -1,4 +1,4 @@
-//! PHP completion (port of `completion.go`).
+//! PHP completion.
 
 use std::collections::HashSet;
 
@@ -15,8 +15,9 @@ use swlsp_php_semantic::{
     Attribute, AttributeValue, AttributeValueKind, CallContract, CallValue, CallValueKind, Flags,
     Parameter, Snapshot, Symbol, SymbolId, SymbolKind, SymbolView, attribute_named,
 };
-use swlsp_php_types::{Type, go_to_lower};
+use swlsp_php_types::Type;
 use swlsp_syntax::{LineIndex, SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
+use swlsp_textutil::lowercase;
 
 use crate::Provider;
 use crate::completion_imports::GlobalCompletionContext;
@@ -93,7 +94,7 @@ impl Provider {
                 .fully_qualified
                 .strip_prefix('\\')
                 .unwrap_or(&symbol.fully_qualified);
-            if label.is_empty() || !seen.insert(go_to_lower(label)) {
+            if label.is_empty() || !seen.insert(lowercase(label)) {
                 continue;
             }
             items.push(CompletionItem {
@@ -141,7 +142,7 @@ impl Provider {
                         label: symbol.name.to_string(),
                         kind: Some(CompletionItemKind::VARIABLE),
                         detail: type_detail(&symbol.ty),
-                        sort_text: format!("00-{}", go_to_lower(&symbol.name)),
+                        sort_text: format!("00-{}", lowercase(&symbol.name)),
                         ..CompletionItem::default()
                     });
                 }
@@ -174,7 +175,7 @@ impl Provider {
             let key = format!(
                 "{}:{}",
                 view.kind() as u8,
-                go_to_lower(view.fully_qualified())
+                lowercase(view.fully_qualified())
             );
             if !seen.insert(key) {
                 continue;
@@ -361,7 +362,7 @@ fn expected_argument_completions(
     let mut seen = HashSet::with_capacity(values.len());
     let mut items = Vec::with_capacity(values.len());
     for value in &values {
-        if value.expression.is_empty() || !seen.insert(go_to_lower(&value.expression)) {
+        if value.expression.is_empty() || !seen.insert(lowercase(&value.expression)) {
             continue;
         }
         let kind = if matches!(value.kind, CallValueKind::String | CallValueKind::Number) {
@@ -389,7 +390,7 @@ fn callable_parameter_at<'a>(
     if !argument_name.is_empty() {
         let name = argument_name.strip_prefix('$').unwrap_or(argument_name);
         return parameters.iter().find(|parameter| {
-            swlsp_php_types::equal_fold(
+            swlsp_textutil::eq_ignore_case(
                 parameter.name.strip_prefix('$').unwrap_or(&parameter.name),
                 name,
             )
@@ -544,11 +545,7 @@ fn member_completions(
         ) {
             continue;
         }
-        if !seen.insert(format!(
-            "{}:{}",
-            symbol.kind as u8,
-            go_to_lower(&symbol.name)
-        )) {
+        if !seen.insert(format!("{}:{}", symbol.kind as u8, lowercase(&symbol.name))) {
             continue;
         }
         let mut item = CompletionItem {

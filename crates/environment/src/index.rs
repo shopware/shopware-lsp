@@ -159,7 +159,7 @@ impl Index {
             }
         }
 
-        // Go keys a map by occurrence; equal keys keep the last value.
+        // One item per occurrence key; a repeated key keeps the last value.
         let mut items: Vec<(String, Occurrence)> = Vec::with_capacity(occurrences.len());
         let mut positions: HashMap<String, usize> = HashMap::with_capacity(occurrences.len());
         for mut occurrence in occurrences {

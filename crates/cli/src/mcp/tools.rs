@@ -1,4 +1,4 @@
-//! Analysis tools (Go `mcp.go` handlers): diagnostics, code actions, hover,
+//! Analysis tools: diagnostics, code actions, hover,
 //! definitions, references and workspace symbols. Paths are validated
 //! against the workspace root before any session work; positions are
 //! one-based and converted here.
@@ -604,7 +604,8 @@ pub(crate) fn to_mcp_range(range: Range) -> McpRange {
 }
 
 impl McpRuntime {
-    /// Go `position`: a workspace path plus a one-based position.
+    /// A validated workspace path plus a one-based position (column 0
+    /// means 1), converted to a zero-based LSP position.
     pub(crate) fn position(
         &self,
         path: &str,
@@ -628,8 +629,8 @@ impl McpRuntime {
         ))
     }
 
-    /// Go `resolvePath`: workspace-relative or absolute, never outside the
-    /// root.
+    /// Resolves a workspace-relative path, absolute path or `file://` URI;
+    /// fails for paths outside the root.
     pub(crate) fn resolve_path(&self, value: &str) -> Result<String, CliError> {
         let mut value = value.trim().to_owned();
         if value.is_empty() {
@@ -722,7 +723,7 @@ impl McpRuntime {
     }
 
     /// Rejects edits that touch paths outside the workspace or use
-    /// unsupported resource operations (Go `validateWorkspaceEdit`).
+    /// unsupported resource operations.
     pub(crate) fn validate_workspace_edit(&self, edit: &WorkspaceEdit) -> Result<(), CliError> {
         let reject = |uri: &str, error: CliError| {
             CliError::fail(format!(
@@ -779,7 +780,7 @@ impl McpRuntime {
     }
 }
 
-/// Go `pathWithinRoot`.
+/// Whether `path` is `root` or lies below it.
 pub(crate) fn path_within_root(root: &str, path: &str) -> bool {
     match filepath::rel(root, path) {
         Ok(relative) => {

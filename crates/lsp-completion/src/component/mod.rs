@@ -1,7 +1,4 @@
-//! Twig/Live component, PHP attribute, controller and route completion
-//! (Go `twig_component_completion.go`, `twig_component_php_completion.go`,
-//! `live_component_event_completion.go`, `php_attribute_completion.go`,
-//! `controller_completion.go`, `route_completion.go`).
+//! Twig/Live component, PHP attribute, controller and route completion.
 
 mod controller;
 mod live_component_event;

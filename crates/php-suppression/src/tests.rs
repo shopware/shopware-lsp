@@ -1,5 +1,3 @@
-//! Port of `internal/php/suppression/suppression_test.go`.
-
 use super::*;
 
 fn offset(source: &str, value: &str) -> u32 {
@@ -104,8 +102,8 @@ fn suppression_markers_remain_case_insensitive() {
     }
 }
 
-/// Compares the prefilter against the original byte-window search (Go's
-/// fuzz corpus seeds plus a few extra cases).
+/// Compares the prefilter against a plain byte-window search (fuzz corpus
+/// seeds plus a few extra cases).
 #[test]
 fn suppression_marker_prefilter_matches_window_search() {
     fn window_search(source: &str) -> bool {

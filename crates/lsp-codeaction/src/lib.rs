@@ -1,5 +1,4 @@
-//! Code actions and generator commands (port of Go
-//! `internal/lsp/codeaction`): PHP refactorings (organize imports, extract
+//! Code actions and generator commands: PHP refactorings (organize imports, extract
 //! variable/method), Symfony/Shopware generators and migrations, Twig and
 //! Administration helpers, and snippet actions.
 //!

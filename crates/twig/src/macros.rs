@@ -1,4 +1,4 @@
-//! Twig macros, imports and macro usages (port of `macro.go`).
+//! Twig macros, imports and macro usages.
 
 use std::collections::HashMap;
 
@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 use swlsp_parser_twig::ast::{AstNode, TwigFunctionCall};
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::*;
-use swlsp_php_types::go_to_lower;
 use swlsp_syntax::rowan::NodeOrToken;
 use swlsp_syntax::{Kind, SyntaxNode, SyntaxNodeExt, SyntaxToken, TextRange, TextSize};
+use swlsp_textutil::lowercase;
 
 use crate::compare_fold;
 use crate::documentation::{documentation_before, documentation_comment_text};
@@ -180,7 +180,7 @@ pub fn macro_references_in_document(path: &str, root: &SyntaxNode) -> Vec<MacroR
             let namespace = &names[0].name;
             let mut templates = imports
                 .namespaces
-                .get(&go_to_lower(namespace))
+                .get(&lowercase(namespace))
                 .cloned()
                 .unwrap_or_default();
             if templates.is_empty() && namespace == "_self" {
@@ -198,7 +198,7 @@ pub fn macro_references_in_document(path: &str, root: &SyntaxNode) -> Vec<MacroR
             });
             continue;
         }
-        let Some(target) = imports.direct.get(&go_to_lower(&names[0].name)) else {
+        let Some(target) = imports.direct.get(&lowercase(&names[0].name)) else {
             continue;
         };
         result.push(MacroReference {
@@ -229,7 +229,7 @@ pub fn macro_completion_at(
     let namespace_templates = |namespace: &str| -> Vec<String> {
         let mut templates = imports
             .namespaces
-            .get(&go_to_lower(namespace))
+            .get(&lowercase(namespace))
             .cloned()
             .unwrap_or_default();
         if templates.is_empty() && namespace == "_self" {
@@ -294,9 +294,7 @@ pub(crate) fn collect_macro_imports(path: &str, root: &SyntaxNode) -> MacroImpor
             continue;
         }
         let alias = &names[names.len() - 1];
-        result
-            .namespaces
-            .insert(go_to_lower(&alias.name), templates);
+        result.namespaces.insert(lowercase(&alias.name), templates);
     }
     for node in twigquery::iterate_nodes(root, &[TWIG_FROM]) {
         let (templates, _) = macro_import_target(path, &node);
@@ -311,7 +309,7 @@ pub(crate) fn collect_macro_imports(path: &str, root: &SyntaxNode) -> MacroImpor
             let original = &names[0];
             let alias = &names[names.len() - 1];
             result.direct.insert(
-                go_to_lower(&alias.name),
+                lowercase(&alias.name),
                 MacroImport {
                     alias: alias.name.clone(),
                     name: original.name.clone(),
@@ -442,7 +440,7 @@ fn unique_macro_references(values: Vec<MacroReference>) -> Vec<MacroReference> {
                 return false;
             }
             seen.insert((
-                go_to_lower(&value.name),
+                lowercase(&value.name),
                 value.templates.join("\0"),
                 value.range,
                 value.role,
@@ -463,7 +461,7 @@ pub(crate) fn macro_usage_key(template: &str, name: &str) -> String {
     format!(
         "{}\0{}",
         normalize_macro_template(template),
-        go_to_lower(name.trim())
+        lowercase(name.trim())
     )
 }
 

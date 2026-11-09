@@ -1,4 +1,4 @@
-//! Ports of the Go Twig completion tests.
+//! Twig completion provider tests.
 
 mod component_variable;
 mod constant;
@@ -50,8 +50,8 @@ pub(super) fn p(path: &std::path::Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-/// A request whose node is looked up at `node_offset` (Go builds the
-/// syntax context by hand in every test).
+/// A request whose syntax node is looked up at `node_offset`, which may
+/// differ from the cursor `offset`.
 pub(super) fn request_with_node(
     document: Arc<TextDocument>,
     offset: u32,
@@ -75,7 +75,7 @@ pub(super) fn request_with_node(
     }
 }
 
-/// Go `twigCompletionAt`: node at `offset - 1`.
+/// A Twig completion request at `offset` with the node at `offset - 1`.
 pub(super) fn twig_completion_at(uri: &str, source: &str, offset: usize) -> CompletionRequest {
     let document = Arc::new(TextDocument::new(uri, source, 1));
     let offset = offset as u32;

@@ -7,7 +7,8 @@ use swlsp_indexer::{
     TransactionalClearer, TransactionalRemover,
 };
 use swlsp_php::PhpIndex;
-use swlsp_php_types::{Kind as TypeKind, Type, equal_fold, go_to_lower};
+use swlsp_php_types::{Kind as TypeKind, Type};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::model::{Message, Occurrence, OccurrenceKind};
 use crate::parser::{parse_php, parse_xml, parse_yaml};
@@ -81,7 +82,7 @@ impl Index {
                 if name.is_empty() {
                     continue;
                 }
-                let message = grouped.entry(go_to_lower(name)).or_insert_with(|| Message {
+                let message = grouped.entry(lowercase(name)).or_insert_with(|| Message {
                     name: name.to_owned(),
                     occurrences: Vec::new(),
                 });
@@ -97,7 +98,7 @@ impl Index {
                 (key, message)
             })
             .collect();
-        // Keys are the lowercased names, so this is Go's order.
+        // Keys are the lowercased names: case-insensitive name order.
         result.sort_by(|left, right| left.0.cmp(&right.0));
         Ok(result.into_iter().map(|(_, message)| message).collect())
     }
@@ -107,7 +108,7 @@ impl Index {
         Ok(self
             .messages()?
             .into_iter()
-            .find(|message| equal_fold(&message.name, name)))
+            .find(|message| eq_ignore_case(&message.name, name)))
     }
 
     pub fn message_names(&self) -> Result<Vec<String>> {
@@ -129,8 +130,8 @@ impl Index {
             .filter(|message| {
                 message.occurrences.iter().any(|handler| {
                     handler.kind == OccurrenceKind::Handler
-                        && equal_fold(&handler.class, class_name)
-                        && equal_fold(&handler.method, method_name)
+                        && eq_ignore_case(&handler.class, class_name)
+                        && eq_ignore_case(&handler.method, method_name)
                 })
             })
             .collect())
@@ -172,7 +173,7 @@ impl Index {
             ".xml" => parse_xml(file),
             _ => return PreparedOccurrences(None),
         };
-        // Go keys a map by occurrence; equal keys keep the last value.
+        // One item per occurrence key; a repeated key keeps the last value.
         let mut items: Vec<(String, Occurrence)> = Vec::with_capacity(occurrences.len());
         let mut positions: HashMap<String, usize> = HashMap::with_capacity(occurrences.len());
         for mut occurrence in occurrences {
@@ -341,9 +342,9 @@ pub(crate) fn occurrence_key(occurrence: &Occurrence) -> String {
         occurrence.kind.ordinal(),
         u32::from(occurrence.range.start()),
         u32::from(occurrence.range.end()),
-        go_to_lower(&occurrence.message),
-        go_to_lower(&occurrence.class),
-        go_to_lower(&occurrence.method),
+        lowercase(&occurrence.message),
+        lowercase(&occurrence.class),
+        lowercase(&occurrence.method),
     )
 }
 
@@ -369,12 +370,12 @@ pub(crate) fn unique_names(values: Vec<String>) -> Vec<String> {
     let mut result: Vec<String> = Vec::new();
     for value in values {
         let value = normalize_name(&value);
-        if value.is_empty() || !seen.insert(go_to_lower(value)) {
+        if value.is_empty() || !seen.insert(lowercase(value)) {
             continue;
         }
         result.push(value.to_owned());
     }
-    result.sort_by_cached_key(|value| go_to_lower(value));
+    result.sort_by_cached_key(|value| lowercase(value));
     result
 }
 

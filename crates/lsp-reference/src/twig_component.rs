@@ -1,5 +1,4 @@
-//! Twig component and Live action references (port of
-//! `twig_component_reference.go`).
+//! Twig component and Live action references.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -7,8 +6,8 @@ use std::sync::Arc;
 use swlsp_lsp::{Context, ProviderResult, ReferenceRequest, ReferencesProvider};
 use swlsp_lsp_protocol as protocol;
 use swlsp_php::{PhpIndex, symbol_at};
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_syntax::TextRange;
+use swlsp_textutil::{eq_ignore_case, lowercase};
 use swlsp_twigcomponent::{
     Component, Index, LiveAction, declaration_at_php, live_action_reference_at,
     live_action_references_in_twig, usage_at, usages_in_twig,
@@ -142,23 +141,23 @@ impl TwigComponentReferenceProvider {
         request: &ReferenceRequest,
         known_actions: &[LiveAction],
     ) -> ProviderResult<Vec<protocol::Location>> {
-        // Go iterates a map here; a sorted map keeps the result deterministic.
+        // A sorted map keeps the result deterministic.
         let mut components: BTreeMap<String, Component> = BTreeMap::new();
         let mut actions = Vec::new();
         let twig = lower_ext(current_path) == ".twig";
         if twig {
             for component in index.components_for_template(current_path)? {
-                components.insert(go_to_lower(&component.name), component);
+                components.insert(lowercase(&component.name), component);
             }
             for action in index.live_actions_for_template(current_path)? {
-                if equal_fold(&action.name, action_name) {
+                if eq_ignore_case(&action.name, action_name) {
                     actions.push(action);
                 }
             }
         } else {
             let all = index.components()?;
             for action in known_actions {
-                if !equal_fold(&action.name, action_name) {
+                if !eq_ignore_case(&action.name, action_name) {
                     continue;
                 }
                 actions.push(action.clone());
@@ -169,7 +168,7 @@ impl TwigComponentReferenceProvider {
                     if component_actions.iter().any(|candidate| {
                         candidate.file == action.file && candidate.range == action.range
                     }) {
-                        components.insert(go_to_lower(&component.name), component.clone());
+                        components.insert(lowercase(&component.name), component.clone());
                     }
                 }
             }
@@ -190,7 +189,7 @@ impl TwigComponentReferenceProvider {
         }
         if twig && let (Some(root), Some(line_index)) = (&request.root, request.line_index()) {
             for reference in live_action_references_in_twig(current_path, root) {
-                if equal_fold(&reference.name, action_name) {
+                if eq_ignore_case(&reference.name, action_name) {
                     result.push(document_location(request, line_index, reference.range));
                 }
             }

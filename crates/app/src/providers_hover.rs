@@ -1,4 +1,4 @@
-//! Hover providers (port of Go `internal/app/providers_hover.go`).
+//! Hover providers.
 
 use std::sync::Arc;
 

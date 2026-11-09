@@ -1,5 +1,4 @@
-//! Configuration model, decoding, validation, layering and fingerprinting
-//! (port of `internal/projectconfig/config.go`).
+//! Configuration model, decoding, validation, layering and fingerprinting.
 
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
@@ -8,9 +7,10 @@ use std::sync::OnceLock;
 use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
-use swlsp_uriutil::{filepath, go_quote};
+use swlsp_textutil::lowercase;
+use swlsp_uriutil::filepath;
 
-use crate::yaml;
+use crate::yaml::{self, DecodeErrors, SyntaxError};
 
 /// The only supported configuration `version`.
 pub const CURRENT_VERSION: i64 = 1;
@@ -20,35 +20,105 @@ pub const PROJECT_RELATIVE_PATH: &str = ".config/shopware/lsp.yaml";
 pub const DEFAULT_MAX_FILE_SIZE_MIB: i64 = 8;
 const MAXIMUM_CONFIGURED_FILE_MIB: i64 = 4095;
 
-/// The embedded JSON schema for `.config/shopware/lsp.yaml` (Go
-/// `projectconfig.Schema`). The Go file stays the single source of truth.
+/// The embedded JSON schema for `.config/shopware/lsp.yaml`.
 pub const SCHEMA: &str = include_str!("../schema.json");
 
-/// A configuration error. `Display` matches the Go error text.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConfigError(pub(crate) String);
-
-impl ConfigError {
-    pub(crate) fn new(message: impl Into<String>) -> Self {
-        Self(message.into())
-    }
-
-    /// The error message.
-    pub fn message(&self) -> &str {
-        &self.0
-    }
+/// A configuration error.
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    #[error("read {path}: {source}")]
+    Read {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    /// An error in the configuration file at `path`.
+    #[error("{path}: {source}")]
+    File {
+        path: String,
+        #[source]
+        source: Box<ConfigError>,
+    },
+    #[error("decode configuration: invalid UTF-8")]
+    InvalidUtf8,
+    #[error("decode configuration: {0}")]
+    Syntax(#[source] SyntaxError),
+    #[error("decode configuration: no YAML document")]
+    Empty,
+    #[error("decode configuration: {0}")]
+    Decode(#[source] DecodeErrors),
+    #[error("decode configuration: multiple YAML documents")]
+    MultipleDocuments,
+    #[error("configuration version is required")]
+    MissingVersion,
+    #[error("unsupported configuration version {0}")]
+    UnsupportedVersion(i64),
+    #[error("invalid Shopware target version {0:?}")]
+    InvalidTargetVersion(String),
+    #[error("{setting} must not contain an empty extension")]
+    EmptyExtension { setting: &'static str },
+    #[error("indexing.maxFileSizeMiB must be between 0 and {MAXIMUM_CONFIGURED_FILE_MIB}")]
+    MaxFileSizeOutOfRange,
+    /// An invalid path pattern in the named setting.
+    #[error("{setting}: {source}")]
+    Pattern {
+        setting: String,
+        #[source]
+        source: PatternError,
+    },
+    #[error("unknown feature {0:?}")]
+    UnknownFeature(String),
+    #[error("unknown MCP tool {0:?}")]
+    UnknownMcpTool(String),
+    #[error("unknown domain {0:?}")]
+    UnknownDomain(String),
+    #[error("invalid check severity {:?}", .0.as_str())]
+    InvalidCheckSeverity(Severity),
+    #[error("invalid check failOn severity {:?}", .0.as_str())]
+    InvalidCheckFailOn(Severity),
+    #[error("diagnostics.overrides[{0}].files must not be empty")]
+    EmptyOverrideFiles(usize),
+    #[error("diagnostics.overrides[{0}] must configure enabled, inspections, or rules")]
+    EmptyOverride(usize),
+    #[error("diagnostics.overrides[{index}]: {source}")]
+    Override {
+        index: usize,
+        #[source]
+        source: Box<ConfigError>,
+    },
+    #[error("diagnostic rule ID must not be empty")]
+    EmptyRuleId,
+    #[error("invalid severity {:?} for diagnostic {id:?}", severity.as_str())]
+    InvalidRuleSeverity { severity: Severity, id: String },
+    #[error("inspection ID must not be empty")]
+    EmptyInspectionId,
+    #[error("resolve configuration workspace: {0}")]
+    ResolveWorkspace(#[source] std::io::Error),
+    #[error("discover nested Shopware LSP configurations: {0}")]
+    DiscoverNested(#[source] std::io::Error),
+    #[error("nested configuration may only contain diagnostics")]
+    NestedNotDiagnosticsOnly,
+    /// Every invalid nested configuration, one per line.
+    #[error("{}", .0.join("\n"))]
+    InvalidScopes(Vec<String>),
 }
 
-impl fmt::Display for ConfigError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
-    }
+/// Why a configured path pattern is invalid.
+#[derive(Debug, thiserror::Error)]
+pub enum PatternError {
+    #[error("pattern must not be empty")]
+    Empty,
+    #[error("pattern {0:?} must be relative")]
+    Absolute(String),
+    #[error("pattern {0:?} must not escape its configuration scope")]
+    EscapesScope(String),
+    #[error(transparent)]
+    Glob(#[from] swlsp_pathmatch::CompileError),
 }
 
-impl std::error::Error for ConfigError {}
-
-/// A diagnostic severity. Like the Go string type, any value can be decoded;
-/// [`valid_severity`] decides whether it is acceptable.
+/// A diagnostic severity. Any string decodes (unknown values are kept as
+/// [`Severity::Other`]); [`valid_severity`] decides whether it is acceptable,
+/// so validation can name the offending value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Severity {
     Off,
@@ -110,14 +180,16 @@ impl Serialize for Severity {
 
 impl<'de> Deserialize<'de> for Severity {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        // Go decodes JSON null into a string type as the zero value.
+        // `null` decodes as the empty (invalid) severity, which validation
+        // then reports.
         Ok(Option::<String>::deserialize(deserializer)?
             .unwrap_or_default()
             .into())
     }
 }
 
-/// Go JSON decoding leaves a field at its zero value when the input is null.
+/// Decodes JSON `null` as the field's default, so clients may send `null`
+/// for settings they leave unset.
 fn nullable<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: Deserializer<'de>,
@@ -281,8 +353,8 @@ pub struct Effective {
     pub origins: BTreeMap<String, String>,
 }
 
-/// Resolved PHP settings. `None` mirrors a nil Go slice (`null` in JSON),
-/// which is distinct from an explicitly configured empty list.
+/// Resolved PHP settings. `None` (unset, `null` in JSON) is distinct from
+/// an explicitly configured empty list.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EffectivePhp {
@@ -328,7 +400,7 @@ pub struct DiagnosticPolicy {
 }
 
 impl Default for DiagnosticPolicy {
-    /// The built-in diagnostic defaults (Go `DefaultDiagnosticPolicy`).
+    /// The built-in diagnostic defaults.
     fn default() -> Self {
         Self {
             enabled: true,
@@ -559,7 +631,7 @@ fn catalog_contains(catalog: &[CatalogEntry], id: &str) -> bool {
 }
 
 impl Default for Effective {
-    /// The built-in defaults (Go `Default`).
+    /// The built-in defaults.
     fn default() -> Self {
         Self {
             php: EffectivePhp::default(),
@@ -588,12 +660,12 @@ impl Default for Effective {
     }
 }
 
-/// The built-in defaults (Go `Default`).
+/// The built-in defaults.
 pub fn default_effective() -> Effective {
     Effective::default()
 }
 
-/// The configuration file path below `root` (Go `Path`).
+/// The configuration file path below `root`.
 pub fn path(root: &str) -> String {
     filepath::join(&[root, &filepath::from_slash(PROJECT_RELATIVE_PATH)])
 }
@@ -604,44 +676,36 @@ pub fn load(root: &str) -> Result<Option<Partial>, ConfigError> {
     let data = match std::fs::read(&path) {
         Ok(data) => data,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(ConfigError(format!("read {path}: {error}"))),
+        Err(source) => return Err(ConfigError::Read { path, source }),
     };
-    decode(&data)
-        .map(Some)
-        .map_err(|error| ConfigError(format!("{path}: {error}")))
+    decode(&data).map(Some).map_err(|source| ConfigError::File {
+        path,
+        source: Box::new(source),
+    })
 }
 
 /// Decodes and validates one YAML (or JSON) configuration document with
-/// unknown fields rejected (Go `Decode`).
+/// unknown fields rejected.
 pub fn decode(data: &[u8]) -> Result<Partial, ConfigError> {
-    let source = std::str::from_utf8(data)
-        .map_err(|_| ConfigError::new("decode configuration: yaml: invalid leading UTF-8 octet"))?;
+    let source = std::str::from_utf8(data).map_err(|_| ConfigError::InvalidUtf8)?;
     let documents = match yaml::load_documents(source) {
         yaml::LoadOutcome::Documents(documents) => documents,
-        yaml::LoadOutcome::SyntaxError(error) => {
-            return Err(ConfigError(format!("decode configuration: {error}")));
-        }
+        yaml::LoadOutcome::SyntaxError(error) => return Err(ConfigError::Syntax(error)),
     };
     let Some(first) = documents.first() else {
-        return Err(ConfigError::new("decode configuration: EOF"));
+        return Err(ConfigError::Empty);
     };
     let mut decoder = yaml::Decoder::new();
     let value = decoder.partial(first);
-    decoder
-        .finish()
-        .map_err(|error| ConfigError(format!("decode configuration: {error}")))?;
+    decoder.finish().map_err(ConfigError::Decode)?;
     if documents.len() > 1 {
-        return Err(ConfigError::new(
-            "decode configuration: multiple JSON values",
-        ));
+        return Err(ConfigError::MultipleDocuments);
     }
     let Some(version) = value.version else {
-        return Err(ConfigError::new("configuration version is required"));
+        return Err(ConfigError::MissingVersion);
     };
     if version != CURRENT_VERSION {
-        return Err(ConfigError(format!(
-            "unsupported configuration version {version}"
-        )));
+        return Err(ConfigError::UnsupportedVersion(version));
     }
     validate(&value)?;
     Ok(value)
@@ -655,8 +719,7 @@ fn target_version_pattern() -> &'static Regex {
     })
 }
 
-/// Validates semantic constraints the YAML decoder cannot express (Go
-/// `Validate`). Unknown feature, MCP tool and domain IDs are rejected.
+/// Validates semantic constraints the YAML decoder cannot express. Unknown feature, MCP tool and domain IDs are rejected.
 pub fn validate(value: &Partial) -> Result<(), ConfigError> {
     if let Some(version) = value
         .shopware
@@ -664,10 +727,7 @@ pub fn validate(value: &Partial) -> Result<(), ConfigError> {
         .and_then(|shopware| shopware.target_version.as_ref())
         && !target_version_pattern().is_match(version.trim())
     {
-        return Err(ConfigError(format!(
-            "invalid Shopware target version {}",
-            go_quote(version)
-        )));
+        return Err(ConfigError::InvalidTargetVersion(version.clone()));
     }
     if let Some(php) = &value.php {
         for (label, values) in [
@@ -679,23 +739,21 @@ pub fn validate(value: &Partial) -> Result<(), ConfigError> {
                 .flatten()
                 .any(|current| current.trim().is_empty())
             {
-                return Err(ConfigError(format!(
-                    "{label} must not contain an empty extension"
-                )));
+                return Err(ConfigError::EmptyExtension { setting: label });
             }
         }
     }
     if let Some(indexing) = &value.indexing {
         for pattern in indexing.exclude.iter().flatten() {
-            validate_path_pattern(pattern)
-                .map_err(|error| ConfigError(format!("indexing.exclude: {error}")))?;
+            validate_path_pattern(pattern).map_err(|source| ConfigError::Pattern {
+                setting: "indexing.exclude".to_owned(),
+                source,
+            })?;
         }
         if let Some(size) = indexing.max_file_size_mib
             && !(0..=MAXIMUM_CONFIGURED_FILE_MIB).contains(&size)
         {
-            return Err(ConfigError(format!(
-                "indexing.maxFileSizeMiB must be between 0 and {MAXIMUM_CONFIGURED_FILE_MIB}"
-            )));
+            return Err(ConfigError::MaxFileSizeOutOfRange);
         }
     }
     if let Some(id) = value
@@ -703,7 +761,7 @@ pub fn validate(value: &Partial) -> Result<(), ConfigError> {
         .keys()
         .find(|id| !catalog_contains(FEATURE_CATALOG, id))
     {
-        return Err(ConfigError(format!("unknown feature {}", go_quote(id))));
+        return Err(ConfigError::UnknownFeature(id.clone()));
     }
     if let Some(mcp) = &value.mcp
         && let Some(id) = mcp
@@ -711,14 +769,14 @@ pub fn validate(value: &Partial) -> Result<(), ConfigError> {
             .keys()
             .find(|id| !catalog_contains(MCP_TOOL_CATALOG, id))
     {
-        return Err(ConfigError(format!("unknown MCP tool {}", go_quote(id))));
+        return Err(ConfigError::UnknownMcpTool(id.clone()));
     }
     if let Some(id) = value
         .domains
         .keys()
         .find(|id| !catalog_contains(DOMAIN_CATALOG, id))
     {
-        return Err(ConfigError(format!("unknown domain {}", go_quote(id))));
+        return Err(ConfigError::UnknownDomain(id.clone()));
     }
     if let Some(diagnostics) = &value.diagnostics {
         validate_diagnostics(diagnostics)?;
@@ -727,18 +785,12 @@ pub fn validate(value: &Partial) -> Result<(), ConfigError> {
         if let Some(severity) = &check.severity
             && !valid_severity(severity, false)
         {
-            return Err(ConfigError(format!(
-                "invalid check severity {}",
-                go_quote(severity.as_str())
-            )));
+            return Err(ConfigError::InvalidCheckSeverity(severity.clone()));
         }
         if let Some(severity) = &check.fail_on
             && !valid_severity(severity, true)
         {
-            return Err(ConfigError(format!(
-                "invalid check failOn severity {}",
-                go_quote(severity.as_str())
-            )));
+            return Err(ConfigError::InvalidCheckFailOn(severity.clone()));
         }
     }
     Ok(())
@@ -748,22 +800,23 @@ fn validate_diagnostics(value: &DiagnosticsConfig) -> Result<(), ConfigError> {
     validate_diagnostic_maps(&value.inspections, &value.rules)?;
     for (index, entry) in value.overrides.iter().enumerate() {
         if entry.files.is_empty() {
-            return Err(ConfigError(format!(
-                "diagnostics.overrides[{index}].files must not be empty"
-            )));
+            return Err(ConfigError::EmptyOverrideFiles(index));
         }
         if entry.enabled.is_none() && entry.inspections.is_empty() && entry.rules.is_empty() {
-            return Err(ConfigError(format!(
-                "diagnostics.overrides[{index}] must configure enabled, inspections, or rules"
-            )));
+            return Err(ConfigError::EmptyOverride(index));
         }
         for pattern in &entry.files {
-            validate_path_pattern(pattern).map_err(|error| {
-                ConfigError(format!("diagnostics.overrides[{index}].files: {error}"))
+            validate_path_pattern(pattern).map_err(|source| ConfigError::Pattern {
+                setting: format!("diagnostics.overrides[{index}].files"),
+                source,
             })?;
         }
-        validate_diagnostic_maps(&entry.inspections, &entry.rules)
-            .map_err(|error| ConfigError(format!("diagnostics.overrides[{index}]: {error}")))?;
+        validate_diagnostic_maps(&entry.inspections, &entry.rules).map_err(|source| {
+            ConfigError::Override {
+                index,
+                source: Box::new(source),
+            }
+        })?;
     }
     Ok(())
 }
@@ -774,18 +827,17 @@ fn validate_diagnostic_maps(
 ) -> Result<(), ConfigError> {
     for (id, severity) in rules {
         if id.trim().is_empty() {
-            return Err(ConfigError::new("diagnostic rule ID must not be empty"));
+            return Err(ConfigError::EmptyRuleId);
         }
         if !valid_severity(severity, true) {
-            return Err(ConfigError(format!(
-                "invalid severity {} for diagnostic {}",
-                go_quote(severity.as_str()),
-                go_quote(id)
-            )));
+            return Err(ConfigError::InvalidRuleSeverity {
+                severity: severity.clone(),
+                id: id.clone(),
+            });
         }
     }
     if inspections.keys().any(|id| id.trim().is_empty()) {
-        return Err(ConfigError::new("inspection ID must not be empty"));
+        return Err(ConfigError::EmptyInspectionId);
     }
     Ok(())
 }
@@ -794,10 +846,10 @@ fn normalize_pattern_separators(pattern: &str) -> String {
     filepath::to_slash(&pattern.trim().replace('\\', "/"))
 }
 
-fn validate_path_pattern(pattern: &str) -> Result<(), ConfigError> {
+fn validate_path_pattern(pattern: &str) -> Result<(), PatternError> {
     let pattern = normalize_pattern_separators(pattern);
     if pattern.is_empty() {
-        return Err(ConfigError::new("pattern must not be empty"));
+        return Err(PatternError::Empty);
     }
     let bytes = pattern.as_bytes();
     let windows_absolute =
@@ -806,24 +858,16 @@ fn validate_path_pattern(pattern: &str) -> Result<(), ConfigError> {
         || pattern.starts_with('/')
         || windows_absolute
     {
-        return Err(ConfigError(format!(
-            "pattern {} must be relative",
-            go_quote(&pattern)
-        )));
+        return Err(PatternError::Absolute(pattern));
     }
     if pattern.split('/').any(|component| component == "..") {
-        return Err(ConfigError(format!(
-            "pattern {} must not escape its configuration scope",
-            go_quote(&pattern)
-        )));
+        return Err(PatternError::EscapesScope(pattern));
     }
-    swlsp_pathmatch::compile(&[pattern.as_str()])
-        .map(|_| ())
-        .map_err(|error| ConfigError(error.to_string()))
+    swlsp_pathmatch::compile(&[pattern.as_str()])?;
+    Ok(())
 }
 
-/// Reports whether `value` is a known severity, optionally rejecting `off`
-/// (Go `ValidSeverity`).
+/// Reports whether `value` is a known severity, optionally rejecting `off`.
 pub fn valid_severity(value: &Severity, allow_off: bool) -> bool {
     match value {
         Severity::Other(_) => false,
@@ -833,7 +877,7 @@ pub fn valid_severity(value: &Severity, allow_off: bool) -> bool {
 }
 
 /// Layers project and editor configuration over the built-in defaults and
-/// cascades disabled domain dependencies (Go `Resolve`).
+/// cascades disabled domain dependencies.
 pub fn resolve(project: &Partial, editor: &Partial) -> Effective {
     let mut result = Effective::default();
     apply(&mut result, project, "project");
@@ -982,8 +1026,9 @@ impl Effective {
     }
 
     /// A SHA-256 hex digest of the settings that require re-indexing when
-    /// they change (PHP, Shopware, indexing, domains). The hashed JSON is
-    /// byte-identical to Go's `encoding/json` output.
+    /// they change (PHP, Shopware, indexing, domains). The digest is stored
+    /// with the index cache, so the hashed bytes must stay stable: see
+    /// [`html_safe_json`].
     pub fn structural_fingerprint(&self) -> String {
         #[derive(Serialize)]
         struct Payload<'a> {
@@ -992,7 +1037,7 @@ impl Effective {
             indexing: &'a EffectiveIndexing,
             domains: &'a BTreeMap<String, bool>,
         }
-        let encoded = go_json(&Payload {
+        let encoded = html_safe_json(&Payload {
             php: &self.php,
             shopware: &self.shopware,
             indexing: &self.indexing,
@@ -1007,10 +1052,12 @@ impl Effective {
     }
 }
 
-/// Serializes like Go `json.Marshal`, which escapes `<`, `>`, `&`, U+2028 and
-/// U+2029 inside strings. Those characters never occur outside strings in
-/// JSON output, so a textual replacement is exact.
-fn go_json<T: Serialize>(value: &T) -> String {
+/// Compact JSON with `<`, `>`, `&`, U+2028 and U+2029 escaped as `\uXXXX`
+/// inside strings. This is the encoding existing structural fingerprints
+/// were computed from; keeping it avoids invalidating every cache. Those
+/// characters never occur outside strings in JSON output, so a textual
+/// replacement is exact.
+fn html_safe_json<T: Serialize>(value: &T) -> String {
     let encoded = serde_json::to_string(value).unwrap_or_default();
     if !encoded.contains(['<', '>', '&', '\u{2028}', '\u{2029}']) {
         return encoded;
@@ -1031,7 +1078,7 @@ fn go_json<T: Serialize>(value: &T) -> String {
 
 /// Applies one configuration layer and its matching ordered overrides.
 /// `relative_path` must be slash-normalized and relative to the layer's
-/// owning scope (Go `ApplyDiagnostics`).
+/// owning scope.
 pub fn apply_diagnostics(
     policy: &mut DiagnosticPolicy,
     value: Option<&DiagnosticsConfig>,
@@ -1071,23 +1118,12 @@ fn apply_diagnostic_values(
     }
 }
 
-/// Lowercases like Go's `strings.ToLower` (one rune per rune).
-fn go_to_lower(value: &str) -> String {
-    if value.is_ascii() {
-        return value.to_ascii_lowercase();
-    }
-    value
-        .chars()
-        .map(|character| character.to_lowercase().next().unwrap_or(character))
-        .collect()
-}
-
 fn normalize_strings(values: &[String]) -> Vec<String> {
     let mut seen = HashSet::with_capacity(values.len());
     let mut result: Vec<String> = values
         .iter()
         .map(|value| value.trim())
-        .filter(|value| !value.is_empty() && seen.insert(go_to_lower(value)))
+        .filter(|value| !value.is_empty() && seen.insert(lowercase(value)))
         .map(str::to_owned)
         .collect();
     result.sort();

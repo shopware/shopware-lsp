@@ -1,4 +1,4 @@
-//! Port of Go `internal/app/php_imports_test.go`.
+//! PHP import diagnostics, their code actions and configuration through the server.
 
 use serde_json::{Value, json};
 

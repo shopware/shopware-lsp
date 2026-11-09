@@ -1,5 +1,4 @@
-//! `Shopware.Application.getContainer(...)` members (port of Go
-//! `application_container.go`).
+//! `Shopware.Application.getContainer(...)` members.
 
 use crate::*;
 

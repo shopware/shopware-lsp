@@ -1,4 +1,4 @@
-//! Expression evaluation (port of `expression_*.go`).
+//! Expression evaluation.
 
 mod array;
 mod assignment;
@@ -13,8 +13,9 @@ use std::borrow::Cow;
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;
 use swlsp_php_semantic::{Confidence, TypeSource, node_identity};
-use swlsp_php_types::{Type, go_to_lower};
+use swlsp_php_types::Type;
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::lowercase;
 
 pub(crate) use array::inspect_array_literal;
 pub(crate) use assignment::ArrayAccessSegment;
@@ -192,7 +193,7 @@ impl Fs<'_, '_, '_> {
 }
 
 fn infer_name(node: &SyntaxNode) -> Type {
-    match go_to_lower(&query::name_value(node)).as_str() {
+    match lowercase(&query::name_value(node)).as_str() {
         "null" => Type::NULL,
         "true" => Type::TRUE,
         "false" => Type::FALSE,

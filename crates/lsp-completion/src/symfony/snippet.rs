@@ -1,8 +1,6 @@
-//! Storefront and Administration snippet key completion (port of Go
-//! `snippet_completion.go`).
+//! Storefront and Administration snippet key completion.
 //!
-//! Go iterates the snippet map, so its item order is random; Rust returns
-//! the items sorted by key.
+//! Items are sorted by key, so the order is deterministic.
 
 use std::collections::HashMap;
 use std::sync::Arc;

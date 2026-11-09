@@ -1,5 +1,4 @@
-//! Interface-to-abstract-class, added parameter and native type migrations
-//! (Go `shopware_migration_declarations.go`).
+//! Interface-to-abstract-class, added parameter and native type migrations.
 
 use super::scan;
 use swlsp_lsp::{Context, Problem};
@@ -9,8 +8,8 @@ use swlsp_parser_php::syntax::{
 };
 use swlsp_php::NameResolver;
 use swlsp_php_semantic::Snapshot;
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::eq_ignore_case;
 
 use super::api::{Since, since};
 use super::{
@@ -274,7 +273,7 @@ impl ShopwareMigrationAnalyzer {
                 let resolved = resolver.resolve(name_text.trim());
                 let resolved = resolved.trim_matches('\\');
                 for rule in INTERFACE_ABSTRACT_CLASS_MIGRATIONS {
-                    if !rule.since.active(self) || !equal_fold(resolved, rule.interface_name) {
+                    if !rule.since.active(self) || !eq_ignore_case(resolved, rule.interface_name) {
                         continue;
                     }
                     let safe = class_can_adopt_parent(class, resolver, rule.abstract_class);
@@ -326,7 +325,7 @@ impl ShopwareMigrationAnalyzer {
         let resolved = resolved.trim_matches('\\');
         INTERFACE_ABSTRACT_CLASS_MIGRATIONS
             .iter()
-            .find(|rule| rule.since.active(self) && equal_fold(resolved, rule.interface_name))
+            .find(|rule| rule.since.active(self) && eq_ignore_case(resolved, rule.interface_name))
             .map(|rule| {
                 declaration_migration_problem(
                     INTERFACE_ABSTRACT_CLASS_CODE,
@@ -494,7 +493,7 @@ fn class_can_adopt_parent(class: &SyntaxNode, resolver: &NameResolver, target: &
         return true;
     };
     phpquery::direct_child(&extends, PHP_NAME).is_some_and(|name| {
-        equal_fold(
+        eq_ignore_case(
             resolver.resolve(node_text(&name).trim()).trim_matches('\\'),
             target,
         )
@@ -503,7 +502,7 @@ fn class_can_adopt_parent(class: &SyntaxNode, resolver: &NameResolver, target: &
 
 fn method_has_parameter(method: &SyntaxNode, name: &str) -> bool {
     phpquery::parameters(method)
-        .any(|parameter| equal_fold(&phpquery::parameter_name(&parameter), name))
+        .any(|parameter| eq_ignore_case(&phpquery::parameter_name(&parameter), name))
 }
 
 fn method_parameter_at(method: &SyntaxNode, position: i64) -> Option<SyntaxNode> {
@@ -518,9 +517,9 @@ fn native_type_matches(actual: &str, expected: &str, resolver: &NameResolver) ->
         return actual == expected;
     }
     if expected.contains(['|', '&', '?']) || !expected.contains('\\') {
-        return equal_fold(&actual.replace(' ', ""), &expected.replace(' ', ""));
+        return eq_ignore_case(&actual.replace(' ', ""), &expected.replace(' ', ""));
     }
-    equal_fold(
+    eq_ignore_case(
         resolver.resolve(actual).trim_matches('\\'),
         expected.trim_matches('\\'),
     )

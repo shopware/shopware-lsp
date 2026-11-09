@@ -1,5 +1,4 @@
-//! Symfony UX Twig component catalog (port of
-//! `twig_component_catalog.go`).
+//! Symfony UX Twig component catalog.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -11,9 +10,9 @@ use swlsp_twigcomponent::{Component, Index, Prop, SourceKind};
 
 use crate::request::{Field, decode, present};
 use crate::{
-    Result, SourceLineResolver, check, errorf, is_zero, lower, optional_file_uri, range_len,
-    range_start, trim_space,
+    Result, SourceLineResolver, check, errorf, is_zero, optional_file_uri, range_len, range_start,
 };
+use swlsp_textutil::lowercase;
 
 pub const LIST_TWIG_COMPONENTS_COMMAND: &str = "shopware/symfony/analytics/twig/components";
 
@@ -134,12 +133,8 @@ impl TwigComponentCatalogProvider {
     fn list(&self, ctx: &Context, args: Option<&Value>) -> Result<Value> {
         let request = match present(args) {
             Some(value) => {
-                let members = decode(
-                    value,
-                    "TwigComponentCatalogRequest",
-                    &[("search", Field::String)],
-                )
-                .map_err(|error| errorf!("invalid twig component catalog request: {error}"))?;
+                let members = decode(value, &[("search", Field::String)])
+                    .map_err(|error| errorf!("invalid twig component catalog request: {error}"))?;
                 TwigComponentCatalogRequest {
                     search: members.string("search"),
                 }
@@ -158,16 +153,16 @@ impl TwigComponentCatalogProvider {
             return Err(errorf!("twig component catalog is unavailable"));
         };
         check(ctx)?;
-        let search = lower(trim_space(&request.search));
+        let search = lowercase(request.search.trim());
         let mut grouped: HashMap<String, Vec<Component>> = HashMap::new();
         let mut names: HashMap<String, String> = HashMap::new();
         for component in index.components()? {
             if component.name.is_empty()
-                || (!search.is_empty() && !lower(&component.name).contains(&search))
+                || (!search.is_empty() && !lowercase(&component.name).contains(&search))
             {
                 continue;
             }
-            let key = lower(&component.name);
+            let key = lowercase(&component.name);
             names
                 .entry(key.clone())
                 .or_insert_with(|| component.name.clone());
@@ -184,7 +179,7 @@ impl TwigComponentCatalogProvider {
                 &mut lines,
             )?);
         }
-        result.sort_by_cached_key(|entry| lower(&entry.name));
+        result.sort_by_cached_key(|entry| lowercase(&entry.name));
         Ok(result)
     }
 }

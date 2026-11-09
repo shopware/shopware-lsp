@@ -1,5 +1,4 @@
-//! Versioned shopware-rector migrations and the Criteria ID-filter check
-//! (port of Go `shopware_migration*.go` and `shopware_criteria.go`).
+//! Versioned shopware-rector migrations and the Criteria ID-filter check.
 
 mod annotations;
 mod api;
@@ -27,9 +26,10 @@ use swlsp_parser_php::syntax::{
 };
 use swlsp_php::PhpIndex;
 use swlsp_php_semantic::Snapshot;
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_shopware::ResolvedVersion;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
+use swlsp_textutil::{eq_ignore_case, lowercase};
+use swlsp_uriutil::filepath;
 
 use crate::ProblemAnalyzer;
 use crate::common::{call_target_name, direct_return_expression, php_type_is_subtype};
@@ -101,8 +101,8 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
-/// The problem and bound-fix payload of every migration (Go
-/// `ShopwareMigrationPayload`; field names and `omitempty` are contracts).
+/// The problem and bound-fix payload of every migration (field names and the
+/// omission of empty fields are contracts).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ShopwareMigrationPayload {
@@ -129,8 +129,7 @@ pub struct ShopwareMigrationPayload {
     pub value: String,
 }
 
-/// One source replacement of a multi-edit migration (Go
-/// `ShopwareMigrationEdit`).
+/// One source replacement of a multi-edit migration.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ShopwareMigrationEdit {
@@ -142,7 +141,7 @@ pub struct ShopwareMigrationEdit {
 
 /// Ports versioned, deterministic shopware-rector rules to byte-oriented
 /// problems. Unknown target versions disable the rules rather than guessing
-/// which migration set applies (Go `ShopwareMigrationAnalyzer`).
+/// which migration set applies.
 pub struct ShopwareMigrationAnalyzer {
     php_index: Option<PhpIndex>,
     version: ResolvedVersion,
@@ -156,18 +155,6 @@ impl ShopwareMigrationAnalyzer {
     pub(crate) fn at_least(&self, minor: i64, patch: i64) -> bool {
         self.version.at_least(6, minor, patch)
     }
-}
-
-/// Go `filepath.Ext`.
-fn go_ext(path: &str) -> &str {
-    for (position, character) in path.char_indices().rev() {
-        match character {
-            '/' => return "",
-            '.' => return &path[position..],
-            _ => {}
-        }
-    }
-    ""
 }
 
 pub(crate) fn migration_problem(
@@ -224,7 +211,7 @@ impl ProblemAnalyzer for ShopwareMigrationAnalyzer {
         };
         if !self.at_least(5, 0)
             || document.language != Some(LanguageId::Php)
-            || go_to_lower(go_ext(&document.uri)) != ".php"
+            || lowercase(filepath::ext(&document.uri)) != ".php"
         {
             return Ok(Vec::new());
         }
@@ -260,7 +247,7 @@ impl ProblemAnalyzer for ShopwareMigrationAnalyzer {
             if ctx.is_cancelled() {
                 return Ok(Vec::new());
             }
-            let method = go_to_lower(&phpquery::call_method_name(&call));
+            let method = lowercase(&phpquery::call_method_name(&call));
             if !ENTITY_SEARCH_RESULT_DELEGATED_METHODS.contains(&method.as_str()) {
                 continue;
             }
@@ -295,7 +282,7 @@ impl ProblemAnalyzer for ShopwareMigrationAnalyzer {
                 return Ok(Vec::new());
             }
             let call_name = phpquery::call_name(&call);
-            let name = go_to_lower(call_name.strip_prefix('\\').unwrap_or(&call_name));
+            let name = lowercase(call_name.strip_prefix('\\').unwrap_or(&call_name));
             if !ENTITY_SEARCH_RESULT_DELEGATED_FUNCTIONS.contains(&name.as_str()) {
                 continue;
             }
@@ -461,13 +448,13 @@ impl ShopwareMigrationAnalyzer {
             let mut parameter_exists = false;
             let mut parameter_compatible = false;
             for parameter in phpquery::parameters(&constructor) {
-                if !equal_fold(&phpquery::parameter_name(&parameter), "$exceptionLogger") {
+                if !eq_ignore_case(&phpquery::parameter_name(&parameter), "$exceptionLogger") {
                     continue;
                 }
                 parameter_exists = true;
                 let resolved = resolver.resolve(&phpquery::parameter_type(&parameter));
                 let parameter_type = resolved.strip_prefix('\\').unwrap_or(&resolved);
-                parameter_compatible = equal_fold(parameter_type, LOGGER_INTERFACE_CLASS);
+                parameter_compatible = eq_ignore_case(parameter_type, LOGGER_INTERFACE_CLASS);
                 break;
             }
             let safe = !parameter_exists || parameter_compatible;
@@ -490,19 +477,19 @@ impl ShopwareMigrationAnalyzer {
     }
 }
 
-/// Go `scheduledTaskParentConstructorCalls`: `parent::__construct(x)` calls
-/// with exactly one argument directly inside `constructor`.
+/// `parent::__construct(x)` calls with exactly one argument directly inside
+/// `constructor`.
 pub(crate) fn scheduled_task_parent_constructor_calls(constructor: &SyntaxNode) -> Vec<SyntaxNode> {
     let mut result = Vec::new();
     for call in phpquery::nodes(constructor, &[PHP_SCOPED_CALL]) {
         if phpquery::function_like_at(&call).as_ref() != Some(constructor)
-            || !equal_fold(&phpquery::call_method_name(&call), "__construct")
+            || !eq_ignore_case(&phpquery::call_method_name(&call), "__construct")
             || phpquery::arguments(&call).count() != 1
         {
             continue;
         }
         if let Some(receiver) = phpquery::call_receiver(&call)
-            && equal_fold(node_text(&receiver).trim(), "parent")
+            && eq_ignore_case(node_text(&receiver).trim(), "parent")
         {
             result.push(call);
         }
@@ -510,8 +497,7 @@ pub(crate) fn scheduled_task_parent_constructor_calls(constructor: &SyntaxNode) 
     result
 }
 
-/// Go `phpClassIsSubtype`: whether the namespaced class declaration is a
-/// subtype of `target`.
+/// Whether the namespaced class declaration is a subtype of `target`.
 pub(crate) fn php_class_is_subtype(
     class: &SyntaxNode,
     root: &SyntaxNode,
@@ -532,16 +518,15 @@ pub(crate) fn php_class_is_subtype(
     snapshot.is_subtype_of(&name, target)
 }
 
-/// Go `phpOwnMethodForMigration`: the class's own method named `name`
-/// (case-insensitive).
+/// The class's own method named `name` (case-insensitive).
 pub(crate) fn php_own_method_for_migration(class: &SyntaxNode, name: &str) -> Option<SyntaxNode> {
     phpquery::methods(class)
         .into_iter()
-        .find(|method| equal_fold(&phpquery::method_name(method), name))
+        .find(|method| eq_ignore_case(&phpquery::method_name(method), name))
 }
 
-/// Go `entityNameConstantReference`: `Foo::ENTITY_NAME` when every direct
-/// return of the method is the same `Foo::class`.
+/// `Foo::ENTITY_NAME` when every direct return of the method is the same
+/// `Foo::class`.
 fn entity_name_constant_reference(method: &SyntaxNode) -> String {
     let mut result = String::new();
     for php_return in phpquery::nodes(method, &[PHP_RETURN_STATEMENT]) {
@@ -560,7 +545,7 @@ fn entity_name_constant_reference(method: &SyntaxNode) -> String {
         let Some(separator) = separator.filter(|separator| *separator > 0) else {
             return String::new();
         };
-        if !equal_fold(value[separator + 2..].trim(), "class") {
+        if !eq_ignore_case(value[separator + 2..].trim(), "class") {
             return String::new();
         }
         let candidate = format!("{}::ENTITY_NAME", value[..separator].trim());
@@ -572,17 +557,17 @@ fn entity_name_constant_reference(method: &SyntaxNode) -> String {
     result
 }
 
-/// Go `phpArgumentExpression`: the last child node of an argument.
+/// The last child node of an argument.
 pub(crate) fn php_argument_expression(argument: &SyntaxNode) -> Option<SyntaxNode> {
     argument.children().last()
 }
 
-/// Go `phpForeachExpression`: the first child node of a foreach statement.
+/// The first child node of a foreach statement.
 pub(crate) fn php_foreach_expression(foreach: &SyntaxNode) -> Option<SyntaxNode> {
     foreach.children().next()
 }
 
-/// Go `canAppendPHPMemberCall`: whether `->getEntities()` can be appended.
+/// Whether `->getEntities()` can be appended.
 pub(crate) fn can_append_php_member_call(expression: Option<&SyntaxNode>) -> bool {
     expression.is_some_and(|expression| {
         matches!(

@@ -1,5 +1,4 @@
-//! Boolean aliases, isset/empty and nullsafe narrowing (port of
-//! `flow_boolean.go`).
+//! Boolean aliases, isset/empty and nullsafe narrowing.
 
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;

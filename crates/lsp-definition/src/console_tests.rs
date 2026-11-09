@@ -58,7 +58,7 @@ class Application { public function find(string $name): object {} }",
         ),
     ] {
         let offset = index_of(source, needle) + needle.find('\'').unwrap() + 1;
-        // Go's consoleDefinitionRequest leaves the position at 0:0.
+        // The request leaves the position at 0:0; only the node matters.
         let mut request = request_at(&document, offset);
         request.params.position = Default::default();
         let locations = definitions(&provider, &request);

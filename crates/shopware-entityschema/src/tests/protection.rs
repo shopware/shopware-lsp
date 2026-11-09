@@ -1,4 +1,4 @@
-//! Port of Go `protection_test.go`.
+//! Tests for protection.
 
 use super::inheritance::{php_ok, s};
 use crate::*;

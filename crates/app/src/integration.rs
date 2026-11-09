@@ -1,5 +1,4 @@
-//! The editor-integration catalog command (port of Go
-//! `internal/lsp/integration`, which has no crate of its own).
+//! The editor-integration catalog command.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;

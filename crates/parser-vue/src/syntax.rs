@@ -1,4 +1,4 @@
-//! Vue SFC syntax kinds (values identical to the Go implementation).
+//! Vue SFC syntax kinds. Kind values are persisted in caches; do not renumber them.
 
 swlsp_syntax::language! {
     name: "vue", base: 32768,

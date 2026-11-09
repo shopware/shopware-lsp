@@ -1,4 +1,4 @@
-//! The CLI's production LSP session (Go `session.go`): an in-process
+//! The CLI's production LSP session: an in-process
 //! [`swlsp_app::Application`] served over an in-memory stream on a small
 //! Tokio runtime of the session, and driven through a JSON-RPC client,
 //! exactly as an editor would drive it. Client calls block the calling
@@ -23,6 +23,9 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader};
 use crate::{Cancel, CliError, Output};
 
 const POLL: Duration = Duration::from_millis(25);
+
+/// JSON-RPC `InternalError`, for server requests the client cannot handle.
+const INTERNAL_ERROR: i64 = -32603;
 
 /// Buffer of the in-memory stream between the client and the server.
 const STREAM_CAPACITY: usize = 1024 * 1024;
@@ -98,7 +101,23 @@ struct RemoteError {
     message: String,
 }
 
-type Reply = Result<String, String>;
+/// Error of a request to the in-process server.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ClientError {
+    #[error("connection closed")]
+    Closed,
+    #[error("cancelled")]
+    Cancelled,
+    #[error("timed out")]
+    Timeout,
+    #[error("{message} (code {code})")]
+    Remote { code: i64, message: String },
+    #[error("encode a request: {0}")]
+    Encode(String),
+}
+
+/// The raw JSON result of a request.
+type Reply = Result<String, ClientError>;
 
 /// A JSON-RPC client over one framed byte stream.
 pub(crate) struct RpcClient {
@@ -125,18 +144,19 @@ impl RpcClient {
         }
     }
 
-    fn send(&self, message: &Value) -> Result<(), String> {
-        let body = serde_json::to_vec(message).map_err(|error| error.to_string())?;
+    fn send(&self, message: &Value) -> Result<(), ClientError> {
+        let body =
+            serde_json::to_vec(message).map_err(|error| ClientError::Encode(error.to_string()))?;
         let mut frame = format!("Content-Length: {}\r\n\r\n", body.len()).into_bytes();
         frame.extend_from_slice(&body);
         let writer = lock(&self.writer);
         match writer.as_ref() {
             Some(writer) if writer.send(frame) => Ok(()),
-            _ => Err("jsonrpc2: connection is closed".into()),
+            _ => Err(ClientError::Closed),
         }
     }
 
-    fn notify(&self, method: &str, params: Value) -> Result<(), String> {
+    fn notify(&self, method: &str, params: Value) -> Result<(), ClientError> {
         self.send(&json!({"jsonrpc": "2.0", "method": method, "params": params}))
     }
 
@@ -148,10 +168,10 @@ impl RpcClient {
         timeout: Option<Duration>,
     ) -> Reply {
         if self.closed.load(Ordering::Acquire) {
-            return Err("jsonrpc2: connection is closed".into());
+            return Err(ClientError::Closed);
         }
         if cancel.is_cancelled() {
-            return Err("context canceled".into());
+            return Err(ClientError::Cancelled);
         }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (sender, receiver) = bounded(1);
@@ -168,19 +188,19 @@ impl RpcClient {
                 lock(&self.pending).remove(&id);
                 // Stops the work on the server; its answer is ignored.
                 let _ = self.notify("$/cancelRequest", json!({"id": id}));
-                return Err("context canceled".into());
+                return Err(ClientError::Cancelled);
             }
             if let Some(deadline) = deadline
                 && Instant::now() >= deadline
             {
                 lock(&self.pending).remove(&id);
-                return Err("context deadline exceeded".into());
+                return Err(ClientError::Timeout);
             }
             match receiver.recv_timeout(POLL) {
                 Ok(reply) => return reply,
                 Err(crossbeam_channel::RecvTimeoutError::Timeout) => {}
                 Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
-                    return Err("jsonrpc2: connection is closed".into());
+                    return Err(ClientError::Closed);
                 }
             }
         }
@@ -288,7 +308,7 @@ impl CliSession {
                         stop.cancelled(),
                     )
                     .await;
-                let _ = done_sender.send(result);
+                let _ = done_sender.send(result.map_err(|error| error.to_string()));
             });
         }
         let (frames, _written) =
@@ -425,14 +445,14 @@ impl CliSession {
                 },
                 default(POLL) => {
                     if self.cancel().is_cancelled() {
-                        return Err(CliError::canceled());
+                        return Err(CliError::cancelled());
                     }
                 }
             }
         }
     }
 
-    /// Sends a request; errors are `method: cause` like Go `session.call`.
+    /// Sends a request; errors read `method: cause`.
     pub fn call_raw(&self, method: &str, params: Value) -> Result<String, CliError> {
         self.client
             .call(method, params, &self.cancel(), None)
@@ -447,7 +467,7 @@ impl CliSession {
             .map_err(|error| CliError::fail(format!("{method}: decode result: {error}")))
     }
 
-    pub fn notify(&self, method: &str, params: Value) -> Result<(), String> {
+    pub fn notify(&self, method: &str, params: Value) -> Result<(), ClientError> {
         self.client.notify(method, params)
     }
 
@@ -533,7 +553,7 @@ impl CliSession {
         Ok(findings)
     }
 
-    /// Shuts the server down (Go `Close`). Idempotent.
+    /// Shuts the server down. Idempotent.
     pub fn close(&self) -> Result<(), CliError> {
         let mut result = lock(&self.close_result);
         if let Some(result) = result.as_ref() {
@@ -546,9 +566,9 @@ impl CliSession {
             if let Err(error) =
                 self.client
                     .call("shutdown", json!({}), &never, Some(Duration::from_secs(10)))
-                && error != "jsonrpc2: connection is closed"
+                && error != ClientError::Closed
             {
-                errors.push(error);
+                errors.push(error.to_string());
             }
             let _ = self.client.notify("exit", json!({}));
         }
@@ -618,10 +638,10 @@ async fn read_server_messages(
                     continue;
                 };
                 let reply = match message.error {
-                    Some(error) => Err(format!(
-                        "jsonrpc2: code {} message: {}",
-                        error.code, error.message
-                    )),
+                    Some(error) => Err(ClientError::Remote {
+                        code: error.code,
+                        message: error.message,
+                    }),
                     None => Ok(message
                         .result
                         .map(|raw| raw.get().to_owned())
@@ -640,7 +660,7 @@ async fn read_server_messages(
                     let response = match result {
                         Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
                         Err(error) => {
-                            json!({"jsonrpc": "2.0", "id": id, "error": {"code": 0, "message": error}})
+                            json!({"jsonrpc": "2.0", "id": id, "error": {"code": INTERNAL_ERROR, "message": error}})
                         }
                     };
                     let _ = client.send(&response);
@@ -693,7 +713,7 @@ fn handle_server_message(
     Ok(Value::Null)
 }
 
-/// One finding of `check` (Go `diagnosticOutput`).
+/// One finding of `check`.
 #[derive(Debug, Clone, Serialize)]
 pub struct DiagnosticOutput {
     pub uri: String,

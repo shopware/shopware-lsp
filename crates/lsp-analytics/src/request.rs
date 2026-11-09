@@ -1,9 +1,22 @@
-//! Go `encoding/json` struct decoding for the small analytics request
-//! objects: case-insensitive member names, `null` members keep their zero
-//! value, unknown members are ignored, and type mismatches report Go's
-//! `*json.UnmarshalTypeError` text.
+//! Decoding of the small analytics request objects: member names match
+//! exactly or ignoring case, `null` members keep their default value,
+//! unknown members are ignored, and a member of the wrong JSON type is an
+//! error.
 
 use serde_json::Value;
+
+/// A request object that does not have the expected shape.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum RequestError {
+    #[error("expected a JSON object, found {found}")]
+    NotAnObject { found: &'static str },
+    #[error("member {member:?} must be {expected}, found {found}")]
+    MemberType {
+        member: &'static str,
+        expected: &'static str,
+        found: String,
+    },
+}
 
 #[derive(Clone, Copy)]
 pub(crate) enum Field {
@@ -65,47 +78,46 @@ fn kind_name(value: &Value) -> &'static str {
     }
 }
 
-/// Decodes `value` into the members of Go struct `analytics.<type_name>`.
+/// Decodes the request object `value` into the declared `fields`. When
+/// several members are invalid, the first one in document order is reported.
 pub(crate) fn decode(
     value: &Value,
-    type_name: &str,
     fields: &[(&'static str, Field)],
-) -> Result<Members, String> {
+) -> Result<Members, RequestError> {
     let Value::Object(object) = value else {
-        return Err(format!(
-            "json: cannot unmarshal {} into Go value of type analytics.{type_name}",
-            kind_name(value)
-        ));
+        return Err(RequestError::NotAnObject {
+            found: kind_name(value),
+        });
     };
     let mut members = Members { values: Vec::new() };
-    let mut first_error: Option<String> = None;
+    let mut first_error: Option<RequestError> = None;
     for (key, member) in object {
         let field = fields.iter().find(|(name, _)| *name == key).or_else(|| {
             fields
                 .iter()
-                .find(|(name, _)| swlsp_php_types::equal_fold(name, key))
+                .find(|(name, _)| swlsp_textutil::eq_ignore_case(name, key))
         });
-        let Some((name, kind)) = field else {
+        let Some(&(name, kind)) = field else {
             continue;
         };
         if member.is_null() {
             continue;
         }
-        let mismatch = |value: String, ty: &str| {
-            format!(
-                "json: cannot unmarshal {value} into Go struct field {type_name}.{name} of type {ty}"
-            )
+        let mismatch = |found: String, expected: &'static str| RequestError::MemberType {
+            member: name,
+            expected,
+            found,
         };
         let decoded = match (kind, member) {
             (Field::String, Value::String(text)) => Ok(Decoded::String(text.clone())),
-            (Field::String, other) => Err(mismatch(kind_name(other).to_owned(), "string")),
+            (Field::String, other) => Err(mismatch(kind_name(other).to_owned(), "a string")),
             (Field::Int, Value::Number(number)) => match number.as_i64() {
                 Some(integer) => Ok(Decoded::Int(integer)),
-                None => Err(mismatch(format!("number {number}"), "int")),
+                None => Err(mismatch(format!("number {number}"), "an integer")),
             },
-            (Field::Int, other) => Err(mismatch(kind_name(other).to_owned(), "int")),
+            (Field::Int, other) => Err(mismatch(kind_name(other).to_owned(), "an integer")),
             (Field::OptionalBool, Value::Bool(flag)) => Ok(Decoded::Bool(*flag)),
-            (Field::OptionalBool, other) => Err(mismatch(kind_name(other).to_owned(), "bool")),
+            (Field::OptionalBool, other) => Err(mismatch(kind_name(other).to_owned(), "a boolean")),
         };
         match decoded {
             Ok(decoded) => members.values.push((name, decoded)),
@@ -120,7 +132,7 @@ pub(crate) fn decode(
     }
 }
 
-/// Go's `raw != nil && len(*raw) != 0 && string(*raw) != "null"`.
+/// The command arguments, unless they are absent or JSON `null`.
 pub(crate) fn present(args: Option<&Value>) -> Option<&Value> {
     args.filter(|value| !value.is_null())
 }

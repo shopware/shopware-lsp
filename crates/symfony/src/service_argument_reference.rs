@@ -9,9 +9,7 @@ use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
 use crate::model::{ServiceArgumentReference, ServiceMethodReference};
 use crate::reference::parse_service_reference;
 use crate::util::numeric_index;
-use crate::util::{
-    go_trim_space, xml_attr, xml_attribute_content_range, yaml_scalar_content_range,
-};
+use crate::util::{xml_attr, xml_attribute_content_range, yaml_scalar_content_range};
 use crate::yaml_context::static_php_class_name;
 use crate::yaml_named_argument::{
     static_yaml_service_class_name, yaml_service_class_name, yaml_service_pairs,
@@ -304,7 +302,7 @@ fn yaml_scalar_factory_method_reference(
 }
 
 fn yaml_factory_receiver(value: &str, reference: &mut ServiceMethodReference) {
-    let value = go_trim_space(value);
+    let value = value.trim();
     if let Some((service_id, _)) = parse_service_reference(value) {
         reference.receiver_service = service_id;
         return;
@@ -564,7 +562,7 @@ fn xml_arguments(
 }
 
 fn xml_static_service_reference(value: &str) -> Option<String> {
-    let value = go_trim_space(value);
+    let value = value.trim();
     if let Some((service_id, _)) = parse_service_reference(value) {
         return Some(service_id);
     }

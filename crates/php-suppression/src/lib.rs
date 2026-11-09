@@ -1,10 +1,9 @@
 //! Parses source-level diagnostic suppression directives and matches them to
-//! Shopware LSP's stable PHP diagnostic identifiers (port of
-//! `internal/php/suppression`).
+//! Shopware LSP's stable PHP diagnostic identifiers.
 
 use std::collections::HashMap;
 
-use swlsp_php_types::go_to_lower;
+use swlsp_textutil::lowercase;
 
 #[cfg(test)]
 mod tests;
@@ -41,10 +40,10 @@ pub fn parse(source: &str) -> Set {
     };
     let line_count = text_lines.len();
     for (line_index, line) in text_lines.iter().enumerate() {
-        // Go searches the lowercased copy and slices the original line with
-        // the same byte offsets; `slice_from`/`slice_to` keep that behavior
-        // without splitting a character.
-        let lower = go_to_lower(line);
+        // Markers are found in the lowercased copy and the original line is
+        // sliced at the same byte offsets; `slice_from`/`slice_to` move them
+        // to a character boundary.
+        let lower = lowercase(line);
         if let Some(marker) = lower.find(IGNORE_NEXT_LINE) {
             let directive =
                 parse_directive(slice_from(line, marker + IGNORE_NEXT_LINE.len()), false);
@@ -223,7 +222,7 @@ fn parse_directive(source: &str, inspection: bool) -> Directive {
         if !inspection && !field.contains('.') && field != "*" {
             break;
         }
-        identifiers.push(go_to_lower(field));
+        identifiers.push(lowercase(field));
     }
     let wildcard = identifiers.is_empty();
     Directive {
@@ -233,9 +232,9 @@ fn parse_directive(source: &str, inspection: bool) -> Directive {
 }
 
 fn identifier_matches(identifier: &str, code: &str) -> bool {
-    let identifier = go_to_lower(identifier.trim());
+    let identifier = lowercase(identifier.trim());
     let identifier = identifier.as_str();
-    let code = go_to_lower(code.trim());
+    let code = lowercase(code.trim());
     if identifier == "*" || identifier == "all" || identifier == code {
         return true;
     }
@@ -288,8 +287,8 @@ fn identifier_matches(identifier: &str, code: &str) -> bool {
 
 /// Cheap prefilter: whether `source` contains a marker candidate. Both
 /// markers are ASCII without Unicode case-fold equivalents of equal byte
-/// length, so an ASCII case-insensitive window comparison matches Go's
-/// `strings.EqualFold` on byte windows.
+/// length, so an ASCII case-insensitive window comparison finds every
+/// case-insensitive occurrence.
 fn contains_suppression_marker(source: &str) -> bool {
     let bytes = source.as_bytes();
     bytes.iter().enumerate().any(|(index, &byte)| {

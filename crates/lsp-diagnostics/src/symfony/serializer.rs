@@ -1,12 +1,12 @@
-//! Go `serializer_diagnostics.go`.
+//! Missing Symfony serializer classes.
 
 use std::sync::Arc;
 
 use swlsp_language::LanguageId;
 use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
 use swlsp_php::PhpIndex;
-use swlsp_php_types::go_to_lower;
 use swlsp_serializer::{Index, TargetKind, usages_in_document};
+use swlsp_textutil::lowercase;
 
 use super::symfony_warning;
 use crate::{DeclaredAnalyzer, ProblemAnalyzer};
@@ -51,7 +51,7 @@ impl ProblemAnalyzer for SerializerAnalyzer {
         else {
             return Ok(Vec::new());
         };
-        if !go_to_lower(&document.uri).ends_with(".php") {
+        if !lowercase(&document.uri).ends_with(".php") {
             return Ok(Vec::new());
         }
         let path = swlsp_uriutil::path(&document.uri).unwrap_or_default();

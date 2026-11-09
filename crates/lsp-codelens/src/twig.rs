@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use swlsp_lsp::{CodeLensProvider, CodeLensRequest, Context, ProviderResult};
 use swlsp_lsp_protocol::{self as protocol, Range};
-use swlsp_php_types::go_to_lower;
 use swlsp_syntax::LineIndex;
+use swlsp_textutil::lowercase;
 use swlsp_twig::{TemplateReference, TemplateReferenceKind, TwigFile, TwigIndexer};
 use swlsp_uriutil::filepath;
 
@@ -174,7 +174,7 @@ fn descendant_templates(
         cancelled(ctx)?;
         let mut pending = Vec::new();
         for name in queue {
-            if visited_names.insert(go_to_lower(name.trim())) {
+            if visited_names.insert(lowercase(name.trim())) {
                 pending.push(name);
             }
         }
@@ -224,7 +224,7 @@ fn block_relationship_code_lenses(
             continue;
         }
         parents_by_name
-            .entry(go_to_lower(&block.name))
+            .entry(lowercase(&block.name))
             .or_default()
             .push(related_target(&block.file_path, block.line));
     }
@@ -235,14 +235,14 @@ fn block_relationship_code_lenses(
         }
         for block in file.blocks.values() {
             implementations_by_name
-                .entry(go_to_lower(&block.name))
+                .entry(lowercase(&block.name))
                 .or_default()
                 .push(related_target(&file.path, block.line));
         }
     }
     let mut result = Vec::new();
     for block in current.blocks.values() {
-        let key = go_to_lower(&block.name);
+        let key = lowercase(&block.name);
         let range = related_protocol_range(block.name_range, lines);
         let parents =
             unique_related_targets(parents_by_name.get(&key).cloned().unwrap_or_default());
@@ -299,7 +299,7 @@ fn unique_twig_template_names(names: Vec<String>) -> Vec<String> {
         .into_iter()
         .filter_map(|name| {
             let name = name.trim().to_owned();
-            (!name.is_empty() && seen.insert(go_to_lower(&name))).then_some(name)
+            (!name.is_empty() && seen.insert(lowercase(&name))).then_some(name)
         })
         .collect();
     result.sort();

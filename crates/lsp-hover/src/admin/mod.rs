@@ -32,7 +32,7 @@ impl AdminHoverProvider {
         }
     }
 
-    /// Go `makeRelativePath`: relative to the project root, without slash
+    /// `path` relative to the project root, without slash
     /// normalization, else unchanged.
     pub(crate) fn make_relative_path(&self, path: &str) -> String {
         if self.project_root.is_empty() {
@@ -75,7 +75,7 @@ pub(crate) fn sections_hover(sections: Vec<String>) -> Option<protocol::Hover> {
     Some(crate::markdown_hover(sections.join("\n\n---\n\n"), None))
 }
 
-/// Go `adminHoverRange`: no range for an empty span.
+/// The protocol range of a hover span; `None` for an empty span.
 pub(crate) fn admin_hover_range(
     request: &HoverRequest,
     range: swlsp_syntax::TextRange,

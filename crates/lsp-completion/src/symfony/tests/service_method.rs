@@ -1,4 +1,4 @@
-//! Port of Go `service_method_completion_test.go`.
+//! Tests for configured service method completion.
 
 use swlsp_lsp_protocol as protocol;
 

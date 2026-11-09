@@ -1,9 +1,9 @@
-//! Typed AST wrappers over the untyped syntax tree (port of
-//! `internal/parser/twig/ast`, itself a port of ludtwig's `syntax/typed.rs`).
+//! Typed AST wrappers over the untyped syntax tree.
 //!
 //! Every composite node kind has a zero-cost wrapper implementing
 //! [`AstNode`]: `X::cast(node)` checks the kind and `x.syntax()` is the escape
-//! hatch. Some wrappers add accessors mirroring the Go/Rust originals.
+//! hatch. Some wrappers add
+//! typed accessors for their children.
 
 pub use swlsp_syntax::rowan::ast::AstNode;
 use swlsp_syntax::{Kind, Lang, SyntaxNode, SyntaxToken};

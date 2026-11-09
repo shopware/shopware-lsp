@@ -1,19 +1,19 @@
-//! Namespace/import name resolution (port of `resolver/names.go`).
+//! Namespace/import name resolution.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, LazyLock};
 
 use swlsp_php_semantic::{ImportTable, Str};
-use swlsp_php_types::{CallableParameter, Kind, ShapeField, Type, go_to_lower};
+use swlsp_php_types::{CallableParameter, Kind, ShapeField, Type};
+use swlsp_textutil::lowercase;
 
 static EMPTY_IMPORTS: LazyLock<Arc<ImportTable>> = LazyLock::new(Default::default);
 static EMPTY_ALIASES: LazyLock<Arc<HashMap<Str, Type>>> = LazyLock::new(Default::default);
 
 /// The namespace/import environment at one source position.
 ///
-/// Go passes this struct by value and shares its maps. Here the import table
-/// and PHPDoc aliases are reference counted, so cloning a context is cheap;
-/// mutation (`add_import`, `set_phpdoc_aliases`) copies on write.
+/// The import table and PHPDoc aliases are reference counted, so cloning a
+/// context is cheap; mutation (`add_import`, `set_phpdoc_aliases`) copies on write.
 #[derive(Clone, Debug)]
 pub struct NameContext {
     /// Namespace without leading/trailing backslashes.
@@ -44,7 +44,7 @@ impl NameContext {
     }
 
     /// A context with a copy of `imports` (typically a scope's table). The
-    /// namespace is used verbatim, as Go's struct literal does.
+    /// namespace is used verbatim (not trimmed).
     pub fn with_imports(namespace: impl Into<Str>, imports: &ImportTable) -> Self {
         NameContext {
             namespace: namespace.into(),
@@ -269,7 +269,7 @@ fn lookup_folded_import<'m>(imports: &'m HashMap<Str, Str>, name: &str) -> Optio
         return imports.get(key).map(|value| value.as_str());
     }
     imports
-        .get(go_to_lower(name).as_str())
+        .get(lowercase(name).as_str())
         .map(|value| value.as_str())
 }
 

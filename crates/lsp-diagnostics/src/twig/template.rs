@@ -1,5 +1,4 @@
-//! Go `template_diagnostics.go`: missing Twig templates referenced from Twig
-//! and PHP.
+//! Missing Twig templates referenced from Twig and PHP.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -11,11 +10,13 @@ use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::{PHP_NAME, PHP_STRING};
 use swlsp_php::{PhpIndex, assistant_argument_tags, guessed_controller_template};
 use swlsp_php_semantic::{Document, Snapshot};
-use swlsp_php_types::{Type, equal_fold};
+use swlsp_php_types::Type;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
+use swlsp_textutil::eq_ignore_case;
 use swlsp_twig::{TemplateReferenceKind, TwigIndexer};
 
-use super::{lower_ext, nil_strings, strings_value, uri_path};
+use super::{lower_ext, strings_value, uri_path};
+use crate::LookupError;
 use crate::ProblemAnalyzer;
 
 const MISSING_TEMPLATE_CODE: &str = "twig.template.missing";
@@ -30,7 +31,6 @@ struct Group {
     range: TextRange,
 }
 
-/// Go `TemplateAnalyzer`.
 pub struct TemplateAnalyzer {
     twig_index: Option<Arc<TwigIndexer>>,
     php_index: Option<PhpIndex>,
@@ -108,10 +108,7 @@ impl ProblemAnalyzer for TemplateAnalyzer {
                 let files = twig_index
                     .get_twig_files_for_reference(candidate.node.as_ref(), &candidate.name)
                     .map_err(|error| {
-                        format!(
-                            "query Twig template {}: {error}",
-                            swlsp_php_types::go_quote(&candidate.name)
-                        )
+                        LookupError::new(format!("query Twig template {:?}", candidate.name), error)
                     })?;
                 if !files.is_empty() {
                     found = true;
@@ -125,7 +122,7 @@ impl ProblemAnalyzer for TemplateAnalyzer {
                 candidate_names = Some(
                     twig_index
                         .get_all_template_files()
-                        .map_err(|error| format!("query Twig templates: {error}"))?,
+                        .map_err(|error| LookupError::new("query Twig templates", error))?,
                 );
             }
             let missing_names: Vec<String> =
@@ -154,7 +151,7 @@ impl ProblemAnalyzer for TemplateAnalyzer {
                 "templateName".into(),
                 Value::String(missing_names[0].clone()),
             );
-            payload.insert("suggestions".into(), nil_strings(suggestions));
+            payload.insert("suggestions".into(), strings_value(suggestions));
             if missing_names.len() > 1 {
                 payload.insert("templateNames".into(), strings_value(missing_names));
             }
@@ -172,7 +169,6 @@ impl ProblemAnalyzer for TemplateAnalyzer {
     }
 }
 
-/// Go `similarTemplateNames`.
 fn similar_template_names(missing_names: &[String], candidates: &[String]) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut result = Vec::new();
@@ -237,7 +233,6 @@ impl TemplateAnalyzer {
     }
 }
 
-/// Go `implicitPHPTemplateCandidates`.
 fn implicit_php_template_candidates(root: &SyntaxNode) -> Vec<(String, TextRange)> {
     let mut result = Vec::new();
     for class in phpquery::classes(root) {
@@ -269,10 +264,9 @@ fn is_template_attribute(attribute: &SyntaxNode) -> bool {
         Some(index) => &name[index + 1..],
         None => name,
     };
-    equal_fold(name, "Template")
+    eq_ignore_case(name, "Template")
 }
 
-/// Go `isSupportedPHPCall`.
 fn is_supported_php_call(
     node: Option<&SyntaxNode>,
     document: Option<&Document>,

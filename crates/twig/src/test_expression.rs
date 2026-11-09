@@ -1,4 +1,4 @@
-//! Twig `is` / `is not` test expressions (port of `test_expression.go`).
+//! Twig `is` / `is not` test expressions.
 
 use swlsp_parser_twig::ast::{AstNode, TwigBinaryExpression};
 use swlsp_parser_twig::query as twigquery;

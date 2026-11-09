@@ -6,7 +6,7 @@ use std::sync::Arc;
 use swlsp_lsp::{Context, HoverProvider, HoverRequest, ProviderResult};
 use swlsp_lsp_protocol as protocol;
 use swlsp_php::PhpIndex;
-use swlsp_php_types::equal_fold;
+use swlsp_textutil::eq_ignore_case;
 use swlsp_twig::TwigIndexer;
 use swlsp_uriutil::filepath;
 
@@ -66,7 +66,7 @@ impl HoverProvider for TwigRenderBlockHoverProvider {
         let blocks = twig.get_template_blocks(&[&reference.template])?;
         let declarations: Vec<_> = blocks
             .iter()
-            .filter(|block| equal_fold(&block.name, &reference.block))
+            .filter(|block| eq_ignore_case(&block.name, &reference.block))
             .collect();
         if declarations.is_empty() {
             return Ok(None);

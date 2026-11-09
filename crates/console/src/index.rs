@@ -90,8 +90,9 @@ impl Index {
         let commands = self.commands.get_all_values_view()?;
         let mut unique: BTreeMap<String, Input> = BTreeMap::new();
         for command in commands.iter() {
-            if !crate::equal_fold(&command.class, class)
-                || !command.method.is_empty() && !crate::equal_fold(&command.method, method)
+            if !swlsp_textutil::eq_ignore_case(&command.class, class)
+                || !command.method.is_empty()
+                    && !swlsp_textutil::eq_ignore_case(&command.method, method)
             {
                 continue;
             }
@@ -142,7 +143,7 @@ impl Index {
             _ => return PreparedCommands(None),
         };
 
-        // Go keys a map by command name; equal names keep the last command.
+        // One command per name: a later declaration replaces an earlier one.
         let mut stored: Vec<usize> = Vec::with_capacity(commands.len());
         let mut positions: HashMap<&str, usize> = HashMap::with_capacity(commands.len());
         for (index, command) in commands.iter().enumerate() {

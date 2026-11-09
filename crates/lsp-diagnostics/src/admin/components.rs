@@ -1,4 +1,4 @@
-//! Go `admin_diagnostics_components.go`: component tag contracts.
+//! Component tag contracts.
 
 use std::collections::{HashMap, HashSet};
 
@@ -16,13 +16,13 @@ use swlsp_lsp::{BoxError, Problem};
 use swlsp_lsp_protocol::{DiagnosticSeverity, DiagnosticTag};
 use swlsp_parser_twig::ast::{AstNode, HtmlAttribute, HtmlStartingTag};
 use swlsp_parser_twig::{query as twigquery, syntax as twigsyntax};
-use swlsp_php_types::{go_quote, go_to_lower};
 use swlsp_suggestion::similar;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, SyntaxToken, TextRange, TextSize};
+use swlsp_textutil::lowercase;
 
 use super::analyzer::AdminAnalyzer;
 use super::twig::AdminTwigDiagnosticDocument;
-use super::{go_string_list, payload, string_array, text};
+use super::{payload, string_array, text};
 use crate::common::admin_nearby_suggestions;
 
 fn range(start: u32, end: u32) -> TextRange {
@@ -43,7 +43,6 @@ fn starting_tag_name(start_tag: &SyntaxNode) -> Option<SyntaxToken> {
 }
 
 impl AdminAnalyzer {
-    /// Go `checkComponentProps`.
     pub(super) fn check_component_props(
         &self,
         root: &SyntaxNode,
@@ -211,7 +210,6 @@ impl AdminAnalyzer {
         }
     }
 
-    /// Go `checkComponentSlotNames`.
     pub(super) fn check_component_slot_names(
         &self,
         start_tag: &SyntaxNode,
@@ -278,7 +276,7 @@ impl AdminAnalyzer {
                 payload: Some(payload(vec![
                     ("componentName", text(&owner)),
                     ("slotName", text(&reference.name)),
-                    ("suggestions", go_string_list(suggestions)),
+                    ("suggestions", string_array(suggestions)),
                 ])),
                 ..Problem::default()
             });
@@ -404,7 +402,7 @@ impl AdminAnalyzer {
                 ("componentName", text(&candidate.name)),
                 (
                     "suggestions",
-                    go_string_list(similar(&candidate.name, &names)),
+                    string_array(similar(&candidate.name, &names)),
                 ),
             ])),
             ..Problem::default()
@@ -704,7 +702,7 @@ impl AdminAnalyzer {
             id: "admin.component.not-found".into(),
             payload: Some(payload(vec![
                 ("componentName", text(tag_name)),
-                ("suggestions", go_string_list(similar(tag_name, &names))),
+                ("suggestions", string_array(similar(tag_name, &names))),
             ])),
             ..Problem::default()
         });
@@ -738,7 +736,6 @@ fn bound_prop_type_problem(
     }
 }
 
-/// Go `checkDeprecatedComponentContractAttributes`.
 fn check_deprecated_component_contract_attributes(
     start_tag: &SyntaxNode,
     components: &[VueComponent],
@@ -875,7 +872,6 @@ fn append_deprecated_admin_prop_problem(
     });
 }
 
-/// Go `adminComponentContractCatalog`.
 struct AdminComponentContractCatalog {
     props: HashSet<String>,
     prop_names: Vec<String>,
@@ -1072,7 +1068,7 @@ fn check_unknown_component_object_binding_field(
 }
 
 fn is_administration_fallthrough_attribute(raw: &str, normalized: &str) -> bool {
-    let raw = go_to_lower(raw.trim().trim_start_matches(':'));
+    let raw = lowercase(raw.trim().trim_start_matches(':'));
     let raw = raw.strip_prefix("v-bind:").unwrap_or(&raw);
     let normalized_bytes = normalized.as_bytes();
     if raw.starts_with("data-")
@@ -1084,7 +1080,7 @@ fn is_administration_fallthrough_attribute(raw: &str, normalized: &str) -> bool 
         return true;
     }
     matches!(
-        go_to_lower(normalized).as_str(),
+        lowercase(normalized).as_str(),
         "accept"
             | "accesskey"
             | "action"
@@ -1153,7 +1149,7 @@ fn is_administration_fallthrough_attribute(raw: &str, normalized: &str) -> bool 
 
 fn is_native_administration_event(name: &str) -> bool {
     matches!(
-        go_to_lower(name.trim()).as_str(),
+        lowercase(name.trim()).as_str(),
         "abort"
             | "animationcancel"
             | "animationend"
@@ -1401,9 +1397,8 @@ fn invalid_admin_prop_value_problem(
     Some(Problem {
         range,
         message: format!(
-            "Prop '{}' on component '{tag_name}' does not accept value {}",
-            prop.name,
-            go_quote(actual)
+            "Prop '{}' on component '{tag_name}' does not accept value {:?}",
+            prop.name, actual
         ),
         source: "shopware".into(),
         severity: Some(DiagnosticSeverity::WARNING),
@@ -1412,7 +1407,7 @@ fn invalid_admin_prop_value_problem(
             ("componentName", text(tag_name)),
             ("propName", text(&prop.name)),
             ("value", text(actual)),
-            ("suggestions", go_string_list(similar(actual, &allowed))),
+            ("suggestions", string_array(similar(actual, &allowed))),
             ("allowedValues", string_array(allowed)),
         ])),
         ..Problem::default()
@@ -1424,7 +1419,7 @@ fn static_prop_needs_binding(
     attribute_name: &str,
     attribute_text: &str,
 ) -> bool {
-    let prop_type = go_to_lower(prop.type_.trim());
+    let prop_type = lowercase(prop.type_.trim());
     if prop_type.is_empty() || prop_type.contains("string") {
         return false;
     }
@@ -1443,8 +1438,8 @@ fn static_prop_needs_binding(
         || prop_type.contains("function")
 }
 
-/// Go `getTagAttributes`: present attribute names and whether a `v-bind`
-/// object could not be fully enumerated.
+/// Present attribute names and whether a `v-bind` object could not be fully
+/// enumerated.
 fn tag_attributes(start_tag: &SyntaxNode) -> (HashSet<String>, bool) {
     let mut attributes = HashSet::new();
     let mut has_unknown_object_binding = false;
@@ -1469,8 +1464,8 @@ fn tag_attributes(start_tag: &SyntaxNode) -> (HashSet<String>, bool) {
     (attributes, has_unknown_object_binding)
 }
 
-/// Go `isPropPresent`: the prop under its camelCase or kebab-case name,
-/// directly or through `:`/`v-bind:` bindings.
+/// The prop under its camelCase or kebab-case name, directly or through
+/// `:`/`v-bind:` bindings.
 fn is_prop_present(prop_name: &str, attributes: &HashSet<String>) -> bool {
     let kebab_name = camel_to_kebab(prop_name);
     [prop_name, kebab_name.as_str()].iter().any(|name| {

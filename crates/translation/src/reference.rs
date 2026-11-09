@@ -1,5 +1,4 @@
-//! Translation references in PHP and Twig sources (port of Go
-//! `reference.go`).
+//! Translation references in PHP and Twig sources.
 
 use std::collections::HashSet;
 
@@ -12,8 +11,9 @@ use swlsp_parser_twig::syntax::{
     HTML_TEXT, TWIG_ARGUMENTS, TWIG_EXPRESSION, TWIG_FILTER, TWIG_LITERAL_NAME, TWIG_LITERAL_STRING,
 };
 use swlsp_php::{NameResolver, PhpContext, PhpIndex};
-use swlsp_php_types::{Type, equal_fold, go_to_lower};
+use swlsp_php_types::Type;
 use swlsp_syntax::{Kind, SyntaxNode};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::parser::last_name_part;
 use crate::{lower_extension, normalize_domain};
@@ -121,7 +121,7 @@ pub fn php_placeholder_reference_at(node: &SyntaxNode) -> Option<Reference> {
     let array = phpquery::array_at(&literal)?;
     let (container, kind, key_index, domain_index) = php_translation_container(&array)?;
     let parameter_index = if kind == PhpReferenceKind::Method
-        && equal_fold(&phpquery::call_method_name(&container), "transChoice")
+        && eq_ignore_case(&phpquery::call_method_name(&container), "transChoice")
     {
         2
     } else {
@@ -197,7 +197,7 @@ pub fn validate_php_reference(
             name == "Symfony\\Component\\Translation\\t" || name == "t"
         }
         PhpReferenceKind::Message => reference.container.as_ref().is_some_and(|container| {
-            equal_fold(
+            eq_ignore_case(
                 last_name_part(&phpquery::object_class_name(container)),
                 "TranslatableMessage",
             )
@@ -232,7 +232,7 @@ fn php_validator_reference_at(
         && phpquery::argument_index(&call, literal) == Some(0)
         && phpquery::argument_expression(&call, 0).as_ref() == Some(literal)
     {
-        match go_to_lower(&phpquery::call_method_name(&call)).as_str() {
+        match lowercase(&phpquery::call_method_name(&call)).as_str() {
             "addviolation" | "buildviolation" => {
                 return Some(Reference {
                     role: ReferenceRole::Key,
@@ -347,7 +347,7 @@ fn constraint_message_property(container: &SyntaxNode, literal: &SyntaxNode) -> 
 }
 
 fn is_constraint_message_property(name: &str) -> bool {
-    let lower = go_to_lower(name);
+    let lower = lowercase(name);
     lower.starts_with("message") || lower.ends_with("message")
 }
 
@@ -360,7 +360,7 @@ fn php_translation_container(
 ) -> Option<(SyntaxNode, PhpReferenceKind, usize, usize)> {
     if let Some(call) = phpquery::call_at(node) {
         let is_function = call.kind() == PHP_FUNCTION_CALL;
-        match go_to_lower(&phpquery::call_method_name(&call)).as_str() {
+        match lowercase(&phpquery::call_method_name(&call)).as_str() {
             "trans" => {
                 let kind = if is_function && last_name_part(&phpquery::call_name(&call)) == "t" {
                     PhpReferenceKind::Function
@@ -375,7 +375,7 @@ fn php_translation_container(
         }
     }
     let object = php_ancestor(node, PHP_OBJECT_CREATION)?;
-    equal_fold(
+    eq_ignore_case(
         last_name_part(&phpquery::object_class_name(&object)),
         "TranslatableMessage",
     )
@@ -437,7 +437,7 @@ pub fn twig_reference_at(node: &SyntaxNode, source: &str) -> Option<Reference> {
 
         if let Some(filter) = twigquery::closest_node_of_kind(&literal, &[TWIG_FILTER]) {
             let (parameter_index, expected_index) =
-                match go_to_lower(&twig_filter_name(&filter)).as_str() {
+                match lowercase(&twig_filter_name(&filter)).as_str() {
                     "trans" => (Some(0), Some(1)),
                     "transchoice" => (Some(1), Some(2)),
                     _ => (None, None),
@@ -510,7 +510,7 @@ fn twig_filter_domain(key: Option<&SyntaxNode>) -> String {
     else {
         return String::new();
     };
-    let index = match go_to_lower(&twig_filter_name(&filter)).as_str() {
+    let index = match lowercase(&twig_filter_name(&filter)).as_str() {
         "trans" => 1,
         "transchoice" => 2,
         _ => return String::new(),

@@ -1,5 +1,4 @@
-//! Twig template files, blocks and block version comments (port of
-//! `parser.go`).
+//! Twig template files, blocks and block version comments.
 
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
@@ -17,7 +16,7 @@ use crate::path::{VERSION_COMMENT_PREFIX, bundle_name_by_path, convert_to_relati
 use crate::reference::{TemplateReferenceKind, twig_template_references};
 
 static SHOPWARE_BLOCK_COMMENT: LazyLock<Regex> = LazyLock::new(|| {
-    // Go's `\s` and `\w` are ASCII-only.
+    // Whitespace and word characters are ASCII only.
     Regex::new(&format!(
         r"\{{#[\t\n\f\r ]*{VERSION_COMMENT_PREFIX}[\t\n\f\r ]*([a-fA-F0-9]+)(?:@([0-9A-Za-z_.\-+]+))?[\t\n\f\r ]*#\}}"
     ))
@@ -194,8 +193,7 @@ fn find_previous_block_comments(block_node: &SyntaxNode) -> Vec<SyntaxNode> {
 }
 
 fn parse_block_deprecation(comment: &str) -> String {
-    // Go lowercases a copy and reuses the byte index; ASCII lowercasing keeps
-    // byte offsets identical for the ASCII marker.
+    // ASCII lowercasing keeps byte offsets aligned with `comment`.
     let lower = comment.to_ascii_lowercase();
     let Some(index) = lower.find("@deprecated") else {
         return String::new();

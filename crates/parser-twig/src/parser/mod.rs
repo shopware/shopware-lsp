@@ -1,5 +1,4 @@
-//! Twig/HTML grammar (port of `internal/parser/twig/parser`, itself a port of
-//! ludtwig-parser's grammar modules).
+//! Twig/HTML grammar, adapted from ludtwig-parser's grammar modules.
 //!
 //! The grammar drives the shared [`swlsp_syntax::Parser`] engine. It is total:
 //! any input yields a lossless tree plus a flat list of errors.

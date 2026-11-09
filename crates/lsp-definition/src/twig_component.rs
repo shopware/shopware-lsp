@@ -1,14 +1,13 @@
-//! Symfony UX Twig component usages, props, blocks, computed values and
-//! live actions to their declarations (port of Go
-//! `twig_component_definition.go`).
+//! Symfony UX Twig component usages, props, blocks, computed values and live
+//! actions to their declarations.
 
 use std::sync::Arc;
 
 use swlsp_lsp::{Context, DefinitionRequest, GotoDefinitionProvider};
 use swlsp_lsp_protocol as protocol;
 use swlsp_php::PhpIndex;
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::{LineIndex, TextRange};
+use swlsp_textutil::eq_ignore_case;
 use swlsp_twigcomponent::{
     Component, ComponentBlockUsage, Index, LiveActionArgumentReference, Prop, PropUsage,
 };
@@ -122,11 +121,11 @@ impl TwigComponentDefinitionProvider {
         };
         let mut result = Vec::new();
         for action in &actions {
-            if !equal_fold(&action.name, &reference.action) {
+            if !eq_ignore_case(&action.name, &reference.action) {
                 continue;
             }
             for parameter in &action.parameters {
-                if !equal_fold(&parameter.name, &reference.name) {
+                if !eq_ignore_case(&parameter.name, &reference.name) {
                     continue;
                 }
                 if let Some(location) = component_file_location(&action.file, parameter.range) {
@@ -148,7 +147,7 @@ impl TwigComponentDefinitionProvider {
         };
         let result = actions
             .iter()
-            .filter(|action| equal_fold(&action.name, name))
+            .filter(|action| eq_ignore_case(&action.name, name))
             .filter_map(|action| component_file_location(&action.file, action.range))
             .collect();
         unique_component_locations(result)
@@ -218,7 +217,7 @@ impl TwigComponentDefinitionProvider {
         };
         let result = props
             .iter()
-            .filter(|prop| equal_fold(&prop.name, &usage.name))
+            .filter(|prop| eq_ignore_case(&prop.name, &usage.name))
             .filter_map(|prop| component_file_location(&prop.file, prop.range))
             .collect();
         unique_component_locations(result)
@@ -254,7 +253,7 @@ fn prop_locations(
 ) -> Vec<protocol::Location> {
     let mut result = Vec::new();
     for prop in props {
-        if !equal_fold(&prop.name, name) {
+        if !eq_ignore_case(&prop.name, name) {
             continue;
         }
         if prop.file == path {

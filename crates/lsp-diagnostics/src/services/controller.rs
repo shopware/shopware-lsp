@@ -1,5 +1,5 @@
-//! Missing and deprecated controller targets of routes and Twig
-//! `controller()` calls (Go `controller_diagnostics.go`).
+//! Missing and deprecated controller targets of routes and Twig `controller()`
+//! calls.
 
 use std::sync::Arc;
 
@@ -14,7 +14,7 @@ use swlsp_php::PhpIndex;
 use swlsp_symfony::{ControllerReference, Route, ServiceIndex};
 use swlsp_syntax::{SyntaxNode, TextRange};
 
-use super::{deprecated_tags, lower_ext, problem, string_list};
+use super::{deprecated_tags, lower_ext, problem};
 use crate::ProblemAnalyzer;
 use crate::common::value_node_text_range;
 
@@ -22,7 +22,6 @@ pub(crate) const MISSING_CONTROLLER_TARGET_CODE: &str = "symfony.controller.targ
 pub(crate) const MISSING_CONTROLLER_METHOD_CODE: &str = "symfony.controller.method.missing";
 pub(crate) const DEPRECATED_CONTROLLER_CODE: &str = "symfony.controller.deprecated";
 
-/// Go `ControllerAnalyzer`.
 pub struct ControllerAnalyzer {
     service_index: Option<Arc<ServiceIndex>>,
     php_index: Option<PhpIndex>,
@@ -145,7 +144,7 @@ impl ProblemAnalyzer for ControllerAnalyzer {
                     "className": class_name,
                     "methodName": item.reference.method,
                     "routeName": item.route_name,
-                    "routeParameters": string_list(local_route_parameters(document, &item.route_name)),
+                    "routeParameters": local_route_parameters(document, &item.route_name),
                 }));
                 result.push(problem);
             } else if resolution.deprecated() {

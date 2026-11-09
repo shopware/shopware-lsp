@@ -1,4 +1,4 @@
-//! Go `twig_guard_completion.go`: `{% guard %}` types and callables.
+//! Completion of types and callables in `{% guard %}` tags.
 
 use std::collections::HashMap;
 
@@ -11,7 +11,7 @@ use super::completion::{
     apply_twig_callable_completion_deprecation,
 };
 use super::{request_offset, sort_by_lower_label};
-use crate::common::go_to_lower;
+use swlsp_textutil::lowercase;
 
 struct TwigGuardCallable {
     name: String,
@@ -30,11 +30,11 @@ impl TwigCompletionProvider {
         if !guard.callable {
             return Some(twig_guard_type_completions(&guard.prefix));
         }
-        let prefix = go_to_lower(&guard.prefix);
+        let prefix = lowercase(&guard.prefix);
         let mut statuses: HashMap<String, TwigCallableCompletionDeprecation> = HashMap::new();
         let mut display_names: HashMap<String, String> = HashMap::new();
         for callable in self.twig_guard_callables(guard.kind) {
-            let key = go_to_lower(&callable.name);
+            let key = lowercase(&callable.name);
             if callable.name.contains('*') || !key.starts_with(&prefix) {
                 continue;
             }
@@ -98,7 +98,7 @@ impl TwigCompletionProvider {
 }
 
 fn twig_guard_type_completions(prefix: &str) -> Vec<protocol::CompletionItem> {
-    let prefix = go_to_lower(prefix);
+    let prefix = lowercase(prefix);
     [GuardKind::Function, GuardKind::Filter, GuardKind::Test]
         .into_iter()
         .map(GuardKind::as_str)

@@ -2,8 +2,8 @@ use swlsp_syntax::SyntaxNode;
 use swlsp_uriutil::filepath;
 
 use crate::config_types::Config;
-use crate::paths::dir;
 use crate::yaml_decode::decode_into;
+use swlsp_uriutil::filepath::dir;
 
 /// shopware-cli's first-existing-file precedence.
 pub const CONFIG_LOCATIONS: [&str; 3] = [

@@ -1,5 +1,4 @@
-//! Analyzer entry point, fixed-point scheduling, and statement flow (port of
-//! `analyzer.go`).
+//! Analyzer entry point, fixed-point scheduling, and statement flow.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
@@ -13,10 +12,9 @@ use swlsp_php_semantic::{
     Confidence, Document, Flags, Issue, NodeId, Snapshot, Str, Symbol, SymbolId, SymbolKind,
     TypeFact, TypeSource, node_identity,
 };
-use swlsp_php_types::{
-    Joiner, Kind, Relations, Type, contains_uncertain, equal_fold, parse_native,
-};
+use swlsp_php_types::{Joiner, Kind, Relations, Type, contains_uncertain, parse_native};
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
+use swlsp_textutil::eq_ignore_case;
 
 use crate::env::{Env, join_environments};
 use crate::extensions::Extension;
@@ -66,9 +64,8 @@ impl Analyzer {
     /// Like [`Analyzer::analyze_owned`] when the caller already holds the
     /// tree's source text (`root` must start at offset zero).
     ///
-    /// Like Go's `AnalyzeOwned`, whose overlay snapshot aliases the owned
-    /// document's symbol slice, return types inferred for one function are
-    /// visible to the functions analyzed after it in the same pass.
+    /// Return types inferred for one function are visible to the functions
+    /// analyzed after it in the same pass.
     pub fn analyze_owned_with_source(
         &self,
         document: Document,
@@ -236,7 +233,7 @@ fn indexed_functions(
     // Constructor assignments can refine private readonly properties for all
     // later method analyses, so analyze constructors first.
     result.sort_by_key(|function| {
-        !equal_fold(&document.symbols[function.symbol_index].name, "__construct")
+        !eq_ignore_case(&document.symbols[function.symbol_index].name, "__construct")
     });
     let indices = result
         .iter()
@@ -404,7 +401,7 @@ impl<'e> AnalyzerState<'e> {
                 typed
                     .iter()
                     .find(|candidate| {
-                        candidate.kind() == Kind::Object && equal_fold(candidate.name(), name)
+                        candidate.kind() == Kind::Object && eq_ignore_case(candidate.name(), name)
                     })
                     .map_or_else(|| Type::named(name, Vec::new()), |found| (*found).clone())
             })

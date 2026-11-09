@@ -1,17 +1,15 @@
-//! Port of Go `diagnostics_audit_test.go`: runs the production PHP
+//! Runs the production PHP
 //! diagnostics provider over real source files and prints the recurring
 //! findings. It is an investigation harness, not a zero-diagnostics
 //! assertion.
 //!
-//! Environment controls (as in Go): `SHOPWARE_LSP_DIAGNOSTICS_ROOT`,
+//! Environment controls: `SHOPWARE_LSP_DIAGNOSTICS_ROOT`,
 //! `_FILE`, `_CODES`, `_TRACE_VARIABLE`, `_TRACE_CALL`, `_TRACE_CLASS`,
 //! `_MAX_FILES`, `_MAX_GROUPS`, `_CACHE_DIR`.
 //!
 //! Trace mode keeps the class, variable (symbols and references with their
 //! inferred types) and callable listings (document, indexed and function
-//! candidates). Go's per-call tracing (result/argument type facts,
-//! `ResolveSignature`, `MemberResolver` receiver arms, constructor
-//! signatures, assignability) is dropped; use the Go harness for that.
+//! candidates).
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};

@@ -1,5 +1,4 @@
-//! Updates Twig and PHP template references when Twig files are renamed
-//! (port of Go `twig_template_rename.go`).
+//! Updates Twig and PHP template references when Twig files are renamed.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -207,19 +206,13 @@ fn load_template_edit_source(path: &str) -> Option<EditSource> {
     })
 }
 
-/// Go `filepath.Dir`.
-fn dir(path: &str) -> String {
-    let index = path.rfind('/').map_or(0, |index| index + 1);
-    filepath::clean(&path[..index])
-}
-
 pub(crate) fn replacement_template_name(
     old_path: &str,
     new_path: &str,
     old_name: &str,
     new_names: &[String],
 ) -> String {
-    if dir(old_path) == dir(new_path) {
+    if filepath::dir(old_path) == filepath::dir(new_path) {
         return rename_template_basename(old_name, &filepath::base(new_path));
     }
     pick_best_template_name(new_names, old_name)

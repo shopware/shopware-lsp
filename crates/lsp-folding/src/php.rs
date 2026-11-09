@@ -40,7 +40,7 @@ impl FoldingRangeProvider for PhpFoldingProvider {
         };
         collector.visit(&root);
         ctx.check()?;
-        // The set orders by (start line, end line, kind) like Go's sort.
+        // The set orders by (start line, end line, kind).
         Ok(collector
             .ranges
             .into_iter()

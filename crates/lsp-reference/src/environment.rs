@@ -1,4 +1,4 @@
-//! Environment variable references (port of `environment_reference.go`).
+//! Environment variable references.
 
 use std::collections::HashSet;
 use std::sync::Arc;

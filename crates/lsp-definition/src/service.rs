@@ -1,6 +1,5 @@
-//! Go `service_definition.go` (`serviceXMLDefinitionProvider`): service IDs,
-//! parameters, tags, classes, configured methods and constructor arguments
-//! in XML, YAML and PHP service configuration and container calls.
+//! Service IDs, parameters, tags, classes, configured methods and constructor
+//! arguments in XML, YAML and PHP service configuration and container calls.
 
 use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
@@ -11,12 +10,13 @@ use swlsp_lsp_protocol as protocol;
 use swlsp_parser_php::query as phpquery;
 use swlsp_php::{NameResolver, PhpContext, PhpIndex};
 use swlsp_php_semantic::{Flags, Parameter, Symbol, SymbolId, Visibility};
-use swlsp_php_types::{Kind, Type, equal_fold};
+use swlsp_php_types::{Kind, Type};
 use swlsp_symfony::{
     PhpArrayServiceMethodReference, PhpAutowireCallableMethodReference, PhpConfigReferenceKind,
     Service, ServiceIndex, ServiceMethodReference,
 };
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::eq_ignore_case;
 
 use crate::common::{
     ext_lower, file_range_location_or_uri, line_location, php_symbol_location, request_offset,
@@ -30,13 +30,14 @@ const CONTAINER_INTERFACES: [&str; 3] = [
     "Symfony\\Contracts\\Service\\ServiceProviderInterface",
 ];
 
-/// Go `serviceXMLDefinitionProvider`.
+/// Definitions for service IDs, parameters, tags, classes and arguments in
+/// service configuration and container calls.
 pub struct ServiceDefinitionProvider {
     services: Option<Arc<ServiceIndex>>,
     php: Option<PhpIndex>,
 }
 
-/// Lazily computed request PHP context (Go reads the enriched context).
+/// Lazily computed request PHP context.
 struct RequestContext<'a> {
     php: Option<&'a PhpIndex>,
     request: &'a DefinitionRequest,
@@ -179,7 +180,7 @@ impl ServiceDefinitionProvider {
     }
 
     /// `Some` when the cursor is on a configured service method name, even
-    /// if it resolves to nothing (Go's `matched`).
+    /// if it resolves to nothing.
     fn configured_service_method_definition(
         &self,
         request: &DefinitionRequest,
@@ -236,7 +237,7 @@ impl ServiceDefinitionProvider {
             if class_name.is_empty() {
                 return;
             }
-            if seen_classes.insert(swlsp_php_types::go_to_lower(class_name)) {
+            if seen_classes.insert(swlsp_textutil::lowercase(class_name)) {
                 class_names.push(class_name.to_owned());
             }
         };
@@ -495,7 +496,7 @@ impl ServiceDefinitionProvider {
             .collect()
     }
 
-    /// Go `serviceOrClassName` for a service ID receiver: the container
+    /// The class behind a service ID receiver: the container
     /// class, else a class of that name.
     fn service_class_name(&self, service_id: &str) -> String {
         let service_id = service_id.trim();
@@ -587,7 +588,7 @@ fn yaml_default_binding_php_type_matches(value: &Type, expected: &str) -> bool {
     if value.is_unknown() {
         return false;
     }
-    if equal_fold(
+    if eq_ignore_case(
         normalize_yaml_default_binding_type(&value.to_string()),
         expected,
     ) {
@@ -607,7 +608,7 @@ fn normalize_yaml_default_binding_type(value: &str) -> &str {
     value.strip_prefix('\\').unwrap_or(value)
 }
 
-/// Go `serviceLocation`: the service line, clamped to the first line.
+/// The service line, clamped to the first line.
 fn service_location(path: &str, line: u32) -> protocol::Location {
     line_location(path, i64::from(line))
 }

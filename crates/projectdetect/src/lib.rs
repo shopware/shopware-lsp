@@ -1,8 +1,11 @@
 //! Detects whether a workspace is a Shopware or Symfony project the language
-//! server supports (port of `internal/projectdetect`).
+//! server supports.
 
 mod composer;
 mod manifest;
+
+pub use composer::ComposerError;
+pub use manifest::ManifestError;
 
 use std::collections::HashSet;
 use std::fmt;
@@ -64,17 +67,30 @@ pub struct DetectResult {
     pub evidence: Vec<Evidence>,
 }
 
-/// A detection failure. `Display` matches the Go error text.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DetectError(String);
-
-impl fmt::Display for DetectError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
-    }
+/// A detection failure.
+#[derive(Debug, thiserror::Error)]
+pub enum DetectError {
+    #[error("resolve project root: {0}")]
+    ResolveRoot(#[source] io::Error),
+    #[error("inspect project root: {0}")]
+    InspectRoot(#[source] io::Error),
+    #[error("project root is not a directory: {0}")]
+    NotDirectory(String),
+    /// A project file exists but could not be inspected or read.
+    #[error("{operation} {file}: {source}")]
+    File {
+        operation: &'static str,
+        file: String,
+        #[source]
+        source: io::Error,
+    },
+    #[error("parse composer.json: {0}")]
+    ComposerJson(#[source] ComposerError),
+    #[error("parse composer.lock: {0}")]
+    ComposerLock(#[source] ComposerError),
+    #[error("parse manifest.xml: {0}")]
+    Manifest(#[source] ManifestError),
 }
-
-impl std::error::Error for DetectError {}
 
 const SHOPWARE_PACKAGES: &[&str] = &[
     "shopware/core",
@@ -87,14 +103,10 @@ const SHOPWARE_PACKAGES: &[&str] = &[
 /// which wins over an explicit configuration file. Malformed metadata is an
 /// error unless other evidence already proves support.
 pub fn detect(root: &str) -> Result<DetectResult, DetectError> {
-    let absolute = filepath::abs(root)
-        .map_err(|error| DetectError(format!("resolve project root: {error}")))?;
-    let metadata = std::fs::metadata(&absolute)
-        .map_err(|error| DetectError(format!("inspect project root: {error}")))?;
+    let absolute = filepath::abs(root).map_err(DetectError::ResolveRoot)?;
+    let metadata = std::fs::metadata(&absolute).map_err(DetectError::InspectRoot)?;
     if !metadata.is_dir() {
-        return Err(DetectError(format!(
-            "project root is not a directory: {absolute}"
-        )));
+        return Err(DetectError::NotDirectory(absolute));
     }
     let join =
         |relative: &str| filepath::join(&[absolute.as_str(), &filepath::from_slash(relative)]);
@@ -119,7 +131,7 @@ pub fn detect(root: &str) -> Result<DetectResult, DetectError> {
                 if let Some(result) = existing_support(&[], &[], &configured) {
                     return Ok(result);
                 }
-                return Err(DetectError(format!("parse composer.json: {error}")));
+                return Err(DetectError::ComposerJson(error));
             }
         }
     }
@@ -138,7 +150,7 @@ pub fn detect(root: &str) -> Result<DetectResult, DetectError> {
                 if let Some(result) = existing_support(&shopware, &symfony, &configured) {
                     return Ok(result);
                 }
-                return Err(DetectError(format!("parse manifest.xml: {error}")));
+                return Err(DetectError::Manifest(error));
             }
         }
     }
@@ -165,7 +177,7 @@ pub fn detect(root: &str) -> Result<DetectResult, DetectError> {
                 if let Some(result) = existing_support(&shopware, &symfony, &configured) {
                     return Ok(result);
                 }
-                return Err(DetectError(format!("parse composer.lock: {error}")));
+                return Err(DetectError::ComposerLock(error));
             }
         };
         for name in lock.packages.iter().chain(&lock.packages_dev) {
@@ -291,10 +303,11 @@ fn regular_file(path: &str) -> Result<bool, DetectError> {
     match std::fs::metadata(path) {
         Ok(metadata) => Ok(metadata.is_file()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(DetectError(format!(
-            "inspect {}: {error}",
-            filepath::base(path)
-        ))),
+        Err(source) => Err(DetectError::File {
+            operation: "inspect",
+            file: filepath::base(path),
+            source,
+        }),
     }
 }
 
@@ -302,10 +315,11 @@ fn read_optional(path: &str) -> Result<Option<Vec<u8>>, DetectError> {
     match std::fs::read(path) {
         Ok(content) => Ok(Some(content)),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(DetectError(format!(
-            "read {}: {error}",
-            filepath::base(path)
-        ))),
+        Err(source) => Err(DetectError::File {
+            operation: "read",
+            file: filepath::base(path),
+            source,
+        }),
     }
 }
 
@@ -481,7 +495,7 @@ mod tests {
     }
 
     #[test]
-    fn result_json_matches_go_shape() {
+    fn result_serializes_supported_kind_and_evidence() {
         let result = detect_files(&[]).unwrap();
         assert_eq!(
             serde_json::to_string(&result).unwrap(),

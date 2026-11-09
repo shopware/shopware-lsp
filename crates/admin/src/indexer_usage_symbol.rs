@@ -1,5 +1,4 @@
-//! JavaScript symbol resolution against the index (port of Go
-//! `indexer_usage_symbol.go`).
+//! JavaScript symbol resolution against the index.
 
 use crate::*;
 

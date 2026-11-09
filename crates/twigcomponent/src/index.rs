@@ -1,7 +1,6 @@
-//! The persistent component index and its resolved catalog (port of
-//! `index.go` and `workspace_symbols.go`).
+//! The persistent component index and its resolved catalog.
 //!
-//! Unlike Go, extraction happens in [`PreparingIndexer::prepare`], ahead of
+//! Extraction happens in [`PreparingIndexer::prepare`], ahead of
 //! the workspace write transaction; `index_prepared` only persists.
 
 use std::collections::{HashMap, HashSet};
@@ -15,9 +14,9 @@ use swlsp_indexer::{
 };
 use swlsp_php::PhpIndex;
 use swlsp_php_semantic::{Flags, Symbol, Visibility};
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_symfony::ServiceIndex;
 use swlsp_syntax::{SyntaxNode, TextRange};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 use swlsp_twig::{TwigIndexer, template_names};
 
 use crate::config::{
@@ -122,7 +121,7 @@ fn contains_any(content: &str, needles: &[&str]) -> bool {
 }
 
 fn sort_by_name_fold<T>(values: &mut [T], name: impl Fn(&T) -> &str) {
-    values.sort_by_cached_key(|value| go_to_lower(name(value)));
+    values.sort_by_cached_key(|value| lowercase(name(value)));
 }
 
 impl Index {
@@ -465,7 +464,7 @@ impl Index {
         let mut component_classes = HashSet::new();
         for component in &components {
             if !component.class.is_empty() {
-                component_classes.insert(go_to_lower(&normalize_class(&component.class)));
+                component_classes.insert(lowercase(&normalize_class(&component.class)));
             }
             template_paths.extend(self.template_files(component)?);
         }
@@ -486,8 +485,7 @@ impl Index {
                     .iter()
                     .filter(|prop| {
                         !prop.class.is_empty()
-                            && component_classes
-                                .contains(&go_to_lower(&normalize_class(&prop.class)))
+                            && component_classes.contains(&lowercase(&normalize_class(&prop.class)))
                     })
                     .cloned(),
             );
@@ -497,11 +495,11 @@ impl Index {
             let matched = indexed.iter().find(|prop| {
                 !prop.class.is_empty()
                     && !prop.member.is_empty()
-                    && equal_fold(
+                    && eq_ignore_case(
                         &normalize_class(&prop.class),
                         &normalize_class(&semantic.class),
                     )
-                    && equal_fold(&prop.member, &semantic.member)
+                    && eq_ignore_case(&prop.member, &semantic.member)
             });
             if let Some(prop) = matched {
                 semantic.name = prop.name.clone();
@@ -530,7 +528,7 @@ impl Index {
         let mut result = Vec::new();
         for component in &components {
             let class = normalize_class(&component.class);
-            if class.is_empty() || !seen_classes.insert(go_to_lower(&class)) {
+            if class.is_empty() || !seen_classes.insert(lowercase(&class)) {
                 continue;
             }
             for method in php.methods(&class) {
@@ -616,7 +614,7 @@ impl Index {
         }
         result.sort_by_cached_key(|action| {
             (
-                go_to_lower(&action.name),
+                lowercase(&action.name),
                 action.file.clone(),
                 action.range.start(),
             )
@@ -634,7 +632,7 @@ impl Index {
                 }
             }
         }
-        result.sort_by_cached_key(|action| (go_to_lower(&action.name), action.file.clone()));
+        result.sort_by_cached_key(|action| (lowercase(&action.name), action.file.clone()));
         Ok(result)
     }
 
@@ -656,7 +654,7 @@ impl Index {
             .iter()
             .filter(|record| template_paths.contains(&record.file))
             .flat_map(|record| &record.live_action_references)
-            .filter(|reference| equal_fold(&reference.name, action_name))
+            .filter(|reference| eq_ignore_case(&reference.name, action_name))
             .cloned()
             .collect();
         result.sort_by(|left, right| {
@@ -742,8 +740,8 @@ impl Index {
                     apply_parsed_parameters(&mut current, &declaration.parameters);
                     let key = format!(
                         "{}\0{}\0{}",
-                        go_to_lower(&declaration.name),
-                        go_to_lower(&method.path),
+                        lowercase(&declaration.name),
+                        lowercase(&method.path),
                         range_key(declaration.range)
                     );
                     if !seen.insert(key) {
@@ -763,7 +761,7 @@ impl Index {
         }
         result.sort_by_cached_key(|listener| {
             (
-                go_to_lower(&listener.name),
+                lowercase(&listener.name),
                 listener.file.clone(),
                 listener.range.start(),
             )
@@ -779,7 +777,7 @@ impl Index {
         let mut result: Vec<LiveEventReference> = records
             .iter()
             .flat_map(|record| &record.live_event_references)
-            .filter(|reference| equal_fold(&reference.name, event_name))
+            .filter(|reference| eq_ignore_case(&reference.name, event_name))
             .cloned()
             .collect();
         result.sort_by(|left, right| {
@@ -796,7 +794,7 @@ impl Index {
             .live_listeners()?
             .into_iter()
             .map(|listener| listener.name)
-            .filter(|name| !name.is_empty() && seen.insert(go_to_lower(name)))
+            .filter(|name| !name.is_empty() && seen.insert(lowercase(name)))
             .collect();
         sort_by_name_fold(&mut result, String::as_str);
         Ok(result)
@@ -883,7 +881,7 @@ impl Index {
                     class = normalize_class(&service.id);
                 }
                 if class.is_empty()
-                    || !seen.insert(format!("{}\0{}", go_to_lower(&class), service.path))
+                    || !seen.insert(format!("{}\0{}", lowercase(&class), service.path))
                 {
                     continue;
                 }
@@ -930,7 +928,7 @@ impl Index {
         let mut result = Vec::new();
         for component in components {
             let class = normalize_class(&component.class);
-            if class.is_empty() || !seen_classes.insert(go_to_lower(&class)) {
+            if class.is_empty() || !seen_classes.insert(lowercase(&class)) {
                 continue;
             }
             for property in php.properties(&class) {
@@ -1027,14 +1025,14 @@ pub(crate) fn component_workspace_symbols(
 }
 
 fn declaration_key(path: &str, range: TextRange) -> String {
-    format!("{}\0{}", go_to_lower(path), range_key(range))
+    format!("{}\0{}", lowercase(path), range_key(range))
 }
 
 fn has_attribute(symbol: &Symbol, name: &str) -> bool {
     symbol
         .attributes()
         .iter()
-        .any(|attribute| equal_fold(&normalize_class(&attribute.name), name))
+        .any(|attribute| eq_ignore_case(&normalize_class(&attribute.name), name))
 }
 
 fn semantic_parameters(
@@ -1070,7 +1068,7 @@ fn apply_parsed_parameters(parameters: &mut [LiveActionParameter], parsed: &[Liv
     for parameter in parameters {
         if let Some(found) = parsed
             .iter()
-            .find(|candidate| equal_fold(&candidate.php_name, &parameter.php_name))
+            .find(|candidate| eq_ignore_case(&candidate.php_name, &parameter.php_name))
         {
             parameter.name = found.name.clone();
             parameter.live_arg = found.live_arg;
@@ -1088,9 +1086,9 @@ fn configured_namespaces(records: &[Record]) -> Vec<Namespace> {
             .cmp(&right.file)
             .then(left.range.start().cmp(&right.range.start()))
     });
-    let has_default = result
-        .iter()
-        .any(|namespace| equal_fold(&normalize_class(&namespace.class_prefix), DEFAULT_NAMESPACE));
+    let has_default = result.iter().any(|namespace| {
+        eq_ignore_case(&normalize_class(&namespace.class_prefix), DEFAULT_NAMESPACE)
+    });
     if !has_default {
         result.push(Namespace {
             class_prefix: DEFAULT_NAMESPACE.to_owned(),
@@ -1114,10 +1112,10 @@ fn anonymous_directories(records: &[Record]) -> Vec<String> {
     result
 }
 
-/// Go `strings.HasPrefix(strings.ToLower(class), strings.ToLower(prefix)+"\\")`.
+/// Whether `class` is `prefix` or lies in namespace `prefix`, ignoring case.
 fn class_in_namespace(class: &str, prefix: &str) -> bool {
-    equal_fold(class, prefix)
-        || go_to_lower(class).starts_with(&format!("{}\\", go_to_lower(prefix)))
+    eq_ignore_case(class, prefix)
+        || lowercase(class).starts_with(&format!("{}\\", lowercase(prefix)))
 }
 
 pub(crate) fn resolve_declaration(
@@ -1184,7 +1182,7 @@ pub(crate) fn resolve_declaration(
 fn merge_compiled_component(components: &mut Vec<Component>, compiled: Component) {
     let Some(merged) = components
         .iter_mut()
-        .find(|component| equal_fold(&component.name, &compiled.name))
+        .find(|component| eq_ignore_case(&component.name, &compiled.name))
     else {
         components.push(compiled);
         return;
@@ -1260,7 +1258,7 @@ pub(crate) fn merge_props(props: Vec<Prop>) -> Vec<Prop> {
     let mut by_name: HashMap<String, usize> = HashMap::with_capacity(props.len());
     let mut result: Vec<Prop> = Vec::with_capacity(props.len());
     for prop in props {
-        let key = go_to_lower(&prop.name);
+        let key = lowercase(&prop.name);
         if key.is_empty() {
             continue;
         }

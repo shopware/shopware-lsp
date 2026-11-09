@@ -1,4 +1,4 @@
-//! Go `twig_translation_extract_codeaction_test.go`.
+//! Twig translation extraction tests.
 
 use std::sync::Arc;
 
@@ -33,7 +33,6 @@ fn translation_index() -> (tempfile::TempDir, tempfile::TempDir, Arc<Index>) {
     (cache, root, index)
 }
 
-/// Go `twigExtractRange`.
 fn extract_range(source: &str, value: &str, occurrence: usize) -> protocol::Range {
     let mut base = 0;
     let mut offset = 0;

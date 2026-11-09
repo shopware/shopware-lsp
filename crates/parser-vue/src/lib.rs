@@ -1,4 +1,4 @@
-//! Vue single-file component parser (port of Go `internal/parser/vue`).
+//! Vue single-file component parser.
 //!
 //! The SFC is split into top-level sections; `<template>` bodies are parsed
 //! with the Twig/HTML parser, `<script>` bodies with the JavaScript parser and
@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use rowan::{GreenNode, GreenToken, NodeOrToken};
 use swlsp_syntax::{Kind, Parse, ParseError, TextRange, TextSize, Tree};
+use swlsp_textutil::{eq_ignore_case, lowercase_char};
 
 use syntax::*;
 
@@ -349,7 +350,8 @@ fn has_boolean_attribute(tag: &[u8], name: &[u8]) -> bool {
 }
 
 fn has_bare_attribute(tag: &[u8], name: &[u8]) -> bool {
-    // Go: strings.Fields(strings.Trim(tag, "<>/ \t\r\n")) + EqualFold.
+    // A bare attribute is a white-space separated field of the tag once its
+    // surrounding `<`, `>`, `/` and white space are trimmed.
     let is_trim = |b: &u8| matches!(b, b'<' | b'>' | b'/' | b' ' | b'\t' | b'\r' | b'\n');
     let start = tag.iter().position(|b| !is_trim(b)).unwrap_or(tag.len());
     let end = tag
@@ -360,45 +362,12 @@ fn has_bare_attribute(tag: &[u8], name: &[u8]) -> bool {
     let name = std::str::from_utf8(name).unwrap_or_default();
     trimmed
         .split_whitespace()
-        .any(|field| equal_fold(field, name))
+        .any(|field| eq_ignore_case(field, name))
 }
 
-/// Go `strings.EqualFold`: simple Unicode case folding per rune.
-fn equal_fold(a: &str, b: &str) -> bool {
-    let mut left = a.chars();
-    let mut right = b.chars();
-    loop {
-        match (left.next(), right.next()) {
-            (None, None) => return true,
-            (Some(x), Some(y)) if fold(x) == fold(y) => {}
-            _ => return false,
-        }
-    }
-}
-
-fn fold(c: char) -> char {
-    // Characters whose simple fold lands in ASCII, as Go's orbit tables do.
-    match c {
-        '\u{017F}' => 's',
-        '\u{212A}' => 'k',
-        _ => simple_lower(c),
-    }
-}
-
-/// Go `unicode.ToLower`: one-to-one simple lowercase mapping.
-fn simple_lower(c: char) -> char {
-    if c == '\u{0130}' {
-        return 'i';
-    }
-    let mut lower = c.to_lowercase();
-    match (lower.next(), lower.next()) {
-        (Some(single), None) => single,
-        _ => c,
-    }
-}
-
-/// Go `strings.ToLower` on possibly non-UTF-8 bytes.
-fn go_to_lower(tag: &[u8]) -> Vec<u8> {
+/// `tag` lowercased one character per character; each invalid UTF-8 byte
+/// becomes U+FFFD.
+fn lowercase_lossy(tag: &[u8]) -> Vec<u8> {
     if tag.is_ascii() {
         return tag.to_ascii_lowercase();
     }
@@ -406,9 +375,8 @@ fn go_to_lower(tag: &[u8]) -> Vec<u8> {
     for chunk in tag.utf8_chunks() {
         let mut buf = [0u8; 4];
         for c in chunk.valid().chars() {
-            out.extend_from_slice(simple_lower(c).encode_utf8(&mut buf).as_bytes());
+            out.extend_from_slice(lowercase_char(c).encode_utf8(&mut buf).as_bytes());
         }
-        // Go maps each invalid byte to U+FFFD.
         for _ in chunk.invalid() {
             out.extend_from_slice("\u{FFFD}".as_bytes());
         }
@@ -417,7 +385,7 @@ fn go_to_lower(tag: &[u8]) -> Vec<u8> {
 }
 
 fn attribute_value<'a>(tag: &'a [u8], name: &[u8]) -> &'a [u8] {
-    let lower = go_to_lower(tag);
+    let lower = lowercase_lossy(tag);
     let mut cursor = 0;
     while cursor < lower.len() {
         let Some(index) = find_str(&lower, cursor, name) else {
@@ -461,7 +429,7 @@ fn attribute_value<'a>(tag: &'a [u8], name: &[u8]) -> &'a [u8] {
     b""
 }
 
-/// Go `strings.TrimSpace(...)` followed by `HasSuffix("/")`.
+/// Whether `bytes` ends with `/` once trailing white space is trimmed.
 fn ends_with_slash_trimmed(bytes: &[u8]) -> bool {
     String::from_utf8_lossy(bytes).trim().ends_with('/')
 }

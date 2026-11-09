@@ -8,7 +8,8 @@ Every component `CompN` is a live component with props, an action, a
 listener for `eventN` and `emit` calls to other components' events; its
 template and page templates use `<twig:...>`, `component()` and
 `data-live-*` attributes that reference other components, actions and events.
-The layout is deterministic so Go and Rust see the same project.
+The layout is deterministic, so runs against two servers see the same
+project.
 """
 
 from __future__ import annotations

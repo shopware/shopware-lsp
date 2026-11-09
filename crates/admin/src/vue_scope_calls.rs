@@ -1,5 +1,4 @@
-//! Calls in evaluated Vue template expressions (port of Go
-//! `vue_scope_calls.go`).
+//! Calls in evaluated Vue template expressions.
 
 use swlsp_parser_twig::ast::AstNode;
 

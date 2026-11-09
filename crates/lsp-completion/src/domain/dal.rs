@@ -1,4 +1,4 @@
-//! DAL entity and field names (Go `dal_completion.go`).
+//! DAL entity and field names.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -9,7 +9,7 @@ use swlsp_lsp_protocol::{self as protocol, CompletionItemKind};
 use swlsp_shopware_dal::{Index, JsFieldReferenceKind};
 
 use super::{item, lower_ext};
-use crate::common::go_to_lower;
+use swlsp_textutil::lowercase;
 
 pub struct DalCompletionProvider {
     index: Arc<Index>,
@@ -87,7 +87,7 @@ impl CompletionProvider for DalCompletionProvider {
         let uri = &request.params.text_document.uri;
         match lower_ext(uri).as_str() {
             ".js" | ".ts" | ".vue" => {
-                if go_to_lower(uri).ends_with(".vue")
+                if lowercase(uri).ends_with(".vue")
                     && effective_syntax_language(Some(LanguageId::Vue), Some(node))
                         != Some(LanguageId::JavaScript)
                 {

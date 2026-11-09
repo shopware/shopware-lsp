@@ -10,9 +10,9 @@
 use rustc_hash::FxHashSet;
 use swlsp_php_binder::Binder;
 use swlsp_php_resolver::ImportKind;
-use swlsp_php_types::go_to_lower;
 use swlsp_rewrite::{Builder, Edit, RewriteError};
 use swlsp_syntax::{TextRange, TextSize};
+use swlsp_textutil::lowercase;
 
 use crate::analyze::{Analysis, Item, analyze};
 use crate::rewrite::remove;
@@ -63,7 +63,7 @@ pub fn remove_orphaned_imports(source: &str, edits: Vec<Edit>) -> Result<Vec<Edi
 fn key(item: &Item) -> (ImportKind, String) {
     (
         item.import.kind,
-        go_to_lower(item.import.target.trim_start_matches('\\')),
+        lowercase(item.import.target.trim_start_matches('\\')),
     )
 }
 

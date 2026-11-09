@@ -1,4 +1,4 @@
-//! Implementations and type hierarchy (port of `hierarchy.go`).
+//! Implementations and type hierarchy.
 
 use std::collections::{HashSet, VecDeque};
 
@@ -6,7 +6,7 @@ use serde_json::json;
 use swlsp_lsp::{ImplementationRequest, TypeHierarchyPrepareRequest};
 use swlsp_lsp_protocol::{Location, SymbolKind, TypeHierarchyItem};
 use swlsp_php_semantic::{Snapshot, Symbol, SymbolKind as PhpSymbolKind};
-use swlsp_php_types::go_to_lower;
+use swlsp_textutil::lowercase;
 
 use crate::Provider;
 use crate::completion::request_offset;
@@ -117,7 +117,7 @@ fn implementation_symbols(snapshot: &Snapshot, symbol: Symbol) -> Vec<Symbol> {
     let mut queue = VecDeque::from([symbol.fully_qualified.to_string()]);
     let mut visited_names = HashSet::new();
     while let Some(name) = queue.pop_front() {
-        if !visited_names.insert(go_to_lower(name.strip_prefix('\\').unwrap_or(&name))) {
+        if !visited_names.insert(lowercase(name.strip_prefix('\\').unwrap_or(&name))) {
             continue;
         }
         for subtype in snapshot.direct_subtypes(&name) {

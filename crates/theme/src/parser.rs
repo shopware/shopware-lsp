@@ -6,11 +6,18 @@ use crate::json::{
 };
 use crate::types::ThemeConfigField;
 
+/// Why a `theme.json` document has no readable configuration.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum ThemeConfigError {
+    #[error("json root is not an object")]
+    RootNotObject,
+}
+
 /// Parses the `config.fields` section of a `theme.json` document.
 pub fn parse_theme_config(
     document: &[u8],
     file_path: &str,
-) -> Result<Vec<ThemeConfigField>, String> {
+) -> Result<Vec<ThemeConfigField>, ThemeConfigError> {
     let parse = swlsp_parser_json::parse(&String::from_utf8_lossy(document));
     let lines = LineIndex::new(parse.tree.source_arc().clone());
     parse_theme_config_tree(&parse.tree, &lines, file_path)
@@ -21,10 +28,10 @@ pub fn parse_theme_config_tree(
     tree: &Tree,
     lines: &LineIndex,
     file_path: &str,
-) -> Result<Vec<ThemeConfigField>, String> {
+) -> Result<Vec<ThemeConfigField>, ThemeConfigError> {
     let root = root_value(&tree.root())
         .filter(|root| root.kind() == JSON_OBJECT)
-        .ok_or_else(|| "JSON root is not an object".to_owned())?;
+        .ok_or(ThemeConfigError::RootNotObject)?;
     let Some(fields) = property(&root, "config")
         .filter(|config| config.kind() == JSON_OBJECT)
         .and_then(|config| property(&config, "fields"))

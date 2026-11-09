@@ -5,8 +5,8 @@ use swlsp_parser_php::syntax::{
     PHP_BINARY_EXPRESSION, PHP_MEMBER_ACCESS, PHP_SCOPED_ACCESS, PHP_STRING,
 };
 use swlsp_php::NameResolver;
-use swlsp_php_types::go_to_lower;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
+use swlsp_textutil::lowercase;
 
 use crate::index::{TargetKind, Usage};
 
@@ -31,7 +31,7 @@ pub fn usages_in_document(path: &str, root: &SyntaxNode) -> Vec<Usage> {
             continue;
         }
         let class = normalize_class(&class_name).to_owned();
-        if !seen.insert((go_to_lower(&class), range)) {
+        if !seen.insert((lowercase(&class), range)) {
             continue;
         }
         result.push(Usage {

@@ -1,5 +1,4 @@
-//! Go `snippet_copy_codeaction_test.go`, plus `SnippetCodeActionProvider`
-//! cases.
+//! Snippet copy and `SnippetCodeActionProvider` tests.
 
 use crate::test_support::{request_at, request_for_range};
 use std::sync::Arc;
@@ -7,7 +6,7 @@ use swlsp_lsp::TextDocument;
 
 use super::*;
 
-/// Go `symfonyGeneratorCodeActionRequest`: empty range and node at the
+/// Empty range and node at the
 /// needle offset.
 fn needle_request(uri: &str, source: &str, needle: &str) -> CodeActionRequest {
     let offset = source.find(needle).unwrap_or(0) as u32;

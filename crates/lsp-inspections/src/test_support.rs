@@ -1,4 +1,4 @@
-//! Shared test helpers (Go `inspection_test.go` helpers).
+//! Shared test helpers.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -11,7 +11,7 @@ use swlsp_lsp_protocol as protocol;
 use swlsp_rewrite::ElementHandle;
 use swlsp_syntax::{SyntaxNodeExt, TextRange};
 
-/// Collects reported problems unchanged (Go `problemCollector`).
+/// Collects reported problems unchanged.
 #[derive(Default)]
 pub struct ProblemCollector {
     pub problems: Vec<Problem>,
@@ -24,7 +24,6 @@ impl ProblemReporter for ProblemCollector {
     }
 }
 
-/// Go `staticDocumentResolver`.
 #[derive(Default, Clone)]
 pub struct StaticDocumentResolver(pub HashMap<String, DocumentSnapshot>);
 
@@ -49,7 +48,6 @@ pub fn inspect(inspection: &dyn Inspection, document: &Arc<TextDocument>) -> Vec
     collector.problems
 }
 
-/// Go `quickFixWithID`.
 pub fn quick_fix_with_id(inspection: &dyn Inspection, id: &str) -> Arc<dyn QuickFix> {
     let fix = inspection
         .quick_fixes()
@@ -63,7 +61,6 @@ pub fn quick_fix_with_id(inspection: &dyn Inspection, id: &str) -> Arc<dyn Quick
     fix
 }
 
-/// Go `fixContext`.
 pub fn fix_context(
     document: &Arc<TextDocument>,
     problem: &Problem,
@@ -100,7 +97,6 @@ pub fn fix_context(
     }
 }
 
-/// Go `wireRange`.
 pub fn wire_range(document: &TextDocument, range: TextRange) -> protocol::Range {
     protocol_range(document.line_index(), range)
 }

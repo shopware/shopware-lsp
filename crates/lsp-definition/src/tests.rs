@@ -173,7 +173,7 @@ fn environment_definition_navigates_every_declaration() {
     let source = "parameters:\n  app_env: '%env(APP_ENV)%'\n";
     let path = p(&root.path().join("config/services.yaml"));
     let document = document(&file_uri(&path), source);
-    // Go passes no tree; the provider falls back to the source scan.
+    // No tree is passed; the provider falls back to the source scan.
     let request = request_with_node(&document, None, index_of(source, "APP_ENV") + 2);
     let locations = definitions(&EnvironmentDefinitionProvider::new(Some(index)), &request);
     assert_eq!(locations.len(), 2);
@@ -250,7 +250,7 @@ fn translation_index(root: &Path) -> Arc<swlsp_translation::Index> {
     index
 }
 
-/// Go `translationDefinitionRequest`: the explicit node at position 0:0.
+/// A translation request with an explicit node at position 0:0.
 fn node_request(
     document: &Arc<swlsp_lsp::TextDocument>,
     offset: usize,

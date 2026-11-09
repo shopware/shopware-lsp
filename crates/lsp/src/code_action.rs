@@ -2,7 +2,6 @@
 //! actions, workspace-plan validation and validated command edits.
 
 use std::collections::BTreeMap;
-use std::fmt;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -11,7 +10,7 @@ use sha2::{Digest, Sha256};
 use swlsp_lsp_protocol as protocol;
 use swlsp_rewrite::{self as rewrite, DocumentPlan, HandleError, WorkspacePlan};
 use swlsp_syntax::{LineIndex, TextRange, TextSize};
-use swlsp_uriutil::{filepath, go_quote};
+use swlsp_uriutil::filepath;
 
 use crate::configuration::diagnostic_rule_severity;
 use crate::context::{BoxError, Context};
@@ -56,43 +55,46 @@ struct LegacyActionEnvelope {
 }
 
 /// Failure to resolve a document snapshot.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum DocumentError {
+    #[error("cancelled")]
     Cancelled,
+    #[error("resolve document URI: {0}")]
     InvalidUri(String),
+    #[error("document {0:?} is outside the workspace")]
     OutsideWorkspace(String),
-    Read { uri: String, source: std::io::Error },
+    #[error("read document {uri:?}: {source}")]
+    Read {
+        uri: String,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 impl DocumentError {
-    /// Whether the document does not exist on disk (Go `os.ErrNotExist`).
+    /// Whether the document does not exist on disk.
     pub fn is_not_found(&self) -> bool {
         matches!(self, DocumentError::Read { source, .. } if source.kind() == std::io::ErrorKind::NotFound)
     }
 }
 
-impl fmt::Display for DocumentError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DocumentError::Cancelled => f.write_str("context canceled"),
-            DocumentError::InvalidUri(error) => write!(f, "resolve document URI: {error}"),
-            DocumentError::OutsideWorkspace(uri) => {
-                write!(f, "document {} is outside the workspace", go_quote(uri))
-            }
-            DocumentError::Read { uri, source } => {
-                write!(f, "read document {}: {source}", go_quote(uri))
-            }
-        }
-    }
-}
-
-impl std::error::Error for DocumentError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            DocumentError::Read { source, .. } => Some(source),
-            _ => None,
-        }
-    }
+/// A workspace plan that cannot be applied safely.
+#[derive(Debug, thiserror::Error)]
+pub enum PlanValidationError {
+    #[error("created document {0:?} is outside the workspace")]
+    CreateOutsideWorkspace(String),
+    #[error("created document {0:?} is already open")]
+    CreateAlreadyOpen(String),
+    #[error("created document {0:?} already exists or cannot be checked")]
+    CreateExists(String),
+    #[error("created document has {0} parser errors")]
+    CreateParseErrors(usize),
+    #[error("rewrite introduces {0} parser errors")]
+    IntroducesParseErrors(usize),
+    #[error("deleted document {0:?} is outside the workspace")]
+    DeleteOutsideWorkspace(String),
+    #[error("deleted document {0:?} does not exist or is not a file")]
+    DeleteMissing(String),
 }
 
 /// Generators and command adapters use this host to resolve snapshots and
@@ -333,35 +335,23 @@ impl Server {
                 .ok()
                 .filter(|path| path_within_root(&root, path));
             let Some(path) = path else {
-                return Err(format!(
-                    "created document {} is outside the workspace",
-                    go_quote(&created.uri)
-                )
-                .into());
+                return Err(
+                    PlanValidationError::CreateOutsideWorkspace(created.uri.clone()).into(),
+                );
             };
             if self.documents.get_document(&created.uri).is_some() {
-                return Err(format!(
-                    "created document {} is already open",
-                    go_quote(&created.uri)
-                )
-                .into());
+                return Err(PlanValidationError::CreateAlreadyOpen(created.uri.clone()).into());
             }
             match std::fs::metadata(&path) {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 _ => {
-                    return Err(format!(
-                        "created document {} already exists or cannot be checked",
-                        go_quote(&created.uri)
-                    )
-                    .into());
+                    return Err(PlanValidationError::CreateExists(created.uri.clone()).into());
                 }
             }
             if let Some((_, parse)) = parse_path(&created.uri, &created.content)
                 && !parse.errors.is_empty()
             {
-                return Err(
-                    format!("created document has {} parser errors", parse.errors.len()).into(),
-                );
+                return Err(PlanValidationError::CreateParseErrors(parse.errors.len()).into());
             }
         }
         for planned in &plan.documents {
@@ -376,9 +366,8 @@ impl Server {
             if let Some((_, parse)) = parse_path(&planned.uri, &updated)
                 && parse.errors.len() > current.document.parse_errors().len()
             {
-                return Err(format!(
-                    "rewrite introduces {} parser errors",
-                    parse.errors.len() - current.document.parse_errors().len()
+                return Err(PlanValidationError::IntroducesParseErrors(
+                    parse.errors.len() - current.document.parse_errors().len(),
                 )
                 .into());
             }
@@ -389,18 +378,12 @@ impl Server {
                 .ok()
                 .filter(|path| path_within_root(&root, path));
             let Some(path) = path else {
-                return Err(format!(
-                    "deleted document {} is outside the workspace",
-                    go_quote(&deleted.uri)
-                )
-                .into());
+                return Err(
+                    PlanValidationError::DeleteOutsideWorkspace(deleted.uri.clone()).into(),
+                );
             };
             if !std::fs::metadata(&path).is_ok_and(|metadata| metadata.is_file()) {
-                return Err(format!(
-                    "deleted document {} does not exist or is not a file",
-                    go_quote(&deleted.uri)
-                )
-                .into());
+                return Err(PlanValidationError::DeleteMissing(deleted.uri.clone()).into());
             }
             let current = self.resolve_snapshot(ctx, &deleted.uri)?;
             if current.document.source() != deleted.source
@@ -470,7 +453,8 @@ impl Server {
             };
             if envelope.uri != document.uri
                 || envelope.document_version != document.version
-                || code_string(diagnostic.code.as_ref()) != envelope.code.0
+                || code_string(diagnostic.code.as_ref()).as_deref()
+                    != Some(envelope.code.0.as_str())
             {
                 continue;
             }

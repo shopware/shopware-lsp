@@ -1,4 +1,4 @@
-//! Go `twig_extension_attribute_codeaction.go`: migrates `getFilters`,
+//! Migrates `getFilters`,
 //! `getFunctions` and `getTests` registries to `#[AsTwig*]` attributes.
 
 use crate::shared::document_snapshot;
@@ -14,8 +14,8 @@ use swlsp_parser_php::syntax::{
 };
 use swlsp_php::{NameResolver, PhpIndex};
 use swlsp_php_resolver::{ImportKind, parse_use_declaration};
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_syntax::{SyntaxNode, SyntaxToken};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::shared::{
     PhpSourceReplacement, apply_php_source_replacements, child_tokens, end_of,
@@ -110,7 +110,7 @@ impl ActionProvider for TwigExtensionAttributeCodeActionProvider {
         let mut plans = Vec::new();
         let mut transformations = Vec::new();
         for spec in &TWIG_EXTENSION_REGISTRY_SPECS {
-            let Some(method) = methods.get(&go_to_lower(spec.method_name)) else {
+            let Some(method) = methods.get(&lowercase(spec.method_name)) else {
                 continue;
             };
             let Some(array) = direct_php_return_array(method) else {
@@ -177,7 +177,7 @@ fn is_twig_extension(
 ) -> bool {
     let resolver = NameResolver::new(root);
     if phpquery::class_extends(class).iter().any(|parent| {
-        equal_fold(
+        eq_ignore_case(
             trim_backslashes(&resolver.resolve(parent)),
             TWIG_ABSTRACT_EXTENSION_CLASS,
         )
@@ -231,7 +231,7 @@ fn twig_extension_array_transformation(
 ) -> Option<TwigExtensionTransformation> {
     let value = phpquery::array_item_value(item)?;
     if value.kind() != PHP_OBJECT_CREATION
-        || !equal_fold(
+        || !eq_ignore_case(
             trim_backslashes(&resolver.resolve(&phpquery::object_class_name(&value))),
             spec.registration,
         )
@@ -250,7 +250,7 @@ fn twig_extension_array_transformation(
     if method_name.is_empty() {
         return None;
     }
-    let target_method = methods.get(&go_to_lower(&method_name))?;
+    let target_method = methods.get(&lowercase(&method_name))?;
     if target_method == registry_method {
         return None;
     }
@@ -323,7 +323,9 @@ fn twig_attribute_options(expression: Option<&SyntaxNode>) -> Option<String> {
     Some(options.join(", "))
 }
 
-/// Go `lowerCamelCase` (the first byte of each part changes case).
+/// `value` in lowerCamelCase: parts split at `_`, `-` and spaces; only the
+/// first character of each part changes case (the first part is lowercased
+/// entirely when there are several).
 fn lower_camel_case(value: &str) -> String {
     let parts: Vec<&str> = value
         .split(['_', '-', ' '])
@@ -335,11 +337,11 @@ fn lower_camel_case(value: &str) -> String {
     if parts.len() == 1 {
         return format!(
             "{}{}",
-            go_to_lower(first_char(first)),
+            lowercase(first_char(first)),
             &first[first_char(first).len()..]
         );
     }
-    let mut result = go_to_lower(first);
+    let mut result = lowercase(first);
     for part in &parts[1..] {
         let head = first_char(part);
         result.push_str(&head.to_uppercase());
@@ -484,7 +486,7 @@ fn twig_registry_methods_all_removed(
 ) -> bool {
     TWIG_EXTENSION_REGISTRY_SPECS.iter().all(|spec| {
         methods
-            .get(&go_to_lower(spec.method_name))
+            .get(&lowercase(spec.method_name))
             .is_none_or(|method| removed.contains(&method))
     })
 }
@@ -497,7 +499,7 @@ fn direct_twig_abstract_extension_clause(
     phpquery::class_extends(class)
         .iter()
         .any(|parent| {
-            equal_fold(
+            eq_ignore_case(
                 trim_backslashes(&resolver.resolve(parent)),
                 TWIG_ABSTRACT_EXTENSION_CLASS,
             )
@@ -512,7 +514,7 @@ fn standalone_php_import(root: &SyntaxNode, class_name: &str) -> Option<SyntaxNo
             let imports = parse_use_declaration(&declaration.text().to_string());
             imports.len() == 1
                 && imports[0].kind == ImportKind::Class
-                && equal_fold(
+                && eq_ignore_case(
                     trim_backslashes(&imports[0].target),
                     trim_backslashes(class_name),
                 )

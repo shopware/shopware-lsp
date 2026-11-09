@@ -1,5 +1,4 @@
-//! Registry reference contexts in JavaScript (port of Go
-//! `runtime_context.go`).
+//! Registry reference contexts in JavaScript.
 
 use crate::*;
 

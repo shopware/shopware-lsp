@@ -1,5 +1,3 @@
-//! Port of `internal/php/types/type_test.go`.
-
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
@@ -8,7 +6,7 @@ use crate::relations::{MAX_PRECISE_LITERAL_UNION_MEMBERS, MAX_PRECISE_UNION_MEMB
 use crate::render::{rendered_length_hint, write_rendered};
 use crate::*;
 
-// ----- allocation counting (Go's testing.AllocsPerRun) -----
+// ----- allocation counting -----
 
 struct CountingAllocator;
 
@@ -498,7 +496,7 @@ fn type_msgpack_encoding_remains_backward_compatible() {
     assert_eq!(expected, restored);
 }
 
-/// Serializes as a msgpack `bin`, like Go's `msgpack.Marshal([]byte)`.
+/// Serializes as a msgpack `bin`, the legacy encoding of persisted type text.
 fn serde_bytes_wrapper(bytes: &[u8]) -> impl serde::Serialize + '_ {
     struct Bytes<'a>(&'a [u8]);
     impl serde::Serialize for Bytes<'_> {
@@ -566,7 +564,7 @@ fn invalid_named_types_collapse_to_unknown() {
 }
 
 #[test]
-fn literal_float_validation_matches_go_parse_float() {
+fn literal_float_validation_accepts_decimal_hex_and_special_values() {
     for valid in [
         "1.5",
         "1.",
@@ -1216,7 +1214,7 @@ fn parse_native_does_not_guess_templates() {
 
 #[test]
 fn this_template_check_uses_unicode_case_folding() {
-    // Go's strings.EqualFold treats U+017F (long s) as 's', so "$thiſ" is
+    // Case folding treats U+017F (long s) as 's', so "$thiſ" is
     // not a template variable and collapses to an invalid class name.
     assert_eq!(parse("$thiſ").unwrap(), Type::UNKNOWN);
     assert_eq!(parse("$THIS").unwrap(), Type::STATIC);

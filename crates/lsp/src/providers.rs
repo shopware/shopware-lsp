@@ -110,7 +110,7 @@ pub struct SemanticToken {
     pub modifiers: u32,
 }
 
-/// Name used in error messages and traces (Go `%T`).
+/// Name used in error messages and traces (the provider's type name).
 macro_rules! provider_name {
     () => {
         fn provider_name(&self) -> &'static str {

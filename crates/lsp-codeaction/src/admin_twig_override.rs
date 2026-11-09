@@ -1,4 +1,4 @@
-//! Go `admin_twig_override_codeaction.go`: overrides an Administration Twig
+//! Overrides an Administration Twig
 //! block in a plugin through `Shopware.Component.override`.
 
 use std::collections::{BTreeMap, HashMap};
@@ -140,7 +140,7 @@ pub(crate) struct AdminTwigOverrideResponse {
     pub script_uri: String,
 }
 
-/// Go `encoding/json` leaves a field unchanged when it is `null`.
+/// Deserializes a JSON `null` as the field's default value.
 pub(crate) fn nullable<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -344,17 +344,28 @@ fn safe_generated_name(value: &str, allow_hyphen: bool) -> bool {
         })
 }
 
+/// Why an existing Administration override script cannot receive the
+/// generated template.
+#[derive(Debug, thiserror::Error)]
+enum OverrideScriptError {
+    #[error("template import must point to {0:?}")]
+    TemplateImport(String),
+    #[error("override for {0:?} does not use template")]
+    MissingTemplate(String),
+    #[error("does not override component {0:?}")]
+    MissingOverride(String),
+}
+
 fn validate_admin_override_script(
     content: &str,
     component_name: &str,
     template_import: &str,
-) -> Result<(), String> {
+) -> Result<(), OverrideScriptError> {
     let parse = swlsp_parser_js::parse(content);
     let root = parse.tree.root();
     if jsquery::import_path(&root, "template").unwrap_or_default() != template_import {
-        return Err(format!(
-            "template import must point to {}",
-            swlsp_uriutil::go_quote(template_import)
+        return Err(OverrideScriptError::TemplateImport(
+            template_import.to_owned(),
         ));
     }
     for call in jsquery::iter_calls(
@@ -373,16 +384,14 @@ fn validate_admin_override_script(
             .and_then(|definition| jsquery::property(definition, "template"))
             .is_none()
         {
-            return Err(format!(
-                "override for {} does not use template",
-                swlsp_uriutil::go_quote(component_name)
+            return Err(OverrideScriptError::MissingTemplate(
+                component_name.to_owned(),
             ));
         }
         return Ok(());
     }
-    Err(format!(
-        "does not override component {}",
-        swlsp_uriutil::go_quote(component_name)
+    Err(OverrideScriptError::MissingOverride(
+        component_name.to_owned(),
     ))
 }
 

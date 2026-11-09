@@ -1,5 +1,5 @@
 //! Twig template domain: template files, blocks, inheritance, references,
-//! macros, globals and extension callables (port of Go `internal/twig`).
+//! macros, globals and extension callables.
 
 mod document_memo;
 mod documentation;
@@ -51,14 +51,14 @@ pub use versioning_service::*;
 
 use std::cmp::Ordering;
 
-/// Go `compareFold`: case-insensitive ordering with an ASCII fast path.
+/// Case-insensitive ordering with an ASCII fast path.
 pub fn compare_fold(left: &str, right: &str) -> Ordering {
     if left.is_ascii() && right.is_ascii() {
         let l = left.bytes().map(|b| b.to_ascii_lowercase());
         let r = right.bytes().map(|b| b.to_ascii_lowercase());
         return l.cmp(r);
     }
-    swlsp_php_types::go_to_lower(left).cmp(&swlsp_php_types::go_to_lower(right))
+    swlsp_textutil::lowercase(left).cmp(&swlsp_textutil::lowercase(right))
 }
 
 #[cfg(test)]

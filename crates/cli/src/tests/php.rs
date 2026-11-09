@@ -1,5 +1,4 @@
-//! Ports of `php_extract_method_test.go`, `php_extract_variable_test.go`
-//! and `php_imports_test.go`.
+//! PHP refactor commands: extract method, extract variable and imports.
 
 use serde_json::json;
 

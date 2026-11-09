@@ -1,4 +1,4 @@
-//! Structural TypeScript type resolution (port of Go `type_resolver.go`).
+//! Structural TypeScript type resolution.
 
 use crate::*;
 

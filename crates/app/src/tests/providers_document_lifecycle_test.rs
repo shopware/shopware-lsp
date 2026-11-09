@@ -1,4 +1,4 @@
-//! Port of Go `internal/app/providers_document_lifecycle_test.go`.
+//! Administration document overlays across open, change and close.
 
 use std::sync::Arc;
 

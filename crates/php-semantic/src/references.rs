@@ -8,8 +8,8 @@
 use rustc_hash::FxHashMap;
 use swlsp_php_types::Type;
 
-use crate::text::go_lower_char;
 use swlsp_syntax::TextRange;
+use swlsp_textutil::lowercase_char;
 
 use crate::atom::Atom;
 use crate::document::{NameKind, Reference};
@@ -94,7 +94,7 @@ pub(crate) fn reference_bloom_hash(value: &str) -> u64 {
     let value = value.strip_prefix(['\\', '$']).unwrap_or(value);
     let mut hash: u64 = 14_695_981_039_346_656_037;
     for character in value.chars() {
-        hash ^= u64::from(u32::from(go_lower_char(character)));
+        hash ^= u64::from(u32::from(lowercase_char(character)));
         hash = hash.wrapping_mul(1_099_511_628_211);
     }
     hash

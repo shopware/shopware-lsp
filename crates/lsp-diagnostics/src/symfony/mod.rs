@@ -43,38 +43,18 @@ pub use validation::{MISSING_CONSTRAINT_OPTION_CODE, ValidationAnalyzer};
 use serde_json::{Value, json};
 use swlsp_lsp::{DiagnosticId, Problem};
 use swlsp_lsp_protocol::DiagnosticSeverity;
-use swlsp_php_types::go_to_lower;
 use swlsp_syntax::TextRange;
+use swlsp_textutil::lowercase;
+use swlsp_uriutil::filepath;
 
-/// Go `filepath.Ext`: the suffix from the final `.` of the last path
-/// element, or empty.
-pub(crate) fn go_ext(path: &str) -> &str {
-    let bytes = path.as_bytes();
-    let mut index = bytes.len();
-    while index > 0 {
-        index -= 1;
-        match bytes[index] {
-            b'/' => return "",
-            b'.' => return &path[index..],
-            _ => {}
-        }
-    }
-    ""
-}
-
-/// Lowercased Go `filepath.Ext`.
+/// The lowercased extension of the last path element.
 pub(crate) fn lower_ext(path: &str) -> String {
-    go_to_lower(go_ext(path))
+    lowercase(filepath::ext(path))
 }
 
-/// Go's `map[string]any{"suggestions": suggestions}`. Go's
-/// `suggestion.Similar` returns nil for no result, which encodes as `null`.
+/// The `{"suggestions": [...]}` payload.
 pub(crate) fn suggestions_payload(suggestions: Vec<String>) -> Value {
-    if suggestions.is_empty() {
-        json!({ "suggestions": null })
-    } else {
-        json!({ "suggestions": suggestions })
-    }
+    json!({ "suggestions": suggestions })
 }
 
 /// A Symfony warning with a suggestion payload.

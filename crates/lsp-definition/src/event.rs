@@ -1,5 +1,5 @@
-//! Go `event_definition.go`: event names navigate to the event class and
-//! listeners; listener method strings navigate to the method.
+//! Event names navigate to the event class and listeners; listener method
+//! strings navigate to the method.
 
 use std::collections::HashSet;
 use std::sync::Arc;

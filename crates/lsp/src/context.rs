@@ -1,6 +1,6 @@
 //! Request context: cooperative cancellation plus typed request-local values.
 //!
-//! This replaces Go's `context.Context`. A [`CancellationToken`] is cancelled
+//! A [`CancellationToken`] is cancelled
 //! explicitly (`$/cancelRequest`, a superseded diagnostics job, server
 //! shutdown) and propagates to every child token. [`Context`] pairs a token
 //! with immutable typed values that context enrichers attach before provider
@@ -27,8 +27,8 @@ pub mod codes {
     pub const REQUEST_CANCELLED: i32 = -32800;
 }
 
-/// A JSON-RPC error response. Plain errors map to code `0` like Go's
-/// `jsonrpc2.HandlerWithError`.
+/// A JSON-RPC error response. Errors without a code of their own answer
+/// `InternalError`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RpcError {
     pub code: i32,
@@ -47,30 +47,40 @@ impl RpcError {
         Self::new(codes::REQUEST_CANCELLED, "request cancelled")
     }
 
+    /// `InternalError` with `message`.
+    pub fn internal(message: impl Into<String>) -> Self {
+        Self::new(codes::INTERNAL_ERROR, message)
+    }
+
+    /// `InvalidParams` with `message`.
+    pub fn invalid_params(message: impl Into<String>) -> Self {
+        Self::new(codes::INVALID_PARAMS, message)
+    }
+
     /// Converts any handler error; an embedded [`RpcError`] keeps its code.
     pub fn from_error(error: BoxError) -> Self {
         match error.downcast::<RpcError>() {
             Ok(rpc) => *rpc,
-            Err(other) => Self::new(0, other.to_string()),
+            Err(other) => Self::internal(other.to_string()),
         }
     }
 }
 
 impl fmt::Display for RpcError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "jsonrpc2: code {} message: {}", self.code, self.message)
+        write!(f, "{} (code {})", self.message, self.code)
     }
 }
 
 impl std::error::Error for RpcError {}
 
-/// The error a cancelled operation returns (Go `context.Canceled`).
+/// The error a cancelled operation returns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cancelled;
 
 impl fmt::Display for Cancelled {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("context canceled")
+        f.write_str("cancelled")
     }
 }
 
@@ -166,8 +176,7 @@ impl CancellationToken {
         child
     }
 
-    /// Cancels `other` whenever this token is cancelled (Go
-    /// `context.AfterFunc(parent, other.cancel)`).
+    /// Cancels `other` whenever this token is cancelled.
     pub fn link(&self, other: &CancellationToken) {
         {
             let mut state = lock(&self.0.state);
@@ -284,7 +293,7 @@ impl Context {
         self.token.is_cancelled()
     }
 
-    /// `Err(Cancelled)` once cancelled (Go `ctx.Err()`).
+    /// `Err(Cancelled)` once cancelled.
     #[inline]
     pub fn check(&self) -> Result<(), Cancelled> {
         self.token.check()

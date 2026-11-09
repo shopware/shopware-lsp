@@ -1,4 +1,4 @@
-//! Ports of `cli_test.go`.
+//! Command-line parsing, output and workspace commands.
 
 use serde_json::Value;
 use swlsp_lsp_protocol::{
@@ -15,8 +15,8 @@ use crate::{
     parse_position_target, resolve_check_files_with_exclusions,
 };
 
-/// Go `t.Setenv` for the duration of `body`, exclusive against every other
-/// run in this process.
+/// Sets an environment variable for the duration of `body`, exclusive
+/// against every other run in this process, and restores it afterwards.
 fn with_env<T>(name: &str, value: &str, body: impl FnOnce() -> T) -> T {
     let _guard = ENV_LOCK.write().unwrap_or_else(|p| p.into_inner());
     let previous = std::env::var_os(name);
@@ -89,7 +89,7 @@ fn remote_serve_stops_while_waiting_for_a_client() {
         &["serve", "--listen", "127.0.0.1:0"],
     );
     let error = run.result.expect_err("cancelled serve must fail");
-    assert!(error.canceled, "{error:?}");
+    assert!(error.cancelled, "{error:?}");
 }
 
 #[test]
@@ -756,7 +756,7 @@ fn global_flags_are_accepted_after_the_command() {
 }
 
 #[test]
-fn go_style_single_dash_flags_are_rejected_with_a_hint() {
+fn single_dash_long_flags_are_rejected_with_a_hint() {
     let run = run(&["-root", "/tmp", "project-info"]);
     let error = run.result.unwrap_err();
     assert_eq!(error.code, 2);

@@ -7,7 +7,7 @@ use swlsp_lsp::async_io::{Output, spawn_output};
 use tokio::io::AsyncReadExt;
 
 use crate::Cancel;
-use crate::session::RpcClient;
+use crate::session::{ClientError, RpcClient};
 
 #[test]
 fn cancelled_call_cancels_the_request_on_the_server() {
@@ -33,7 +33,7 @@ fn cancelled_call_cancels_the_request_on_the_server() {
 
     let reply = client.call("textDocument/hover", json!({}), &cancel, None);
     canceller.join().unwrap();
-    assert_eq!(reply, Err("context canceled".to_owned()));
+    assert_eq!(reply, Err(ClientError::Cancelled));
 
     // Closing the client ends the stream, so everything sent can be read.
     client.close();

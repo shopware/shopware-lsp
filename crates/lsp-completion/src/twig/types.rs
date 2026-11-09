@@ -1,4 +1,4 @@
-//! Go `twig_types_completion.go`: PHP class names inside `{% types %}`.
+//! Completion of PHP class names inside `{% types %}`.
 
 use std::collections::HashSet;
 
@@ -8,7 +8,8 @@ use swlsp_php_semantic::{Flags, SymbolKind};
 
 use super::completion::TwigCompletionProvider;
 use super::{request_offset, sort_by_lower_label};
-use crate::common::{go_to_lower, protocol_range, text_edit};
+use crate::common::{protocol_range, text_edit};
+use swlsp_textutil::lowercase;
 
 impl TwigCompletionProvider {
     pub(crate) fn twig_types_tag_completions(
@@ -22,7 +23,7 @@ impl TwigCompletionProvider {
             return Some(Vec::new());
         };
         let range = protocol_range(completion.range, line_index);
-        let prefix = go_to_lower(
+        let prefix = lowercase(
             completion
                 .prefix
                 .strip_prefix('\\')
@@ -36,7 +37,7 @@ impl TwigCompletionProvider {
                 .strip_prefix('\\')
                 .unwrap_or(&symbol.fully_qualified)
                 .to_string();
-            let key = go_to_lower(&name);
+            let key = lowercase(&name);
             if seen.contains(&key) || !prefix.is_empty() && !key.starts_with(&prefix) {
                 continue;
             }

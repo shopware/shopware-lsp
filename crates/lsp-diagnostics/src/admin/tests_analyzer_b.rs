@@ -1,4 +1,4 @@
-//! Ports of `admin_diagnostics_test.go` (part 2).
+//! Tests of the Administration analyzer (part 2).
 
 use swlsp_admin::{
     VueComponentAssignment, VueComponentEvent, VueComponentMember, VueComponentMemberKind,

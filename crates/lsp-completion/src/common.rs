@@ -6,29 +6,9 @@ use swlsp_lsp::SyntaxContext;
 use swlsp_lsp_protocol as protocol;
 use swlsp_php::{PhpContext, PhpIndex};
 use swlsp_syntax::{LineIndex, TextRange};
+use swlsp_textutil::lowercase;
 
-/// Go `strings.ToLower`: maps every rune through `unicode.ToLower` (one
-/// rune to one rune, unlike Rust's context-sensitive `str::to_lowercase`).
-pub fn go_to_lower(value: &str) -> String {
-    if value.is_ascii() {
-        return value.to_ascii_lowercase();
-    }
-    value.chars().map(go_lower_rune).collect()
-}
-
-/// Go `unicode.ToLower` for one rune.
-pub fn go_lower_rune(c: char) -> char {
-    if c == '\u{130}' {
-        return 'i';
-    }
-    let mut lower = c.to_lowercase();
-    match (lower.next(), lower.next()) {
-        (Some(first), None) => first,
-        _ => c,
-    }
-}
-
-/// Go `sortCompletionItems`: orders by lowercase label. Labels equal up to
+/// Orders items by lowercase label. Labels equal up to
 /// case ("error"/"Error") or identical are ordered by
 /// [`compare_completion_items`], so the result does not depend on the
 /// provider's input order.
@@ -38,7 +18,7 @@ pub fn sort_completion_items(items: &mut [protocol::CompletionItem]) {
     }
     let mut keyed: Vec<(String, protocol::CompletionItem)> = items
         .iter_mut()
-        .map(|item| (go_to_lower(&item.label), std::mem::take(item)))
+        .map(|item| (lowercase(&item.label), std::mem::take(item)))
         .collect();
     keyed.sort_unstable_by(|left, right| {
         left.0
@@ -71,9 +51,7 @@ pub fn compare_completion_items(
         .then_with(|| left.sort_text.cmp(&right.sort_text))
 }
 
-/// A byte range converted to an LSP UTF-16 range (Go
-/// `completionProtocolRange`, `namedArgumentCompletionRange`,
-/// `containerConstantCompletionRange`).
+/// A byte range converted to an LSP UTF-16 range.
 pub fn protocol_range(range: TextRange, line_index: &LineIndex) -> protocol::Range {
     let (start_line, start_character) = line_index.position_utf16(range.start().into());
     let (end_line, end_character) = line_index.position_utf16(range.end().into());
@@ -98,8 +76,8 @@ pub fn text_edit(range: protocol::Range, new_text: impl Into<String>) -> protoco
     }
 }
 
-/// Go `truncateText`: cuts at a byte offset (a cut multi-byte tail becomes one
-/// U+FFFD per byte, as Go's JSON encoder writes it).
+/// `text` cut to `max_len` bytes including a `...` suffix. The cut is at a
+/// byte offset; each byte of a character split by the cut becomes U+FFFD.
 pub fn truncate_text(text: &str, max_len: usize) -> String {
     if text.len() <= max_len {
         return text.to_string();
@@ -111,7 +89,7 @@ pub fn truncate_text(text: &str, max_len: usize) -> String {
     }
     let mut result = String::with_capacity(cut + 6);
     result.push_str(&text[..valid]);
-    // Go's JSON encoder writes one U+FFFD per invalid byte.
+    // One replacement character per byte of the split character.
     for _ in valid..cut {
         result.push('\u{FFFD}');
     }
@@ -119,20 +97,21 @@ pub fn truncate_text(text: &str, max_len: usize) -> String {
     result
 }
 
-/// Go `leadingYAMLIndent`: spaces and tabs at the start of `line`.
+/// The number of spaces and tabs at the start of `line`.
 pub fn leading_yaml_indent(line: &str) -> usize {
     line.bytes()
         .take_while(|byte| *byte == b' ' || *byte == b'\t')
         .count()
 }
 
-/// Go `isYAMLFile`.
+/// Whether `uri` has a `.yaml` or `.yml` extension (any case).
 pub fn is_yaml_file(uri: &str) -> bool {
-    let extension = go_to_lower(swlsp_uriutil::filepath::ext(uri));
+    let extension = lowercase(swlsp_uriutil::filepath::ext(uri));
     extension == ".yaml" || extension == ".yml"
 }
 
-/// Go `componentPropDetail`.
+/// The completion detail of a component prop: its type and live/writable
+/// marker.
 pub fn component_prop_detail(prop: &swlsp_twigcomponent::Prop) -> String {
     let suffix = if prop.live && prop.writable {
         "writable live prop"
@@ -150,8 +129,7 @@ pub fn component_prop_detail(prop: &swlsp_twigcomponent::Prop) -> String {
     format!("{} • {}", prop.ty, suffix)
 }
 
-/// The request's PHP analysis, as Go's PHP context enricher attaches it to
-/// `context.Context`: the memoized document analysis, or a fresh unnamed
+/// The request's PHP analysis: the memoized document analysis, or a fresh unnamed
 /// analysis when the document has no file path. `None` outside PHP
 /// documents or without a tree.
 pub fn php_context(index: &PhpIndex, syntax: &SyntaxContext) -> Option<PhpContext> {
@@ -177,4 +155,9 @@ pub fn php_context(index: &PhpIndex, syntax: &SyntaxContext) -> Option<PhpContex
             ))
         }
     }
+}
+
+/// The lowercase extension of `path`, with its dot (`.twig`).
+pub(crate) fn lower_ext(path: &str) -> String {
+    swlsp_textutil::lowercase(swlsp_uriutil::filepath::ext(path))
 }

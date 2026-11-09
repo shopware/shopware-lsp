@@ -1,4 +1,4 @@
-//! Closures and arrow functions (port of `expression_closure.go`).
+//! Closures and arrow functions.
 
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;

@@ -804,7 +804,7 @@ fn serializer_code_lens_links_class_to_deserialize_uses() {
         lenses[0].command.as_ref().unwrap().command,
         OPEN_REFERENCES_COMMAND
     );
-    // Go keeps the zero-based line in serializer targets.
+    // Serializer targets keep the zero-based line.
     assert_eq!(
         targets(&lenses[0]),
         vec![swlsp_uriutil::file_uri_with_fragment(
@@ -1221,7 +1221,7 @@ fn vite_code_lens_links_entry_target_to_config_and_twig_usages() {
 // -- protocol shape -------------------------------------------------------------
 
 #[test]
-fn related_lens_serializes_like_go() {
+fn related_lens_serializes_command_arguments() {
     let lens = related_lens(line_range(2), "Open", vec!["file:///a#1".to_owned()]);
     assert_eq!(
         serde_json::to_string(&lens).unwrap(),

@@ -1,6 +1,5 @@
-//! Helpers shared by several providers (Go `php_edit.go`,
-//! `structural_edit.go`, `twig_strings.go` and the cross-file helpers of the
-//! individual provider files).
+//! Helpers shared by several providers: PHP edits, structural text edits,
+//! Twig string escaping and generator request decoding.
 
 use std::collections::HashSet;
 
@@ -15,10 +14,9 @@ use swlsp_parser_php::syntax::{
 };
 use swlsp_php::NameResolver;
 use swlsp_php_resolver::{ImportKind, parse_use_declaration};
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, SyntaxToken};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
-/// Go `strings.Trim(value, "\\")`.
 pub(crate) fn trim_backslashes(value: &str) -> &str {
     value.trim_matches('\\')
 }
@@ -48,7 +46,7 @@ pub(crate) fn trimmed_end(node: &SyntaxNode) -> u32 {
     u32::from(node.range_trimmed_trivia().end())
 }
 
-/// The direct child tokens of `node` (Go `node.ChildTokens()`).
+/// The direct child tokens of `node`.
 pub(crate) fn child_tokens(node: &SyntaxNode) -> impl Iterator<Item = SyntaxToken> + use<> {
     node.children_with_tokens()
         .filter_map(|element| element.into_token())
@@ -59,7 +57,7 @@ pub(crate) fn request_source(request: &CodeActionRequest) -> &str {
     request.source()
 }
 
-/// Go `offsetRange`: converts byte offsets to a UTF-16 protocol range.
+/// Converts byte offsets to a UTF-16 protocol range.
 pub(crate) fn offset_range(request: &CodeActionRequest, start: u32, end: u32) -> protocol::Range {
     let Some(line_index) = request.line_index() else {
         return protocol::Range::default();
@@ -87,7 +85,7 @@ pub(crate) fn text_edit(
     protocol::TextEdit::new(offset_range(request, start, end), new_text)
 }
 
-/// Go `phpClassQualifier`: the name to write for `class_name` in the
+/// The name to write for `class_name` in the
 /// request document and, when needed, the `use` edit that imports it.
 pub(crate) fn php_class_qualifier(
     request: &CodeActionRequest,
@@ -112,17 +110,17 @@ pub(crate) fn php_class_qualifier(
             if imported.kind != ImportKind::Class {
                 continue;
             }
-            if equal_fold(trim_backslashes(&imported.target), class_name) {
+            if eq_ignore_case(trim_backslashes(&imported.target), class_name) {
                 return (imported.alias, None);
             }
-            if equal_fold(&imported.alias, short_name) {
+            if eq_ignore_case(&imported.alias, short_name) {
                 conflict = true;
             }
         }
     }
     for class in phpquery::classes(root) {
-        if equal_fold(&phpquery::class_name(&class), short_name)
-            && !equal_fold(&php_class_fully_qualified_name(root, &class), class_name)
+        if eq_ignore_case(&phpquery::class_name(&class), short_name)
+            && !eq_ignore_case(&php_class_fully_qualified_name(root, &class), class_name)
         {
             conflict = true;
         }
@@ -130,7 +128,7 @@ pub(crate) fn php_class_qualifier(
     if conflict {
         return (format!("\\{class_name}"), None);
     }
-    if equal_fold(
+    if eq_ignore_case(
         trim_backslashes(&phpquery::namespace(root)),
         class_namespace,
     ) {
@@ -149,7 +147,6 @@ pub(crate) fn php_class_qualifier(
     )
 }
 
-/// Go `phpImportInsertionOffset`.
 pub(crate) fn php_import_insertion_offset(root: &SyntaxNode) -> u32 {
     let mut result = 0;
     for declaration in phpquery::use_declarations(root) {
@@ -172,7 +169,6 @@ pub(crate) fn php_import_insertion_offset(root: &SyntaxNode) -> u32 {
     0
 }
 
-/// Go `phpClassFullyQualifiedName`.
 pub(crate) fn php_class_fully_qualified_name(root: &SyntaxNode, class: &SyntaxNode) -> String {
     let class_name = phpquery::class_name(class);
     if class_name.is_empty() {
@@ -187,14 +183,13 @@ pub(crate) fn php_class_fully_qualified_name(root: &SyntaxNode, class: &SyntaxNo
     }
 }
 
-/// Go `phpSuggestedParameter`.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PhpSuggestedParameter {
     pub class_name: &'static str,
     pub variable_name: &'static str,
 }
 
-/// Go `phpExistingParameterTypes`: lowercase resolved class names used in
+/// Lowercase resolved class names used in
 /// the parameter types of `method`.
 pub(crate) fn php_existing_parameter_types(
     method: &SyntaxNode,
@@ -208,13 +203,13 @@ pub(crate) fn php_existing_parameter_types(
             if type_name.is_empty() {
                 continue;
             }
-            result.insert(go_to_lower(trim_backslashes(&resolver.resolve(type_name))));
+            result.insert(lowercase(trim_backslashes(&resolver.resolve(type_name))));
         }
     }
     result
 }
 
-/// Go `phpRequiredParameterEdit`: inserts `qualifier $variable_name` before
+/// Inserts `qualifier $variable_name` before
 /// the first optional or variadic parameter, or after the last one.
 pub(crate) fn php_required_parameter_edit(
     request: &CodeActionRequest,
@@ -339,7 +334,6 @@ fn php_parameter_indentation(
     format!("{close_indent}{indent_unit}")
 }
 
-/// Go `phpClassShortName`.
 pub(crate) fn php_class_short_name(class_name: &str) -> &str {
     let class_name = trim_backslashes(class_name);
     match class_name.rfind('\\') {
@@ -348,7 +342,7 @@ pub(crate) fn php_class_short_name(class_name: &str) -> &str {
     }
 }
 
-/// Go `propertyServiceDocumentPath`: the request document's file path, or
+/// The request document's file path, or
 /// its URI when it is not a file URI.
 pub(crate) fn request_document_path(request: &CodeActionRequest) -> String {
     let Some(document) = request.document.as_ref() else {
@@ -357,19 +351,19 @@ pub(crate) fn request_document_path(request: &CodeActionRequest) -> String {
     swlsp_uriutil::path(&document.uri).unwrap_or_else(|_| document.uri.clone())
 }
 
-/// Go `phpClassConstructor`.
 pub(crate) fn php_class_constructor(class: &SyntaxNode) -> Option<SyntaxNode> {
     phpquery::methods(class)
         .into_iter()
-        .find(|method| equal_fold(&phpquery::method_name(method), "__construct"))
+        .find(|method| eq_ignore_case(&phpquery::method_name(method), "__construct"))
 }
 
-/// Go `phpClassIsReadonly`.
 pub(crate) fn php_class_is_readonly(class: Option<&SyntaxNode>) -> bool {
-    class.is_some_and(|class| child_tokens(class).any(|token| equal_fold(token.text(), "readonly")))
+    class.is_some_and(|class| {
+        child_tokens(class).any(|token| eq_ignore_case(token.text(), "readonly"))
+    })
 }
 
-/// Go `phpBlockDelimiters`: the first `{` and last `}` child token.
+/// The first `{` and last `}` child token.
 pub(crate) fn php_block_delimiters(
     block: &SyntaxNode,
 ) -> (Option<SyntaxToken>, Option<SyntaxToken>) {
@@ -387,7 +381,6 @@ pub(crate) fn php_block_delimiters(
     (open, close)
 }
 
-/// Go `phpMemberIndentUnit`.
 pub(crate) fn php_member_indent_unit(
     source: &str,
     class: Option<&SyntaxNode>,
@@ -408,7 +401,6 @@ pub(crate) fn php_member_indent_unit(
     "    ".to_owned()
 }
 
-/// Go `hasResolvedPHPAttribute`.
 pub(crate) fn has_resolved_php_attribute(
     node: &SyntaxNode,
     resolver: &NameResolver,
@@ -419,7 +411,7 @@ pub(crate) fn has_resolved_php_attribute(
         let name = trim_backslashes(&resolved);
         if targets
             .iter()
-            .any(|target| equal_fold(name, trim_backslashes(target)))
+            .any(|target| eq_ignore_case(name, trim_backslashes(target)))
         {
             return true;
         }
@@ -427,7 +419,7 @@ pub(crate) fn has_resolved_php_attribute(
     false
 }
 
-/// Go `phpLineIndentation`: the leading spaces/tabs of the line holding
+/// The leading spaces/tabs of the line holding
 /// `offset`, up to `offset`.
 pub(crate) fn php_line_indentation(source: &str, offset: u32) -> &str {
     let offset = offset as usize;
@@ -444,13 +436,13 @@ pub(crate) fn php_line_indentation(source: &str, offset: u32) -> &str {
     &line[..line.len() - trimmed.len()]
 }
 
-/// Go `phpMethodsByName`: methods keyed by lowercase name (last wins).
+/// Methods keyed by lowercase name (last wins).
 pub(crate) fn php_methods_by_name(
     class: &SyntaxNode,
 ) -> std::collections::HashMap<String, SyntaxNode> {
     let mut result = std::collections::HashMap::new();
     for method in phpquery::methods(class) {
-        let name = go_to_lower(&phpquery::method_name(&method));
+        let name = lowercase(&phpquery::method_name(&method));
         if !name.is_empty() {
             result.insert(name, method);
         }
@@ -458,7 +450,6 @@ pub(crate) fn php_methods_by_name(
     result
 }
 
-/// Go `phpImportBlock`.
 pub(crate) fn php_import_block(root: &SyntaxNode, classes: &[String]) -> String {
     let prefix = if phpquery::use_declarations(root).is_empty() {
         "\n\n"
@@ -468,7 +459,6 @@ pub(crate) fn php_import_block(root: &SyntaxNode, classes: &[String]) -> String 
     format!("{prefix}use {};", classes.join(";\nuse "))
 }
 
-/// Go `phpClassNameUsedOutside`.
 pub(crate) fn php_class_name_used_outside(
     root: &SyntaxNode,
     resolver: &NameResolver,
@@ -484,7 +474,7 @@ pub(crate) fn php_class_name_used_outside(
         if skip {
             continue;
         }
-        if equal_fold(
+        if eq_ignore_case(
             trim_backslashes(&resolver.resolve(&phpquery::name_value(&name))),
             wanted,
         ) {
@@ -494,17 +484,14 @@ pub(crate) fn php_class_name_used_outside(
     false
 }
 
-/// Go `escapePHPSingleQuoted`.
 pub(crate) fn escape_php_single_quoted(value: &str) -> String {
     value.replace('\\', "\\\\").replace('\'', "\\'")
 }
 
-/// Go `escapeTwigSingleQuoted`.
 pub(crate) fn escape_twig_single_quoted(value: &str) -> String {
     value.replace('\\', "\\\\").replace('\'', "\\'")
 }
 
-/// Go `phpSourceReplacement`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct PhpSourceReplacement {
     pub start: u32,
@@ -512,7 +499,7 @@ pub(crate) struct PhpSourceReplacement {
     pub text: String,
 }
 
-/// Go `applyPHPSourceReplacements`: applies non-overlapping replacements
+/// Applies non-overlapping replacements
 /// back to front; `None` on an invalid or overlapping replacement.
 pub(crate) fn apply_php_source_replacements(
     source: &str,
@@ -542,13 +529,11 @@ pub(crate) fn apply_php_source_replacements(
     Some(source)
 }
 
-/// Go `isAdministrationTwigPath`.
 pub(crate) fn is_administration_twig_path(file_path: &str) -> bool {
     let normalized = swlsp_uriutil::filepath::to_slash(&swlsp_uriutil::filepath::clean(file_path));
     normalized.ends_with(".twig") && normalized.contains("/Resources/app/administration/src/")
 }
 
-/// Go `decodeSymfonyGeneratorRequest`.
 pub(crate) fn decode_generator_request<T: DeserializeOwned>(
     raw: Option<&Value>,
 ) -> Result<T, BoxError> {
@@ -559,7 +544,7 @@ pub(crate) fn decode_generator_request<T: DeserializeOwned>(
         .map_err(|error| format!("invalid generator request: {error}").into())
 }
 
-/// Go `indentationAt` (structural_edit.go).
+/// The leading spaces and tabs of the line holding `offset`.
 pub(crate) fn indentation_at(content: &[u8], offset: u32) -> String {
     let start = line_start_offset(content, offset) as usize;
     let mut end = start;
@@ -569,7 +554,6 @@ pub(crate) fn indentation_at(content: &[u8], offset: u32) -> String {
     String::from_utf8_lossy(&content[start..end]).into_owned()
 }
 
-/// Go `lineStartOffset`.
 pub(crate) fn line_start_offset(content: &[u8], offset: u32) -> u32 {
     let mut offset = (offset as usize).min(content.len());
     while offset > 0 && content[offset - 1] != b'\n' {
@@ -578,7 +562,7 @@ pub(crate) fn line_start_offset(content: &[u8], offset: u32) -> u32 {
     offset as u32
 }
 
-/// Go `yamlFlowClosingOffset`: the offset of the last `delimiter` in
+/// The offset of the last `delimiter` in
 /// `node`, moved left over horizontal whitespace.
 pub(crate) fn yaml_flow_closing_offset(node: Option<&SyntaxNode>, delimiter: u8) -> Option<u32> {
     let node = node?;

@@ -1,5 +1,4 @@
-//! Symfony UX component attribute completion inside component classes (Go
-//! `twig_component_php_completion.go`).
+//! Symfony UX component attribute completion inside component classes.
 
 use swlsp_lsp::{CompletionProvider, CompletionRequest, Context};
 use swlsp_lsp_protocol as protocol;
@@ -9,8 +8,8 @@ use swlsp_parser_php::syntax::{
 };
 use swlsp_php::NameResolver;
 use swlsp_php_resolver::{ImportKind, parse_use_declaration};
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
+use swlsp_textutil::eq_ignore_case;
 
 use super::twig_component::byte_range;
 use super::util::{kind, markdown, request_offset};
@@ -46,7 +45,7 @@ impl CompletionProvider for TwigComponentPhpCompletionProvider {
         let (Some(root), Some(line_index)) = (request.root.as_ref(), request.line_index()) else {
             return Vec::new();
         };
-        if !equal_fold(
+        if !eq_ignore_case(
             swlsp_uriutil::filepath::ext(&request.params.text_document.uri),
             ".php",
         ) {
@@ -201,7 +200,7 @@ fn start(node: &SyntaxNode) -> u32 {
     node.text_range().start().into()
 }
 
-/// Go `componentAttributeTarget`: the class and the member kind an attribute
+/// The class and the member kind an attribute
 /// at `offset` decorates.
 pub(super) fn component_attribute_target(
     root: &SyntaxNode,
@@ -284,12 +283,12 @@ fn php_component_class_kinds(class: &SyntaxNode, resolver: &NameResolver) -> (bo
     for attribute in phpquery::attributes(class) {
         let resolved = resolver.resolve(&phpquery::attribute_name(&attribute));
         let name = resolved.trim_matches('\\');
-        if equal_fold(
+        if eq_ignore_case(
             name,
             "Symfony\\UX\\TwigComponent\\Attribute\\AsTwigComponent",
         ) {
             component = true;
-        } else if equal_fold(
+        } else if eq_ignore_case(
             name,
             "Symfony\\UX\\LiveComponent\\Attribute\\AsLiveComponent",
         ) {
@@ -300,7 +299,7 @@ fn php_component_class_kinds(class: &SyntaxNode, resolver: &NameResolver) -> (bo
     (component, live)
 }
 
-/// Go `phpAttributeReplacementRange`: the attribute name being typed.
+/// The range of the attribute name being typed.
 pub(super) fn php_attribute_replacement_range(
     request: &CompletionRequest,
     offset: u32,
@@ -333,7 +332,7 @@ pub(super) fn php_attribute_replacement_range(
     Some(byte_range(name_start as u32, offset as u32))
 }
 
-/// Go `componentAttributeImport`: the name to insert and an optional `use`
+/// The name to insert and an optional `use`
 /// edit.
 pub(super) fn component_attribute_import(
     request: &CompletionRequest,
@@ -350,10 +349,10 @@ pub(super) fn component_attribute_import(
             if imported.kind != ImportKind::Class {
                 continue;
             }
-            if equal_fold(imported.target.trim_matches('\\'), fqn) {
+            if eq_ignore_case(imported.target.trim_matches('\\'), fqn) {
                 return (imported.alias, None);
             }
-            if equal_fold(&imported.alias, short) {
+            if eq_ignore_case(&imported.alias, short) {
                 conflict = true;
             }
         }

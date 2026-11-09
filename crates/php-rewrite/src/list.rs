@@ -1,4 +1,4 @@
-//! Argument and parameter list edits (port of `list.go`).
+//! Argument and parameter list edits.
 
 use swlsp_parser_php::query::{call_at, direct_child};
 use swlsp_parser_php::syntax::{

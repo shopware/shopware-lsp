@@ -1,9 +1,8 @@
-//! Structural queries over PHP syntax trees (port of Go
-//! `internal/parser/php/query`).
+//! Structural queries over PHP syntax trees.
 //!
-//! Functions accept the node a Go caller would pass and return `Option` for
-//! nodes (Go `nil`) and `String` for text (empty when Go returns `""`). Text
-//! derived from several tokens is normalized exactly like the Go helpers.
+//! Functions return `Option` for nodes and `String` for text, empty when the
+//! text is absent. Text derived from several tokens is normalized (white
+//! space and comments removed) so callers can compare it directly.
 
 mod extract;
 mod imports;
@@ -18,7 +17,7 @@ pub use strings::*;
 use swlsp_syntax::rowan::{NodeOrToken, WalkEvent};
 use swlsp_syntax::{Kind, SyntaxNode, SyntaxNodeExt, SyntaxToken, TextRange, TextSize};
 
-use crate::equal_fold;
+use crate::eq_ignore_case;
 use crate::syntax::*;
 
 const CLASS_KINDS: &[Kind] = &[
@@ -143,8 +142,8 @@ fn compact_name(text: &str) -> String {
         .collect()
 }
 
-/// Removes white space and comment-like regions, like Go `compactExpression`
-/// (comment detection is textual and also applies inside string literals).
+/// Removes white space and comment-like regions (comment detection is textual
+/// and also applies inside string literals).
 pub(crate) fn compact_expression(text: &str) -> String {
     let bytes = text.as_bytes();
     let needs_slow = bytes.iter().enumerate().any(|(index, &byte)| match byte {
@@ -276,7 +275,7 @@ pub fn is_enum(node: &SyntaxNode) -> bool {
 pub fn is_abstract(node: &SyntaxNode) -> bool {
     class_at(node).is_some_and(|class| {
         class.kind() == PHP_CLASS_DECLARATION
-            && child_tokens(&class).any(|token| equal_fold(token.text(), "abstract"))
+            && child_tokens(&class).any(|token| eq_ignore_case(token.text(), "abstract"))
     })
 }
 
@@ -410,7 +409,7 @@ pub fn declaration_visibility(node: &SyntaxNode) -> String {
                 return visibility.to_owned();
             }
         }
-        if equal_fold(text, "function") {
+        if eq_ignore_case(text, "function") {
             break;
         }
     }
@@ -731,7 +730,7 @@ pub fn scoped_access_class(node: &SyntaxNode, member_name: &str) -> String {
         let Some(separator) = text.rfind("::") else {
             continue;
         };
-        if !equal_fold(&text[separator + 2..], member_name) {
+        if !eq_ignore_case(&text[separator + 2..], member_name) {
             continue;
         }
         return text[..separator].trim().to_owned();

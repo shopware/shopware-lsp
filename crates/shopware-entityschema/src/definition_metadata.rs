@@ -1,5 +1,4 @@
-//! Class-based definition metadata hooks (port of Go
-//! `definition_metadata.go`).
+//! Class-based definition metadata hooks.
 
 use std::collections::HashSet;
 use std::sync::LazyLock;
@@ -240,8 +239,8 @@ fn validate_definition_defaults(
             v.add(
                 "entity.definitionMetadata.default.property.invalid",
                 format!(
-                    "{label} property {} is not a valid DAL property name",
-                    go_quote(&value.property_name)
+                    "{label} property {:?} is not a valid DAL property name",
+                    value.property_name
                 ),
                 field_id,
             );
@@ -249,10 +248,7 @@ fn validate_definition_defaults(
         if !seen.insert(value.property_name.as_str()) {
             v.add(
                 "entity.definitionMetadata.default.property.duplicate",
-                format!(
-                    "{label} property {} is duplicated",
-                    go_quote(&value.property_name)
-                ),
+                format!("{label} property {:?} is duplicated", value.property_name),
                 field_id,
             );
         }
@@ -260,8 +256,8 @@ fn validate_definition_defaults(
             v.add(
                 "entity.definitionMetadata.default.expression.invalid",
                 format!(
-                    "{label} value for {} is not a valid PHP expression",
-                    go_quote(&value.property_name)
+                    "{label} value for {:?} is not a valid PHP expression",
+                    value.property_name
                 ),
                 field_id,
             );

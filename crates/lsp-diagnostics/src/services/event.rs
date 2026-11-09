@@ -1,5 +1,4 @@
-//! Dispatched events without listeners and missing listener methods (Go
-//! `event_diagnostics.go`).
+//! Dispatched events without listeners and missing listener methods.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -15,19 +14,18 @@ use swlsp_parser_xml::syntax::XML_ATTRIBUTE;
 use swlsp_parser_yaml::query as yamlquery;
 use swlsp_parser_yaml::syntax::YAML_SCALAR;
 use swlsp_php::{PhpContext, PhpIndex};
-use swlsp_php_types::equal_fold;
-use swlsp_php_types::go_to_lower;
 use swlsp_symfony::ServiceIndex;
 use swlsp_syntax::{SyntaxNodeExt, TextRange};
+use swlsp_textutil::eq_ignore_case;
+use swlsp_textutil::lowercase;
 
-use super::{lower_ext, problem, similar_value, string_list};
+use super::{lower_ext, problem, similar_value};
 use crate::ProblemAnalyzer;
 use crate::common::value_node_text_range;
 
 const MISSING_EVENT_CODE: &str = "symfony.event.missing";
 const MISSING_LISTENER_METHOD_CODE: &str = "symfony.event.listener_method.missing";
 
-/// Go `EventAnalyzer`.
 pub struct EventAnalyzer {
     index: Option<Arc<Index>>,
     php_index: Option<PhpIndex>,
@@ -147,7 +145,7 @@ impl ProblemAnalyzer for EventAnalyzer {
                         );
                         data.insert(
                             "eventTypes".to_owned(),
-                            string_list(event_listener_types(&events, &path, reference, &listener)),
+                            Value::from(event_listener_types(&events, &path, reference, &listener)),
                         );
                     }
                     result.push(diagnostic);
@@ -177,13 +175,13 @@ fn event_listener_types(
                 && (range_contains(listener.range, offset)
                     || range_contains(listener.method_range, offset)))
                 || (!resolved.class.is_empty()
-                    && equal_fold(&listener.class, &resolved.class)
-                    && equal_fold(&listener.method, &reference.name))
+                    && eq_ignore_case(&listener.class, &resolved.class)
+                    && eq_ignore_case(&listener.method, &reference.name))
                 || (!resolved.service.is_empty()
-                    && equal_fold(&listener.service, &resolved.service)
-                    && equal_fold(&listener.method, &reference.name))
+                    && eq_ignore_case(&listener.service, &resolved.service)
+                    && eq_ignore_case(&listener.method, &reference.name))
         });
-        if !matches || !seen.insert(go_to_lower(&current.event_type)) {
+        if !matches || !seen.insert(lowercase(&current.event_type)) {
             continue;
         }
         result.push(current.event_type.clone());

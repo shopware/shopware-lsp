@@ -1,7 +1,7 @@
-//! `use` declaration parsing (port of `resolver/imports.go`).
+//! `use` declaration parsing.
 
 use swlsp_php_semantic::Str;
-use swlsp_php_types::{equal_fold, go_to_lower};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::names::NameContext;
 
@@ -59,15 +59,13 @@ impl NameContext {
             ImportKind::Function => {
                 imports
                     .functions
-                    .insert(Str::from(go_to_lower(alias)), target);
+                    .insert(Str::from(lowercase(alias)), target);
             }
             ImportKind::Constant => {
                 imports.constants.insert(Str::from(alias), target);
             }
             ImportKind::Class => {
-                imports
-                    .classes
-                    .insert(Str::from(go_to_lower(alias)), target);
+                imports.classes.insert(Str::from(lowercase(alias)), target);
             }
         }
     }
@@ -101,10 +99,10 @@ fn consume_import_kind(source: &str, fallback: ImportKind) -> (ImportKind, &str)
     }
     let end = source.find(char::is_whitespace).unwrap_or(source.len());
     let first = &source[..end];
-    if equal_fold(first, "function") {
+    if eq_ignore_case(first, "function") {
         return (ImportKind::Function, source[end..].trim());
     }
-    if equal_fold(first, "const") {
+    if eq_ignore_case(first, "const") {
         return (ImportKind::Constant, source[end..].trim());
     }
     (fallback, source)
@@ -123,7 +121,7 @@ fn parse_import(source: &str, kind: ImportKind, base: &str) -> Option<Import> {
     let mut alias = split_last(&target).0.to_owned();
     let (alias_field, before_alias) = last_import_field(source);
     let (keyword, _) = last_import_field(before_alias);
-    if !alias_field.is_empty() && equal_fold(keyword, "as") {
+    if !alias_field.is_empty() && eq_ignore_case(keyword, "as") {
         alias = alias_field.to_owned();
     }
     Some(Import {
@@ -212,7 +210,7 @@ fn strip_comments(source: &str) -> std::borrow::Cow<'_, str> {
         }
     }
     // An unterminated block comment can end inside a multi-byte character;
-    // Go keeps the raw byte, Rust replaces it.
+    // the partial character is replaced with U+FFFD.
     match String::from_utf8(result) {
         Ok(text) => std::borrow::Cow::Owned(text),
         Err(error) => {

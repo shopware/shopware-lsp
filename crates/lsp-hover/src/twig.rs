@@ -217,7 +217,7 @@ impl TwigHoverProvider {
             swlsp_uriutil::file_uri(&icon_path)
         } else {
             let document_path = swlsp_uriutil::path(request_uri(request))?;
-            match filepath::rel(&go_dir(&document_path), &icon_path) {
+            match filepath::rel(&filepath::dir(&document_path), &icon_path) {
                 Ok(relative) => relative,
                 Err(_) => swlsp_uriutil::file_uri(&icon_path),
             }
@@ -230,15 +230,6 @@ impl TwigHoverProvider {
             request_byte_range(request, icon_range),
         )))
     }
-}
-
-/// Go `filepath.Dir` for slash-separated paths.
-fn go_dir(path: &str) -> String {
-    let directory = match path.rfind('/') {
-        Some(index) => &path[..=index],
-        None => "",
-    };
-    filepath::clean(directory)
 }
 
 fn append_twig_documentation(

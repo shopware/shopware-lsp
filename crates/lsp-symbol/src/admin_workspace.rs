@@ -1,5 +1,4 @@
-//! Administration registry workspace symbols (port of `admin_symbol.go` and
-//! `admin_symbol_collect.go`).
+//! Administration registry workspace symbols.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -11,7 +10,7 @@ use swlsp_admin::{
 use swlsp_lsp::{Context, ProviderResult, WorkspaceSymbolProvider};
 use swlsp_lsp_protocol as protocol;
 use swlsp_lsp_protocol::SymbolKind;
-use swlsp_php_types::go_to_lower;
+use swlsp_textutil::lowercase;
 
 use crate::{line_location, lower_contains};
 
@@ -39,7 +38,7 @@ impl WorkspaceSymbolProvider for AdminWorkspaceSymbolProvider {
         let mut collector = Collector {
             ctx,
             index,
-            query: go_to_lower(query.trim()),
+            query: lowercase(query.trim()),
             result: Vec::new(),
             seen_api: HashSet::new(),
         };

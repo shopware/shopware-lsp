@@ -61,7 +61,9 @@ impl Server {
     ) -> usize {
         self.diagnostics_for_document(ctx, document)
             .iter()
-            .filter(|diagnostic| code_string(diagnostic.code.as_ref()) == code.0)
+            .filter(|diagnostic| {
+                code_string(diagnostic.code.as_ref()).as_deref() == Some(code.0.as_str())
+            })
             .filter_map(|diagnostic| decode_diagnostic_envelope(diagnostic.data.as_ref()).ok())
             .filter(|envelope| envelope.fixes.iter().any(|bound| &bound.id == fix))
             .count()

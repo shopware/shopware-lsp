@@ -1,4 +1,4 @@
-//! Port of Go `snippet_completion_test.go`.
+//! Tests for snippet key completion.
 
 use std::sync::Arc;
 

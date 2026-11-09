@@ -1,4 +1,4 @@
-//! Twig documentation comments (port of `documentation.go`).
+//! Twig documentation comments.
 
 use swlsp_parser_twig::syntax::{BODY, TWIG_COMMENT};
 use swlsp_syntax::SyntaxNode;

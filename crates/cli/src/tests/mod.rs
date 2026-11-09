@@ -1,4 +1,5 @@
-//! Ports of the Go `internal/cli` tests.
+//! End-to-end tests of the command line and MCP server, run in-process
+//! against temporary workspaces.
 
 mod cli;
 mod common;

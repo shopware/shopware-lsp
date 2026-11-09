@@ -1,5 +1,4 @@
-//! EntityExtension and BulkEntityExtension import (port of Go
-//! `import_extensions.go`).
+//! EntityExtension and BulkEntityExtension import.
 
 use std::collections::HashMap;
 
@@ -108,8 +107,8 @@ pub(crate) fn import_extension_parsed(
     }
     if spec.extended_definition_class.is_empty() {
         return Err(errorf!(
-            "entity extension target {} is not present in the indexed DAL catalog",
-            go_quote(&spec.entity_name)
+            "entity extension target {:?} is not present in the indexed DAL catalog",
+            spec.entity_name
         ));
     }
     if let Some(target) = lookup_relation(lookup, &spec.extended_definition_class) {

@@ -1,8 +1,8 @@
-//! Lexical path helpers mirroring Go's `path/filepath` semantics.
+//! Lexical path helpers that never touch the filesystem.
 
 use std::path::{Component, Path, PathBuf};
 
-/// Lexically normalizes `path` like Go `filepath.Clean`: removes `.`
+/// Lexically normalizes `path`: removes `.`
 /// segments, resolves `..` against preceding names, and drops redundant
 /// separators. An empty result becomes `.`.
 pub fn clean(path: &Path) -> PathBuf {
@@ -26,7 +26,7 @@ pub fn clean(path: &Path) -> PathBuf {
     result.iter().collect()
 }
 
-/// Go `filepath.Join(base, path)`: concatenation followed by [`clean`]. An
+/// Joins `path` to `base` and cleans the result with [`clean`]. An
 /// absolute `path` is appended rather than replacing `base`.
 pub fn join(base: &Path, path: &str) -> PathBuf {
     let mut joined = base.as_os_str().to_owned();
@@ -37,8 +37,7 @@ pub fn join(base: &Path, path: &str) -> PathBuf {
     clean(Path::new(&joined))
 }
 
-/// Go `filepath.Abs`: joins relative paths with the working directory and
-/// cleans the result.
+/// `path` made absolute against the working directory, then cleaned.
 pub fn absolute(path: &Path) -> PathBuf {
     if path.is_absolute() {
         return clean(path);

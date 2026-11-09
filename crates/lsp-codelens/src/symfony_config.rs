@@ -8,8 +8,8 @@ use swlsp_lsp::{CodeLensProvider, CodeLensRequest, Context, ProviderResult};
 use swlsp_lsp_protocol as protocol;
 use swlsp_parser_php::syntax::PHP_STRING;
 use swlsp_parser_yaml::syntax::YAML_SCALAR;
-use swlsp_php_types::go_to_lower;
 use swlsp_symfonyconfig::Index;
+use swlsp_textutil::lowercase;
 
 use crate::{
     cancelled, lower_ext, related_lens, related_protocol_range, related_source_line,
@@ -61,7 +61,7 @@ impl CodeLensProvider for SymfonyConfigCodeLensProvider {
             if let Some(reference) = swlsp_symfonyconfig::root_reference_at(&node)
                 && seen.insert(("root", reference.range))
             {
-                let key = go_to_lower(&reference.name);
+                let key = lowercase(&reference.name);
                 let targets = match root_targets.get(&key) {
                     Some(targets) => targets.clone(),
                     None => {

@@ -1,10 +1,9 @@
-//! PHP semantic graph LSP features (port of Go `internal/lsp/phpsemantic`):
+//! PHP semantic graph LSP features:
 //! semantic diagnostics, completion, definition, implementations, type
 //! hierarchy, hover, references, rename, signature help, document symbols
 //! and document highlights.
 //!
-//! Go reads the request's PHP analysis from the enriched `context.Context`.
-//! Rust builds the same [`PhpContext`] from the request's document through
+//! Each provider builds the request's [`PhpContext`] from its document through
 //! the memoized [`swlsp_lsp_phpanalysis::for_document`] analysis, so every
 //! provider of one request shares one semantic pass.
 //!
@@ -53,7 +52,7 @@ impl Provider {
         self.index.as_ref()
     }
 
-    /// The request's PHP analysis (Go's PHP context enricher): the memoized
+    /// The request's PHP analysis: the memoized
     /// document analysis, or a fresh unnamed analysis when the document has
     /// no file path.
     fn php_context(&self, syntax: &SyntaxContext) -> Option<PhpContext> {

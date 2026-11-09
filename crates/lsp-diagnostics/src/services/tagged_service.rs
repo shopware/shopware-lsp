@@ -1,5 +1,4 @@
-//! Tagged services whose class misses the tag's required interface (Go
-//! `tagged_service_diagnostics.go`).
+//! Tagged services whose class misses the tag's required interface.
 
 use std::sync::Arc;
 
@@ -13,7 +12,6 @@ use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
 const TAGGED_SERVICE_TYPE_CODE: &str = "symfony.service.tag_type";
 
-/// Go `TaggedServiceAnalyzer`.
 pub struct TaggedServiceAnalyzer {
     php_index: Option<PhpIndex>,
 }
@@ -86,7 +84,7 @@ impl ProblemAnalyzer for TaggedServiceAnalyzer {
             if php.find_class(class_name).is_none() {
                 continue;
             }
-            // TagMap is a BTreeMap: keys iterate sorted like Go's sort.Strings.
+            // TagMap is a BTreeMap, so tags iterate in sorted order.
             for tag in service.tags.keys() {
                 let expected = swlsp_symfony::required_service_tag_types(tag);
                 if expected.is_empty() {

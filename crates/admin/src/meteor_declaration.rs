@@ -1,5 +1,4 @@
-//! Meteor component library declarations (port of Go
-//! `meteor_declaration.go`).
+//! Meteor component library declarations.
 
 use std::sync::LazyLock;
 
@@ -32,14 +31,6 @@ pub(crate) struct TypeDeclarationField {
     /// Absolute byte offset of the value, if any.
     pub value_offset: Option<usize>,
     pub quoted: bool,
-}
-
-/// Go `unicode.IsSpace(rune(byte))`.
-fn is_space_byte(value: u8) -> bool {
-    matches!(
-        value,
-        b'\t' | b'\n' | 0x0B | 0x0C | b'\r' | b' ' | 0x85 | 0xA0
-    )
 }
 
 fn line_at(line_index: &LineIndex, offset: usize) -> u32 {
@@ -500,7 +491,7 @@ pub(crate) fn parse_type_declaration_field(
     let mut value_offset = None;
     if value_start < bytes.len() && bytes[value_start] == b':' {
         let mut offset = value_start + 1;
-        while offset < bytes.len() && is_space_byte(bytes[offset]) {
+        while offset < bytes.len() && is_ascii_space(bytes[offset]) {
             offset += 1;
         }
         value = lossy_slice(trimmed, offset, bytes.len()).trim().to_owned();

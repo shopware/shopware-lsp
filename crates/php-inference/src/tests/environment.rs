@@ -1,5 +1,4 @@
-//! Environment semantics (ported from the Go environment tests; Go's
-//! handle-layout assertions are replaced by equivalent semantic checks).
+//! Environment semantics: copy-on-write frames, joins and frame size limits.
 
 use swlsp_php_types::{Relations, Type};
 

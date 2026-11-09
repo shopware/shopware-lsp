@@ -1,5 +1,4 @@
-//! Twig macro calls to their declarations (port of Go
-//! `twig_macro_definition.go`).
+//! Twig macro calls to their declarations.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -38,8 +37,8 @@ impl GotoDefinitionProvider for TwigMacroDefinitionProvider {
             return Vec::new();
         };
         let uri = request_uri(request);
-        // Go compares `filepath.Ext` case-sensitively here.
-        if !go_ext(uri).eq(".twig") {
+        // The extension check is case-sensitive.
+        if !swlsp_uriutil::filepath::ext(uri).eq(".twig") {
             return Vec::new();
         }
         let Some(offset) = request_offset(request) else {
@@ -103,12 +102,6 @@ fn definitions(
         );
     }
     result
-}
-
-/// Go `filepath.Ext`.
-fn go_ext(path: &str) -> &str {
-    let base = path.rsplit('/').next().unwrap_or(path);
-    base.rfind('.').map_or("", |index| &base[index..])
 }
 
 #[cfg(test)]

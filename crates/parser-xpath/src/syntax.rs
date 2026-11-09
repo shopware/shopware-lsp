@@ -1,4 +1,4 @@
-//! XPath syntax kinds (values identical to the Go implementation).
+//! XPath syntax kinds. Kind values are persisted in caches; do not renumber them.
 
 swlsp_syntax::language! {
     name: "xpath", base: 28672,

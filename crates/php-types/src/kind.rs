@@ -1,7 +1,7 @@
 use std::fmt;
 
-/// Identifies one semantic type constructor. Discriminants match Go's
-/// `types.Kind` values.
+/// Identifies one semantic type constructor. Discriminants are persisted
+/// and must not be reordered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 pub enum Kind {
@@ -83,7 +83,7 @@ impl Kind {
         Kind::ALL[value as usize]
     }
 
-    /// The Go `Kind.String()` text.
+    /// The canonical name of the kind.
     pub const fn as_str(self) -> &'static str {
         match self {
             Kind::Unknown => "unknown",

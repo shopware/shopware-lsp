@@ -10,9 +10,10 @@ use swlsp_parser_xml::query as xmlquery;
 use swlsp_parser_yaml::query as yamlquery;
 use swlsp_php::PhpIndex;
 use swlsp_php_semantic::{Parameter, Symbol};
-use swlsp_php_types::{Kind as TypeKind, Type, equal_fold, go_to_lower};
+use swlsp_php_types::{Kind as TypeKind, Type};
 use swlsp_symfony::ServiceIndex;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::{inlay_hint_byte_range, position};
 
@@ -98,7 +99,7 @@ impl InlayHintProvider for ServiceArgumentProvider {
             }
             result.push(protocol::InlayHint {
                 position: position(document, binding.hint_position),
-                label: serde_json::Value::String(label),
+                label: label.into(),
                 kind: Some(InlayHintKind::PARAMETER),
                 tooltip: service_parameter_hint_tooltip(parameter),
                 padding_left: true,
@@ -123,7 +124,7 @@ impl ServiceArgumentProvider {
         let mut visited = HashSet::new();
         let mut current = service_id.to_string();
         while !current.is_empty() {
-            let key = go_to_lower(&current);
+            let key = lowercase(&current);
             if !visited.insert(key.clone()) {
                 return Ok(None);
             }
@@ -161,7 +162,7 @@ fn service_binding_parameter<'m>(method: &'m Symbol, binding: &Binding) -> Optio
             .strip_prefix('$')
             .unwrap_or(&binding.parameter);
         return method.parameters.iter().find(|parameter| {
-            equal_fold(
+            eq_ignore_case(
                 parameter.name.strip_prefix('$').unwrap_or(&parameter.name),
                 wanted,
             )
@@ -222,7 +223,7 @@ fn xml_service_argument_bindings(root: &SyntaxNode) -> (Services, Vec<Binding>) 
         let service_id = xml_attribute(&service, "id");
         let class_name = xml_attribute(&service, "class");
         services.insert(
-            go_to_lower(&service_id),
+            lowercase(&service_id),
             Descriptor {
                 class_name: class_name.clone(),
                 alias: xml_attribute(&service, "alias"),
@@ -253,7 +254,7 @@ fn xml_service_argument_bindings(root: &SyntaxNode) -> (Services, Vec<Binding>) 
     }
     for alias in xmlquery::elements(root, &["alias"]) {
         services.insert(
-            go_to_lower(&xml_attribute(&alias, "id")),
+            lowercase(&xml_attribute(&alias, "id")),
             Descriptor {
                 class_name: String::new(),
                 alias: xml_attribute(&alias, "alias"),
@@ -337,7 +338,7 @@ fn yaml_service_argument_bindings(root: &SyntaxNode) -> (Services, Vec<Binding>)
             let alias = yaml_scalar(config);
             descriptor.alias = alias.strip_prefix('@').unwrap_or(&alias).to_string();
         }
-        services.insert(go_to_lower(&service_id), descriptor.clone());
+        services.insert(lowercase(&service_id), descriptor.clone());
         if !yaml_is_mapping(config) {
             continue;
         }

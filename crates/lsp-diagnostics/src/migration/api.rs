@@ -1,5 +1,4 @@
-//! Class, member and exception-factory renames (Go
-//! `shopware_migration_api.go`).
+//! Class, member and exception-factory renames.
 
 use super::scan;
 use std::collections::HashMap;
@@ -13,8 +12,8 @@ use swlsp_parser_php::syntax::{
 };
 use swlsp_php_resolver::{ImportKind, parse_use_declaration};
 use swlsp_php_semantic::{Document, NameKind, Reference, Snapshot, SymbolKind};
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_syntax::{Kind, SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use super::{
     ShopwareMigrationAnalyzer, ShopwareMigrationEdit, ShopwareMigrationPayload, migration_problem,
@@ -29,7 +28,7 @@ const API_CONSTANT_RENAME_CODE: &str = "shopware.migration.api.constant.rename";
 const API_PROPERTY_MIGRATION_CODE: &str = "shopware.migration.api.property";
 const API_EXCEPTION_FACTORY_CODE: &str = "shopware.migration.api.exception_factory";
 
-/// The Shopware 6.x release a rule applies from (Go `shopwareMigrationSince`).
+/// The Shopware 6.x release a rule applies from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Since {
     pub minor: i64,
@@ -585,10 +584,7 @@ type MemberIndex = HashMap<String, Vec<ApiMemberMigration>>;
 fn index_api_member_migrations(rules: &[ApiMemberMigration]) -> MemberIndex {
     let mut result: MemberIndex = HashMap::new();
     for rule in rules {
-        result
-            .entry(go_to_lower(rule.from))
-            .or_default()
-            .push(*rule);
+        result.entry(lowercase(rule.from)).or_default().push(*rule);
     }
     result
 }
@@ -610,7 +606,6 @@ struct ApiClassOccurrence {
     explicit_alias: bool,
 }
 
-/// Go `validSourceRange`.
 pub(crate) fn valid_source_range(start: u32, end: u32, source: &str) -> bool {
     start < end && end as usize <= source.len()
 }
@@ -651,7 +646,7 @@ impl ShopwareMigrationAnalyzer {
         let mut active: HashMap<String, ApiClassMigration> = HashMap::new();
         for rule in API_CLASS_MIGRATIONS {
             if rule.since.active(self) {
-                active.insert(go_to_lower(rule.from), *rule);
+                active.insert(lowercase(rule.from), *rule);
             }
         }
         let mut occurrences = Vec::new();
@@ -661,8 +656,7 @@ impl ShopwareMigrationAnalyzer {
                 if imported.kind != ImportKind::Class {
                     continue;
                 }
-                let Some(rule) = active.get(&go_to_lower(trim_backslashes(&imported.target)))
-                else {
+                let Some(rule) = active.get(&lowercase(trim_backslashes(&imported.target))) else {
                     continue;
                 };
                 let Some(range) = php_use_target_range(&declaration, &imported.target, source)
@@ -674,9 +668,12 @@ impl ShopwareMigrationAnalyzer {
                     rule: *rule,
                     node: declaration.clone(),
                     in_use: true,
-                    explicit_alias: !equal_fold(&imported.alias, short_php_name(&imported.target)),
+                    explicit_alias: !eq_ignore_case(
+                        &imported.alias,
+                        short_php_name(&imported.target),
+                    ),
                 });
-                imports.insert(go_to_lower(rule.from), true);
+                imports.insert(lowercase(rule.from), true);
             }
         }
         for reference in &document.references {
@@ -698,7 +695,7 @@ impl ShopwareMigrationAnalyzer {
             };
             let in_use = ancestor_php_kind(&node, PHP_USE_DECLARATION).is_some();
             if in_use {
-                imports.insert(go_to_lower(rule.from), true);
+                imports.insert(lowercase(rule.from), true);
             }
             occurrences.push(ApiClassOccurrence {
                 range,
@@ -711,7 +708,7 @@ impl ShopwareMigrationAnalyzer {
         let mut result = Vec::with_capacity(occurrences.len());
         for occurrence in &occurrences {
             if imports
-                .get(&go_to_lower(occurrence.rule.from))
+                .get(&lowercase(occurrence.rule.from))
                 .copied()
                 .unwrap_or(false)
                 && !occurrence.in_use
@@ -755,7 +752,7 @@ impl ShopwareMigrationAnalyzer {
             let resolved = resolver.resolve(&phpquery::object_class_name(&creation));
             let class = trim_backslashes(&resolved);
             for rule in API_FACTORY_MIGRATIONS {
-                if !rule.since.active(self) || !equal_fold(class, rule.from) {
+                if !rule.since.active(self) || !eq_ignore_case(class, rule.from) {
                     continue;
                 }
                 let Some(arguments) = phpquery::direct_child(&creation, PHP_ARGUMENT_LIST) else {
@@ -915,7 +912,7 @@ impl ShopwareMigrationAnalyzer {
         rules_by_name: &MemberIndex,
     ) -> Option<ApiMemberMigration> {
         rules_by_name
-            .get(&go_to_lower(&reference.name))?
+            .get(&lowercase(&reference.name))?
             .iter()
             .find(|rule| {
                 rule.since.active(self)
@@ -962,7 +959,7 @@ fn api_class_migration_edits(
     }];
     let old_short = short_php_name(occurrence.rule.from);
     let new_short = short_php_name(occurrence.rule.to);
-    if equal_fold(old_short, new_short) || occurrence.explicit_alias {
+    if eq_ignore_case(old_short, new_short) || occurrence.explicit_alias {
         return (edits, true);
     }
     if php_import_alias_conflict(root, &use_declaration, new_short) {
@@ -971,7 +968,7 @@ fn api_class_migration_edits(
         return (edits, true);
     }
     for other in occurrences {
-        if other.in_use || !equal_fold(other.rule.from, occurrence.rule.from) {
+        if other.in_use || !eq_ignore_case(other.rule.from, occurrence.rule.from) {
             continue;
         }
         let (other_start, other_end) =
@@ -1003,20 +1000,20 @@ fn php_import_alias_conflict(root: &SyntaxNode, current: &SyntaxNode, alias: &st
             parse_use_declaration(&node_text(declaration))
                 .iter()
                 .any(|imported| {
-                    imported.kind == ImportKind::Class && equal_fold(&imported.alias, alias)
+                    imported.kind == ImportKind::Class && eq_ignore_case(&imported.alias, alias)
                 })
         })
 }
 
-/// Go `phpUseTargetRange`: the source range of `target` inside a `use`
-/// declaration, including a leading backslash.
+/// The source range of `target` inside a `use` declaration, including a leading
+/// backslash.
 fn php_use_target_range(declaration: &SyntaxNode, target: &str, source: &str) -> Option<TextRange> {
     if target.is_empty() {
         return None;
     }
     let text = node_text(declaration);
     let trimmed = trim_backslashes(target);
-    let mut index = go_to_lower(&text).find(&go_to_lower(trimmed))?;
+    let mut index = lowercase(&text).find(&lowercase(trimmed))?;
     let bytes = text.as_bytes();
     if index >= bytes.len() {
         return None;
@@ -1073,16 +1070,16 @@ fn class_migration_for_reference(
     active: &HashMap<String, ApiClassMigration>,
 ) -> Option<ApiClassMigration> {
     for name in reference.qualified_names() {
-        if let Some(rule) = active.get(&go_to_lower(trim_backslashes(name))) {
+        if let Some(rule) = active.get(&lowercase(trim_backslashes(name))) {
             return Some(*rule);
         }
     }
     active
-        .get(&go_to_lower(trim_backslashes(&reference.name)))
+        .get(&lowercase(trim_backslashes(&reference.name)))
         .copied()
 }
 
-/// Go `ancestorPHPKind`: `node` or its nearest ancestor of `kind`.
+/// `node` or its nearest ancestor of `kind`.
 pub(crate) fn ancestor_php_kind(node: &SyntaxNode, kind: Kind) -> Option<SyntaxNode> {
     node.ancestors().find(|current| current.kind() == kind)
 }

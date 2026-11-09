@@ -1,4 +1,4 @@
-//! Go `command_invoke_parameter_codeaction_test.go`.
+//! Console `__invoke` parameter action tests.
 
 use swlsp_indexer::{Indexer, ParsedFile};
 use swlsp_lsp::{ActionProvider, CodeActionRequest, Context};

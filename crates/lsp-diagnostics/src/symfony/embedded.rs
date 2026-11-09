@@ -1,6 +1,5 @@
-//! Go `embedded_{css,json,xpath,language}_diagnostics.go`: static PHP
-//! strings embedding JSON, CSS selectors or XPath, validated by the native
-//! parsers with ranges mapped back into the PHP document.
+//! Static PHP strings embedding JSON, CSS selectors or XPath, validated by the
+//! native parsers with ranges mapped back into the PHP document.
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -14,8 +13,8 @@ use swlsp_php::{
     EmbeddedLanguage, EmbeddedPhpString, PhpIndex, embedded_css_selectors, embedded_json_literals,
     embedded_language_strings, embedded_xpath_expressions,
 };
-use swlsp_php_types::go_to_lower;
 use swlsp_syntax::{SyntaxNode, TextRange, TextSize};
+use swlsp_textutil::lowercase;
 
 use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
@@ -61,7 +60,7 @@ fn php_document<'a>(
 ) -> Option<(&'a PhpIndex, SyntaxNode, String)> {
     let php_index = php_index?;
     let root = document.root()?;
-    if !go_to_lower(&document.uri).ends_with(".php") {
+    if !lowercase(&document.uri).ends_with(".php") {
         return None;
     }
     let path = swlsp_uriutil::path(&document.uri).ok()?;
@@ -212,9 +211,8 @@ impl ProblemAnalyzer for EmbeddedLanguageAnalyzer {
     }
 }
 
-/// The decoded value as parser input. Go parses the raw bytes; escapes that
-/// decode to invalid UTF-8 are replaced here, which may shift ranges after
-/// the replaced bytes.
+/// The decoded value as parser input. Escapes that decode to invalid UTF-8 are
+/// replaced, which may shift ranges after the replaced bytes.
 fn embedded_text(string: &EmbeddedPhpString) -> Cow<'_, str> {
     string.text()
 }
@@ -293,8 +291,8 @@ fn embedded_xpath_diagnostics(expression: &EmbeddedPhpString) -> Vec<Problem> {
     )]
 }
 
-/// Go `embeddedDiagnosticHostRange`: maps an embedded range into the PHP
-/// document and widens an empty range by one byte inside the content.
+/// Maps an embedded range into the PHP document and widens an empty range by
+/// one byte inside the content.
 fn embedded_diagnostic_host_range(literal: &EmbeddedPhpString, embedded: TextRange) -> TextRange {
     let host = literal.source_range(embedded);
     if !host.is_empty() {

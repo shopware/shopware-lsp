@@ -1,4 +1,4 @@
-//! Port of Go `services_xml_migration.go`.
+//! The deprecated `services.xml` inspection and its migration fix.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -20,7 +20,6 @@ use crate::{BoundInspection, resolve_anchor};
 
 pub const CONVERT_SERVICES_XML_FIX_ID: &str = "convert-services-xml-to-yaml";
 
-/// Go `NewServicesXMLMigration`.
 pub fn new_services_xml_migration() -> Arc<dyn Inspection> {
     Arc::new(BoundInspection {
         definition: InspectionDefinition {

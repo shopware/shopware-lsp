@@ -1,4 +1,4 @@
-//! Import usage analysis (port of `imports/analyze.go`).
+//! Import usage analysis.
 
 use rustc_hash::FxHashSet;
 use swlsp_parser_php::query::{direct_child, is_constant_reference, name_value, use_items};
@@ -6,9 +6,9 @@ use swlsp_parser_php::syntax::{PHP_BLOCK, PHP_NAMESPACE, PHP_USE_DECLARATION, TK
 use swlsp_php_phpdoc::visit_reference_names;
 use swlsp_php_resolver::{Import, ImportKind, parse_use_declaration};
 use swlsp_php_semantic::{Document, NameKind};
-use swlsp_php_types::go_to_lower;
 use swlsp_syntax::rowan::NodeOrToken;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
+use swlsp_textutil::lowercase;
 
 use crate::Cancelled;
 
@@ -64,7 +64,7 @@ impl Used {
     /// namespace-relative names use no import; qualified names use the class
     /// import of their first segment.
     fn mark(&mut self, name: &str, kind: ImportKind) {
-        if name.starts_with('\\') || go_to_lower(name).starts_with("namespace\\") {
+        if name.starts_with('\\') || lowercase(name).starts_with("namespace\\") {
             return;
         }
         let (name, kind) = match name.find('\\') {
@@ -74,7 +74,7 @@ impl Used {
         let key = if kind == ImportKind::Constant {
             name.to_owned()
         } else {
-            go_to_lower(name)
+            lowercase(name)
         };
         self.set(kind).insert(key);
     }
@@ -142,7 +142,7 @@ pub fn analyze(
                 let alias = if item.import.kind == ImportKind::Constant {
                     item.import.alias.clone()
                 } else {
-                    go_to_lower(&item.import.alias)
+                    lowercase(&item.import.alias)
                 };
                 item.used = used.set(item.import.kind).contains(&alias);
             }

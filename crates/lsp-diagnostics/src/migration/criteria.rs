@@ -1,4 +1,4 @@
-//! Criteria ID-filter check (Go `shopware_criteria.go`).
+//! Criteria ID-filter check.
 
 use std::sync::{Arc, LazyLock};
 
@@ -13,7 +13,7 @@ use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
 use crate::ProblemAnalyzer;
 use crate::common::{ancestor_php_node, short_php_name};
 
-// Go's RE2 `\s` is ASCII whitespace; spelled out for parity.
+// ASCII whitespace only, so Unicode spaces do not widen the match.
 static CRITERIA_RECEIVER_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"^[\t\n\f\r ]*\$([A-Za-z_][A-Za-z0-9_]*)[\t\n\f\r ]*->[\t\n\f\r ]*addFilter[\t\n\f\r ]*\(",
@@ -27,8 +27,8 @@ static CRITERIA_ASSIGNMENT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     .expect("criteria assignment pattern")
 });
 
-/// Reports `new EqualsFilter('id', ...)` that should pass IDs to the
-/// Criteria constructor (Go `ShopwareCriteriaAnalyzer`).
+/// Reports `new EqualsFilter('id', ...)` that should pass IDs to the Criteria
+/// constructor.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ShopwareCriteriaAnalyzer;
 
@@ -51,7 +51,7 @@ impl ProblemAnalyzer for ShopwareCriteriaAnalyzer {
         let Some(root) = document.root() else {
             return Ok(Vec::new());
         };
-        if !swlsp_php_types::go_to_lower(&document.uri).ends_with(".php") {
+        if !swlsp_textutil::lowercase(&document.uri).ends_with(".php") {
             return Ok(Vec::new());
         }
         let mut result = Vec::new();

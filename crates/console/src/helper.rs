@@ -5,8 +5,9 @@ use std::sync::Mutex;
 use swlsp_parser_php::query;
 use swlsp_php::{PhpContext, PhpIndex};
 use swlsp_php_semantic::{Flags, SymbolKind};
-use swlsp_php_types::{Kind, go_to_lower};
+use swlsp_php_types::Kind;
 use swlsp_syntax::{SyntaxNode, TextRange};
+use swlsp_textutil::lowercase;
 
 pub const HELPER_INTERFACE: &str = "Symfony\\Component\\Console\\Helper\\HelperInterface";
 pub const HELPER_SET_CLASS: &str = "Symfony\\Component\\Console\\Helper\\HelperSet";
@@ -86,10 +87,7 @@ pub fn helpers(index: &PhpIndex) -> Vec<Helper> {
                 if literal.ty.kind() != Kind::LiteralString || literal.value.trim().is_empty() {
                     continue;
                 }
-                let key = (
-                    go_to_lower(&literal.value),
-                    go_to_lower(&class.fully_qualified),
-                );
+                let key = (lowercase(&literal.value), lowercase(&class.fully_qualified));
                 if !seen.insert(key) {
                     continue;
                 }
@@ -117,14 +115,15 @@ pub fn helpers(index: &PhpIndex) -> Vec<Helper> {
     result
 }
 
-/// Go's comparator: a differing field decides by its case-folded value even
-/// when that compares equal.
+/// Orders helpers by name, class, file and position. Names and classes compare
+/// case-insensitively; when two differ only in case, the field still decides
+/// (as equal) instead of falling through to the next one.
 fn compare_helpers(left: &Helper, right: &Helper) -> Ordering {
     if left.name != right.name {
-        return go_to_lower(&left.name).cmp(&go_to_lower(&right.name));
+        return lowercase(&left.name).cmp(&lowercase(&right.name));
     }
     if left.class != right.class {
-        return go_to_lower(&left.class).cmp(&go_to_lower(&right.class));
+        return lowercase(&left.class).cmp(&lowercase(&right.class));
     }
     if left.file != right.file {
         return left.file.cmp(&right.file);

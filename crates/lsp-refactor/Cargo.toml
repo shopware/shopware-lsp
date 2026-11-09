@@ -15,8 +15,8 @@ swlsp-lsp-protocol = { path = "../lsp-protocol" }
 swlsp-parser-twig = { path = "../parser-twig" }
 swlsp-php = { path = "../php" }
 swlsp-php-semantic = { path = "../php-semantic" }
-swlsp-php-types = { path = "../php-types" }
 swlsp-twig = { path = "../twig" }
+swlsp-textutil = { path = "../textutil" }
 swlsp-uriutil = { path = "../uriutil" }
 
 [dev-dependencies]

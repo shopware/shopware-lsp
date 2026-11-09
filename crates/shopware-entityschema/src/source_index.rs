@@ -1,4 +1,4 @@
-//! Source of class-based DAL candidates (port of Go `source_index.go`).
+//! Source of class-based DAL candidates.
 //!
 //! Only files which syntactically look like class-based definitions or
 //! extensions retain their source; the semantic index proves the effective

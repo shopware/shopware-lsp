@@ -1,4 +1,4 @@
-//! Port of Go `entity_snapshot.go`.
+//! Entity schema snapshot validation.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -12,11 +12,10 @@ use swlsp_shopware_entityschema as entityschema;
 use swlsp_syntax::{TextRange, TextSize};
 use swlsp_uriutil::filepath;
 
-use super::util::go_dir;
 use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
-/// Go `EntitySnapshotAnalyzer`: validates committed entity schema
-/// snapshots, their history graph, referenced migrations and schema drift.
+/// Validates committed entity schema snapshots, their history graph, referenced
+/// migrations and schema drift.
 #[derive(Clone, Default)]
 pub struct EntitySnapshotAnalyzer {
     entities: Option<Arc<entityschema::IndexedCatalog>>,
@@ -203,8 +202,8 @@ impl ProblemAnalyzer for EntitySnapshotAnalyzer {
         };
         let scanned = match scanned {
             Ok((scanned, _)) => scanned,
-            Err(error) if error.0 == entityschema::ERR_INDEX_NOT_READY => return Ok(problems),
-            Err(error) => return Err(error.0.into()),
+            Err(entityschema::Error::IndexNotReady) => return Ok(problems),
+            Err(error) => return Err(error.into()),
         };
         let scanned = entityschema::restore_snapshot_only_indexes(&scanned, &leaf.schema);
         let left = serde_json::to_vec(&scanned.normalize())?;
@@ -220,13 +219,12 @@ impl ProblemAnalyzer for EntitySnapshotAnalyzer {
     }
 }
 
-/// Go `snapshotPluginRoot`: the plugin root of
-/// `<root>/src/Resources/shopware-lsp/schema/<file>`.
+/// The plugin root of `<root>/src/Resources/shopware-lsp/schema/<file>`.
 fn snapshot_plugin_root(path: &str) -> Option<String> {
-    let directory = go_dir(path);
-    let shopware_lsp = go_dir(&directory);
-    let resources = go_dir(&shopware_lsp);
-    let src = go_dir(&resources);
+    let directory = filepath::dir(path);
+    let shopware_lsp = filepath::dir(&directory);
+    let resources = filepath::dir(&shopware_lsp);
+    let src = filepath::dir(&resources);
     if filepath::base(&directory) != "schema"
         || filepath::base(&shopware_lsp) != "shopware-lsp"
         || filepath::base(&resources) != "Resources"
@@ -234,7 +232,7 @@ fn snapshot_plugin_root(path: &str) -> Option<String> {
     {
         return None;
     }
-    Some(go_dir(&src))
+    Some(filepath::dir(&src))
 }
 
 /// A hash of the plugin's snapshot files by name, size and modification time.

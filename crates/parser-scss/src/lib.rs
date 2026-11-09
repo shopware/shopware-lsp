@@ -1,4 +1,4 @@
-//! Lossless, error-tolerant SCSS parser (port of Go `internal/parser/scss`).
+//! Lossless, error-tolerant SCSS parser.
 
 pub mod lexer;
 pub mod query;
@@ -298,7 +298,7 @@ mod tests {
     }
 
     #[test]
-    fn debug_dump_matches_go() {
+    fn debug_dump_prints_tree_and_errors() {
         let parse = parse("a: f('x)");
         assert_eq!(
             parse.debug_dump(),

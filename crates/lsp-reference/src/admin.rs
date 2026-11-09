@@ -1,5 +1,4 @@
-//! Administration reference graph (port of `admin_reference.go` and
-//! `admin_reference_declarations.go`).
+//! Administration reference graph.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

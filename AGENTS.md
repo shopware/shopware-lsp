@@ -14,8 +14,8 @@ symbols, and other IDE features for Shopware and Symfony projects. The server
 is written in Rust: a Cargo workspace under `crates/`, one crate per subsystem
 (`crates/<name>`, package `swlsp-<name>`), with the `shopware-lsp` binary in
 `crates/cli`. The VS Code client is TypeScript and the Zed client is
-Rust/WASM. `crates/PORTING.md` records crate conventions and the history of
-the port from the earlier Go implementation.
+Rust/WASM. `crates/CONVENTIONS.md` records the conventions the crates
+share.
 
 Keep these invariants intact:
 

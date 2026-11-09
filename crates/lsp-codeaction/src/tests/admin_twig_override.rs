@@ -1,4 +1,4 @@
-//! Go `admin_twig_override_codeaction_test.go`.
+//! Administration Twig override generator tests.
 
 use std::path::Path;
 use std::sync::Arc;

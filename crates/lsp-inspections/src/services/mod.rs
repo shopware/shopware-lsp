@@ -1,6 +1,4 @@
-//! Symfony service-argument, routing/controller, event and console
-//! inspections (Go `service_argument.go`, `service_argument_rewrite.go`,
-//! `controller.go`, `event.go`, `invokable_command.go`, `php_method.go`).
+//! Symfony service-argument, routing/controller, event and console inspections.
 
 mod controller;
 mod event;
@@ -23,7 +21,6 @@ use swlsp_lsp::{DiagnosticId, ProblemDefinition};
 use swlsp_lsp_protocol::DiagnosticSeverity;
 use swlsp_syntax::{SyntaxElement, SyntaxNode};
 
-/// Go `mapString`.
 pub(crate) fn map_string(values: &Map<String, Value>, key: &str) -> String {
     values
         .get(key)
@@ -32,7 +29,7 @@ pub(crate) fn map_string(values: &Map<String, Value>, key: &str) -> String {
         .to_owned()
 }
 
-/// Go `mapStrings`: the non-empty strings of a JSON array.
+/// The non-empty strings of a JSON array.
 pub(crate) fn map_strings(values: &Map<String, Value>, key: &str) -> Vec<String> {
     let Some(Value::Array(items)) = values.get(key) else {
         return Vec::new();
@@ -54,8 +51,7 @@ pub(crate) fn definition(id: &str, severity: DiagnosticSeverity) -> ProblemDefin
     }
 }
 
-/// Go `ancestorNode`: the element itself or its nearest ancestor node of
-/// `kind`.
+/// The element itself or its nearest ancestor node of `kind`.
 pub(crate) fn ancestor_node(
     element: &SyntaxElement,
     kind: swlsp_syntax::Kind,

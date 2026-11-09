@@ -47,7 +47,7 @@ fn returns_value(_: &SyntaxNode) -> bool {
     true
 }
 
-// -- extract_variable_test.go ----------------------------------------------------
+// -- extract variable ------------------------------------------------------------
 
 #[test]
 fn extract_variable_cases() {
@@ -169,7 +169,7 @@ fn extract_variable_caret_and_cancellation() {
     assert_eq!(error, RefactorError::Cancelled);
 }
 
-// -- extraction_expanded_test.go -------------------------------------------------
+// -- expanded extraction ---------------------------------------------------------
 
 #[test]
 fn extract_variable_preserves_evaluation_point() {
@@ -380,7 +380,7 @@ fn extract_method_early_returns_many() {
     assert_eq!(got.matches(" [1, 1]").count(), 100, "{got}");
 }
 
-// -- extract_method_test.go ------------------------------------------------------
+// -- extract method --------------------------------------------------------------
 
 #[test]
 fn extract_method_inputs_and_live_output() {
@@ -530,7 +530,7 @@ fn extract_method_caret_on_large_body() {
     assert!(result.is_some());
 }
 
-// -- extraction_runtime_test.go --------------------------------------------------
+// -- extraction runtime ----------------------------------------------------------
 
 /// Optional execution checks supplement native-CST tests without making PHP
 /// a build prerequisite.

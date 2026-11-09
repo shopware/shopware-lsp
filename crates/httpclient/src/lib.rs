@@ -1,8 +1,8 @@
 //! Symfony HttpClient option declarations and references resolved from the
-//! shared PHP semantic index (port of Go `internal/httpclient`).
+//! shared PHP semantic index.
 //!
-//! Go threads the request's PHP analysis through `context.Context`; Rust
-//! takes an explicit [`PhpContext`].
+//! Request-time lookups take the request's PHP analysis as an explicit
+//! [`PhpContext`].
 
 use std::collections::BTreeSet;
 

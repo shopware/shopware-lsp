@@ -1,4 +1,5 @@
-//! Port of Go `app_script.go`.
+//! App script diagnostics: unavailable hook services and missing manifest
+//! permissions.
 
 use std::collections::HashSet;
 use std::sync::{Arc, LazyLock};
@@ -15,7 +16,7 @@ use swlsp_uriutil::filepath;
 
 use crate::ProblemAnalyzer;
 
-/// RE2 `\b` and `\s` are ASCII-only.
+/// `\b` and `\s` are ASCII-only.
 static SERVICE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?-u:\b)services[\t\n\x0C\r ]*\.[\t\n\x0C\r ]*([A-Za-z_][A-Za-z0-9_]*)")
         .expect("service pattern")
@@ -27,8 +28,8 @@ static REPOSITORY_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     .expect("repository pattern")
 });
 
-/// Go `AppScriptAnalyzer`: unavailable hook services and missing manifest
-/// read permissions in app scripts.
+/// Unavailable hook services and missing manifest read permissions in app
+/// scripts.
 #[derive(Clone)]
 pub struct AppScriptAnalyzer {
     index: Option<Arc<AppScriptIndex>>,
@@ -138,8 +139,7 @@ fn byte_range(start: usize, end: usize) -> TextRange {
     TextRange::new(TextSize::from(start as u32), TextSize::from(end as u32))
 }
 
-/// Go `scriptHookName`: the directory (or file stem) below
-/// `/Resources/scripts/`.
+/// The directory (or file stem) below `/Resources/scripts/`.
 fn script_hook_name(path: &str) -> String {
     let path = filepath::to_slash(path);
     const MARKER: &str = "/Resources/scripts/";

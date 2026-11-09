@@ -1,4 +1,4 @@
-//! System configuration keys and domains (Go `systemconfig_completion.go`).
+//! System configuration keys and domains.
 
 use std::sync::Arc;
 

@@ -37,7 +37,7 @@ fn rfind(source: &str, needle: &str) -> u32 {
     source.rfind(needle).expect(needle) as u32
 }
 
-/// Mirrors the Go tests' hand-built requests: node/token at `node_offset`,
+/// A hand-built request shape: node/token at `node_offset`,
 /// the cursor position at `position` (or 0:0 when absent).
 #[derive(Clone, Copy)]
 struct Shape {

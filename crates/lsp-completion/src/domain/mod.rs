@@ -40,10 +40,8 @@ pub use validation::ValidationCompletionProvider;
 
 use swlsp_lsp_protocol as protocol;
 
-/// Go `filepath.Ext` lowercased.
-pub(crate) fn lower_ext(path: &str) -> String {
-    crate::common::go_to_lower(swlsp_uriutil::filepath::ext(path))
-}
+/// The lowercase extension of `path`, including the leading dot.
+pub(crate) use crate::common::lower_ext;
 
 pub(crate) fn markdown(value: impl Into<String>) -> protocol::MarkupContent {
     protocol::MarkupContent {

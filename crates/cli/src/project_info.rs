@@ -1,4 +1,4 @@
-//! `project-info` and the supported-project gate (Go `project_info.go`).
+//! `project-info` and the supported-project gate.
 
 use crate::{CliError, Runner};
 
@@ -24,7 +24,8 @@ pub(crate) fn run_project_info(runner: &Runner) -> Result<(), CliError> {
 }
 
 impl Runner {
-    /// Go `requireSupportedProject`.
+    /// Fails unless `root` looks like a Shopware or Symfony project (or
+    /// `--allow-unsupported-project` is set).
     pub(crate) fn require_supported_project(&self, root: &str) -> Result<(), CliError> {
         if self.allow_unsupported_project {
             return Ok(());

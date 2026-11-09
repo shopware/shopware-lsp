@@ -1,5 +1,5 @@
 //! shopware-cli extension configuration (`.shopware-extension.yml`). These
-//! types mirror `shopware-cli/internal/extension/config.go`; they describe
+//! types follow shopware-cli's extension configuration; they describe
 //! extension metadata, not the LSP's `.config/shopware/lsp.yaml`.
 
 use std::collections::BTreeMap;
@@ -18,7 +18,7 @@ pub struct Config {
     pub validation: ConfigValidation,
     /// The configuration file this snapshot was read from (not decoded).
     pub storage_location: String,
-    /// The Go error text of a partial decode (not decoded).
+    /// The error text of a partial decode (not decoded).
     pub decode_error: String,
 }
 
@@ -322,7 +322,7 @@ struct_target!(ConfigValidation, "ConfigValidation", {
     "php_version" => php_version,
 });
 
-/// Go `ConfigValidationList` (a named slice type).
+/// The list of validation ignore entries.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ConfigValidationList(pub Vec<ConfigValidationIgnore>);
@@ -354,7 +354,7 @@ impl Target for ConfigValidationList {
     }
 }
 
-/// Mirrors `shopware-cli/internal/changelog.Config`.
+/// The changelog section, as shopware-cli reads it.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ConfigChangelog {
     pub enabled: bool,
@@ -389,7 +389,7 @@ impl Target for ConfigValidationIgnore {
         "extension.ConfigValidationIgnore".to_owned()
     }
 
-    /// Go `UnmarshalYAML`: scalars are identifiers; anything else decodes
+    /// Scalars are identifiers; anything else decodes
     /// as the plain object type in a nested decoder whose type errors make
     /// this element fail.
     fn decode(&mut self, decoder: &mut Decoder<'_>, id: Id) -> R<bool> {
@@ -415,7 +415,7 @@ impl Target for ConfigValidationIgnore {
     }
 }
 
-/// Go's local `type object ConfigValidationIgnore` used by `UnmarshalYAML`.
+/// The object form of a [`ConfigValidationIgnore`], decoded field by field.
 struct IgnoreObject(ConfigValidationIgnore);
 
 impl Target for IgnoreObject {

@@ -1,4 +1,4 @@
-//! Port of Go `admin_completion_javascript.go`.
+//! Administration completions in JavaScript, TypeScript and Vue scripts.
 
 use std::collections::HashMap;
 
@@ -36,7 +36,7 @@ fn sorted_items(mut items: Vec<protocol::CompletionItem>) -> Vec<protocol::Compl
 }
 
 impl AdminCompletionProvider {
-    /// Go `jsCompletions`: completions in JS/TS files and Vue scripts.
+    /// Completions in JS/TS files and Vue scripts.
     pub(super) fn js_completions(
         &self,
         request: &CompletionRequest,
@@ -345,7 +345,8 @@ impl AdminCompletionProvider {
         sorted(items_by_name)
     }
 
-    /// Go `getThisMemberCompletions`; `None` outside component definitions.
+    /// Members reachable through `this` in the component defined in `uri`;
+    /// `None` outside component definitions.
     pub(super) fn get_this_member_completions(
         &self,
         uri: &str,
@@ -410,7 +411,7 @@ impl AdminCompletionProvider {
             .collect()
     }
 
-    /// Go `getDirectiveCompletions`; `markup` prefixes `v-` and scopes the
+    /// Vue directive completions; `markup` prefixes `v-` and scopes the
     /// list to `template_path`.
     pub(super) fn get_directive_completions(
         &self,

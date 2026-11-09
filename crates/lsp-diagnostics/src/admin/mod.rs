@@ -1,5 +1,4 @@
-//! Shopware Administration diagnostics (Go `admin_*.go` of
-//! `internal/lsp/diagnostics`).
+//! Shopware Administration diagnostics.
 
 mod analyzer;
 mod block_override;
@@ -34,26 +33,7 @@ pub use twig_migration::{AdminTwigMigrationAnalyzer, AdminTwigMigrationPayload};
 
 use serde_json::{Map, Value};
 
-/// Go `filepath.Ext`: the suffix from the final `.` of the last path
-/// element, or empty.
-pub(crate) fn go_ext(path: &str) -> &str {
-    let start = path.rfind('/').map_or(0, |index| index + 1);
-    match path[start..].rfind('.') {
-        Some(index) => &path[start + index..],
-        None => "",
-    }
-}
-
-/// A JSON string list as Go encodes it: an empty (nil) list is `null`.
-pub(crate) fn go_string_list(values: Vec<String>) -> Value {
-    if values.is_empty() {
-        Value::Null
-    } else {
-        Value::Array(values.into_iter().map(Value::String).collect())
-    }
-}
-
-/// A JSON string list from a non-nil Go slice (`[]` when empty).
+/// A JSON string list (`[]` when empty).
 pub(crate) fn string_array(values: Vec<String>) -> Value {
     Value::Array(values.into_iter().map(Value::String).collect())
 }

@@ -1,5 +1,5 @@
 //! Static DoctrineBundle custom DBAL type registrations in PHP, YAML and XML
-//! configuration (port of Go `type_config.go`).
+//! configuration.
 
 use std::collections::HashSet;
 
@@ -13,12 +13,11 @@ use swlsp_parser_xml::syntax::XML_TEXT;
 use swlsp_parser_yaml::query as yamlquery;
 use swlsp_parser_yaml::syntax::{YAML_FLOW_MAPPING, YAML_MAPPING};
 use swlsp_php::NameResolver;
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::helpers::{
-    go_trim_space, has_range, normalize_class, range, range_contains_cursor, xml_value_range,
-    yaml_scalar_range,
+    has_range, normalize_class, range, range_contains_cursor, xml_value_range, yaml_scalar_range,
 };
 
 /// A static DoctrineBundle custom DBAL type registration. `name_range` and
@@ -54,7 +53,7 @@ pub struct TypeRegistrationReference {
 fn lower_extension(path: &str) -> String {
     let base = path.rsplit('/').next().unwrap_or(path);
     match base.rfind('.') {
-        Some(dot) => go_to_lower(&base[dot..]),
+        Some(dot) => lowercase(&base[dot..]),
         None => String::new(),
     }
 }
@@ -142,8 +141,8 @@ pub fn type_registration_reference_at(
 fn registration_key(name: &str, class: &str, name_range: TextRange) -> String {
     format!(
         "{}|{}|{}:{}",
-        go_to_lower(name),
-        go_to_lower(class),
+        lowercase(name),
+        lowercase(class),
         u32::from(name_range.start()),
         u32::from(name_range.end())
     )
@@ -287,7 +286,7 @@ fn php_runtime_type_registration_calls(
 ) -> Vec<RuntimeCall> {
     let mut result = Vec::new();
     for call in calls.iter().cloned() {
-        match go_to_lower(&phpquery::call_method_name(&call)).as_str() {
+        match lowercase(&phpquery::call_method_name(&call)).as_str() {
             "addtype" | "overridetype" => {
                 if php_dbal_type_static_call(&call, resolver) {
                     result.push(RuntimeCall {
@@ -298,7 +297,7 @@ fn php_runtime_type_registration_calls(
             }
             "register" => {
                 if let Some(receiver) = phpquery::call_receiver(&call)
-                    && equal_fold(&phpquery::call_method_name(&receiver), "getTypeRegistry")
+                    && eq_ignore_case(&phpquery::call_method_name(&receiver), "getTypeRegistry")
                     && php_dbal_type_static_call(&receiver, resolver)
                 {
                     result.push(RuntimeCall {
@@ -319,7 +318,7 @@ fn php_dbal_type_static_call(call: &SyntaxNode, resolver: &NameResolver) -> bool
     };
     let name = phpquery::name_value(&receiver);
     !name.is_empty()
-        && equal_fold(
+        && eq_ignore_case(
             &normalize_class(&resolver.resolve(&name)),
             "Doctrine\\DBAL\\Types\\Type",
         )
@@ -329,11 +328,11 @@ fn php_doctrine_type_arrays(calls: &[SyntaxNode]) -> Vec<SyntaxNode> {
     let mut result = Vec::new();
     let mut seen = HashSet::new();
     for call in calls {
-        if !equal_fold(&phpquery::call_method_name(call), "extension") {
+        if !eq_ignore_case(&phpquery::call_method_name(call), "extension") {
             continue;
         }
         let extension = php_type_config_string(phpquery::argument_expression(call, 0).as_ref());
-        if !extension.is_some_and(|extension| equal_fold(&extension, "doctrine")) {
+        if !extension.is_some_and(|extension| eq_ignore_case(&extension, "doctrine")) {
             continue;
         }
         let config =
@@ -356,7 +355,7 @@ fn php_type_config_array_property(array: Option<&SyntaxNode>, name: &str) -> Opt
     let array = array?;
     for item in phpquery::array_items(array) {
         let key = php_type_config_string(phpquery::array_item_key(&item).as_ref());
-        if key.is_some_and(|key| equal_fold(&key, name)) {
+        if key.is_some_and(|key| eq_ignore_case(&key, name)) {
             return phpquery::array_item_value(&item);
         }
     }
@@ -372,7 +371,7 @@ fn php_type_config_string(node: Option<&SyntaxNode>) -> Option<String> {
         return None;
     }
     let raw = text(&literal);
-    let trimmed = go_trim_space(&raw).as_bytes();
+    let trimmed = raw.trim().as_bytes();
     if trimmed.len() < 2 {
         return None;
     }
@@ -652,7 +651,7 @@ fn php_type_class_option_reference_at(
     for (index, option) in items.iter().enumerate() {
         let key_node = phpquery::array_item_key(option);
         let key = php_type_config_string(key_node.as_ref());
-        if !key.is_some_and(|key| equal_fold(&key, "class")) {
+        if !key.is_some_and(|key| eq_ignore_case(&key, "class")) {
             continue;
         }
         let option_range = option.text_range();
@@ -717,7 +716,7 @@ fn yaml_type_registrations(path: &str, root: &SyntaxNode) -> Vec<TypeRegistratio
                 Some(value) if yamlquery::is_mapping(value) => yamlquery::property(value, "class"),
                 _ => value,
             };
-            let name = go_trim_space(&scalar(name_node.as_ref())).to_owned();
+            let name = scalar(name_node.as_ref()).trim().to_owned();
             let class = normalize_class(&scalar(class_node.as_ref()));
             if name.is_empty() || class.is_empty() {
                 continue;
@@ -755,7 +754,7 @@ fn yaml_type_registration_reference_at(
     }
     let name = path[types_at + 1].clone();
     let mut role = TypeRegistrationReferenceRole::Class;
-    if path.len() > types_at + 2 && !equal_fold(&path[types_at + 2], "class") {
+    if path.len() > types_at + 2 && !eq_ignore_case(&path[types_at + 2], "class") {
         return None;
     }
     let key = yamlquery::pair_key(&pair);
@@ -791,9 +790,9 @@ fn yaml_type_registration_reference_at(
 
 fn type_registration_path_index(path: &[String]) -> Option<usize> {
     (0..path.len().saturating_sub(2)).find_map(|index| {
-        (equal_fold(&path[index], "doctrine")
-            && equal_fold(&path[index + 1], "dbal")
-            && equal_fold(&path[index + 2], "types"))
+        (eq_ignore_case(&path[index], "doctrine")
+            && eq_ignore_case(&path[index + 1], "dbal")
+            && eq_ignore_case(&path[index + 2], "types"))
         .then_some(index + 2)
     })
 }
@@ -803,7 +802,7 @@ fn attribute_value(node: Option<&SyntaxNode>) -> String {
 }
 
 fn is_dbal_type_element(element: &SyntaxNode) -> bool {
-    equal_fold(&xml_local_name(element), "type")
+    eq_ignore_case(&xml_local_name(element), "type")
         && xml_has_ancestor(element, "dbal")
         && xml_has_ancestor(element, "config")
 }
@@ -816,7 +815,7 @@ fn xml_type_registrations(path: &str, root: &SyntaxNode) -> Vec<TypeRegistration
         }
         let name_attribute = xmlquery::attribute(&element, "name");
         let class_attribute = xmlquery::attribute(&element, "class");
-        let name = go_trim_space(&attribute_value(name_attribute.as_ref())).to_owned();
+        let name = attribute_value(name_attribute.as_ref()).trim().to_owned();
         let mut class = normalize_class(&attribute_value(class_attribute.as_ref()));
         let mut class_range = xml_value_range(class_attribute.as_ref());
         if class.is_empty() {
@@ -849,10 +848,10 @@ fn xml_type_registration_reference_at(
     }
     let name_attribute = xmlquery::attribute(&element, "name");
     let class_attribute = xmlquery::attribute(&element, "class");
-    let name = go_trim_space(&attribute_value(name_attribute.as_ref())).to_owned();
+    let name = attribute_value(name_attribute.as_ref()).trim().to_owned();
     let class = normalize_class(&attribute_value(class_attribute.as_ref()));
     if let Some(attribute) = xmlquery::attribute_at(&node) {
-        match go_to_lower(&xmlquery::attribute_name(&attribute).unwrap_or_default()).as_str() {
+        match lowercase(&xmlquery::attribute_name(&attribute).unwrap_or_default()).as_str() {
             "name" => {
                 return Some(TypeRegistrationReference {
                     role: TypeRegistrationReferenceRole::Name,
@@ -905,7 +904,7 @@ fn xml_local_name(element: &SyntaxNode) -> String {
 fn xml_has_ancestor(element: &SyntaxNode, name: &str) -> bool {
     let mut parent = xmlquery::parent_element(element);
     while let Some(current) = parent {
-        if equal_fold(&xml_local_name(&current), name) {
+        if eq_ignore_case(&xml_local_name(&current), name) {
             return true;
         }
         parent = xmlquery::parent_element(&current);
@@ -916,7 +915,7 @@ fn xml_has_ancestor(element: &SyntaxNode, name: &str) -> bool {
 fn xml_registration_text(element: &SyntaxNode) -> (String, TextRange) {
     for node in xmlquery::nodes(element, &[XML_TEXT]) {
         let raw = text(&node);
-        let value = go_trim_space(&raw);
+        let value = raw.trim();
         if value.is_empty() {
             continue;
         }

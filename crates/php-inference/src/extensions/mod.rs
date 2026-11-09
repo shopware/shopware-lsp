@@ -1,4 +1,4 @@
-//! Call inference extension points (port of `extensions.go`) and the
+//! Call inference extension points and the
 //! built-in extensions.
 
 mod attribute_contracts;
@@ -59,7 +59,7 @@ impl<'a> CallContext<'a> {
             .map_or_else(Relations::default, |snapshot| snapshot.relations())
     }
 
-    /// Name context at the call site, like Go's contract helpers build it.
+    /// Name context (namespace and imports) at the call site.
     pub(crate) fn name_context(&self) -> NameContext {
         let Some(document) = self.document else {
             return NameContext::new("");

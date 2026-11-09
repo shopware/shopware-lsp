@@ -24,9 +24,7 @@ use crate::php_service_method_reference::{
 };
 use crate::reference::parse_service_reference;
 use crate::util::numeric_index;
-use crate::util::{
-    clean_path, configured_service_bool, dir_path, go_trim_space, join_path, line_at,
-};
+use crate::util::{clean_path, configured_service_bool, dir_path, join_path, line_at};
 
 const CONTAINER_CONFIGURATOR_CLASS: &str =
     "Symfony\\Component\\DependencyInjection\\Loader\\Configurator\\ContainerConfigurator";
@@ -106,8 +104,8 @@ pub fn php_service_method_references(
     unique_service_method_references(references)
 }
 
-/// Go `parsePHPServiceConfigTree`: fluent configurator callbacks merged with
-/// native array configuration.
+/// Services from a PHP configuration file: fluent configurator callbacks
+/// merged with native array configuration.
 pub(crate) fn parse_php_service_config_tree(
     path: &str,
     root: &SyntaxNode,
@@ -230,7 +228,7 @@ pub(crate) struct PhpServiceEvaluator<'a> {
     pub(crate) container_variable: String,
     pub(crate) services: HashMap<String, Service>,
     pub(crate) parameters: HashMap<String, Parameter>,
-    /// Go uses sets/maps; insertion order keeps lookups deterministic.
+    /// Kept in insertion order so lookups are deterministic.
     pub(crate) service_variables: Vec<String>,
     pub(crate) parameter_variables: Vec<String>,
     pub(crate) definition_vars: Vec<(String, String)>,
@@ -521,7 +519,7 @@ impl PhpServiceEvaluator<'_> {
             if let Some(evaluated) = static_php_value(&expression, self.resolver, self.path) {
                 value = evaluated;
             } else if is_static_parameter_expression(&expression) {
-                value = go_trim_space(&expression).to_owned();
+                value = expression.trim().to_owned();
             }
         }
         let parameter = Parameter {
@@ -671,7 +669,7 @@ pub(crate) fn php_expression_content_range(expression: Option<&SyntaxNode>) -> T
 }
 
 fn unquoted_range(range: TextRange, text: &str) -> TextRange {
-    let text = go_trim_space(text).as_bytes();
+    let text = text.trim().as_bytes();
     if text.len() >= 2
         && (text[0] == b'\'' || text[0] == b'"')
         && text[text.len() - 1] == text[0]
@@ -904,7 +902,7 @@ fn unique_service_argument_references(
         .collect()
 }
 
-/// Resolves a configuration-relative path (Go `configPath` / `phpArrayConfigPath`).
+/// Resolves a configuration-relative path.
 pub(crate) fn config_path(config_path: &str, value: &str) -> String {
     if value.starts_with('/') {
         return clean_path(value);
@@ -933,9 +931,9 @@ pub(crate) fn static_php_value(
     resolver: &NameResolver,
     file_path: &str,
 ) -> Option<String> {
-    let mut expression = go_trim_space(expression);
+    let mut expression = expression.trim();
     while wrapped_by_parentheses(expression) {
-        expression = go_trim_space(&expression[1..expression.len() - 1]);
+        expression = expression[1..expression.len() - 1].trim();
     }
     if expression.is_empty() {
         return None;
@@ -951,13 +949,13 @@ pub(crate) fn static_php_value(
     if let Some(value) = php_string_literal(expression) {
         return Some(value);
     }
-    let lower = swlsp_php_types::go_to_lower(expression);
+    let lower = swlsp_textutil::lowercase(expression);
     let suffix = expression.len().wrapping_sub("::class".len());
     if expression.len() >= "::class".len()
         && expression.is_char_boundary(suffix)
         && expression[suffix..].eq_ignore_ascii_case("::class")
     {
-        let name = go_trim_space(&expression[..expression.len() - "::class".len()]);
+        let name = expression[..expression.len() - "::class".len()].trim();
         if !is_php_name(name)
             || name.eq_ignore_ascii_case("self")
             || name.eq_ignore_ascii_case("static")
@@ -1004,7 +1002,7 @@ fn split_php_concatenation(expression: &str) -> Vec<&str> {
             b'(' | b'[' | b'{' => depth += 1,
             b')' | b']' | b'}' => depth = depth.saturating_sub(1),
             b'.' if depth == 0 => {
-                parts.push(go_trim_space(&expression[start..index]));
+                parts.push(expression[start..index].trim());
                 start = index + 1;
             }
             _ => {}
@@ -1013,7 +1011,7 @@ fn split_php_concatenation(expression: &str) -> Vec<&str> {
     if parts.is_empty() {
         return vec![expression];
     }
-    parts.push(go_trim_space(&expression[start..]));
+    parts.push(expression[start..].trim());
     parts
 }
 
@@ -1139,7 +1137,7 @@ fn is_php_number(value: &str) -> bool {
 }
 
 pub(crate) fn is_static_parameter_expression(expression: &str) -> bool {
-    let expression = go_trim_space(expression);
+    let expression = expression.trim();
     let lower = expression.to_lowercase();
     if expression.is_empty()
         || expression.contains('$')

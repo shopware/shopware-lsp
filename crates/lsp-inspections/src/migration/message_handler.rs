@@ -1,14 +1,13 @@
-//! Message handler subscriber fix (Go
-//! `shopware_migration_message_handler.go`).
+//! Message handler subscriber fix.
 
 use swlsp_lsp::{BoxError, Context, FixContext, FixId, FixPresentation, QuickFix, RewriteQuickFix};
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::{PHP_EXTENDS_CLAUSE, PHP_IMPLEMENTS_CLAUSE, PHP_NAME};
 use swlsp_php::NameResolver;
 use swlsp_php_rewrite::Editor;
-use swlsp_php_types::equal_fold;
 use swlsp_rewrite::WorkspacePlan;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::eq_ignore_case;
 
 use super::{
     finish_php_rewrite, invalid, php_own_method_for_migration_fix, present_migration,
@@ -99,6 +98,6 @@ fn class_has_migration_attribute(
 ) -> bool {
     phpquery::attributes(class).iter().any(|attribute| {
         let name = phpquery::attribute_name(attribute);
-        equal_fold(resolver.resolve(&name).trim_matches('\\'), target)
+        eq_ignore_case(resolver.resolve(&name).trim_matches('\\'), target)
     })
 }

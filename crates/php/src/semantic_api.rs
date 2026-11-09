@@ -1,5 +1,4 @@
-//! Semantic queries over the published workspace generation (port of
-//! `semantic_api.go`).
+//! Semantic queries over the published workspace generation.
 
 use std::cmp::Ordering;
 use std::collections::HashSet;
@@ -11,8 +10,9 @@ use swlsp_php_binder::Binder;
 use swlsp_php_inference::{Analyzer, link_members_owned};
 use swlsp_php_resolver::MemberResolver;
 use swlsp_php_semantic::{Document, Flags, Reference, Snapshot, Symbol, SymbolKind};
-use swlsp_php_types::{Type, go_to_lower};
+use swlsp_php_types::Type;
 use swlsp_syntax::{SyntaxNode, TextRange, Tree};
+use swlsp_textutil::lowercase;
 
 use crate::{PhpIndex, lock};
 
@@ -75,7 +75,7 @@ impl PhpIndex {
             .file_name()
             .map(|name| name.to_string_lossy())
             .unwrap_or_default();
-        if swlsp_php_types::equal_fold(&file_name, ".phpstorm.meta.php") {
+        if swlsp_textutil::eq_ignore_case(&file_name, ".phpstorm.meta.php") {
             document.call_contracts = swlsp_php_phpstormmeta::parse(root);
         }
         let snapshot = base.with_declarations(&document);
@@ -301,7 +301,7 @@ impl PhpIndex {
         let mut seen = HashSet::with_capacity(symbols.len());
         let names: Vec<String> = symbols
             .iter()
-            .filter(|symbol| seen.insert(go_to_lower(&symbol.fully_qualified)))
+            .filter(|symbol| seen.insert(lowercase(&symbol.fully_qualified)))
             .map(|symbol| symbol.fully_qualified.to_string())
             .collect();
         let symbols: Arc<[Symbol]> = symbols.into();
@@ -345,9 +345,6 @@ fn constant_display_name(snapshot: &Snapshot, symbol: &Symbol) -> String {
     }
 }
 
-/// Case-insensitive name order: ASCII folds byte-wise; any non-ASCII byte in
-/// the common prefix compares the Unicode-lowercased strings (Go
-/// `compareFold`).
 /// Orders two declarations that tie on their displayed name by source
 /// position, then by their stable ID.
 fn compare_declaration(left: &Symbol, right: &Symbol) -> Ordering {
@@ -357,11 +354,13 @@ fn compare_declaration(left: &Symbol, right: &Symbol) -> Ordering {
         .then_with(|| left.id.cmp(&right.id))
 }
 
+/// Case-insensitive name order: ASCII folds byte-wise; any non-ASCII byte in
+/// the common prefix compares the lowercased strings.
 pub fn compare_fold(left: &str, right: &str) -> Ordering {
     let (left_bytes, right_bytes) = (left.as_bytes(), right.as_bytes());
     for (&left_byte, &right_byte) in left_bytes.iter().zip(right_bytes) {
         if left_byte >= 0x80 || right_byte >= 0x80 {
-            return go_to_lower(left).cmp(&go_to_lower(right));
+            return lowercase(left).cmp(&lowercase(right));
         }
         let ordering = left_byte
             .to_ascii_lowercase()

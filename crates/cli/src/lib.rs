@@ -1,4 +1,4 @@
-//! The `shopware-lsp` command line (port of Go `internal/cli`): the stdio
+//! The `shopware-lsp` command line: the stdio
 //! language server, the MCP server, workspace commands (`index`, `stats`,
 //! `check`), read-only feature commands and previewing refactors.
 //!
@@ -27,13 +27,13 @@ use tokio_util::sync::CancellationToken;
 
 use crate::args::{Command, ShopwareLsp};
 
-pub use edit::{EditMode, apply_protocol_text_edits, apply_workspace_edit};
+pub use edit::{EditMode, TextEditError, apply_protocol_text_edits, apply_workspace_edit};
 pub use logger::{LogSink, install_logger, set_log_sink};
 pub use session::{CliDocument, CliSession, SessionOptions};
 pub use target::{PositionTarget, code_action_selection, parse_position_target};
 pub use workspace_commands::resolve_check_files_with_exclusions;
 
-/// Process options (Go `cli.Options`).
+/// Process options: version and license texts embedded at build time.
 #[derive(Debug, Clone, Default)]
 pub struct Options {
     pub version: String,
@@ -41,7 +41,7 @@ pub struct Options {
     pub third_party_notices: String,
 }
 
-/// Cancellation shared by a command and its session (Go context). Children
+/// Cancellation shared by a command and its session. Children
 /// are cancelled with their parent, and async code can wait for it.
 #[derive(Debug, Clone, Default)]
 pub struct Cancel(CancellationToken);
@@ -75,14 +75,19 @@ impl Cancel {
     }
 }
 
-/// A command failure. `exit` marks Go's `*exitError`, which `Run` returns
-/// unwrapped; other errors are prefixed with the command name.
+/// A command failure, carrying the process exit code.
+///
+/// `exit` marks a final error whose message is already complete (usage
+/// errors and commands that chose their own exit code, such as `check`
+/// finding problems): [`Runner::run`] returns it as is. Other errors are
+/// prefixed with the command name. `cancelled` marks an interrupted
+/// command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CliError {
     pub code: i32,
     pub message: String,
     pub exit: bool,
-    pub canceled: bool,
+    pub cancelled: bool,
 }
 
 impl CliError {
@@ -91,7 +96,7 @@ impl CliError {
             code: 1,
             message: message.into(),
             exit: false,
-            canceled: false,
+            cancelled: false,
         }
     }
 
@@ -100,7 +105,7 @@ impl CliError {
             code: 2,
             message: message.into(),
             exit: true,
-            canceled: false,
+            cancelled: false,
         }
     }
 
@@ -109,16 +114,16 @@ impl CliError {
             code,
             message: message.into(),
             exit: true,
-            canceled: false,
+            cancelled: false,
         }
     }
 
-    pub fn canceled() -> Self {
+    pub fn cancelled() -> Self {
         Self {
             code: 1,
-            message: "context canceled".into(),
+            message: "cancelled".into(),
             exit: false,
-            canceled: true,
+            cancelled: true,
         }
     }
 
@@ -144,7 +149,7 @@ impl From<io::Error> for CliError {
     }
 }
 
-/// The process exit code for a `run` result (Go `ExitCode`).
+/// The process exit code for a `run` result.
 pub fn exit_code(result: &Result<(), CliError>) -> i32 {
     match result {
         Ok(()) => 0,
@@ -231,7 +236,7 @@ pub struct CommandDefinition {
     pub usage: String,
 }
 
-/// The command-line runner (Go `cli.Runner`).
+/// The command-line runner: parses one command line and dispatches it.
 pub struct Runner {
     options: Options,
     pub(crate) root: String,
@@ -275,7 +280,7 @@ impl Runner {
             .unwrap_or_else(|| Box::new(io::empty()))
     }
 
-    /// Runs one command line (Go `Runner.Run`).
+    /// Runs one command line.
     pub fn run(
         &mut self,
         cancel: &Cancel,
@@ -425,7 +430,8 @@ impl Runner {
         out.write_all(text.as_bytes()).map_err(CliError::from)
     }
 
-    /// The absolute, cleaned workspace root (Go `workspaceRoot`).
+    /// The absolute, cleaned workspace root (`--root` or the current
+    /// directory).
     pub(crate) fn workspace_root(&self) -> Result<String, CliError> {
         let mut root = self.root.clone();
         if root.is_empty() {
@@ -458,7 +464,7 @@ impl Runner {
         }
     }
 
-    /// Opens an indexed production session (Go `connect`).
+    /// Opens an indexed production session.
     pub(crate) fn connect(&self) -> Result<CliSession, CliError> {
         let root = self.workspace_root()?;
         self.require_supported_project(&root)?;
@@ -482,7 +488,7 @@ impl Runner {
         Ok(session)
     }
 
-    /// Opens a session without indexing (Go `connectWithoutIndex`).
+    /// Opens a session without indexing.
     pub(crate) fn connect_without_index(&self) -> Result<CliSession, CliError> {
         let root = self.workspace_root()?;
         self.require_supported_project(&root)?;
@@ -623,8 +629,7 @@ fn run_licenses(runner: &Runner) -> Result<(), CliError> {
     runner.write_text(&output)
 }
 
-/// Profile flags. Go writes pprof CPU/heap profiles and runtime traces.
-/// With the `cpu-profile` feature on Unix, `--profile-cpu` samples the process
+/// Profile flags. With the `cpu-profile` feature on Unix, `--profile-cpu` samples the process
 /// with `SIGPROF` and writes a pprof protobuf; otherwise, and for the heap and
 /// trace flags, the files are created (reporting the same creation errors)
 /// and left empty.
@@ -641,9 +646,9 @@ impl Profiles {
         memory: &str,
         err_out: &mut dyn Write,
     ) -> Result<Self, CliError> {
-        // The Go oracle wrote pprof heap profiles and runtime traces. The Rust
-        // server keeps the flags (and creates the files, so scripts relying on
-        // them keep working) but says plainly that they stay empty.
+        // Heap profiles and runtime traces are not available. The flags stay
+        // (and the files are created, so scripts relying on them keep
+        // working), with a plain note that they stay empty.
         if !memory.is_empty() {
             let _ = writeln!(
                 err_out,
@@ -694,7 +699,7 @@ impl Profiles {
         })
     }
 
-    fn stop(self) -> Result<(), String> {
+    fn stop(self) -> Result<(), ProfileError> {
         #[cfg(all(unix, feature = "cpu-profile"))]
         if let Some((path, guard)) = self.cpu {
             use pprof::protos::Message;
@@ -702,17 +707,41 @@ impl Profiles {
                 .report()
                 .build()
                 .and_then(|report| report.pprof())
-                .map_err(|error| format!("write CPU profile: {error}"))?;
+                .map_err(ProfileError::Report)?;
             std::fs::write(&path, profile.encode_to_vec())
-                .map_err(|error| format!("write CPU profile {path}: {error}"))?;
+                .map_err(|source| ProfileError::Write { path, source })?;
         }
         if self.memory.is_empty() {
             return Ok(());
         }
         std::fs::File::create(&self.memory)
             .map(|_| ())
-            .map_err(|error| format!("create heap profile {}: {error}", self.memory))
+            .map_err(|source| ProfileError::Create {
+                path: self.memory,
+                source,
+            })
     }
+}
+
+/// A profile that could not be written when the command finished.
+#[derive(Debug, thiserror::Error)]
+enum ProfileError {
+    #[cfg(all(unix, feature = "cpu-profile"))]
+    #[error("write CPU profile: {0}")]
+    Report(#[source] pprof::Error),
+    #[cfg(all(unix, feature = "cpu-profile"))]
+    #[error("write CPU profile {path}: {source}")]
+    Write {
+        path: String,
+        #[source]
+        source: io::Error,
+    },
+    #[error("create heap profile {path}: {source}")]
+    Create {
+        path: String,
+        #[source]
+        source: io::Error,
+    },
 }
 
 #[cfg(test)]

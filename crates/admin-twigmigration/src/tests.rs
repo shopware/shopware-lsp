@@ -1,4 +1,4 @@
-//! Port of Go `migration_test.go` and `real_world_integration_test.go`.
+//! Migration compilation tests and a dry run against a real Shopware checkout.
 
 use std::collections::HashSet;
 
@@ -258,8 +258,8 @@ fn count_tag(root: &SyntaxNode, name: &str) -> usize {
         .count()
 }
 
-/// Port of Go `TestAdministrationTwigMigrationsOnTrunk`: dry-runs every
-/// currently applicable fix against a real checkout; never writes to it.
+/// Dry-runs every currently applicable fix against a real checkout; never
+/// writes to it.
 #[test]
 #[ignore = "needs a real-world Shopware checkout"]
 fn administration_twig_migrations_on_trunk() {

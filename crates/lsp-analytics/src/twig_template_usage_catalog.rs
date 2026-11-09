@@ -1,4 +1,4 @@
-//! Twig template usage catalog (port of `twig_template_usage_catalog.go`).
+//! Twig template usage catalog.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -18,8 +18,9 @@ use crate::request::{Field, decode, present};
 use crate::route_catalog::normalized_route_methods;
 use crate::{
     Result, SourceLineResolver, ant_path_match, check, enclosing_template_method, errorf, is_zero,
-    lower, range_len, range_start, relative_inside, trim_space,
+    range_len, range_start, relative_inside,
 };
+use swlsp_textutil::lowercase;
 
 pub const LIST_TWIG_TEMPLATE_USAGES_COMMAND: &str =
     "shopware/symfony/analytics/twig/templateUsages";
@@ -141,7 +142,6 @@ impl TwigTemplateUsageCatalogProvider {
         };
         let members = decode(
             value,
-            "TwigTemplateUsageCatalogRequest",
             &[("template", Field::String), ("fileGlob", Field::String)],
         )
         .map_err(|error| errorf!("invalid twig template usage request: {error}"))?;
@@ -161,15 +161,15 @@ impl TwigTemplateUsageCatalogProvider {
             return Err(errorf!("twig template usage catalog is unavailable"));
         };
         check(ctx)?;
-        let template_filter = lower(trim_space(&request.template));
-        let file_glob = filepath::to_slash(trim_space(&request.file_glob));
+        let template_filter = lowercase(request.template.trim());
+        let file_glob = filepath::to_slash(request.file_glob.trim());
         if template_filter.is_empty() && file_glob.is_empty() {
             return Err(errorf!("{TEMPLATE_REQUIRED}"));
         }
         let mut matching: HashSet<String> = twig
             .get_all_template_files()?
             .into_iter()
-            .filter(|name| template_filter.is_empty() || lower(name).contains(&template_filter))
+            .filter(|name| template_filter.is_empty() || lowercase(name).contains(&template_filter))
             .collect();
         if !request.template.is_empty() {
             matching.extend(template_names_for_path_input(
@@ -189,7 +189,7 @@ impl TwigTemplateUsageCatalogProvider {
             }
             result.push(self.catalog_entry(twig, php, &name, &files, &route_map, &mut lines)?);
         }
-        result.sort_by_cached_key(|entry| lower(&entry.template));
+        result.sort_by_cached_key(|entry| lowercase(&entry.template));
         Ok(result)
     }
 
@@ -266,7 +266,7 @@ impl TwigTemplateUsageCatalogProvider {
             }
             let method = resolution.method.unwrap_or_default();
             result
-                .entry(lower(&method.fully_qualified))
+                .entry(lowercase(&method.fully_qualified))
                 .or_default()
                 .push(TwigTemplateRouteEntry {
                     name: route.name.clone(),
@@ -275,7 +275,7 @@ impl TwigTemplateUsageCatalogProvider {
                 });
         }
         for entries in result.values_mut() {
-            entries.sort_by_cached_key(|entry| lower(&entry.name));
+            entries.sort_by_cached_key(|entry| lowercase(&entry.name));
         }
         Ok(result)
     }
@@ -347,7 +347,7 @@ fn controller_usage(
         file_uri: swlsp_uriutil::file_uri(&method.path),
         line: lines.line(&method.path, range_start(line_range)),
         routes: routes
-            .get(&lower(&method.fully_qualified))
+            .get(&lowercase(&method.fully_qualified))
             .cloned()
             .unwrap_or_default(),
     })
@@ -359,7 +359,7 @@ pub(crate) fn template_names_for_path_input(
     twig: &TwigIndexer,
     input: &str,
 ) -> Vec<String> {
-    let input = trim_space(input);
+    let input = input.trim();
     if input.is_empty() || filepath::is_abs(input) {
         return Vec::new();
     }
@@ -399,13 +399,13 @@ fn unique_template_controllers(
         .filter(|controller| {
             seen.insert(format!(
                 "{}\x00{}\x00{}",
-                lower(&controller.controller),
+                lowercase(&controller.controller),
                 controller.file_uri,
                 controller.line
             ))
         })
         .collect();
-    result.sort_by_cached_key(|controller| lower(&controller.controller));
+    result.sort_by_cached_key(|controller| lowercase(&controller.controller));
     result
 }
 

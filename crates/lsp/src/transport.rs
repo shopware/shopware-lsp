@@ -47,28 +47,19 @@ use crate::async_io::{FrameSender, FrameWriter, Input, Output};
 use crate::context::{CancellationToken, RpcError, lock};
 
 /// Error of an outgoing call.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CallError {
+    #[error("connection closed")]
     Closed,
+    #[error("cancelled")]
     Cancelled,
+    #[error("timed out")]
     Timeout,
+    #[error("{0}")]
     Remote(RpcError),
+    #[error("{0}")]
     Io(String),
 }
-
-impl std::fmt::Display for CallError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CallError::Closed => f.write_str("jsonrpc2: connection is closed"),
-            CallError::Cancelled => f.write_str("context canceled"),
-            CallError::Timeout => f.write_str("context deadline exceeded"),
-            CallError::Remote(error) => error.fmt(f),
-            CallError::Io(error) => f.write_str(error),
-        }
-    }
-}
-
-impl std::error::Error for CallError {}
 
 /// The server-to-client half of a connection plus outgoing-call
 /// bookkeeping. Usable from any thread.
@@ -251,11 +242,7 @@ impl Dispatcher {
             };
             self.respond(&response);
         } else if let Err(error) = result {
-            log::warn!(
-                "jsonrpc2 handler: notification {:?} handling error: {}",
-                work.method,
-                error.message
-            );
+            log::warn!("notification {:?} failed: {}", work.method, error.message);
         }
         work.cancel.cancel();
     }
@@ -268,7 +255,7 @@ impl Dispatcher {
         let frame = match encode_frame(response) {
             Ok(frame) => frame,
             Err(error) => {
-                log::warn!("jsonrpc2: encoding a response: {error}");
+                log::warn!("encode a response: {error}");
                 return;
             }
         };
@@ -429,7 +416,7 @@ pub(crate) async fn serve(
     let (reader, frames, output_done) = match crate::async_io::connect(input, output) {
         Ok(connected) => connected,
         Err(error) => {
-            log::warn!("jsonrpc2: connecting streams: {error}");
+            log::warn!("connect the streams: {error}");
             conn.close();
             return conn;
         }
@@ -453,7 +440,7 @@ pub(crate) async fn serve(
     let worker = match worker {
         Ok(worker) => worker,
         Err(error) => {
-            log::warn!("jsonrpc2: starting the worker: {error}");
+            log::warn!("start the worker: {error}");
             conn.close();
             lock(&dispatcher.frames).take();
             drop(frames);

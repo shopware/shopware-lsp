@@ -1,5 +1,4 @@
-//! Linked editing for Administration component tags (port of Go
-//! `internal/lsp/linkedediting`).
+//! Linked editing for Administration component tags.
 
 use swlsp_language::LanguageId;
 use swlsp_lsp::{

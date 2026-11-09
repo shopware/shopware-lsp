@@ -1,4 +1,4 @@
-//! Port of Go `theme_diagnostics.go`.
+//! `sw_icon` names missing from their icon pack.
 
 use std::sync::Arc;
 
@@ -15,7 +15,7 @@ use swlsp_syntax::SyntaxNodeExt;
 
 use crate::{DeclaredAnalyzer, ProblemAnalyzer};
 
-/// Icon lookups (Go `IconProvider`).
+/// Icon lookups.
 pub trait IconProvider: Send + Sync {
     fn icon_packs(&self) -> Vec<String>;
     fn icons(&self, pack: &str) -> Vec<String>;
@@ -46,7 +46,7 @@ impl IconProvider for swlsp_theme::IconProvider {
     }
 }
 
-/// Go `ThemeAnalyzer`: `sw_icon` names missing from their icon pack.
+/// `sw_icon` names missing from their icon pack.
 #[derive(Clone)]
 pub struct ThemeAnalyzer {
     icon_provider: Arc<dyn IconProvider>,

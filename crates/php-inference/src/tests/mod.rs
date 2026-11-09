@@ -1,5 +1,3 @@
-//! Tests ported from `internal/php/inference/*_test.go`.
-
 use std::sync::Arc;
 
 use swlsp_parser_php::query;
@@ -87,7 +85,7 @@ pub(crate) fn text_of(node: &SyntaxNode) -> String {
     node.text().to_string()
 }
 
-/// Go `assertTextType`: the first node with the trimmed text whose fact is
+/// Asserts that the first node with the trimmed text whose fact is
 /// known must have the expected type.
 #[track_caller]
 pub(crate) fn assert_text_type(document: &Document, root: &SyntaxNode, text: &str, expected: &str) {
@@ -104,7 +102,7 @@ pub(crate) fn assert_text_type(document: &Document, root: &SyntaxNode, text: &st
     panic!("no inferred node {text:?}");
 }
 
-/// Go `assertNodeType`: the last node of `kind` has the expected type.
+/// Asserts that the last node of `kind` has the expected type.
 #[track_caller]
 pub(crate) fn assert_node_type(document: &Document, root: &SyntaxNode, kind: Kind, expected: &str) {
     let nodes = query::nodes(root, &[kind]);
@@ -113,7 +111,7 @@ pub(crate) fn assert_node_type(document: &Document, root: &SyntaxNode, kind: Kin
 }
 
 #[allow(dead_code)]
-/// The type of the last node of `kind` (unknown renders as its Go text).
+/// The type of the last node of `kind` (unknown renders as `unknown`).
 pub(crate) fn last_node_type(document: &Document, root: &SyntaxNode, kind: Kind) -> String {
     let nodes = query::nodes(root, &[kind]);
     document

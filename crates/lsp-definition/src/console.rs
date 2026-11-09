@@ -1,4 +1,4 @@
-//! Go `console_definition.go`: Console command names and input names.
+//! Console command names and input names.
 
 use std::sync::Arc;
 
@@ -16,8 +16,7 @@ pub struct ConsoleDefinitionProvider {
 }
 
 impl ConsoleDefinitionProvider {
-    /// `php` supplies the request's PHP context (Go reads it from the
-    /// enriched request context).
+    /// `php` supplies the request's PHP context.
     pub fn new(index: Option<Arc<Index>>, php: Option<PhpIndex>) -> Self {
         Self { index, php }
     }

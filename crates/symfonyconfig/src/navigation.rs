@@ -26,7 +26,7 @@ pub fn resource_files(current_path: &str, resource_path: &str) -> Vec<String> {
     result
 }
 
-/// Go `filepath.Glob`: `*` and `?` never cross a separator; malformed
+/// Paths matching `pattern`: `*` and `?` never cross a separator; malformed
 /// patterns and I/O errors yield no matches.
 fn glob(pattern: &str) -> Vec<String> {
     let options = glob::MatchOptions {
@@ -43,7 +43,8 @@ fn glob(pattern: &str) -> Vec<String> {
         .collect()
 }
 
-/// Go `filepath.Dir` (without volume handling).
+/// The cleaned directory part of `path`; `.` without one. Volume names get
+/// no special handling.
 fn dir(path: &str) -> String {
     match path.rfind(['/', std::path::MAIN_SEPARATOR]) {
         Some(index) => filepath::clean(&path[..=index]),

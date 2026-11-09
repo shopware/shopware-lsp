@@ -4,7 +4,7 @@ use swlsp_language::LanguageId;
 
 use crate::paths;
 
-/// The language registered for `path`'s extension (Go `language.DefaultRegistry().ForPath`).
+/// The language registered for `path`'s extension.
 pub fn language_for_path(path: &str) -> Option<LanguageId> {
     let extension = paths::ext(path);
     let extension = extension.strip_prefix('.')?;

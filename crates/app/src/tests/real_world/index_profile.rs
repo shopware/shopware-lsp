@@ -1,12 +1,9 @@
-//! Port of Go `index_profile_test.go`: a small opt-in resource harness for
+//! A small opt-in resource harness for
 //! the production workspace composition (construction, cold indexing, warm
 //! no-op scan, retained memory and on-disk cache size).
 //!
-//! Go-runtime specifics have no Rust equivalent and are replaced or dropped:
-//! `runtime.MemStats` heap figures become `/proc/self/status` VmRSS/VmHWM,
-//! `runtimeconfig.ApplyMemoryPolicy`, GOMAXPROCS and the pprof heap profiles
-//! (`SHOPWARE_LSP_HEAP_PROFILE`, `SHOPWARE_LSP_REVERSE_HEAP_PROFILE`) are
-//! dropped; allocation counts and GC statistics are not reported.
+//! Memory is reported as the process's resident set (`/proc/self/status`
+//! VmRSS/VmHWM); allocation counts are not reported.
 
 use std::path::Path;
 use std::time::Instant;

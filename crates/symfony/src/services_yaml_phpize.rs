@@ -1,6 +1,6 @@
 //! Symfony `XmlUtils::phpize` for XML configuration values.
 
-use crate::util::GoLower;
+use crate::util::Lowercase;
 
 /// The PHP value of an XML configuration string.
 #[derive(Clone, Debug, PartialEq)]
@@ -15,7 +15,7 @@ pub(crate) enum PhpValue {
 /// Converts the string content of an XML configuration value into its PHP
 /// representation, mirroring Symfony's `XmlUtils::phpize`.
 pub(crate) fn phpize(value: &str) -> PhpValue {
-    let lower = value.to_go_lower();
+    let lower = value.lowercase();
     if value.is_empty() {
         return PhpValue::Str(String::new());
     }
@@ -43,7 +43,7 @@ pub(crate) fn phpize(value: &str) -> PhpValue {
         return i64::from_str_radix(&value[2..], 16).map_or_else(|_| text(), PhpValue::Int);
     }
     if is_php_float(value) {
-        return crate::services_yaml_convert::go_parse_float(value)
+        return crate::services_yaml_convert::parse_finite_float(value)
             .map_or_else(text, PhpValue::Float);
     }
     text()

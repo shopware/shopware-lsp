@@ -1,6 +1,5 @@
-//! Rename and refactor providers (port of Go `internal/lsp/refactor`):
-//! Twig template file renames, typed Twig usages of renamed PHP symbols and
-//! Administration registry/contract renames.
+//! Rename and refactor providers: Twig template file renames, typed Twig usages
+//! of renamed PHP symbols and Administration registry/contract renames.
 
 mod admin_rename;
 mod admin_rename_helpers;
@@ -33,7 +32,7 @@ pub(crate) fn protocol_range(line_index: &LineIndex, range: TextRange) -> protoc
     }
 }
 
-/// Go `filepath.Ext` of a path or URI, lowercased.
+/// The lowercased extension (with its dot) of a path or URI.
 pub(crate) fn lower_ext(value: &str) -> String {
     swlsp_uriutil::filepath::ext(value).to_lowercase()
 }

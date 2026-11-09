@@ -1,9 +1,5 @@
 //! Symfony service, routing, controller, event and console diagnostics
-//! (Go `service_diagnostics.go`, `service_argument_diagnostics.go`,
-//! `tagged_service_diagnostics.go`, `container_constant_diagnostics.go`,
-//! `duplicate_diagnostics.go`, `controller_diagnostics.go`,
-//! `route_diagnostics.go`, `event_diagnostics.go`,
-//! `invokable_command_diagnostics.go`).
+//! analyzers.
 
 mod container_constant;
 mod controller;
@@ -40,8 +36,8 @@ use swlsp_lsp::{DiagnosticId, Problem};
 use swlsp_lsp_protocol as protocol;
 use swlsp_syntax::TextRange;
 
-/// Go `filepath.Ext` lowercased with ASCII rules (enough for extension
-/// comparisons).
+/// The extension of the last path element (from its final `.`), lowercased with
+/// ASCII rules (enough for extension comparisons).
 pub(crate) fn lower_ext(path: &str) -> String {
     for (index, byte) in path.bytes().enumerate().rev() {
         if byte == b'/' {
@@ -54,19 +50,9 @@ pub(crate) fn lower_ext(path: &str) -> String {
     String::new()
 }
 
-/// A Go `[]string` as JSON: `nil` (empty here) encodes as `null`.
-pub(crate) fn string_list(values: Vec<String>) -> Value {
-    if values.is_empty() {
-        Value::Null
-    } else {
-        Value::Array(values.into_iter().map(Value::String).collect())
-    }
-}
-
-/// `suggestion.Similar` as JSON. Go returns `nil` exactly when no candidate
-/// scores, which is exactly when the Rust port returns no candidate.
+/// The similar candidates as a JSON array (`[]` when none scores).
 pub(crate) fn similar_value<S: AsRef<str>>(input: &str, candidates: &[S]) -> Value {
-    string_list(swlsp_suggestion::similar(input, candidates))
+    Value::from(swlsp_suggestion::similar(input, candidates))
 }
 
 pub(crate) fn problem(

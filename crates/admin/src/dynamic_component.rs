@@ -1,4 +1,4 @@
-//! Static `<component :is>` selectors (port of Go `dynamic_component.go`).
+//! Static `<component :is>` selectors.
 
 use crate::*;
 
@@ -162,12 +162,7 @@ const DYNAMIC_SPACE: &[char] = &[' ', '\t', '\r', '\n'];
 
 pub(crate) fn trim_dynamic_component_expression(value: &str, base: u32) -> (&str, u32) {
     let left = value.len() - value.trim_start_matches(DYNAMIC_SPACE).len();
-    (go_trim_space(value), base + left as u32)
-}
-
-/// Go `strings.TrimSpace` (ASCII and Unicode white space).
-fn go_trim_space(value: &str) -> &str {
-    value.trim()
+    (value.trim(), base + left as u32)
 }
 
 /// A complete static quoted string: `(name, start, end)` where the range

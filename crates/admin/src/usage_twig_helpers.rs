@@ -1,4 +1,4 @@
-//! Template usage helpers (port of Go `usage_twig_helpers.go`).
+//! Template usage helpers.
 
 use crate::*;
 

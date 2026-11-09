@@ -1,5 +1,4 @@
-//! Go `twig_component_variable_completion.go`: props, `this` and
-//! `computed` inside Twig component templates.
+//! Completion of props, `this` and `computed` inside Twig component templates.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -16,7 +15,8 @@ use super::completion::{
     compact_twig_accessor, is_twig_identifier, twig_member_type, twig_php_member_completions,
 };
 use super::lower_ext;
-use crate::common::{component_prop_detail, go_to_lower, sort_completion_items};
+use crate::common::{component_prop_detail, sort_completion_items};
+use swlsp_textutil::lowercase;
 
 pub struct TwigComponentVariableCompletionProvider {
     index: Option<Arc<Index>>,
@@ -124,7 +124,7 @@ impl CompletionProvider for TwigComponentVariableCompletionProvider {
         let mut items: HashMap<String, protocol::CompletionItem> = HashMap::new();
         for prop in &props {
             items.insert(
-                go_to_lower(&prop.name),
+                lowercase(&prop.name),
                 protocol::CompletionItem {
                     label: prop.name.clone(),
                     kind: Some(CompletionItemKind::VARIABLE),

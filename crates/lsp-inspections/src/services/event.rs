@@ -1,4 +1,4 @@
-//! Go `event.go`: the `symfony.event` inspection.
+//! The `symfony.event` inspection.
 
 use std::sync::Arc;
 
@@ -17,7 +17,6 @@ use crate::{BoundInspection, SuggestionFix, suggestion_bound_fixes};
 
 pub const EVENT_METHOD_FIX_ID: &str = "create-event-listener-method";
 
-/// Go `NewEvent`.
 pub fn new_event(
     index: Option<Arc<Index>>,
     php_index: Option<PhpIndex>,

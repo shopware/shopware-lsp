@@ -1,4 +1,4 @@
-//! Port of Go `bulk_extension_test.go`.
+//! Tests for bulk extension.
 
 use std::collections::HashMap;
 

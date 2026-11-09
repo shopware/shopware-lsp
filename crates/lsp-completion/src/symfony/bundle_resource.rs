@@ -1,6 +1,5 @@
 //! Bundle (`@AcmeBundle/...`) and directory-scoped routing/service resource
-//! completion in YAML, XML and PHP configuration (port of Go
-//! `bundle_resource_completion.go`).
+//! completion in YAML, XML and PHP configuration.
 
 use std::collections::HashSet;
 use std::sync::{Arc, LazyLock};
@@ -27,8 +26,7 @@ static YAML_PATH_PREFIX: LazyLock<Regex> = LazyLock::new(|| {
 static XML_RESOURCE_PREFIX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"(?-u:\b)resource[ \t]*=[ \t]*(['"])"#).expect("valid regex"));
 
-/// Completes bundle and directory-scoped resource paths (Go
-/// `BundleResourceCompletionProvider`).
+/// Completes bundle and directory-scoped resource paths.
 pub struct BundleResourceCompletionProvider {
     resolver: RouteResourceResolver,
     paths: Option<Arc<dyn IndexedResourcePaths>>,
@@ -268,20 +266,6 @@ struct LocalResourceCandidate {
     directory: bool,
 }
 
-/// Go `filepath.Dir` for slash-separated paths.
-fn go_dir(path: &str) -> String {
-    let volume = filepath::volume_name_len(path);
-    let mut index = path.len();
-    while index > volume && !filepath::is_path_separator(path.as_bytes()[index - 1]) {
-        index -= 1;
-    }
-    let dir = filepath::clean(&path[volume..index]);
-    if dir == "." && volume > 2 {
-        return path[..volume].to_string();
-    }
-    format!("{}{}", &path[..volume], dir)
-}
-
 fn local_resource_candidates(
     ctx: &Context,
     catalog: Option<&dyn IndexedResourcePaths>,
@@ -290,7 +274,7 @@ fn local_resource_candidates(
     let Some(catalog) = catalog else {
         return Vec::new();
     };
-    let root = go_dir(current_path);
+    let root = filepath::dir(current_path);
     let Ok(paths) = catalog.resource_paths(&root, MAX_LOCAL_RESOURCE_CANDIDATES) else {
         return Vec::new();
     };
@@ -316,11 +300,11 @@ fn local_resource_candidates(
                     directory,
                 });
             }
-            value = go_dir(&value);
+            value = filepath::dir(&value);
             directory = true;
         }
     }
-    // Values are unique, so a stable sort matches Go's sort.Slice.
+    // Values are unique, so the order is total.
     result.sort_by(|left, right| left.value.cmp(&right.value));
     result
 }

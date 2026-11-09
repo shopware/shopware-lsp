@@ -1,4 +1,5 @@
-//! Port of Go `admin_completion_provider.go`.
+//! The Administration completion provider: routes a request to the Twig or
+//! JavaScript completion source.
 
 use std::sync::Arc;
 
@@ -7,7 +8,7 @@ use swlsp_language::LanguageId;
 use swlsp_lsp::{CompletionProvider, CompletionRequest, Context, effective_syntax_language};
 use swlsp_lsp_protocol as protocol;
 
-use crate::common::go_to_lower;
+use swlsp_textutil::lowercase;
 
 /// Completions for Shopware Administration Vue components.
 #[derive(Clone, Default)]
@@ -28,7 +29,7 @@ impl CompletionProvider for AdminCompletionProvider {
         request: &CompletionRequest,
     ) -> Vec<protocol::CompletionItem> {
         let uri = request.params.text_document.uri.as_str();
-        let ext = go_to_lower(swlsp_uriutil::filepath::ext(uri));
+        let ext = lowercase(swlsp_uriutil::filepath::ext(uri));
         let language_at_cursor = effective_syntax_language(request.language, request.node.as_ref());
 
         if ext == ".js"

@@ -1,5 +1,4 @@
-//! Whole-document JavaScript query index (port of Go
-//! `javascript_analysis.go`).
+//! Whole-document JavaScript query index.
 
 use crate::*;
 

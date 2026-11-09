@@ -1,4 +1,4 @@
-//! Go `service_argument.go`: the `symfony.service.arguments` inspection.
+//! The `symfony.service.arguments` inspection.
 
 use std::sync::Arc;
 
@@ -23,7 +23,6 @@ use crate::{BoundInspection, SuggestionFix, suggestion_bound_fixes};
 pub const SERVICE_ARGUMENTS_FIX_ID: &str = "add-missing-service-arguments";
 pub const SERVICE_METHOD_FIX_ID: &str = "create-service-method";
 
-/// Go `NewServiceArgument`.
 pub fn new_service_argument(
     service_index: Option<Arc<ServiceIndex>>,
     php_index: Option<PhpIndex>,
@@ -90,7 +89,6 @@ pub fn new_service_argument(
     })
 }
 
-/// Go `serviceArgumentFix`.
 pub(crate) struct ServiceArgumentFix;
 
 fn present_value(payload: &Map<String, Value>, key: &str) -> bool {

@@ -13,12 +13,12 @@ use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::PHP_STRING;
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::TWIG_LITERAL_STRING;
-use swlsp_php_types::go_to_lower;
 use swlsp_snippet::{Snippet, SnippetIndexer};
 use swlsp_syntax::SyntaxNodeExt;
+use swlsp_textutil::lowercase;
 use swlsp_uriutil::{file_uri, filepath};
 
-use crate::{inlay_hint_byte_range, line_position, parts_label, position};
+use crate::{inlay_hint_byte_range, line_position, position};
 
 pub struct SnippetPreviewProvider {
     index: Arc<SnippetIndexer>,
@@ -87,7 +87,7 @@ impl InlayHintProvider for SnippetPreviewProvider {
             }
             result.push(protocol::InlayHint {
                 position: position(document, candidate.position),
-                label: parts_label(vec![part]),
+                label: protocol::InlayHintLabel::Parts(vec![part]),
                 kind: Some(InlayHintKind::TYPE),
                 tooltip: snippet_preview_tooltip(&candidate.key, &translations),
                 padding_left: true,
@@ -150,7 +150,7 @@ fn snippet_hint_candidates(document: &TextDocument) -> Vec<Candidate> {
 }
 
 fn snippet_locale_rank(path: &str) -> u8 {
-    let normalized = go_to_lower(&filepath::to_slash(path));
+    let normalized = lowercase(&filepath::to_slash(path));
     if normalized.contains("en-gb")
         || normalized.contains("en_gb")
         || normalized.ends_with("/en.json")

@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::PHP_STRING;
 use swlsp_php::NameResolver;
-use swlsp_php_types::go_to_lower;
 use swlsp_syntax::{SyntaxNode, TextRange};
+use swlsp_textutil::lowercase;
 
 const TREE_BUILDER_CLASS: &str = "Symfony\\Component\\Config\\Definition\\Builder\\TreeBuilder";
 
@@ -112,7 +112,7 @@ fn unique_roots(values: Vec<Root>) -> Vec<Root> {
         .into_iter()
         .filter(|value| {
             !value.name.is_empty()
-                && seen.insert((go_to_lower(&value.name), value.file.clone(), value.range))
+                && seen.insert((lowercase(&value.name), value.file.clone(), value.range))
         })
         .collect()
 }

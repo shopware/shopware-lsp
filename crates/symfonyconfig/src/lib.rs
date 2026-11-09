@@ -1,6 +1,5 @@
 //! Symfony bundle configuration roots (`getConfigTreeBuilder()`), config
-//! root-key and `imports` resource references in PHP and YAML config files
-//! (port of Go `internal/symfonyconfig`).
+//! root-key and `imports` resource references in PHP and YAML config files.
 
 mod index;
 mod navigation;

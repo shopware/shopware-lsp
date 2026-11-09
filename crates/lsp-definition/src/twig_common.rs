@@ -9,12 +9,12 @@ use swlsp_uriutil::file_uri;
 
 use crate::common::protocol_range;
 
-/// Go `uriutil.Path` with the error ignored.
+/// The file path of `uri`, or empty when it is not a file URI.
 pub(crate) fn uri_path(uri: &str) -> String {
     swlsp_uriutil::path(uri).unwrap_or_default()
 }
 
-/// Go `componentFileLocation`: reads `path` and converts a byte range.
+/// Reads `path` and converts a byte range to a location.
 pub(crate) fn component_file_location(path: &str, range: TextRange) -> Option<protocol::Location> {
     let source = std::fs::read(path).ok()?;
     let lines = LineIndex::new(String::from_utf8_lossy(&source).into_owned());
@@ -24,7 +24,7 @@ pub(crate) fn component_file_location(path: &str, range: TextRange) -> Option<pr
     })
 }
 
-/// Go `twigVariableLocation`: like [`component_file_location`] but rejects
+/// Like [`component_file_location`] but rejects
 /// an empty path.
 pub(crate) fn twig_variable_location(path: &str, range: TextRange) -> Option<protocol::Location> {
     if path.is_empty() {
@@ -33,7 +33,7 @@ pub(crate) fn twig_variable_location(path: &str, range: TextRange) -> Option<pro
     component_file_location(path, range)
 }
 
-/// Go `uniqueComponentLocations`: first location per URI and range.
+/// Deduplicates locations, keeping the first per URI and range.
 pub(crate) fn unique_component_locations(
     locations: Vec<protocol::Location>,
 ) -> Vec<protocol::Location> {
@@ -107,7 +107,7 @@ pub(crate) mod test_support {
     }
 
     /// A request whose node is the node at `node_offset` and whose cursor is
-    /// at `position` (Go tests sometimes leave the position at 0:0).
+    /// at `position` (some tests leave the position at 0:0).
     pub(crate) fn request_with_position(
         document: TextDocument,
         node_offset: u32,

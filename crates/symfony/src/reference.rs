@@ -45,7 +45,7 @@ pub fn parameter_references(value: &str) -> Vec<String> {
             break;
         };
         let end = end + start + 1;
-        let name = crate::util::go_trim_space(&value[start + 1..end]);
+        let name = value[start + 1..end].trim();
         offset = end + 1;
         if name.is_empty() || name.starts_with("env(") || name.starts_with("expr(") {
             continue;

@@ -1,7 +1,7 @@
-//! Type helpers shared by expression and flow analysis (port of the type
-//! helpers in `helpers.go`, `expression_array.go` and `builtins.go`).
+//! Type helpers shared by expression and flow analysis.
 
-use swlsp_php_types::{CallableParameter, Joiner, Kind, Relations, ShapeField, Type, go_to_lower};
+use swlsp_php_types::{CallableParameter, Joiner, Kind, Relations, ShapeField, Type};
+use swlsp_textutil::lowercase;
 
 use crate::syntax::{trim_backslash, trim_quotes};
 
@@ -9,19 +9,10 @@ use crate::syntax::{trim_backslash, trim_quotes};
 /// Keep enough headroom for valid chains while bounding adversarial graphs.
 pub(crate) const MAX_SPECIAL_TYPE_DEPTH: usize = 128;
 
-/// Bounds `self`/`static` substitution cost; see Go's `maxSpecialTypeNodes`.
+/// Bounds `self`/`static` substitution cost.
 pub(crate) const MAX_SPECIAL_TYPE_NODES: usize = 4096;
 
 pub(crate) const MAX_INFERRED_TUPLE_FIELDS: usize = 16;
-
-/// Go `strconv.Atoi` success check (optional sign, decimal digits, fits i64).
-pub(crate) fn parse_go_int(text: &str) -> Option<i64> {
-    let digits = text.strip_prefix(['+', '-']).unwrap_or(text);
-    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    text.parse::<i64>().ok()
-}
 
 pub(crate) fn is_int_like(value: &Type) -> bool {
     matches!(value.kind(), Kind::Int | Kind::LiteralInt)
@@ -63,7 +54,7 @@ pub(crate) fn iterable_types(value: &Type, relations: Relations<'_>) -> (Type, T
         }
         Kind::Object => {
             if value.argument_count() == 1 {
-                let name = go_to_lower(trim_backslash(value.name()));
+                let name = lowercase(trim_backslash(value.name()));
                 if matches!(
                     name.as_str(),
                     "iterator" | "iteratoraggregate" | "traversable"
@@ -94,7 +85,7 @@ pub(crate) fn array_shape_iterable_types(value: &Type, relations: Relations<'_>)
     let mut values = Joiner::new(relations, Type::NEVER);
     for field in value.fields() {
         let name = trim_quotes(&field.name);
-        match parse_go_int(name) {
+        match name.parse::<i64>().ok() {
             Some(numeric) => keys.add(Type::literal_int(&numeric.to_string())),
             None => keys.add(Type::literal_string(name)),
         }

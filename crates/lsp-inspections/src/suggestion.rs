@@ -20,8 +20,7 @@ struct SuggestionPayload {
     replacement: String,
 }
 
-/// Replaces the diagnostic range with one suggested value (Go
-/// `suggestionFix`).
+/// Replaces the diagnostic range with one suggested value.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SuggestionFix;
 
@@ -78,8 +77,8 @@ impl RewriteQuickFix for SuggestionFix {
     }
 }
 
-/// Go `suggestionBoundFixes`: one bound fix per distinct non-blank entry of
-/// the payload's `suggestions` array.
+/// One bound fix per distinct non-blank entry of the payload's `suggestions`
+/// array.
 pub fn suggestion_bound_fixes(payload: &Map<String, Value>) -> Vec<BoundFix> {
     let Some(Value::Array(values)) = payload.get("suggestions") else {
         return Vec::new();

@@ -1,5 +1,4 @@
-//! Typed EntityExtension `modifyFields` flag changes (port of Go
-//! `field_modification.go`).
+//! Typed EntityExtension `modifyFields` flag changes.
 
 use std::collections::{BTreeSet, HashSet};
 
@@ -104,25 +103,22 @@ pub(crate) fn validate_field_modifications(v: &mut SpecValidator) {
         if !seen_ids.insert(id.clone()) {
             v.add(
                 "entity.extension.modifyFields.id.duplicate",
-                format!("Field modification ID {} is duplicated", go_quote(&id)),
+                format!("Field modification ID {:?} is duplicated", id),
                 &id,
             );
         }
         if !PROPERTY_PATTERN.is_match(&modification.property_name) {
             v.add(
                 "entity.extension.modifyFields.property.invalid",
-                format!(
-                    "Invalid target property {}",
-                    go_quote(&modification.property_name)
-                ),
+                format!("Invalid target property {:?}", modification.property_name),
                 &id,
             );
         } else if seen_properties.contains(&modification.property_name) {
             v.add(
                 "entity.extension.modifyFields.property.duplicate",
                 format!(
-                    "Target property {} is modified more than once",
-                    go_quote(&modification.property_name)
+                    "Target property {:?} is modified more than once",
+                    modification.property_name
                 ),
                 &id,
             );
@@ -140,7 +136,7 @@ pub(crate) fn validate_field_modifications(v: &mut SpecValidator) {
             if !added.insert(flag.kind.clone()) {
                 v.add(
                     "entity.extension.modifyFields.flag.duplicate",
-                    format!("Flag {} is added more than once", go_quote(&flag.kind)),
+                    format!("Flag {:?} is added more than once", flag.kind),
                     &id,
                 );
             }
@@ -151,24 +147,21 @@ pub(crate) fn validate_field_modifications(v: &mut SpecValidator) {
             if field_flag_class(kind).is_none() {
                 v.add(
                     "entity.extension.modifyFields.flag.invalid",
-                    format!("Unsupported DAL flag {}", go_quote(kind)),
+                    format!("Unsupported DAL flag {:?}", kind),
                     &id,
                 );
             }
             if !removed.insert(kind.clone()) {
                 v.add(
                     "entity.extension.modifyFields.flag.duplicate",
-                    format!("Flag {} is removed more than once", go_quote(kind)),
+                    format!("Flag {:?} is removed more than once", kind),
                     &id,
                 );
             }
             if added.contains(kind) {
                 v.add(
                     "entity.extension.modifyFields.flag.conflict",
-                    format!(
-                        "Flag {} cannot be added and removed together",
-                        go_quote(kind)
-                    ),
+                    format!("Flag {:?} cannot be added and removed together", kind),
                     &id,
                 );
             }
@@ -180,7 +173,7 @@ fn validate_field_modification_flag(v: &mut SpecValidator, flag: &FieldFlagSpec,
     if field_flag_class(&flag.kind).is_none() {
         v.add(
             "entity.extension.modifyFields.flag.invalid",
-            format!("Unsupported DAL flag {}", go_quote(&flag.kind)),
+            format!("Unsupported DAL flag {:?}", flag.kind),
             field_id,
         );
         return;
@@ -190,8 +183,8 @@ fn validate_field_modification_flag(v: &mut SpecValidator, flag: &FieldFlagSpec,
         v.add(
             "entity.extension.modifyFields.flag.arguments.invalid",
             format!(
-                "Flag {} does not accept {}",
-                go_quote(&flag.kind),
+                "Flag {:?} does not accept {}",
+                flag.kind,
                 arguments.join(", ")
             ),
             field_id,

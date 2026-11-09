@@ -1,4 +1,4 @@
-//! Theme configuration keys (Go `theme_completion.go`).
+//! Theme configuration keys.
 
 use std::collections::HashSet;
 use std::sync::Arc;

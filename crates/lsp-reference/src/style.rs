@@ -1,5 +1,4 @@
-//! CSS class references across SCSS, Twig, HTML and Vue (port of
-//! `style_class_reference.go`).
+//! CSS class references across SCSS, Twig, HTML and Vue.
 
 use std::collections::HashSet;
 use std::sync::Arc;

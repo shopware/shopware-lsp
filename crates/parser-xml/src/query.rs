@@ -1,4 +1,4 @@
-//! Structural XML queries over parsed trees (port of Go `xml/query`).
+//! Structural XML queries over parsed trees.
 //!
 //! Every function accepts any node inside a tree. Functions that operate on an
 //! element normalize their argument first: a node inside an element resolves
@@ -108,8 +108,8 @@ pub fn attribute_name(node: &SyntaxNode) -> Option<String> {
 
 /// The raw value token of the attribute containing `node` (quotes included).
 ///
-/// Like Go this is the first token of the value node, which is leading trivia
-/// when whitespace separates `=` from the value.
+/// This is the first token of the value node, which is leading trivia when
+/// whitespace separates `=` from the value.
 pub fn attribute_value_token(node: &SyntaxNode) -> Option<SyntaxToken> {
     attribute_at(node)?
         .child_node_of_kind(XML_ATTRIBUTE_VALUE)?

@@ -1,4 +1,4 @@
-//! Compact TypeScript type index (port of Go `type_index.go`).
+//! Compact TypeScript type index.
 
 use std::cell::RefCell;
 use std::sync::LazyLock;
@@ -135,7 +135,7 @@ pub(crate) fn parse_admin_type_file(
         };
         let end = admin_type_alias_end(source, equals + 1);
         let mut alias_start = equals + 1;
-        while alias_start < end && go_byte_is_space(bytes[alias_start]) {
+        while alias_start < end && is_ascii_space(bytes[alias_start]) {
             alias_start += 1;
         }
         declaration.alias = source
@@ -264,7 +264,7 @@ pub(crate) fn admin_type_field_documentation(source: &str, offset: usize) -> Str
         return String::new();
     }
     let mut end = offset;
-    while end > 0 && go_byte_is_space(bytes[end - 1]) {
+    while end > 0 && is_ascii_space(bytes[end - 1]) {
         end -= 1;
     }
     if end < 2 || &bytes[end - 2..end] != b"*/" {
@@ -351,11 +351,11 @@ pub(crate) fn append_admin_type_import(
     });
 }
 
-/// Go `parseAdminTypeParameters`: `(parameters, cursor after them)`.
+/// Generic type parameters at `cursor`: `(parameters, cursor after them)`.
 pub(crate) fn parse_admin_type_parameters(source: &str, cursor: usize) -> (Vec<String>, usize) {
     let bytes = source.as_bytes();
     let mut cursor = cursor;
-    while cursor < bytes.len() && go_byte_is_space(bytes[cursor]) {
+    while cursor < bytes.len() && is_ascii_space(bytes[cursor]) {
         cursor += 1;
     }
     if cursor >= bytes.len() || bytes[cursor] != b'<' {
@@ -546,7 +546,7 @@ pub(crate) fn admin_type_import_candidates(file_path: &str, import_path: &str) -
 /// Seen-set shared by one recursive type resolution.
 pub(crate) type TypeSeen = RefCell<HashSet<String>>;
 
-/// Removes a key from the seen set when dropped (Go `defer delete`).
+/// Removes a key from the seen set when dropped.
 pub(crate) struct SeenGuard<'a> {
     seen: &'a TypeSeen,
     key: String,
@@ -719,7 +719,7 @@ impl AdminComponentIndexer {
         Ok(result)
     }
 
-    /// Go `resolveVueType` with a caller-owned seen set.
+    /// Resolves a type with a caller-owned seen set.
     pub(crate) fn resolve_vue_type_impl(
         &self,
         type_expression: &str,
@@ -1023,7 +1023,8 @@ impl AdminComponentIndexer {
     }
 }
 
-/// Go `adminEntityGeneric`: `(entityName, collection)`.
+/// The entity of an `Entity<'name'>` or `EntityCollection<'name'>`
+/// generic: `(entity_name, collection)`.
 pub(crate) fn admin_entity_generic(name: &str, arguments: &[String]) -> Option<(String, bool)> {
     if arguments.len() != 1 {
         return None;
@@ -1181,7 +1182,8 @@ pub(crate) fn admin_entity_collection_shape(
 }
 
 impl AdminComponentIndexer {
-    /// Go `(declaration, declarationContext, found, error)`.
+    /// The declaration and the path of its declaring file; `None` when not
+    /// found.
     pub(crate) fn resolve_admin_type_declaration(
         &self,
         context_path: &str,
@@ -1289,7 +1291,7 @@ impl AdminComponentIndexer {
             }
             seen.insert(path);
         }
-        // Go iterates the overlay map in random order; sort for determinism.
+        // Sort the overlays for determinism.
         let mut overlays: Vec<(&String, &'a AdminTypeFile)> = live_files
             .iter()
             .filter(|(path, _)| !seen.contains(*path))
@@ -1367,7 +1369,7 @@ pub(crate) fn admin_type_default_declaration(
         .find(|declaration| declaration.default)
 }
 
-/// Go `parseAdminNamedType`: `(name, arguments)`; empty name when `value`
+/// A (generic) named type: `(name, arguments)`; empty name when `value`
 /// is not a (generic) named type.
 pub(crate) fn parse_admin_named_type(value: &str) -> (String, Vec<String>) {
     let value = value.trim();
@@ -1461,19 +1463,19 @@ pub(crate) fn split_admin_type_top_level(value: &str, separator: u8) -> Vec<Stri
                 && state.brackets == 0
                 && angles == 0
             {
-                result.push(go_byte_slice(value, start, index).trim().to_owned());
+                result.push(lossy_slice(value, start, index).trim().to_owned());
                 start = index + 1;
             }
         }
         index += 1;
     }
-    result.push(go_byte_slice(value, start, bytes.len()).trim().to_owned());
+    result.push(lossy_slice(value, start, bytes.len()).trim().to_owned());
     result
 }
 
 /// A byte-range slice that tolerates non-boundary offsets (only possible for
 /// non-ASCII separators, which callers never use).
-fn go_byte_slice(value: &str, start: usize, end: usize) -> String {
+fn lossy_slice(value: &str, start: usize, end: usize) -> String {
     match value.get(start..end) {
         Some(slice) => slice.to_owned(),
         None => String::from_utf8_lossy(&value.as_bytes()[start..end]).into_owned(),

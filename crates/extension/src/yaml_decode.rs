@@ -1,5 +1,7 @@
-//! Decodes the native YAML CST into typed configuration with the exact
-//! semantics of Go `yamlquery.Decode` followed by `yaml.v3` `Node.Decode`.
+//! Decodes the native YAML CST into typed extension configuration the way
+//! shopware-cli reads `.shopware-extension.yml` (it decodes with the
+//! `yaml.v3` library), so the editor sees the same values and errors as the
+//! build tool.
 //!
 //! `swlsp_parser_yaml::query::decode` resolves values into a generic
 //! [`Value`](swlsp_parser_yaml::query::Value) and aborts on the first type
@@ -7,22 +9,21 @@
 //! string targets keep the original scalar text (`8.0` stays `8.0`), type
 //! errors are collected while every other field still decodes, failed
 //! sequence elements are dropped, and duplicate keys reject a mapping. The
-//! representation graph built here mirrors Go's `semanticDecoder`, and the
-//! [`Decoder`] mirrors yaml.v3's reflective decoder for the concrete target
-//! types implementing [`Target`].
+//! [`Document`] graph resolves tags, anchors and merge keys once; the
+//! [`Decoder`] then walks it into the concrete target types implementing
+//! [`Target`].
 
 use std::collections::{BTreeMap, HashSet};
 
 use swlsp_parser_yaml::query::{
     decode_block_scalar, decode_double_quoted, is_mapping, is_null, is_sequence, is_yaml_float,
-    item_value, items, pair_key, pair_value, pairs, parse_go_int, parse_go_uint, root_value,
-    scalar_token, scalar_value,
+    item_value, items, pair_key, pair_value, pairs, root_value, scalar_token, scalar_value,
 };
 use swlsp_parser_yaml::syntax::{
     TK_BLOCK_SCALAR, TK_DOUBLE_QUOTED_SCALAR, TK_SINGLE_QUOTED_SCALAR, YAML_SCALAR,
 };
 use swlsp_syntax::SyntaxNode;
-use swlsp_uriutil::go_quote;
+use swlsp_textutil::{parse_int_literal, parse_uint_literal};
 
 pub(crate) type Id = usize;
 
@@ -38,7 +39,7 @@ pub(crate) const BINARY_TAG: &str = "!!binary";
 const MERGE_TAG: &str = "!!merge";
 const LONG_TAG_PREFIX: &str = "tag:yaml.org,2002:";
 
-// -- representation graph (Go semanticDecoder) --------------------------------
+// -- representation graph --------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum NodeKind {
@@ -224,7 +225,7 @@ impl Builder {
     }
 }
 
-// -- resolution (yaml.v3 resolve.go) -----------------------------------------------
+// -- scalar resolution -------------------------------------------------------
 
 /// A fatal decoding error (yaml.v3 `failf`): decoding stops, fields decoded so
 /// far are kept.
@@ -313,10 +314,10 @@ fn resolve_untyped(tag: &str, input: &str) -> (&'static str, Resolved) {
                     return (TIMESTAMP_TAG, Resolved::Timestamp);
                 }
                 let plain = input.replace('_', "");
-                if let Some(value) = parse_go_int(&plain) {
+                if let Some(value) = parse_int_literal(&plain) {
                     return (INT_TAG, Resolved::Int(value));
                 }
-                if let Some(value) = parse_go_uint(&plain) {
+                if let Some(value) = parse_uint_literal(&plain) {
                     return (INT_TAG, Resolved::Uint(value));
                 }
                 if is_yaml_float(&plain)
@@ -547,16 +548,17 @@ fn decode_base64(text: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
-// -- typed decoding (yaml.v3 decode.go) ------------------------------------------
+// -- typed decoding ----------------------------------------------------------
 
-/// A Go type yaml.v3 can decode into. The default methods report a type
-/// error, like yaml.v3 does for unsupported node/target combinations.
+/// A type the configuration decodes into. The default methods report a type
+/// error for unsupported node/target combinations.
 pub(crate) trait Target {
-    /// Go `reflect.Type.String()`, used in type errors.
+    /// The type name shown in type errors, spelled as shopware-cli reports
+    /// it (`int`, `[]string`, `extension.ConfigStore`).
     fn type_name() -> String;
 
-    /// The type as it appears inside a generic instantiation, where Go
-    /// prints named types with their full import path.
+    /// The type name inside a generic instantiation, where named types are
+    /// spelled with their full import path.
     fn qualified_name() -> String {
         Self::type_name()
     }
@@ -596,7 +598,7 @@ pub(crate) trait Target {
     }
 }
 
-/// A Go struct: yaml keys in field order.
+/// A record type: yaml keys in field order.
 pub(crate) trait StructTarget: Target {
     const FIELDS: &'static [&'static str];
 
@@ -613,8 +615,8 @@ pub(crate) struct Decoder<'a> {
     aliases: HashSet<Id>,
 }
 
-/// Decodes `root` into `target` like `yamlquery.Decode`; the result is the
-/// Go error text, if any.
+/// Decodes `root` into `target`; the result is the error text shopware-cli
+/// would report, if any.
 pub(crate) fn decode_into<T: Target>(root: &SyntaxNode, target: &mut T) -> Option<String> {
     let document = Document::build(root);
     let mut decoder = Decoder::new(&document);
@@ -789,8 +791,8 @@ impl<'a> Decoder<'a> {
                     && first.value == second.value
                 {
                     self.terrors.push(format!(
-                        "line 0: mapping key {} already defined at line 0",
-                        go_quote(&second.value)
+                        "line 0: mapping key {:?} already defined at line 0",
+                        second.value
                     ));
                 }
             }
@@ -1013,7 +1015,7 @@ impl Target for bool {
     }
 }
 
-/// Go `int` (64-bit).
+/// A 64-bit `int`.
 impl Target for i64 {
     fn type_name() -> String {
         "int".to_owned()
@@ -1046,8 +1048,9 @@ impl Target for i64 {
     }
 }
 
-/// Go pointers: `null` resets to nil; anything else allocates before
-/// decoding into the element (even when that then fails).
+/// An optional (pointer) field: `null` resets it to `None`; anything else
+/// allocates the element before decoding into it (even when that then
+/// fails).
 impl<T: Target + Default> Target for Option<T> {
     fn type_name() -> String {
         format!("*{}", T::type_name())
@@ -1123,7 +1126,7 @@ impl Target for BTreeMap<String, String> {
     }
 }
 
-/// Implements [`Target`] and [`StructTarget`] for a Go struct.
+/// Implements [`Target`] and [`StructTarget`] for a record type.
 macro_rules! struct_target {
     ($type:ty, $name:literal, { $($key:literal => $field:ident),* $(,)? }) => {
         impl $crate::yaml_decode::Target for $type {

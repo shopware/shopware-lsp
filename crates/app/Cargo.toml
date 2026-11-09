@@ -5,9 +5,8 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
-# Provider crates that were still being ported when the composition root was
-# written are optional. Every feature is on by default; turning one off
-# removes exactly the registrations that depend on that crate.
+# Provider crates are optional. Every feature is on by default; turning one
+# off removes exactly the registrations that depend on that crate.
 [features]
 default = ["symbol", "reference", "highlight", "definition", "codelens", "completion", "diagnostics", "hover"]
 symbol = ["dep:swlsp-lsp-symbol"]
@@ -18,11 +17,12 @@ codelens = ["dep:swlsp-lsp-codelens"]
 completion = ["dep:swlsp-lsp-completion"]
 diagnostics = ["dep:swlsp-lsp-diagnostics", "dep:swlsp-lsp-inspections"]
 hover = ["dep:swlsp-lsp-hover"]
-# Opt-in real-world suite (Go build tag `integration`); needs a Shopware
+# Opt-in real-world suite; needs a Shopware
 # checkout at SHOPWARE_LSP_REAL_WORLD_ROOT or ~/Developer/sw-trunk.
 integration = []
 
 [dependencies]
+thiserror.workspace = true
 swlsp-syntax.workspace = true
 swlsp-admin = { path = "../admin" }
 swlsp-appscript = { path = "../appscript" }

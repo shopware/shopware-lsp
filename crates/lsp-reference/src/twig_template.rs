@@ -1,5 +1,4 @@
-//! Twig template references from Twig and PHP (port of
-//! `twig_template_reference.go`).
+//! Twig template references from Twig and PHP.
 
 use std::collections::HashSet;
 use std::sync::Arc;

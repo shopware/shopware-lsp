@@ -1,4 +1,4 @@
-//! Port of Go `admin_completion_test.go`.
+//! Tests for the Administration completion provider.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -2300,7 +2300,7 @@ fn template_completions_include_runtime_scope() {
             }],
     });
     let provider = fixture.provider();
-    // Go `twigCompletionAt`: node one byte left of the cursor, no token.
+    // The node one byte left of the cursor, no token.
     let c = |source: &str, marker: &str| {
         let offset = after(source, marker);
         by_label(complete(

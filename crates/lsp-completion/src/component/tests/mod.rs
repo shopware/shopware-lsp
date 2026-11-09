@@ -1,4 +1,4 @@
-//! Tests for the component group (ports of the matching Go `_test.go`).
+//! Tests for the component completion providers.
 
 mod controller;
 mod live_component_event;
@@ -18,7 +18,7 @@ pub(super) fn p(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-/// Go `requireCompletion`.
+/// The item labelled `label`; panics when it is missing.
 pub(super) fn require_completion(
     items: &[protocol::CompletionItem],
     label: &str,
@@ -30,7 +30,7 @@ pub(super) fn require_completion(
         .unwrap_or_else(|| panic!("{label:?} not in {:?}", labels(items)))
 }
 
-/// Go `completionLabels`.
+/// The labels of `items`.
 pub(super) fn labels(items: &[protocol::CompletionItem]) -> Vec<String> {
     items.iter().map(|item| item.label.clone()).collect()
 }
@@ -44,7 +44,7 @@ pub(super) fn additional_edit(item: &protocol::CompletionItem, index: usize) -> 
     item.additional_text_edits[index].clone()
 }
 
-/// Go `completionRangeText` (trimmed source text of `range`).
+/// The trimmed source text of `range`.
 pub(super) fn range_text(document: &TextDocument, range: protocol::Range) -> String {
     let start = document
         .line_index()
@@ -60,7 +60,7 @@ pub(super) fn node_at(document: &TextDocument, offset: u32) -> Option<SyntaxNode
 }
 
 /// A request at `offset` for `node` (default: the node at `offset`, or at
-/// `offset - 1` like Go `bundleResourceCompletionRequest`).
+/// `offset - 1`).
 pub(super) fn request_for(
     document: &Arc<TextDocument>,
     node: Option<SyntaxNode>,
@@ -74,7 +74,7 @@ pub(super) fn request_for(
     crate::test_support::completion_request(document.clone(), node, offset)
 }
 
-/// Go `completionCaret`.
+/// Removes the `<caret>` marker and returns the source and its offset.
 pub(super) fn caret(source: &str) -> (String, u32) {
     let offset = source.find("<caret>").expect("caret");
     (source.replacen("<caret>", "", 1), offset as u32)

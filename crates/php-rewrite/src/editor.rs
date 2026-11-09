@@ -1,38 +1,24 @@
-//! The edit collector and class-reference imports (port of `editor.go`).
+//! The edit collector and class-reference imports.
 
 use rustc_hash::FxHashMap;
 use swlsp_parser_php::query::{class_name, classes, namespace, nodes, use_declarations};
 use swlsp_parser_php::syntax::{PHP_NAMESPACE, TK_OPEN_TAG};
 use swlsp_php_resolver::{ImportKind, parse_use_declaration};
-use swlsp_php_types::{equal_fold, go_to_lower};
+use swlsp_textutil::{eq_ignore_case, lowercase};
+
 use swlsp_rewrite::{Builder, Edit, RewriteError, SyntaxRange};
 use swlsp_syntax::{SyntaxNode, TextRange, TextSize};
 
 /// A rejected or failed PHP rewrite.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum Error {
-    /// The requested edit is not applicable to the source (Go's
-    /// `fmt.Errorf` messages, e.g. "set PHP parent: parent is empty").
+    /// The requested edit is not applicable to the source, described as
+    /// `operation: reason` (e.g. "set PHP parent: parent is empty").
+    #[error("{0}")]
     Invalid(String),
     /// The edit set is invalid (overlapping or out-of-range edits).
-    Rewrite(RewriteError),
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::Invalid(message) => f.write_str(message),
-            Error::Rewrite(error) => error.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl From<RewriteError> for Error {
-    fn from(error: RewriteError) -> Self {
-        Error::Rewrite(error)
-    }
+    #[error(transparent)]
+    Rewrite(#[from] RewriteError),
 }
 
 pub(crate) fn invalid<T>(message: impl Into<String>) -> Result<T, Error> {
@@ -84,10 +70,10 @@ impl<'s> Editor<'s> {
                 let target = imported.target.trim_matches('\\');
                 editor
                     .imports
-                    .insert(go_to_lower(&imported.alias), target.to_owned());
+                    .insert(lowercase(&imported.alias), target.to_owned());
                 editor
                     .import_aliases
-                    .insert(go_to_lower(target), imported.alias.clone());
+                    .insert(lowercase(target), imported.alias.clone());
             }
         }
         editor
@@ -118,8 +104,8 @@ impl<'s> Editor<'s> {
             return invalid("add PHP class reference: class name is empty");
         }
         let (short_name, class_namespace) = split_class_name(class_name);
-        let alias_key = go_to_lower(short_name);
-        let class_key = go_to_lower(class_name);
+        let alias_key = lowercase(short_name);
+        let class_key = lowercase(class_name);
         if let Some(alias) = self.import_aliases.get(&class_key) {
             return Ok(alias.clone());
         }
@@ -128,7 +114,7 @@ impl<'s> Editor<'s> {
         }
         for imports in [&self.imports, &self.planned_imports] {
             if let Some(target) = imports.get(&alias_key) {
-                if equal_fold(target, class_name) {
+                if eq_ignore_case(target, class_name) {
                     return Ok(short_name.to_owned());
                 }
                 return Ok(format!("\\{class_name}"));
@@ -139,7 +125,7 @@ impl<'s> Editor<'s> {
             .as_ref()
             .map(|root| namespace(root).trim_matches('\\').to_owned())
             .unwrap_or_default();
-        if equal_fold(&current_namespace, class_namespace) {
+        if eq_ignore_case(&current_namespace, class_namespace) {
             return Ok(short_name.to_owned());
         }
         if self.local_class_name_conflicts(short_name, class_name, &current_namespace) {
@@ -174,7 +160,7 @@ impl<'s> Editor<'s> {
             return false;
         };
         classes(root).iter().any(|class| {
-            if !equal_fold(&self::class_name(class), short_name) {
+            if !eq_ignore_case(&self::class_name(class), short_name) {
                 return false;
             }
             let local_name = if namespace.is_empty() {
@@ -182,7 +168,7 @@ impl<'s> Editor<'s> {
             } else {
                 format!("{namespace}\\{short_name}")
             };
-            !equal_fold(&local_name, class_name)
+            !eq_ignore_case(&local_name, class_name)
         })
     }
 }

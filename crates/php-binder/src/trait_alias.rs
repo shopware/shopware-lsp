@@ -3,7 +3,8 @@
 use swlsp_parser_php::syntax::*;
 use swlsp_php_resolver::NameContext;
 use swlsp_php_semantic::{Str, TraitAlias, Visibility};
-use swlsp_php_types::{equal_fold, go_to_lower};
+use swlsp_textutil::{eq_ignore_case, lowercase};
+
 use swlsp_syntax::SyntaxNode;
 use swlsp_syntax::rowan::NodeOrToken;
 
@@ -58,7 +59,7 @@ fn parse_trait_alias(
     context: &NameContext,
     used_traits: &[String],
 ) -> Option<TraitAlias> {
-    let as_index = parts.iter().position(|part| equal_fold(part, "as"))?;
+    let as_index = parts.iter().position(|part| eq_ignore_case(part, "as"))?;
     if as_index == 0 || as_index + 1 >= parts.len() {
         return None;
     }
@@ -82,7 +83,7 @@ fn parse_trait_alias(
         ..TraitAlias::default()
     };
     for part in &parts[as_index + 1..] {
-        match go_to_lower(part).as_str() {
+        match lowercase(part).as_str() {
             "public" => {
                 alias.visibility = Visibility::Public;
                 alias.has_visibility = true;

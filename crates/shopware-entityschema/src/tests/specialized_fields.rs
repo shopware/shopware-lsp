@@ -1,4 +1,4 @@
-//! Port of Go `specialized_fields_test.go`.
+//! Tests for specialized fields.
 
 use std::collections::HashMap;
 

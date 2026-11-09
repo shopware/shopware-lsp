@@ -101,8 +101,7 @@ and Linux, `brew install --cask shopware/tap/shopware-lsp` installs the
 release binary.
 
 The server is a single self-contained Rust executable: no runtime, PHP, or
-system SQLite is required. Earlier releases shipped a Go build whose
-`GOMEMLIMIT` and `shopwareLSP.memoryLimitMiB` tuning no longer applies.
+system SQLite is required.
 
 ### Building from source
 

@@ -206,7 +206,7 @@ pub fn class_usages(path: &str, root: &SyntaxNode) -> Vec<ClassOccurrence> {
     let mut result = Vec::new();
     for node in root.descendants() {
         if node.kind() != HTML_ATTRIBUTE
-            || !html_attribute_name(&node).is_some_and(|name| equal_fold_class(&name))
+            || !html_attribute_name(&node).is_some_and(|name| is_class_attribute_name(&name))
         {
             continue;
         }
@@ -222,8 +222,8 @@ pub fn class_usages(path: &str, root: &SyntaxNode) -> Vec<ClassOccurrence> {
     unique_occurrences(result)
 }
 
-/// Go `strings.EqualFold(name, "class")`: `ſ` (U+017F) folds to `s`.
-fn equal_fold_class(name: &str) -> bool {
+/// Whether `name` is `class` ignoring case; `ſ` (U+017F) folds to `s`.
+fn is_class_attribute_name(name: &str) -> bool {
     let mut chars = name.chars();
     for expected in "class".chars() {
         let Some(actual) = chars.next() else {

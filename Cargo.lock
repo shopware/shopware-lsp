@@ -2430,6 +2430,7 @@ dependencies = [
  "swlsp-parser-twig",
  "swlsp-parser-vue",
  "swlsp-syntax",
+ "swlsp-textutil",
  "swlsp-twig",
  "swlsp-uriutil",
  "tempfile",
@@ -2442,6 +2443,8 @@ dependencies = [
  "swlsp-parser-twig",
  "swlsp-rewrite",
  "swlsp-syntax",
+ "swlsp-textutil",
+ "thiserror",
 ]
 
 [[package]]
@@ -2520,6 +2523,7 @@ dependencies = [
  "swlsp-twigcomponent",
  "swlsp-uriutil",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -2549,6 +2553,7 @@ dependencies = [
  "swlsp-php",
  "swlsp-php-types",
  "swlsp-syntax",
+ "swlsp-textutil",
  "swlsp-uriutil",
  "tempfile",
 ]
@@ -2603,6 +2608,7 @@ dependencies = [
  "swlsp-syntax",
  "swlsp-uriutil",
  "tempfile",
+ "thiserror",
  "tokio",
  "tokio-util",
  "usage-rs",
@@ -2624,6 +2630,7 @@ dependencies = [
  "swlsp-php-semantic",
  "swlsp-php-types",
  "swlsp-syntax",
+ "swlsp-textutil",
  "swlsp-uriutil",
  "tempfile",
 ]
@@ -2643,6 +2650,7 @@ dependencies = [
  "swlsp-php-types",
  "swlsp-shopware-dal",
  "swlsp-syntax",
+ "swlsp-textutil",
  "tempfile",
 ]
 
@@ -2674,6 +2682,7 @@ dependencies = [
  "swlsp-php-semantic",
  "swlsp-php-types",
  "swlsp-syntax",
+ "swlsp-textutil",
  "tempfile",
 ]
 
@@ -2689,6 +2698,7 @@ dependencies = [
  "swlsp-php-binder",
  "swlsp-php-semantic",
  "swlsp-syntax",
+ "swlsp-textutil",
  "swlsp-uriutil",
  "tempfile",
 ]
@@ -2702,6 +2712,7 @@ dependencies = [
  "swlsp-parser-yaml",
  "swlsp-syntax",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -2792,6 +2803,7 @@ dependencies = [
  "swlsp-syntax",
  "swlsp-uriutil",
  "tempfile",
+ "thiserror",
  "tokio",
  "tokio-util",
  "tower",
@@ -2815,10 +2827,12 @@ dependencies = [
  "swlsp-php-types",
  "swlsp-symfony",
  "swlsp-syntax",
+ "swlsp-textutil",
  "swlsp-twig",
  "swlsp-twigcomponent",
  "swlsp-uriutil",
  "tempfile",
+ "thiserror",
  "url",
 ]
 
@@ -2876,6 +2890,7 @@ dependencies = [
  "swlsp-twig",
  "swlsp-uriutil",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -2895,11 +2910,11 @@ dependencies = [
  "swlsp-parser-yaml",
  "swlsp-php",
  "swlsp-php-semantic",
- "swlsp-php-types",
  "swlsp-serializer",
  "swlsp-symfony",
  "swlsp-symfonyconfig",
  "swlsp-syntax",
+ "swlsp-textutil",
  "swlsp-translation",
  "swlsp-twig",
  "swlsp-twigcomponent",
@@ -2932,12 +2947,14 @@ dependencies = [
  "swlsp-indexer",
  "swlsp-lsp",
  "swlsp-lsp-protocol",
+ "swlsp-parser-json",
  "swlsp-rewrite",
  "swlsp-snippet",
  "swlsp-syntax",
  "swlsp-twig",
  "swlsp-uriutil",
  "tempfile",
+ "thiserror",
  "webpki-roots",
 ]
 
@@ -3033,6 +3050,7 @@ dependencies = [
  "swlsp-symfonyconfig",
  "swlsp-syntax",
  "swlsp-systemconfig",
+ "swlsp-textutil",
  "swlsp-theme",
  "swlsp-translation",
  "swlsp-twig",
@@ -3097,6 +3115,7 @@ dependencies = [
  "swlsp-uriutil",
  "swlsp-validation",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -3188,6 +3207,7 @@ dependencies = [
  "swlsp-snippet",
  "swlsp-symfony",
  "swlsp-syntax",
+ "swlsp-textutil",
  "swlsp-theme",
  "swlsp-translation",
  "swlsp-twig",
@@ -3221,6 +3241,7 @@ dependencies = [
  "swlsp-snippet",
  "swlsp-symfony",
  "swlsp-syntax",
+ "swlsp-textutil",
  "swlsp-twig",
  "swlsp-uriutil",
  "tempfile",
@@ -3267,6 +3288,7 @@ dependencies = [
  "swlsp-twig",
  "swlsp-uriutil",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -3320,6 +3342,7 @@ dependencies = [
  "swlsp-php-suppression",
  "swlsp-php-types",
  "swlsp-syntax",
+ "swlsp-textutil",
  "swlsp-uriutil",
  "tempfile",
 ]
@@ -3348,8 +3371,8 @@ dependencies = [
  "swlsp-parser-twig",
  "swlsp-php",
  "swlsp-php-semantic",
- "swlsp-php-types",
  "swlsp-syntax",
+ "swlsp-textutil",
  "swlsp-twig",
  "swlsp-uriutil",
  "tempfile",
@@ -3379,6 +3402,7 @@ dependencies = [
  "swlsp-style",
  "swlsp-symfony",
  "swlsp-syntax",
+ "swlsp-textutil",
  "swlsp-twig",
  "swlsp-twigcomponent",
  "swlsp-uriutil",
@@ -3410,6 +3434,7 @@ dependencies = [
  "swlsp-textutil",
  "swlsp-uriutil",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -3455,6 +3480,7 @@ dependencies = [
  "swlsp-parser-twig",
  "swlsp-php-types",
  "swlsp-syntax",
+ "swlsp-textutil",
  "swlsp-twig",
  "swlsp-uriutil",
  "tempfile",
@@ -3478,6 +3504,7 @@ dependencies = [
  "swlsp-shopware-dal",
  "swlsp-symfony",
  "swlsp-syntax",
+ "swlsp-textutil",
  "swlsp-translation",
  "swlsp-twig",
  "swlsp-twigcomponent",
@@ -3500,6 +3527,7 @@ dependencies = [
  "swlsp-php-semantic",
  "swlsp-php-types",
  "swlsp-syntax",
+ "swlsp-textutil",
  "tempfile",
 ]
 
@@ -3547,6 +3575,7 @@ dependencies = [
  "swlsp-parser-scss",
  "swlsp-parser-twig",
  "swlsp-syntax",
+ "swlsp-textutil",
 ]
 
 [[package]]
@@ -3571,6 +3600,8 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "swlsp-syntax",
+ "swlsp-textutil",
+ "thiserror",
 ]
 
 [[package]]
@@ -3588,6 +3619,7 @@ dependencies = [
  "crc32fast",
  "flate2",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -3611,6 +3643,7 @@ dependencies = [
  "swlsp-syntax",
  "swlsp-textutil",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -3641,6 +3674,8 @@ dependencies = [
  "swlsp-php-types",
  "swlsp-rewrite",
  "swlsp-syntax",
+ "swlsp-textutil",
+ "thiserror",
 ]
 
 [[package]]
@@ -3679,6 +3714,7 @@ dependencies = [
  "swlsp-parser-php",
  "swlsp-php-types",
  "swlsp-syntax",
+ "swlsp-textutil",
 ]
 
 [[package]]
@@ -3686,6 +3722,7 @@ name = "swlsp-php-phpdoc"
 version = "0.1.0"
 dependencies = [
  "swlsp-php-types",
+ "swlsp-textutil",
 ]
 
 [[package]]
@@ -3696,6 +3733,7 @@ dependencies = [
  "swlsp-php-semantic",
  "swlsp-php-types",
  "swlsp-syntax",
+ "swlsp-textutil",
 ]
 
 [[package]]
@@ -3707,6 +3745,7 @@ dependencies = [
  "swlsp-parser-php",
  "swlsp-syntax",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -3726,6 +3765,7 @@ dependencies = [
  "rustc-hash 2.1.3",
  "swlsp-php-semantic",
  "swlsp-php-types",
+ "swlsp-textutil",
 ]
 
 [[package]]
@@ -3738,6 +3778,8 @@ dependencies = [
  "swlsp-php-types",
  "swlsp-rewrite",
  "swlsp-syntax",
+ "swlsp-textutil",
+ "thiserror",
 ]
 
 [[package]]
@@ -3751,6 +3793,8 @@ dependencies = [
  "swlsp-php-literal",
  "swlsp-php-types",
  "swlsp-syntax",
+ "swlsp-textutil",
+ "thiserror",
 ]
 
 [[package]]
@@ -3761,6 +3805,8 @@ dependencies = [
  "swlsp-php-resolver",
  "swlsp-php-semantic",
  "swlsp-php-types",
+ "swlsp-textutil",
+ "thiserror",
 ]
 
 [[package]]
@@ -3779,7 +3825,9 @@ dependencies = [
  "swlsp-php-stubs",
  "swlsp-php-types",
  "swlsp-syntax",
+ "swlsp-textutil",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -3787,6 +3835,7 @@ name = "swlsp-php-suppression"
 version = "0.1.0"
 dependencies = [
  "swlsp-php-types",
+ "swlsp-textutil",
 ]
 
 [[package]]
@@ -3796,6 +3845,8 @@ dependencies = [
  "rmp-serde",
  "serde",
  "smallvec",
+ "swlsp-textutil",
+ "thiserror",
  "unicode-general-category",
 ]
 
@@ -3810,8 +3861,10 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "swlsp-pathmatch",
+ "swlsp-textutil",
  "swlsp-uriutil",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -3823,6 +3876,7 @@ dependencies = [
  "swlsp-projectconfig",
  "swlsp-uriutil",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -3848,6 +3902,7 @@ dependencies = [
  "swlsp-php",
  "swlsp-php-types",
  "swlsp-syntax",
+ "swlsp-textutil",
  "tempfile",
 ]
 
@@ -3863,6 +3918,7 @@ dependencies = [
  "swlsp-php-semantic",
  "swlsp-php-types",
  "swlsp-syntax",
+ "swlsp-textutil",
  "tempfile",
 ]
 
@@ -3878,8 +3934,8 @@ dependencies = [
  "swlsp-parser-php",
  "swlsp-parser-twig",
  "swlsp-php-resolver",
- "swlsp-php-types",
  "swlsp-syntax",
+ "swlsp-textutil",
  "tempfile",
 ]
 
@@ -3905,8 +3961,10 @@ dependencies = [
  "swlsp-php-types",
  "swlsp-rewrite",
  "swlsp-syntax",
+ "swlsp-textutil",
  "swlsp-uriutil",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -3940,6 +3998,9 @@ dependencies = [
 [[package]]
 name = "swlsp-suggestion"
 version = "0.1.0"
+dependencies = [
+ "swlsp-textutil",
+]
 
 [[package]]
 name = "swlsp-symfony"
@@ -3968,6 +4029,7 @@ dependencies = [
  "swlsp-textutil",
  "swlsp-uriutil",
  "tempfile",
+ "thiserror",
  "url",
 ]
 
@@ -3983,6 +4045,7 @@ dependencies = [
  "swlsp-php",
  "swlsp-php-types",
  "swlsp-syntax",
+ "swlsp-textutil",
  "swlsp-uriutil",
  "tempfile",
 ]
@@ -4022,6 +4085,7 @@ dependencies = [
  "swlsp-syntax",
  "swlsp-uriutil",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -4062,6 +4126,7 @@ dependencies = [
  "swlsp-php-types",
  "swlsp-symfony",
  "swlsp-syntax",
+ "swlsp-textutil",
  "tempfile",
 ]
 
@@ -4081,6 +4146,7 @@ dependencies = [
  "swlsp-php-types",
  "swlsp-symfony",
  "swlsp-syntax",
+ "swlsp-textutil",
  "swlsp-twig",
  "tempfile",
 ]
@@ -4091,6 +4157,7 @@ version = "0.1.0"
 dependencies = [
  "percent-encoding",
  "tempfile",
+ "thiserror",
  "url",
 ]
 
@@ -4105,6 +4172,7 @@ dependencies = [
  "swlsp-php-semantic",
  "swlsp-php-types",
  "swlsp-syntax",
+ "swlsp-textutil",
  "tempfile",
 ]
 

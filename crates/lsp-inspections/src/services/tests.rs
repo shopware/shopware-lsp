@@ -1,4 +1,4 @@
-//! Ports of the services-group tests of Go `inspection_test.go`.
+//! Tests of the services inspection group.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -258,7 +258,7 @@ class Consumer {
                     "suggestedService": "logger",
                     "candidates": ["logger"],
                 },
-                {"name": "$name", "type": "string", "suggestedService": "?", "candidates": null},
+                {"name": "$name", "type": "string", "suggestedService": "?", "candidates": []},
             ],
         }))
     );

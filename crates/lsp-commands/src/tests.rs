@@ -370,43 +370,55 @@ fn possible_snippet_files_prefer_en_gb_and_suggest_default() {
     );
 }
 
-// --- sjson / pretty --------------------------------------------------------
+// --- JSON key insertion / pretty printing ---------------------------------
 
 #[test]
-fn sjson_set_matches_go() {
+fn set_string_replaces_inserts_and_creates_nested_objects() {
     let cases = [
         ("{}", "a", "x", r#"{"a":"x"}"#),
         ("", "a.b", "x", r#"{"a":{"b":"x"}}"#),
+        ("  \n", "a", "x", r#"{"a":"x"}"#),
         (r#"{"a":{"b":"old"}}"#, "a.b", "new", r#"{"a":{"b":"new"}}"#),
         (r#"{"a":{"c":1}}"#, "a.b", "x", r#"{"a":{"c":1,"b":"x"}}"#),
+        (r#"{"a":{}}"#, "a.b.c", "x", r#"{"a":{"b":{"c":"x"}}}"#),
         (r#"{"a":"str"}"#, "a.b", "x", r#"{"a":{"b":"x"}}"#),
-        (r#"{ "a" : 1 }"#, "b", "<&>", r#"{ "a" : 1 ,"b":"<&>"}"#),
+        (r#"{"a":[1]}"#, "a.b", "x", r#"{"a":{"b":"x"}}"#),
+        (r#"{"a":{"b":1}}"#, "a", "x", r#"{"a":"x"}"#),
+        (r#"{ "a" : 1 }"#, "b", "<&>", r#"{ "a" : 1,"b":"<&>" }"#),
+        (r#"{"a":1,}"#, "b", "x", r#"{"a":1,"b":"x"}"#),
         (r#"{"a.b":1}"#, r"a\.b", "x", r#"{"a.b":"x"}"#),
-        (r#"{"a":[1]}"#, "a.2", "x", r#"{"a":[1,null,"x"]}"#),
-        (r#"{"a":[1]}"#, "a.-1", "x", r#"{"a":[1,"x"]}"#),
-        ("{}", "a.0", "x", r#"{"a":["x"]}"#),
-        ("{}", "a*", "x", "{}"),
+        (r#"{"\u0061":1}"#, "a", "x", r#"{"\u0061":"x"}"#),
+        ("{}", "a*", "x", r#"{"a*":"x"}"#),
         ("{}", "k", "line\nä\"", r#"{"k":"line\nä\""}"#),
+        (
+            "{\n  \"a\": {\n    \"b\": \"x\"\n  },\n  \"z\": 1\n}\n",
+            "a.c",
+            "y",
+            "{\n  \"a\": {\n    \"b\": \"x\",\"c\":\"y\"\n  },\n  \"z\": 1\n}\n",
+        ),
     ];
     for (json, path, value, expected) in cases {
         assert_eq!(
-            crate::sjson::set(json, path, value).unwrap(),
+            crate::json_edit::set_string(json, path, value).unwrap(),
             expected,
             "{json} {path}"
         );
     }
+    let error = |json: &str, path: &str| {
+        crate::json_edit::set_string(json, path, "x")
+            .unwrap_err()
+            .to_string()
+    };
+    assert_eq!(error("{}", ""), "key path is empty");
+    assert_eq!(error("[1]", "a"), "document root is not a JSON object");
     assert_eq!(
-        crate::sjson::set(r#"{"a":[1]}"#, "a.b", "x").unwrap_err().0,
-        "cannot set array element for non-numeric key 'b'"
-    );
-    assert_eq!(
-        crate::sjson::set("{}", "", "x").unwrap_err().0,
-        "path cannot be empty"
+        error(r#"{"a":1"#, "b"),
+        "JSON object at byte 0 is not closed"
     );
 }
 
 #[test]
-fn pretty_matches_go() {
+fn pretty_indents_objects_and_keeps_short_arrays_inline() {
     let pretty = |value: &str| String::from_utf8(crate::pretty::pretty(value.as_bytes())).unwrap();
     assert_eq!(pretty("{}"), "{}\n");
     assert_eq!(

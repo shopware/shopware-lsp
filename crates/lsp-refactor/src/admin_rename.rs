@@ -1,5 +1,4 @@
-//! Administration registry and component-contract rename (port of Go
-//! `admin_rename.go`).
+//! Administration registry and component-contract rename.
 
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
@@ -11,7 +10,7 @@ use swlsp_admin::{
 use swlsp_lsp::{BoxError, Context, ProviderResult, RenameProvider, RenameRequest};
 use swlsp_lsp_protocol as protocol;
 use swlsp_syntax::TextRange;
-use swlsp_uriutil::{file_uri, filepath, go_quote};
+use swlsp_uriutil::{file_uri, filepath};
 
 use crate::admin_rename_helpers::{
     Request, admin_rename_replacement, has_admin_declaration_occurrence,
@@ -181,8 +180,8 @@ impl Plan<'_> {
                 Ok(())
             }
             _ => Err(format!(
-                "cannot safely rename Shopware EventBus event {} because its typed declaration is not indexed",
-                go_quote(&self.target.name)
+                "cannot safely rename Shopware EventBus event {:?} because its typed declaration is not indexed",
+                self.target.name
             )
             .into()),
         }
@@ -201,9 +200,9 @@ impl Plan<'_> {
             .any(|set| set.kind == AdminSymbolKind::ComponentModel)
         {
             return Err(format!(
-                "cannot safely rename Administration {} {} because it participates in a compound v-model contract",
+                "cannot safely rename Administration {} {:?} because it participates in a compound v-model contract",
                 self.target.kind.as_str(),
-                go_quote(&self.target.name)
+                self.target.name
             )
             .into());
         }
@@ -226,9 +225,9 @@ impl Plan<'_> {
                     .dynamic_component_usage_rename_safe(set, occurrence, &self.target)?
                 {
                     return Err(format!(
-                        "cannot safely rename Administration {} {} because a dynamic component usage resolves to distinct declarations",
+                        "cannot safely rename Administration {} {:?} because a dynamic component usage resolves to distinct declarations",
                         self.target.kind.as_str(),
-                        go_quote(&self.target.name)
+                        self.target.name
                     )
                     .into());
                 }
@@ -247,24 +246,24 @@ impl Plan<'_> {
         ) && !has_admin_owned_source_occurrence(&self.sets, &target.owner)
         {
             return Err(format!(
-                "cannot safely rename Administration {} {} because its declaration source is not indexed",
+                "cannot safely rename Administration {} {:?} because its declaration source is not indexed",
                 target.kind.as_str(),
-                go_quote(&target.name)
+                target.name
             )
             .into());
         }
         let declared = has_admin_declaration_occurrence(&self.sets);
         if target.kind == AdminSymbolKind::ComponentMember && !declared {
             return Err(format!(
-                "cannot safely rename Administration component member {} because its declaration source is not indexed",
-                go_quote(&target.name)
+                "cannot safely rename Administration component member {:?} because its declaration source is not indexed",
+                target.name
             )
             .into());
         }
         if target.kind == AdminSymbolKind::Directive && !target.owner.is_empty() && !declared {
             return Err(format!(
-                "cannot safely rename component-local Administration directive {} because its declaration source is not indexed",
-                go_quote(&target.name)
+                "cannot safely rename component-local Administration directive {:?} because its declaration source is not indexed",
+                target.name
             )
             .into());
         }
@@ -274,8 +273,8 @@ impl Plan<'_> {
         ) && !declared
         {
             return Err(format!(
-                "cannot safely rename Shopware CMS registry {} because its declaration source is not indexed",
-                go_quote(&target.name)
+                "cannot safely rename Shopware CMS registry {:?} because its declaration source is not indexed",
+                target.name
             )
             .into());
         }
@@ -293,9 +292,8 @@ impl Plan<'_> {
             .any(|occurrence| occurrence.identifier)
         {
             return Err(format!(
-                "{} is not a valid JavaScript identifier for injected service {}",
-                go_quote(&self.new_name),
-                self.target.name
+                "{:?} is not a valid JavaScript identifier for injected service {}",
+                self.new_name, self.target.name
             )
             .into());
         }
@@ -415,7 +413,7 @@ pub(crate) fn reject_conflict(
             .any(|component| {
                 component
                     .local_directive(new_name)
-                    .is_some_and(|local| !swlsp_php_types::equal_fold(&local.name, &target.name))
+                    .is_some_and(|local| !swlsp_textutil::eq_ignore_case(&local.name, &target.name))
             }),
         AdminSymbolKind::Filter => !index.get_filter(new_name)?.is_empty(),
         AdminSymbolKind::CmsElement | AdminSymbolKind::CmsBlock => {
@@ -451,9 +449,9 @@ pub(crate) fn reject_conflict(
     };
     if exists {
         return Err(format!(
-            "administration {} {} already exists",
+            "administration {} {:?} already exists",
             target.kind.as_str(),
-            go_quote(new_name)
+            new_name
         )
         .into());
     }

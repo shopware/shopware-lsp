@@ -1,4 +1,4 @@
-//! Port of Go `metadata_test.go`.
+//! Tests for metadata.
 
 use super::inheritance::{field_by_property, php_ok, s};
 use crate::*;

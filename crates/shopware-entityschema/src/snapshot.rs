@@ -1,8 +1,8 @@
-//! Committed, content-addressed schema snapshots (port of Go `snapshot.go`).
+//! Committed, content-addressed schema snapshots.
 //!
-//! Snapshot IDs are SHA-256 digests of Go `json.Marshal` output, so the JSON
-//! encoding goes through [`crate::gojson`] to stay compatible with snapshots
-//! committed by the Go implementation.
+//! Snapshot IDs are SHA-256 digests of the [`crate::canonical_json`]
+//! encoding, which is fixed so snapshots already committed to plugin
+//! repositories keep their IDs.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::ErrorKind;
@@ -10,7 +10,7 @@ use std::io::ErrorKind;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::gojson::{self, null_if_empty, nullable};
+use crate::canonical_json::{self, null_if_empty, nullable};
 use crate::model::*;
 use swlsp_uriutil::filepath;
 
@@ -92,7 +92,7 @@ impl Snapshot {
 
     pub fn seal(&self) -> Result<Snapshot> {
         let mut snapshot = self.normalized(false);
-        let encoded = gojson::to_vec(&snapshot)?;
+        let encoded = canonical_json::to_vec(&snapshot)?;
         snapshot.id = hex(&Sha256::digest(&encoded));
         Ok(snapshot.normalized(true))
     }
@@ -100,13 +100,13 @@ impl Snapshot {
 
 pub fn marshal_snapshot(snapshot: &Snapshot) -> Result<Vec<u8>> {
     let sealed = snapshot.seal()?;
-    let mut encoded = gojson::to_vec_indent(&sealed)?;
+    let mut encoded = canonical_json::to_vec_indent(&sealed)?;
     encoded.push(b'\n');
     Ok(encoded)
 }
 
 pub fn parse_snapshot(source: &[u8]) -> Result<Snapshot> {
-    let snapshot: Snapshot = gojson::from_slice(source)?;
+    let snapshot: Snapshot = canonical_json::from_slice(source)?;
     if snapshot.format_version != SNAPSHOT_FORMAT_VERSION {
         return Err(errorf!(
             "unsupported entity snapshot format {}",

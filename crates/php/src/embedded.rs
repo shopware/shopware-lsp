@@ -1,10 +1,11 @@
 //! Static PHP string arguments that embed JSON, CSS selectors or XPath
-//! (port of `embedded_json.go`, `embedded_css.go` and `embedded_xpath.go`).
+//!.
 
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::{PHP_MEMBER_CALL, PHP_NAME, PHP_SCOPED_CALL};
-use swlsp_php_types::{Type, go_to_lower};
+use swlsp_php_types::Type;
 use swlsp_syntax::{SyntaxNode, TextRange, TextSize};
+use swlsp_textutil::lowercase;
 
 use crate::PhpIndex;
 use crate::assistant::name_context;
@@ -132,7 +133,7 @@ pub fn embedded_language_strings(
     }
     let mut candidates = Vec::new();
     for call in query::nodes(root, &[PHP_MEMBER_CALL, PHP_SCOPED_CALL]) {
-        let (language, target) = match go_to_lower(&query::call_method_name(&call)).as_str() {
+        let (language, target) = match lowercase(&query::call_method_name(&call)).as_str() {
             "fromjsonstring" | "setjson" => (EmbeddedLanguage::Json, SYMFONY_JSON_RESPONSE),
             "filter" | "children" => (EmbeddedLanguage::Css, SYMFONY_DOM_CRAWLER),
             "toxpath" => (EmbeddedLanguage::Css, SYMFONY_CSS_CONVERTER),
@@ -288,7 +289,7 @@ fn decode_static_php_string(source: &str, literal: &SyntaxNode) -> Option<Embedd
             && let Some(close) = raw[position + 3..].iter().position(|byte| *byte == b'}')
         {
             let stop = position + 3 + close;
-            // Go `strconv.ParseUint(_, 16, 32)` rejects signs and empty input.
+            // One or more hex digits (no sign) naming a valid character.
             let value = std::str::from_utf8(&raw[position + 3..stop])
                 .ok()
                 .filter(|digits| {

@@ -1,5 +1,4 @@
-//! Doctrine DBAL type classes, tables, columns and aliases (Go
-//! `doctrine_completion.go`).
+//! Doctrine DBAL type classes, tables, columns and aliases.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -10,11 +9,12 @@ use swlsp_doctrine::{
 use swlsp_lsp::{CompletionProvider, CompletionRequest, Context};
 use swlsp_lsp_protocol::{self as protocol, CompletionItemKind};
 use swlsp_php::PhpIndex;
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::{TextRange, TextSize};
+use swlsp_textutil::eq_ignore_case;
 
 use super::{item, lower_ext, strings};
-use crate::common::{go_to_lower, php_context};
+use crate::common::php_context;
+use swlsp_textutil::lowercase;
 
 const DBAL_TYPE: &str = "Doctrine\\DBAL\\Types\\Type";
 
@@ -42,7 +42,7 @@ impl DoctrineCompletionProvider {
             .class_symbols_view()
             .iter()
             .filter(|symbol| {
-                !equal_fold(&symbol.fully_qualified, DBAL_TYPE)
+                !eq_ignore_case(&symbol.fully_qualified, DBAL_TYPE)
                     && snapshot.is_subtype_of(&symbol.fully_qualified, DBAL_TYPE)
             })
             .map(|symbol| symbol.fully_qualified.to_string())
@@ -95,7 +95,7 @@ fn type_class_completion_items(
     let mut seen = HashSet::with_capacity(class_names.len());
     for class_name in class_names {
         let class_name = class_name.strip_prefix('\\').unwrap_or(class_name);
-        if class_name.is_empty() || !seen.insert(go_to_lower(class_name)) {
+        if class_name.is_empty() || !seen.insert(lowercase(class_name)) {
             continue;
         }
         let mut completion = item(class_name, CompletionItemKind::CLASS, detail);

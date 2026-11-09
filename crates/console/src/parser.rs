@@ -9,8 +9,8 @@ use swlsp_parser_php::syntax::{
 use swlsp_parser_xml::query as xml;
 use swlsp_syntax::rowan::NodeOrToken;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange, Tree};
+use swlsp_textutil::eq_ignore_case;
 
-use crate::equal_fold;
 use crate::model::{Command, Input, InputKind};
 
 pub(crate) fn is_php_command_candidate(source: &str) -> bool {
@@ -174,7 +174,7 @@ fn command_name_expression_value(
         return String::new();
     }
     let scope = &text[..separator];
-    if !equal_fold(scope, "self") && !equal_fold(scope, "static") {
+    if !eq_ignore_case(scope, "self") && !eq_ignore_case(scope, "static") {
         return String::new();
     }
     constants
@@ -198,7 +198,7 @@ fn class_string_constants(class: &SyntaxNode) -> HashMap<String, String> {
         for element in declaration.children_with_tokens() {
             match element {
                 NodeOrToken::Token(token) => {
-                    if equal_fold(token.text(), "const") || token.kind() == TK_COMMA {
+                    if eq_ignore_case(token.text(), "const") || token.kind() == TK_COMMA {
                         expect_name = true;
                         expect_value = false;
                         name.clear();
@@ -274,12 +274,12 @@ fn traditional_command_names(class: &SyntaxNode) -> (Vec<String>, TextRange) {
         }
     }
     for method in query::methods(class) {
-        if !equal_fold(&query::method_name(&method), "configure") {
+        if !eq_ignore_case(&query::method_name(&method), "configure") {
             continue;
         }
         for call in query::nodes(&method, &[PHP_MEMBER_CALL]) {
             if query::function_like_at(&call).as_ref() != Some(&method)
-                || !equal_fold(&query::call_method_name(&call), "setName")
+                || !eq_ignore_case(&query::call_method_name(&call), "setName")
             {
                 continue;
             }
@@ -364,7 +364,7 @@ pub fn legacy_command_inputs(class: &SyntaxNode, path: &str) -> (Vec<Input>, Vec
     let mut seen_options = HashSet::new();
     let Some(method) = query::methods(class)
         .into_iter()
-        .find(|method| equal_fold(&query::method_name(method), "configure"))
+        .find(|method| eq_ignore_case(&query::method_name(method), "configure"))
     else {
         return (arguments, options);
     };
@@ -472,7 +472,7 @@ fn input_from_arguments(call: &SyntaxNode, kind: InputKind, path: &str) -> Optio
 /// (unless that position holds a different named argument).
 fn call_argument(call: &SyntaxNode, name: &str, fallback: Option<usize>) -> Option<SyntaxNode> {
     if let Some(index) = query::arguments(call)
-        .position(|argument| equal_fold(&query::argument_name(&argument), name))
+        .position(|argument| eq_ignore_case(&query::argument_name(&argument), name))
     {
         return query::argument_expression(call, index);
     }
@@ -485,7 +485,7 @@ fn call_argument(call: &SyntaxNode, name: &str, fallback: Option<usize>) -> Opti
 }
 
 fn attribute_has_name(attribute: &SyntaxNode, expected: &str) -> bool {
-    equal_fold(short_php_name(&query::attribute_name(attribute)), expected)
+    eq_ignore_case(short_php_name(&query::attribute_name(attribute)), expected)
 }
 
 fn short_php_name(name: &str) -> &str {

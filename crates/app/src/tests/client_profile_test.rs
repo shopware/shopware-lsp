@@ -1,4 +1,4 @@
-//! Port of Go `internal/app/client_profile_test.go`.
+//! Capabilities advertised per client profile.
 
 use serde_json::{Map, Value, json};
 use swlsp_lsp::Server;

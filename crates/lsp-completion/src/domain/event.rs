@@ -1,4 +1,4 @@
-//! Event names and listener methods (Go `event_completion.go`).
+//! Event names and listener methods.
 
 use std::sync::Arc;
 

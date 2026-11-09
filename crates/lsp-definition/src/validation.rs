@@ -5,8 +5,8 @@ use swlsp_php::PhpIndex;
 use crate::common::php_symbol_location;
 use crate::php_common::php_context;
 
-/// Go reads the PHP context from the request; Rust rebuilds it, so the
-/// provider needs the PHP index (Go `NewValidationDefinitionProvider()`).
+/// Validation constraint definitions. The provider derives the request's PHP
+/// context itself, so it needs the PHP index.
 pub struct ValidationDefinitionProvider {
     php: Option<PhpIndex>,
 }

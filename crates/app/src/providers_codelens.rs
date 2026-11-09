@@ -1,4 +1,4 @@
-//! Code lens providers (port of Go `internal/app/providers_codelens.go`).
+//! Code lens providers.
 
 use crate::registrar::Registrar;
 use crate::workspace::Services;

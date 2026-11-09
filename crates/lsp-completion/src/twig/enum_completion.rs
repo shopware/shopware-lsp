@@ -1,4 +1,4 @@
-//! Go `twig_enum_completion.go`: PHP enum names inside `enum()`.
+//! Completion of PHP enum names inside `enum()`.
 
 use swlsp_lsp::{CompletionProvider, CompletionRequest, Context};
 use swlsp_lsp_protocol::{self as protocol, CompletionItemKind};

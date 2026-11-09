@@ -1,14 +1,14 @@
 //! Call-site signature matching, template inference, and return
-//! specialization (port of `resolver/signatures.go`).
+//! specialization.
 
 use swlsp_php_semantic::{
     AttributeValue, AttributeValueKind, CallReturnContract, Flags, Parameter, Str, Symbol,
     attribute_named,
 };
 use swlsp_php_types::{
-    Joiner, Kind, Relations, Type, contains_template, contains_uncertain, equal_fold, parse,
-    substitute,
+    Joiner, Kind, Relations, Type, contains_template, contains_uncertain, parse, substitute,
 };
+use swlsp_textutil::eq_ignore_case;
 
 use crate::call_contracts::effective_call_return_type;
 use crate::members::{TemplateBindings, type_contains_template_named};
@@ -405,9 +405,9 @@ fn default_contract_branch(value: Option<&AttributeValue>) -> &'static str {
     if value.kind != AttributeValueKind::Bool {
         return "";
     }
-    if equal_fold(&value.value, "true") {
+    if eq_ignore_case(&value.value, "true") {
         "true"
-    } else if equal_fold(&value.value, "false") {
+    } else if eq_ignore_case(&value.value, "false") {
         "false"
     } else {
         ""
@@ -426,7 +426,8 @@ fn nominally_satisfies_generic_bound(relations: Relations<'_>, value: &Type, bou
     {
         return false;
     }
-    equal_fold(value.name(), bound.name()) || hierarchy.is_subtype_of(value.name(), bound.name())
+    eq_ignore_case(value.name(), bound.name())
+        || hierarchy.is_subtype_of(value.name(), bound.name())
 }
 
 /// Infers template bindings by matching `actual` against `pattern`.
@@ -473,7 +474,7 @@ pub fn infer_templates(
     let mut actual = actual.clone();
     if pattern.kind() == Kind::Object
         && actual.kind() == Kind::Object
-        && !equal_fold(pattern.name(), actual.name())
+        && !eq_ignore_case(pattern.name(), actual.name())
         && let Some(hierarchy) = relations.hierarchy
         && let Some(projected) = hierarchy.as_supertype(&actual, pattern.name())
     {

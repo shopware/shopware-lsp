@@ -13,6 +13,7 @@ swlsp-parser-yaml = { path = "../parser-yaml" }
 swlsp-php = { path = "../php" }
 swlsp-php-binder = { path = "../php-binder" }
 swlsp-php-semantic = { path = "../php-semantic" }
+swlsp-textutil = { path = "../textutil" }
 swlsp-uriutil = { path = "../uriutil" }
 serde = { version = "1", features = ["derive"] }
 

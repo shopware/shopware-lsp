@@ -1,5 +1,3 @@
-//! Port of `member_links_test.go`.
-
 use std::sync::Arc;
 
 use swlsp_php_binder::link;

@@ -1,4 +1,4 @@
-//! Ports of the Go `*_test.go` files; one module per Go test file.
+//! Crate tests, one module per area of the crate.
 
 mod support;
 

@@ -1,4 +1,4 @@
-//! Ports of the Go domain completion tests.
+//! Tests for the domain completion providers.
 
 mod asset;
 mod console;
@@ -32,7 +32,7 @@ pub(super) fn node_at(document: &TextDocument, offset: usize) -> Option<SyntaxNo
     document.root()?.node_at(TextSize::from(offset as u32))
 }
 
-/// Go `consoleCompletionRequest`: the node, with a zero position.
+/// A request for the node at `offset`, with a zero position.
 pub(super) fn node_request(document: &Arc<TextDocument>, offset: usize) -> CompletionRequest {
     let mut params = protocol::CompletionParams::default();
     params.text_document.uri = document.uri.clone();
@@ -48,7 +48,7 @@ pub(super) fn node_request(document: &Arc<TextDocument>, offset: usize) -> Compl
     }
 }
 
-/// Go `completionRequest(document, NodeAtOffset(offset), offset)`.
+/// A request for the node at `offset`.
 pub(super) fn request(document: &Arc<TextDocument>, offset: usize) -> CompletionRequest {
     crate::test_support::completion_request(
         document.clone(),
@@ -85,7 +85,7 @@ pub(super) fn text_edit(item: &protocol::CompletionItem) -> protocol::TextEdit {
     item.text_edit.clone().expect("text edit")
 }
 
-/// Go `completionRangeText`.
+/// The source text of `range`.
 pub(super) fn range_text(document: &TextDocument, range: protocol::Range) -> String {
     let index = document.line_index();
     let start = index.offset_utf16(range.start.line, range.start.character) as usize;

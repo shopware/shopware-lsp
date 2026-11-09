@@ -1,5 +1,4 @@
-//! Constructs every diagnostic inspection the application emits (port of Go
-//! `internal/app/inspections.go`). Inspections declare their IDs, codes,
+//! Constructs every diagnostic inspection the application emits. Inspections declare their IDs, codes,
 //! languages and configuration domains themselves; this module only supplies
 //! their services.
 
@@ -27,8 +26,7 @@ pub(crate) fn register_diagnostic_inspections(
     let _ = php_features;
 }
 
-/// Adapts the PHP semantic provider to the analyzer interface (Go passes
-/// the provider itself as a `ProblemAnalyzer`).
+/// Adapts the PHP semantic provider to the analyzer interface.
 #[cfg(feature = "diagnostics")]
 struct PhpSemanticAnalyzer(Arc<PhpFeatures>);
 

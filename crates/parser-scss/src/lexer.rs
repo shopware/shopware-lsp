@@ -1,4 +1,4 @@
-//! SCSS lexer (port of Go `internal/parser/scss/lexer`).
+//! SCSS lexer.
 
 use swlsp_syntax::{Kind, Token};
 
@@ -79,8 +79,8 @@ fn next(source: &[u8], position: usize) -> (Kind, usize) {
             (TK_NUMBER, scan_number(source, position) - position)
         }
         byte if is_name_start(byte) || byte == b'\\' => {
-            // Go returns a zero-length token for a trailing lone backslash
-            // (and never terminates); consume the byte instead.
+            // A trailing lone backslash scans as an empty name; consume the
+            // byte so the lexer always advances.
             (
                 TK_IDENTIFIER,
                 (scan_name(source, position) - position).max(1),

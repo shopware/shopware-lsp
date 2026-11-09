@@ -1,4 +1,4 @@
-//! Lossless, error-tolerant YAML parser (port of Go `internal/parser/yaml`).
+//! Lossless, error-tolerant YAML parser.
 
 pub mod lexer;
 pub mod query;
@@ -603,7 +603,7 @@ parameters:
     }
 
     #[test]
-    fn debug_tree_matches_go() {
+    fn debug_tree_prints_kinds_ranges_and_token_text() {
         let parse = parse("a: [1]\n");
         assert_eq!(
             parse.debug_dump(),

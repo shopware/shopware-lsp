@@ -1,20 +1,20 @@
-//! Go `scss_variable_diagnostics.go`.
+//! Unknown SCSS variables.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use serde_json::json;
 use swlsp_lsp::{BoxError, Context, DiagnosticId, Problem, TextDocument};
-use swlsp_php_types::equal_fold;
 use swlsp_style::{analyze_variables, normalize_variable_name};
 use swlsp_syntax::TextRange;
+use swlsp_textutil::eq_ignore_case;
+use swlsp_uriutil::filepath;
 
-use super::go_ext;
+use crate::LookupError;
 use crate::ProblemAnalyzer;
 
 pub const SCSS_VARIABLE_UNKNOWN_CODE: &str = "scss.variable.unknown";
 
-/// Go `SCSSVariableDeclarationProvider`.
 pub trait ScssVariableDeclarationProvider: Send + Sync {
     fn has_variable_declaration(&self, name: &str, excluded_path: &str) -> Result<bool, BoxError>;
     /// Advances whenever an answer may change; `None` when unknown.
@@ -23,7 +23,6 @@ pub trait ScssVariableDeclarationProvider: Send + Sync {
     }
 }
 
-/// Go `SCSSVariableIndexReadiness`.
 pub trait ScssVariableIndexReadiness: Send + Sync {
     fn ready(&self, ctx: &Context) -> Result<bool, BoxError>;
     /// Whether the index is ready, without a context; `None` when unknown.
@@ -96,19 +95,19 @@ impl ProblemAnalyzer for ScssVariableAnalyzer {
         let (Some(variables), Some(root)) = (&self.variables, document.root()) else {
             return Ok(Vec::new());
         };
-        if !equal_fold(go_ext(&document.uri), ".scss") {
+        if !eq_ignore_case(filepath::ext(&document.uri), ".scss") {
             return Ok(Vec::new());
         }
         if let Some(readiness) = &self.readiness {
             let ready = readiness
                 .ready(ctx)
-                .map_err(|error| format!("query SCSS index readiness: {error}"))?;
+                .map_err(|error| LookupError::new("query SCSS index readiness", error))?;
             if !ready {
                 return Ok(Vec::new());
             }
         }
         let path = swlsp_uriutil::path(&document.uri)
-            .map_err(|error| format!("resolve SCSS document path: {error}"))?;
+            .map_err(|error| LookupError::new("resolve SCSS document path", error))?;
         let analysis = analyze_variables(&path, &root);
         let known: HashSet<String> = analysis
             .bindings
@@ -130,7 +129,10 @@ impl ProblemAnalyzer for ScssVariableAnalyzer {
                         variables
                             .has_variable_declaration(&name, &path)
                             .map_err(|error| {
-                                format!("resolve SCSS variable ${}: {error}", reference.name)
+                                LookupError::new(
+                                    format!("resolve SCSS variable ${}", reference.name),
+                                    error,
+                                )
                             })?;
                     indexed.insert(name, exists);
                     exists

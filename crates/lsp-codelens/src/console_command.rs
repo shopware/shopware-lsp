@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use serde_json::Value;
 use swlsp_lsp::{CodeLensProvider, CodeLensRequest, Context, ProviderResult};
 use swlsp_lsp_protocol as protocol;
-use swlsp_php_types::go_to_lower;
+use swlsp_textutil::lowercase;
 use swlsp_uriutil::filepath;
 
 use crate::{by_position_title, cancelled, related_protocol_range};
@@ -53,7 +53,7 @@ impl CodeLensProvider for ConsoleCommandCodeLensProvider {
             if command.name.is_empty() || command.name != command.canonical {
                 continue;
             }
-            let key = go_to_lower(&format!(
+            let key = lowercase(&format!(
                 "{}\0{}\0{}",
                 command.class, command.method, command.name
             ));

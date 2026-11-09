@@ -207,7 +207,7 @@ error at 2..3: expected ) but reached end of file"
 
 #[test]
 fn recovery_is_lossless() {
-    // Seeds from the Go fuzz corpus plus typical half-typed input.
+    // Fuzz corpus seeds plus typical half-typed input.
     for source in [
         "",
         "Component.register(",

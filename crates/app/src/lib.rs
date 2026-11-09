@@ -1,4 +1,4 @@
-//! The composition root (port of Go `internal/app`): workspace construction,
+//! The composition root: workspace construction,
 //! indexer wiring, provider and inspection registration.
 //!
 //! [`Workspace`] is the only place that knows the whole system. It opens the
@@ -6,8 +6,8 @@
 //! the indexers of enabled domains to the file scanner and registers every
 //! provider, inspection, context enricher and document observer on the
 //! [`swlsp_lsp::Server`]. The server installs the scanner's update callback
-//! itself. Registration order, feature gating and domain gating follow Go's
-//! `providers*.go` and `inspections.go` exactly; [`Workspace::registrations`]
+//! itself. Registration order, feature gating and domain gating live in the
+//! `providers*` modules and `inspections`; [`Workspace::registrations`]
 //! records them.
 
 mod cache;
@@ -30,11 +30,15 @@ use std::io::{Read, Write};
 
 use swlsp_lsp::Server;
 
-pub use cache::{CACHE_DIR_ENV, project_cache_folder, project_cache_folder_in, user_cache_dir};
+pub use cache::{
+    CACHE_DIR_ENV, CacheDirError, PlatformCacheDirError, project_cache_folder,
+    project_cache_folder_in, user_cache_dir,
+};
 pub use integration::{CATALOG_COMMAND, Provider as IntegrationProvider};
 pub use registrar::Registration;
 pub use workspace::{
-    Services, Workspace, domain_for_indexer, workspace_factory, workspace_factory_in,
+    CloseError, Services, Workspace, WorkspaceError, domain_for_indexer, workspace_factory,
+    workspace_factory_in,
 };
 
 /// Process-level options.
@@ -70,7 +74,7 @@ impl Application {
         &self,
         input: impl Read + Send + 'static,
         output: impl Write + Send + 'static,
-    ) -> Result<(), String> {
+    ) -> Result<(), swlsp_lsp::CloseError> {
         self.server.start(input, output)
     }
 
@@ -81,11 +85,11 @@ impl Application {
         input: swlsp_lsp::async_io::Input,
         output: swlsp_lsp::async_io::Output,
         stop: impl std::future::Future<Output = ()>,
-    ) -> Result<(), String> {
+    ) -> Result<(), swlsp_lsp::CloseError> {
         self.server.serve(input, output, stop).await
     }
 
-    pub fn close(&self) -> Result<(), String> {
+    pub fn close(&self) -> Result<(), swlsp_lsp::CloseError> {
         self.server.close_all()
     }
 }

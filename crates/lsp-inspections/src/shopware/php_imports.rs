@@ -1,4 +1,4 @@
-//! Port of Go `php_imports.go`: unused PHP imports and their removal.
+//! Unused PHP imports and their removal.
 
 use std::sync::Arc;
 
@@ -18,7 +18,7 @@ use crate::resolve_anchor;
 
 pub const UNUSED_IMPORT_FIX_ID: &str = "php.remove-unused-import";
 
-/// Go `cst.TextRange` JSON (`{"Start":..,"End":..}`).
+/// A byte range in the payload wire format (`{"Start":..,"End":..}`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct RangeJson {
     #[serde(rename = "Start", default)]
@@ -51,7 +51,6 @@ struct UnusedImportPayload {
     alias: String,
 }
 
-/// Go `NewPHPImports`.
 pub fn new_php_imports(index: Option<PhpIndex>) -> Arc<dyn Inspection> {
     Arc::new(PhpImportsInspection { index })
 }

@@ -60,7 +60,7 @@ fn namespace_from_composer_json(composer_path: &Path, stem: &str) -> Result<Stri
     Ok(format!("{plugin_name}.config"))
 }
 
-/// Mirrors Go's typed decode: `name` and `extra.shopware-plugin-class` must
+/// Validates the composer.json shape: `name` and `extra.shopware-plugin-class` must
 /// be strings (or null), `extra` an object (or null).
 fn composer_plugin_class(composer: &Value) -> Result<&str> {
     let Value::Object(composer) = composer else {

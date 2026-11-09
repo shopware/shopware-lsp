@@ -1,5 +1,5 @@
 //! Planning of a services.xml → services.yaml conversion including local XML
-//! imports (Go `services_yaml_plan.go`).
+//! imports.
 
 use std::collections::BTreeMap;
 
@@ -8,6 +8,33 @@ use swlsp_indexer::CancelToken;
 use crate::services_yaml_convert::{ConvertError, convert_container_to_yaml};
 use crate::services_yaml_model::{Container, XmlImports, parse_services_xml};
 use crate::util::{clean_path, dir_path, extension, join_path};
+
+/// Why a services.xml conversion could not be planned.
+#[derive(Debug, thiserror::Error)]
+pub enum PlanError {
+    #[error("cancelled")]
+    Cancelled,
+    #[error("read {path}: {source}")]
+    Read {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("{path}: {source}")]
+    Convert {
+        path: String,
+        #[source]
+        source: ConvertError,
+    },
+    #[error("check conversion target {target}: {source}")]
+    CheckTarget {
+        target: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("cannot convert {path}: {target} exists already")]
+    TargetExists { path: String, target: String },
+}
 
 /// One lossless XML-to-YAML file replacement. Planning is side-effect free
 /// so callers can validate and apply every file as one workspace edit.
@@ -27,7 +54,7 @@ pub fn plan_services_xml_conversion(
     path: &str,
     read: &mut dyn FnMut(&str) -> std::io::Result<String>,
     target_exists: &mut dyn FnMut(&str) -> std::io::Result<bool>,
-) -> Result<Vec<ServicesXmlConversion>, ConvertError> {
+) -> Result<Vec<ServicesXmlConversion>, PlanError> {
     let mut planner = Planner {
         cancel,
         read,
@@ -73,34 +100,42 @@ fn import_lists(container: &mut Container) -> Vec<&mut XmlImports> {
 }
 
 impl Planner<'_> {
-    fn check_cancelled(&self) -> Result<(), ConvertError> {
+    fn check_cancelled(&self) -> Result<(), PlanError> {
         if self.cancel.is_cancelled() {
-            return Err(ConvertError("context canceled".to_owned()));
+            return Err(PlanError::Cancelled);
         }
         Ok(())
     }
 
-    fn plan(&mut self, path: &str, prefetched: Option<String>) -> Result<(), ConvertError> {
+    fn plan(&mut self, path: &str, prefetched: Option<String>) -> Result<(), PlanError> {
         self.check_cancelled()?;
         if self.planned.contains_key(path) {
             return Ok(());
         }
         let content = match prefetched {
             Some(content) => content,
-            None => (self.read)(path).map_err(|error| ConvertError(error.to_string()))?,
+            None => (self.read)(path).map_err(|source| PlanError::Read {
+                path: path.to_owned(),
+                source,
+            })?,
         };
-        let mut container = parse_services_xml(&content)
-            .map_err(|error| ConvertError(format!("{path}: {error}")))?;
+        let mut container = parse_services_xml(&content).map_err(|source| PlanError::Convert {
+            path: path.to_owned(),
+            source,
+        })?;
         let without_extension = &path[..path.len() - extension(path).len()];
         let target = format!("{without_extension}.yaml");
         for candidate in [target.clone(), format!("{without_extension}.yml")] {
-            let exists = (self.target_exists)(&candidate).map_err(|error| {
-                ConvertError(format!("check conversion target {candidate}: {error}"))
-            })?;
+            let exists =
+                (self.target_exists)(&candidate).map_err(|source| PlanError::CheckTarget {
+                    target: candidate.clone(),
+                    source,
+                })?;
             if exists {
-                return Err(ConvertError(format!(
-                    "cannot convert {path}: {candidate} exists already"
-                )));
+                return Err(PlanError::TargetExists {
+                    path: path.to_owned(),
+                    target: candidate,
+                });
             }
         }
         // Mark the file before descending so circular local imports end.
@@ -129,8 +164,11 @@ impl Planner<'_> {
                 }
             }
         }
-        let converted = convert_container_to_yaml(&container)
-            .map_err(|error| ConvertError(format!("{path}: {error}")))?;
+        let converted =
+            convert_container_to_yaml(&container).map_err(|source| PlanError::Convert {
+                path: path.to_owned(),
+                source,
+            })?;
         self.contents.insert(path.to_owned(), converted);
         Ok(())
     }

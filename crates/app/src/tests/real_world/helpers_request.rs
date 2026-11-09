@@ -1,9 +1,9 @@
-//! Port of Go `real_world_helpers_request_test.go`.
+//! Request builders of the real-world suite.
 
 #[allow(unused_imports)]
 use super::indexing_main::record_failure as soft;
 
-/// Records a soft failure (Go `t.Errorf` in the soft oracle run) and
+/// Records a soft failure and
 /// continues with the zero value.
 #[allow(dead_code)]
 fn soft_default<T: Default>(message: String) -> T {
@@ -31,7 +31,7 @@ use swlsp_php::PhpIndex;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextSize};
 use swlsp_twig::TwigIndexer;
 
-/// A new open-document snapshot (Go `lsp.NewTextDocument`).
+/// A new open-document snapshot.
 pub fn new_document(uri: impl Into<String>, source: &str, version: i32) -> Arc<TextDocument> {
     Arc::new(TextDocument::new(uri, source, version))
 }
@@ -49,7 +49,8 @@ pub fn node_at(document: &TextDocument, offset: u32) -> Option<SyntaxNode> {
     document.root()?.node_at(TextSize::from(offset))
 }
 
-/// The node at `offset`, falling back to `offset - 1` (Go helpers' EOF rule).
+/// The node at `offset`, falling back to `offset - 1` so a cursor at the end
+/// of a token or the file still finds it.
 pub fn node_at_or_before(document: &TextDocument, offset: u32) -> Option<SyntaxNode> {
     node_at(document, offset).or_else(|| {
         if offset > 0 {
@@ -156,7 +157,7 @@ pub fn real_world_signature_request(
     params.text_document.uri = document.uri.clone();
     params.position = position(document, offset);
     let mut context = syntax(document, node_at_or_before(document, offset), None);
-    // Go leaves Language unset for signature requests.
+    // Signature requests carry no language.
     context.language = None;
     SignatureHelpRequest {
         params,

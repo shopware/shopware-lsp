@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::paths::{dir, join};
 use swlsp_uriutil::filepath;
+use swlsp_uriutil::filepath::{dir, join};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ShopwareExtensionType {

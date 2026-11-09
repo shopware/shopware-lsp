@@ -8,9 +8,10 @@ use swlsp_php_semantic::{
     Confidence, Flags, NameKind, Reference, ScopeId, ScopeKind, Str, Symbol, SymbolId, SymbolKind,
     TypeFact, TypeSource, anonymous_class_name, new_symbol_id, node_identity,
 };
-use swlsp_php_types::{Type, equal_fold};
+use swlsp_php_types::Type;
 use swlsp_syntax::rowan::NodeOrToken;
 use swlsp_syntax::{Kind, SyntaxNode, SyntaxNodeExt, TextRange};
+use swlsp_textutil::eq_ignore_case;
 
 use crate::builder::{Builder, effective_type, resolve_names};
 use crate::declaration_references::is_type_node;
@@ -135,7 +136,7 @@ impl Builder<'_> {
 
     fn bind_class_alias(&mut self, call: &SyntaxNode, scope: ScopeId, context: &NameContext) {
         let call_name = query::call_name(call);
-        if !equal_fold(
+        if !eq_ignore_case(
             call_name.strip_prefix('\\').unwrap_or(&call_name),
             "class_alias",
         ) {
@@ -150,7 +151,7 @@ impl Builder<'_> {
         else {
             return;
         };
-        if equal_fold(&target, &alias) {
+        if eq_ignore_case(&target, &alias) {
             return;
         }
         let alias_name = alias
@@ -381,7 +382,7 @@ impl Builder<'_> {
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Token(token) => {
-                    if equal_fold(token.text(), "as") {
+                    if eq_ignore_case(token.text(), "as") {
                         in_targets = true;
                     } else if in_targets && token.kind() == TK_CLOSE_PAREN {
                         return;
@@ -641,8 +642,8 @@ fn static_class_alias_name(
     Some((value.to_owned(), query::string_content_range(node), true))
 }
 
-/// Go `strings.NewReplacer("\\\\", "\\", "\\'", "'", "\\\"", "\"")`: a
-/// single left-to-right pass.
+/// Unescapes `\\`, `\'` and `\"` in a single left-to-right pass; other
+/// backslashes stay.
 fn replace_class_alias_escapes(value: &str) -> String {
     let mut result = String::with_capacity(value.len());
     let mut rest = value;
@@ -705,7 +706,7 @@ fn nested_function(kind: Kind) -> bool {
 
 fn has_direct_text(node: &SyntaxNode, text: &str) -> bool {
     node.children_with_tokens().any(|child| match child {
-        NodeOrToken::Token(token) => equal_fold(token.text(), text),
+        NodeOrToken::Token(token) => eq_ignore_case(token.text(), text),
         NodeOrToken::Node(_) => false,
     })
 }

@@ -1,4 +1,4 @@
-//! Service registration of DAL definitions (port of Go `service.go`).
+//! Service registration of DAL definitions.
 
 use swlsp_language::LanguageId;
 use swlsp_parser_php::query as phpquery;
@@ -35,12 +35,12 @@ pub fn patch_tagged_service_configuration(
         && tag != "shopware.entity.extension"
         && tag != "shopware.bulk.entity.extension"
     {
-        return Err(errorf!("unsupported entity service tag {}", go_quote(tag)));
+        return Err(errorf!("unsupported entity service tag {:?}", tag));
     }
     if source.contains(class_name) && source.contains(tag) {
         return Ok(source.to_owned());
     }
-    let result = match go_to_lower(filepath::ext(path)).as_str() {
+    let result = match lowercase(filepath::ext(path)).as_str() {
         ".xml" => {
             if source.trim().is_empty() {
                 format!(
@@ -139,7 +139,7 @@ pub fn remove_service_configuration(path: &str, source: &str, class_name: &str) 
             u32::from(range.end()) as usize,
         )
     };
-    match go_to_lower(filepath::ext(path)).as_str() {
+    match lowercase(filepath::ext(path)).as_str() {
         ".xml" => {
             let parsed = swlsp_parser_xml::parse(source);
             if !parsed.errors.is_empty() {

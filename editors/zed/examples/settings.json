@@ -5,10 +5,7 @@
     "shopware-lsp": {
       "settings": {
         "shopwareLSP": {
-          "activationMode": "auto",
-          // 0 uses the server's balanced GC policy. 512 trades indexing CPU
-          // for lower peak memory on large workspaces.
-          "memoryLimitMiB": 0
+          "activationMode": "auto"
         }
       }
     },

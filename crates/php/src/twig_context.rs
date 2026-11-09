@@ -1,5 +1,4 @@
-//! PHP values exposed to Twig templates by controllers (port of
-//! `twig_context.go`).
+//! PHP values exposed to Twig templates by controllers.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
@@ -12,9 +11,10 @@ use swlsp_parser_php::syntax::{
     PHP_RETURN_STATEMENT, PHP_SCOPED_CALL, PHP_STRING, PHP_VARIABLE,
 };
 use swlsp_php_semantic::Document;
-use swlsp_php_types::{Type, go_to_lower};
+use swlsp_php_types::Type;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
 use swlsp_textutil::FoldAsciiMatcher;
+use swlsp_textutil::lowercase;
 
 use crate::{PhpIndex, lock};
 
@@ -158,14 +158,14 @@ pub(crate) fn extract_twig_template_contexts(
 /// deterministic order by their exact spelling.
 fn sort_by_lower_name(variables: &mut [TwigTemplateVariable]) {
     variables.sort_by(|left, right| {
-        go_to_lower(&left.name)
-            .cmp(&go_to_lower(&right.name))
+        lowercase(&left.name)
+            .cmp(&lowercase(&right.name))
             .then_with(|| left.name.cmp(&right.name))
     });
 }
 
 fn twig_render_arguments(call: &SyntaxNode) -> Option<(String, SyntaxNode)> {
-    let name = go_to_lower(&query::call_method_name(call));
+    let name = lowercase(&query::call_method_name(call));
     let context_index = match name.as_str() {
         "render" | "renderview" | "renderstorefront" | "stream" | "htmltemplate"
         | "texttemplate" => 1,
@@ -177,7 +177,7 @@ fn twig_render_arguments(call: &SyntaxNode) -> Option<(String, SyntaxNode)> {
         return None;
     }
     let template = query::string_value(&template_node);
-    if !go_to_lower(&template).ends_with(".twig") {
+    if !lowercase(&template).ends_with(".twig") {
         return None;
     }
     let context = argument_expression(call, &["parameters", "context"], context_index)?;
@@ -186,7 +186,7 @@ fn twig_render_arguments(call: &SyntaxNode) -> Option<(String, SyntaxNode)> {
 
 fn argument_expression(call: &SyntaxNode, names: &[&str], fallback: usize) -> Option<SyntaxNode> {
     for (index, argument) in query::arguments(call).enumerate() {
-        let name = go_to_lower(&query::argument_name(&argument));
+        let name = lowercase(&query::argument_name(&argument));
         if names.contains(&name.as_str()) {
             return query::argument_expression(call, index);
         }
@@ -204,7 +204,7 @@ fn method_template_names(root: &SyntaxNode, method: &SyntaxNode) -> Vec<String> 
         let name = query::direct_child(&attribute, PHP_NAME)
             .map(|name| query::name_value(&name))
             .unwrap_or_default();
-        if !swlsp_php_types::equal_fold(go_base(&name.replace('\\', "/")), "Template") {
+        if !swlsp_textutil::eq_ignore_case(last_name_segment(&name), "Template") {
             continue;
         }
         match argument_expression(&attribute, &["template"], 0) {
@@ -259,16 +259,11 @@ pub fn guessed_controller_template(root: &SyntaxNode, method: &SyntaxNode) -> St
     )
 }
 
-/// Go `filepath.Base` for slash-separated paths.
-fn go_base(path: &str) -> &str {
-    if path.is_empty() {
-        return ".";
-    }
-    let trimmed = path.trim_end_matches('/');
-    if trimmed.is_empty() {
-        return "/";
-    }
-    trimmed.rsplit('/').next().unwrap_or(trimmed)
+/// The last segment of a `\\`- or `/`-separated name, ignoring trailing
+/// separators.
+fn last_name_segment(name: &str) -> &str {
+    let trimmed = name.trim_end_matches(['\\', '/']);
+    trimmed.rsplit(['\\', '/']).next().unwrap_or(trimmed)
 }
 
 fn snake_path(value: &str) -> String {
@@ -289,7 +284,7 @@ fn snake_case(value: &str) -> String {
             result.push(current.to_ascii_lowercase());
         } else {
             let mut buffer = [0u8; 4];
-            result.push_str(&go_to_lower(current.encode_utf8(&mut buffer)));
+            result.push_str(&lowercase(current.encode_utf8(&mut buffer)));
         }
     }
     result
@@ -456,7 +451,7 @@ impl Collector<'_> {
             return;
         }
         for method in query::methods(&class) {
-            if !swlsp_php_types::equal_fold(&query::method_name(&method), &name) {
+            if !swlsp_textutil::eq_ignore_case(&query::method_name(&method), &name) {
                 continue;
             }
             if !self
@@ -586,7 +581,7 @@ impl Collector<'_> {
 
 fn is_twig_array_context_function(name: &str) -> bool {
     let name = name.trim();
-    let name = go_to_lower(name.strip_prefix('\\').unwrap_or(name));
+    let name = lowercase(name.strip_prefix('\\').unwrap_or(name));
     matches!(
         name.as_str(),
         "array_merge" | "array_merge_recursive" | "array_replace"
@@ -619,7 +614,7 @@ impl PhpIndex {
                 continue;
             }
             for variable in self.twig_variables_for_template(&template)? {
-                let key = go_to_lower(&variable.name);
+                let key = lowercase(&variable.name);
                 let replace = merged
                     .get(&key)
                     .is_none_or(|existing| existing.ty == UNKNOWN && variable.ty != UNKNOWN);
@@ -703,7 +698,7 @@ impl PhpIndex {
                     if variable.ty == UNKNOWN {
                         continue;
                     }
-                    fresh.insert((path.to_owned(), go_to_lower(&variable.name)), variable.ty);
+                    fresh.insert((path.to_owned(), lowercase(&variable.name)), variable.ty);
                 }
             }
         }
@@ -714,7 +709,7 @@ impl PhpIndex {
             if variable.ty != UNKNOWN {
                 continue;
             }
-            if let Some(ty) = fresh.get(&(variable.file.clone(), go_to_lower(&variable.name))) {
+            if let Some(ty) = fresh.get(&(variable.file.clone(), lowercase(&variable.name))) {
                 variable.ty = ty.clone();
             }
         }

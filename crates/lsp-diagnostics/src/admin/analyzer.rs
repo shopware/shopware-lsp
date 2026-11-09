@@ -1,5 +1,4 @@
-//! Go `admin_diagnostics.go`: the analyzer entry point and its JavaScript
-//! diagnostics.
+//! The analyzer entry point and its JavaScript diagnostics.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -13,15 +12,15 @@ use swlsp_admin::{
 use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
 use swlsp_lsp_protocol::DiagnosticSeverity;
 use swlsp_parser_js::{query as jsquery, syntax as jssyntax};
-use swlsp_php_types::go_to_lower;
 use swlsp_syntax::{LineIndex, SyntaxNode, SyntaxNodeExt, TextRange};
+use swlsp_textutil::lowercase;
+use swlsp_uriutil::filepath;
 
-use super::{go_ext, go_string_list, payload, text};
+use super::{payload, string_array, text};
 use crate::ProblemAnalyzer;
 use crate::common::{admin_nearby_suggestions, javascript_string_content_range};
 
-/// Diagnostics for Shopware Administration Vue components (Go
-/// `AdminAnalyzer`).
+/// Diagnostics for Shopware Administration Vue components.
 #[derive(Clone, Default)]
 pub struct AdminAnalyzer {
     pub(super) admin_indexer: Option<Arc<AdminComponentIndexer>>,
@@ -29,7 +28,6 @@ pub struct AdminAnalyzer {
 }
 
 impl AdminAnalyzer {
-    /// Go `NewAdminAnalyzer`.
     pub fn new(admin_indexer: Option<Arc<AdminComponentIndexer>>) -> Self {
         Self {
             admin_indexer,
@@ -39,8 +37,7 @@ impl AdminAnalyzer {
 
     /// Lets a more specific, version-aware migration diagnostic own selected
     /// component tags without producing duplicate generic deprecation or
-    /// not-found problems on the same source range (Go
-    /// `SuppressComponentDiagnostics`).
+    /// not-found problems on the same source range.
     pub fn suppress_component_diagnostics<S: AsRef<str>>(&mut self, names: &[S]) -> &mut Self {
         for name in names {
             self.suppressed_component_diagnostics
@@ -76,8 +73,7 @@ impl AdminAnalyzer {
                 continue;
             }
             let missing = match self.indexer() {
-                // Go dereferences a nil indexer here; without an index no
-                // component is registered.
+                // Without an index no component is registered.
                 None => true,
                 Some(indexer) => indexer
                     .get_component(&parent_name)
@@ -328,7 +324,7 @@ impl AdminAnalyzer {
                 payload: Some(payload(vec![
                     ("receiver", text(&receiver_path)),
                     ("memberName", text(&member_name)),
-                    ("suggestions", go_string_list(suggestions)),
+                    ("suggestions", string_array(suggestions)),
                 ])),
                 ..Problem::default()
             });
@@ -392,7 +388,7 @@ impl AdminAnalyzer {
                 payload: Some(payload(vec![
                     ("receiver", text(&receiver_path)),
                     ("memberName", text(&member_name)),
-                    ("suggestions", go_string_list(suggestions)),
+                    ("suggestions", string_array(suggestions)),
                 ])),
                 ..Problem::default()
             });
@@ -457,7 +453,7 @@ impl AdminAnalyzer {
                 payload: Some(payload(vec![
                     ("containerName", text(&container_name)),
                     ("memberName", text(&member_name)),
-                    ("suggestions", go_string_list(suggestions)),
+                    ("suggestions", string_array(suggestions)),
                 ])),
                 ..Problem::default()
             });
@@ -520,7 +516,7 @@ impl AdminAnalyzer {
                     ("memberName", text(&name)),
                     (
                         "suggestions",
-                        go_string_list(admin_nearby_suggestions(&name, &scope.known_names)),
+                        string_array(admin_nearby_suggestions(&name, &scope.known_names)),
                     ),
                 ])),
                 ..Problem::default()
@@ -551,7 +547,7 @@ impl ProblemAnalyzer for AdminAnalyzer {
         if !uri.contains("Resources/app/administration") {
             return Ok(Vec::new());
         }
-        let ext = go_to_lower(go_ext(uri));
+        let ext = lowercase(filepath::ext(uri));
         match ext.as_str() {
             ".js" | ".ts" => self.js_diagnostics(ctx, document),
             ".twig" => self.twig_diagnostics(ctx, document),

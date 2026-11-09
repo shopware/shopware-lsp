@@ -1,5 +1,4 @@
-//! Structural queries over JavaScript trees (port of Go
-//! `internal/parser/javascript/query`).
+//! Structural queries over JavaScript trees.
 //!
 //! Every function accepting a "cursor" node also accepts any descendant of the
 //! construct it looks for (it walks up to the nearest matching ancestor), so

@@ -1,13 +1,13 @@
 //! `renderBlock()`/`renderBlockView()` block arguments in PHP controllers to
-//! the block declarations (port of Go `twig_render_block_definition.go`).
+//! the block declarations.
 
 use std::sync::Arc;
 
 use swlsp_lsp::{Context, DefinitionRequest, GotoDefinitionProvider};
 use swlsp_lsp_protocol as protocol;
 use swlsp_php::PhpIndex;
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::LineIndex;
+use swlsp_textutil::eq_ignore_case;
 use swlsp_twig::TwigIndexer;
 use swlsp_uriutil::file_uri;
 
@@ -60,7 +60,7 @@ impl GotoDefinitionProvider for TwigRenderBlockDefinitionProvider {
         };
         let mut result = Vec::new();
         for block in &blocks {
-            if !equal_fold(&block.name, &reference.block) {
+            if !eq_ignore_case(&block.name, &reference.block) {
                 continue;
             }
             let Ok(source) = std::fs::read(&block.file_path) else {

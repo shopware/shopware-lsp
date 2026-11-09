@@ -1,4 +1,4 @@
-//! Port of `client_command_filter_test.go`.
+//! Client contract and command filtering tests.
 
 use std::sync::Arc;
 
@@ -68,12 +68,23 @@ fn client_command_filtering_keeps_only_usable_presentations() {
     assert!(items[0].command.is_none());
 
     let mut hints = vec![protocol::InlayHint {
-        label: json!([{"value": "variables", "command": {"title": "x", "command": "shopware.unsupported"}}]),
+        label: protocol::InlayHintLabel::Parts(vec![protocol::InlayHintLabelPart {
+            value: "variables".to_owned(),
+            command: Some(protocol::Command {
+                title: "x".to_owned(),
+                command: "shopware.unsupported".to_owned(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }]),
         ..Default::default()
     }];
     server.filter_inlay_hint_commands_for_client(&mut hints);
-    assert!(hints[0].label[0].get("command").is_none());
-    assert_eq!(hints[0].label[0]["value"], "variables");
+    let protocol::InlayHintLabel::Parts(parts) = &hints[0].label else {
+        panic!("label parts expected");
+    };
+    assert!(parts[0].command.is_none());
+    assert_eq!(parts[0].value, "variables");
 
     let resolved = server.filter_resolved_code_action_for_client(action(
         "x",

@@ -1,4 +1,4 @@
-//! The few JSON queries snippets need (Go `internal/parser/json/query`).
+//! The few JSON queries snippets need.
 
 use swlsp_parser_json::syntax::{
     JSON_ARRAY, JSON_BOOLEAN, JSON_NULL_VALUE, JSON_NUMBER, JSON_OBJECT, JSON_PAIR, JSON_STRING,

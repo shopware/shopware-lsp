@@ -3,9 +3,8 @@ use crate::services_yaml_model::parse_services_xml;
 
 fn convert(content: &str) -> String {
     let container = parse_services_xml(content).unwrap();
-    // Go additionally re-parses the output with yaml.v3; the native YAML
-    // CST does not accept every tagged flow collection, so the golden
-    // comparison stands in for it.
+    // The native YAML CST does not accept every tagged flow collection, so
+    // the golden comparison stands in for re-parsing the output.
     convert_container_to_yaml(&container).unwrap()
 }
 
@@ -148,7 +147,7 @@ fn convert_invalid_xml() {
 }
 
 #[test]
-fn format_float_matches_go() {
+fn format_float_uses_shortest_digits_with_exponent_outside_small_range() {
     for (value, expected) in [
         (1.5, "1.5"),
         (1000.0, "1000"),

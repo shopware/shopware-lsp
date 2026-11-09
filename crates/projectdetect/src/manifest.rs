@@ -1,10 +1,10 @@
 //! Recognition of Shopware app `manifest.xml` files.
 //!
-//! Mirrors the subset of Go's strict `encoding/xml` tokenizer the detector
-//! relies on: everything before the first start element (XML declaration,
-//! processing instructions, comments, doctype, character data) is validated
-//! and skipped, then the root element name and attributes are read. Nothing
-//! after the root start tag is inspected, exactly like the Go detector.
+//! A strict, minimal XML prefix scanner: everything before the first start
+//! element (XML declaration, processing instructions, comments, doctype,
+//! character data) is validated and skipped, then the root element name and
+//! attributes are read. Nothing after the root start tag is inspected, so a
+//! manifest that is still being edited further down is recognized.
 
 struct Scanner<'a> {
     source: &'a [u8],
@@ -12,15 +12,29 @@ struct Scanner<'a> {
     line: usize,
 }
 
-type ScanResult<T> = Result<T, String>;
+/// Why the prefix of a `manifest.xml` is not well-formed XML.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ManifestError {
+    #[error("XML syntax error on line {line}: {message}")]
+    Syntax { line: usize, message: String },
+    #[error("unsupported XML version {0:?}; only version 1.0 is supported")]
+    UnsupportedVersion(String),
+    #[error("unsupported XML encoding {0:?}; only UTF-8 is supported")]
+    UnsupportedEncoding(String),
+}
+
+type ScanResult<T> = Result<T, ManifestError>;
 
 impl<'a> Scanner<'a> {
-    fn error(&self, message: impl std::fmt::Display) -> String {
-        format!("XML syntax error on line {}: {message}", self.line)
+    fn error(&self, message: impl std::fmt::Display) -> ManifestError {
+        ManifestError::Syntax {
+            line: self.line,
+            message: message.to_string(),
+        }
     }
 
-    fn eof(&self) -> String {
-        self.error("unexpected EOF")
+    fn eof(&self) -> ManifestError {
+        self.error("unexpected end of input")
     }
 
     fn peek(&self) -> Option<u8> {
@@ -131,17 +145,11 @@ impl<'a> Scanner<'a> {
         let content = String::from_utf8_lossy(content);
         let version = proc_inst("version", &content);
         if !version.is_empty() && version != "1.0" {
-            return Err(format!(
-                "xml: unsupported version {}; only version 1.0 is supported",
-                swlsp_uriutil::go_quote(&version)
-            ));
+            return Err(ManifestError::UnsupportedVersion(version));
         }
         let encoding = proc_inst("encoding", &content);
         if !encoding.is_empty() && !encoding.eq_ignore_ascii_case("utf-8") {
-            return Err(format!(
-                "xml: encoding {} declared but Decoder.CharsetReader is nil",
-                swlsp_uriutil::go_quote(&encoding)
-            ));
+            return Err(ManifestError::UnsupportedEncoding(encoding));
         }
         Ok(())
     }
@@ -236,8 +244,8 @@ impl<'a> Scanner<'a> {
     }
 }
 
-/// Go `Decoder.nsname`: at most one colon; a prefix or local part that would
-/// be empty keeps the whole name as local.
+/// The local part of a possibly prefixed name: at most one colon is allowed;
+/// a prefix or local part that would be empty keeps the whole name as local.
 fn local_name(name: &str) -> Option<String> {
     if name.matches(':').count() > 1 {
         return None;
@@ -248,7 +256,7 @@ fn local_name(name: &str) -> Option<String> {
     }
 }
 
-/// Go `procInst`: the quoted value of `param=` in an XML declaration.
+/// The quoted value of `param=` in an XML declaration.
 fn proc_inst(param: &str, content: &str) -> String {
     let mut rest = content;
     loop {
@@ -318,7 +326,7 @@ fn unescape(value: &str) -> String {
 /// Reports whether `content` is a Shopware app manifest: its root element
 /// is `manifest` (case-insensitive) with an attribute value mentioning both
 /// "shopware" and "manifest", typically the schema location.
-pub(crate) fn is_shopware_manifest(content: &[u8]) -> Result<bool, String> {
+pub(crate) fn is_shopware_manifest(content: &[u8]) -> Result<bool, ManifestError> {
     let mut scanner = Scanner {
         source: content,
         offset: 0,
@@ -416,12 +424,16 @@ mod tests {
             assert!(is_shopware_manifest(source.as_bytes()).is_err(), "{source}");
         }
         assert_eq!(
-            is_shopware_manifest(b"\n<manifest a=x>").unwrap_err(),
+            is_shopware_manifest(b"\n<manifest a=x>")
+                .unwrap_err()
+                .to_string(),
             "XML syntax error on line 2: unquoted or missing attribute value in element"
         );
         assert_eq!(
-            is_shopware_manifest(b"<?xml version='1.0' encoding='ISO-8859-1'?>").unwrap_err(),
-            r#"xml: encoding "ISO-8859-1" declared but Decoder.CharsetReader is nil"#
+            is_shopware_manifest(b"<?xml version='1.0' encoding='ISO-8859-1'?>")
+                .unwrap_err()
+                .to_string(),
+            r#"unsupported XML encoding "ISO-8859-1"; only UTF-8 is supported"#
         );
     }
 }

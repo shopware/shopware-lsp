@@ -1,18 +1,9 @@
-//! Small range and name helpers (port of Go `helpers.go`).
+//! Small range and name helpers.
 
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
 
-pub(crate) fn go_trim_space(value: &str) -> &str {
-    value.trim_matches(|character: char| {
-        matches!(
-            character,
-            '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r' | ' ' | '\u{85}' | '\u{A0}'
-        ) || character.is_whitespace()
-    })
-}
-
 pub(crate) fn normalize_class(value: &str) -> String {
-    go_trim_space(value).trim_matches('\\').to_owned()
+    value.trim().trim_matches('\\').to_owned()
 }
 
 pub(crate) fn has_range(range: TextRange) -> bool {
@@ -30,11 +21,11 @@ pub(crate) fn xml_value_range(node: Option<&SyntaxNode>) -> TextRange {
     };
     let full = node.range_trimmed_trivia();
     let raw = node.text().to_string();
-    let text = go_trim_space(&raw);
+    let text = raw.trim();
     let Some(equals) = text.find('=') else {
         return full;
     };
-    let value = go_trim_space(&text[equals + 1..]);
+    let value = text[equals + 1..].trim();
     let Some(value_offset) = text.find(value) else {
         return full;
     };
@@ -57,7 +48,7 @@ pub(crate) fn yaml_scalar_range(node: Option<&SyntaxNode>) -> TextRange {
     };
     let full = node.range_trimmed_trivia();
     let raw = node.text().to_string();
-    let text = go_trim_space(&raw).as_bytes();
+    let text = raw.trim().as_bytes();
     let mut start = u32::from(full.start());
     let mut end = u32::from(full.end());
     if !text.is_empty() && (text[0] == b'\'' || text[0] == b'"') {

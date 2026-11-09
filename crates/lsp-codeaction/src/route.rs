@@ -1,5 +1,5 @@
-//! Go `route_attribute_codeaction.go` and
-//! `route_action_parameter_codeaction.go`.
+//! Symfony route actions: add a `#[Route]` attribute to a controller action
+//! and inject framework parameters into a route action.
 
 use crate::shared::document_snapshot;
 use swlsp_language::LanguageId;
@@ -7,8 +7,8 @@ use swlsp_lsp::{ActionProvider, CodeActionRequest, Context};
 use swlsp_lsp_protocol::{self as protocol, CodeActionKind};
 use swlsp_parser_php::query as phpquery;
 use swlsp_php::{NameResolver, PhpIndex};
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::shared::{
     PhpSuggestedParameter, has_resolved_php_attribute, offset_range, php_class_qualifier,
@@ -86,7 +86,7 @@ impl RouteAttributeCodeActionProvider {
             return true;
         }
         if phpquery::class_extends(class).iter().any(|parent| {
-            equal_fold(
+            eq_ignore_case(
                 trim_backslashes(&resolver.resolve(parent)),
                 ABSTRACT_CONTROLLER_CLASS,
             )
@@ -207,15 +207,14 @@ fn is_public_instance_php_method(method: Option<&SyntaxNode>) -> bool {
     true
 }
 
-/// Go `generatedRouteName`.
 pub(crate) fn generated_route_name(class_fqn: &str, method_name: &str) -> String {
     let method_name = method_name.strip_suffix("Action").unwrap_or(method_name);
     let mut result: Vec<String> = Vec::new();
     for part in trim_backslashes(class_fqn).split('\\') {
-        if part.is_empty() || equal_fold(part, "controller") {
+        if part.is_empty() || eq_ignore_case(part, "controller") {
             continue;
         }
-        let mut part = go_to_lower(part);
+        let mut part = lowercase(part);
         if part.ends_with("bundle") && part != "bundle" {
             part.truncate(part.len() - "bundle".len());
         } else if part.ends_with("controller") && part != "controller" {
@@ -225,7 +224,7 @@ pub(crate) fn generated_route_name(class_fqn: &str, method_name: &str) -> String
             result.push(part);
         }
     }
-    let name = go_to_lower(method_name);
+    let name = lowercase(method_name);
     if result.is_empty() {
         return name;
     }
@@ -235,7 +234,6 @@ pub(crate) fn generated_route_name(class_fqn: &str, method_name: &str) -> String
     result.join("_")
 }
 
-/// Go `generatedRoutePath`.
 pub(crate) fn generated_route_path(class_fqn: &str, method_name: &str) -> String {
     let method_name = method_name.strip_suffix("Action").unwrap_or(method_name);
     let mut found_controller = false;
@@ -244,14 +242,14 @@ pub(crate) fn generated_route_path(class_fqn: &str, method_name: &str) -> String
         if part.is_empty() {
             continue;
         }
-        if equal_fold(part, "controller") {
+        if eq_ignore_case(part, "controller") {
             found_controller = true;
             continue;
         }
         if !found_controller {
             continue;
         }
-        let mut part = go_to_lower(part);
+        let mut part = lowercase(part);
         if part.ends_with("controller") {
             part.truncate(part.len() - "controller".len());
         }
@@ -259,8 +257,8 @@ pub(crate) fn generated_route_path(class_fqn: &str, method_name: &str) -> String
             result.push(part);
         }
     }
-    if !equal_fold(method_name, "index") && !method_name.is_empty() {
-        result.push(go_to_lower(method_name));
+    if !eq_ignore_case(method_name, "index") && !method_name.is_empty() {
+        result.push(lowercase(method_name));
     }
     if result.is_empty() {
         return String::new();
@@ -318,7 +316,7 @@ impl ActionProvider for RouteActionParameterCodeActionProvider {
         let existing = php_existing_parameter_types(&method, &resolver);
         let mut result = Vec::new();
         for parameter in ROUTE_ACTION_PARAMETERS {
-            if existing.contains(&go_to_lower(parameter.class_name)) {
+            if existing.contains(&lowercase(parameter.class_name)) {
                 continue;
             }
             let (qualifier, import_edit) = php_class_qualifier(request, parameter.class_name);
@@ -349,11 +347,10 @@ impl ActionProvider for RouteActionParameterCodeActionProvider {
 
 fn is_php_route_action(method: &SyntaxNode, class: &SyntaxNode, resolver: &NameResolver) -> bool {
     has_php_route_marker(Some(method), resolver)
-        || equal_fold(&phpquery::method_name(method), "__invoke")
+        || eq_ignore_case(&phpquery::method_name(method), "__invoke")
             && has_php_route_marker(Some(class), resolver)
 }
 
-/// Go `hasPHPRouteMarker`.
 pub(crate) fn has_php_route_marker(node: Option<&SyntaxNode>, resolver: &NameResolver) -> bool {
     let Some(node) = node else {
         return false;
@@ -415,7 +412,7 @@ fn php_doc_has_resolved_annotation(
         let name = trim_backslashes(&resolved);
         if targets
             .iter()
-            .any(|target| equal_fold(name, trim_backslashes(target)))
+            .any(|target| eq_ignore_case(name, trim_backslashes(target)))
         {
             return true;
         }

@@ -254,9 +254,8 @@ struct LanguageServerPlan {
     env: Vec<(String, String)>,
 }
 
-/// `shopwareLSP.memoryLimitMiB` used to become `GOMEMLIMIT` for the Go
-/// server. The shipped server is Rust and has no garbage collector, so the
-/// setting is ignored and only the shell environment is passed through.
+/// The binary to start, its arguments, and the shell environment passed
+/// through unchanged.
 fn plan_language_server(
     facts: LanguageServerFacts,
     cached_binary: Option<String>,
@@ -874,7 +873,6 @@ mod tests {
             "mcp": {"enabled": false, "tools": {"shopware_hover": false}},
             // Editor-only: the server has no setting for any of these.
             "activationMode": "auto",
-            "memoryLimitMiB": 512,
             "phpExecutable": "php",
             "serverPath": "/somewhere/shopware-lsp",
         });
@@ -898,7 +896,6 @@ mod tests {
         assert!(config["mcp"].get("enabled").is_none());
         for key in [
             "activationMode",
-            "memoryLimitMiB",
             "phpExecutable",
             "serverPath",
             "shopwareLSP",
@@ -973,8 +970,7 @@ mod tests {
 
         assert_eq!(plan.binary.as_deref(), Some("/usr/local/bin/shopware-lsp"));
         assert_eq!(plan.args, vec!["--rpc-trace".to_string()]);
-        // The shell environment is preserved; the deprecated Go memory limit
-        // is not turned into GOMEMLIMIT for the Rust server.
+        // The shell environment is passed through unchanged.
         assert_eq!(plan.env, vec![("PATH".to_string(), "/usr/bin".to_string())]);
     }
 

@@ -1,4 +1,4 @@
-//! Go `service_tag_codeaction_test.go`.
+//! "Add Tags" service-tag action tests.
 
 use swlsp_indexer::{Indexer, ParsedFile};
 use swlsp_lsp::{ActionProvider, CodeActionRequest, Context, TextDocument};

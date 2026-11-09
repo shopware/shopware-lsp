@@ -1,4 +1,4 @@
-//! Go `twig_codeaction.go`: block override, version-comment and block-diff
+//! Block override, version-comment and block-diff
 //! actions in Storefront Twig templates.
 
 use std::sync::Arc;
@@ -299,16 +299,17 @@ fn parse_twig_document(context: &TwigRequest<'_>) -> Option<TwigFile> {
     }
 }
 
-/// Go `hasDiagnosticCode` (codes compared through `fmt.Sprint`).
+/// Whether a diagnostic in the request's context has one of `codes`.
 fn has_diagnostic_code(request: &CodeActionRequest, codes: &[&str]) -> bool {
-    request.params.context.diagnostics.iter().any(|diagnostic| {
-        let current = match &diagnostic.code {
-            None | Some(Value::Null) => "<nil>".to_owned(),
-            Some(Value::String(value)) => value.clone(),
-            Some(other) => other.to_string(),
-        };
-        codes.contains(&current.as_str())
-    })
+    request
+        .params
+        .context
+        .diagnostics
+        .iter()
+        .any(|diagnostic| match &diagnostic.code {
+            Some(Value::String(code)) => codes.contains(&code.as_str()),
+            _ => false,
+        })
 }
 
 #[cfg(test)]

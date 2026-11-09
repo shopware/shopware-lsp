@@ -1,13 +1,13 @@
-//! Small Go-compatible string helpers shared by the importer and renderer.
+//! Small string helpers shared by the importer and renderer.
 
-pub use swlsp_php_types::{equal_fold, go_quote, go_to_lower};
+pub(crate) use swlsp_textutil::{eq_ignore_case, lowercase, uppercase_first};
 
-/// Go `strings.Trim(value, "\\ ")`.
+/// `value` without leading and trailing backslashes and spaces.
 pub(crate) fn trim_class(value: &str) -> &str {
     value.trim_matches(|c| c == '\\' || c == ' ')
 }
 
-/// Go `strings.Trim(value, "\\")`.
+/// `value` without leading and trailing backslashes.
 pub(crate) fn trim_backslash(value: &str) -> &str {
     value.trim_matches('\\')
 }
@@ -51,42 +51,9 @@ pub(crate) fn camelize_storage_name(value: &str) -> String {
             result.push_str(part);
             continue;
         }
-        // Go upper-cases the first byte with strings.ToUpper.
-        let first_len = part.chars().next().map_or(0, char::len_utf8);
-        let (first, rest) = part.split_at(first_len);
-        result.push_str(&go_to_upper(first));
-        result.push_str(rest);
+        result.push_str(&uppercase_first(part));
     }
     result
-}
-
-fn go_upper_char(character: char) -> char {
-    if character.is_ascii() {
-        return character.to_ascii_uppercase();
-    }
-    let mut upper = character.to_uppercase();
-    match (upper.next(), upper.next()) {
-        (Some(value), None) => value,
-        _ => character,
-    }
-}
-
-pub(crate) fn go_to_upper(value: &str) -> String {
-    value.chars().map(go_upper_char).collect()
-}
-
-/// Upper-cases the first rune (Go `unicode.ToUpper`).
-pub(crate) fn exported(value: &str) -> String {
-    let mut chars = value.chars();
-    match chars.next() {
-        Some(first) => {
-            let mut result = String::with_capacity(value.len());
-            result.push(go_upper_char(first));
-            result.push_str(chars.as_str());
-            result
-        }
-        None => String::new(),
-    }
 }
 
 pub(crate) fn infer_entity_name(definition_class: &str) -> String {
@@ -96,7 +63,7 @@ pub(crate) fn infer_entity_name(definition_class: &str) -> String {
         if character.is_uppercase() && index > 0 {
             result.push('_');
         }
-        result.push_str(&go_to_lower(character.encode_utf8(&mut [0; 4])));
+        result.push(swlsp_textutil::lowercase_char(character));
     }
     result
 }
@@ -133,7 +100,10 @@ pub(crate) fn with_modifiers(
     result
 }
 
-/// Go `strconv.FormatFloat(value, 'g', -1, 64)`.
+/// The shortest representation of `value` that parses back to it, in `%g`
+/// style: scientific notation (`1e+06`, `1e-05`, two-digit minimum exponent)
+/// when the decimal exponent is below -4 or at least 6, plain decimal
+/// otherwise; `NaN`, `+Inf` and `-Inf` for special values.
 pub(crate) fn format_float_g(value: f64) -> String {
     if value.is_nan() {
         return "NaN".to_owned();
@@ -147,7 +117,6 @@ pub(crate) fn format_float_g(value: f64) -> String {
     let scientific = format!("{value:e}");
     let (mantissa, exponent) = scientific.split_once('e').unwrap_or((&scientific, "0"));
     let exponent: i32 = exponent.parse().unwrap_or(0);
-    // Shortest formatting decides with precision 6 (Go ftoa.go).
     if !(-4..6).contains(&exponent) {
         let sign = if exponent < 0 { '-' } else { '+' };
         let magnitude = exponent.unsigned_abs();
@@ -161,7 +130,8 @@ pub(crate) fn format_float_g(value: f64) -> String {
     }
 }
 
-/// Go `strings.Fields(source)` joined with single spaces.
+/// `source` with every whitespace run collapsed to one space and no
+/// leading or trailing whitespace.
 pub(crate) fn compact_fields(source: &str) -> String {
     source.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -171,7 +141,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn formats_floats_like_go() {
+    fn formats_floats_shortest_in_g_style() {
         assert_eq!(format_float_g(500.0), "500");
         assert_eq!(format_float_g(0.25), "0.25");
         assert_eq!(format_float_g(80.0), "80");

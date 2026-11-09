@@ -123,8 +123,8 @@ fn range_parts(range: TextRange) -> (u32, u32) {
 
 fn text_range(start: u32, end: u32) -> TextRange {
     if end < start {
-        // TextRange cannot represent inverted ranges; Go never produces them
-        // for declarations.
+        // TextRange cannot represent inverted ranges; the binder never
+        // produces them for declarations.
         return TextRange::new(start.into(), start.into());
     }
     TextRange::new(start.into(), end.into())
@@ -924,7 +924,7 @@ impl PackedParameter {
             extras.ty = source.ty.clone();
             ParameterTypeSource::Explicit
         };
-        // Go semantics: an empty ID is replaced by the derived one; only IDs
+        // An empty ID is replaced by the derived one; only IDs
         // that differ from the derivation are stored.
         if !source.id.is_empty()
             && (owner.is_empty()

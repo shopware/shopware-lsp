@@ -1,10 +1,10 @@
-//! Port of the assertion helpers of Go `real_world_helpers_fixture_test.go`
-//! (workspace opening lives in `fixture.rs`).
+//! Assertion helpers of the real-world suite (workspace opening lives in
+//! `fixture.rs`).
 
 #[allow(unused_imports)]
 use super::indexing_main::record_failure as soft;
 
-/// Records a soft failure (Go `t.Errorf` in the soft oracle run) and
+/// Records a soft failure and
 /// continues with the zero value.
 #[allow(dead_code)]
 fn soft_default<T: Default>(message: String) -> T {

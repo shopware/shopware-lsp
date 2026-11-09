@@ -51,7 +51,7 @@ be.
 $SHOPWARE_LSP_CACHE_DIR (or the user cache dir)/shopware-lsp/<sha256 of root>/
 ├── indexes.db                  the single namespaced store (SQLite, WAL)
 ├── file_scanner.db             file_hashes: path → size, mtime, content hash
-├── index_version               "<INDEX_VERSION>-rs"; compared against swlsp_indexer::INDEX_VERSION
+├── index_version               "<INDEX_VERSION>"; compared against swlsp_indexer::INDEX_VERSION
 ├── configuration_fingerprint   structural configuration hash
 └── phar/                       extracted PHAR sources
 ```
@@ -643,12 +643,11 @@ first.
 
 ```rust
 // crates/indexer/src/version.rs
-pub const INDEX_VERSION: u32 = 180;
+pub const INDEX_VERSION: u32 = 182;
 ```
 
-The version file stores `<INDEX_VERSION>-rs` (`index_version_marker()`); the
-suffix marks the Rust value encoding, so a cache written by the earlier Go
-implementation is rebuilt rather than misread.
+The version file stores `INDEX_VERSION` (`index_version_marker()`); any other
+content, including a missing or unreadable file, makes the cache be rebuilt.
 
 Two independent invalidation checks run at workspace construction:
 

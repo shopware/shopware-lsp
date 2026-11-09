@@ -1,5 +1,3 @@
-//! Port of `internal/parser/twig/lexer/lexer_test.go`.
-
 use super::*;
 
 /// Lexes `input` and asserts kind, text and range of every token.

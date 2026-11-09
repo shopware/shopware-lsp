@@ -1,10 +1,10 @@
-//! Completion providers (port of Go `internal/lsp/completion`): PHP, Twig,
+//! Completion providers: PHP, Twig,
 //! Administration JS/Vue, YAML/XML configuration, SCSS, snippets, routes,
 //! services and the other framework domains.
 //!
 //! Every provider implements [`swlsp_lsp::CompletionProvider`], rejects
-//! unsupported contexts itself and returns deterministic items whose JSON
-//! matches Go (labels, kinds, sort/filter text, text edits, data, commands).
+//! unsupported contexts itself and returns deterministic items (stable
+//! labels, kinds, sort/filter text, text edits, data and commands).
 //! Ranges are computed as byte offsets and converted to UTF-16 only through
 //! [`common::protocol_range`].
 

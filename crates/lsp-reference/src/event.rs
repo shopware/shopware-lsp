@@ -1,4 +1,4 @@
-//! Symfony event references (port of `event_reference.go`).
+//! Symfony event references.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -8,13 +8,12 @@ use swlsp_lsp::{Context, ProviderResult, ReferenceRequest, ReferencesProvider};
 use swlsp_lsp_protocol as protocol;
 use swlsp_parser_php::query as phpquery;
 use swlsp_php::{NameResolver, PhpIndex};
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::SyntaxNodeExt;
+use swlsp_textutil::eq_ignore_case;
 
 use crate::{FileLines, lower_ext, php_context};
 
-/// `php` supplies the request's semantic PHP context, which Go receives
-/// through the server's context enricher.
+/// `php` supplies the request's semantic PHP context.
 pub struct EventReferenceProvider {
     index: Option<Arc<Index>>,
     php: Option<PhpIndex>,
@@ -102,8 +101,8 @@ fn listener_event_locations(
         .flat_map(|event| &event.occurrences)
         .filter(|occurrence| {
             occurrence.kind == OccurrenceKind::Dispatch
-                || (equal_fold(&occurrence.class, class_name)
-                    && equal_fold(&occurrence.method, method_name))
+                || (eq_ignore_case(&occurrence.class, class_name)
+                    && eq_ignore_case(&occurrence.method, method_name))
         });
     occurrence_locations(occurrences, true)
 }

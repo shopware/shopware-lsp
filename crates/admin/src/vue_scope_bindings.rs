@@ -1,5 +1,5 @@
 //! Lexical Vue template bindings: `v-for` aliases and implicit `$event`
-//! locals (port of Go `vue_scope_bindings.go`).
+//! locals.
 
 use swlsp_parser_twig::ast::AstNode;
 

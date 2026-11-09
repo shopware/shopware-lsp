@@ -117,7 +117,7 @@ impl McpRuntime {
         self.configuration.mcp_tool_enabled(name)
     }
 
-    /// Runs `operation` on the shared, indexed session (Go `withMCPSession`),
+    /// Runs `operation` on the shared, indexed session,
     /// with its requests cancelled by `cancel` (the tool call's token). A
     /// cancelled wait for the first index keeps the session, so the next
     /// call resumes waiting.
@@ -207,71 +207,82 @@ fn mcp_configuration(root: &str, editor: Option<&Partial>) -> Result<Effective, 
     Ok(swlsp_projectconfig::resolve(&project, &editor))
 }
 
-/// Decodes `SHOPWARE_LSP_EDITOR_CONFIGURATION` with unknown fields rejected
-/// (Go `mcpEditorConfiguration`).
+/// Why `SHOPWARE_LSP_EDITOR_CONFIGURATION` could not be decoded.
+#[derive(Debug, thiserror::Error)]
+enum EditorConfigurationError {
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    #[error("no JSON value")]
+    Empty,
+    #[error("multiple JSON values")]
+    MultipleValues,
+    #[error("expected a configuration object, found {0}")]
+    NotAnObject(&'static str),
+    #[error("unknown field {0:?}")]
+    UnknownField(String),
+}
+
+/// Decodes `SHOPWARE_LSP_EDITOR_CONFIGURATION` (one JSON object or `null`)
+/// with unknown fields rejected, then validates it.
 fn mcp_editor_configuration() -> Result<Option<Partial>, CliError> {
     let source = std::env::var(EDITOR_CONFIGURATION_ENV).unwrap_or_default();
     let source = source.trim();
     if source.is_empty() {
         return Ok(None);
     }
-    let decode_error =
-        |message: String| CliError::fail(format!("decode MCP editor configuration: {message}"));
-    let mut stream = serde_json::Deserializer::from_str(source).into_iter::<Value>();
-    let value = match stream.next() {
-        Some(Ok(value)) => value,
-        Some(Err(error)) => return Err(decode_error(error.to_string())),
-        None => return Err(decode_error("EOF".into())),
-    };
-    match stream.next() {
-        None => {}
-        Some(Ok(_)) => return Err(decode_error("multiple JSON values".into())),
-        Some(Err(error)) => return Err(decode_error(error.to_string())),
-    }
-    let kind = match &value {
-        Value::Object(_) | Value::Null => None,
-        Value::Array(_) => Some("array"),
-        Value::String(_) => Some("string"),
-        Value::Number(_) => Some("number"),
-        Value::Bool(_) => Some("bool"),
-    };
-    if let Some(kind) = kind {
-        return Err(decode_error(format!(
-            "json: cannot unmarshal {kind} into Go value of type projectconfig.Partial"
-        )));
-    }
-    reject_unknown_configuration_fields(&value).map_err(decode_error)?;
-    let partial: Partial = if value.is_null() {
-        Partial::default()
-    } else {
-        serde_json::from_value(value).map_err(|error| decode_error(error.to_string()))?
-    };
+    let partial = decode_editor_configuration(source)
+        .map_err(|error| CliError::fail(format!("decode MCP editor configuration: {error}")))?;
     swlsp_projectconfig::validate(&partial)
         .map_err(|error| CliError::fail(format!("validate MCP editor configuration: {error}")))?;
     Ok(Some(partial))
 }
 
-/// Go's `DisallowUnknownFields` for the configuration structs (maps such as
-/// `features` accept any key; `Validate` rejects unknown IDs).
-fn reject_unknown_configuration_fields(value: &Value) -> Result<(), String> {
+fn decode_editor_configuration(source: &str) -> Result<Partial, EditorConfigurationError> {
+    let mut stream = serde_json::Deserializer::from_str(source).into_iter::<Value>();
+    let value = stream.next().ok_or(EditorConfigurationError::Empty)??;
+    match stream.next() {
+        None => {}
+        Some(Ok(_)) => return Err(EditorConfigurationError::MultipleValues),
+        Some(Err(error)) => return Err(error.into()),
+    }
+    let kind = match &value {
+        Value::Object(_) => None,
+        Value::Null => return Ok(Partial::default()),
+        Value::Array(_) => Some("array"),
+        Value::String(_) => Some("string"),
+        Value::Number(_) => Some("number"),
+        Value::Bool(_) => Some("boolean"),
+    };
+    if let Some(kind) = kind {
+        return Err(EditorConfigurationError::NotAnObject(kind));
+    }
+    reject_unknown_configuration_fields(&value)?;
+    Ok(serde_json::from_value(value)?)
+}
+
+/// Rejects unknown members of the configuration objects, so a misspelled
+/// setting fails instead of being ignored. Maps such as `features` accept
+/// any key here; `swlsp_projectconfig::validate` rejects unknown IDs.
+fn reject_unknown_configuration_fields(value: &Value) -> Result<(), EditorConfigurationError> {
+    type Nested<'a> = &'a dyn Fn(&str, &Value) -> Result<(), EditorConfigurationError>;
     fn check(
         value: &Value,
         allowed: &[&str],
-        nested: &dyn Fn(&str, &Value) -> Result<(), String>,
-    ) -> Result<(), String> {
+        nested: Nested<'_>,
+    ) -> Result<(), EditorConfigurationError> {
         let Value::Object(map) = value else {
             return Ok(());
         };
         for (key, item) in map {
             if !allowed.contains(&key.as_str()) {
-                return Err(format!("json: unknown field {:?}", key));
+                return Err(EditorConfigurationError::UnknownField(key.clone()));
             }
             nested(key, item)?;
         }
         Ok(())
     }
     let none = |_: &str, _: &Value| Ok(());
-    let overrides = |key: &str, item: &Value| -> Result<(), String> {
+    let overrides = |key: &str, item: &Value| -> Result<(), EditorConfigurationError> {
         if key == "overrides"
             && let Value::Array(items) = item
         {
@@ -438,9 +449,10 @@ fn tool_error(message: impl Into<String>) -> CallToolResponse {
     CallToolResult::error(vec![ContentBlock::text(message.into())]).into()
 }
 
-/// Prepares validated arguments for typed decoding the way Go's decoder
-/// sees them: integral floats become integers, and `null` members (which Go
-/// leaves at their zero value) are dropped.
+/// Prepares validated arguments for typed decoding. The schema accepts an
+/// integral float such as `1.0` as an integer, so those become integers that
+/// serde decodes into integer fields; `null` members are dropped so optional
+/// fields fall back to their `#[serde(default)]` values instead of failing.
 fn normalize_arguments(value: Value) -> Value {
     match value {
         Value::Number(number) if !number.is_i64() && !number.is_u64() => {
@@ -462,9 +474,9 @@ fn normalize_arguments(value: Value) -> Value {
     }
 }
 
-/// Tool output: serialized through `serde_json::Value`, so object keys come
-/// out sorted like Go's re-marshaled structured content.
+/// Tool output: serialized through `serde_json::Value`, whose maps are
+/// ordered, so object keys come out sorted and the output is deterministic.
 pub(crate) fn output<T: Serialize>(value: &T) -> Result<Value, CliError> {
     serde_json::to_value(value)
-        .map_err(|error| CliError::fail(format!("marshaling output: {error}")))
+        .map_err(|error| CliError::fail(format!("encode tool output: {error}")))
 }

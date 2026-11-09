@@ -1,5 +1,4 @@
-//! Serializer `deserialize()` target references (port of
-//! `serializer_reference.go`).
+//! Serializer `deserialize()` target references.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -7,8 +6,8 @@ use std::sync::Arc;
 use swlsp_lsp::{Context, ProviderResult, ReferenceRequest, ReferencesProvider};
 use swlsp_lsp_protocol as protocol;
 use swlsp_php::{PhpIndex, symbol_at};
-use swlsp_php_types::equal_fold;
 use swlsp_serializer::{Index, usage_at, usages_in_document};
+use swlsp_textutil::eq_ignore_case;
 
 use crate::{FileLines, document_location, php_context, request_offset, symbol_range};
 
@@ -64,7 +63,7 @@ impl ReferencesProvider for SerializerReferenceProvider {
             filtered.extend(
                 usages_in_document(&current_path, root)
                     .into_iter()
-                    .filter(|usage| equal_fold(&usage.class, &class_name)),
+                    .filter(|usage| eq_ignore_case(&usage.class, &class_name)),
             );
         }
 

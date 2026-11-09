@@ -1,5 +1,4 @@
-//! Document-local Vue template scope types (port of Go
-//! `vue_scope_types.go`).
+//! Document-local Vue template scope types.
 
 use crate::*;
 
@@ -83,7 +82,7 @@ pub struct TwigVueCall {
     pub filter: bool,
 }
 
-/// One complete statically named call (Go embeds `TwigVueCall`).
+/// One complete statically named call and its source range.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TwigVueCallSite {
     pub call: TwigVueCall,

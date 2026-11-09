@@ -1,5 +1,5 @@
 //! Constructor arguments, configured method calls, argument types and named
-//! arguments of configured services (Go `service_argument_diagnostics.go`).
+//! arguments of configured services.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -12,11 +12,13 @@ use swlsp_parser_yaml::query as yamlquery;
 use swlsp_php::PhpIndex;
 use swlsp_php_resolver::MemberResolver;
 use swlsp_php_semantic::{Flags, Parameter, Symbol, SymbolKind, Visibility};
-use swlsp_php_types::{Kind as TypeKind, Type, equal_fold, go_to_lower};
+use swlsp_php_types::{Kind as TypeKind, Type};
 use swlsp_symfony::{Service, ServiceArgumentReference, ServiceIndex, ServiceMethodReference};
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
-use super::{lower_ext, problem, similar_value, string_list};
+use super::{lower_ext, problem, similar_value};
+use crate::LookupError;
 use crate::ProblemAnalyzer;
 use crate::common::value_node_text_range;
 
@@ -37,7 +39,6 @@ const UNSUPPORTED_SERVICE_CONFIGURATION_KEYS: &[&str] = &[
     "alias",
 ];
 
-/// Go `ServiceArgumentAnalyzer`.
 pub struct ServiceArgumentAnalyzer {
     service_index: Option<Arc<ServiceIndex>>,
     php_index: Option<PhpIndex>,
@@ -113,7 +114,10 @@ impl ProblemAnalyzer for ServiceArgumentAnalyzer {
                     && let Some(services) = self.services()
                 {
                     let found = services.get_services_by_type(&type_name).map_err(|error| {
-                        format!("find services for constructor type {type_name:?}: {error}")
+                        LookupError::new(
+                            format!("find services for constructor type {type_name:?}"),
+                            error,
+                        )
                     })?;
                     service_suggestions
                         .insert(type_name.clone(), found.into_iter().map(|s| s.id).collect());
@@ -131,7 +135,7 @@ impl ProblemAnalyzer for ServiceArgumentAnalyzer {
                     "name": parameter.name.as_str(),
                     "type": parameter.ty.to_string(),
                     "suggestedService": suggested_service,
-                    "candidates": string_list(candidates),
+                    "candidates": candidates,
                 }));
                 names.push(parameter.name.as_str().to_owned());
             }
@@ -357,9 +361,12 @@ impl ServiceArgumentAnalyzer {
                 &argument,
             )
             .map_err(|error| {
-                format!(
-                    "resolve service class for named argument {:?}: {error}",
-                    argument.name
+                LookupError::new(
+                    format!(
+                        "resolve service class for named argument {:?}",
+                        argument.name
+                    ),
+                    error,
                 )
             })?;
             let Some(class_name) = class_name else {
@@ -414,7 +421,7 @@ fn public_php_method_names(index: &PhpIndex, class_name: &str) -> Vec<String> {
         if symbol.kind != SymbolKind::Method || symbol.visibility != Visibility::Public {
             continue;
         }
-        if !seen.insert(go_to_lower(&symbol.name)) {
+        if !seen.insert(lowercase(&symbol.name)) {
             continue;
         }
         result.push(symbol.name.as_str().to_owned());
@@ -568,7 +575,7 @@ fn xml_service_argument_definitions(root: &SyntaxNode) -> Vec<Definition> {
         let default_autowire = xmlquery::child_element(&services, &["defaults"])
             .and_then(|defaults| xmlquery::attribute(&defaults, "autowire"))
             .and_then(|attribute| xmlquery::attribute_value(&attribute))
-            .is_some_and(|value| equal_fold(&value, "true"));
+            .is_some_and(|value| eq_ignore_case(&value, "true"));
         for service in xmlquery::child_elements(&services, &["service"]) {
             let attributes = xmlquery::attribute_values(&service);
             if unsupported_xml_service_configuration(&attributes)
@@ -577,7 +584,7 @@ fn xml_service_argument_definitions(root: &SyntaxNode) -> Vec<Definition> {
                 continue;
             }
             let attribute = |name: &str| attributes.get(name).cloned().unwrap_or_default();
-            let autowire = match go_to_lower(&attribute("autowire")).as_str() {
+            let autowire = match lowercase(&attribute("autowire")).as_str() {
                 "true" => true,
                 "false" => false,
                 _ => default_autowire,
@@ -660,7 +667,7 @@ fn yaml_service_argument_definitions(root: &SyntaxNode) -> Vec<Definition> {
             continue;
         }
         let autowire = match yamlquery::property(&config, "autowire") {
-            Some(property) => equal_fold(&yamlquery::scalar_value(&property), "true"),
+            Some(property) => eq_ignore_case(&yamlquery::scalar_value(&property), "true"),
             None => default_autowire,
         };
         if autowire {
@@ -715,7 +722,7 @@ fn yaml_boolean_property(mapping: Option<&SyntaxNode>, name: &str) -> bool {
     let value = yamlquery::property(mapping, name)
         .map(|property| yamlquery::scalar_value(&property))
         .unwrap_or_default();
-    equal_fold(&value, "true")
+    eq_ignore_case(&value, "true")
 }
 
 fn unsupported_yaml_service_configuration(mapping: &SyntaxNode) -> bool {

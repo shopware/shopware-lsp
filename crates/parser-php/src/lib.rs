@@ -1,4 +1,4 @@
-//! Lossless, error-tolerant PHP parser (port of Go `internal/parser/php`).
+//! Lossless, error-tolerant PHP parser.
 
 pub mod lexer;
 mod parser;
@@ -24,10 +24,10 @@ pub fn root(source: &str) -> SyntaxNode {
     parse(source).root()
 }
 
-/// Go-compatible case-insensitive comparison of `text` with an ASCII word
-/// (`strings.EqualFold`), including the non-ASCII folds `ſ`→`s` and the
-/// Kelvin sign → `k`.
-pub(crate) fn equal_fold_ascii(text: &str, word: &str) -> bool {
+/// Case-insensitive comparison of `text` with an ASCII keyword. Besides ASCII
+/// case, the only folds are the long s (`ſ`) to `s` and the Kelvin sign to
+/// `k`, the two non-ASCII characters whose simple case folding is ASCII.
+pub(crate) fn eq_ignore_case_keyword(text: &str, word: &str) -> bool {
     if text.len() == word.len() {
         return text.eq_ignore_ascii_case(word);
     }
@@ -50,17 +50,18 @@ pub(crate) fn equal_fold_ascii(text: &str, word: &str) -> bool {
     word_chars.next().is_none()
 }
 
-/// Approximates Go `strings.EqualFold` for arbitrary strings using simple
-/// case folding per character.
-pub(crate) fn equal_fold(left: &str, right: &str) -> bool {
+/// Case-insensitive comparison of two names, character by character through
+/// simple case folding (a character folds to the lowercase of its uppercase
+/// form when both are single characters).
+pub(crate) fn eq_ignore_case(left: &str, right: &str) -> bool {
     if left.is_ascii() && right.is_ascii() {
         return left.eq_ignore_ascii_case(right);
     }
     if right.is_ascii() {
-        return equal_fold_ascii(left, right);
+        return eq_ignore_case_keyword(left, right);
     }
     if left.is_ascii() {
-        return equal_fold_ascii(right, left);
+        return eq_ignore_case_keyword(right, left);
     }
     fn fold(character: char) -> char {
         match character {

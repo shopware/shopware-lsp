@@ -1,5 +1,4 @@
-//! Class-level EntityDefinition behavior (port of Go
-//! `definition_behavior.go`).
+//! Class-level EntityDefinition behavior.
 
 use std::collections::HashSet;
 
@@ -303,8 +302,8 @@ pub(crate) fn validate_definition_behavior(
             v.add(
                 "entity.definitionBehavior.restrictDelete.property.invalid",
                 format!(
-                    "Restrict-delete metadata property {} is invalid",
-                    go_quote(property)
+                    "Restrict-delete metadata property {:?} is invalid",
+                    property
                 ),
                 field_id,
             );
@@ -316,8 +315,8 @@ pub(crate) fn validate_definition_behavior(
             v.add(
                 "entity.definitionBehavior.restrictDelete.property.duplicate",
                 format!(
-                    "Restrict-delete metadata property {} is duplicated",
-                    go_quote(property)
+                    "Restrict-delete metadata property {:?} is duplicated",
+                    property
                 ),
                 field_id,
             );

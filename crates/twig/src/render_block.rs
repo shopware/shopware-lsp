@@ -1,5 +1,4 @@
-//! `renderBlock()` references and template block catalogs (port of
-//! `render_block.go`).
+//! `renderBlock()` references and template block catalogs.
 
 use std::collections::HashSet;
 
@@ -42,8 +41,8 @@ pub fn render_block_references_in_php(root: &SyntaxNode) -> Vec<RenderBlockRefer
     let mut result = Vec::new();
     for call in phpquery::nodes(root, &[PHP_MEMBER_CALL, PHP_SCOPED_CALL, PHP_FUNCTION_CALL]) {
         let name = phpquery::call_method_name(&call);
-        if !swlsp_php_types::equal_fold(&name, "renderBlock")
-            && !swlsp_php_types::equal_fold(&name, "renderBlockView")
+        if !swlsp_textutil::eq_ignore_case(&name, "renderBlock")
+            && !swlsp_textutil::eq_ignore_case(&name, "renderBlockView")
         {
             continue;
         }
@@ -145,7 +144,7 @@ fn render_block_argument(call: &SyntaxNode, names: &[&str], fallback: usize) -> 
         let name = phpquery::argument_name(&argument);
         if names
             .iter()
-            .any(|candidate| swlsp_php_types::equal_fold(&name, candidate))
+            .any(|candidate| swlsp_textutil::eq_ignore_case(&name, candidate))
         {
             return phpquery::argument_expression(call, index);
         }
@@ -180,7 +179,7 @@ impl TwigIndexer {
             .rev()
             .map(|template| (template.as_ref().to_owned(), 0))
             .collect();
-        // Depth-first in the same order as Go's recursive walk.
+        // Depth-first, visiting includes in source order.
         while let Some((template, depth)) = stack.pop() {
             if depth > 32 {
                 continue;

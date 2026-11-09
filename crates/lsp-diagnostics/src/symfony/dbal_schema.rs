@@ -1,12 +1,11 @@
-//! Go `dbal_schema.go`: physical tables described by Shopware DAL
-//! definitions.
+//! Physical tables described by Shopware DAL definitions.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use swlsp_indexer::Result;
-use swlsp_php_types::{equal_fold, go_to_lower};
 use swlsp_shopware_dal::{Definition, Index};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 #[derive(Default)]
 struct DbalSchemaTable {
@@ -37,7 +36,7 @@ impl DbalSchemaCatalog {
         if name.is_empty() {
             return None;
         }
-        let key = go_to_lower(name);
+        let key = lowercase(name);
         if !self.tables.contains_key(&key) {
             self.names.push(name.to_owned());
         }
@@ -65,7 +64,7 @@ impl DbalSchemaCatalog {
         if name.is_empty() {
             return Ok(());
         }
-        let key = go_to_lower(name);
+        let key = lowercase(name);
         if self.dal_resolved.contains(&key) || self.dal_loaded {
             return Ok(());
         }
@@ -102,7 +101,7 @@ impl DbalSchemaCatalog {
         if name.is_empty() {
             return Ok(false);
         }
-        let key = go_to_lower(name);
+        let key = lowercase(name);
         if self.tables.contains_key(&key) {
             return Ok(true);
         }
@@ -113,7 +112,7 @@ impl DbalSchemaCatalog {
     pub(crate) fn table_names(&mut self) -> Result<Vec<String>> {
         self.load_all_dal_tables()?;
         let mut result = self.names.clone();
-        result.sort_by_cached_key(|name| go_to_lower(name));
+        result.sort_by_cached_key(|name| lowercase(name));
         Ok(result)
     }
 
@@ -123,7 +122,7 @@ impl DbalSchemaCatalog {
             return Ok((Vec::new(), false));
         }
         self.resolve_dal_table(table_name)?;
-        let Some(table) = self.tables.get(&go_to_lower(table_name)) else {
+        let Some(table) = self.tables.get(&lowercase(table_name)) else {
             return Ok((Vec::new(), false));
         };
         let mut seen = HashSet::new();
@@ -141,17 +140,19 @@ impl DbalSchemaCatalog {
                     &field.storage_name
                 };
                 let name = name.trim();
-                if name.is_empty() || !seen.insert(go_to_lower(name)) {
+                if name.is_empty() || !seen.insert(lowercase(name)) {
                     continue;
                 }
                 result.push(name.to_owned());
             }
         }
-        result.sort_by_cached_key(|name| go_to_lower(name));
+        result.sort_by_cached_key(|name| lowercase(name));
         Ok((result, true))
     }
 }
 
 pub(crate) fn has_dbal_schema_name(names: &[String], name: &str) -> bool {
-    names.iter().any(|candidate| equal_fold(candidate, name))
+    names
+        .iter()
+        .any(|candidate| eq_ignore_case(candidate, name))
 }

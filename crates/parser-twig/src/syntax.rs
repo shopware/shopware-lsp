@@ -1,8 +1,8 @@
-//! Twig/HTML syntax kinds (values, names and texts identical to the Go
-//! implementation in `internal/parser/twig/syntax`).
+//! Twig/HTML syntax kinds. Kind values, names and texts are persisted in
+//! caches and CST dumps; do not change them.
 //!
 //! The kinds are registered manually rather than with `swlsp_syntax::language!`
-//! because the `ERROR` node kind carries the display text "error" in Go.
+//! because the `ERROR` node kind carries the display text "error".
 
 use swlsp_syntax::{Kind, LanguageSpec};
 

@@ -1,5 +1,4 @@
-//! PHP refactorings built against immutable source snapshots (port of Go
-//! `internal/php/refactoring`).
+//! PHP refactorings built against immutable source snapshots.
 //!
 //! Every refactoring returns validated byte edits for the exact source it
 //! was given; nothing scans the workspace. `Ok(None)` means the refactoring
@@ -32,7 +31,7 @@ pub struct Extraction {
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum RefactorError {
-    /// The caller's cancellation signal fired (Go `context.Canceled`).
+    /// The caller's cancellation signal fired.
     #[error("operation cancelled")]
     Cancelled,
     #[error("return statement has no stable boundaries")]

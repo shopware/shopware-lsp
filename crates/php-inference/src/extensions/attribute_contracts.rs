@@ -1,5 +1,4 @@
-//! Call-site-sensitive JetBrains attributes (port of
-//! `attribute_contracts.go`).
+//! Call-site-sensitive JetBrains attributes.
 
 use std::borrow::Cow;
 
@@ -8,8 +7,9 @@ use swlsp_php_semantic::{
     Attribute, AttributeValue, AttributeValueKind, Confidence, SymbolView, TypeFact, TypeSource,
     attribute_named,
 };
-use swlsp_php_types::{Kind, Type, equal_fold, go_to_lower};
+use swlsp_php_types::{Kind, Type};
 use swlsp_syntax::TextRange;
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use super::{CallContext, Extension, normalize_contract_expression};
 use crate::syntax::trim_backslash;
@@ -84,7 +84,7 @@ fn no_return_any_argument(value: &AttributeValue) -> bool {
     if value.kind != AttributeValueKind::ClassConstant {
         return false;
     }
-    let identity = go_to_lower(trim_backslash(&value.value));
+    let identity = lowercase(trim_backslash(&value.value));
     identity.ends_with("\\noreturn::any_argument") || identity == "noreturn::any_argument"
 }
 
@@ -101,7 +101,7 @@ fn attribute_value_matches(expected: &AttributeValue, actual: &Type, expression:
                 || &*expected.value == "false" && actual.kind() == Kind::False
         }
         AttributeValueKind::Null => actual.kind() == Kind::Null,
-        _ => equal_fold(
+        _ => eq_ignore_case(
             &normalize_contract_expression(&expected.expression),
             expression,
         ),

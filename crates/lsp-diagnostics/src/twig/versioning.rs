@@ -1,14 +1,13 @@
-//! Go `twig_versioning.go`: Shopware Twig block versioning diagnostics.
+//! Shopware Twig block versioning diagnostics.
 
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
 use swlsp_lsp_protocol as protocol;
-use swlsp_php_types::go_quote;
 use swlsp_twig::{TwigBlockHash, VersioningService};
+use swlsp_uriutil::filepath;
 
-use super::go_ext;
 use crate::ProblemAnalyzer;
 
 pub const TWIG_VERSIONING_ORIGINAL_MISSING_CODE: &str = "twig.versioning.original_missing";
@@ -17,7 +16,6 @@ pub const TWIG_VERSIONING_COMMENT_MISSING_CODE: &str = "twig.versioning.comment_
 pub const TWIG_BLOCK_DEPRECATED_CODE: &str = "twig.block.deprecated";
 pub const TWIG_BLOCK_REDUNDANT_OVERRIDE_CODE: &str = "twig.block.redundant_override";
 
-/// Go `TwigVersioningPayload`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TwigVersioningPayload {
@@ -33,7 +31,6 @@ pub struct TwigVersioningPayload {
     pub upstream_path: String,
 }
 
-/// Go `TwigVersioningAnalyzer`.
 pub struct TwigVersioningAnalyzer {
     versioning: Option<Arc<VersioningService>>,
 }
@@ -52,7 +49,7 @@ impl ProblemAnalyzer for TwigVersioningAnalyzer {
     fn input_revision(&self, document: &swlsp_lsp::TextDocument) -> Option<u64> {
         // Only templates extending another are checked, against the Twig
         // index and the package versions read from disk.
-        if go_ext(&document.uri) != ".twig" || !document.source().contains("extends") {
+        if filepath::ext(&document.uri) != ".twig" || !document.source().contains("extends") {
             return Some(0);
         }
         let versioning = self.versioning.as_ref()?;
@@ -68,7 +65,7 @@ impl ProblemAnalyzer for TwigVersioningAnalyzer {
         let Some(versioning) = &self.versioning else {
             return Ok(Vec::new());
         };
-        if go_ext(&document.uri) != ".twig" {
+        if filepath::ext(&document.uri) != ".twig" {
             return Ok(Vec::new());
         }
         let file_path = swlsp_uriutil::path(&document.uri).unwrap_or_else(|_| document.uri.clone());
@@ -131,8 +128,8 @@ impl ProblemAnalyzer for TwigVersioningAnalyzer {
                     id: TWIG_BLOCK_REDUNDANT_OVERRIDE_CODE.into(),
                     range: block.name_range,
                     message: format!(
-                        "The block {} duplicates its resolved parent; delegate to parent() instead",
-                        go_quote(&block.name)
+                        "The block {:?} duplicates its resolved parent; delegate to parent() instead",
+                        block.name
                     ),
                     payload: payload_value(&payload),
                     related_information: vec![block_related_information(
@@ -158,13 +155,13 @@ impl ProblemAnalyzer for TwigVersioningAnalyzer {
                         .collect();
                     let message = if locations.is_empty() {
                         format!(
-                            "The upstream block {} has been removed; check whether this override is still needed",
-                            go_quote(&block.name)
+                            "The upstream block {:?} has been removed; check whether this override is still needed",
+                            block.name
                         )
                     } else {
                         format!(
-                            "The upstream block {} was removed from this template but still exists elsewhere",
-                            go_quote(&block.name)
+                            "The upstream block {:?} was removed from this template but still exists elsewhere",
+                            block.name
                         )
                     };
                     problems.push(Problem {
@@ -184,8 +181,8 @@ impl ProblemAnalyzer for TwigVersioningAnalyzer {
                     id: TWIG_VERSIONING_COMMENT_MISSING_CODE.into(),
                     range: block.name_range,
                     message: format!(
-                        "The block {} does not have a versioning comment",
-                        go_quote(&block.name)
+                        "The block {:?} does not have a versioning comment",
+                        block.name
                     ),
                     payload: payload_value(&payload),
                     ..Problem::default()
@@ -233,7 +230,6 @@ impl ProblemAnalyzer for TwigVersioningAnalyzer {
     }
 }
 
-/// Go `blockRelatedInformation`.
 fn block_related_information(
     block: &TwigBlockHash,
     message: &str,

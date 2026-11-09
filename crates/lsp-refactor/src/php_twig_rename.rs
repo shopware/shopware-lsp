@@ -1,5 +1,5 @@
-//! Augments the PHP semantic rename with typed Twig member, constant,
-//! enum-case and class-name usages (port of Go `php_twig_rename.go`).
+//! Augments the PHP semantic rename with typed Twig member, constant, enum-case
+//! and class-name usages.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -8,8 +8,8 @@ use swlsp_lsp::{Context, ProviderResult, RenameProvider, RenameRequest, TextDocu
 use swlsp_lsp_protocol as protocol;
 use swlsp_php::{PhpIndex, symbol_at};
 use swlsp_php_semantic::{Document, Snapshot, Symbol, SymbolKind};
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::{LineIndex, TextRange};
+use swlsp_textutil::eq_ignore_case;
 use swlsp_twig::{
     ConstantReference, TwigIndexer, php_usage_target_for_symbol, twig_attribute_name,
 };
@@ -138,8 +138,7 @@ impl RenameProvider for PhpTwigRenameProvider {
     }
 }
 
-/// The request's PHP analysis (Go reads it from the enriched context; Rust
-/// shares the memoized document analysis), falling back to the indexed
+/// The request's PHP analysis: the memoized document analysis, falling back to the indexed
 /// document or a fresh analysis.
 fn php_semantic_state(
     index: &PhpIndex,
@@ -191,11 +190,11 @@ fn twig_constant_rename_target(snapshot: &Snapshot, symbol: &Symbol) -> Option<C
 fn renamed_twig_php_usage(current: &str, symbol: &Symbol, new_name: &str) -> String {
     match symbol.kind {
         SymbolKind::Method => {
-            if equal_fold(current, &symbol.name) {
+            if eq_ignore_case(current, &symbol.name) {
                 return new_name.to_owned();
             }
             let shortcut = twig_attribute_name(&symbol.name);
-            if !shortcut.is_empty() && equal_fold(current, &shortcut) {
+            if !shortcut.is_empty() && eq_ignore_case(current, &shortcut) {
                 let renamed = twig_attribute_name(new_name);
                 if !renamed.is_empty() {
                     return renamed;

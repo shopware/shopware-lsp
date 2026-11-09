@@ -1,4 +1,4 @@
-//! Go `php_imports.go`.
+//! The PHP "Organize Imports" source action.
 
 use swlsp_lsp::{ActionProvider, CodeActionRequest, Context};
 use swlsp_lsp_protocol as protocol;

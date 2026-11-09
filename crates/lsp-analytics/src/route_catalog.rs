@@ -1,4 +1,4 @@
-//! Symfony route catalog (port of `route_catalog.go`).
+//! Symfony route catalog.
 
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
@@ -14,11 +14,12 @@ use swlsp_symfony::{
 use swlsp_twig::TwigIndexer;
 use swlsp_uriutil::filepath;
 
-use crate::request::{Field, decode, present};
+use crate::request::{Field, RequestError, decode, present};
 use crate::{
     Result, RouteTemplateResolver, SourceLineResolver, ant_path_match, check, errorf, is_zero,
-    lower, range_len, range_start, relative_inside, trim_space,
+    range_len, range_start, relative_inside,
 };
+use swlsp_textutil::lowercase;
 
 pub const LIST_ROUTES_COMMAND: &str = "shopware/symfony/analytics/routes";
 
@@ -40,10 +41,9 @@ pub struct RouteCatalogRequest {
 }
 
 impl RouteCatalogRequest {
-    fn decode(value: &Value) -> Result<Self, String> {
+    fn decode(value: &Value) -> Result<Self, RequestError> {
         let members = decode(
             value,
-            "RouteCatalogRequest",
             &[
                 ("routeName", Field::String),
                 ("controller", Field::String),
@@ -120,9 +120,9 @@ impl RouteCatalogProvider {
         };
         check(ctx)?;
         let routes = routes.get_routes_view()?;
-        let name_filter = lower(trim_space(&request.route_name));
-        let controller_filter = lower(trim_space(&request.controller));
-        let file_glob = filepath::to_slash(trim_space(&request.file_glob));
+        let name_filter = lowercase(request.route_name.trim());
+        let controller_filter = lowercase(request.controller.trim());
+        let file_glob = filepath::to_slash(request.file_glob.trim());
         let path_matcher = RoutePathSearchMatcher::new(&request.url_path);
         let filter_path = !path_matcher.search_path().is_empty();
         let mut templates = RouteTemplateResolver::new(Some(php), self.twig.as_deref());
@@ -131,7 +131,7 @@ impl RouteCatalogProvider {
         let mut result = Vec::with_capacity(routes.len());
         for route in routes.iter() {
             check(ctx)?;
-            if !name_filter.is_empty() && !lower(&route.name).contains(&name_filter) {
+            if !name_filter.is_empty() && !lowercase(&route.name).contains(&name_filter) {
                 continue;
             }
             if filter_path && !path_matcher.matches(&route.path) {
@@ -139,8 +139,8 @@ impl RouteCatalogProvider {
             }
             let entry = self.route_entry(php, route, &mut templates, &mut lines)?;
             if !controller_filter.is_empty()
-                && !lower(&entry.controller).contains(&controller_filter)
-                && !lower(&entry.resolved_controller).contains(&controller_filter)
+                && !lowercase(&entry.controller).contains(&controller_filter)
+                && !lowercase(&entry.resolved_controller).contains(&controller_filter)
             {
                 continue;
             }
@@ -165,7 +165,7 @@ impl RouteCatalogProvider {
         }
         result.sort_by(|left, right| {
             if left.name != right.name {
-                return lower(&left.name).cmp(&lower(&right.name));
+                return lowercase(&left.name).cmp(&lowercase(&right.name));
             }
             left.source_uri
                 .cmp(&right.source_uri)
@@ -242,25 +242,11 @@ impl CommandProvider for RouteCatalogProvider {
     }
 }
 
-/// Go `strings.ToUpper` (simple case mapping).
-fn go_to_upper(value: &str) -> String {
-    value
-        .chars()
-        .map(|character| {
-            let mut upper = character.to_uppercase();
-            match (upper.next(), upper.next()) {
-                (Some(single), None) => single,
-                _ => character,
-            }
-        })
-        .collect()
-}
-
 pub(crate) fn normalized_route_methods(methods: &[String]) -> Vec<String> {
     let mut result = Vec::with_capacity(methods.len());
     let mut seen = HashSet::with_capacity(methods.len());
     for method in methods {
-        let method = go_to_upper(trim_space(method));
+        let method = swlsp_textutil::uppercase(method.trim());
         if method.is_empty() || !seen.insert(method.clone()) {
             continue;
         }

@@ -1,4 +1,4 @@
-//! Completion providers (port of Go `internal/app/providers_completion.go`).
+//! Completion providers.
 
 use std::sync::Arc;
 

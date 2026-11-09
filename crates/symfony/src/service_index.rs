@@ -1,4 +1,4 @@
-//! The Symfony service index (Go `ServiceIndex`): services, parameters, and
+//! The Symfony service index: services, parameters, and
 //! prototypes from XML, YAML, and PHP configuration files, merged with the
 //! compiled container.
 
@@ -19,7 +19,7 @@ use crate::model::{
     ContainerTwigComponent, ContainerTwigGlobal, Location, Parameter, Service, ServicePrototype,
 };
 use crate::path_match::path_matches_config_pattern;
-use crate::util::GoLower;
+use crate::util::Lowercase;
 use crate::workspace_symbols::add_service_workspace_symbols;
 
 const PATH_SERVICES: u8 = 1;
@@ -263,7 +263,7 @@ impl ServiceIndex {
             _ => return None,
         };
 
-        // Go keys maps by path → id; one entry per id with the last value.
+        // One entry per id; a repeated id keeps the last value.
         let mut service_write: PathWrites<Service> = vec![(path.to_owned(), Vec::new())];
         for service in &services {
             let bucket = bucket(&mut service_write, &service.path);
@@ -538,7 +538,7 @@ impl ServiceIndex {
         let php_revision = php.as_ref().map_or(0, PhpIndex::revision);
         let own_revision = self.prototype_revision.load(Ordering::SeqCst);
         let container_revision = self.container.revision();
-        let key = target_name.to_go_lower();
+        let key = target_name.lowercase();
         {
             let mut cache = self
                 .services_by_type
@@ -602,14 +602,14 @@ impl ServiceIndex {
             if class_name.is_empty() {
                 continue;
             }
-            let matches = swlsp_php_types::equal_fold(class_name, target_name)
+            let matches = swlsp_textutil::eq_ignore_case(class_name, target_name)
                 || php.is_some_and(|php| php.is_subtype_of(class_name, target_name));
-            if !matches || !seen.insert(service.id.to_go_lower()) {
+            if !matches || !seen.insert(service.id.lowercase()) {
                 continue;
             }
             result.push(service.clone());
         }
-        result.sort_by_cached_key(|service| service.id.to_go_lower());
+        result.sort_by_cached_key(|service| service.id.lowercase());
         Ok(result)
     }
 
@@ -712,16 +712,16 @@ impl ServiceIndex {
         let mut values = self.parameters.get_all_values()?;
         let mut seen: HashSet<String> = values
             .iter()
-            .map(|parameter| parameter.name.to_go_lower())
+            .map(|parameter| parameter.name.lowercase())
             .collect();
         if self.container_exists() {
             for parameter in self.container.get_all_parameters() {
-                if seen.insert(parameter.name.to_go_lower()) {
+                if seen.insert(parameter.name.lowercase()) {
                     values.push(parameter);
                 }
             }
         }
-        values.sort_by_cached_key(|parameter| parameter.name.to_go_lower());
+        values.sort_by_cached_key(|parameter| parameter.name.lowercase());
         Ok(values)
     }
 
@@ -729,7 +729,7 @@ impl ServiceIndex {
     /// compiled container.
     pub fn get_parameter_by_name(&self, name: &str) -> Result<Option<Parameter>> {
         let mut values = self.parameters.get_values_view(name)?;
-        let lower = name.to_go_lower();
+        let lower = name.lowercase();
         if values.is_empty() && lower != name {
             values = self.parameters.get_values_view(&lower)?;
         }
@@ -751,7 +751,7 @@ impl ServiceIndex {
         let mut locations: Vec<Location> = Vec::new();
         let mut seen: HashSet<Location> = HashSet::new();
         let mut append = |service: &Service| {
-            if !swlsp_php_types::equal_fold(
+            if !swlsp_textutil::eq_ignore_case(
                 service.class.strip_prefix('\\').unwrap_or(&service.class),
                 class_name,
             ) {
@@ -815,7 +815,7 @@ impl ServiceIndex {
         let mut locations: Vec<Location> = Vec::new();
         let mut seen: HashSet<Location> = HashSet::new();
         for service in &definitions {
-            if !swlsp_php_types::equal_fold(
+            if !swlsp_textutil::eq_ignore_case(
                 service.class.strip_prefix('\\').unwrap_or(&service.class),
                 class_name,
             ) {
@@ -852,7 +852,7 @@ fn service_definitions_by_id<'a>(definitions: &[&'a Service]) -> HashMap<String,
             .id
             .strip_prefix('\\')
             .unwrap_or(&service.id)
-            .to_go_lower();
+            .lowercase();
         if !key.is_empty() {
             by_id.entry(key).or_default().push(service);
         }
@@ -944,7 +944,7 @@ fn effective_service_autowire(
         .parent
         .strip_prefix('\\')
         .unwrap_or(&service.parent)
-        .to_go_lower();
+        .lowercase();
     if parent.is_empty() || visiting.contains(&parent) {
         return false;
     }
@@ -1026,8 +1026,7 @@ impl TransactionalClearer for ServiceIndex {
 }
 
 impl ServiceIndex {
-    /// The scanner-fed compiled container index for this service index (Go
-    /// `NewCompiledContainerIndex`).
+    /// The scanner-fed compiled container index for this service index.
     pub fn compiled_container_index(
         &self,
         cache: impl AsRef<Path>,

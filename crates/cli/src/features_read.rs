@@ -1,4 +1,4 @@
-//! Read-only feature commands (Go `features_read.go`). Each command opens
+//! Read-only feature commands. Each command opens
 //! the target in the production session, sends one LSP request, decodes the
 //! typed result and prints it as JSON.
 
@@ -62,10 +62,10 @@ pub(crate) fn run_completion(runner: &Runner, args: &[String]) -> Result<(), Cli
     params["context"] = json!({"triggerKind": 1});
     let result: Option<CompletionList> = session.call("textDocument/completion", params)?;
     let _ = session.close();
-    // Go decodes into a CompletionList value, so null prints as the zero list.
+    // A `null` result prints as an empty list.
     match result {
         Some(result) => runner.write_json(&result),
-        None => runner.write_json(&json!({"isIncomplete": false, "items": null})),
+        None => runner.write_json(&json!({"isIncomplete": false, "items": []})),
     }
 }
 
@@ -190,7 +190,8 @@ fn cached_workspace_symbols(
 ) -> Result<Option<Vec<SymbolInformation>>, CliError> {
     let root = runner.workspace_root()?;
     runner.require_supported_project(&root)?;
-    let cache_dir = swlsp_app::project_cache_folder(&root).map_err(CliError::fail)?;
+    let cache_dir = swlsp_app::project_cache_folder(&root)
+        .map_err(|error| CliError::fail(error.to_string()))?;
     let current = swlsp_indexer::cache_version_current(&cache_dir).map_err(|error| {
         CliError::fail(format!("check workspace symbol cache version: {error}"))
     })?;

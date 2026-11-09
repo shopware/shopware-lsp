@@ -1,5 +1,4 @@
-//! Lazily resolved `<script setup>` type contracts (port of Go
-//! `script_setup_contract.go`).
+//! Lazily resolved `<script setup>` type contracts.
 
 use crate::*;
 

@@ -1,12 +1,13 @@
-//! Function, method and static calls (port of `expression_call.go`).
+//! Function, method and static calls.
 
 use rustc_hash::FxHashSet;
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;
 use swlsp_php_resolver::resolve_signature;
 use swlsp_php_semantic::{Flags, Symbol};
-use swlsp_php_types::{CallableParameter, Kind, Type, equal_fold, go_to_lower};
+use swlsp_php_types::{CallableParameter, Kind, Type};
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::analyzer::Fs;
 use crate::env::Env;
@@ -99,7 +100,7 @@ impl Fs<'_, '_, '_> {
             && nodes[0].kind() == PHP_NAME
             && self.current_class.kind() == Kind::Object
             && matches!(
-                go_to_lower(&query::name_value(&nodes[0])).as_str(),
+                lowercase(&query::name_value(&nodes[0])).as_str(),
                 "self" | "static" | "parent"
             )
         {
@@ -210,7 +211,7 @@ impl Fs<'_, '_, '_> {
                     return receiver.clone();
                 }
                 if receiver.kind() == Kind::Object {
-                    if equal_fold(
+                    if eq_ignore_case(
                         trim_backslash(receiver.name()),
                         trim_backslash(&symbol.fully_qualified),
                     ) {
@@ -299,7 +300,7 @@ impl Fs<'_, '_, '_> {
         if call.kind() != PHP_FUNCTION_CALL {
             return Vec::new();
         }
-        let name = go_to_lower(trim_backslash(&query::call_method_name(call)));
+        let name = lowercase(trim_backslash(&query::call_method_name(call)));
         match name.as_str() {
             "preg_replace_callback" if argument_index == 1 => vec![regex_callback_matches_type()],
             "array_map" => {
@@ -336,7 +337,7 @@ impl Fs<'_, '_, '_> {
     pub(crate) fn infer_receiver(&mut self, node: &SyntaxNode, env: &Env, is_static: bool) -> Type {
         if is_static && node.kind() == PHP_NAME {
             let name = query::name_value(node);
-            return match go_to_lower(&name).as_str() {
+            return match lowercase(&name).as_str() {
                 "self" | "static" => self.current_class.clone(),
                 "parent" => {
                     if self.current_class.kind() == Kind::Object {

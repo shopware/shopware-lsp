@@ -37,16 +37,20 @@ fn hints(provider: &dyn InlayHintProvider, request: &InlayHintRequest) -> Vec<pr
 }
 
 fn parts(hint: &protocol::InlayHint) -> Vec<protocol::InlayHintLabelPart> {
-    serde_json::from_value(hint.label.clone()).expect("label parts")
+    match &hint.label {
+        protocol::InlayHintLabel::Parts(parts) => parts.clone(),
+        protocol::InlayHintLabel::String(_) => panic!("label parts expected"),
+    }
 }
 
 fn labels(hints: &[protocol::InlayHint]) -> Vec<String> {
     hints
         .iter()
         .map(|hint| match &hint.label {
-            Value::String(label) => label.clone(),
-            Value::Array(_) => parts(hint).into_iter().map(|part| part.value).collect(),
-            _ => String::new(),
+            protocol::InlayHintLabel::String(label) => label.clone(),
+            protocol::InlayHintLabel::Parts(parts) => {
+                parts.iter().map(|part| part.value.as_str()).collect()
+            }
         })
         .collect()
 }

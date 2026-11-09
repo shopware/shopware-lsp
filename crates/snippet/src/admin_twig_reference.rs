@@ -75,7 +75,7 @@ pub fn admin_twig_reference_at_offset(
         }
         let mut reference = reference.clone();
         if !complete && offset < end {
-            // Go slices bytes; keep the cut on a character boundary. The key
+            // The cursor is a byte offset; keep the cut on a character boundary. The key
             // is the source text from `start`, so cut it relative to that.
             let mut cut = (offset - start) as usize;
             while !reference.key.is_char_boundary(cut) {
@@ -139,7 +139,7 @@ fn scan_admin_twig_reference(source: &str, start: usize) -> Option<Scan> {
             _ => cursor += 1,
         }
     }
-    // An escape at the very end steps past EOF (Go would panic slicing).
+    // An escape at the very end steps the cursor past EOF; clamp it.
     let end = cursor.min(bytes.len());
     let mut key_end = end;
     while !source.is_char_boundary(key_end) {
@@ -224,7 +224,8 @@ mod tests {
         }
     }
 
-    /// The pre-memo implementation, kept as the oracle for the memoized one.
+    /// The unmemoized implementation, kept as the reference the memoized one
+    /// is tested against.
     fn fresh_reference_at_offset(root: &SyntaxNode, offset: u32) -> Option<AdminTwigReference> {
         let source = root.text().to_string();
         let mut cursor = 0;

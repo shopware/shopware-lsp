@@ -1,4 +1,4 @@
-//! Port of Go `internal/app/php_extract_variable_test.go`.
+//! PHP extract-variable routing and configuration through the server.
 
 use serde_json::{Value, json};
 

@@ -1,4 +1,4 @@
-//! Port of Go `services_xml_deprecation.go`.
+//! Deprecated `services.xml` service definitions.
 
 use std::sync::Arc;
 
@@ -13,15 +13,13 @@ use crate::ProblemAnalyzer;
 
 pub const SERVICES_XML_DEPRECATED_CODE: &str = "symfony.services_xml.deprecated";
 
-/// Go `ServicesXMLDeprecationPayload`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServicesXmlDeprecationPayload {
     #[serde(default)]
     pub convertible: bool,
 }
 
-/// Go `ServicesXMLDeprecationAnalyzer`: mirrors shopware-cli's
-/// platform-plugin validation. Only convention-loaded
+/// Mirrors shopware-cli's platform-plugin validation. Only convention-loaded
 /// `Resources/config/services.xml` files are flagged; arbitrary XML files may
 /// be loaded explicitly and cannot be renamed without updating their loader.
 #[derive(Debug, Clone, Copy, Default)]
@@ -83,7 +81,7 @@ fn is_convention_loaded_services_xml(uri: &str) -> bool {
     let Ok(path) = swlsp_uriutil::path(uri) else {
         return false;
     };
-    if !swlsp_php_types::equal_fold(&filepath::base(&path), "services.xml") {
+    if !swlsp_textutil::eq_ignore_case(&filepath::base(&path), "services.xml") {
         return false;
     }
     let normalized = filepath::to_slash(&filepath::clean(&path)).to_lowercase();

@@ -1,4 +1,4 @@
-//! Port of Go `inheritance_test.go` plus helpers shared by batch-A tests.
+//! Tests for inheritance plus helpers shared by the other test modules.
 
 use crate::*;
 

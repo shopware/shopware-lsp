@@ -27,7 +27,8 @@ impl fmt::Debug for WorkspaceGraph {
 }
 
 /// Error returned by a [`WorkspaceGraphLoader`].
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("{0}")]
 pub struct LoadError(String);
 
 impl LoadError {
@@ -35,14 +36,6 @@ impl LoadError {
         LoadError(message.into())
     }
 }
-
-impl fmt::Display for LoadError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for LoadError {}
 
 /// Resolves one persisted graph by source path. Warm cache restoration keeps
 /// declaration cores and hierarchy edges resident and loads signatures and

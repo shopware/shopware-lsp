@@ -1,4 +1,5 @@
-//! Go `shopware_context_codeaction.go`.
+//! Context-dependent Shopware actions: extend or override an Administration
+//! component and scaffold an event listener for an event class.
 
 use crate::shared::document_snapshot;
 use std::sync::LazyLock;

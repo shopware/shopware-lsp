@@ -1,5 +1,4 @@
-//! Static DAL reference contexts in JavaScript, Twig and PHP (port of Go
-//! `dal/context.go`).
+//! Static DAL reference contexts in JavaScript, Twig and PHP.
 
 use swlsp_parser_js::query as jsquery;
 use swlsp_parser_php::query as phpquery;
@@ -137,7 +136,7 @@ pub fn js_field_reference_segment(node: &SyntaxNode, offset: u32) -> (String, bo
         return (String::new(), false);
     }
     let raw = string_node.text().to_string();
-    let trimmed = go_trim_space(&raw);
+    let trimmed = raw.trim();
     let leading = raw.find(trimmed).unwrap_or(0);
     let mut content_start = u32::from(string_node.text_range().start()) + leading as u32;
     if matches!(trimmed.as_bytes().first(), Some(b'\'' | b'"' | b'`')) {
@@ -195,14 +194,4 @@ pub fn is_php_field_reference(node: &SyntaxNode) -> bool {
     let class_name = phpquery::object_class_name(&creation);
     let class_name = class_name.rsplit('\\').next().unwrap_or_default();
     class_name.ends_with("Filter") && class_name != "Filter"
-}
-
-/// Go `strings.TrimSpace`.
-pub(crate) fn go_trim_space(value: &str) -> &str {
-    value.trim_matches(|c: char| {
-        matches!(
-            c,
-            '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r' | ' ' | '\u{85}' | '\u{A0}'
-        ) || c.is_whitespace()
-    })
 }

@@ -1,5 +1,5 @@
-//! Go `controller_definition.go`: controller references in YAML/XML routes
-//! and Twig `controller()`/`@see` navigate to the action or class.
+//! Controller references in YAML/XML routes and Twig `controller()`/`@see`
+//! navigate to the action or class.
 
 use std::sync::Arc;
 

@@ -1,4 +1,4 @@
-//! Signature help providers (port of Go `internal/lsp/signature`).
+//! Signature help providers.
 
 mod admin;
 mod twig_macro;

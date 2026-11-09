@@ -1,4 +1,4 @@
-//! Port of Go `enum_field_test.go`.
+//! Tests for enum field.
 
 use super::inheritance::{
     backfill_free, field, field_by_property, php_ok, require_issue_code, stored, validation_codes,

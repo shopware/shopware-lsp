@@ -1,4 +1,4 @@
-//! Ports of the Go tests of the Symfony completion group.
+//! Tests for the Symfony completion providers.
 
 mod bundle_resource;
 mod service_deprecation;
@@ -23,13 +23,13 @@ pub(super) fn p(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-/// Go `completionCaret`: removes `<caret>` and returns its offset.
+/// Removes `<caret>` and returns its offset.
 pub(super) fn completion_caret(source: &str) -> (String, usize) {
     let offset = source.find("<caret>").expect("source has <caret>");
     (source.replacen("<caret>", "", 1), offset)
 }
 
-/// Go `bundleResourceCompletionRequest`.
+/// A bundle resource completion request at the caret.
 pub(super) fn bundle_request(
     path: &str,
     source: &str,
@@ -78,7 +78,7 @@ pub(super) fn labels(items: &[protocol::CompletionItem]) -> Vec<String> {
     items.iter().map(|item| item.label.clone()).collect()
 }
 
-/// Go `requireCompletion`.
+/// The item labelled `label`; panics when it is missing.
 #[track_caller]
 pub(super) fn require_completion(
     items: &[protocol::CompletionItem],
@@ -97,7 +97,7 @@ pub(super) fn edit(item: &protocol::CompletionItem) -> protocol::TextEdit {
     item.text_edit.clone().expect("item has a text edit")
 }
 
-/// Go `completionRangeText`.
+/// The source text of `range`.
 pub(super) fn range_text(document: &TextDocument, range: protocol::Range) -> String {
     let start = document
         .line_index()

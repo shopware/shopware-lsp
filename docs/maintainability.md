@@ -16,17 +16,6 @@ it only with correctness fixtures and performance measurements in place.
   and compilation of the real-world integration suite) is the safety net for
   structural refactors.
 
-## History
-
-The August and September 2026 maintainability passes were done on the Go
-implementation, before the port. They split the large Administration indexer,
-diagnostic analyzer, completion, and hover implementations; the compact PHP
-workspace graph; the PHP semantic LSP adapter; and entity-schema importing and
-validation into focused files, and replaced the indexing coordinator and the
-protocol method switch with explicit phases and a typed handler table. The
-Rust crates were ported from that decomposed shape, so the same module
-boundaries appear under `crates/`.
-
 ## Largest production files
 
 The largest non-test Rust source files are:

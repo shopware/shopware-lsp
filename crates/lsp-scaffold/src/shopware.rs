@@ -1,5 +1,4 @@
-//! Shopware extension scaffolds producing atomic create-file edits (port of
-//! Go `shopware_scaffold.go`).
+//! Shopware extension scaffolds producing atomic create-file edits.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -9,10 +8,10 @@ use swlsp_language::LanguageId;
 use swlsp_lsp::Context;
 use swlsp_lsp_protocol as protocol;
 use swlsp_rewrite::{Builder, CreateFilePlan, DocumentPlan, WorkspacePlan};
-use swlsp_shopware_entityschema::gojson;
-use swlsp_uriutil::{file_uri, go_quote};
+use swlsp_shopware_entityschema::canonical_json;
+use swlsp_uriutil::file_uri;
 
-use crate::paths::{self, Stat};
+use crate::paths::{self, FileError, Stat};
 use crate::symfony::{ensure_scaffold_target_available, namespace_for_directory};
 use crate::{Provider, Result, Sorted, errorf, pascal_name};
 
@@ -84,16 +83,13 @@ impl Provider {
         request.kind = request.kind.trim().to_lowercase();
         request.name = request.name.trim().to_owned();
         if !valid_scaffold_name(&request.name) {
-            return Err(errorf!(
-                "invalid Shopware scaffold name {}",
-                go_quote(&request.name)
-            ));
+            return Err(errorf!("invalid Shopware scaffold name {:?}", request.name));
         }
         let (files, primary) = self.shopware_files(&directory, &request)?;
         if files.is_empty() {
             return Err(errorf!(
-                "shopware scaffold {} produced no files",
-                go_quote(&request.kind)
+                "shopware scaffold {:?} produced no files",
+                request.kind
             ));
         }
         let mut seen: HashSet<String> = HashSet::with_capacity(files.len());
@@ -125,7 +121,7 @@ impl Provider {
                     });
                 }
                 Stat::Failed(error) => {
-                    return Err(errorf!("{}", paths::path_error("stat", &main_path, &error)));
+                    return Err(FileError::new("inspect", &main_path, error).into());
                 }
                 Stat::Exists(_) => {
                     if let Some(document) = main_js_import_plan(&directory, &primary)? {
@@ -202,7 +198,7 @@ impl Provider {
                     vec![
                         generated(
                             paths::join(&[&root, "composer.json"]),
-                            go_indent_json(&composer) + "\n",
+                            indented_sorted_json(&composer) + "\n",
                         ),
                         generated(primary.clone(), plugin_php(&namespace, &class_name)),
                         generated(
@@ -313,15 +309,15 @@ impl Provider {
                 let mode = option_string(options, "mode", "register").to_lowercase();
                 if mode != "register" && mode != "extend" && mode != "override" {
                     return Err(errorf!(
-                        "unsupported Administration component mode {}",
-                        go_quote(&mode)
+                        "unsupported Administration component mode {:?}",
+                        mode
                     ));
                 }
                 let target = option_string(options, "target", "");
                 if mode != "register" && !valid_scaffold_name(&target) {
                     return Err(errorf!(
-                        "invalid Administration target component {}",
-                        go_quote(&target)
+                        "invalid Administration target component {:?}",
+                        target
                     ));
                 }
                 let mut root_kind = "component";
@@ -384,8 +380,8 @@ impl Provider {
             )),
             "cms-element" => Ok(cms_element_files(directory, &name)),
             _ => Err(errorf!(
-                "unsupported Shopware scaffold kind {}",
-                go_quote(&request.kind)
+                "unsupported Shopware scaffold kind {:?}",
+                request.kind
             )),
         }
     }
@@ -399,17 +395,18 @@ impl Provider {
         let Ok(data) = std::fs::read(paths::join(&[&self.root, "composer.json"])) else {
             return String::new();
         };
-        gojson::from_slice::<Composer>(&data)
+        canonical_json::from_slice::<Composer>(&data)
             .ok()
             .and_then(|mut composer| composer.require.remove("shopware/core"))
             .unwrap_or_default()
     }
 }
 
-/// Go `json.MarshalIndent(value, "", "  ")` of a map literal (sorted keys,
-/// HTML-safe escaping).
-fn go_indent_json(value: &Value) -> String {
-    String::from_utf8(gojson::to_vec_indent(&Sorted(value)).unwrap_or_default()).unwrap_or_default()
+/// `value` in the canonical JSON encoding, indented by two spaces with object
+/// keys sorted, so generated files are deterministic.
+fn indented_sorted_json(value: &Value) -> String {
+    String::from_utf8(canonical_json::to_vec_indent(&Sorted(value)).unwrap_or_default())
+        .unwrap_or_default()
 }
 
 fn validate_generated_file(path: &str, source: &str) -> Result<()> {
@@ -429,7 +426,7 @@ fn validate_generated_file(path: &str, source: &str) -> Result<()> {
 
 fn main_js_import_plan(directory: &str, primary: &str) -> Result<Option<DocumentPlan>> {
     let main_path = paths::join(&[directory, "main.js"]);
-    let Some(source) = paths::read_file(&main_path).map_err(|error| errorf!("{error}"))? else {
+    let Some(source) = paths::read_file(&main_path)? else {
         return Ok(None);
     };
     let relative =
@@ -681,7 +678,7 @@ fn admin_module_snippet(name: &str) -> String {
         name.to_owned(),
         json!({"general": {"title": name, "description": name}}),
     );
-    go_indent_json(&Value::Object(root)) + "\n"
+    indented_sorted_json(&Value::Object(root)) + "\n"
 }
 
 fn cms_block_files(directory: &str, name: &str, category: &str) -> (Vec<GeneratedFile>, String) {

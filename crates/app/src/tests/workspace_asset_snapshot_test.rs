@@ -1,4 +1,4 @@
-//! Port of Go `internal/app/workspace_asset_snapshot_test.go`.
+//! Asset catalog state across workspace indexing, restarts and file removal.
 
 use swlsp_asset::{ReferenceKind, Resource, Usage};
 

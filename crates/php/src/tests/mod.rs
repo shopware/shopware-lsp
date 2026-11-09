@@ -1,5 +1,3 @@
-//! Ports of the Go `internal/php` root package tests.
-
 mod api;
 mod embedded;
 mod indexer;

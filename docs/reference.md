@@ -1564,30 +1564,6 @@ The real-world integration benchmark uses 21 request samples by default. Set
 `SHOPWARE_LSP_LATENCY_SAMPLES` to a value of at least 2 for a shorter profiling
 run; the first request is reported separately and excluded from p50/p95.
 
-One representative August 2026 run of the former Go server against a
-60,811-file `sw-trunk` checkout reported the following warm request latency
-after indexing. These are local reference measurements rather than portable
-timing guarantees:
-
-| LSP request | p50 | p95 |
-|---|---:|---:|
-| PHP hover | 0.45 ms | 0.50 ms |
-| Administration Twig hover | 0.13 ms | 0.15 ms |
-| PHP code actions, all kinds | 1.09 ms | 1.37 ms |
-| PHP quick fixes only | 0.03 ms | 0.07 ms |
-| Administration Twig code actions, all kinds | 0.09 ms | 0.11 ms |
-| Administration Twig diagnostics | 0.09 ms | 0.10 ms |
-| Administration diagnostic quick fixes | 0.49 ms | 0.51 ms |
-| Code-action resolve | 0.56 ms | 0.61 ms |
-| Twig document links | 0.06 ms | 0.06 ms |
-| Administration TypeScript document symbols | 0.46 ms | 0.48 ms |
-| Administration Twig document symbols | 0.10 ms | 0.10 ms |
-
-The diagnostics row is an unchanged-document pull after the scheduled publish
-pass, so it reuses the versioned diagnostic result. On the same fresh index,
-the uncached Administration Twig analysis after opening the document took
-30.8 ms end to end, including 24.4 ms in the Administration inspection.
-
 ### Updating PHP runtime stubs
 
 Runtime declarations are generated from a pinned
@@ -1747,16 +1723,10 @@ records index time, RSS, per-request latency, and a response hash;
 `scripts/bench/compare.py` diffs two runs. Run the servers one after the
 other, never concurrently, and use isolated cache directories.
 
-On a Shopware checkout, the November 2026 run of that benchmark measured the
-Rust server at 21.5 s cold index, 333 MiB RSS after indexing, and 759 MiB
-peak, against 54.8 s, 696 MiB, and 1,012 MiB for the former Go server; the
-full request mix took 125.7 s against 265.7 s. These are local reference
-numbers, not timing guarantees.
-
-The Rust server has no garbage collector: it ignores `GOMEMLIMIT` and `GOGC`,
-and the VS Code `shopwareLSP.memoryLimitMiB` setting is deprecated. Earlier
-memory and allocation tuning notes for the Go server remain in the Git
-history of this file.
+On a Shopware checkout, the November 2026 run of that benchmark measured
+21.5 s cold index, 333 MiB RSS after indexing, 759 MiB peak, and 125.7 s for
+the full request mix. These are local reference numbers, not timing
+guarantees.
 
 ### CI/CD
 

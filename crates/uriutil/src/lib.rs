@@ -1,20 +1,16 @@
-//! File URI <-> operating-system path conversion (port of `internal/uriutil`)
-//! and the URL escaping helpers shared by the other crates.
+//! File URI <-> operating-system path conversion and the URL escaping
+//! helpers shared by the other crates.
 //!
-//! Incoming URIs are parsed with the `url` crate. Outgoing file URIs keep the
-//! escaping the Go server produced (and editors accept): every byte except
-//! RFC 3986 unreserved characters, `/` and `$&+,:;=@` is percent-encoded and
-//! Windows drive letters are written as `/C:/...`. Paths use the
-//! Go-compatible lexical helpers in [`filepath`].
+//! Incoming URIs are parsed with the `url` crate. Outgoing file URIs are
+//! escaped the way editors expect: every byte except RFC 3986 unreserved
+//! characters, `/` and `$&+,:;=@` is percent-encoded, and Windows drive
+//! letters are written as `/C:/...`. Paths are handled as strings by the
+//! lexical helpers in [`filepath`].
 
 pub mod filepath;
 
-mod quote;
-
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, percent_encode};
 use url::Url;
-
-pub use quote::go_quote;
 
 /// Bytes percent-encoded in a URL path: everything except RFC 3986
 /// unreserved characters, `/` and the sub-delimiters `$&+,:;=@`.
@@ -50,7 +46,7 @@ impl std::fmt::Display for UriError {
 impl std::error::Error for UriError {}
 
 /// Converts an LSP file URI to an operating-system path. Plain paths are
-/// accepted for compatibility with older clients (Go `uriutil.Path`).
+/// accepted for compatibility with older clients.
 pub fn path(value: &str) -> Result<String, UriError> {
     if value.is_empty() {
         return Err(UriError("empty URI".to_owned()));
@@ -58,21 +54,20 @@ pub fn path(value: &str) -> Result<String, UriError> {
     // The URL standard silently strips tabs and newlines; reject them instead.
     if value.bytes().any(|byte| byte < 0x20 || byte == 0x7f) {
         return Err(UriError(format!(
-            "parse URI {}: invalid control character in URI",
-            go_quote(value)
+            "parse URI {value:?}: invalid control character in URI"
         )));
     }
     let parsed = match Url::parse(value) {
         Ok(parsed) => parsed,
         Err(url::ParseError::RelativeUrlWithoutBase) => return Ok(filepath::clean(value)),
         Err(error) => {
-            return Err(UriError(format!("parse URI {}: {error}", go_quote(value))));
+            return Err(UriError(format!("parse URI {value:?}: {error}")));
         }
     };
     if parsed.scheme() != "file" {
         return Err(UriError(format!(
-            "unsupported URI scheme {}",
-            go_quote(parsed.scheme())
+            "unsupported URI scheme {:?}",
+            parsed.scheme()
         )));
     }
     let mut path = percent_decode_str(parsed.path())
@@ -91,8 +86,7 @@ pub fn path(value: &str) -> Result<String, UriError> {
     Ok(filepath::from_slash(&path))
 }
 
-/// Converts a path to a standards-compliant escaped file URI (Go
-/// `uriutil.FileURI`).
+/// Converts a path to a standards-compliant escaped file URI.
 pub fn file_uri(path: &str) -> String {
     let cleaned = filepath::clean(path);
     let mut slash_path = filepath::to_slash(&cleaned);
@@ -102,8 +96,7 @@ pub fn file_uri(path: &str) -> String {
     format!("file://{}", percent_encode(slash_path.as_bytes(), PATH))
 }
 
-/// Creates a file URI whose fragment is already decoded (Go
-/// `uriutil.FileURIWithFragment`).
+/// Creates a file URI with `fragment`, which is given decoded.
 pub fn file_uri_with_fragment(path: &str, fragment: &str) -> String {
     let uri = file_uri(path);
     if fragment.is_empty() {
@@ -113,15 +106,14 @@ pub fn file_uri_with_fragment(path: &str, fragment: &str) -> String {
     format!("{uri}#{}", path_escape(fragment))
 }
 
-/// Escapes a string for use as one URL path segment (Go `url.PathEscape`).
+/// Escapes a string for use as one URL path segment.
 pub fn path_escape(value: &str) -> String {
     percent_encode(value.as_bytes(), PATH_SEGMENT).to_string()
 }
 
-/// Canonical escaped form of a raw (possibly already escaped) URL path, as
-/// Go's `URL.EscapedPath` returns it: a validly encoded path is kept
-/// verbatim, anything else is decoded and re-encoded with [`PATH`]. Returns
-/// `None` for a malformed `%` escape.
+/// Canonical escaped form of a raw (possibly already escaped) URL path: a
+/// validly encoded path is kept verbatim, anything else is decoded and
+/// re-encoded with [`PATH`]. Returns `None` for a malformed `%` escape.
 pub fn escaped_path(raw: &str) -> Option<String> {
     let bytes = raw.as_bytes();
     for (index, _) in raw.match_indices('%') {
@@ -231,7 +223,7 @@ mod tests {
                 "file://h:x/p",
                 Err(r#"parse URI "file://h:x/p": invalid international domain name"#),
             ),
-            // Accepted by the URL standard, unlike Go's `net/url`.
+            // Accepted by the URL standard.
             ("file:relative.php", Ok("/relative.php")),
             ("file:///a%zz", Ok("/a%zz")),
             ("file:///tmp/../x.php", Ok("/x.php")),
@@ -256,7 +248,7 @@ mod tests {
 
     #[cfg(not(windows))]
     #[test]
-    fn file_uri_matches_go_escaping() {
+    fn file_uri_escapes_reserved_bytes() {
         assert_eq!(
             file_uri("/tmp/a b!?#é[x]"),
             "file:///tmp/a%20b%21%3F%23%C3%A9%5Bx%5D"
@@ -280,7 +272,7 @@ mod tests {
     }
 
     #[test]
-    fn escaped_path_matches_go() {
+    fn escaped_path_keeps_valid_escapes() {
         assert_eq!(
             escaped_path("/edit/foo%2Ebar~v1").as_deref(),
             Some("/edit/foo%2Ebar~v1")

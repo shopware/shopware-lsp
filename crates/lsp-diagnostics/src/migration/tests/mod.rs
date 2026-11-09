@@ -1,5 +1,4 @@
-//! Tests of the migration group (Go `shopware_migration*_test.go`,
-//! `shopware_criteria_test.go`).
+//! Tests of the migration and Criteria analyzers.
 
 mod api;
 mod arguments;
@@ -33,7 +32,6 @@ impl TestIndex {
     }
 }
 
-/// Go `migrationTestPHPIndex`.
 pub(super) fn migration_test_php_index() -> TestIndex {
     let dir = tempfile::tempdir().expect("tempdir");
     let index = PhpIndex::open(dir.path(), None).expect("php index");
@@ -57,7 +55,6 @@ pub(super) fn migration_test_php_index() -> TestIndex {
     test
 }
 
-/// Go `resolvedShopwareMigrationVersion`.
 pub(super) fn version(major: i64, minor: i64, patch: i64) -> ResolvedVersion {
     ResolvedVersion {
         version: Version::new(major, minor, patch),

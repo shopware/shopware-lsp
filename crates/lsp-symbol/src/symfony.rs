@@ -1,5 +1,4 @@
-//! Symfony, Twig, translation and controller workspace symbols (port of
-//! `symfony_symbol.go`).
+//! Symfony, Twig, translation and controller workspace symbols.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -10,12 +9,12 @@ use swlsp_lsp_protocol as protocol;
 use swlsp_lsp_protocol::SymbolKind;
 use swlsp_php::PhpIndex;
 use swlsp_php_semantic::{Symbol, SymbolKind as PhpSymbolKind, Visibility};
-use swlsp_php_types::go_to_lower;
 use swlsp_symfony::{
     Route, RouteIndexer, RoutePathSearchMatcher, ServiceIndex, parse_controller_reference,
     resolve_controller_reference,
 };
 use swlsp_syntax::{LineIndex, TextRange};
+use swlsp_textutil::lowercase;
 use swlsp_translation::Index as TranslationIndex;
 use swlsp_twig::TwigIndexer;
 use swlsp_twigcomponent::Index as ComponentIndex;
@@ -110,7 +109,7 @@ impl WorkspaceSymbolProvider for SymfonyWorkspaceSymbolProvider {
         candidates.sort_by(|left, right| {
             left.score
                 .cmp(&right.score)
-                .then_with(|| go_to_lower(&left.name).cmp(&go_to_lower(&right.name)))
+                .then_with(|| lowercase(&left.name).cmp(&lowercase(&right.name)))
                 .then_with(|| left.container.cmp(&right.container))
                 .then_with(|| left.path.cmp(&right.path))
                 .then_with(|| left.range.start().cmp(&right.range.start()))
@@ -126,7 +125,7 @@ impl WorkspaceSymbolProvider for SymfonyWorkspaceSymbolProvider {
                 continue;
             };
             let key = (
-                go_to_lower(&current.name),
+                lowercase(&current.name),
                 current.container.clone(),
                 location.uri.clone(),
                 current.range,
@@ -440,7 +439,7 @@ impl SymfonyWorkspaceSymbolProvider {
                 container.push_str(&message.locale);
             }
             let domain_key = (
-                go_to_lower(&message.domain),
+                lowercase(&message.domain),
                 message.locale.clone(),
                 filepath::clean(&message.file),
             );
@@ -477,11 +476,11 @@ fn trim_backslash(value: &str) -> &str {
 }
 
 fn is_symfony_controller_class(class: &Symbol) -> bool {
-    let name = go_to_lower(trim_backslash(&class.fully_qualified));
+    let name = lowercase(trim_backslash(&class.fully_qualified));
     if !name.ends_with("controller") || !name.contains("\\controller\\") {
         return false;
     }
-    let path = go_to_lower(&filepath::to_slash(&class.path));
+    let path = lowercase(&filepath::to_slash(&class.path));
     !path.contains("/test/") && !path.contains("/tests/")
 }
 
@@ -544,13 +543,13 @@ fn short_route_controller_class(value: &str) -> String {
 
 /// 0 exact, 1 prefix, 2 substring, 3 empty query; `None` without a match.
 fn symbol_match_score(query: &str, values: &[&str]) -> Option<u8> {
-    let query = go_to_lower(query.trim());
+    let query = lowercase(query.trim());
     if query.is_empty() {
         return Some(3);
     }
     let mut best = 4;
     for value in values {
-        let value = go_to_lower(value);
+        let value = lowercase(value);
         if value == query {
             best = 0;
         } else if value.starts_with(&query) {

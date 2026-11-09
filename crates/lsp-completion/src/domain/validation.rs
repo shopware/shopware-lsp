@@ -1,4 +1,4 @@
-//! Validator constraint option names (Go `validation_completion.go`).
+//! Validator constraint option names.
 
 use swlsp_lsp::{CompletionProvider, CompletionRequest, Context};
 use swlsp_lsp_protocol::{self as protocol, CompletionItemKind};
@@ -7,8 +7,8 @@ use swlsp_php::PhpIndex;
 use super::{item, strings};
 use crate::common::php_context;
 
-/// Go has no dependencies and reads the PHP analysis from the request
-/// context; Rust builds it from `php`.
+/// Completes validator constraint option names; the PHP analysis of a
+/// request is built from `php`.
 pub struct ValidationCompletionProvider {
     php: Option<PhpIndex>,
 }

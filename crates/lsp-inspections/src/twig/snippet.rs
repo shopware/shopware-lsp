@@ -1,4 +1,4 @@
-//! Go `snippet.go`.
+//! Missing snippet inspection.
 
 use std::sync::Arc;
 
@@ -27,7 +27,6 @@ struct CreateSnippetPayload {
     admin: bool,
 }
 
-/// Go `NewSnippet`.
 pub fn new_snippet(
     snippet_index: Option<Arc<SnippetIndexer>>,
     translation_index: Option<Arc<TranslationIndex>>,

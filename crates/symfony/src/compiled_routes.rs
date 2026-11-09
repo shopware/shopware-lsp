@@ -81,7 +81,7 @@ pub(crate) fn parse_compiled_routes_tree(file_path: &str, tree: Option<&Tree>) -
             );
         }
         for method in phpquery::methods(&class) {
-            if !swlsp_php_types::equal_fold(&phpquery::method_name(&method), "__construct") {
+            if !swlsp_textutil::eq_ignore_case(&phpquery::method_name(&method), "__construct") {
                 continue;
             }
             for assignment in phpquery::nodes(&method, &[PHP_ASSIGNMENT_EXPRESSION]) {
@@ -166,7 +166,7 @@ fn compiled_route_generator_class(class: &SyntaxNode) -> bool {
         .any(|name| {
             let trimmed = name.trim();
             let normalized =
-                swlsp_php_types::go_to_lower(trimmed.strip_prefix('\\').unwrap_or(trimmed));
+                swlsp_textutil::lowercase(trimmed.strip_prefix('\\').unwrap_or(trimmed));
             normalized == "urlgenerator"
                 || normalized == "urlgeneratorinterface"
                 || normalized.ends_with("\\routing\\generator\\urlgenerator")
@@ -280,7 +280,7 @@ fn compiled_array_element(array: Option<&SyntaxNode>, wanted: i64) -> Option<Syn
     for item in phpquery::array_items(&array) {
         let mut item_index = position;
         if let Some(key) = phpquery::array_item_key(&item) {
-            match go_atoi(key.text().to_string().trim()) {
+            match key.text().to_string().trim().parse::<i64>().ok() {
                 Some(parsed) => item_index = parsed,
                 None => {
                     position += 1;
@@ -294,15 +294,6 @@ fn compiled_array_element(array: Option<&SyntaxNode>, wanted: i64) -> Option<Syn
         position = item_index + 1;
     }
     None
-}
-
-/// Go `strconv.Atoi`: optional sign followed by ASCII digits.
-fn go_atoi(value: &str) -> Option<i64> {
-    let digits = value.strip_prefix(['+', '-']).unwrap_or(value);
-    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    value.parse().ok()
 }
 
 fn direct_compiled_array(node: Option<&SyntaxNode>) -> Option<SyntaxNode> {

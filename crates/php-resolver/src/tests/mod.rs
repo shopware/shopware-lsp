@@ -1,5 +1,3 @@
-//! Ports of the Go `internal/php/resolver` tests.
-
 mod members;
 mod names;
 mod signatures;

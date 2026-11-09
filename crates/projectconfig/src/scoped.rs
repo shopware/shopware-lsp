@@ -1,5 +1,4 @@
-//! Nested, diagnostics-only extension configurations (port of
-//! `internal/projectconfig/scoped.go`).
+//! Nested, diagnostics-only extension configurations.
 
 use std::collections::HashSet;
 use std::io;
@@ -47,7 +46,7 @@ const SCOPED_DISCOVERY_SKIP_DIRECTORIES: &[&str] = &[
     ".devenv",
 ];
 
-/// Go `filepath.EvalSymlinks` for an existing path.
+/// The canonical path of an existing path, with every symlink resolved.
 fn eval_symlinks(path: &str) -> io::Result<String> {
     Ok(std::fs::canonicalize(path)?.to_string_lossy().into_owned())
 }
@@ -62,7 +61,7 @@ struct Discovery {
 impl Discovery {
     fn walk(&mut self, directory: &str) -> io::Result<()> {
         let mut entries = std::fs::read_dir(directory)?.collect::<io::Result<Vec<_>>>()?;
-        // Go os.ReadDir returns entries sorted by file name.
+        // Walk in file-name order so discovery is deterministic.
         entries.sort_by_key(|entry| entry.file_name());
         for entry in entries {
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -111,11 +110,9 @@ impl Discovery {
 }
 
 /// Discovers diagnostics-only configurations below `workspace_root`. The
-/// workspace-root configuration itself remains owned by [`crate::load`]
-/// (Go `LoadScopes`).
+/// workspace-root configuration itself remains owned by [`crate::load`].
 pub fn load_scopes(workspace_root: &str) -> Result<Vec<Scope>, ConfigError> {
-    let workspace_root = filepath::abs(workspace_root)
-        .map_err(|error| ConfigError(format!("resolve configuration workspace: {error}")))?;
+    let workspace_root = filepath::abs(workspace_root).map_err(ConfigError::ResolveWorkspace)?;
     let workspace_root = filepath::clean(&workspace_root);
     let mut discovery = Discovery {
         workspace_root: workspace_root.clone(),
@@ -128,11 +125,9 @@ pub fn load_scopes(workspace_root: &str) -> Result<Vec<Scope>, ConfigError> {
             .visited_directories
             .insert(filepath::clean(&real_root));
     }
-    discovery.walk(&workspace_root).map_err(|error| {
-        ConfigError(format!(
-            "discover nested Shopware LSP configurations: {error}"
-        ))
-    })?;
+    discovery
+        .walk(&workspace_root)
+        .map_err(ConfigError::DiscoverNested)?;
     let mut result = discovery.result;
     result.sort_by(|left, right| {
         path_depth(&left.root)
@@ -149,7 +144,10 @@ fn load_scope(root: &str, config_path: &str) -> Scope {
         ..Scope::default()
     };
     let outcome = std::fs::read(config_path)
-        .map_err(|error| ConfigError(error.to_string()))
+        .map_err(|source| ConfigError::Read {
+            path: config_path.to_owned(),
+            source,
+        })
         .and_then(|data| decode(&data))
         .and_then(|configuration| {
             validate_nested(&configuration)?;
@@ -157,13 +155,15 @@ fn load_scope(root: &str, config_path: &str) -> Scope {
         });
     match outcome {
         Ok(configuration) => result.configuration = configuration,
+        // A read error already names the file.
+        Err(error @ ConfigError::Read { .. }) => result.error = error.to_string(),
         Err(error) => result.error = format!("{config_path}: {error}"),
     }
     result
 }
 
 /// Rejects settings whose behavior cannot be scoped safely to a nested
-/// extension repository (Go `ValidateNested`).
+/// extension repository.
 pub fn validate_nested(value: &Partial) -> Result<(), ConfigError> {
     if value.php.is_some()
         || value.shopware.is_some()
@@ -172,30 +172,27 @@ pub fn validate_nested(value: &Partial) -> Result<(), ConfigError> {
         || !value.domains.is_empty()
         || value.check.is_some()
     {
-        return Err(ConfigError::new(
-            "nested configuration may only contain diagnostics",
-        ));
+        return Err(ConfigError::NestedNotDiagnosticsOnly);
     }
     Ok(())
 }
 
-/// Joins every invalid nested configuration for strict CLI startup (Go
-/// `ScopeErrors`; `Ok` stands for a nil joined error).
+/// Joins every invalid nested configuration for strict CLI startup; `Ok`
+/// when all scopes are valid.
 pub fn scope_errors(values: &[Scope]) -> Result<(), ConfigError> {
-    let errors: Vec<&str> = values
+    let errors: Vec<String> = values
         .iter()
         .filter(|value| !value.error.is_empty())
-        .map(|value| value.error.as_str())
+        .map(|value| value.error.clone())
         .collect();
     if errors.is_empty() {
         return Ok(());
     }
-    Err(ConfigError(errors.join("\n")))
+    Err(ConfigError::InvalidScopes(errors))
 }
 
 /// Reports whether `candidate` belongs to `root` without resolving symlinks,
-/// preserving the workspace-visible path used by editor URIs (Go
-/// `Contains`).
+/// preserving the workspace-visible path used by editor URIs.
 pub fn contains(root: &str, candidate: &str) -> bool {
     let Ok(relative) = filepath::rel(&filepath::clean(root), &filepath::clean(candidate)) else {
         return false;

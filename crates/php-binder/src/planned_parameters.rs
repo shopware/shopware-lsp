@@ -6,9 +6,10 @@ use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;
 use swlsp_php_resolver::NameContext;
 use swlsp_php_semantic::{Flags, Parameter, Str, SymbolKind, new_symbol_id};
-use swlsp_php_types::{Kind as TypeKind, Type, equal_fold};
+use swlsp_php_types::{Kind as TypeKind, Type};
 use swlsp_syntax::SyntaxNode;
 use swlsp_syntax::rowan::NodeOrToken;
+use swlsp_textutil::eq_ignore_case;
 
 use crate::builder::Builder;
 
@@ -29,9 +30,9 @@ impl Builder<'_> {
         let mut result = Vec::new();
         for attribute in query::attributes(node) {
             let resolved = context.resolve_class(&query::attribute_name(&attribute));
-            let optional = if equal_fold(&resolved, NEW_OPTIONAL_PARAMETER_ATTRIBUTE) {
+            let optional = if eq_ignore_case(&resolved, NEW_OPTIONAL_PARAMETER_ATTRIBUTE) {
                 true
-            } else if equal_fold(&resolved, NEW_REQUIRED_PARAMETER_ATTRIBUTE) {
+            } else if eq_ignore_case(&resolved, NEW_REQUIRED_PARAMETER_ATTRIBUTE) {
                 false
             } else {
                 continue;
@@ -77,7 +78,7 @@ impl Builder<'_> {
 
 fn named_attribute_argument(attribute: &SyntaxNode, name: &str) -> Option<SyntaxNode> {
     let index = query::arguments(attribute)
-        .position(|argument| equal_fold(&query::argument_name(&argument), name))?;
+        .position(|argument| eq_ignore_case(&query::argument_name(&argument), name))?;
     query::argument_expression(attribute, index)
 }
 

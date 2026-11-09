@@ -1,4 +1,4 @@
-//! Interpolated string inputs (port of Go `string_variables.go`).
+//! Interpolated string inputs.
 
 use swlsp_syntax::SyntaxToken;
 
@@ -57,7 +57,7 @@ pub fn string_variables_in(text: &str) -> Option<Vec<String>> {
             return None;
         }
         if !variable_start(bytes[index]) {
-            // Go's loop increment also skips the byte after a bare `$`.
+            // A bare `$` also skips the byte after it.
             index += 1;
             continue;
         }

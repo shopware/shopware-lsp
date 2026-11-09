@@ -1,5 +1,4 @@
-//! Go `route_attribute_codeaction_test.go` and
-//! `route_action_parameter_codeaction_test.go`.
+//! Route attribute and route action parameter tests.
 
 use std::sync::Arc;
 
@@ -11,8 +10,7 @@ use swlsp_syntax::{SyntaxNodeExt, TextSize};
 
 use super::*;
 
-/// Go `routeAttributeCodeActionRequest` / `commandInvokeParameterRequest`:
-/// the node is taken at the needle offset, the range spans the needle.
+/// A request whose node is taken at the needle offset, the range spans the needle.
 fn needle_request(uri: &str, source: &str, needle: &str) -> CodeActionRequest {
     let document = Arc::new(TextDocument::new(uri, source, 1));
     let offset = source.find(needle).unwrap() as u32;

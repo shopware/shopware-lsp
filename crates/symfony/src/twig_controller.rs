@@ -6,7 +6,7 @@ use swlsp_parser_twig::syntax as twigsyntax;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
 
 use crate::controller::{ControllerReference, parse_controller_reference};
-use crate::util::{GoLower, go_trim_space};
+use crate::util::Lowercase;
 
 /// A statically knowable first argument of Twig's `controller()` function.
 /// `range` covers the string contents without quotes.
@@ -28,7 +28,8 @@ pub struct TwigControllerReference {
 /// Mirrors Twig's escaped namespace spelling and the reference plugin's
 /// controller index normalization.
 pub fn normalize_twig_controller_value(value: &str) -> String {
-    go_trim_space(value)
+    value
+        .trim()
         .replace("\\\\", "\\")
         .trim_start_matches('\\')
         .to_owned()
@@ -38,15 +39,15 @@ pub fn normalize_twig_controller_value(value: &str) -> String {
 pub fn controller_reference_key(reference: &ControllerReference) -> String {
     format!(
         "{}::{}",
-        go_trim_space(&reference.target).trim_start_matches('\\'),
-        go_trim_space(&reference.method)
+        reference.target.trim().trim_start_matches('\\'),
+        reference.method.trim()
     )
-    .to_go_lower()
+    .lowercase()
 }
 
 fn is_controller_call(call: &SyntaxNode) -> bool {
     twigquery::function_name(call)
-        .is_some_and(|name| swlsp_php_types::equal_fold(&name, "controller"))
+        .is_some_and(|name| swlsp_textutil::eq_ignore_case(&name, "controller"))
 }
 
 /// Direct static first arguments of `controller()`.
@@ -122,14 +123,14 @@ pub fn parse_twig_controller_reference(value: &str) -> Option<ControllerReferenc
     if let Some(reference) = parse_controller_reference(value) {
         return Some(reference);
     }
-    let value = go_trim_space(value);
+    let value = value.trim();
     let parts: Vec<&str> = value.split(':').collect();
     if parts.len() != 3 {
         return None;
     }
     let mut trimmed = Vec::with_capacity(3);
     for part in parts {
-        let part = go_trim_space(part);
+        let part = part.trim();
         if part.is_empty() || part.contains(['%', '$', '{', '}']) {
             return None;
         }
@@ -150,7 +151,7 @@ fn twig_controller_string_range(node: &SyntaxNode) -> TextRange {
     }
     let range = node.range_trimmed_trivia();
     let text = node.text().to_string();
-    let text = go_trim_space(&text).as_bytes();
+    let text = text.trim().as_bytes();
     if text.len() >= 2
         && (text[0] == b'\'' || text[0] == b'"')
         && text[text.len() - 1] == text[0]

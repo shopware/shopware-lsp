@@ -1,12 +1,13 @@
-//! Object creation and member access (port of `expression_object.go`).
+//! Object creation and member access.
 
 use rustc_hash::FxHashMap;
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;
 use swlsp_php_resolver::{TemplateBindings, resolve_signature};
 use swlsp_php_semantic::{Flags, Str, Symbol, SymbolKind, Visibility, anonymous_class_name};
-use swlsp_php_types::{Kind, Type, equal_fold, go_to_lower};
+use swlsp_php_types::{Kind, Type};
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::analyzer::Fs;
 use crate::env::Env;
@@ -34,7 +35,7 @@ impl Fs<'_, '_, '_> {
         }
         let mut class_name = context.resolve_class(&name);
         let mut preserve_current_templates = false;
-        match go_to_lower(trim_backslash(&name)).as_str() {
+        match lowercase(trim_backslash(&name)).as_str() {
             "self" | "static" => {
                 if self.current_class.kind() == Kind::Object {
                     class_name = self.current_class.name().to_owned();
@@ -147,7 +148,7 @@ impl Fs<'_, '_, '_> {
         }
         let receiver = self.infer_receiver(&nodes[0], env, is_static);
         let name = query::name_value(&nodes[nodes.len() - 1]);
-        if is_static && equal_fold(&name, "class") {
+        if is_static && eq_ignore_case(&name, "class") {
             return Type::class_string(receiver);
         }
         let members = self.members();
@@ -173,7 +174,7 @@ impl Fs<'_, '_, '_> {
         value: &Type,
     ) {
         if target.kind() != PHP_MEMBER_ACCESS
-            || !equal_fold(&self.symbol.name, "__construct")
+            || !eq_ignore_case(&self.symbol.name, "__construct")
             || value.is_unknown()
         {
             return;
@@ -222,7 +223,7 @@ fn map_current_class_templates(class: &Symbol, current: &Type, enabled: bool) ->
     let mut result = TemplateBindings::default();
     if !enabled
         || current.kind() != Kind::Object
-        || !equal_fold(&class.fully_qualified, current.name())
+        || !eq_ignore_case(&class.fully_qualified, current.name())
     {
         return result;
     }

@@ -1,4 +1,4 @@
-//! Shared test helpers (Go `main_test.go` cache setup, an MCP test client).
+//! Shared test helpers: the process-wide test cache and an MCP test client.
 
 use std::io::Write;
 use std::path::Path;
@@ -12,7 +12,7 @@ use crate::{Buffer, Cancel, CliError, Options, Runner};
 
 static INIT: Once = Once::new();
 
-/// Go `TestMain`: one cache parent for the whole process. Production cache
+/// One cache parent for the whole process. Production cache
 /// folders are keyed by workspace root, and every test owns a unique root.
 pub fn init() {
     INIT.call_once(|| {
@@ -125,8 +125,8 @@ pub struct ToolResult {
     pub structured: Value,
 }
 
-/// An MCP client driving `shopware-lsp -root <root> mcp` in-process over a
-/// pipe (Go `connectMCPTestClient`).
+/// An MCP client driving `shopware-lsp --root <root> mcp` in-process over a
+/// pipe.
 pub struct McpClient {
     writer: Option<std::io::PipeWriter>,
     out: Buffer,

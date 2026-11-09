@@ -102,7 +102,7 @@ impl Index {
         }
         if is_theme_config {
             let fields = swlsp_theme::parse_theme_config_tree(tree, lines, file.path())
-                .map_err(Error::msg)?;
+                .map_err(|error| Error::msg(error.to_string()))?;
             prepared.variable_declarations = theme_variables(&fields);
         }
         if matches!(extension, ".twig" | ".html" | ".vue") {
@@ -164,17 +164,17 @@ impl Index {
             .any(|catalog| excluded == "." || filepath::clean(&catalog.file) != excluded))
     }
 
-    /// The class declaration repository (oracle and diagnostics access).
+    /// The class declaration repository (diagnostics and tests).
     pub fn declaration_repository(&self) -> &DataIndexer<ClassCatalog> {
         &self.declarations
     }
 
-    /// The class usage repository (oracle and diagnostics access).
+    /// The class usage repository (diagnostics and tests).
     pub fn usage_repository(&self) -> &DataIndexer<ClassCatalog> {
         &self.usages
     }
 
-    /// The variable declaration repository (oracle and diagnostics access).
+    /// The variable declaration repository (diagnostics and tests).
     pub fn variable_repository(&self) -> &DataIndexer<VariableCatalog> {
         &self.variables
     }
@@ -198,7 +198,7 @@ impl Index {
     }
 }
 
-/// Groups occurrences by name in source order (Go `catalogWrite`).
+/// Groups occurrences by name in source order.
 fn class_catalogs(path: &str, occurrences: &[ClassOccurrence]) -> BTreeMap<String, ClassCatalog> {
     let mut catalogs: BTreeMap<String, ClassCatalog> = BTreeMap::new();
     for occurrence in occurrences

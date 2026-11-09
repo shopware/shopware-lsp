@@ -130,7 +130,7 @@ fn html_attribute_equals(start_tag: &SyntaxNode, name: &str, value: &str) -> boo
         .value()
         .and_then(|string| string.inner())
         .is_some_and(|inner| {
-            swlsp_php_types::equal_fold(inner.syntax().text().to_string().trim(), value)
+            swlsp_textutil::eq_ignore_case(inner.syntax().text().to_string().trim(), value)
         })
 }
 

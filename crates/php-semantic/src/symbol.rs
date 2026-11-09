@@ -116,8 +116,8 @@ impl fmt::Debug for SymbolId {
     }
 }
 
-/// The declaration kind. Values match the Go constants and are part of the
-/// symbol ID format.
+/// The declaration kind. Values are part of the symbol ID format and must
+/// not change.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 pub enum SymbolKind {
@@ -229,7 +229,7 @@ impl Visibility {
     }
 }
 
-/// Declaration modifier bits; values match Go.
+/// Declaration modifier bits. Values are persisted and must not change.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct Flags(pub u32);
 
@@ -801,6 +801,6 @@ pub(crate) fn write_lower_identifier(target: &mut String, value: &str) {
                 .map(|byte| char::from(byte.to_ascii_lowercase())),
         );
     } else {
-        target.push_str(&swlsp_php_types::go_to_lower(value));
+        target.push_str(&swlsp_textutil::lowercase(value));
     }
 }

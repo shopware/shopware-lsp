@@ -19,7 +19,8 @@ use super::{AdminHoverProvider, HoverResult, admin_hover_range, admin_template_p
 use crate::{markdown_hover, request_offset};
 
 impl AdminHoverProvider {
-    /// Go `twigVueMemberHover`: `Ok((hover, handled))`.
+    /// The hover for a Vue member in an Administration template, with whether
+    /// the cursor was on a member at all: `Ok((hover, handled))`.
     pub(crate) fn twig_vue_member_hover(
         &self,
         request: &HoverRequest,

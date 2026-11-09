@@ -1,5 +1,4 @@
-//! The Administration indexer and its repositories (port of Go
-//! `indexer.go`).
+//! The Administration indexer and its repositories.
 
 use std::sync::RwLock;
 
@@ -23,12 +22,11 @@ pub struct AdminComponentIndexer {
     pub(crate) privilege_index: DataIndexer<AdminPrivilege>,
     pub(crate) usage_index: DataIndexer<AdminUsageSet>,
     pub(crate) type_index: DataIndexer<AdminTypeFile>,
-    /// Template path → component name (Go `templateCache` +
-    /// `templateCatalogBuilt`).
+    /// Template path → component name, plus whether the catalog is built.
     pub(crate) template_cache: RwLock<TemplateComponentCache>,
-    /// Effective components by name (Go `effectiveCache` + epoch).
+    /// Effective components by name, tagged with the index epoch.
     pub(crate) effective_cache: RwLock<EffectiveComponentCache>,
-    /// Open-document overlays (Go `liveDocumentMu` + maps). Write through
+    /// Open-document overlays. Write through
     /// [`Self::live_mut`], which advances `live_revision`.
     pub(crate) live: RwLock<LiveDocuments>,
     /// Advanced by every change to the open-document overlays.
@@ -62,7 +60,7 @@ pub(crate) struct TemplateComponentCache {
     pub components: HashMap<String, String>,
     pub catalog_built: bool,
     /// Normalized template paths proven to have no component in the
-    /// current generation (Go recomputes these with a full scan per call).
+    /// current generation, so repeated lookups skip the full scan.
     pub misses: HashSet<String>,
 }
 
@@ -93,7 +91,7 @@ impl AdminComponentIndexer {
     }
 
     /// Opens the repositories inside `store`, or isolated databases below
-    /// `config_dir` when no store is given (Go `NewAdminComponentIndexer`).
+    /// `config_dir` when no store is given.
     pub fn new(config_dir: &str, store: Option<&Store>) -> IndexResult<Self> {
         fn open<T>(
             config_dir: &str,
@@ -144,8 +142,8 @@ impl AdminComponentIndexer {
     }
 }
 
-/// Runs every repository operation and returns the first error (Go
-/// `errors.Join`).
+/// Runs every repository operation, even after a failure, and returns the
+/// first error.
 fn join_errors(results: impl IntoIterator<Item = IndexResult<()>>) -> IndexResult<()> {
     let mut first = Ok(());
     for result in results {
@@ -675,8 +673,7 @@ impl AdminComponentIndexer {
     }
 }
 
-/// Builds `key -> value` items where later values with the same key win,
-/// matching Go map assignment.
+/// Builds `key -> value` items where later values with the same key win.
 fn keyed<T: Clone>(values: &[T], key: impl Fn(&T) -> String) -> HashMap<String, T> {
     let mut result = HashMap::with_capacity(values.len());
     for value in values {
@@ -1039,7 +1036,7 @@ pub(crate) fn merge_component_definitions(
     base
 }
 
-/// Go `appendUniqueValues`: appends non-empty values not yet present.
+/// Appends non-empty values not yet present.
 pub(crate) fn append_unique_values(values: &mut Vec<String>, additions: &[String]) {
     for value in additions {
         if value.is_empty() || values.contains(value) {

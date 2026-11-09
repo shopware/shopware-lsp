@@ -1,13 +1,14 @@
 //! Doctrine DBAL table, column and join alias intelligence on
-//! `Connection`/`QueryBuilder` calls (port of Go `dbal.go`).
+//! `Connection`/`QueryBuilder` calls.
 
 use std::collections::{BTreeSet, HashSet};
 
 use swlsp_parser_php::query as phpquery;
 use swlsp_php::PhpContext;
-use swlsp_php_types::{Type, equal_fold, go_to_lower};
+use swlsp_php_types::Type;
 use swlsp_shopware_dal::{Definition, Field};
 use swlsp_syntax::{SyntaxNode, TextRange};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::index::Index;
 
@@ -78,7 +79,7 @@ impl Index {
         let literal = phpquery::string_at(node)?;
         let call = phpquery::call_at(&literal)?;
         let receiver = dbal_receiver(context, &call)?;
-        let method = go_to_lower(&phpquery::call_method_name(&call));
+        let method = lowercase(&phpquery::call_method_name(&call));
         let argument = phpquery::argument_index(&call, &literal);
         let mut reference = DbalReference {
             role: DbalReferenceRole::Table,
@@ -170,7 +171,7 @@ impl Index {
                         continue;
                     }
                     let name = column_name(field);
-                    if name.is_empty() || !seen.insert(go_to_lower(name)) {
+                    if name.is_empty() || !seen.insert(lowercase(name)) {
                         continue;
                     }
                     result.push(DbalCompletion {
@@ -225,7 +226,7 @@ impl Index {
         let field = definition
             .fields
             .iter()
-            .find(|field| !field.association && equal_fold(column_name(field), column))
+            .find(|field| !field.association && eq_ignore_case(column_name(field), column))
             .cloned();
         Ok(field.map(|field| (definition, field)))
     }
@@ -291,7 +292,7 @@ fn first_char(value: &str) -> &str {
 }
 
 fn dbal_alias_suggestions(from_alias: &str, table: &str) -> Vec<String> {
-    let table = crate::helpers::go_trim_space(table);
+    let table = table.trim();
     if table.is_empty() {
         return Vec::new();
     }
@@ -317,9 +318,9 @@ fn dbal_camelize(value: &str) -> String {
     let Some(first) = parts.next() else {
         return String::new();
     };
-    let mut result = go_to_lower(first);
+    let mut result = lowercase(first);
     for part in parts {
-        let lower = go_to_lower(part);
+        let lower = lowercase(part);
         let head = first_char(&lower);
         result.push_str(&head.to_uppercase());
         result.push_str(&lower[head.len()..]);

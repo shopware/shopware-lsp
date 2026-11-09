@@ -1,5 +1,5 @@
 //! Static CSS classes (SCSS declarations and markup usages) and SCSS
-//! variables (port of Go `internal/style`).
+//! variables.
 
 mod classes;
 mod index;

@@ -1,5 +1,5 @@
-//! Storefront and Administration snippet commands (port of Go
-//! `snippet_command.go`).
+//! Storefront and Administration snippet commands: list snippets, suggest
+//! snippet files for a template, and add a key to snippet files.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -9,9 +9,10 @@ use serde_json::{Value, json};
 use swlsp_lsp::{BoxError, CommandFunc, CommandProvider, Context};
 use swlsp_rewrite::WorkspacePlan;
 use swlsp_snippet::{Snippet, SnippetIndexer};
-use swlsp_uriutil::{file_uri, filepath};
+use swlsp_uriutil::file_uri;
+use swlsp_uriutil::filepath::{self, dir};
 
-use crate::{EditHost, EditResponse, add_replacement, decode_args, dir, target_snapshot};
+use crate::{EditHost, EditResponse, add_replacement, decode_args, target_snapshot};
 
 /// A snippet file candidate or a value to write into one.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,8 +64,7 @@ impl SnippetCommandProvider {
         }
     }
 
-    /// Builds the edit adding `key` to every listed file (Go
-    /// `createSnippets`).
+    /// Builds the edit adding `key` to every listed file.
     pub fn create_snippets(
         &self,
         ctx: &Context,
@@ -269,7 +269,7 @@ impl Inner {
             let source = snapshot
                 .as_ref()
                 .map_or("{}", |snapshot| snapshot.document.source());
-            let content = crate::sjson::set(source, key, &snippet.value)
+            let content = crate::json_edit::set_string(source, key, &snippet.value)
                 .map_err(|error| format!("set snippet {key}: {error}"))?;
             let formatted = crate::pretty::pretty(content.as_bytes());
             add_replacement(

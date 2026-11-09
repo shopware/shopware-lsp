@@ -1,5 +1,4 @@
-//! Go `container_constant_completion.go`: `!php/const` and `!php/enum`
-//! values in Symfony YAML service configuration.
+//! Completion of `!php/const` and `!php/enum` values in Symfony YAML service configuration.
 
 use std::collections::HashSet;
 
@@ -11,7 +10,8 @@ use swlsp_symfony::ContainerValueKind;
 use swlsp_syntax::{LineIndex, TextRange, TextSize};
 
 use super::{markdown, request_offset, sort_by_lower_label};
-use crate::common::{go_to_lower, is_yaml_file, protocol_range, text_edit};
+use crate::common::{is_yaml_file, protocol_range, text_edit};
+use swlsp_textutil::lowercase;
 
 pub struct ContainerConstantCompletionProvider {
     php_index: Option<PhpIndex>,
@@ -85,15 +85,14 @@ fn class_constant_items(
     line_index: &LineIndex,
     kind: ContainerValueKind,
 ) -> Vec<protocol::CompletionItem> {
-    let partial = go_to_lower(partial);
+    let partial = lowercase(partial);
     let mut items = Vec::new();
     let mut seen = HashSet::new();
     for symbol in php.constants(class_name) {
         if kind == ContainerValueKind::Enum && symbol.kind != SymbolKind::EnumCase {
             continue;
         }
-        if symbol.visibility != Visibility::Public
-            || !go_to_lower(&symbol.name).starts_with(&partial)
+        if symbol.visibility != Visibility::Public || !lowercase(&symbol.name).starts_with(&partial)
         {
             continue;
         }
@@ -118,11 +117,11 @@ fn all_enum_items(
     replace: TextRange,
     line_index: &LineIndex,
 ) -> Vec<protocol::CompletionItem> {
-    let prefix = go_to_lower(prefix);
+    let prefix = lowercase(prefix);
     let mut items = Vec::new();
     let mut seen = HashSet::new();
     let mut add = |label: String, symbol: &Symbol, kind: CompletionItemKind| {
-        if !go_to_lower(&label).starts_with(&prefix) || !seen.insert(label.clone()) {
+        if !lowercase(&label).starts_with(&prefix) || !seen.insert(label.clone()) {
             return;
         }
         let mut item =
@@ -166,7 +165,7 @@ fn all_constant_items(
     replace: TextRange,
     line_index: &LineIndex,
 ) -> Vec<protocol::CompletionItem> {
-    let prefix = go_to_lower(prefix);
+    let prefix = lowercase(prefix);
     let mut items = Vec::new();
     let mut seen = HashSet::new();
     for symbol in php.constant_symbols() {
@@ -174,7 +173,7 @@ fn all_constant_items(
             continue;
         }
         let label = php.constant_symbol_name(&symbol);
-        let lower = go_to_lower(&label);
+        let lower = lowercase(&label);
         if matches!(lower.as_str(), "true" | "false" | "null") || !lower.starts_with(&prefix) {
             continue;
         }

@@ -1,4 +1,4 @@
-//! Go `property_service_codeaction_test.go`.
+//! "Add Property Service" action tests.
 
 use std::sync::Arc;
 

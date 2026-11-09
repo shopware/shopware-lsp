@@ -140,8 +140,7 @@ fn event_heavy_source() -> String {
     source
 }
 
-/// Correctness part of Go `BenchmarkTwigVueBindingsAtOffsetEventHeavy` and
-/// `BenchmarkTwigVueBindingReferencesEventHeavy`.
+/// Bindings and binding references in an event-heavy template.
 #[test]
 fn twig_vue_event_heavy_bindings() {
     let content = event_heavy_source();

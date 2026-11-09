@@ -117,7 +117,7 @@ struct WriterSlot {
     closed: bool,
     /// The thread that began the active mutation. A second mutation from the
     /// same thread could never acquire the writer, so it fails instead of
-    /// deadlocking (Go hits SQLite's busy timeout in the same situation).
+    /// deadlocking.
     owner: Option<ThreadId>,
     /// Grouped mutations whose outer transaction is still open.
     group: Group,

@@ -1,5 +1,5 @@
 //! Local components/directives, instance assignments and lexical const
-//! resolution (port of Go `definition_parser_registration.go`).
+//! resolution.
 
 use crate::*;
 

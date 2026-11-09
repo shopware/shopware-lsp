@@ -1,5 +1,5 @@
-//! Ports of `provider_test.go`, `completion_imports_test.go`,
-//! `hierarchy_test.go` and `editor_test.go`.
+//! Tests for the PHP semantic providers: diagnostics, completion and
+//! imports, navigation, hierarchy and the editor features.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -61,7 +61,7 @@ fn document(path: &Path, source: &str, version: i32) -> Arc<TextDocument> {
     ))
 }
 
-/// Go's test `syntaxContext`: the node and token at a byte offset.
+/// The syntax context of `document`: the node and token at a byte offset.
 fn syntax(document: &Arc<TextDocument>, offset: u32) -> SyntaxContext {
     let root = document.root().unwrap();
     let at = TextSize::from(offset);
@@ -180,7 +180,7 @@ fn assert_elements_match(mut actual: Vec<String>, expected: &[&str]) {
 }
 
 // ---------------------------------------------------------------------------
-// provider_test.go
+// Diagnostics, completion and navigation
 
 #[test]
 fn provider_member_features() {
@@ -1228,7 +1228,7 @@ fn provider_analyze_ignores_non_php_and_reports_cancellation() {
 }
 
 // ---------------------------------------------------------------------------
-// completion_imports_test.go
+// Completion imports
 
 fn global_completions(
     index: &PhpIndex,
@@ -1397,7 +1397,7 @@ fn php_completion_package_uses_composer_psr4_ownership() {
 }
 
 // ---------------------------------------------------------------------------
-// hierarchy_test.go
+// Hierarchy
 
 fn implementation_locations(
     provider: &Provider,
@@ -1517,7 +1517,7 @@ class_alias(Child::class, \\Legacy\\ChildAlias::class);
 }
 
 // ---------------------------------------------------------------------------
-// editor_test.go
+// Editor features
 
 fn outline(provider: &Provider, document: &Arc<TextDocument>) -> Vec<DocumentSymbol> {
     provider

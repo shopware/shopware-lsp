@@ -1,4 +1,4 @@
-//! Ports of the Go `internal/messenger` tests.
+//! Handler, dispatch, index and reference tests.
 
 use swlsp_indexer::{Indexer, ParsedFile, PreparingIndexer};
 use swlsp_php::PhpIndex;

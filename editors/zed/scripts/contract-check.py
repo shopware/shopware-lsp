@@ -260,7 +260,7 @@ def check_mcp(binary, root):
         [binary, "-root", root, "mcp"], capture_output=True, text=True, timeout=120
     )
     check(
-        "Go-style single-dash flags are rejected",
+        "single-dash long flags are rejected",
         rejected.returncode == 2 and "'--root'" in rejected.stderr,
         "clients must pass GNU-style flags such as --root",
     )

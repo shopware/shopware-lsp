@@ -58,7 +58,11 @@ impl TestClient {
         let (server_in, client_out) = std::io::pipe().expect("pipe");
         let (client_in, server_out) = std::io::pipe().expect("pipe");
         let running = server.clone();
-        let server_thread = std::thread::spawn(move || running.start(server_in, server_out));
+        let server_thread = std::thread::spawn(move || {
+            running
+                .start(server_in, server_out)
+                .map_err(|error| error.to_string())
+        });
         let writer = Arc::new(Mutex::new(Some(client_out)));
         let pending: Pending = Arc::default();
         let notifications: Arc<Mutex<Vec<(String, Value)>>> = Arc::default();
@@ -278,7 +282,7 @@ pub fn file_uri(path: &Path) -> String {
     swlsp_uriutil::file_uri(&path.to_string_lossy())
 }
 
-/// A server built like Go's `lsp.NewServer(nil, root, "test")` with the
+/// A test server for `root` with the
 /// production workspace factory caching below `cache`.
 pub fn workspace_server(root: &Path, cache: &Path) -> Server {
     let server = Server::new(None, &root.to_string_lossy(), "test");

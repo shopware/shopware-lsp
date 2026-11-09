@@ -1,4 +1,4 @@
-//! Go `twig_extension_attribute_codeaction_test.go`.
+//! Twig extension attribute migration tests.
 
 use swlsp_indexer::{Indexer, ParsedFile};
 use swlsp_lsp::{ActionProvider, CodeActionRequest, Context, TextDocument};
@@ -10,7 +10,7 @@ use crate::test_support::request_at;
 
 const URI: &str = "file:///project/src/TestCommand.php";
 
-/// Go `commandInvokeParameterRequest`: selects `needle`.
+/// Selects `needle`.
 fn request(source: &str, needle: &str) -> CodeActionRequest {
     let offset = source.find(needle).unwrap() as u32;
     request_at(URI, source, offset, offset + needle.len() as u32)
@@ -360,7 +360,7 @@ class OtherExtension extends AbstractExtension
 }
 
 #[test]
-fn lower_camel_case_matches_go() {
+fn lower_camel_case_changes_only_part_initials() {
     assert_eq!(lower_camel_case("needs_environment"), "needsEnvironment");
     assert_eq!(lower_camel_case("Single"), "single");
     assert_eq!(lower_camel_case("IS-SAFE now"), "isSAFENow");

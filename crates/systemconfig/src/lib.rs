@@ -1,4 +1,4 @@
-//! Shopware system-config XML fields (port of Go `internal/systemconfig`).
+//! Shopware system-config XML fields.
 
 mod indexer;
 mod namespace;

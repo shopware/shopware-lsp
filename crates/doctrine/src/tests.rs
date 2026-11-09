@@ -1,4 +1,4 @@
-//! Ports of the Go `internal/doctrine` tests.
+//! DBAL type registration, type configuration and DBAL reference tests.
 
 use std::sync::Arc;
 

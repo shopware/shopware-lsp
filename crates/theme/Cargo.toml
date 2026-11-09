@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+thiserror.workspace = true
 swlsp-syntax.workspace = true
 swlsp-indexer = { path = "../indexer" }
 swlsp-parser-json = { path = "../parser-json" }

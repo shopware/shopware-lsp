@@ -25,6 +25,7 @@ swlsp-php-semantic = { path = "../php-semantic" }
 swlsp-php-types = { path = "../php-types" }
 swlsp-pathmatch = { path = "../pathmatch" }
 swlsp-textutil = { path = "../textutil" }
+thiserror.workspace = true
 swlsp-uriutil = { path = "../uriutil" }
 swlsp-admin-twigmigration = { path = "../admin-twigmigration" }
 memchr = "2"

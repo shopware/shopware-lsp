@@ -1,12 +1,13 @@
-//! Go `snippet_codeaction.go` and `snippet_copy_codeaction.go`.
+//! Snippet actions: create a Storefront or Administration snippet from the
+//! selection and copy a snippet usage.
 
 use serde_json::Value;
 use swlsp_language::LanguageId;
 use swlsp_lsp::{ActionProvider, CodeActionRequest, Context};
 use swlsp_lsp_protocol::{self as protocol, CodeActionKind};
 use swlsp_parser_json::syntax::{JSON_OBJECT, JSON_PAIR, JSON_STRING};
-use swlsp_php_types::go_to_lower;
 use swlsp_syntax::{LineIndex, SyntaxNode};
+use swlsp_textutil::lowercase;
 
 pub const COPY_SNIPPET_USAGE_ACTION: &str = "shopware.copySnippetUsage";
 
@@ -53,7 +54,7 @@ impl ActionProvider for SnippetCodeActionProvider {
         request: &CodeActionRequest,
     ) -> Vec<protocol::CodeAction> {
         let uri = &request.params.text_document.uri;
-        if !go_to_lower(swlsp_uriutil::filepath::ext(uri)).ends_with(".twig") {
+        if !lowercase(swlsp_uriutil::filepath::ext(uri)).ends_with(".twig") {
             return Vec::new();
         }
         let is_admin_file = uri.contains("/Resources/app/administration/");
@@ -92,7 +93,6 @@ impl ActionProvider for SnippetCodeActionProvider {
     }
 }
 
-/// Go `textForRange`.
 fn text_for_range(content: &str, range: protocol::Range, line_index: Option<&LineIndex>) -> String {
     let owned;
     let line_index = match line_index {
@@ -158,7 +158,7 @@ impl ActionProvider for SnippetCopyCodeActionProvider {
 }
 
 fn is_shopware_snippet_json(uri: &str) -> bool {
-    let path = go_to_lower(&swlsp_uriutil::filepath::to_slash(uri));
+    let path = lowercase(&swlsp_uriutil::filepath::to_slash(uri));
     path.contains("/resources/snippet/")
         || path.contains("/resources/app/administration/") && path.contains("/snippet/")
 }

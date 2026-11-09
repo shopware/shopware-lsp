@@ -224,7 +224,11 @@ pub fn start_client(
     let (done_sender, server_done) = bounded(1);
     let serving = server.clone();
     thread::spawn(move || {
-        let _ = done_sender.send(serving.start(server_in, server_out));
+        let _ = done_sender.send(
+            serving
+                .start(server_in, server_out)
+                .map_err(|error| error.to_string()),
+        );
     });
     let pending: Arc<Mutex<HashMap<RequestId, Sender<Response>>>> = Arc::default();
     let (published_sender, published) = unbounded();

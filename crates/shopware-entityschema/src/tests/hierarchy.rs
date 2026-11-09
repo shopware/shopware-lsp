@@ -1,4 +1,4 @@
-//! Port of Go `hierarchy_test.go`.
+//! Tests for hierarchy.
 
 use super::inheritance::{backfill_free, field, php_ok, s};
 use crate::*;

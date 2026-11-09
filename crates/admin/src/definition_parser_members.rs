@@ -1,10 +1,9 @@
-//! Source-aware component member declarations (port of Go
-//! `definition_parser_members.go`).
+//! Source-aware component member declarations.
 
 use crate::*;
 
-/// A value which `member_definitions` turns into a component member (Go
-/// constrains the generic to `~string | VueComponentProp`).
+/// A value which `member_definitions` turns into a component member (a plain
+/// name or a [`VueComponentProp`]).
 pub(crate) trait MemberDefinitionValue {
     /// Name, type and deprecation of the value.
     fn member_parts(&self) -> (&str, &str, &str);

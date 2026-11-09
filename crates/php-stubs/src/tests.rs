@@ -1,4 +1,4 @@
-//! Port of `internal/php/stubs/stubs_test.go`. Snapshot-level checks walk
+//! Snapshot-level checks walk
 //! members directly; the `MemberResolver`/`ResolveSignature` assertions
 //! live in the `resolver` module.
 
@@ -450,8 +450,7 @@ fn stub_document_snapshot_accepts_document() {
 }
 
 mod resolver {
-    //! The `MemberResolver`/`ResolveSignature` assertions of
-    //! `stubs_test.go`.
+    //! `MemberResolver` and `resolve_signature` over stub declarations.
 
     use swlsp_php_resolver::{Argument, MemberResolver, resolve_signature};
 

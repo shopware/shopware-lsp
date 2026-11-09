@@ -1,12 +1,12 @@
-//! Declaration validation: final parents, overrides, abstract methods (port
-//! of `declarations.go`).
+//! Declaration validation: final parents, overrides, abstract methods.
 
 use std::collections::HashSet;
 
 use rustc_hash::FxHashSet;
 use swlsp_php_resolver::MemberResolver;
 use swlsp_php_semantic::{Flags, Parameter, Snapshot, Symbol, SymbolKind, SymbolView, Visibility};
-use swlsp_php_types::{Kind, Relations, Type, equal_fold, go_to_lower};
+use swlsp_php_types::{Kind, Relations, Type};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::analyzer::AnalyzerState;
 use crate::syntax::trim_backslash;
@@ -159,7 +159,7 @@ impl<'s> Validator<'s> {
             self.validate_property_override(state, class, member, parent);
             return;
         }
-        if equal_fold(&member.name, "__construct") {
+        if eq_ignore_case(&member.name, "__construct") {
             return;
         }
         if !self.compatible_method(class, member, parent) {
@@ -405,7 +405,7 @@ fn parent_receiver_types(class: &Symbol) -> Vec<Type> {
     for name in class.extends().iter().chain(class.implements()) {
         let value = declared
             .iter()
-            .find(|candidate| equal_fold(candidate.name(), name))
+            .find(|candidate| eq_ignore_case(candidate.name(), name))
             .map_or_else(|| Type::named(name, Vec::new()), |found| (*found).clone());
         if !seen.insert(value.key().into_owned()) {
             continue;
@@ -452,9 +452,9 @@ fn declaration_type(value: &Type, class: &Symbol) -> Type {
 }
 
 fn has_attribute_named(symbol: &Symbol, expected: &str) -> bool {
-    let expected = go_to_lower(trim_backslash(expected));
+    let expected = lowercase(trim_backslash(expected));
     symbol.attributes().iter().any(|attribute| {
-        let name = go_to_lower(trim_backslash(&attribute.name));
+        let name = lowercase(trim_backslash(&attribute.name));
         name == expected || name.ends_with(&format!("\\{expected}"))
     })
 }

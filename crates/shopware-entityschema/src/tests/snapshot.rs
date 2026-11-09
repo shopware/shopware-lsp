@@ -55,7 +55,7 @@ fn snapshot_canonical_round_trip_and_graph() {
 }
 
 fn reencode(snapshot: &Snapshot, key: &str, value: serde_json::Value) -> Vec<u8> {
-    let encoded = gojson::to_vec(snapshot).unwrap();
+    let encoded = canonical_json::to_vec(snapshot).unwrap();
     let mut payload: serde_json::Map<String, serde_json::Value> =
         serde_json::from_slice(&encoded).unwrap();
     payload.insert(s(key), value);
@@ -229,7 +229,7 @@ fn snapshot_rejects_previous_format() {
     }
     .seal()
     .unwrap();
-    let encoded = reencode(&snapshot, "formatVersion", serde_json::json!(1)); // Go encodes float64(1) as `1`.
+    let encoded = reencode(&snapshot, "formatVersion", serde_json::json!(1)); // An integral float encodes as `1`.
     let error = parse_snapshot(&encoded).unwrap_err();
     assert!(
         error

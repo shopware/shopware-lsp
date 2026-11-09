@@ -1,13 +1,11 @@
 //! Versioned binary cache format of a workspace graph.
 //!
-//! The format is private to the Rust implementation and not compatible with
-//! Go's MessagePack layout. Integers are LEB128 varints. Identifier-like
+//! The format is private to this crate. Integers are LEB128 varints. Identifier-like
 //! strings and types are written once into per-graph tables and referenced
 //! by index (0 means empty/unknown); free text is written inline. Each
 //! symbol's signature/metadata payload is length-prefixed so summary
 //! decoding can skip it without parsing.
 
-use std::fmt;
 use std::sync::{Arc, OnceLock};
 
 use rustc_hash::FxHashMap;
@@ -41,16 +39,9 @@ const MAX_STRING: u64 = 128 << 20;
 const MAX_ATTRIBUTE_DEPTH: usize = 64;
 
 /// A malformed or incompatible cache payload.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("decode workspace graph: {0}")]
 pub struct DecodeError(String);
-
-impl fmt::Display for DecodeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "decode workspace graph: {}", self.0)
-    }
-}
-
-impl std::error::Error for DecodeError {}
 
 fn error<T>(message: impl Into<String>) -> Result<T, DecodeError> {
     Err(DecodeError(message.into()))

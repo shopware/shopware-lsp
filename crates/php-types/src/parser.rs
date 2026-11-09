@@ -1,30 +1,16 @@
 //! Parser for native PHP and common PHPDoc type syntax.
 
-use std::fmt;
-
-use crate::gostr::{go_quote, go_unquote, is_space_byte};
+use crate::quote::{is_space_byte, quote_literal, unquote_literal};
 use crate::render::is_type_name_byte;
 use crate::ty::{CallableParameter, Name, ShapeField, Type};
 
-/// A type syntax error, rendered like Go's
-/// `parse PHP type at byte N: message`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// A type syntax error at a byte position of the parsed text.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("parse PHP type at byte {position}: {message}")]
 pub struct ParseError {
     pub position: usize,
     pub message: String,
 }
-
-impl fmt::Display for ParseError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "parse PHP type at byte {}: {}",
-            self.position, self.message
-        )
-    }
-}
-
-impl std::error::Error for ParseError {}
 
 type ParseResult = Result<Type, ParseError>;
 
@@ -62,7 +48,7 @@ fn parse_with(source: &str, allow_templates: bool) -> ParseResult {
     parser.skip_space();
     if !parser.at_end() {
         let rest = parser.slice(parser.position, parser.source.len());
-        return Err(parser.error(format!("unexpected {}", go_quote(&rest))));
+        return Err(parser.error(format!("unexpected {rest:?}")));
     }
     Ok(result)
 }
@@ -299,7 +285,7 @@ impl<'a> TypeParser<'a> {
         }
         if self.peek() == b'\'' || self.peek() == b'"' {
             return match self.parse_quoted() {
-                Ok(value) => go_quote(&value),
+                Ok(value) => quote_literal(&value),
                 Err(_) => String::new(),
             };
         }
@@ -402,7 +388,7 @@ impl<'a> TypeParser<'a> {
             }
             if value == quote {
                 let raw = self.slice(start, self.position);
-                return Ok(match go_unquote(&raw) {
+                return Ok(match unquote_literal(&raw) {
                     Some(decoded) => decoded,
                     None => raw[1..raw.len() - 1].to_owned(),
                 });
@@ -457,7 +443,7 @@ fn is_number_start(value: u8) -> bool {
 
 fn type_from_name(name: &str, arguments: Vec<Type>, allow_templates: bool) -> Type {
     let builtin = builtin_type_name(name.strip_prefix('\\').unwrap_or(name));
-    if allow_templates && name.starts_with('$') && !crate::gostr::equal_fold(name, "$this") {
+    if allow_templates && name.starts_with('$') && !swlsp_textutil::eq_ignore_case(name, "$this") {
         return Type::template(name);
     }
     let mut arguments = arguments;

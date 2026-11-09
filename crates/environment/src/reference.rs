@@ -73,7 +73,7 @@ pub fn occurrence_at(path: &str, source: &str, offset: u32) -> Option<Occurrence
 /// `offset`.
 pub fn completion_reference_at(source: &str, offset: u32) -> Option<Reference> {
     let cursor = (offset as usize).min(source.len());
-    // Go slices bytes; a cursor inside a character cannot be a name position.
+    // A cursor inside a multi-byte character cannot be a name position.
     if !source.is_char_boundary(cursor) {
         return None;
     }

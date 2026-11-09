@@ -1,13 +1,12 @@
-//! Conventional custom DBAL `Type` subclasses (port of Go `types.go`).
+//! Conventional custom DBAL `Type` subclasses.
 
 use std::collections::HashSet;
 
 use swlsp_php::PhpIndex;
 use swlsp_php_semantic::{ConstantReturn, Symbol};
-use swlsp_php_types::{Kind as TypeKind, equal_fold, go_to_lower};
+use swlsp_php_types::Kind as TypeKind;
 use swlsp_syntax::TextRange;
-
-use crate::helpers::go_trim_space;
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TypeDeclaration {
@@ -37,7 +36,7 @@ pub fn type_declarations(index: &PhpIndex) -> Vec<TypeDeclaration> {
         if name.is_empty() {
             continue;
         }
-        if !seen.insert(go_to_lower(&format!("{name}|{}", symbol.fully_qualified))) {
+        if !seen.insert(lowercase(&format!("{name}|{}", symbol.fully_qualified))) {
             continue;
         }
         result.push(TypeDeclaration {
@@ -61,14 +60,14 @@ pub(crate) fn sort_declarations(declarations: &mut [TypeDeclaration]) {
 
 fn doctrine_type_declared_name(index: &PhpIndex, class: &str) -> String {
     for method in index.methods(class) {
-        if !equal_fold(&method.name, "getName") {
+        if !eq_ignore_case(&method.name, "getName") {
             continue;
         }
         for literal in method.literal_returns() {
             if literal.ty.kind() != TypeKind::LiteralString {
                 continue;
             }
-            let name = go_trim_space(&literal.value);
+            let name = literal.value.trim();
             if !name.is_empty() {
                 return name.to_owned();
             }
@@ -82,7 +81,7 @@ fn doctrine_type_declared_name(index: &PhpIndex, class: &str) -> String {
                 if constant.ty.kind() != TypeKind::LiteralString {
                     continue;
                 }
-                let name = go_trim_space(constant.ty.name());
+                let name = constant.ty.name().trim();
                 if !name.is_empty() {
                     return name.to_owned();
                 }
@@ -98,14 +97,14 @@ fn doctrine_constant_return_receiver(
     method: &Symbol,
     returned: &ConstantReturn,
 ) -> String {
-    let receiver = go_trim_space(&returned.receiver);
-    match go_to_lower(receiver).as_str() {
+    let receiver = returned.receiver.trim();
+    match lowercase(receiver).as_str() {
         "self" | "static" | "parent" => {
             let snapshot = index.semantic_snapshot();
             let Some(owner) = snapshot.symbol(method.container.as_str()) else {
                 return String::new();
             };
-            if !equal_fold(receiver, "parent") {
+            if !eq_ignore_case(receiver, "parent") {
                 return owner.fully_qualified.to_string();
             }
             owner

@@ -207,7 +207,7 @@ fn dependency_version() {
 }
 
 #[test]
-fn clean_and_join_follow_go_semantics() {
+fn clean_and_join_normalize_lexically() {
     assert_eq!(clean(Path::new("/a/./b/../c/")), PathBuf::from("/a/c"));
     assert_eq!(clean(Path::new("/../a")), PathBuf::from("/a"));
     assert_eq!(clean(Path::new("")), PathBuf::from("."));

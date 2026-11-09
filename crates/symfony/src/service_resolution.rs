@@ -6,7 +6,6 @@ use swlsp_indexer::Result;
 
 use crate::model::Service;
 use crate::service_index::ServiceIndex;
-use crate::util::go_trim_space;
 use crate::yaml_named_argument::static_yaml_service_class_name;
 
 /// Resolves a service receiver from the current unsaved configuration first,
@@ -43,7 +42,7 @@ pub fn resolve_configured_service_class(
 }
 
 fn static_configured_service_class(value: &str) -> Option<String> {
-    let value = go_trim_space(value.strip_prefix('\\').unwrap_or(value));
+    let value = value.strip_prefix('\\').unwrap_or(value).trim();
     (!value.is_empty() && !value.contains(['%', '$', '{', '}', '@', ' ', '\t']))
         .then(|| value.to_owned())
 }
@@ -65,8 +64,11 @@ impl ServiceIndex {
                 service_id = service.alias_target;
                 continue;
             }
-            let class_name =
-                go_trim_space(service.class.strip_prefix('\\').unwrap_or(&service.class));
+            let class_name = service
+                .class
+                .strip_prefix('\\')
+                .unwrap_or(&service.class)
+                .trim();
             if static_yaml_service_class_name(class_name) {
                 return Ok(Some(class_name.to_owned()));
             }

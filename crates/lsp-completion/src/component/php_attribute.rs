@@ -1,5 +1,5 @@
 //! Framework PHP attribute completion for controllers, Twig extensions,
-//! commands and Twig components (Go `php_attribute_completion.go`).
+//! commands and Twig components.
 
 use std::collections::HashSet;
 
@@ -10,8 +10,8 @@ use swlsp_parser_php::syntax::PHP_CLASS_DECLARATION;
 use swlsp_php::{NameResolver, PhpIndex};
 use swlsp_php_languagelevel::Feature;
 use swlsp_php_semantic::Snapshot;
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::{SyntaxNode, TextRange};
+use swlsp_textutil::eq_ignore_case;
 
 use super::twig_component::byte_range;
 use super::twig_component_php::{
@@ -19,7 +19,8 @@ use super::twig_component_php::{
     php_attribute_replacement_range,
 };
 use super::util::{kind, markdown, request_offset, snippet};
-use crate::common::{go_to_lower, protocol_range, text_edit};
+use crate::common::{protocol_range, text_edit};
+use swlsp_textutil::lowercase;
 
 pub(super) const PHP_ROUTE_ATTRIBUTE: &str = "Symfony\\Component\\Routing\\Attribute\\Route";
 const PHP_IS_GRANTED_ATTRIBUTE: &str = "Symfony\\Component\\Security\\Http\\Attribute\\IsGranted";
@@ -92,7 +93,7 @@ impl CompletionProvider for PhpAttributeCompletionProvider {
         ) else {
             return Vec::new();
         };
-        if !equal_fold(
+        if !eq_ignore_case(
             swlsp_uriutil::filepath::ext(&request.params.text_document.uri),
             ".php",
         ) {
@@ -134,7 +135,7 @@ impl CompletionProvider for PhpAttributeCompletionProvider {
             if php.find_class(spec.fqn).is_none() {
                 continue;
             }
-            if !seen.insert(go_to_lower(spec.fqn)) {
+            if !seen.insert(lowercase(spec.fqn)) {
                 continue;
             }
             let (qualifier, import_edit) = component_attribute_import(request, spec.fqn);
@@ -464,8 +465,8 @@ fn php_attribute_console_parameters(method: &SyntaxNode, resolver: &NameResolver
             .any(|candidate| {
                 let resolved = resolver.resolve(candidate);
                 let resolved = resolved.trim_matches('\\');
-                equal_fold(resolved, PHP_INPUT_INTERFACE)
-                    || equal_fold(resolved, PHP_OUTPUT_INTERFACE)
+                eq_ignore_case(resolved, PHP_INPUT_INTERFACE)
+                    || eq_ignore_case(resolved, PHP_OUTPUT_INTERFACE)
             })
     })
 }
@@ -476,7 +477,7 @@ fn php_has_attribute(node: &SyntaxNode, resolver: &NameResolver, targets: &[&str
         let name = resolved.trim_matches('\\');
         targets
             .iter()
-            .any(|target| equal_fold(name, target.trim_matches('\\')))
+            .any(|target| eq_ignore_case(name, target.trim_matches('\\')))
     })
 }
 
@@ -488,7 +489,7 @@ fn php_public_instance_method(method: &SyntaxNode) -> bool {
     !method
         .children_with_tokens()
         .filter_map(|element| element.into_token())
-        .any(|token| equal_fold(token.text(), "static"))
+        .any(|token| eq_ignore_case(token.text(), "static"))
 }
 
 fn php_attribute_method_at_or_after(
@@ -534,11 +535,11 @@ fn twig_component_candidate(ctx: &Context, php: &PhpIndex, class_fqn: &str) -> b
         let Some(separator) = other.rfind('\\') else {
             continue;
         };
-        if !equal_fold(namespace, &other[..separator]) {
+        if !eq_ignore_case(namespace, &other[..separator]) {
             continue;
         }
         if symbol.attributes().iter().any(|attribute| {
-            equal_fold(
+            eq_ignore_case(
                 attribute.name.trim_matches('\\'),
                 PHP_AS_TWIG_COMPONENT_ATTRIBUTE,
             )

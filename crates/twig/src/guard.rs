@@ -1,4 +1,4 @@
-//! Twig's `{% guard %}` tag (port of `guard.go`).
+//! Twig's `{% guard %}` tag.
 
 use swlsp_syntax::TextRange;
 

@@ -20,6 +20,7 @@ swlsp-php-semantic = { path = "../php-semantic" }
 swlsp-php-stubs = { path = "../php-stubs" }
 swlsp-php-suppression = { path = "../php-suppression" }
 swlsp-php-types = { path = "../php-types" }
+swlsp-textutil = { path = "../textutil" }
 swlsp-uriutil = { path = "../uriutil" }
 serde_json = "1"
 

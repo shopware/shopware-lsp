@@ -8,7 +8,7 @@ use swlsp_php_project::{Model, Version};
 use swlsp_php_semantic::{Symbol, SymbolKind};
 use swlsp_syntax::{SyntaxNode, TextRange, TextSize};
 
-use crate::util::{go_trim_space, xml_attr};
+use crate::util::xml_attr;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum ContainerValueKind {
@@ -125,7 +125,7 @@ pub fn resolve_container_constant(index: Option<&PhpIndex>, name: &str) -> Vec<S
     let Some(index) = index else {
         return Vec::new();
     };
-    let name = go_trim_space(name);
+    let name = name.trim();
     if name.is_empty() {
         return Vec::new();
     }
@@ -239,7 +239,7 @@ fn yaml_constant_references_in_line(
                 kind,
             });
         }
-        // Go's loop resumes at end + 1.
+        // Resume after the character that ended the reference.
         cursor = end + 1;
     }
     result

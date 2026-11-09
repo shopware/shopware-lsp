@@ -1,5 +1,5 @@
 //! PHP name, hierarchy, member, and signature resolution over semantic
-//! snapshots (port of `internal/php/resolver`).
+//! snapshots.
 //!
 //! - [`NameContext`] resolves class, function, and constant names and nested
 //!   type names against a namespace, `use` imports, and PHPDoc aliases.

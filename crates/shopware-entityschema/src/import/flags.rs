@@ -1,4 +1,4 @@
-//! DAL flag and fluent-modifier import (port of Go `import_flags.go`).
+//! DAL flag and fluent-modifier import.
 
 use std::sync::LazyLock;
 
@@ -295,7 +295,7 @@ pub(crate) fn imported_default_bool_argument(
     if index >= phpquery::arguments(creation).count() {
         return Some(fallback);
     }
-    match go_to_lower(phpquery::argument_value_text(creation, index).trim()).as_str() {
+    match lowercase(phpquery::argument_value_text(creation, index).trim()).as_str() {
         "true" => Some(true),
         "false" => Some(false),
         _ => None,
@@ -332,7 +332,7 @@ pub(crate) fn normalize_imported_php_expression(source: &str, resolve: &Resolver
         if class.trim().starts_with('\\') {
             return format!("\\{}", trim_class(class));
         }
-        match go_to_lower(class.trim()).as_str() {
+        match lowercase(class.trim()).as_str() {
             "" | "self" | "static" | "parent" | "class" => return class.to_owned(),
             _ => {}
         }
@@ -446,8 +446,9 @@ pub(crate) fn imported_choice(creation: &SyntaxNode) -> Option<ChoiceSpec> {
     Some(choice)
 }
 
-/// Go `strconv.ParseFloat`: decimal and special values only.
-fn parse_go_float(text: &str) -> Option<f64> {
+/// Parses a decimal float literal (or `inf`/`nan`); rejects underscores and
+/// hexadecimal floats, which PHP search rankings never use.
+fn parse_decimal_float(text: &str) -> Option<f64> {
     if text.is_empty() || text.contains('_') {
         return None;
     }
@@ -465,7 +466,7 @@ pub(crate) fn imported_search_ranking(creation: &SyntaxNode) -> Option<(f64, Opt
         return None;
     }
     let expression = phpquery::argument_value_text(creation, 0).trim().to_owned();
-    let ranking = match parse_go_float(&expression) {
+    let ranking = match parse_decimal_float(&expression) {
         Some(ranking) => ranking,
         None => {
             let normalized = trim_prefix(&expression, "\\").replace(' ', "");
@@ -485,7 +486,7 @@ pub(crate) fn imported_search_ranking(creation: &SyntaxNode) -> Option<(f64, Opt
     if count == 1 {
         return Some((ranking, None));
     }
-    match go_to_lower(phpquery::argument_value_text(creation, 1).trim()).as_str() {
+    match lowercase(phpquery::argument_value_text(creation, 1).trim()).as_str() {
         "true" => Some((ranking, Some(true))),
         "false" => Some((ranking, Some(false))),
         _ => None,

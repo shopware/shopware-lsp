@@ -1,5 +1,5 @@
 //! Stable core PHP signatures that are useful even before a versioned stub
-//! package has been loaded (port of `builtins.go`).
+//! package has been loaded.
 
 use std::borrow::Cow;
 
@@ -7,8 +7,9 @@ use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;
 use swlsp_php_resolver::NameContext;
 use swlsp_php_semantic::{Confidence, TypeFact, TypeSource};
-use swlsp_php_types::{Joiner, Kind, Relations, Type, contains_uncertain, equal_fold, go_to_lower};
+use swlsp_php_types::{Joiner, Kind, Relations, Type, contains_uncertain};
 use swlsp_syntax::{SyntaxNode, TextRange};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use super::{CallContext, Extension};
 use crate::syntax::{
@@ -43,7 +44,7 @@ impl Extension for Builtins {
 /// `None` means the extension does not apply; `Some(unknown)` that it
 /// applies without a better type.
 fn builtin_type(context: &CallContext<'_>) -> Option<Type> {
-    let name = go_to_lower(trim_backslash(context.name));
+    let name = lowercase(trim_backslash(context.name));
     let relations = context.relations();
     let arguments = context.arguments;
     let source = Source(context.source);
@@ -480,7 +481,7 @@ fn array_map_result_type(context: &CallContext<'_>) -> Type {
     else {
         return Type::UNKNOWN;
     };
-    match go_to_lower(&diagnostic_string_value(context, &expression)).as_str() {
+    match lowercase(&diagnostic_string_value(context, &expression)).as_str() {
         "count" | "strlen" | "mb_strlen" => Type::INT,
         _ => Type::UNKNOWN,
     }
@@ -490,7 +491,7 @@ fn date_time_receiver(value: &Type) -> bool {
     match value.kind() {
         Kind::Object => {
             let name = trim_backslash(value.name());
-            equal_fold(name, "DateTime") || equal_fold(name, "DateTimeImmutable")
+            eq_ignore_case(name, "DateTime") || eq_ignore_case(name, "DateTimeImmutable")
         }
         Kind::Union | Kind::Intersection => {
             value.argument_count() > 0 && value.arguments().iter().all(date_time_receiver)
@@ -684,7 +685,7 @@ fn non_empty_array_source(node: Option<&SyntaxNode>) -> bool {
         return !query::array_items(node).is_empty();
     }
     node.kind() == PHP_FUNCTION_CALL
-        && equal_fold(trim_backslash(&query::call_method_name(node)), "explode")
+        && eq_ignore_case(trim_backslash(&query::call_method_name(node)), "explode")
 }
 
 fn condition_guarantees_non_empty_array(
@@ -721,7 +722,7 @@ fn condition_guarantees_non_empty_array(
     }
     let left = &nodes[0];
     let right = &nodes[nodes.len() - 1];
-    let operator = go_to_lower(&direct_operator(node));
+    let operator = lowercase(&direct_operator(node));
     match operator.as_str() {
         "&&" | "and" => {
             let left = condition_guarantees_non_empty_array(source, Some(left), key, truth);
@@ -759,7 +760,7 @@ fn compared_count_is_positive(
     key: &str,
 ) -> bool {
     if call.kind() != PHP_FUNCTION_CALL
-        || !equal_fold(trim_backslash(&query::call_method_name(call)), "count")
+        || !eq_ignore_case(trim_backslash(&query::call_method_name(call)), "count")
     {
         return false;
     }
@@ -818,7 +819,7 @@ fn arrow_predicate_constraint(
     }
     let first = &operands[0];
     let last = &operands[operands.len() - 1];
-    match go_to_lower(&direct_operator(predicate)).as_str() {
+    match lowercase(&direct_operator(predicate)).as_str() {
         "instanceof" => {
             if first.kind() != PHP_VARIABLE
                 || query::variable_key(first) != parameter
@@ -869,7 +870,7 @@ fn pathinfo_returns_string(context: &CallContext<'_>) -> bool {
 fn known_core_ini_option(value: &Type) -> bool {
     value.kind() == Kind::LiteralString
         && matches!(
-            go_to_lower(value.name()).as_str(),
+            lowercase(value.name()).as_str(),
             "default_charset"
                 | "max_execution_time"
                 | "max_input_nesting_level"

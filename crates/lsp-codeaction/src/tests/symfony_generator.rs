@@ -1,4 +1,4 @@
-//! Go `symfony_generator_codeaction_test.go`.
+//! Symfony service and compiler-pass generator tests.
 
 use std::sync::Arc;
 
@@ -258,7 +258,7 @@ fn definition_collector_generates_multiple_classes_and_choices() {
     assert!(missing.error.contains("was not found"));
     assert!(missing.content.is_empty());
 
-    // The command adapter serializes with Go's omitempty shape.
+    // The command response omits empty fields.
     let encoded = run_command(
         &fixture.provider,
         COLLECT_SYMFONY_SERVICES_COMMAND,

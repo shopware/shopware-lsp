@@ -1,4 +1,4 @@
-//! Shared test helpers (Go `codeaction_test_helpers_test.go`).
+//! Shared test helpers.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -75,7 +75,7 @@ pub(crate) fn edits_for_uri(edit: &protocol::WorkspaceEdit, uri: &str) -> Vec<pr
     result
 }
 
-/// Go `applyCodeActionEdit`: applies the action's edits for `uri` back to
+/// Applies the action's edits for `uri` back to
 /// front.
 pub(crate) fn apply_code_action_edit(
     source: &str,
@@ -116,7 +116,7 @@ pub(crate) fn apply_text_edits(source: &str, edits: &[protocol::TextEdit]) -> St
     updated
 }
 
-/// Go `applyGeneratedWorkspaceEdit`: writes the edit to disk.
+/// Writes the edit to disk.
 pub(crate) fn apply_generated_workspace_edit(edit: &protocol::WorkspaceEdit) {
     for change in &edit.document_changes {
         if change.kind == "create" {
@@ -133,7 +133,7 @@ pub(crate) fn apply_generated_workspace_edit(edit: &protocol::WorkspaceEdit) {
     }
 }
 
-/// Go `generationTestHost`: resolves registered snapshots, then disk.
+/// Resolves registered snapshots, then disk.
 #[derive(Default)]
 pub(crate) struct GenerationTestHost {
     pub snapshots: HashMap<String, DocumentSnapshot>,

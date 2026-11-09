@@ -1,5 +1,4 @@
-//! Symfony UX Toolkit `@prop`/`@block` and Twig `@var` comment annotations
-//! (port of Go `twig_ux_toolkit.go`).
+//! Symfony UX Toolkit `@prop`/`@block` and Twig `@var` comment annotations.
 
 use std::collections::HashSet;
 use std::sync::LazyLock;
@@ -16,8 +15,8 @@ use swlsp_syntax::{SyntaxNode, TextRange, TextSize};
 
 use crate::{has_suffix_fold, sort_tokens, token};
 
-// Go's RE2 `\S` and `\w` are ASCII classes; spell them out so Rust's Unicode
-// classes do not widen the matches.
+// `\S` and `\w` are meant as ASCII classes; spell them out so Unicode classes
+// do not widen the matches.
 const NON_SPACE: &str = r"[^\t\n\x0C\r ]";
 const TYPE_CHAR: &str = r"[0-9A-Za-z_\\\[\]]";
 

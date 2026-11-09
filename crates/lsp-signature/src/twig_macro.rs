@@ -7,8 +7,8 @@ use swlsp_lsp::{Context, ProviderResult, SignatureHelpProvider, SignatureHelpReq
 use swlsp_lsp_protocol::{self as protocol, MarkupContent, MarkupKind};
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::{TK_COMMA, TWIG_ARGUMENTS};
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::{SyntaxNode, TextSize};
+use swlsp_textutil::eq_ignore_case;
 use swlsp_twig::{Macro, MacroReference, MacroReferenceRole, TwigIndexer};
 use swlsp_uriutil::filepath;
 
@@ -60,7 +60,7 @@ impl SignatureHelpProvider for TwigMacroSignatureProvider {
             macros.extend(
                 swlsp_twig::macros_in_document(&path, root)
                     .into_iter()
-                    .filter(|item| equal_fold(&item.name, &reference.name)),
+                    .filter(|item| eq_ignore_case(&item.name, &reference.name)),
             );
         }
         if macros.is_empty() {

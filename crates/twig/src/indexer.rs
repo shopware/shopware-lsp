@@ -1,7 +1,6 @@
-//! The persistent Twig index (port of `indexer.go` and
-//! `workspace_symbols.go`).
+//! The persistent Twig index.
 //!
-//! Unlike Go, extraction happens in [`PreparingIndexer::prepare`], ahead of
+//! Extraction happens in [`PreparingIndexer::prepare`], ahead of
 //! the workspace write transaction; `index_prepared` only persists.
 
 use std::collections::{BTreeMap, HashSet};
@@ -988,7 +987,7 @@ impl TwigIndexer {
         Ok(self
             .get_macros(template)?
             .into_iter()
-            .filter(|definition| swlsp_php_types::equal_fold(&definition.name, name))
+            .filter(|definition| swlsp_textutil::eq_ignore_case(&definition.name, name))
             .collect())
     }
 
@@ -1180,8 +1179,8 @@ impl TwigIndexer {
     }
 }
 
-/// Go's `*Deprecation` helpers: `Some(message)` only when declarations exist
-/// and every one is deprecated; the message is the first non-empty one.
+/// `Some(message)` only when declarations exist and every one is
+/// deprecated; the message is the first non-empty one.
 fn all_deprecated<'a>(values: impl Iterator<Item = (bool, &'a String)>) -> Option<String> {
     let mut any = false;
     let mut message = String::new();
@@ -1207,7 +1206,7 @@ fn resolve_global(global: &mut Global, services: Option<&ServiceIndex>) {
     let mut current = global.service_id.clone();
     let mut visited = HashSet::new();
     for _ in 0..16 {
-        if current.is_empty() || !visited.insert(swlsp_php_types::go_to_lower(&current)) {
+        if current.is_empty() || !visited.insert(swlsp_textutil::lowercase(&current)) {
             break;
         }
         let Ok(Some(service)) = services.get_service_by_id(&current) else {

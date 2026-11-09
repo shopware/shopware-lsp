@@ -1,4 +1,4 @@
-//! `shopware/symfony/console/commands` (port of Go `console.go`).
+//! `shopware/symfony/console/commands`: the Symfony console command catalog.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;

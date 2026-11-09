@@ -1,11 +1,11 @@
-//! Literal, null, instanceof and class predicate narrowing (port of
-//! `flow_narrow.go`).
+//! Literal, null, instanceof and class predicate narrowing.
 
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;
 use swlsp_php_semantic::TypeSource;
-use swlsp_php_types::{Kind, Type, equal_fold, go_to_lower};
+use swlsp_php_types::{Kind, Type};
 use swlsp_syntax::SyntaxNode;
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use super::Branches;
 use crate::analyzer::Fs;
@@ -167,11 +167,11 @@ impl Fs<'_, '_, '_> {
         }
         if original.kind() == Kind::Object
             && constraint.kind() == Kind::Object
-            && equal_fold(trim_backslash(original.name()), "DateTimeInterface")
+            && eq_ignore_case(trim_backslash(original.name()), "DateTimeInterface")
         {
             // DateTimeInterface is engine-only; excluding one implementation
             // leaves exactly the other.
-            match go_to_lower(trim_backslash(constraint.name())).as_str() {
+            match lowercase(trim_backslash(constraint.name())).as_str() {
                 "datetimeimmutable" => return Type::named("DateTime", Vec::new()),
                 "datetime" => return Type::named("DateTimeImmutable", Vec::new()),
                 _ => {}

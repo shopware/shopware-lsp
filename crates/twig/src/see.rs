@@ -1,4 +1,4 @@
-//! `@see` targets in Twig documentation comments (port of `see.go`).
+//! `@see` targets in Twig documentation comments.
 
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::TWIG_COMMENT;
@@ -93,7 +93,7 @@ pub fn see_php_class_and_member(target: &str) -> Option<(String, String)> {
     let target = target.trim();
     let target = target.strip_suffix("[]").unwrap_or(target);
     if target.is_empty()
-        || swlsp_php_types::go_to_lower(target).ends_with(".twig")
+        || swlsp_textutil::lowercase(target).ends_with(".twig")
         || target.starts_with('@')
         || target.starts_with('.')
         || target.contains('/')
@@ -194,7 +194,7 @@ fn looks_like_legacy_see_target(target: &str) -> bool {
         || target.starts_with('\\')
         || target.starts_with('.')
         || target.contains(['\\', '/', ':'])
-        || swlsp_php_types::go_to_lower(target).ends_with(".twig")
+        || swlsp_textutil::lowercase(target).ends_with(".twig")
     {
         return true;
     }

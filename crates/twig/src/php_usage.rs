@@ -1,5 +1,4 @@
-//! Typed Twig usages of PHP declarations and `constant()` references (port
-//! of `php_usage.go` and `constant_reference.go`).
+//! Typed Twig usages of PHP declarations and `constant()` references.
 
 use std::collections::HashSet;
 use std::sync::LazyLock;
@@ -9,8 +8,9 @@ use serde::{Deserialize, Serialize};
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::*;
 use swlsp_php_semantic::{Snapshot, Symbol, SymbolKind};
-use swlsp_php_types::{Kind as TypeKind, Type, go_to_lower};
+use swlsp_php_types::{Kind as TypeKind, Type};
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
+use swlsp_textutil::lowercase;
 
 use crate::compare_fold;
 use crate::enum_reference::enum_references;
@@ -55,7 +55,7 @@ const NON_CLASS_TWIG_TYPES: [&str; 23] = [
 ];
 
 pub(crate) fn is_non_class_twig_type(value: &str) -> bool {
-    NON_CLASS_TWIG_TYPES.contains(&go_to_lower(value).as_str())
+    NON_CLASS_TWIG_TYPES.contains(&lowercase(value).as_str())
 }
 
 mod symbol_kind_serde {
@@ -97,12 +97,12 @@ pub struct PhpUsageCatalog {
 /// The persistent semantic key for a class or member target.
 pub fn php_usage_reference_key(reference: &PhpUsageReference) -> String {
     let class = reference.class.trim();
-    let class = go_to_lower(class.strip_prefix('\\').unwrap_or(class));
+    let class = lowercase(class.strip_prefix('\\').unwrap_or(class));
     if class.is_empty() {
         return String::new();
     }
     let member = reference.member.trim();
-    let member = go_to_lower(member.strip_prefix('$').unwrap_or(member));
+    let member = lowercase(member.strip_prefix('$').unwrap_or(member));
     if member.is_empty() {
         return format!("class\0{class}");
     }
@@ -291,11 +291,11 @@ pub struct ConstantCompletionContext {
 }
 
 pub fn constant_reference_key(reference: &ConstantReference) -> String {
-    let name = go_to_lower(reference.name.trim());
+    let name = lowercase(reference.name.trim());
     if name.is_empty() {
         return String::new();
     }
-    let class = go_to_lower(&normalize_twig_constant_class(&reference.class));
+    let class = lowercase(&normalize_twig_constant_class(&reference.class));
     if class.is_empty() {
         return format!("global\0{name}");
     }
@@ -437,7 +437,7 @@ fn constant_receiver_classes(
         match current.kind() {
             TypeKind::Object => {
                 let name = normalize_twig_constant_class(current.name());
-                if name.is_empty() || !seen.insert(go_to_lower(&name)) {
+                if name.is_empty() || !seen.insert(lowercase(&name)) {
                     return;
                 }
                 result.push(name);

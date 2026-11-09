@@ -1,4 +1,4 @@
-//! Ports of the Go `internal/lsp/semantic` tests.
+//! Tests of the semantic token providers.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -832,8 +832,8 @@ fn admin_markup_semantic_tokens_color_whole_slot_object_members() {
 
 #[test]
 fn embedded_tokens_keep_invalid_utf8_bytes_inside_identifiers() {
-    // Go lexes decoded PHP strings as raw bytes, so `\xff` continues an
-    // identifier instead of ending it.
+    // An invalid byte such as `\xff` counts as a non-ASCII character, so it
+    // continues an identifier instead of ending it.
     let value = b"a\xff.b".to_vec();
     let expression = EmbeddedPhpString {
         source_offsets: (0..=value.len() as u32).collect(),

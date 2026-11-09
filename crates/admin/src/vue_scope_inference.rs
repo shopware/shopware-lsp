@@ -1,6 +1,4 @@
-//! `v-for` parsing and iterable/event payload type inference (port of Go
-//! `vue_scope_inference.go`).
-#![allow(clippy::needless_range_loop)] // byte loops mirror the Go scanners
+//! `v-for` parsing and iterable/event payload type inference.
 
 use crate::*;
 
@@ -100,13 +98,13 @@ pub(crate) fn split_twig_vue_top_level_ranges(
     let mut result = Vec::new();
     let mut part_start = start;
     let mut state = SlotScanState::default();
-    for index in start..end {
-        if bytes[index] == separator && state.top_level() {
+    for (index, &byte) in bytes.iter().enumerate().take(end).skip(start) {
+        if byte == separator && state.top_level() {
             result.push((part_start, index));
             part_start = index + 1;
             continue;
         }
-        state.consume(bytes[index]);
+        state.consume(byte);
     }
     result.push((part_start, end));
     result

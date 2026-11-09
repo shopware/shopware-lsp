@@ -1,4 +1,4 @@
-//! Class hierarchy, attribute, and member edits (port of `class.go`).
+//! Class hierarchy, attribute, and member edits.
 
 use swlsp_parser_php::query::{class_at, class_body, direct_child};
 use swlsp_parser_php::syntax::{
@@ -7,8 +7,8 @@ use swlsp_parser_php::syntax::{
     PHP_NAME, PHP_PROPERTY_DECLARATION, PHP_TRAIT_USE_DECLARATION, TK_BLOCK_COMMENT,
     TK_CLOSE_BRACE, TK_LINE_COMMENT, TK_OPEN_BRACE,
 };
-use swlsp_php_types::equal_fold;
 use swlsp_syntax::{Kind, SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::eq_ignore_case;
 
 use crate::editor::{Editor, Result, end, invalid, line_start, range, start, whitespace_prefix};
 use crate::list::direct_nodes;
@@ -257,7 +257,7 @@ fn same_php_name(left: &str, right: &str) -> bool {
     fn normalize(value: &str) -> String {
         value.replace([' ', '\t'], "").trim_matches('\\').to_owned()
     }
-    equal_fold(&normalize(left), &normalize(right))
+    eq_ignore_case(&normalize(left), &normalize(right))
 }
 
 fn is_class_member(kind: Kind) -> bool {
@@ -290,8 +290,7 @@ fn dedent(source: &str) -> String {
         .map(|line| {
             if minimum > 0 && line.len() >= minimum {
                 // Indentation bytes are ASCII; a shorter-indented blank line
-                // may cut inside a character, which Go tolerates and Rust
-                // keeps intact.
+                // would cut inside a character, so it is kept intact.
                 line.get(minimum..).unwrap_or(line)
             } else {
                 line

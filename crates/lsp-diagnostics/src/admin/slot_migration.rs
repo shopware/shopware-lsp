@@ -1,4 +1,4 @@
-//! Go `admin_slot_migration.go`: legacy `slot` / `slot-scope` attributes.
+//! Legacy `slot` / `slot-scope` attributes.
 
 use std::sync::{Arc, LazyLock};
 
@@ -11,8 +11,8 @@ use swlsp_syntax::{SyntaxNodeExt, TextRange, TextSize};
 use super::{payload, text};
 use crate::ProblemAnalyzer;
 
-// Go's `\b` and `\s` are ASCII-only; spell them out so Rust's Unicode
-// classes do not widen the matches.
+// `\b` and `\s` are meant as ASCII classes; spell them out so Unicode classes
+// do not widen the matches.
 static LEGACY_TEMPLATE_TAG: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?is)<template(?-u:\b)[^>]*>").expect("template pattern"));
 static LEGACY_SLOT: LazyLock<Regex> = LazyLock::new(|| {
@@ -24,7 +24,6 @@ static LEGACY_SLOT_SCOPE: LazyLock<Regex> = LazyLock::new(|| {
         .expect("slot-scope pattern")
 });
 
-/// Go `AdminSlotMigrationAnalyzer`.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AdminSlotMigrationAnalyzer;
 

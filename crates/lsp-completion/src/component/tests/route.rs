@@ -40,7 +40,7 @@ fn fixture() -> Fixture {
     }
 }
 
-/// Go `routeCompletionRequest`: an explicit node with no cursor position.
+/// A route completion request with an explicit node with no cursor position.
 fn route_request(
     uri: &str,
     source: &str,

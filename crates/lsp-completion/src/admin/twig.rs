@@ -1,4 +1,4 @@
-//! Port of Go `admin_completion_twig.go`.
+//! Administration completions in Twig templates.
 
 use swlsp_admin::{
     AdminSymbolKind, is_twig_block_name_completion_at, is_twig_vue_expression_at,
@@ -22,7 +22,7 @@ use super::values::admin_dynamic_component_selector_at_completion;
 use crate::common::sort_completion_items;
 
 impl AdminCompletionProvider {
-    /// Go `twigCompletions`: completions in Administration Twig templates.
+    /// Completions in Administration Twig templates.
     pub(super) fn twig_completions(
         &self,
         request: &CompletionRequest,
@@ -105,7 +105,7 @@ impl AdminCompletionProvider {
             )
         };
         if let Some(resolved) = resolved_slot {
-            // Go reads the zero offset when the position is unavailable.
+            // An unavailable position is treated as offset zero.
             let raw_offset = offset.unwrap_or_default();
             if resolved.scope.is_binding_offset(raw_offset) {
                 return scoped_slot_contract_completions(resolved);
@@ -156,7 +156,7 @@ impl AdminCompletionProvider {
         Vec::new()
     }
 
-    /// Go `getParentBlockCompletions`.
+    /// Block names of the parent templates of `template_path`.
     pub(super) fn get_parent_block_completions(
         &self,
         template_path: &str,

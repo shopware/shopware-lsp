@@ -1,5 +1,4 @@
-//! Administration symbol identities and persisted usage sets (port of Go
-//! `usage_types.go`).
+//! Administration symbol identities and persisted usage sets.
 
 use crate::*;
 
@@ -39,8 +38,7 @@ pub struct AdminSymbolTarget {
 }
 
 /// A static registry lookup such as
-/// `Component.getComponentRegistry().get('sw-card')` (Go embeds
-/// `AdminSymbolTarget`).
+/// `Component.getComponentRegistry().get('sw-card')`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct JavaScriptRegistryReference {
     pub target: AdminSymbolTarget,
@@ -63,7 +61,7 @@ pub struct AdminSourceRange {
     pub dynamic_router_view: bool,
 }
 
-/// Persisted as Go's `uint8` value.
+/// Persisted as its `u8` discriminant.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum AdminNameStyle {
     #[default]

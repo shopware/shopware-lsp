@@ -1,4 +1,4 @@
-//! Lossless import of class-based DAL definitions (port of Go `import*.go`).
+//! Lossless import of class-based DAL definitions.
 //!
 //! Literal field declarations become editable [`FieldSpec`]s; anything the
 //! typed model cannot prove stays a locked raw expression.
@@ -39,7 +39,7 @@ pub(crate) use extensions::{
 pub(crate) use fields::import_fields;
 pub(crate) use translation::import_translation_parsed;
 
-// Go RE2: `\b` and `\s` are ASCII-only.
+// `\b` and whitespace are ASCII-only, matching PHP identifier rules.
 static ENTITY_NAME_CONSTANT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?m)(?-u:\b)ENTITY_NAME[\t\n\x0C\r ]*=[\t\n\x0C\r ]*['"]([^'"]+)['"]"#)
         .expect("valid pattern")
@@ -80,7 +80,7 @@ impl Resolver {
             for imported in parse_use_declaration(&node_string(&declaration)) {
                 if imported.kind == ImportKind::Class {
                     aliases.insert(
-                        go_to_lower(&imported.alias),
+                        lowercase(&imported.alias),
                         trim_backslash(&imported.target).to_owned(),
                     );
                 }
@@ -94,7 +94,7 @@ impl Resolver {
         }
     }
 
-    /// Returns names unchanged (Go `func(value string) string { return value }`).
+    /// A resolver that returns names unchanged.
     pub(crate) fn identity() -> Self {
         Resolver {
             namespace: String::new(),
@@ -112,14 +112,14 @@ impl Resolver {
         if name.is_empty() {
             return String::new();
         }
-        if equal_fold(name, "self") || equal_fold(name, "static") {
+        if eq_ignore_case(name, "self") || eq_ignore_case(name, "static") {
             return self.current_class.clone();
         }
         let (first, rest) = match name.split_once('\\') {
             Some((first, rest)) => (first, Some(rest)),
             None => (name, None),
         };
-        if let Some(target) = self.aliases.get(&go_to_lower(first)) {
+        if let Some(target) = self.aliases.get(&lowercase(first)) {
             return match rest {
                 Some(rest) => format!("{target}\\{rest}"),
                 None => target.clone(),
@@ -183,10 +183,7 @@ pub fn import_class_based_definition(
         }
         DEFINITION_EXTENSION => import_extension_class(source, lookup, definition_class),
         DEFINITION_BULK_EXTENSION => import_bulk_extension_class(source, lookup, definition_class),
-        _ => Err(errorf!(
-            "unsupported class-based DAL kind {}",
-            go_quote(kind)
-        )),
+        _ => Err(errorf!("unsupported class-based DAL kind {:?}", kind)),
     }
 }
 
@@ -200,7 +197,7 @@ pub(crate) fn select_class(
 ) -> Option<(SyntaxNode, Option<String>)> {
     for class in classes.iter().cloned() {
         if !selected_class.is_empty()
-            && equal_fold(
+            && eq_ignore_case(
                 &qualify(namespace, &phpquery::class_name(&class)),
                 trim_backslash(selected_class),
             )
@@ -819,7 +816,7 @@ pub(crate) fn apply_imported_delete_options(field: &mut FieldSpec, creations: &[
         if phpquery::arguments(creation).next().is_none() {
             continue;
         }
-        let value = go_to_lower(phpquery::argument_value_text(creation, 0).trim());
+        let value = lowercase(phpquery::argument_value_text(creation, 0).trim());
         if value != "true" && value != "false" {
             continue;
         }
@@ -845,7 +842,7 @@ pub(crate) fn imported_class_argument(creation: &SyntaxNode, index: usize) -> St
         .unwrap_or_default()
 }
 
-/// Go `strconv.Atoi` on the trimmed argument text.
+/// The trimmed argument text parsed as a decimal integer.
 fn imported_int(creation: &SyntaxNode, index: usize) -> Option<i64> {
     let argument = phpquery::arguments(creation).nth(index)?;
     node_string(&argument).trim().parse::<i64>().ok()
@@ -858,20 +855,20 @@ pub(crate) fn imported_int_argument(creation: &SyntaxNode, index: usize, fallbac
 pub(crate) fn imported_bool_argument(creation: &SyntaxNode, index: usize) -> bool {
     phpquery::arguments(creation)
         .nth(index)
-        .is_some_and(|argument| equal_fold(node_string(&argument).trim(), "true"))
+        .is_some_and(|argument| eq_ignore_case(node_string(&argument).trim(), "true"))
 }
 
 pub(crate) fn imported_association_autoload(creation: &SyntaxNode, fallback: bool) -> bool {
     let arguments: Vec<SyntaxNode> = phpquery::arguments(creation).collect();
     for (index, argument) in arguments.iter().enumerate() {
-        if equal_fold(&phpquery::argument_name(argument), "autoload") {
-            return equal_fold(&phpquery::argument_value_text(creation, index), "true");
+        if eq_ignore_case(&phpquery::argument_name(argument), "autoload") {
+            return eq_ignore_case(&phpquery::argument_value_text(creation, index), "true");
         }
     }
     if arguments.len() <= 4 {
         return fallback;
     }
-    equal_fold(&phpquery::argument_value_text(creation, 4), "true")
+    eq_ignore_case(&phpquery::argument_value_text(creation, 4), "true")
 }
 
 pub(crate) fn imported_optional_int_argument(creation: &SyntaxNode, index: usize) -> Option<i64> {
@@ -916,7 +913,7 @@ pub(crate) fn returned_expression_text(returned: &SyntaxNode) -> String {
     let statement = statement.trim();
     if statement.len() < 6
         || !statement.is_char_boundary(6)
-        || !equal_fold(&statement[..6], "return")
+        || !eq_ignore_case(&statement[..6], "return")
     {
         return String::new();
     }
@@ -942,7 +939,7 @@ pub(crate) fn lookup_relation(
         definition_class: class.to_owned(),
         entity_class: format!("{namespace}{base}Entity"),
         collection_class: format!("{namespace}{base}Collection"),
-        entity_name: go_to_lower(&entity_name),
+        entity_name: lowercase(&entity_name),
         fields: vec![RelationTargetField {
             property_name: "id".to_owned(),
             storage_name: "id".to_owned(),
@@ -1007,7 +1004,7 @@ pub(crate) fn imported_boolean_return(method: Option<&SyntaxNode>) -> Option<boo
     if text.trim() != returned_expression_text(&returned) {
         return None;
     }
-    match go_to_lower(text.trim()).as_str() {
+    match lowercase(text.trim()).as_str() {
         "true" => Some(true),
         "false" => Some(false),
         _ => None,

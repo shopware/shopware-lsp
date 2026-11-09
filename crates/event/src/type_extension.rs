@@ -1,12 +1,12 @@
-//! EventDispatcher `dispatch()` return types (port of Go
-//! `event/type_extension.go`).
+//! EventDispatcher `dispatch()` return types.
 
 use std::borrow::Cow;
 
 use swlsp_php_inference::{CallContext, Extension};
 use swlsp_php_semantic::{Confidence, TypeFact, TypeSource};
-use swlsp_php_types::{Kind, equal_fold};
+use swlsp_php_types::Kind;
 use swlsp_syntax::TextRange;
+use swlsp_textutil::eq_ignore_case;
 
 use crate::parser::is_dispatcher_type;
 
@@ -23,7 +23,7 @@ impl PhpTypeExtension {
 
 impl Extension for PhpTypeExtension {
     fn infer_call(&self, context: &CallContext<'_>) -> Option<TypeFact> {
-        if !equal_fold(context.name, "dispatch")
+        if !eq_ignore_case(context.name, "dispatch")
             || context.arguments.is_empty()
             || !is_dispatcher_type(&context.receiver, context.snapshot)
         {

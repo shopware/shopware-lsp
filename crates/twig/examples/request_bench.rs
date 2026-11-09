@@ -1,6 +1,6 @@
-//! Release-mode benchmark for request-time Twig scans, mirroring the
-//! definition oracle's probe pattern (up to 250 word-start positions per
-//! file, every scan called once per probe).
+//! Release-mode benchmark for request-time Twig scans, probing definitions
+//! the way the real-world tests do (up to 250 word-start positions per file,
+//! every scan called once per probe).
 //!
 //! `cargo run --release -p swlsp-twig --example request_bench -- <file-list>`
 

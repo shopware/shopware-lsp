@@ -1,5 +1,4 @@
-//! Component, mixin and module registrations in JavaScript (port of Go
-//! `indexer_javascript.go`).
+//! Component, mixin and module registrations in JavaScript.
 
 use crate::*;
 
@@ -191,7 +190,7 @@ pub(crate) fn parse_raw_vue_application_component_collections(
     let source = root.text().to_string();
     let collections = raw_vue_application_component_collections(&source);
     let mut result = Vec::new();
-    // Go iterates a map here; the caller sorts the combined result.
+    // The caller sorts the combined result.
     for (collection_name, loop_offset) in collections {
         let Some(open) =
             static_vue_collection_object_start(&source[..loop_offset], &collection_name)
@@ -725,7 +724,8 @@ pub(crate) fn string_property(object: &SyntaxNode, name: &str) -> String {
     string_property_of(Some(object), name)
 }
 
-/// Go `stringProperty` with a possibly missing object.
+/// The string value of property `name`; empty when the object or property
+/// is missing.
 pub(crate) fn string_property_of(object: Option<&SyntaxNode>, name: &str) -> String {
     object
         .and_then(|object| jsquery::property(object, name))

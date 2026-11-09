@@ -1,4 +1,4 @@
-//! Go `translation_diagnostics.go` and `translation_diagnostics_run.go`.
+//! Missing translation keys and domains.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -9,19 +9,19 @@ use swlsp_lsp_protocol as protocol;
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::PHP_STRING;
 use swlsp_php::{PhpContext, PhpIndex, assistant_argument_tags, assistant_sibling_string_argument};
-use swlsp_php_types::{equal_fold, go_quote, go_to_lower};
 use swlsp_snippet::SnippetIndexer;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 use swlsp_translation::{Index, Reference, ReferenceRole};
 
-use super::{lower_ext, nil_strings};
+use super::{lower_ext, strings_value};
+use crate::LookupError;
 use crate::ProblemAnalyzer;
 use crate::common::value_node_text_range;
 
 const MISSING_TRANSLATION_KEY_CODE: &str = "symfony.translation.key.missing";
 const MISSING_TRANSLATION_DOMAIN_CODE: &str = "symfony.translation.domain.missing";
 
-/// Go `TranslationAnalyzer`.
 pub struct TranslationAnalyzer {
     index: Option<Arc<Index>>,
     php_index: Option<PhpIndex>,
@@ -48,14 +48,13 @@ impl TranslationAnalyzer {
         let Some(snippets) = &self.snippet_index else {
             return Ok(false);
         };
-        if !equal_fold(domain, "messages") {
+        if !eq_ignore_case(domain, "messages") {
             return Ok(false);
         }
         Ok(!snippets.frontend_snippet(key)?.is_empty())
     }
 }
 
-/// Go `staticTranslationKey`.
 fn static_translation_key(extension: &str, node: &SyntaxNode, key: &str) -> bool {
     if key.is_empty() || key.contains('$') {
         return false;
@@ -107,7 +106,7 @@ impl ProblemAnalyzer for TranslationAnalyzer {
         };
         let analyzed = run.analyze_references();
         if run.domains_empty() {
-            // Go returns no problems when no domain is indexed.
+            // Without an indexed domain there is nothing to check against.
             return Ok(Vec::new());
         }
         analyzed?;
@@ -158,14 +157,14 @@ struct Domains {
 }
 
 impl Run<'_> {
-    /// Loads the indexed domains once (Go loads them before analysis).
+    /// Loads the indexed domains once per run.
     fn domains(&mut self) -> Result<&Domains, BoxError> {
         if self.domains.is_none() {
             let names = self
                 .index
                 .domains()
-                .map_err(|error| format!("query translation domains: {error}"))?;
-            let lowered = names.iter().map(|domain| go_to_lower(domain)).collect();
+                .map_err(|error| LookupError::new("query translation domains", error))?;
+            let lowered = names.iter().map(|domain| lowercase(domain)).collect();
             self.domains = Some(Domains { names, lowered });
         }
         Ok(self.domains.as_ref().expect("domains loaded"))
@@ -225,7 +224,7 @@ impl Run<'_> {
     fn has_domain(&mut self, domain: &str) -> Result<bool, BoxError> {
         let domains = self.domains()?;
         // An empty catalog disables the analysis (see `domains_empty`).
-        Ok(domains.names.is_empty() || domains.lowered.contains(&go_to_lower(domain)))
+        Ok(domains.names.is_empty() || domains.lowered.contains(&lowercase(domain)))
     }
 
     fn add_missing_domain(&mut self, node: &SyntaxNode, domain: &str) -> Result<(), BoxError> {
@@ -236,7 +235,7 @@ impl Run<'_> {
         payload.insert("domain".into(), Value::String(domain.to_owned()));
         payload.insert(
             "suggestions".into(),
-            nil_strings(swlsp_suggestion::similar(domain, &self.domains()?.names)),
+            strings_value(swlsp_suggestion::similar(domain, &self.domains()?.names)),
         );
         self.result.push(Problem {
             id: MISSING_TRANSLATION_DOMAIN_CODE.into(),
@@ -266,9 +265,9 @@ impl Run<'_> {
             return Ok(());
         }
         let keys = self.index.keys(domain).map_err(|error| {
-            format!(
-                "query translation keys for domain {}: {error}",
-                go_quote(domain)
+            LookupError::new(
+                format!("query translation keys for domain {:?}", domain),
+                error,
             )
         })?;
         let mut payload = Map::new();
@@ -276,7 +275,7 @@ impl Run<'_> {
         payload.insert("key".into(), Value::String(key.to_owned()));
         payload.insert(
             "suggestions".into(),
-            nil_strings(swlsp_suggestion::similar(key, &keys)),
+            strings_value(swlsp_suggestion::similar(key, &keys)),
         );
         self.result.push(Problem {
             id: MISSING_TRANSLATION_KEY_CODE.into(),

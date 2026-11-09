@@ -1,4 +1,4 @@
-//! Port of Go `bundle_resource_completion_test.go`.
+//! Tests for bundle and directory-scoped resource completion.
 
 use std::sync::Arc;
 

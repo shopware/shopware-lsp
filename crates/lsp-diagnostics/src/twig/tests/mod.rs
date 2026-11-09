@@ -1,4 +1,4 @@
-//! Tests for the Twig analyzer group (ports of the Go `_test.go` files).
+//! Tests for the Twig analyzer group.
 
 mod component;
 mod deprecation;
@@ -75,12 +75,10 @@ pub(super) fn tempdir() -> tempfile::TempDir {
     tempfile::tempdir().expect("tempdir")
 }
 
-/// Go `problemRangeText`.
 pub(super) fn range_text(document: &TextDocument, range: TextRange) -> &str {
     &document.source()[range]
 }
 
-/// Go `problemSuggestionStrings`.
 pub(super) fn suggestions(problem: &Problem) -> Vec<String> {
     payload_strings(problem, "suggestions")
 }

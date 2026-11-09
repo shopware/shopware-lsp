@@ -6,7 +6,7 @@ use swlsp_indexer::{
     DataIndexer, Error, Indexer, Mutation, ParsedFile, Prepared, PreparingIndexer, Result, Store,
     SupplementalPathIndexer, SupplementalSyntaxIndexer, TransactionalClearer, TransactionalRemover,
 };
-use swlsp_php_types::{equal_fold, go_to_lower};
+use swlsp_textutil::{eq_ignore_case, lowercase};
 
 use crate::assetic::AsseticCatalog;
 use crate::model::{Kind, Package, ReferenceKind, Resource, Usage, normalize_name};
@@ -183,7 +183,7 @@ impl Index {
         let mut resources = self.records.get_all_values()?;
         resources.sort_by(|left, right| {
             if left.name != right.name {
-                return go_to_lower(&left.name).cmp(&go_to_lower(&right.name));
+                return lowercase(&left.name).cmp(&lowercase(&right.name));
             }
             left.kind
                 .cmp(&right.kind)
@@ -216,7 +216,7 @@ impl Index {
                 Kind::ViteEntry => (2, &mut catalog.vite_entries),
                 _ => (3, &mut catalog.assets),
             };
-            if seen[slot].insert(go_to_lower(&resource.name)) {
+            if seen[slot].insert(lowercase(&resource.name)) {
                 list.push(resource.name.clone());
             }
         }
@@ -257,7 +257,7 @@ impl Index {
         Ok(self
             .resources_view()?
             .iter()
-            .filter(|resource| resource.kind == kind && equal_fold(&resource.name, &name))
+            .filter(|resource| resource.kind == kind && eq_ignore_case(&resource.name, &name))
             .cloned()
             .collect())
     }
@@ -285,7 +285,9 @@ impl Index {
         Ok(self
             .resources_view()?
             .iter()
-            .filter(|resource| is_asset_kind(resource.kind) && equal_fold(&resource.name, &name))
+            .filter(|resource| {
+                is_asset_kind(resource.kind) && eq_ignore_case(&resource.name, &name)
+            })
             .cloned()
             .collect())
     }
@@ -299,10 +301,10 @@ impl Index {
         let mut result: Vec<String> = self
             .packages()?
             .into_iter()
-            .filter(|package| seen.insert(go_to_lower(&package.name)))
+            .filter(|package| seen.insert(lowercase(&package.name)))
             .map(|package| package.name)
             .collect();
-        result.sort_by_cached_key(|name| go_to_lower(name));
+        result.sort_by_cached_key(|name| lowercase(name));
         Ok(result)
     }
 
@@ -311,7 +313,7 @@ impl Index {
         Ok(self
             .packages()?
             .into_iter()
-            .filter(|package| equal_fold(&package.name, name))
+            .filter(|package| eq_ignore_case(&package.name, name))
             .collect())
     }
 
@@ -331,7 +333,7 @@ impl Index {
             .filter(|resource| {
                 is_asset_kind(resource.kind)
                     && targets.iter().any(|target| {
-                        equal_fold(&resource.name, target)
+                        eq_ignore_case(&resource.name, target)
                             || *target == theme_target
                                 && theme_resource_matches(&resource.name, name)
                     })
@@ -372,12 +374,10 @@ impl Index {
             .assetic
             .resources(false)
             .into_iter()
-            .filter(|resource| {
-                !resource.name.is_empty() && seen.insert(go_to_lower(&resource.name))
-            })
+            .filter(|resource| !resource.name.is_empty() && seen.insert(lowercase(&resource.name)))
             .map(|resource| resource.name)
             .collect();
-        result.sort_by_cached_key(|name| go_to_lower(name));
+        result.sort_by_cached_key(|name| lowercase(name));
         result
     }
 
@@ -386,7 +386,7 @@ impl Index {
         self.assetic
             .resources(false)
             .into_iter()
-            .filter(|resource| equal_fold(&resource.name, name))
+            .filter(|resource| eq_ignore_case(&resource.name, name))
             .collect()
     }
 
@@ -406,7 +406,7 @@ impl Index {
             }
             format!("{base_path}/")
         };
-        let lower_prefix = go_to_lower(&prefix);
+        let lower_prefix = lowercase(&prefix);
         let mut seen = HashSet::new();
         let mut result = Vec::new();
         for resource in self.resources_view()?.iter() {
@@ -415,16 +415,16 @@ impl Index {
             }
             let mut name = normalize_name(&resource.name);
             if !prefix.is_empty() {
-                if !go_to_lower(&name).starts_with(&lower_prefix) || name.len() < prefix.len() {
+                if !lowercase(&name).starts_with(&lower_prefix) || name.len() < prefix.len() {
                     continue;
                 }
                 name = name[prefix.len()..].to_owned();
             }
-            if !name.is_empty() && seen.insert(go_to_lower(&name)) {
+            if !name.is_empty() && seen.insert(lowercase(&name)) {
                 result.push(name);
             }
         }
-        result.sort_by_cached_key(|name| go_to_lower(name));
+        result.sort_by_cached_key(|name| lowercase(name));
         Ok(result)
     }
 
@@ -445,21 +445,22 @@ impl Index {
                 continue;
             }
             for package in &packages {
-                let logical = if equal_fold(package_name, "theme") && package.base_path.is_empty() {
-                    theme_logical_name(&resource.name)
-                } else {
-                    package_logical_name(&resource.name, package)
-                };
+                let logical =
+                    if eq_ignore_case(package_name, "theme") && package.base_path.is_empty() {
+                        theme_logical_name(&resource.name)
+                    } else {
+                        package_logical_name(&resource.name, package)
+                    };
                 let Some(logical) = logical else {
                     continue;
                 };
-                if seen.insert(go_to_lower(&logical)) {
+                if seen.insert(lowercase(&logical)) {
                     result.push(logical);
                 }
                 break;
             }
         }
-        result.sort_by_cached_key(|name| go_to_lower(name));
+        result.sort_by_cached_key(|name| lowercase(name));
         Ok(result)
     }
 
@@ -469,7 +470,7 @@ impl Index {
             .usages
             .get_all_values()?
             .into_iter()
-            .filter(|usage| usage.kind == kind && equal_fold(&usage.name, &name))
+            .filter(|usage| usage.kind == kind && eq_ignore_case(&usage.name, &name))
             .collect();
         result.sort_by(|left, right| {
             left.file
@@ -488,7 +489,7 @@ impl Index {
         Ok(self
             .usages(name, kind)?
             .into_iter()
-            .filter(|usage| equal_fold(&usage.package, package_name))
+            .filter(|usage| eq_ignore_case(&usage.package, package_name))
             .collect())
     }
 
@@ -518,7 +519,7 @@ impl Index {
         if !slash_path_within(&self.normalized_root, bundle_dir) {
             return None;
         }
-        let lower = go_to_lower(&slash_base(bundle_dir));
+        let lower = lowercase(&slash_base(bundle_dir));
         let public_name = lower.strip_suffix("bundle").unwrap_or(&lower);
         if public_name.is_empty() {
             return None;
@@ -736,8 +737,8 @@ fn package_items(file: &ParsedFile) -> Vec<(String, Package)> {
     keyed(packages.into_iter().enumerate().map(|(position, package)| {
         let key = format!(
             "{}:{}",
-            go_to_lower(&package.name),
-            go_to_lower(&package.base_path)
+            lowercase(&package.name),
+            lowercase(&package.base_path)
         );
         (position, key, package)
     }))
@@ -753,11 +754,7 @@ fn resource_items(resources: Vec<Resource>) -> Vec<(String, Resource)> {
                 if resource.name.is_empty() {
                     return None;
                 }
-                let key = format!(
-                    "{}:{}",
-                    resource.kind.ordinal(),
-                    go_to_lower(&resource.name)
-                );
+                let key = format!("{}:{}", resource.kind.ordinal(), lowercase(&resource.name));
                 Some((position, key, resource))
             }),
     )
@@ -787,7 +784,7 @@ fn usage_items(file: &ParsedFile) -> Vec<(String, Usage)> {
                 let key = format!(
                     "{}:{}:{}",
                     usage.kind.ordinal(),
-                    go_to_lower(&usage.name),
+                    lowercase(&usage.name),
                     u32::from(usage.range.start())
                 );
                 Some((position, key, usage))
@@ -795,7 +792,7 @@ fn usage_items(file: &ParsedFile) -> Vec<(String, Usage)> {
     )
 }
 
-/// Saves `items` for `path`; equal keys get a `#<position>` suffix like Go.
+/// Keys `items` for storage; equal keys get a `#<position>` suffix.
 fn keyed<T>(items: impl IntoIterator<Item = (usize, String, T)>) -> Vec<(String, T)> {
     let mut result: Vec<(String, T)> = Vec::new();
     let mut positions: HashMap<String, usize> = HashMap::new();
@@ -803,8 +800,7 @@ fn keyed<T>(items: impl IntoIterator<Item = (usize, String, T)>) -> Vec<(String,
         if positions.contains_key(&key) {
             key = format!("{key}#{position}");
         }
-        // Go writes into a map: a repeated suffixed key replaces the earlier
-        // item.
+        // A repeated suffixed key replaces the earlier item.
         match positions.get(&key) {
             Some(&existing) => result[existing].1 = item,
             None => {
@@ -1008,7 +1004,7 @@ fn is_dynamic_public_directory(name: &str) -> bool {
         "uploads",
     ]
     .iter()
-    .any(|candidate| equal_fold(name, candidate))
+    .any(|candidate| eq_ignore_case(name, candidate))
 }
 
 fn is_static_asset_path(path: &str) -> bool {
@@ -1023,7 +1019,7 @@ fn is_asset_metadata_path(path: &str) -> bool {
 }
 
 fn is_composer_installed_path(path: &str) -> bool {
-    equal_fold(&base(&dir(path)), "composer")
+    eq_ignore_case(&base(&dir(path)), "composer")
 }
 
 fn is_usage_candidate(file: &ParsedFile) -> bool {
@@ -1051,7 +1047,7 @@ fn package_asset_targets(name: &str, package_name: &str, packages: &[Package]) -
     let mut seen = HashSet::new();
     let mut add = |value: String| {
         let value = normalize_name(&value);
-        if !value.is_empty() && seen.insert(go_to_lower(&value)) {
+        if !value.is_empty() && seen.insert(lowercase(&value)) {
             result.push(value);
         }
     };
@@ -1062,7 +1058,7 @@ fn package_asset_targets(name: &str, package_name: &str, packages: &[Package]) -
             add(format!("{}/{name}", package.base_path));
         }
     }
-    if equal_fold(package_name, "theme") {
+    if eq_ignore_case(package_name, "theme") {
         add(format!("theme/*/{name}"));
     }
     result
@@ -1076,7 +1072,7 @@ fn package_logical_name(resource_name: &str, package: &Package) -> Option<String
     let prefix = format!("{}/", normalize_name(&package.base_path));
     if resource_name.len() <= prefix.len()
         || !resource_name.is_char_boundary(prefix.len())
-        || !equal_fold(&resource_name[..prefix.len()], &prefix)
+        || !eq_ignore_case(&resource_name[..prefix.len()], &prefix)
     {
         return None;
     }
@@ -1085,14 +1081,14 @@ fn package_logical_name(resource_name: &str, package: &Package) -> Option<String
 
 fn theme_resource_matches(resource_name: &str, logical_name: &str) -> bool {
     theme_logical_name(resource_name)
-        .is_some_and(|logical| equal_fold(&logical, &normalize_name(logical_name)))
+        .is_some_and(|logical| eq_ignore_case(&logical, &normalize_name(logical_name)))
 }
 
 /// `theme/<id>/<path>` → `<path>`.
 fn theme_logical_name(resource_name: &str) -> Option<String> {
     let name = normalize_name(resource_name);
     let parts: Vec<&str> = name.split('/').collect();
-    if parts.len() < 3 || !equal_fold(parts[0], "theme") {
+    if parts.len() < 3 || !eq_ignore_case(parts[0], "theme") {
         return None;
     }
     Some(parts[2..].join("/"))
@@ -1101,21 +1097,21 @@ fn theme_logical_name(resource_name: &str) -> Option<String> {
 fn assetic_resource_matches(name: &str, pattern: &str) -> bool {
     let name = normalize_name(name);
     let pattern = normalize_name(pattern);
-    if equal_fold(&name, &pattern) {
+    if eq_ignore_case(&name, &pattern) {
         return true;
     }
     if pattern.ends_with('/') {
-        return go_to_lower(&name).starts_with(&go_to_lower(&pattern));
+        return lowercase(&name).starts_with(&lowercase(&pattern));
     }
     if !pattern.contains(['*', '?', '[']) {
         return false;
     }
-    swlsp_pathmatch::go_glob(&go_to_lower(&pattern), &go_to_lower(&name), false)
+    swlsp_pathmatch::path_glob(&lowercase(&pattern), &lowercase(&name), false)
 }
 
 fn assetic_bundle_base_path(package_name: &str) -> String {
     let name = package_name.trim();
-    let name = go_to_lower(name.strip_prefix('@').unwrap_or(name));
+    let name = lowercase(name.strip_prefix('@').unwrap_or(name));
     let name = name.strip_suffix("bundle").unwrap_or(&name);
     if name.is_empty() {
         String::new()

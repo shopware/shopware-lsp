@@ -5,9 +5,10 @@ use swlsp_php_resolver::NameContext;
 use swlsp_php_semantic::{
     Flags, Parameter, ScopeId, Str, Symbol, SymbolKind, Visibility, new_symbol_id,
 };
-use swlsp_php_types::{Type, go_to_lower};
+use swlsp_php_types::Type;
 use swlsp_syntax::SyntaxNode;
 use swlsp_syntax::rowan::NodeOrToken;
+use swlsp_textutil::lowercase;
 
 use crate::builder::Builder;
 
@@ -29,7 +30,7 @@ impl Builder<'_> {
                     if !after_colon || token.kind().is_trivia() {
                         continue;
                     }
-                    return match go_to_lower(token.text()).as_str() {
+                    return match lowercase(token.text()).as_str() {
                         "int" | "string" => self.bind_native_type(token.text(), context),
                         _ => Type::unknown(),
                     };

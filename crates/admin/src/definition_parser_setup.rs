@@ -1,5 +1,4 @@
-//! Composition API `setup()` members (port of Go
-//! `definition_parser_setup.go`).
+//! Composition API `setup()` members.
 
 use crate::*;
 

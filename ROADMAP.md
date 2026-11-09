@@ -5,7 +5,7 @@ comparing Shopware LSP with the reverse-engineered PhpStorm PHP implementation
 in `php-research`.
 
 The goal is compatibility with useful PHP metadata and behavior, not a port of
-IntelliJ's architecture. Shopware LSP should remain a lightweight Go language
+IntelliJ's architecture. Shopware LSP should remain a lightweight language
 server built around its native lossless CST, immutable semantic snapshots, and
 shared SQLite index.
 
@@ -75,8 +75,7 @@ attributes retain their resolved name without arbitrary payload. Contract-only
 parameter defaults are retained so omitted boolean arguments select the correct
 return branch. Focused tests cover live source, compact workspace round trips,
 generated stubs, completion, inference, hover, and diagnostics. The 59,954-file
-`sw-trunk` oracle passes with a 9.45-second cold index, 0.83-second warm scan,
-2.13-second cache restore, and 278.0 MiB retained Go heap on the recorded run.
+`sw-trunk` real-world suite passes.
 
 ## Phase 3: Diagnostic Correctness
 
@@ -273,11 +272,10 @@ are measured bottlenecks. SQLite remains the storage and crash-recovery layer.
 
 ## Validation
 
-The August 2026 roadmap pass ran against the former Go implementation (since
-replaced by the Rust server in `crates/`) and was verified by `go test ./...`, focused race
-coverage for the PHP, semantic LSP, and application composition packages,
-`golangci-lint run`, the VS Code TypeScript build, and byte-for-byte repeated
-stub generation from the pinned JetBrains revision. The sole unchecked item is
+Roadmap work is verified by `make rust-check` (rustfmt, clippy, the workspace
+tests and the real-world suite's compilation), the VS Code checks, and
+byte-for-byte repeated stub generation from the pinned JetBrains revision. The
+sole unchecked item is
 intentionally conditional: PHPCS suppression belongs with future PHPCS
 diagnostics and has no current diagnostic producer to integrate.
 

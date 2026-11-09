@@ -1,4 +1,4 @@
-//! Ports of `admin_diagnostics_test.go` (part 3).
+//! Tests of the Administration analyzer (part 3).
 
 use std::collections::HashMap;
 

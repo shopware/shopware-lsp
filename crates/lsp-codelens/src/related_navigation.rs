@@ -7,8 +7,8 @@ use swlsp_lsp::{CodeLensProvider, CodeLensRequest, Context, ProviderResult};
 use swlsp_lsp_protocol::{self as protocol, Range};
 use swlsp_php::PhpIndex;
 use swlsp_php_semantic::SymbolKind;
-use swlsp_php_types::go_to_lower;
 use swlsp_symfony::{RouteIndexer, ServiceIndex};
+use swlsp_textutil::lowercase;
 use swlsp_twig::{TemplateReference, TemplateReferenceKind, TwigIndexer};
 use swlsp_uriutil::filepath;
 
@@ -111,11 +111,11 @@ impl RelatedNavigationCodeLensProvider {
             .collect();
         let wanted: HashSet<String> = methods
             .iter()
-            .map(|symbol| go_to_lower(&symbol.fully_qualified))
+            .map(|symbol| lowercase(&symbol.fully_qualified))
             .collect();
         let route_targets = self.route_targets_by_method(ctx, php, routes, &wanted)?;
         for symbol in methods {
-            let Some(targets) = route_targets.get(&go_to_lower(&symbol.fully_qualified)) else {
+            let Some(targets) = route_targets.get(&lowercase(&symbol.fully_qualified)) else {
                 continue;
             };
             if targets.is_empty() {
@@ -173,7 +173,7 @@ impl RelatedNavigationCodeLensProvider {
                 if symbol.kind == SymbolKind::Method
                     && symbol.body_range.contains(reference.range.start())
                 {
-                    rendering_methods.push(go_to_lower(&symbol.fully_qualified));
+                    rendering_methods.push(lowercase(&symbol.fully_qualified));
                 }
             }
         }
@@ -247,7 +247,7 @@ impl RelatedNavigationCodeLensProvider {
                     method = resolved.fully_qualified.to_string();
                 }
             }
-            let key = go_to_lower(method.strip_prefix('\\').unwrap_or(&method));
+            let key = lowercase(method.strip_prefix('\\').unwrap_or(&method));
             if !wanted.contains(&key) {
                 continue;
             }

@@ -1,4 +1,4 @@
-//! Port of Go `service_named_argument_completion_test.go`.
+//! Tests for named service argument completion.
 
 use std::sync::Arc;
 

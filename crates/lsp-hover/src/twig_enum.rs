@@ -49,7 +49,7 @@ impl HoverProvider for TwigEnumHoverProvider {
             );
             let cases = twig_enum_cases(php, &symbol);
             if !cases.is_empty() {
-                // Go escapes the joined list, separators included.
+                // The joined list is escaped as a whole, separators included.
                 let _ = write!(
                     markdown,
                     "\n\nCases: `{}`",

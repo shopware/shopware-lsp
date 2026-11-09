@@ -1,4 +1,5 @@
-//! Go `html.UnescapeString`.
+//! HTML character reference unescaping (`&lt;`, `&#225;`, `&#xE1;`) following
+//! the HTML5 named and numeric reference rules.
 
 use crate::entities::{ENTITY, ENTITY2};
 
@@ -27,7 +28,9 @@ fn entity2(name: &[u8]) -> Option<(char, char)> {
         .map(|index| (ENTITY2[index].1, ENTITY2[index].2))
 }
 
-/// Unescapes entities like `&lt;` exactly like Go's `html.UnescapeString`.
+/// Unescapes entities like `&lt;`. Numeric references in 0x80..=0x9F map
+/// through Windows-1252; invalid ones become U+FFFD; unknown or malformed
+/// references stay verbatim.
 pub fn unescape_string(value: &str) -> String {
     if !value.contains('&') {
         return value.to_owned();
@@ -162,7 +165,7 @@ mod tests {
     use super::unescape_string;
 
     #[test]
-    fn matches_go_examples() {
+    fn unescapes_named_numeric_and_malformed_references() {
         for (input, expected) in [
             ("plain", "plain"),
             ("&lt;b&gt; &amp; &quot;", "<b> & \""),
