@@ -9,7 +9,7 @@ use crate::error::{Error, Result, ResultExt};
 /// The current version of persisted index contents. Bump it whenever a schema
 /// change or extraction-semantics change requires existing workspace caches
 /// to be rebuilt.
-pub const INDEX_VERSION: u32 = 182;
+pub const INDEX_VERSION: u32 = 184;
 
 const VERSION_FILE_NAME: &str = "index_version";
 const CONFIGURATION_FINGERPRINT_FILE_NAME: &str = "configuration_fingerprint";
@@ -104,8 +104,8 @@ mod tests {
     #[test]
     fn index_version_marker_is_current() {
         // Update together with every INDEX_VERSION bump.
-        assert_eq!(INDEX_VERSION, 182);
-        assert_eq!(index_version_marker(), "182");
+        assert_eq!(INDEX_VERSION, 184);
+        assert_eq!(index_version_marker(), "184");
     }
 
     #[test]
@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn older_versions_are_rebuilt() {
-        for stored in ["1", "181", "181-rs"] {
+        for stored in ["1", "183", "181-rs"] {
             let cache = tempfile::tempdir().unwrap();
             std::fs::write(cache.path().join(VERSION_FILE_NAME), stored).unwrap();
             std::fs::write(cache.path().join("indexes.db"), "data").unwrap();

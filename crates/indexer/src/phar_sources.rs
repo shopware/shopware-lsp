@@ -15,7 +15,8 @@ use crate::error::{CancelToken, Error, Result, ResultExt};
 use crate::paths::{self, path_within};
 use crate::scanner::{FileMeta, Inner};
 
-const PHAR_CACHE_FORMAT_VERSION: i32 = 1;
+/// Bump when the extracted file set changes for the same archive.
+const PHAR_CACHE_FORMAT_VERSION: i32 = 2;
 const MAX_PHAR_PHP_FILES: usize = 100_000;
 const MAX_PHAR_PHP_FILE_SIZE: i64 = 128 << 20;
 const MAX_PHAR_PHP_SOURCE_SIZE: i64 = 1 << 30;
@@ -126,6 +127,9 @@ impl Inner {
                 )));
             }
             let relative = safe_phar_entry_path(&entry.name)?;
+            if self.vendors.bundles_root_package(&relative) {
+                continue;
+            }
             if let Some(previous) = collisions.insert(relative.to_lowercase(), entry.name.clone()) {
                 return Err(Error::msg(format!(
                     "entries {previous:?} and {:?} map to the same source path",

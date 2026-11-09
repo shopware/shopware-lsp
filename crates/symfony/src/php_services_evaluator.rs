@@ -13,16 +13,30 @@ impl PhpServiceEvaluator<'_> {
             return;
         }
         let assigned_variable = phpquery::assigned_variable(statement);
-        if self.capture_accessor_assignment(&calls, &assigned_variable)
-            || self.evaluate_standalone_configurator(&calls)
+        let segments = definition_segments(&calls);
+        let last = segments.len().saturating_sub(1);
+        for (index, segment) in segments.iter().enumerate() {
+            // `$x = $services->set('a')->set('b')` binds `$x` to the last one.
+            let variable = if index == last {
+                assigned_variable.as_str()
+            } else {
+                ""
+            };
+            self.evaluate_calls(segment, variable);
+        }
+    }
+
+    fn evaluate_calls(&mut self, calls: &[SyntaxNode], assigned_variable: &str) {
+        if self.capture_accessor_assignment(calls, assigned_variable)
+            || self.evaluate_standalone_configurator(calls)
         {
             return;
         }
-        let definition_id = self.resolve_definition(&calls);
+        let definition_id = self.resolve_definition(calls);
         if definition_id.is_empty() {
             return;
         }
-        self.configure_definition(&definition_id, &assigned_variable, &calls);
+        self.configure_definition(&definition_id, assigned_variable, calls);
     }
 
     fn capture_accessor_assignment(
@@ -222,4 +236,54 @@ impl PhpServiceEvaluator<'_> {
             }
         }
     }
+}
+
+/// Methods that start a new definition when chained: Symfony's fluent
+/// configurators return a configurator on which `->set()` (and the others)
+/// define the next service, as in
+/// `$services->set('a', A::class)->args([…])->set('b', B::class)`.
+const DEFINITION_STARTERS: &[&str] = &["set", "alias", "load", "stack"];
+
+/// The calls of one statement, split into one group per definition its main
+/// chain starts. Calls of the main chain all begin where the statement's
+/// expression begins; a call belongs to the definition whose segment its
+/// range ends in, so argument calls such as `service('kernel')` stay with
+/// the definition they configure. A statement with at most one definition is
+/// a single group.
+fn definition_segments(calls: &[SyntaxNode]) -> Vec<Vec<SyntaxNode>> {
+    let Some(chain_start) = calls.iter().map(|call| call.text_range().start()).min() else {
+        return Vec::new();
+    };
+    let mut chain: Vec<&SyntaxNode> = calls
+        .iter()
+        .filter(|call| call.text_range().start() == chain_start)
+        .collect();
+    chain.sort_by_key(|call| call.text_range().end());
+    let starters: Vec<usize> = chain
+        .iter()
+        .enumerate()
+        .filter(|(_, call)| {
+            DEFINITION_STARTERS.contains(&phpquery::call_method_name(call).as_str())
+        })
+        .map(|(index, _)| index)
+        .collect();
+    if starters.len() <= 1 {
+        return vec![calls.to_vec()];
+    }
+    // Segment k ends with the chain call right before starter k + 1.
+    let boundaries: Vec<_> = starters
+        .iter()
+        .skip(1)
+        .map(|&starter| chain[starter - 1].text_range().end())
+        .collect();
+    let mut segments = vec![Vec::new(); starters.len()];
+    for call in calls {
+        let end = call.text_range().end();
+        let segment = boundaries
+            .iter()
+            .position(|boundary| end <= *boundary)
+            .unwrap_or(starters.len() - 1);
+        segments[segment].push(call.clone());
+    }
+    segments
 }

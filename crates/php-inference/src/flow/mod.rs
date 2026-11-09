@@ -9,7 +9,7 @@ mod update;
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;
 use swlsp_php_semantic::TypeSource;
-use swlsp_php_types::Type;
+use swlsp_php_types::{Kind, Type};
 use swlsp_syntax::SyntaxNode;
 use swlsp_textutil::lowercase;
 
@@ -19,9 +19,9 @@ use crate::analyzer::Fs;
 use crate::env::Env;
 use crate::syntax::{
     direct_nodes, direct_operator, first_node, flow_expression_key, has_direct_token, is_null_node,
-    last_node, lower_call_name, predicate_flow_target,
+    last_node, lower_call_name, predicate_flow_target, trim_quotes,
 };
-use crate::types_util::predicate_type;
+use crate::types_util::{iterable_types, predicate_type};
 
 pub(crate) type Branches = (Env, Env);
 
@@ -204,6 +204,16 @@ impl Fs<'_, '_, '_> {
                     return Some(branches);
                 }
             }
+            "array_key_exists" | "key_exists" => {
+                if let Some(branches) = self.narrow_shape_key(node, env) {
+                    return Some(branches);
+                }
+            }
+            "in_array" => {
+                if let Some(branches) = self.narrow_strict_in_array(node, env) {
+                    return Some(branches);
+                }
+            }
             _ => {}
         }
         if let Some(branches) = self.narrow_class_predicate(node, &name, env) {
@@ -215,6 +225,73 @@ impl Fs<'_, '_, '_> {
             return Some(branches);
         }
         self.typed_predicate_environments(node, &name, env)
+    }
+
+    /// `array_key_exists($key, $shape)` on a closed shape: in the true branch
+    /// `$key` is one of the shape's keys.
+    fn narrow_shape_key(&mut self, node: &SyntaxNode, env: &Env) -> Option<Branches> {
+        let key = query::argument_expression(node, 0)?;
+        let array = query::argument_expression(node, 1)?;
+        let array_type = self.infer(&array, env);
+        if array_type.kind() != Kind::ArrayShape || array_type.is_open_shape() {
+            return None;
+        }
+        let keys: Vec<Type> = array_type
+            .fields()
+            .iter()
+            .map(|field| {
+                let name = trim_quotes(&field.name);
+                if name.parse::<i64>().is_ok() {
+                    Type::literal_int(name)
+                } else {
+                    Type::literal_string(name)
+                }
+            })
+            .collect();
+        if keys.is_empty() {
+            return None;
+        }
+        self.narrow_true_branch(&key, &Type::union(keys), env, "array_key_exists")
+    }
+
+    /// `in_array($value, $list, true)`: in the true branch `$value` has the
+    /// list's element type.
+    fn narrow_strict_in_array(&mut self, node: &SyntaxNode, env: &Env) -> Option<Branches> {
+        let strict = query::argument_expression(node, 2)?;
+        if lowercase(self.src().text(&strict).trim()) != "true" {
+            return None;
+        }
+        let value = query::argument_expression(node, 0)?;
+        let haystack = query::argument_expression(node, 1)?;
+        let haystack_type = self.infer(&haystack, env);
+        let (_, element) = iterable_types(&haystack_type, self.relations);
+        if element.is_unknown() || element.kind() == Kind::Mixed {
+            return None;
+        }
+        self.narrow_true_branch(&value, &element, env, "in_array")
+    }
+
+    /// Narrows `expression` to `narrowed` in the true branch only.
+    fn narrow_true_branch(
+        &mut self,
+        expression: &SyntaxNode,
+        narrowed: &Type,
+        env: &Env,
+        reason: &'static str,
+    ) -> Option<Branches> {
+        let key = flow_expression_key(self.src(), Some(expression));
+        if key.is_empty() {
+            return None;
+        }
+        let original = self.flow_value(&key, expression, env);
+        let true_value = self.relations.narrow(&original, narrowed);
+        if true_value.is_unknown() {
+            return None;
+        }
+        let (true_env, false_env) = (env.fork(), env.fork());
+        true_env.set(&key, true_value.clone());
+        self.record(expression, &true_value, TypeSource::Flow, reason);
+        Some((true_env, false_env))
     }
 
     fn numeric_predicate_environments(&mut self, node: &SyntaxNode, env: &Env) -> Option<Branches> {

@@ -55,6 +55,25 @@ fn template_names_cases() {
 }
 
 #[test]
+fn template_names_use_the_bundle_namespace_of_composer_packages() {
+    assert!(
+        template_names(
+            "/project/vendor/symfony/web-profiler-bundle/Resources/views/Profiler/layout.html.twig"
+        )
+        .contains(&"@WebProfiler/Profiler/layout.html.twig".to_owned())
+    );
+    assert!(
+        template_names("/project/vendor/acme/demo-bundle/src/Resources/views/page.html.twig")
+            .contains(&"@Demo/page.html.twig".to_owned())
+    );
+    // Only kebab-case `*-bundle` package directories are renamed.
+    assert!(
+        template_names("/project/vendor/acme/Shop/Resources/views/page.html.twig")
+            .contains(&"@Shop/page.html.twig".to_owned())
+    );
+}
+
+#[test]
 fn template_names_for_storefront_dist() {
     assert_eq!(
         template_names(

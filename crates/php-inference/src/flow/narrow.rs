@@ -205,6 +205,10 @@ impl Fs<'_, '_, '_> {
         false_env.set(&key, false_value.clone());
         self.narrow_array_access_base(value_node, &true_env, &true_value, equal);
         self.narrow_array_access_base(value_node, &false_env, &false_value, !equal);
+        if value_node.kind() == PHP_VARIABLE {
+            let non_null = if equal { &false_env } else { &true_env };
+            self.apply_non_null_alias(&key, non_null, env);
+        }
         let true_value = true_env.get(&key).unwrap_or_default();
         self.record(value_node, &true_value, TypeSource::Flow, "null comparison");
         (true_env, false_env)

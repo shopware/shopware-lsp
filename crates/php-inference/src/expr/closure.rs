@@ -88,8 +88,12 @@ impl Fs<'_, '_, '_> {
             let name = query::parameter_name(&parameter);
             let mut value =
                 self.parse_native_type(&query::parameter_type(&parameter), start(&parameter));
+            // The context (the array a callback iterates) refines the
+            // parameter only where it fits the declared type; a declared type
+            // the context contradicts wins.
             if let Some(contextual) = parameter_types.get(result.len())
                 && !contextual.is_unknown()
+                && (value.is_unknown() || self.relations.is_subtype(contextual, &value))
             {
                 value = contextual.clone();
             }

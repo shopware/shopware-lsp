@@ -391,6 +391,23 @@ class Invalid extends Closed {}
 }
 
 #[test]
+fn class_aliases_of_final_and_abstract_classes_are_not_subclasses() {
+    let source = r#"<?php
+final class Closed {}
+abstract class Route { abstract public function load(): void; }
+class_alias(Closed::class, 'Legacy\\Closed');
+class_alias(Route::class, 'Legacy\\Route');
+"#;
+    let (_, analyzed) = analyze_plain("/aliases.php", source);
+    let messages: Vec<String> = analyzed
+        .issues
+        .iter()
+        .map(|issue| issue.message.to_string())
+        .collect();
+    assert!(messages.is_empty(), "{messages:?}");
+}
+
+#[test]
 fn declaration_compatibility_accepts_variance() {
     let source = r#"<?php
 class Entity {}
@@ -1010,4 +1027,183 @@ function run(): void {
     ];
     expected.sort();
     assert_eq!(messages, expected);
+}
+
+#[test]
+fn declared_polyfill_return_types_outweigh_inferred_ones() {
+    // Polyfills declare one function several times behind `function_exists`;
+    // only some declare their return type.
+    let polyfills = r#"<?php
+if (!function_exists('poly_trim')) {
+    function poly_trim(?string $value) { return $value === '' ? false : (string) $value; }
+}
+if (!function_exists('poly_trim')) {
+    function poly_trim(?string $value): string { return (string) $value; }
+}
+"#;
+    let parsed_polyfills = parse(polyfills);
+    let bound_polyfills = bind("/polyfills.php", &parsed_polyfills);
+    let base = snapshot(std::slice::from_ref(&bound_polyfills));
+    let analyzed_polyfills = analyze_linked(&base, builtins(), &bound_polyfills, &parsed_polyfills);
+
+    let caller = r#"<?php
+function take(?string $value): void {}
+$trimmed = poly_trim('x');
+take($trimmed);
+"#;
+    let parsed_caller = parse(caller);
+    let bound_caller = bind("/caller.php", &parsed_caller);
+    let workspace = snapshot(&[analyzed_polyfills, bound_caller.clone()]);
+    let analyzed = analyze_linked(&workspace, builtins(), &bound_caller, &parsed_caller);
+    assert_text_type(&analyzed, &parsed_caller.root, "$trimmed", "string");
+    assert!(
+        all_messages(&analyzed).is_empty(),
+        "{:?}",
+        all_messages(&analyzed)
+    );
+}
+
+/// Analyzes `source` with the PHP 8.3 runtime stubs and the builtin
+/// extensions, returning its issue messages.
+fn issues_with_builtins(path: &str, source: &str) -> (Parsed, Document) {
+    let (parsed, document, _) = analyze_source(path, source, true, builtins());
+    (parsed, document)
+}
+
+#[test]
+fn for_loop_conditions_narrow_the_body() {
+    let source = r#"<?php
+class Node { public function parent(): ?Node { return null; } }
+function visit(Node $node): void {}
+function walk(Node $start): void {
+    for ($current = $start->parent(); $current !== null; $current = $current->parent()) {
+        visit($current);
+    }
+}
+"#;
+    let (_, analyzed) = issues_with_builtins("/for.php", source);
+    assert!(
+        all_messages(&analyzed).is_empty(),
+        "{:?}",
+        all_messages(&analyzed)
+    );
+}
+
+#[test]
+fn strict_in_array_and_array_key_exists_narrow_their_needle() {
+    let source = r#"<?php
+function take(string $value): void {}
+/** @return array{tools: int, prompts: int} */
+function versions(?string $mode, string $list, int $version): array {
+    if (\in_array($mode, ['a', 'b'], true)) {
+        take($mode);
+    }
+    $versions = ['tools' => 0, 'prompts' => 0];
+    if (\array_key_exists($list, $versions)) {
+        $versions[$list] = $version;
+    }
+    return $versions;
+}
+"#;
+    let (_, analyzed) = issues_with_builtins("/narrow.php", source);
+    assert!(
+        all_messages(&analyzed).is_empty(),
+        "{:?}",
+        all_messages(&analyzed)
+    );
+}
+
+#[test]
+fn assigning_one_of_several_shape_keys_keeps_the_shape() {
+    let source = r#"<?php
+/**
+ * @param array{m: bool, x: bool} $flags
+ * @return array{m: bool, x: bool}
+ */
+function inline_flags(array $flags, string $on): array {
+    foreach (['m', 'x'] as $flag) {
+        if (str_contains($on, $flag)) {
+            $flags[$flag] = true;
+        }
+    }
+    return $flags;
+}
+"#;
+    let (_, analyzed) = issues_with_builtins("/shape.php", source);
+    assert!(
+        all_messages(&analyzed).is_empty(),
+        "{:?}",
+        all_messages(&analyzed)
+    );
+}
+
+#[test]
+fn parse_url_and_hrtime_results_depend_on_their_arguments() {
+    let source = r#"<?php
+function port(int $port): void {}
+function timer(int|float $started): void {}
+/** @param array<string, mixed> $parts */
+function build(array $parts): string { return ''; }
+function run(string $url): void {
+    $parts = parse_url($url);
+    if ($parts === false) {
+        return;
+    }
+    port($parts['port'] ?? 80);
+    build($parts);
+    timer(hrtime(true));
+    $pair = hrtime();
+}
+"#;
+    let (parsed, analyzed) = issues_with_builtins("/builtins.php", source);
+    assert!(
+        all_messages(&analyzed).is_empty(),
+        "{:?}",
+        all_messages(&analyzed)
+    );
+    assert_text_type(&analyzed, &parsed.root, "$pair", "array{0:int,1:int}");
+}
+
+#[test]
+fn declared_callback_parameters_win_over_the_iterated_array() {
+    let source = r#"<?php
+function permits(string $name): bool { return true; }
+/** @param array<string, array{privileges: list<string>}> $events */
+function filter(array $events): array {
+    return array_filter($events, fn (string $name) => permits($name), \ARRAY_FILTER_USE_KEY);
+}
+"#;
+    let (_, analyzed) = issues_with_builtins("/callback.php", source);
+    assert!(
+        all_messages(&analyzed).is_empty(),
+        "{:?}",
+        all_messages(&analyzed)
+    );
+}
+
+#[test]
+fn a_ternary_with_a_null_branch_ties_the_result_to_its_condition() {
+    let source = r#"<?php
+class Method {}
+function source_of(Method $method): string { return ''; }
+function created(?Method $setUp, bool $expects): ?string {
+    $assign = $setUp !== null && !$expects ? 'assign' : null;
+    if ($assign !== null) {
+        return source_of($setUp);
+    }
+    $reverse = $setUp === null ? null : 'assign';
+    if (null !== $reverse) {
+        return source_of($setUp);
+    }
+    $assign = 'reassigned';
+    if ($assign !== null) {
+        return source_of($setUp);
+    }
+    return null;
+}
+"#;
+    let (_, analyzed) = issues_with_builtins("/alias.php", source);
+    let messages = all_messages(&analyzed);
+    // Only the call after the reassignment lost the tie to the condition.
+    assert_eq!(messages.len(), 1, "{messages:?}");
 }

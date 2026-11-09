@@ -643,7 +643,7 @@ first.
 
 ```rust
 // crates/indexer/src/version.rs
-pub const INDEX_VERSION: u32 = 182;
+pub const INDEX_VERSION: u32 = 184;
 ```
 
 The version file stores `INDEX_VERSION` (`index_version_marker()`); any other

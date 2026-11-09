@@ -9,7 +9,9 @@ use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, Tex
 use swlsp_lsp_phpanalysis::State;
 use swlsp_lsp_protocol as protocol;
 use swlsp_parser_php::query as phpquery;
-use swlsp_parser_php::syntax::PHP_STRING;
+use swlsp_parser_php::syntax::{
+    PHP_BINARY_EXPRESSION, PHP_FUNCTION_CALL, PHP_MEMBER_CALL, PHP_NAME, PHP_STRING,
+};
 use swlsp_parser_xml::query as xmlquery;
 use swlsp_parser_xml::syntax::{XML_ATTRIBUTE, XML_TEXT};
 use swlsp_parser_yaml::query as yamlquery;
@@ -35,8 +37,46 @@ const DEPRECATED_CLASS_CODE: &str = "symfony.class.deprecated";
 const CONTAINER_TYPES: &[&str] = &[
     "Psr\\Container\\ContainerInterface",
     "Symfony\\Component\\DependencyInjection\\ContainerInterface",
-    "Symfony\\Contracts\\Service\\ServiceProviderInterface",
 ];
+
+/// Parameters the kernel defines in every container
+/// (`Kernel::getKernelParameters()`), known without a compiled container.
+const KERNEL_PARAMETERS: &[&str] = &[
+    "kernel.build_dir",
+    "kernel.bundles",
+    "kernel.bundles_metadata",
+    "kernel.cache_dir",
+    "kernel.charset",
+    "kernel.container_build_time",
+    "kernel.container_class",
+    "kernel.debug",
+    "kernel.environment",
+    "kernel.logs_dir",
+    "kernel.project_dir",
+    "kernel.runtime_environment",
+    "kernel.runtime_mode",
+    "kernel.runtime_mode.cli",
+    "kernel.runtime_mode.web",
+    "kernel.runtime_mode.worker",
+    "kernel.share_dir",
+    "kernel.trusted_headers",
+    "kernel.trusted_hosts",
+    "kernel.trusted_proxies",
+    // Shopware's kernel adds these.
+    "kernel.active_plugins",
+    "kernel.app_dir",
+    "kernel.cache.hash",
+    "kernel.plugin_dir",
+    "kernel.plugin_infos",
+    "kernel.shopware_core_dir",
+    "kernel.shopware_version",
+    "kernel.shopware_version_revision",
+    "kernel.supported_api_versions",
+];
+
+/// Service locators: their `get()` keys are local to the locator, not
+/// container service ids.
+const LOCATOR_TYPES: &[&str] = &["Symfony\\Contracts\\Service\\ServiceProviderInterface"];
 
 pub struct ServiceAnalyzer {
     service_index: Option<Arc<ServiceIndex>>,
@@ -95,6 +135,8 @@ impl ProblemAnalyzer for ServiceAnalyzer {
             seen: HashSet::new(),
             local_services: HashMap::new(),
             local_parameters: HashSet::new(),
+            guarded_services: HashSet::new(),
+            guarded_parameters: HashSet::new(),
             analysis: None,
             service_names: None,
             parameter_names: None,
@@ -119,6 +161,11 @@ struct Collector<'a> {
     seen: HashSet<(u32, u32, &'static str, String)>,
     local_services: HashMap<String, Service>,
     local_parameters: HashSet<String>,
+    /// Services the document tests with `has()`: optional there.
+    guarded_services: HashSet<String>,
+    /// Parameters the document tests with `hasParameter()` (or `has()` on a
+    /// parameter bag): optional there.
+    guarded_parameters: HashSet<String>,
     analysis: Option<Arc<State>>,
     service_names: Option<Vec<String>>,
     parameter_names: Option<Vec<String>>,
@@ -130,12 +177,36 @@ impl Collector<'_> {
         let config_file = self.document.source().contains("ContainerConfigurator");
         let assistant_context =
             swlsp_lsp_phpanalysis::context_for_document(self.php, self.document)?;
-        for literal in phpquery::nodes(root, &[PHP_STRING]) {
+        let literals = phpquery::nodes(root, &[PHP_STRING]);
+        for literal in &literals {
+            if phpquery::string_argument_index(literal) != Some(0) {
+                continue;
+            }
+            match phpquery::call_method_name(literal).as_str() {
+                "hasParameter" => {
+                    self.guarded_parameters
+                        .insert(phpquery::string_value(literal));
+                }
+                "has" if self.is_typed_parameter_read_call(literal) => {
+                    self.guarded_parameters
+                        .insert(phpquery::string_value(literal));
+                }
+                "has" => {
+                    self.guarded_services
+                        .insert(phpquery::string_value(literal));
+                }
+                _ => {}
+            }
+        }
+        for literal in literals {
             if self.ctx.is_cancelled() {
                 return Ok(());
             }
             let value = phpquery::string_value(&literal);
-            if value.is_empty() {
+            if value.is_empty()
+                || is_concatenation_operand(&literal)
+                || is_optional_service_call(&literal)
+            {
                 continue;
             }
             if let Some((_, tags)) = assistant_context.as_ref().and_then(|context| {
@@ -181,7 +252,12 @@ impl Collector<'_> {
             if phpquery::string_argument_index(&literal) == Some(0)
                 && self.is_typed_parameter_read_call(&literal)
             {
-                self.check_parameter(&literal, &value)?;
+                if !matches!(
+                    phpquery::call_method_name(&literal).as_str(),
+                    "has" | "hasParameter"
+                ) {
+                    self.check_parameter(&literal, &value)?;
+                }
                 continue;
             }
             if config_file {
@@ -191,7 +267,7 @@ impl Collector<'_> {
                     continue;
                 }
             }
-            if phpquery::string_in_call(&literal, 0, &["get", "has"])
+            if phpquery::string_in_call(&literal, 0, &["get"])
                 && self.is_typed_container_call(&literal)
             {
                 self.check_service(&literal, &value)?;
@@ -226,7 +302,9 @@ impl Collector<'_> {
     }
 
     fn is_typed_container_call(&mut self, node: &SyntaxNode) -> bool {
-        if self.is_typed_parameter_read_call(node) {
+        if self.is_typed_parameter_read_call(node)
+            || self.is_typed_receiver_subtype(node, LOCATOR_TYPES)
+        {
             return false;
         }
         self.is_typed_receiver_subtype(node, CONTAINER_TYPES)
@@ -325,7 +403,10 @@ impl Collector<'_> {
                 false,
             ),
         };
-        if name.is_empty() || name.contains(['%', '$', '{', '}']) {
+        if name.is_empty()
+            || name.contains(['%', '$', '{', '}'])
+            || self.guarded_services.contains(&name)
+        {
             return Ok(());
         }
         if let Some(service) = self.local_services.get(&name).cloned() {
@@ -425,16 +506,19 @@ impl Collector<'_> {
 
     fn check_parameter(&mut self, node: &SyntaxNode, name: &str) -> Result<(), BoxError> {
         let name = name.trim_matches('%').trim();
-        if name.is_empty() || name.contains(['$', '{', '}']) {
+        if name.is_empty()
+            || name.contains(['$', '{', '}'])
+            || self.guarded_parameters.contains(name)
+        {
             return Ok(());
         }
-        if self.local_parameters.contains(&lowercase(name)) {
+        if self.local_parameters.contains(&lowercase(name)) || KERNEL_PARAMETERS.contains(&name) {
             return Ok(());
         }
         let found = self.services.get_parameter_by_name(name).map_err(|error| {
             LookupError::new(format!("query Symfony parameter {name:?}"), error)
         })?;
-        if found.is_none() {
+        if found.is_none() && !self.is_optional_configuration_key(name)? {
             let candidates = self.all_parameter_names()?;
             let suggestions = similar_value(name, candidates);
             self.add(
@@ -446,6 +530,28 @@ impl Collector<'_> {
             );
         }
         Ok(())
+    }
+
+    /// Bundle configuration is flattened into dotted parameters
+    /// (`shopware.cart.storage` and `shopware.cart.storage.type`); a nested
+    /// key below a configured collection exists only when it is configured,
+    /// such as `shopware.cart.storage.config.connection` for Redis storage.
+    fn is_optional_configuration_key(&self, name: &str) -> Result<bool, BoxError> {
+        let mut prefix = name;
+        while let Some((parent, _)) = prefix.rsplit_once('.') {
+            prefix = parent;
+            let parameter = self
+                .services
+                .get_parameter_by_name(prefix)
+                .map_err(|error| {
+                    LookupError::new(format!("query Symfony parameter {prefix:?}"), error)
+                })?;
+            if let Some(parameter) = parameter {
+                let value = parameter.value.trim();
+                return Ok(value.is_empty() || value.starts_with(['[', '{']));
+            }
+        }
+        Ok(false)
     }
 
     fn check_class(&mut self, node: &SyntaxNode, name: &str) {
@@ -619,4 +725,41 @@ impl Collector<'_> {
         }));
         self.diagnostics.push(problem);
     }
+}
+
+/// Whether `literal` is one operand of a computed name such as
+/// `$entity . '.repository'`.
+fn is_concatenation_operand(literal: &SyntaxNode) -> bool {
+    literal
+        .parent()
+        .is_some_and(|parent| parent.kind() == PHP_BINARY_EXPRESSION)
+}
+
+/// Whether `literal` names the service of `service('id')->nullOnInvalid()`
+/// or `->ignoreOnInvalid()`: an optional reference.
+fn is_optional_service_call(literal: &SyntaxNode) -> bool {
+    let Some(call) = literal
+        .ancestors()
+        .find(|node| node.kind() == PHP_FUNCTION_CALL)
+    else {
+        return false;
+    };
+    let Some(chained) = call
+        .parent()
+        .filter(|parent| parent.kind() == PHP_MEMBER_CALL)
+    else {
+        return false;
+    };
+    if chained.first_child().as_ref() != Some(&call) {
+        return false;
+    }
+    chained
+        .children()
+        .find(|child| child.kind() == PHP_NAME)
+        .is_some_and(|name| {
+            matches!(
+                name.text().to_string().trim(),
+                "nullOnInvalid" | "ignoreOnInvalid"
+            )
+        })
 }

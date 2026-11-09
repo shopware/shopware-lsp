@@ -77,10 +77,33 @@ impl VendorPackages {
     /// Reports whether a workspace-relative path sits inside a nested vendor
     /// package that the workspace root already provides.
     pub fn duplicates_root_package(&self, relative_path: &str) -> bool {
+        self.provides(nested_vendor_package(relative_path))
+    }
+
+    /// Reports whether a path inside a bundled archive (a PHAR) belongs to a
+    /// vendor package the workspace root already provides: tools such as
+    /// `phpstan.phar` ship their own copies of polyfills and libraries, which
+    /// must not shadow the project's.
+    pub fn bundles_root_package(&self, archive_relative_path: &str) -> bool {
+        let path = normalize_relative_path(archive_relative_path);
+        let mut segments = path.split('/');
+        match (
+            segments.next(),
+            segments.next(),
+            segments.next(),
+            segments.next(),
+        ) {
+            (Some("vendor"), Some(vendor), Some(package), Some(_)) => {
+                self.provides(format!("{vendor}/{package}"))
+            }
+            _ => false,
+        }
+    }
+
+    fn provides(&self, candidate: String) -> bool {
         let Some(root) = &self.root else {
             return false;
         };
-        let candidate = nested_vendor_package(relative_path);
         if candidate.is_empty() {
             return false;
         }
@@ -186,6 +209,22 @@ mod tests {
             packages.duplicates_root_package("custom/plugins/Swag/vendor/shopware/core/Foo.php")
         );
         assert!(!packages.duplicates_root_package("vendor/shopware/core/Foo.php"));
+    }
+
+    #[test]
+    fn archive_copies_of_root_packages_are_bundled_duplicates() {
+        let root = tempfile::tempdir().unwrap();
+        fixture(
+            root.path(),
+            r#"{"name":"acme/shop"}"#,
+            &["vendor/symfony/polyfill-php84"],
+        );
+        let packages = VendorPackages::new(root_str(root.path()));
+        assert!(packages.bundles_root_package("vendor/symfony/polyfill-php84/bootstrap.php"));
+        // Packages only the archive has, and the archive's own code, stay.
+        assert!(!packages.bundles_root_package("vendor/nikic/php-parser/lib/Parser.php"));
+        assert!(!packages.bundles_root_package("src/Analyser/Scope.php"));
+        assert!(!packages.bundles_root_package("vendor/symfony/polyfill-php84"));
     }
 
     #[test]

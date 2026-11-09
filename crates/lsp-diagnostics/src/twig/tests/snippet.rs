@@ -94,6 +94,52 @@ Module.register('demo', {
 }
 
 #[test]
+fn computed_admin_keys_are_not_reported() {
+    let root = tempdir();
+    let index = snippet_index_with_admin_known(root.path());
+    check_problems(
+        &SnippetAnalyzer::new(Some(index.clone()), None),
+        "file:///project/src/Resources/app/administration/view.html.twig",
+        "<div\n    :title=\"$t('global.default.' + variant)\"\n    :label=\"$tc('admin.known', 2)\"\n    :aria-label=\"$t('{|admin.snippet.missing:admin.missing|}' )\"\n/>",
+    );
+    check_problems(
+        &SnippetAnalyzer::new(Some(index.clone()), None),
+        "file:///project/src/Resources/app/administration/index.js",
+        "
+this.$t('sw-shortcut.save' + this.platformSuffix);
+this.$t(
+    'sw-shortcut.clear' +
+        suffix,
+);
+this.$t({|admin.snippet.missing:'admin.missing'|}, { count: 1 });
+Module.register('demo', {
+    description: 'The module for creating content.',
+    navigation: [{ label: 'plain navigation text' }],
+});
+",
+    );
+    // Test input is not shipped code.
+    check_problems(
+        &SnippetAnalyzer::new(Some(index), None),
+        "file:///project/src/Resources/app/administration/scripts/__fixtures__/legacy/index.js",
+        "this.$t('legacy.missing');",
+    );
+}
+
+#[test]
+fn computed_storefront_keys_are_not_reported() {
+    let root = tempdir();
+    let index = snippet_index_with_admin_known(root.path());
+    check_problems(
+        &SnippetAnalyzer::new(Some(index), None),
+        "file:///project/src/Resources/views/storefront/page.html.twig",
+        "{{ ('cookie.' ~ feature ~ '.title')|trans }}\n\
+         {{ \"detail.review#{point}PointRatingText\"|trans }}\n\
+         {{ {|frontend.snippet.missing:'static.missing'|}|trans }}",
+    );
+}
+
+#[test]
 fn snippet_diagnostics_admin_file_detection() {
     let cases = [
         (

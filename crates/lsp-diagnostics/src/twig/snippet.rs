@@ -6,7 +6,7 @@ use serde_json::{Map, Value};
 use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
 use swlsp_lsp_protocol as protocol;
 use swlsp_parser_twig::query as twigquery;
-use swlsp_parser_twig::syntax::TWIG_LITERAL_STRING;
+use swlsp_parser_twig::syntax::{TWIG_BINARY_EXPRESSION, TWIG_LITERAL_STRING, TWIG_OPERAND};
 use swlsp_snippet::SnippetIndexer;
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
 use swlsp_translation::Index as TranslationIndex;
@@ -62,6 +62,9 @@ impl ProblemAnalyzer for SnippetAnalyzer {
         let (Some(index), Some(root)) = (&self.snippet_index, document.root()) else {
             return Ok(Vec::new());
         };
+        if is_test_fixture(&document.uri) {
+            return Ok(Vec::new());
+        }
         match lower_ext(&document.uri).as_str() {
             ".twig" => self.twig_diagnostics(ctx, document, index, &root),
             ".js" | ".ts" => js_diagnostics(ctx, index, &root),
@@ -107,7 +110,7 @@ impl SnippetAnalyzer {
             if ctx.is_cancelled() {
                 return Ok(Vec::new());
             }
-            if twigquery::string_in_filter(&candidate, &["trans"]) {
+            if twigquery::string_in_filter(&candidate, &["trans"]) && is_whole_key(&candidate) {
                 matches.push(candidate);
             }
         }
@@ -145,6 +148,24 @@ impl SnippetAnalyzer {
         }
         Ok(diagnostics)
     }
+}
+
+/// Test input under a `__fixtures__` or `__mocks__` directory: data for a
+/// test (a codemod's legacy component, a mocked module), not shipped code
+/// whose snippets must exist.
+fn is_test_fixture(uri: &str) -> bool {
+    uri.contains("/__fixtures__/") || uri.contains("/__mocks__/")
+}
+
+/// Whether the literal is the complete translation key: not interpolated
+/// (`"a.#{b}"`) and not one operand of a computed key (`'a.' ~ b`).
+fn is_whole_key(literal: &SyntaxNode) -> bool {
+    twigquery::string_is_static(literal)
+        && !literal
+            .ancestors()
+            .skip(1)
+            .take_while(|node| node.kind() != TWIG_OPERAND)
+            .any(|node| node.kind() == TWIG_BINARY_EXPRESSION)
 }
 
 fn js_diagnostics(

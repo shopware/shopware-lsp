@@ -804,9 +804,8 @@ impl<'a, 'e, 's> Fs<'a, 'e, 's> {
             },
             PHP_IF_STATEMENT => self.analyze_if(node, env),
             PHP_FOREACH_STATEMENT => self.analyze_foreach(node, env, &annotations),
-            PHP_WHILE_STATEMENT | PHP_DO_WHILE_STATEMENT | PHP_FOR_STATEMENT => {
-                self.analyze_loop(node, env)
-            }
+            PHP_FOR_STATEMENT => self.analyze_for(node, env),
+            PHP_WHILE_STATEMENT | PHP_DO_WHILE_STATEMENT => self.analyze_loop(node, env),
             PHP_TRY_STATEMENT => self.analyze_try(node, env),
             PHP_SWITCH_STATEMENT => self.analyze_switch(node, env),
             _ => {
@@ -1033,6 +1032,63 @@ impl<'a, 'e, 's> Fs<'a, 'e, 's> {
             self.infer(child, &loop_env);
         }
         Flow::of(self.join(&env, &loop_env))
+    }
+
+    /// `for (init; condition; update) body`: the body runs where the
+    /// condition holds (`$parent !== null` narrows `$parent` inside it), and
+    /// the loop is left where it does not.
+    fn analyze_for(&mut self, node: &SyntaxNode, env: Env) -> Flow {
+        let mut sections: [Vec<SyntaxNode>; 3] = Default::default();
+        let mut section = 0;
+        let mut body = None;
+        let mut header_closed = false;
+        for element in node.children_with_tokens() {
+            match element {
+                swlsp_syntax::rowan::NodeOrToken::Token(token) => match token.kind() {
+                    TK_SEMICOLON if !header_closed => section = (section + 1).min(2),
+                    TK_CLOSE_PAREN if !header_closed => header_closed = true,
+                    _ => {}
+                },
+                swlsp_syntax::rowan::NodeOrToken::Node(child) => {
+                    if header_closed {
+                        body = Some(child);
+                    } else if is_expression_kind(child.kind()) {
+                        sections[section].push(child);
+                    }
+                }
+            }
+        }
+        let [init, conditions, updates] = sections;
+        for expression in &init {
+            self.infer(expression, &env);
+        }
+        // Every condition expression is evaluated; the last one decides.
+        let (true_env, false_env) = match conditions.split_last() {
+            Some((last, earlier)) => {
+                for expression in earlier {
+                    self.infer(expression, &env);
+                }
+                self.condition_environments(Some(last), &env)
+            }
+            None => (env.fork(), env.fork()),
+        };
+        let body_flow = match &body {
+            Some(body) => self.analyze_statement(body, true_env),
+            None => Flow::of(true_env),
+        };
+        let mut iteration = body_flow.env;
+        for continued in &body_flow.continues {
+            iteration = self.join(&iteration, continued);
+        }
+        for expression in &updates {
+            self.infer(expression, &iteration);
+        }
+        let result = if conditions.is_empty() {
+            self.join(&env, &iteration)
+        } else {
+            self.join(&false_env, &iteration)
+        };
+        Flow::of(result)
     }
 
     fn analyze_try(&mut self, node: &SyntaxNode, env: Env) -> Flow {

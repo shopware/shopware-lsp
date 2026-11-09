@@ -9,10 +9,19 @@ use swlsp_syntax::SyntaxNode;
 use super::Branches;
 use crate::analyzer::Fs;
 use crate::env::{BOOLEAN_ALIAS_BINDING_PREFIX, Env, IMPOSSIBLE_ENVIRONMENT_BINDING};
-use crate::syntax::{first_node, flow_expression_key, has_direct_token};
+use crate::syntax::{
+    direct_nodes, first_node, flow_expression_key, has_direct_token, is_null_node,
+};
 
 pub(crate) fn boolean_alias_prefix(name: &str) -> String {
     format!("{BOOLEAN_ALIAS_BINDING_PREFIX}{name}:")
+}
+
+/// Refinements that hold where the variable is not null (see
+/// [`Fs::capture_non_null_alias`]); cleared with the boolean aliases when
+/// the variable is reassigned.
+fn non_null_alias_prefix(name: &str) -> String {
+    format!("{}nonnull:", boolean_alias_prefix(name))
 }
 
 fn boolean_alias_branch_prefix(name: &str, truth: bool) -> String {
@@ -62,6 +71,59 @@ impl Fs<'_, '_, '_> {
             for (key, value) in refinements {
                 env.set(&key, value);
             }
+        }
+    }
+
+    /// Records how `$name = COND ? value : null` ties `$name` to `COND`:
+    /// wherever `$name` is not null, `COND` held (or failed, for
+    /// `COND ? null : value`), so its narrowing applies too.
+    pub(crate) fn capture_non_null_alias(
+        &mut self,
+        name: &str,
+        source: Option<&SyntaxNode>,
+        env: &Env,
+    ) {
+        let Some(source) = source.filter(|source| source.kind() == PHP_TERNARY_EXPRESSION) else {
+            return;
+        };
+        let parts = direct_nodes(source);
+        let [condition, then, otherwise] = parts.as_slice() else {
+            return;
+        };
+        let null_then = is_null_node(self.src(), Some(then));
+        let null_otherwise = is_null_node(self.src(), Some(otherwise));
+        if null_then == null_otherwise {
+            return;
+        }
+        let (true_env, false_env) = self.condition_environments(Some(condition), env);
+        let branch = if null_otherwise { true_env } else { false_env };
+        let prefix = non_null_alias_prefix(name);
+        let mut refinements = Vec::new();
+        branch.visit(|key, value| {
+            if key.starts_with(BOOLEAN_ALIAS_BINDING_PREFIX) || key == name {
+                return;
+            }
+            if env.get(key).is_some_and(|original| original != *value) {
+                refinements.push((format!("{prefix}{key}"), value.clone()));
+            }
+        });
+        for (key, value) in refinements {
+            env.set(&key, value);
+        }
+    }
+
+    /// Applies the refinements captured for `name` to `non_null`, the
+    /// environment in which `name` is known not to be null.
+    pub(crate) fn apply_non_null_alias(&self, name: &str, non_null: &Env, env: &Env) {
+        let prefix = non_null_alias_prefix(name);
+        let mut refinements = Vec::new();
+        env.visit(|key, value| {
+            if let Some(stripped) = key.strip_prefix(&prefix) {
+                refinements.push((stripped.to_owned(), value.clone()));
+            }
+        });
+        for (key, value) in refinements {
+            non_null.set(&key, value);
         }
     }
 

@@ -167,7 +167,7 @@ pub(crate) struct Inner {
     pub(crate) on_update: RwLock<Option<UpdateCallback>>,
     pub(crate) worker_count: AtomicUsize,
     exclusions: PathExclusions,
-    vendors: VendorPackages,
+    pub(crate) vendors: VendorPackages,
     max_file_size: AtomicI64,
     skipped: RwLock<HashMap<String, SkippedFileStats>>,
     pub(crate) operation: Mutex<()>,

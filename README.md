@@ -222,6 +222,15 @@ configured severity threshold, while refactoring commands preview a diff unless
 write mode is explicitly requested. Run `shopware-lsp help` for the full
 command catalog.
 
+Run `check` on a fully set-up project: dependencies installed (`composer
+install`, the Administration and Storefront `npm ci`) and the Symfony container
+compiled once, for example with `bin/console` (or `bin/ci` in the Shopware
+repository). The compiled container under `var/cache` supplies the services
+and parameters that bundles register at compile time; without it, such
+references are reported as missing. In the Shopware repository, the
+Storefront's SCSS libraries must also be copied to its `vendor` directory
+(`node copy-to-vendor.js`) for Bootstrap's variables to resolve.
+
 ## MCP and AI clients
 
 VS Code automatically exposes one Shopware MCP server per supported workspace

@@ -7,7 +7,7 @@ use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;
 use swlsp_php_resolver::NameContext;
 use swlsp_php_semantic::{Confidence, TypeFact, TypeSource};
-use swlsp_php_types::{Joiner, Kind, Relations, Type, contains_uncertain};
+use swlsp_php_types::{Joiner, Kind, Name, Relations, ShapeField, Type, contains_uncertain};
 use swlsp_syntax::{SyntaxNode, TextRange};
 use swlsp_textutil::{eq_ignore_case, lowercase};
 
@@ -195,6 +195,7 @@ fn builtin_type(context: &CallContext<'_>) -> Option<Type> {
             }
         }
         "parse_url" => parse_url_component_return_type(context),
+        "hrtime" => hrtime_return_type(context),
         "pathinfo" => {
             if pathinfo_returns_string(context) {
                 Type::STRING
@@ -884,17 +885,60 @@ fn known_core_ini_option(value: &Type) -> bool {
 
 fn parse_url_component_return_type(context: &CallContext<'_>) -> Type {
     let Some(component) = context.argument_expression(1) else {
-        return Type::UNKNOWN;
+        return parse_url_components_type();
     };
     let text = compact(context.text(&component));
     let name = text.strip_prefix('\\').unwrap_or(&text).to_uppercase();
     match name.as_str() {
+        "-1" => parse_url_components_type(),
         "PHP_URL_PORT" | "2" => Type::union([Type::INT, Type::NULL, Type::FALSE]),
         "PHP_URL_SCHEME" | "PHP_URL_HOST" | "PHP_URL_USER" | "PHP_URL_PASS" | "PHP_URL_PATH"
         | "PHP_URL_QUERY" | "PHP_URL_FRAGMENT" | "0" | "1" | "3" | "4" | "5" | "6" | "7" => {
             Type::union([Type::STRING, Type::NULL, Type::FALSE])
         }
         _ => Type::UNKNOWN,
+    }
+}
+
+/// `parse_url($url)`: the components present in the URL, or `false` for a
+/// seriously malformed one.
+fn parse_url_components_type() -> Type {
+    let field = |name: &str, ty: Type| ShapeField {
+        name: Name::from(name),
+        ty,
+        optional: true,
+    };
+    let components = Type::array_shape(
+        vec![
+            field("scheme", Type::STRING),
+            field("host", Type::STRING),
+            field("port", Type::INT),
+            field("user", Type::STRING),
+            field("pass", Type::STRING),
+            field("path", Type::STRING),
+            field("query", Type::STRING),
+            field("fragment", Type::STRING),
+        ],
+        false,
+    );
+    Type::union([components, Type::FALSE])
+}
+
+/// `hrtime(true)` is a number of nanoseconds; `hrtime()` the
+/// `[seconds, nanoseconds]` pair.
+fn hrtime_return_type(context: &CallContext<'_>) -> Type {
+    let as_number = context
+        .argument_expression(0)
+        .map(|argument| compact(context.text(&argument)).to_lowercase());
+    let pair = |name: &str| ShapeField {
+        name: Name::from(name),
+        ty: Type::INT,
+        optional: false,
+    };
+    match as_number.as_deref() {
+        Some("true") => Type::union([Type::INT, Type::FLOAT]),
+        None | Some("false") => Type::array_shape(vec![pair("0"), pair("1")], false),
+        Some(_) => Type::UNKNOWN,
     }
 }
 

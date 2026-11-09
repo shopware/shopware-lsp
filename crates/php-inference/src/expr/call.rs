@@ -52,6 +52,7 @@ impl Fs<'_, '_, '_> {
             let snapshot = self.snapshot;
             let relations = self.relations;
             let mut results = Vec::new();
+            let mut inferred_results = Vec::new();
             let mut generated_fallbacks = Vec::new();
             let mut mismatches = Vec::new();
             let mut candidate_count = 0usize;
@@ -63,7 +64,11 @@ impl Fs<'_, '_, '_> {
                     if resolved.compatible {
                         self.apply_by_reference_arguments(node, &symbol, &arguments, env);
                         self.record_return_dependency(&symbol);
-                        results.push(resolved.return_type);
+                        if symbol.flags.has(Flags::INFERRED_RETURN) {
+                            inferred_results.push(resolved.return_type);
+                        } else {
+                            results.push(resolved.return_type);
+                        }
                     } else if symbol.flags.has(Flags::GENERATED_STUB) {
                         generated_fallbacks.push(resolved.return_type);
                     } else {
@@ -71,8 +76,14 @@ impl Fs<'_, '_, '_> {
                     }
                     true
                 });
-                results.is_empty()
+                results.is_empty() && inferred_results.is_empty()
             });
+            // Several declarations of one function are conditional
+            // alternatives (polyfills behind `function_exists`); the ones
+            // that declare their return type outweigh body-inferred ones.
+            if results.is_empty() {
+                results = inferred_results;
+            }
             if results.is_empty() && !generated_fallbacks.is_empty() {
                 return join_types(relations, &generated_fallbacks);
             }
@@ -323,11 +334,20 @@ impl Fs<'_, '_, '_> {
             "array_filter" if argument_index == 1 => {
                 let source = query::argument_expression(call, 0);
                 let value = self.infer_opt(source.as_ref(), env);
-                let (_, element) = iterable_types(&value, self.relations);
-                if element.is_unknown() {
+                let (key, element) = iterable_types(&value, self.relations);
+                // The mode decides what the callback receives.
+                let mode = query::argument_expression(call, 2)
+                    .map(|mode| trim_backslash(self.src().text(&mode).trim()).to_owned());
+                let types = match mode.as_deref() {
+                    Some("ARRAY_FILTER_USE_KEY") => vec![key],
+                    Some("ARRAY_FILTER_USE_BOTH") => vec![element, key],
+                    None => vec![element],
+                    Some(_) => Vec::new(),
+                };
+                if types.iter().any(Type::is_unknown) {
                     Vec::new()
                 } else {
-                    vec![element]
+                    types
                 }
             }
             _ => Vec::new(),

@@ -155,6 +155,13 @@ impl<'a> IdSet<'a> {
     }
 }
 
+/// Whether the declaration at `index` is a function with a native return
+/// type. Such a declaration keeps its ID against a later duplicate whose
+/// return type is only documented or inferred.
+fn declares_native_return(document: &PackedDocument, index: u32) -> bool {
+    document.symbol(index).kind() == SymbolKind::Function && !document.types(index)[1].is_unknown()
+}
+
 fn class_key(fully_qualified: &str) -> &str {
     trim_name(fully_qualified, false)
 }
@@ -351,7 +358,11 @@ impl PackedIndex {
             .map(|document| document.symbols.len())
             .sum();
         index.symbols.reserve(symbol_count, |_| 0);
-        // Declaration IDs: the last declaration wins.
+        // Declaration IDs: the last declaration wins, except that a function
+        // without a native return type never replaces one that has it.
+        // Duplicate functions are conditional alternatives (polyfills behind
+        // `function_exists` for different PHP versions); the native
+        // signature is enforced at runtime, a docblock or inferred one is not.
         for (document_index, document) in index.documents.iter().enumerate() {
             for symbol_index in 0..document.symbols.len() as u32 {
                 let reference = SymRef {
@@ -367,7 +378,14 @@ impl PackedIndex {
                         .same_id(symbol)
                 };
                 match index.symbols.find_mut(hash, lookup) {
-                    Some(existing) => *existing = reference,
+                    Some(existing) => {
+                        let current = &documents[existing.document as usize];
+                        if !(declares_native_return(current, existing.index)
+                            && !declares_native_return(document, symbol_index))
+                        {
+                            *existing = reference;
+                        }
+                    }
                     None => {
                         index.symbols.insert_unique(hash, reference, |candidate| {
                             documents[candidate.document as usize]
@@ -603,7 +621,17 @@ impl ExpandedIndex {
         };
         for position in 0..index.symbols.len() {
             let symbol = &index.symbols[position];
-            index.ids.insert(symbol.id.clone(), position as u32);
+            // As in the packed layer: the last declaration wins unless it is
+            // a function without a native return type replacing one with it.
+            let declares = |symbol: &Symbol| {
+                symbol.kind == SymbolKind::Function && !symbol.native_type.is_unknown()
+            };
+            let keeps_existing = index.ids.get(&symbol.id).is_some_and(|&existing| {
+                declares(&index.symbols[existing as usize]) && !declares(symbol)
+            });
+            if !keeps_existing {
+                index.ids.insert(symbol.id.clone(), position as u32);
+            }
             let id = symbol.id.clone();
             if !symbol.container.is_empty() && symbol.kind.is_member() {
                 let name = normalize_symbol_name(&symbol.name, true);
@@ -799,7 +827,14 @@ impl Snapshot {
         let mut lowered: Option<Cow<'_, str>> = None;
         for current in self.chain() {
             for reference in current.layer.packed.named(kind, name) {
-                let view = current.layer.packed.view(reference);
+                // Duplicate declarations share an ID; visit the one that
+                // owns it (see `PackedIndex::build`).
+                let owner = current
+                    .layer
+                    .packed
+                    .find_ref(reference)
+                    .unwrap_or(reference);
+                let view = current.layer.packed.view(owner);
                 if !self.visit_visible(direct, view, seen, visit) {
                     return false;
                 }

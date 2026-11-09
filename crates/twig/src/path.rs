@@ -181,13 +181,39 @@ pub(crate) fn bundle_name_by_path(twig_path: &str) -> String {
 }
 
 /// The bundle, plugin, app, or theme name owning a Resources root: the
-/// directory directly above `Resources`, or the one above `src`.
+/// directory directly above `Resources`, or the one above `src`. A Composer
+/// package directory such as `web-profiler-bundle` names its bundle's Twig
+/// namespace (`WebProfiler`), as Symfony derives it from the bundle class.
 fn bundle_name_before(normalized: &str, index: usize) -> String {
     let possible = normalized[..index].trim_matches('/');
-    if base(possible) == "src" {
-        return base(&dir(possible)).to_owned();
+    let name = if base(possible) == "src" {
+        base(&dir(possible)).to_owned()
+    } else {
+        base(possible).to_owned()
+    };
+    package_bundle_namespace(&name).unwrap_or(name)
+}
+
+/// `web-profiler-bundle` → `WebProfiler`; `None` for anything that is not a
+/// kebab-case `*-bundle` package directory.
+fn package_bundle_namespace(directory: &str) -> Option<String> {
+    let stem = directory.strip_suffix("-bundle")?;
+    if stem.is_empty()
+        || !stem
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+    {
+        return None;
     }
-    base(possible).to_owned()
+    let mut namespace = String::with_capacity(stem.len());
+    for part in stem.split('-').filter(|part| !part.is_empty()) {
+        let mut chars = part.chars();
+        if let Some(first) = chars.next() {
+            namespace.push(first.to_ascii_uppercase());
+            namespace.push_str(chars.as_str());
+        }
+    }
+    (!namespace.is_empty()).then_some(namespace)
 }
 
 pub fn is_storefront_template(uri: &str) -> bool {

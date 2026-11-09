@@ -58,6 +58,7 @@ impl Fs<'_, '_, '_> {
             env.set(&name, value.clone());
             self.record(left, value, TypeSource::Assignment, "assignment");
             self.update_local_type(&name, start(left), value);
+            self.capture_non_null_alias(&name, source, env);
             if matches!(value.kind(), Kind::Bool | Kind::True | Kind::False) {
                 self.capture_boolean_alias(&name, source, env);
             }
@@ -363,6 +364,31 @@ impl Fs<'_, '_, '_> {
                         return Type::array_shape(fields, false);
                     }
                 }
+                // `$shape[$key] = …` where `$key` is one of several existing
+                // fields: the shape stays, and each of those fields may now
+                // hold either its old or the new value.
+                if !append_value && let Some(names) = literal_key_union(key) {
+                    let known = |name: &str| {
+                        existing
+                            .fields()
+                            .iter()
+                            .any(|field| trim_quotes(&field.name) == name)
+                    };
+                    if names.iter().all(|name| known(name)) {
+                        let fields = existing
+                            .fields()
+                            .iter()
+                            .map(|field| {
+                                let mut field = field.clone();
+                                if names.contains(&trim_quotes(&field.name)) {
+                                    field.ty = relations.join(&field.ty, value);
+                                }
+                                field
+                            })
+                            .collect();
+                        return Type::array_shape(fields, existing.is_open_shape());
+                    }
+                }
                 let (key_type, element_type) = array_shape_iterable_types(existing, relations);
                 if append_value && array_shape_is_list(existing) {
                     Type::non_empty_list(relations.join(&element_type, value))
@@ -376,4 +402,12 @@ impl Fs<'_, '_, '_> {
             _ => Type::array(key.clone(), value.clone()),
         }
     }
+}
+
+/// The literal keys of a union of literal array keys (`"m"|"x"`).
+fn literal_key_union(key: &Type) -> Option<Vec<&str>> {
+    if key.kind() != Kind::Union {
+        return None;
+    }
+    key.arguments().iter().map(array_literal_key).collect()
 }

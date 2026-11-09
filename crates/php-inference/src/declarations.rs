@@ -13,11 +13,13 @@ use crate::syntax::trim_backslash;
 
 impl AnalyzerState<'_> {
     pub(crate) fn validate_declarations(&mut self, snapshot: &Snapshot) {
+        // A `class_alias()` is another name for its target, not a subclass
+        // that could break the target's final or abstract contract.
         let classes: Vec<Symbol> = self
             .document
             .symbols
             .iter()
-            .filter(|symbol| symbol.is_class_like())
+            .filter(|symbol| symbol.is_class_like() && !symbol.flags.has(Flags::CLASS_ALIAS))
             .cloned()
             .collect();
         let validator = Validator {

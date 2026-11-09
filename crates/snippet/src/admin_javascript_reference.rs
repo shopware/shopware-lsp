@@ -15,7 +15,7 @@ pub fn admin_javascript_string_reference(node: &SyntaxNode) -> bool {
     if query::string_argument_index(node) == Some(0)
         && query::call_at(node).is_some_and(|call| is_admin_javascript_snippet_call(&call))
     {
-        return true;
+        return is_whole_argument(&string);
     }
     is_admin_module_snippet_property(&string)
 }
@@ -30,6 +30,7 @@ pub fn admin_javascript_string_references(root: &SyntaxNode) -> Vec<SyntaxNode> 
         }
         if let Some(argument) = query::argument_expression(&call, 0)
             && argument.kind() == JS_STRING
+            && is_whole_argument(&argument)
             && is_static_admin_javascript_string(&argument)
         {
             result.push(argument);
@@ -44,7 +45,30 @@ pub fn admin_javascript_string_references(root: &SyntaxNode) -> Vec<SyntaxNode> 
     result
 }
 
+/// Whether `string` is the entire argument, not one operand of a computed
+/// key such as `'prefix.' + name`.
+fn is_whole_argument(string: &SyntaxNode) -> bool {
+    let Some(argument) = string.parent() else {
+        return false;
+    };
+    argument
+        .children_with_tokens()
+        .filter(|element| !element.kind().is_trivia())
+        .count()
+        == 1
+}
+
+/// Module manifests often carry plain English descriptions instead of
+/// snippet keys; a snippet key never contains whitespace.
+fn looks_like_snippet_key(string: &SyntaxNode) -> bool {
+    let value = query::string_value(string);
+    !value.is_empty() && !value.contains(char::is_whitespace)
+}
+
 fn is_admin_module_snippet_property(string: &SyntaxNode) -> bool {
+    if !looks_like_snippet_key(string) {
+        return false;
+    }
     let Some(property) = query::property_at(string) else {
         return false;
     };

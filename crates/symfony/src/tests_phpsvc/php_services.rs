@@ -90,6 +90,52 @@ return static function (string $env, ContainerConfigurator $container): void {
 }
 
 #[test]
+fn chained_definitions_in_one_statement_are_each_defined() {
+    let source = r#"<?php
+use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+
+return static function (ContainerConfigurator $container) {
+    $container->services()
+        ->set('test.client', Client::class)
+            ->args([
+                service('kernel'),
+                service('test.client.history'),
+            ])
+            ->share(false)
+            ->public()
+
+        ->set('test.client.history', History::class)->share(false)
+        ->alias('test.history', 'test.client.history')
+        ->set('test.client.cookiejar', CookieJar::class)->tag('test.jar');
+};
+"#;
+    let (services, _) = parse_php_services("/project/config/test.php", source);
+    let services = by_id(&services);
+    assert_eq!(
+        {
+            let mut ids: Vec<_> = services.keys().copied().collect();
+            ids.sort_unstable();
+            ids
+        },
+        [
+            "test.client",
+            "test.client.cookiejar",
+            "test.client.history",
+            "test.history"
+        ]
+    );
+    assert_eq!(services["test.client"].class, "Client");
+    assert_eq!(services["test.client.history"].class, "History");
+    assert_eq!(services["test.history"].alias_target, "test.client.history");
+    // A chained call configures the definition its segment belongs to.
+    assert_eq!(
+        services["test.client.cookiejar"].tags,
+        tags(&[("test.jar", "")])
+    );
+    assert!(services["test.client"].tags.is_empty());
+}
+
+#[test]
 fn parse_php_deprecated_service_metadata() {
     let (services, _) = parse_php_services(
         "services.php",

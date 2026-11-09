@@ -19,14 +19,22 @@ pub struct AdminTwigReference {
 struct Scan {
     reference: AdminTwigReference,
     next: usize,
+    /// The closing quote was found.
     complete: bool,
+    /// The string is the whole first argument (`$t('key')`, `$t('key', …)`),
+    /// not one piece of a computed key such as `$t('prefix.' + name)`.
+    whole: bool,
 }
+
+/// A scan result: the reference, whether its string is closed, and whether
+/// it is the whole first argument.
+type ScanEntry = (AdminTwigReference, bool, bool);
 
 /// Every scan of the tree's source in order, before the context check.
 /// Memoized per tree snapshot so per-request lookups do not copy and rescan
 /// the whole document.
-fn admin_twig_scans(root: &SyntaxNode) -> Arc<Vec<(AdminTwigReference, bool)>> {
-    static MEMO: DocumentMemo<Vec<(AdminTwigReference, bool)>> = DocumentMemo::new(4);
+fn admin_twig_scans(root: &SyntaxNode) -> Arc<Vec<ScanEntry>> {
+    static MEMO: DocumentMemo<Vec<ScanEntry>> = DocumentMemo::new(4);
     MEMO.get_or_compute(root, "", || {
         let source = root.text().to_string();
         let mut result = Vec::new();
@@ -37,7 +45,7 @@ fn admin_twig_scans(root: &SyntaxNode) -> Arc<Vec<(AdminTwigReference, bool)>> {
                 continue;
             };
             offset = scan.next;
-            result.push((scan.reference, scan.complete));
+            result.push((scan.reference, scan.complete, scan.whole));
         }
         result
     })
@@ -48,12 +56,13 @@ fn admin_twig_scans(root: &SyntaxNode) -> Arc<Vec<(AdminTwigReference, bool)>> {
 pub fn admin_twig_references(root: &SyntaxNode) -> Vec<AdminTwigReference> {
     let mut result: Vec<AdminTwigReference> = admin_twig_scans(root)
         .iter()
-        .filter(|(reference, complete)| {
+        .filter(|(reference, complete, whole)| {
             *complete
+                && *whole
                 && !reference.key.is_empty()
                 && admin_twig_reference_allowed(root, u32::from(reference.range.start()))
         })
-        .map(|(reference, _)| reference.clone())
+        .map(|(reference, _, _)| reference.clone())
         .collect();
     result.sort_by_key(|reference| reference.range.start());
     result
@@ -65,7 +74,7 @@ pub fn admin_twig_reference_at_offset(
     root: &SyntaxNode,
     offset: u32,
 ) -> Option<AdminTwigReference> {
-    for (reference, complete) in admin_twig_scans(root).iter() {
+    for (reference, complete, _) in admin_twig_scans(root).iter() {
         let (start, end) = (
             u32::from(reference.range.start()),
             u32::from(reference.range.end()),
@@ -145,6 +154,8 @@ fn scan_admin_twig_reference(source: &str, start: usize) -> Option<Scan> {
     while !source.is_char_boundary(key_end) {
         key_end -= 1;
     }
+    let after = skip_snippet_space(bytes, (cursor + 1).min(bytes.len()));
+    let whole = complete && matches!(bytes.get(after), Some(b',' | b')'));
     Some(Scan {
         reference: AdminTwigReference {
             key: source[value_start..key_end].to_owned(),
@@ -152,6 +163,7 @@ fn scan_admin_twig_reference(source: &str, start: usize) -> Option<Scan> {
         },
         next: (cursor + 1).max(start + 1),
         complete,
+        whole,
     })
 }
 

@@ -157,10 +157,82 @@ function resolve(
     DIContainer $diContainer,
 ): void {
     $parameters->get('{|symfony.parameter.missing:app.service|}');
-    $containerBag->has('{|symfony.parameter.missing:app.service|}');
+    // A presence check is never a missing reference.
+    $containerBag->has('app.optional');
     $services->get('{|symfony.service.missing:app.parameter|}');
     $diContainer->getParameter('{|symfony.parameter.missing:app.service|}');
     $diContainer->hasParameter('app.parameter');
+}",
+    );
+}
+
+#[test]
+fn optional_guarded_and_computed_references_are_not_reported() {
+    let dir = tempfile::tempdir().unwrap();
+    let php = php_index(
+        &dir.path().join("php"),
+        &[(
+            "/project/Stubs.php",
+            r"<?php
+namespace Psr\Container { interface ContainerInterface {} }
+namespace Symfony\Contracts\Service {
+    interface ServiceProviderInterface extends \Psr\Container\ContainerInterface {}
+}
+namespace Symfony\Component\DependencyInjection {
+    interface ContainerInterface extends \Psr\Container\ContainerInterface {}
+    class ContainerBuilder implements ContainerInterface {}
+    class ServiceLocator implements \Symfony\Contracts\Service\ServiceProviderInterface {}
+}
+namespace App { class Existing {} }
+",
+        )],
+    );
+    let services = service_index(
+        &dir.path().join("services"),
+        Some(&php),
+        &[(
+            "/project/indexed_services.yaml",
+            "services:\n  app.existing:\n    class: App\\Existing\n",
+        )],
+    );
+    let analyzer = ServiceAnalyzer::new(Some(services), Some(php));
+    check_problems(
+        &analyzer,
+        "file:///project/config/services.php",
+        r"<?php
+use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+
+return static function (ContainerConfigurator $container): void {
+    $container->services()
+        ->set('app.client', \App\Existing::class)
+        ->args([
+            service('app.optional')->nullOnInvalid(),
+            service('app.ignored')->ignoreOnInvalid(),
+            service('{|symfony.service.missing:app.required|}'),
+        ]);
+};",
+    );
+    check_problems(
+        &analyzer,
+        "file:///project/src/Process.php",
+        r"<?php
+use Psr\Container\ContainerInterface;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\ServiceLocator;
+
+function process(ContainerBuilder $builder, ContainerInterface $services, ServiceLocator $locator, string $entity): void {
+    if ($builder->hasParameter('app.guarded')) {
+        $builder->getParameter('app.guarded');
+    }
+    $builder->getParameter('{|symfony.parameter.missing:app.unguarded|}');
+    // Kernel parameters exist in every container.
+    $builder->getParameter('kernel.project_dir');
+    $services->has('app.maybe');
+    $services->get('app.maybe');
+    $services->get('{|symfony.service.missing:app.absent|}');
+    $services->get($entity . '.repository');
+    // Locator keys are local to the locator.
+    $locator->get('async');
 }",
     );
 }

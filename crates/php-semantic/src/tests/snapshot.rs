@@ -843,3 +843,56 @@ fn snapshot_is_shareable_across_threads() {
     assert_send_sync::<Store>();
     assert_send_sync::<WorkspaceGraph>();
 }
+
+#[test]
+fn native_function_returns_outrank_documented_or_inferred_duplicates() {
+    let declaration = |path: &str, inferred: bool| {
+        let mut function = symbol(
+            "2:poly_trim",
+            SymbolKind::Function,
+            "poly_trim",
+            "poly_trim",
+            path,
+        );
+        function.return_type = Type::STRING;
+        if inferred {
+            function.flags.insert(Flags::INFERRED_RETURN);
+        } else {
+            function.native_type = Type::STRING;
+        }
+        document(path, vec![function])
+    };
+    let untyped = |path: &str| {
+        document(
+            path,
+            vec![symbol(
+                "2:poly_trim",
+                SymbolKind::Function,
+                "poly_trim",
+                "poly_trim",
+                path,
+            )],
+        )
+    };
+    // Whichever order the files come in, the native signature owns the ID,
+    // against inferred, documented-only and not yet analyzed duplicates.
+    for documents in [
+        [
+            declaration("/declared.php", false),
+            declaration("/inferred.php", true),
+        ],
+        [
+            declaration("/inferred.php", true),
+            declaration("/declared.php", false),
+        ],
+        [declaration("/declared.php", false), untyped("/untyped.php")],
+        [untyped("/untyped.php"), declaration("/declared.php", false)],
+    ] {
+        let snapshot = Snapshot::new(1, &documents);
+        let owner = snapshot.symbol("2:poly_trim").expect("function");
+        assert_eq!(owner.path.as_str(), "/declared.php");
+        let named = snapshot.functions("poly_trim");
+        assert_eq!(named.len(), 1);
+        assert_eq!(named[0].path.as_str(), "/declared.php");
+    }
+}
