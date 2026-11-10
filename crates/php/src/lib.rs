@@ -460,10 +460,12 @@ impl PhpIndex {
                 ))
             })?;
         let document = self.analyze_parsed_file(file);
+        let index_lookups = swlsp_php_inference::take_index_lookups();
         let graph = WorkspaceGraph::project_borrowed(&document);
         let storage = encode_workspace_graph(&graph)
             .map_err(|err| Error::msg(format!("encode PHP workspace graph for {path}: {err}")))?;
-        let settle = settle::Candidate::of(path, file.content(), &storage, &document);
+        let settle =
+            settle::Candidate::of(path, file.content(), &storage, &document, index_lookups);
         let twig_contexts = match file.syntax_tree() {
             Some(tree) => twig_context::extract_twig_template_contexts(
                 path,

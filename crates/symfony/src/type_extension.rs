@@ -84,6 +84,9 @@ impl Extension for PhpTypeExtension {
         {
             return None;
         }
+        // The service index is built by the same indexing run that analyzes
+        // this call.
+        context.consults_index();
         let service_id = context.arguments[0].ty.name();
         let service = self.resolve_service(services, service_id, &mut HashSet::new())?;
         let mut class_name = service.class.as_str();

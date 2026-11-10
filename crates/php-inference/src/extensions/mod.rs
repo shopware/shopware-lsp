@@ -42,7 +42,28 @@ pub struct CallContext<'a> {
     pub is_static: bool,
 }
 
+thread_local! {
+    /// Set by [`CallContext::consults_index`], taken by [`take_index_lookups`].
+    static INDEX_LOOKUP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether an extension consulted an index outside the PHP graph during the
+/// analyses that ran on this thread since the last call. Such an analysis
+/// depends on how far that index was built when it ran, so a bulk indexing
+/// run analyzes the file again once every index is complete.
+pub fn take_index_lookups() -> bool {
+    INDEX_LOOKUP.with(|lookup| lookup.replace(false))
+}
+
 impl<'a> CallContext<'a> {
+    /// Records that the type of this call is looked up in an index outside
+    /// the PHP graph (the service container, say). Call it before the
+    /// lookup, whether or not the lookup finds something: a miss may only
+    /// mean the index is not complete yet.
+    pub fn consults_index(&self) {
+        INDEX_LOOKUP.with(|lookup| lookup.set(true));
+    }
+
     /// Source text of a node of the analyzed tree.
     pub fn text(&self, node: &SyntaxNode) -> &'a str {
         range_text(self.source, node.text_range())

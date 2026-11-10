@@ -612,6 +612,16 @@ of inferred functions converge (at most four passes). A file whose content
 changed since the run is skipped; the watcher reindexes it. A run with a
 single PHP file is not settled: it already saw every other file.
 
+Data of *other indexes* has the same problem in a sharper form: those indexes
+commit while the run is going, so what a PHP analysis reads from them depends
+on which worker committed first. The Symfony type extension answers
+`$container->get('id')` from the service index; before this was settled, two
+cold indexes of the same checkout could persist different receiver types for
+the same call. A type extension that looks a call up in another index marks
+it with `CallContext::consults_index()` (before the lookup, hit or miss), and
+`PhpIndex` settles the files with a marked lookup too. An extension that
+reads only the PHP graph needs no marker.
+
 On a Shopware checkout the first pass re-analyzes about 1,700 files and
 changes about 1,550 of them; the second changes about 20, the third none.
 Settling adds about 2 s to a cold index.
@@ -676,7 +686,7 @@ first.
 
 ```rust
 // crates/indexer/src/version.rs
-pub const INDEX_VERSION: u32 = 184;
+pub const INDEX_VERSION: u32 = 185;
 ```
 
 The version file stores `INDEX_VERSION` (`index_version_marker()`); any other

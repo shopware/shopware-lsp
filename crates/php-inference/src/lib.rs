@@ -60,6 +60,7 @@ mod tests;
 pub use analyzer::Analyzer;
 pub use extensions::{
     AttributeContracts, Builtins, CallArgument, CallContext, CallContracts, Extension, FakerTypes,
+    take_index_lookups,
 };
 pub use member_links::{link_members, link_members_owned};
 

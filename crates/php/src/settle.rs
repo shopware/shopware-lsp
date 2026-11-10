@@ -8,7 +8,14 @@
 //! them. Without settling, the persisted type of a file depended on how it
 //! was last indexed.
 //!
-//! After a run has published, its files with inferred returns are analyzed
+//! Type extensions can make the same mistake with other indexes: a container
+//! lookup (`$container->get('id')`) answers from the service index, which the
+//! same run is still building, so its result depended on which file a worker
+//! happened to commit first. Extensions mark such lookups
+//! ([`swlsp_php_inference::CallContext::consults_index`]) and the file is
+//! settled too.
+//!
+//! After a run has published, these files are analyzed
 //! again against the complete generation; changed graphs are persisted and
 //! published. Further passes follow chains of inferred functions across
 //! files: they revisit only files calling a function or method whose
@@ -33,7 +40,9 @@ use crate::{PhpIndex, lock};
 /// files of the run; later ones follow chains of inferred functions.
 const MAXIMUM_PASSES: usize = 4;
 
-/// A committed file whose graph holds inferred return types.
+/// A committed file whose graph may change once the run is complete: it
+/// holds inferred return types, or its analysis looked something up in an
+/// index the same run was still building.
 #[derive(Clone)]
 pub(crate) struct Candidate {
     path: String,
@@ -47,15 +56,17 @@ pub(crate) struct Candidate {
 }
 
 impl Candidate {
-    /// The candidate of an analyzed file, when it has inferred return types.
+    /// The candidate of an analyzed file, when it has inferred return types
+    /// or `index_lookups` (see [`swlsp_php_inference::take_index_lookups`]).
     pub(crate) fn of(
         path: &str,
         content: &[u8],
         storage: &PersistedWorkspaceGraph,
         document: &Document,
+        index_lookups: bool,
     ) -> Option<Self> {
         let inferred = InferredReturns::of(document);
-        if inferred.0.is_empty() {
+        if inferred.0.is_empty() && !index_lookups {
             return None;
         }
         let mut calls: Vec<u64> = document
@@ -218,6 +229,9 @@ fn reanalyze_one(
     let parsed = swlsp_parser_php::parse(&source);
     let root = parsed.root();
     let document = index.analyze_against(&index.indexing_snapshot(), path, 0, &root, &source);
+    // Every index is complete now; the marker must not leak into the next
+    // analysis on this thread.
+    let _ = swlsp_php_inference::take_index_lookups();
     let graph = WorkspaceGraph::project_borrowed(&document);
     let storage = encode_workspace_graph(&graph).map_err(|err| {
         Error::msg(format!(

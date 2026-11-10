@@ -124,3 +124,76 @@ fn cancelled_settling_keeps_the_published_run() {
     assert_eq!(return_type(&idx, "App\\label"), "unknown");
     idx.close().unwrap();
 }
+
+/// The stored receiver type of the `label` call in `path`.
+fn label_receiver(idx: &PhpIndex, path: &str) -> String {
+    let document = idx.inner.semantic_store.document(path).expect("document");
+    document
+        .references
+        .iter()
+        .find(|reference| reference.name.as_str() == "label")
+        .expect("label call")
+        .receiver
+        .to_string()
+}
+
+#[test]
+fn settles_lookups_in_indexes_the_run_was_still_building() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use swlsp_php_inference::CallContext;
+    use swlsp_php_semantic::{Confidence, TypeFact, TypeSource};
+    use swlsp_php_types::Type;
+
+    let project = tempfile::tempdir().unwrap();
+    let config = tempfile::tempdir().unwrap();
+    let write = |name: &str, source: &str| {
+        let path = project.path().join(name);
+        std::fs::write(&path, source).unwrap();
+        path.to_str().unwrap().to_owned()
+    };
+    let paths = [
+        write("Item.php", FILES[0].1),
+        // No inferred return type: only the lookup makes it a candidate.
+        write(
+            "run.php",
+            "<?php\nnamespace App;\nfunction run(): void { service()->label(); }\n",
+        ),
+    ];
+    let idx = open(config.path());
+    // An index another indexer fills during the same run: `service()` is
+    // known only once it is complete.
+    let complete = Arc::new(AtomicBool::new(false));
+    let index_state = complete.clone();
+    idx.register_type_extension(Arc::new(move |context: &CallContext<'_>| {
+        if context.name != "service" {
+            return None;
+        }
+        context.consults_index();
+        index_state.load(Ordering::SeqCst).then(|| TypeFact {
+            ty: Type::named("App\\Item", Vec::new()),
+            confidence: Confidence::Declared,
+            source: TypeSource::Framework,
+            origin: Default::default(),
+            reason: "test index".into(),
+        })
+    }));
+
+    idx.begin_indexing_batch(&paths);
+    for path in &paths {
+        index(&idx, path, &std::fs::read_to_string(path).unwrap());
+    }
+    complete.store(true, Ordering::SeqCst);
+    idx.end_indexing_batch().unwrap();
+    assert_eq!(label_receiver(&idx, &paths[1]), "unknown");
+
+    idx.settle_indexing_batch(&CancelToken::new(), 2).unwrap();
+    assert_eq!(label_receiver(&idx, &paths[1]), "App\\Item");
+    idx.close().unwrap();
+
+    // Persisted, not only published.
+    let idx = open(config.path());
+    assert_eq!(label_receiver(&idx, &paths[1]), "App\\Item");
+    idx.close().unwrap();
+}
