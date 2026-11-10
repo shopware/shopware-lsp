@@ -702,6 +702,10 @@ function guardedBranch(): void {
 function guardedTernary(): mixed {
     return class_exists(Runtime::class) ? Runtime::start() : null;
 }
+function guardedOperand(object $value): bool {
+    return class_exists('Optional\\Package\\Runtime') && $value instanceof Runtime
+        || !class_exists(Runtime::class) || $value instanceof Runtime;
+}
 function unguarded(): void {
     Runtime::missing();
 }";

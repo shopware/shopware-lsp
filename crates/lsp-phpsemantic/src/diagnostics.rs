@@ -673,6 +673,24 @@ fn class_existence_guarded(root: &SyntaxNode, document: &Document, reference: &R
         {
             return true;
         }
+        // `class_exists(X::class) && $value instanceof X`: the right operand
+        // only runs when the left one held (`&&`) or failed (`||`).
+        if parent.kind() == PHP_BINARY_EXPRESSION
+            && let (Some(left), Some(right)) = (parent.children().next(), parent.children().last())
+            && right.text_range().contains(offset)
+            && !left.text_range().contains(offset)
+        {
+            let truth = match lowercase(&diagnostic_direct_operator(&parent)).as_str() {
+                "&&" | "and" => Some(true),
+                "||" | "or" => Some(false),
+                _ => None,
+            };
+            if let Some(truth) = truth
+                && condition_guarantees_class(Some(&left), document, &names, truth)
+            {
+                return true;
+            }
+        }
         if parent.kind() == PHP_IF_STATEMENT {
             let nodes = direct_nodes(&parent);
             if nodes.len() >= 2
