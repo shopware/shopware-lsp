@@ -209,6 +209,34 @@ impl Store {
         })
     }
 
+    /// Like [`Store::restore_workspace_graphs_decoded_with`] for a large
+    /// repository: `feed` hands over the encoded rows and `threads` threads
+    /// run `decode` on them, each with its own decoder. The documents are
+    /// canonicalized afterwards, so equal types and names are still shared
+    /// across the whole restore.
+    pub fn restore_workspace_graphs_parallel<E: Send>(
+        &self,
+        capacity: WorkspaceRestoreCapacity,
+        documents: &[Document],
+        threads: usize,
+        feed: impl FnOnce(&mut dyn FnMut(Vec<u8>)) -> Result<(), E>,
+        decode: impl Fn(&mut WorkspaceGraphDecoder, &[u8]) -> Result<WorkspaceGraph, E> + Sync,
+    ) -> Result<Arc<Snapshot>, E> {
+        let mut canon = Canon::with_capacity(capacity.types);
+        self.restore(|accept| {
+            for mut document in decode_rows(threads.max(1), feed, &decode)? {
+                document.canonicalize(&mut canon);
+                accept(document);
+            }
+            for document in documents {
+                let mut packed = PackedDocument::pack(document, true);
+                packed.canonicalize(&mut canon);
+                accept(packed);
+            }
+            Ok(())
+        })
+    }
+
     fn restore<E>(
         &self,
         load: impl FnOnce(&mut dyn FnMut(PackedDocument)) -> Result<(), E>,
@@ -354,4 +382,64 @@ fn rehome_all(state: &mut BTreeMap<Str, Arc<PackedDocument>>, generation: &Arc<G
             (document.path.clone(), document)
         })
         .collect();
+}
+
+/// Rows handed to a decoding thread at once, to keep channel traffic low.
+const DECODE_CHUNK_ROWS: usize = 64;
+
+/// Decodes the rows `feed` produces on `threads` threads. The first error
+/// wins; the order of the documents is unspecified.
+fn decode_rows<E: Send>(
+    threads: usize,
+    feed: impl FnOnce(&mut dyn FnMut(Vec<u8>)) -> Result<(), E>,
+    decode: &(impl Fn(&mut WorkspaceGraphDecoder, &[u8]) -> Result<WorkspaceGraph, E> + Sync),
+) -> Result<Vec<PackedDocument>, E> {
+    let (rows, pending) = std::sync::mpsc::sync_channel::<Vec<Vec<u8>>>(threads * 2);
+    let pending = Mutex::new(pending);
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..threads)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut decoder = WorkspaceGraphDecoder::new();
+                    let mut documents = Vec::new();
+                    loop {
+                        let chunk = pending
+                            .lock()
+                            .unwrap_or_else(|poison| poison.into_inner())
+                            .recv();
+                        let Ok(chunk) = chunk else {
+                            return Ok(documents);
+                        };
+                        for row in chunk {
+                            documents.push(decode(&mut decoder, &row)?.document);
+                        }
+                    }
+                })
+            })
+            .collect();
+        let mut chunk = Vec::with_capacity(DECODE_CHUNK_ROWS);
+        // A failed send means every decoder stopped on an error, which the
+        // joins below report.
+        let fed = feed(&mut |row| {
+            chunk.push(row);
+            if chunk.len() == DECODE_CHUNK_ROWS {
+                let _ = rows.send(std::mem::take(&mut chunk));
+            }
+        });
+        let _ = rows.send(chunk);
+        drop(rows);
+        let mut documents = Vec::new();
+        let mut error = fed.err();
+        for worker in workers {
+            match worker.join() {
+                Ok(Ok(decoded)) => documents.extend(decoded),
+                Ok(Err(failure)) => error = error.or(Some(failure)),
+                Err(panic) => std::panic::resume_unwind(panic),
+            }
+        }
+        match error {
+            Some(error) => Err(error),
+            None => Ok(documents),
+        }
+    })
 }

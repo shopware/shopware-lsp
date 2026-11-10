@@ -72,7 +72,7 @@ impl<'a> AdminUsageCollector<'a> {
         let original = if node.kind() == jssyntax::JS_STRING {
             jsquery::string_value(node)
         } else {
-            node.text().to_string().trim().to_owned()
+            node.text_string().trim().to_owned()
         };
         let style = if kind == AdminSymbolKind::ComponentEvent
             && original != canonical_event_name(&original)

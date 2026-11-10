@@ -19,7 +19,7 @@ pub(crate) fn parse_admin_twig_usages(
     file_path: &str,
     line_index: &LineIndex,
 ) -> Vec<AdminUsageSet> {
-    let content = root.text().to_string();
+    let content = root.text_string();
     let vue_bindings = twig_vue_for_bindings(root, &content);
     let scoped_slots = twig_scoped_slots(root);
     let mut scanner = AdminTwigUsageScanner {
@@ -175,7 +175,7 @@ impl AdminTwigUsageScanner<'_> {
             return;
         };
         let (fields, _) = vue_object_binding_fields(
-            &inner.syntax().text().to_string(),
+            &inner.syntax().text_string(),
             u32::from(inner.syntax().text_range().start()),
         );
         for field in &fields {

@@ -2,6 +2,7 @@
 
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::TWIG_COMMENT;
+use swlsp_syntax::SyntaxNodeExt as _;
 use swlsp_syntax::{SyntaxNode, TextRange};
 
 use crate::DocumentMemo;
@@ -24,7 +25,7 @@ pub struct SeeCompletionContext {
 /// Explicit `@see` targets and the reference plugin's legacy single-target
 /// comment form.
 pub fn see_references(root: &SyntaxNode) -> Vec<SeeReference> {
-    let excluded = see_verbatim_ranges(root.text().to_string().as_bytes());
+    let excluded = see_verbatim_ranges(root.text_string().as_bytes());
     let mut result = Vec::new();
     for comment in twigquery::iterate_nodes(root, &[TWIG_COMMENT]) {
         if see_range_excluded(comment.text_range(), &excluded) {
@@ -55,7 +56,7 @@ pub fn see_reference_at(root: &SyntaxNode, offset: u32) -> Option<SeeReference> 
 /// An explicit `@see` target under construction. Legacy bare comments stay
 /// navigation-only.
 pub fn see_completion_at(root: &SyntaxNode, offset: u32) -> Option<SeeCompletionContext> {
-    let excluded = see_verbatim_ranges(root.text().to_string().as_bytes());
+    let excluded = see_verbatim_ranges(root.text_string().as_bytes());
     for comment in twigquery::iterate_nodes(root, &[TWIG_COMMENT]) {
         let comment_range = comment.text_range();
         if offset < u32::from(comment_range.start()) || offset > u32::from(comment_range.end()) {
@@ -118,7 +119,7 @@ pub fn see_php_class_and_member(target: &str) -> Option<(String, String)> {
 }
 
 fn see_references_in_comment(comment: &SyntaxNode, include_empty: bool) -> Vec<SeeReference> {
-    let text = comment.text().to_string();
+    let text = comment.text_string();
     let bytes = text.as_bytes();
     let Some(inner_start) = text.find("{#") else {
         return Vec::new();

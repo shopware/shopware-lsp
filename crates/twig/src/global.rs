@@ -215,7 +215,7 @@ fn yaml_global_scalar_range(node: Option<&SyntaxNode>) -> TextRange {
         return TextRange::default();
     };
     let range = node.range_trimmed_trivia();
-    let text = node.text().to_string();
+    let text = node.text_string();
     let text = text.trim().as_bytes();
     let (mut start, mut end) = (range.start(), range.end());
     if !text.is_empty() && (text[0] == b'\'' || text[0] == b'"') {
@@ -264,7 +264,7 @@ pub fn globals_in_php_extension(
                 result.push(Global {
                     name,
                     ty: php_global_type(&value, document, &resolver),
-                    value: value.text().to_string().trim().to_owned(),
+                    value: value.text_string().trim().to_owned(),
                     file: path.to_owned(),
                     range: php_global_string_range(key.as_ref()),
                     source: GlobalSource::PhpExtension,
@@ -308,7 +308,7 @@ fn php_global_type(
     match node.kind() {
         PHP_STRING => "string".to_owned(),
         PHP_NUMBER => {
-            if node.text().to_string().contains(['.', 'e', 'E']) {
+            if node.text_string().contains(['.', 'e', 'E']) {
                 "float".to_owned()
             } else {
                 "int".to_owned()
@@ -330,7 +330,7 @@ fn php_global_string_range(node: Option<&SyntaxNode>) -> TextRange {
         return TextRange::default();
     };
     let range = node.range_trimmed_trivia();
-    let text = node.text().to_string();
+    let text = node.text_string();
     let text = text.trim().as_bytes();
     if text.len() >= 2
         && (text[0] == b'\'' || text[0] == b'"')

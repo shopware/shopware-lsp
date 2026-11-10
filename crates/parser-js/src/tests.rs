@@ -22,6 +22,19 @@ fn parse_clean(source: &str) -> SyntaxNode {
 }
 
 #[test]
+fn text_string_matches_the_node_text() {
+    use swlsp_syntax::SyntaxNodeExt as _;
+
+    let source =
+        "const value = call(first, { key: [1, 2] }) // note\n  .then((result) => result);\n";
+    let root = parse(source).root();
+    assert_eq!(root.text_string(), source);
+    for node in root.descendants() {
+        assert_eq!(node.text_string(), node.text().to_string());
+    }
+}
+
+#[test]
 fn administration_component() {
     let root = parse_clean(
         "import template from './sw-card.html.twig';

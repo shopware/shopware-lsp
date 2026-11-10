@@ -59,7 +59,7 @@ pub fn link_members_owned(
             let name_node = &nodes[1];
             // A variable member name is resolved at runtime.
             if name_node.kind() == PHP_VARIABLE
-                || (!is_static && name_node.text().to_string().trim().starts_with('$'))
+                || (!is_static && name_node.text_string().trim().starts_with('$'))
             {
                 return true;
             }

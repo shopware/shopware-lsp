@@ -455,7 +455,7 @@ fn evaluate_twig_template_target(node: Option<&SyntaxNode>) -> Evaluation {
             Evaluation {
                 targets: vec![TwigTemplateTarget {
                     template: name,
-                    range: string_content_range(&node.text().to_string(), node.text_range()),
+                    range: string_content_range(&node.text_string(), node.text_range()),
                     direct_literal: true,
                 }],
                 exact: true,
@@ -666,7 +666,7 @@ pub(crate) fn php_template_references_uncached(
         result.push(TemplateReference {
             template: normalize_template_reference(&template),
             file_path: path.to_owned(),
-            range: string_content_range(&literal.text().to_string(), literal.text_range()),
+            range: string_content_range(&literal.text_string(), literal.text_range()),
             kind,
         });
         true
@@ -714,7 +714,7 @@ fn php_template_call_reference(literal: &SyntaxNode) -> bool {
 }
 
 pub(crate) fn php_string_is_static(literal: &SyntaxNode) -> bool {
-    let text = literal.text().to_string();
+    let text = literal.text_string();
     let text = text.trim().as_bytes();
     text.len() >= 2
         && matches!(text[0], b'\'' | b'"' | b'`')

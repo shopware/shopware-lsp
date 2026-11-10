@@ -4,6 +4,7 @@ use swlsp_parser_json::syntax::{
     JSON_ARRAY, JSON_BOOLEAN, JSON_NULL_VALUE, JSON_NUMBER, JSON_OBJECT, JSON_PAIR, JSON_STRING,
 };
 use swlsp_syntax::SyntaxNode;
+use swlsp_syntax::SyntaxNodeExt as _;
 
 fn is_value(node: &SyntaxNode) -> bool {
     matches!(
@@ -39,7 +40,7 @@ pub(crate) fn string_value(node: &SyntaxNode) -> String {
     if node.kind() != JSON_STRING {
         return String::new();
     }
-    let text = node.text().to_string();
+    let text = node.text_string();
     let text = text.trim();
     let text = text.strip_prefix('"').unwrap_or(text);
     text.strip_suffix('"').unwrap_or(text).to_owned()
@@ -49,5 +50,5 @@ pub(crate) fn scalar_text(node: &SyntaxNode) -> String {
     if node.kind() == JSON_STRING {
         return string_value(node);
     }
-    node.text().to_string().trim().to_owned()
+    node.text_string().trim().to_owned()
 }

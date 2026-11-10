@@ -74,6 +74,21 @@ pub use twig_context::{
 
 use loader::WorkspaceGraphRepositoryLoader;
 
+/// Below this many persisted graphs a restore decodes them in place:
+/// starting threads would cost more than they save.
+const PARALLEL_RESTORE_MINIMUM_DOCUMENTS: usize = 2_000;
+const MAXIMUM_RESTORE_THREADS: usize = 4;
+
+/// Decoding threads for restoring `documents` persisted graphs.
+fn restore_threads(documents: usize) -> usize {
+    if documents < PARALLEL_RESTORE_MINIMUM_DOCUMENTS {
+        return 1;
+    }
+    std::thread::available_parallelism()
+        .map_or(1, usize::from)
+        .min(MAXIMUM_RESTORE_THREADS)
+}
+
 const WORKSPACE_RESTORE_STRINGS_PER_DOCUMENT: usize = 18;
 const WORKSPACE_RESTORE_TYPE_NUMERATOR: usize = 5;
 const WORKSPACE_RESTORE_TYPE_DENOMINATOR: usize = 4;
@@ -316,21 +331,37 @@ impl PhpIndex {
                 .div_ceil(WORKSPACE_RESTORE_TYPE_DENOMINATOR),
         };
         let loader: Arc<dyn WorkspaceGraphLoader> = inner.loader.clone();
-        let result = inner.semantic_store.restore_workspace_graphs_decoded_with(
-            capacity,
-            documents,
-            |decoder, accept| {
-                inner.workspace_graphs.visit_all_encoded_values(|encoded| {
-                    let persisted = decode_persisted_workspace_graph_borrowed(encoded)
-                        .map_err(persist_error)?;
-                    let graph = persisted
-                        .decode_summary(decoder, loader.clone())
-                        .map_err(persist_error)?;
-                    accept(graph);
-                    Ok(())
-                })
-            },
-        );
+        let decode = |decoder: &mut swlsp_php_semantic::WorkspaceGraphDecoder, encoded: &[u8]| {
+            decode_persisted_workspace_graph_borrowed(encoded)
+                .and_then(|persisted| persisted.decode_summary(decoder, loader.clone()))
+                .map_err(persist_error)
+        };
+        let threads = restore_threads(count);
+        let result = if threads > 1 {
+            inner.semantic_store.restore_workspace_graphs_parallel(
+                capacity,
+                documents,
+                threads,
+                |accept| {
+                    inner.workspace_graphs.visit_all_encoded_values(|encoded| {
+                        accept(encoded.to_vec());
+                        Ok(())
+                    })
+                },
+                decode,
+            )
+        } else {
+            inner.semantic_store.restore_workspace_graphs_decoded_with(
+                capacity,
+                documents,
+                |decoder, accept| {
+                    inner.workspace_graphs.visit_all_encoded_values(|encoded| {
+                        accept(decode(decoder, encoded)?);
+                        Ok(())
+                    })
+                },
+            )
+        };
         // Restoration is the only high-volume decode phase; release the
         // pooled decompression buffer while the server is idle.
         persistence::release_codec_pool();

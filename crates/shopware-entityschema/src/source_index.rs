@@ -5,6 +5,7 @@
 //! subtype later. This keeps request paths off the disk.
 
 use std::path::Path;
+use swlsp_syntax::SyntaxNodeExt as _;
 
 use serde::{Deserialize, Serialize};
 use swlsp_indexer::{
@@ -94,7 +95,7 @@ pub(crate) fn class_based_source_candidate(class: &SyntaxNode) -> bool {
             return true;
         }
     }
-    if class.to_string().contains("ENTITY_NAME") {
+    if class.text_string().contains("ENTITY_NAME") {
         return true;
     }
     phpquery::methods(class).iter().any(|method| {

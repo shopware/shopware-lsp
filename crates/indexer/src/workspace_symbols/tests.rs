@@ -218,6 +218,74 @@ fn bulk_population_defers_and_rebuilds_fts() {
     store.close().unwrap();
 }
 
+fn has_priority_index(store: &Store) -> bool {
+    store
+        .read(|connection| {
+            Ok(connection.query_row(
+                "SELECT EXISTS (SELECT 1 FROM sqlite_master
+                 WHERE type = 'index' AND name = 'idx_workspace_symbols_priority')",
+                [],
+                |row| row.get(0),
+            )?)
+        })
+        .unwrap()
+}
+
+#[test]
+fn populating_an_empty_catalog_defers_the_priority_index() {
+    let (_directory, store) = store();
+    let catalog = WorkspaceSymbolCatalog::new(&store).unwrap();
+    let cancel = CancelToken::new();
+    let document = |path: &str, name: &str| WorkspaceSymbolDocument {
+        path: path.into(),
+        symbols: vec![symbol(name, WorkspaceSymbolKind::CLASS, 0)],
+    };
+    assert!(has_priority_index(&store));
+
+    catalog.begin_bulk_population();
+    assert!(!has_priority_index(&store));
+    catalog
+        .replace_files(&cancel, &[document("/project/First.php", "First")])
+        .unwrap();
+    catalog.end_bulk_population(&cancel).unwrap();
+    assert!(has_priority_index(&store));
+    assert_eq!(catalog.query("First", 20).unwrap().len(), 1);
+
+    // A populated catalog keeps the index: a warm run changes few rows.
+    catalog.begin_bulk_population();
+    assert!(has_priority_index(&store));
+    catalog
+        .replace_files(&cancel, &[document("/project/Second.php", "Second")])
+        .unwrap();
+    catalog.end_bulk_population(&cancel).unwrap();
+    assert_eq!(catalog.query("Second", 20).unwrap().len(), 1);
+    store.close().unwrap();
+}
+
+#[test]
+fn an_interrupted_cold_population_gets_its_priority_index_back() {
+    let (_directory, store) = store();
+    let catalog = WorkspaceSymbolCatalog::new(&store).unwrap();
+    catalog.begin_bulk_population();
+    assert!(!has_priority_index(&store));
+    // The process ends before `end_bulk_population`; the next one reopens.
+    drop(catalog);
+    let reopened = WorkspaceSymbolCatalog::new(&store).unwrap();
+    assert!(has_priority_index(&store));
+    drop(reopened);
+    store.close().unwrap();
+}
+
+#[test]
+fn an_empty_bulk_population_restores_the_priority_index() {
+    let (_directory, store) = store();
+    let catalog = WorkspaceSymbolCatalog::new(&store).unwrap();
+    catalog.begin_bulk_population();
+    catalog.end_bulk_population(&CancelToken::new()).unwrap();
+    assert!(has_priority_index(&store));
+    store.close().unwrap();
+}
+
 #[test]
 fn index_text_normalization() {
     let symbol = WorkspaceSymbol {

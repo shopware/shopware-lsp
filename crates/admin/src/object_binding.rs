@@ -197,7 +197,7 @@ pub fn twig_component_object_binding_field_at_offset(
                 continue;
             }
             let (fields, _) = vue_object_binding_fields(
-                &inner.text().to_string(),
+                &inner.text_string(),
                 u32::from(inner.text_range().start()),
             );
             for field in fields {
@@ -225,7 +225,7 @@ pub fn twig_component_object_binding_value_at_offset(
                 continue;
             }
             let (fields, _) = vue_object_binding_fields(
-                &inner.text().to_string(),
+                &inner.text_string(),
                 u32::from(inner.text_range().start()),
             );
             for field in fields {
@@ -267,7 +267,7 @@ pub fn twig_component_object_binding_key_context_at_offset(
                     continue;
                 };
                 let inner = inner.syntax().clone();
-                let text = inner.text().to_string();
+                let text = inner.text_string();
                 let base = u32::from(inner.text_range().start());
                 if offset < base || offset > base + text.len() as u32 {
                     continue;

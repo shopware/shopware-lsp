@@ -88,7 +88,7 @@ fn parse_php_array_parameters(
         if value.is_none()
             && let Some(expression) = expression.as_ref()
         {
-            let text = expression.text().to_string();
+            let text = expression.text_string();
             if is_static_parameter_expression(&text) {
                 value = Some(text.trim().to_owned());
             }
@@ -438,7 +438,7 @@ pub(crate) fn php_array_static_value_ok(
     resolver: &NameResolver,
     path: &str,
 ) -> Option<String> {
-    static_php_value(&node?.text().to_string(), resolver, path)
+    static_php_value(&node?.text_string(), resolver, path)
 }
 
 fn php_array_normalize_service(value: &str) -> String {

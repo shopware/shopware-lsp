@@ -2452,6 +2452,7 @@ name = "swlsp-app"
 version = "0.1.0"
 dependencies = [
  "log",
+ "rustix",
  "serde",
  "serde_json",
  "sha2 0.10.9",

@@ -38,7 +38,7 @@ pub(crate) fn parse_shopware_utility_value_declarations(
             continue;
         };
         let name = jsquery::identifier_text(&name_node).unwrap_or_default();
-        if name.is_empty() || !function.text().to_string().contains("function") {
+        if name.is_empty() || !function.text_string().contains("function") {
             continue;
         }
         append_declaration(AdminTypeDeclaration {
@@ -103,7 +103,7 @@ pub(crate) fn parse_shopware_utility_value_declarations(
             jssyntax::JS_IDENTIFIER => {
                 declaration.alias = jsquery::identifier_text(&expression).unwrap_or_default();
             }
-            _ => declaration.alias = expression.text().to_string().trim().to_owned(),
+            _ => declaration.alias = expression.text_string().trim().to_owned(),
         }
         append_declaration(declaration);
     }
@@ -152,7 +152,7 @@ pub(crate) fn shopware_utility_object_members(
             jssyntax::JS_FUNCTION | jssyntax::JS_ARROW_FUNCTION => {
                 member.type_ = vue_method_signature(&value, &HashMap::new());
             }
-            _ => member.type_ = compact_vue_expression(&value.text().to_string()),
+            _ => member.type_ = compact_vue_expression(&value.text_string()),
         }
         result.push(member);
     }
@@ -160,7 +160,7 @@ pub(crate) fn shopware_utility_object_members(
 }
 
 pub(crate) fn shopware_utility_variable_type(variable: &SyntaxNode) -> String {
-    let full = variable.text().to_string();
+    let full = variable.text_string();
     let text = full.trim();
     let Some(equals) = text.find('=') else {
         return String::new();

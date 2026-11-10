@@ -77,7 +77,7 @@ pub(crate) fn javascript_application_container_member_impl(
     let mut member_name = String::new();
     for child in children {
         if child.kind() == jssyntax::JS_IDENTIFIER {
-            member_name = child.text().to_string().trim().to_owned();
+            member_name = child.text_string().trim().to_owned();
         }
     }
     Some((container_name, member_name))
@@ -99,7 +99,7 @@ pub(crate) fn javascript_application_container_member_name_node_impl(
     let member = jsquery::member_expression_at(node)?;
     let mut result = None;
     for child in member.children().skip(1) {
-        if child.kind() == jssyntax::JS_IDENTIFIER && child.text().to_string().trim() == name {
+        if child.kind() == jssyntax::JS_IDENTIFIER && child.text_string().trim() == name {
             result = Some(child);
         }
     }
@@ -146,7 +146,7 @@ pub(crate) fn application_container_const_alias_names(
     for declaration in &declarations {
         let initializer = match analysis {
             Some(analysis) => analysis.const_initializer(declaration),
-            None => direct_component_const_initializer(&declaration.text().to_string()),
+            None => direct_component_const_initializer(&declaration.text_string()),
         };
         let Some((name, initializer)) = initializer else {
             continue;

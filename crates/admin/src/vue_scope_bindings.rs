@@ -76,7 +76,7 @@ pub(crate) fn twig_vue_bindings_impl(
                     continue;
                 }
                 result.extend(parse_twig_vue_for_bindings(
-                    &inner.text().to_string(),
+                    &inner.text_string(),
                     u32::from(expression_range.start()),
                     scope_range,
                     expression_range,

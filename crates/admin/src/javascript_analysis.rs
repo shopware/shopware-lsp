@@ -17,7 +17,7 @@ impl JavaScriptDocumentAnalysis {
         let mut variable_bindings = HashMap::new();
         let mut const_initializers = HashMap::new();
         for declaration in index.nodes_of_kind(jssyntax::JS_VARIABLE_DECLARATION) {
-            let text = declaration.text().to_string();
+            let text = declaration.text_string();
             let bindings = javascript_variable_bindings(&text);
             if !bindings.is_empty() {
                 let by_name: HashMap<String, JavaScriptVariableBinding> = bindings

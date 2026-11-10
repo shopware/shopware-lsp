@@ -5,6 +5,7 @@
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax as phpsyntax;
 use swlsp_php::NameResolver;
+use swlsp_syntax::SyntaxNodeExt as _;
 use swlsp_syntax::{SyntaxNode, TextRange};
 
 use crate::php_array_services::{php_array_node, php_array_option_value};
@@ -105,14 +106,14 @@ pub fn php_array_service_method_at(
         ["calls", _, "0"] => {
             let entry = php_array_service_entry_at(&literal)?;
             let id = phpquery::array_item_key(&entry)
-                .and_then(|key| static_php_value(&key.text().to_string(), &resolver, ""))
+                .and_then(|key| static_php_value(&key.text_string(), &resolver, ""))
                 .unwrap_or_default();
             let definition = php_array_node(phpquery::array_item_value(&entry));
             if let Some(class_node) =
                 php_array_option_value(definition.as_ref(), "class", &resolver, "")
             {
-                reference.class = static_php_value(&class_node.text().to_string(), &resolver, "")
-                    .unwrap_or_default();
+                reference.class =
+                    static_php_value(&class_node.text_string(), &resolver, "").unwrap_or_default();
                 if !reference.class.is_empty() {
                     reference.class = format!(
                         "\\{}",
@@ -146,7 +147,7 @@ pub fn php_array_service_method_at(
             }
             let receiver = phpquery::array_item_value(&items[0]);
             let receiver_text = receiver
-                .map(|receiver| receiver.text().to_string())
+                .map(|receiver| receiver.text_string())
                 .unwrap_or_default();
             let value = static_php_value(&receiver_text, &resolver, "")
                 .filter(|value| !value.is_empty())?;
@@ -288,7 +289,7 @@ fn php_array_static_string(node: Option<&SyntaxNode>) -> String {
     {
         return phpquery::string_value(&literal);
     }
-    node.text().to_string().trim().to_owned()
+    node.text_string().trim().to_owned()
 }
 
 fn php_array_same_node(left: Option<&SyntaxNode>, right: Option<&SyntaxNode>) -> bool {

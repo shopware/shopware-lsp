@@ -18,7 +18,7 @@ fn text_range(start: usize, end: usize) -> TextRange {
 /// Complete registry references from executable Vue/Twig expression
 /// contexts, sorted by position.
 pub fn twig_registry_references(root: &SyntaxNode) -> Vec<AdminTwigRegistryReference> {
-    let source = root.text().to_string();
+    let source = root.text_string();
     let mut result = Vec::new();
     let mut offset = 0;
     while offset < source.len() {
@@ -48,7 +48,7 @@ pub fn twig_registry_reference_at_offset(
     root: &SyntaxNode,
     offset: u32,
 ) -> Option<AdminTwigRegistryReference> {
-    let source = root.text().to_string();
+    let source = root.text_string();
     let mut cursor = 0;
     while cursor < source.len() {
         let (reference, next) = match scan_twig_acl_reference(&source, cursor) {
@@ -87,7 +87,7 @@ fn twig_route_references(
         else {
             continue;
         };
-        let text = inner.syntax().text().to_string();
+        let text = inner.syntax().text_string();
         if !is_admin_route_attribute(
             &twigquery::html_attribute_name(&node).unwrap_or_default(),
             &text,

@@ -172,7 +172,7 @@ pub(crate) fn visible_javascript_const_declaration_indexed(
     for declaration in declarations {
         let initializer = match analysis {
             Some(analysis) => analysis.const_initializer(&declaration),
-            None => direct_component_const_initializer(&declaration.text().to_string()),
+            None => direct_component_const_initializer(&declaration.text_string()),
         };
         let Some((name, expression)) = initializer else {
             continue;

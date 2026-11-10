@@ -1714,8 +1714,8 @@ and warm scan time, current and peak RSS, and cache size. Set
 one-time cost of constructing the lazy PHP reverse-reference index, and
 `SHOPWARE_LSP_PROFILE_SEMANTIC_STORAGE=1` to report compact PHP graph
 cardinality. `SHOPWARE_LSP_PROFILE_WORKERS` overrides indexing concurrency for
-comparative resource measurements. The production scanner defaults to at most
-four workers.
+comparative resource measurements. The production scanner defaults to three
+quarters of the cores, at most eight workers, plus one writer thread.
 
 For end-to-end comparisons of two server binaries, `scripts/bench/lsp_bench.py`
 drives a server over stdio with a fixed request mix on a real checkout and

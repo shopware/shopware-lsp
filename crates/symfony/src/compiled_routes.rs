@@ -189,7 +189,7 @@ fn compiled_assignment_operands(assignment: &SyntaxNode) -> Option<(SyntaxNode, 
 }
 
 fn compiled_declared_routes_access(node: &SyntaxNode) -> bool {
-    let text: String = node.text().to_string().split_whitespace().collect();
+    let text: String = node.text_string().split_whitespace().collect();
     text.ends_with("::$declaredRoutes")
 }
 
@@ -280,7 +280,7 @@ fn compiled_array_element(array: Option<&SyntaxNode>, wanted: i64) -> Option<Syn
     for item in phpquery::array_items(&array) {
         let mut item_index = position;
         if let Some(key) = phpquery::array_item_key(&item) {
-            match key.text().to_string().trim().parse::<i64>().ok() {
+            match key.text_string().trim().parse::<i64>().ok() {
                 Some(parsed) => item_index = parsed,
                 None => {
                     position += 1;

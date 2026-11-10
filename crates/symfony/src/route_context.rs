@@ -57,7 +57,7 @@ pub fn is_php_route_name_in_context(context: Option<&PhpContext>, node: &SyntaxN
     let receiver_type = context.document.type_of(&receiver).ty;
     let method = phpquery::call_method_name(&call).lowercase();
     if receiver_type.is_unknown() {
-        return receiver.text().to_string().trim() == "$this"
+        return receiver.text_string().trim() == "$this"
             && (method == "generateurl" || method == "redirecttoroute");
     }
     let relations = context.snapshot.relations();
@@ -233,7 +233,7 @@ pub struct JsRouteUrlReference {
 /// arguments, `url` properties, and `axios.create({baseURL: ...})`.
 pub fn js_route_url_reference_at(node: &SyntaxNode) -> Option<JsRouteUrlReference> {
     let literal = jsquery::string_at(node)?;
-    let text = literal.text().to_string();
+    let text = literal.text_string();
     if text.trim().starts_with('`') && text.contains("${") {
         return None;
     }
@@ -604,7 +604,7 @@ pub fn twig_html_route_reference_at(node: &SyntaxNode) -> Option<TwigHtmlRouteRe
     let value_node = HtmlString::cast(html_string.clone())
         .and_then(|typed| typed.inner())
         .map_or_else(|| html_string.clone(), |inner| inner.syntax().clone());
-    let value = value_node.text().to_string().trim().to_owned();
+    let value = value_node.text_string().trim().to_owned();
     if value.contains("{{") || value.contains("{%") || value.contains("{#") {
         return None;
     }
@@ -804,7 +804,7 @@ pub fn twig_route_parameter_reference_at(node: &SyntaxNode) -> Option<(String, S
             twigquery::string_value(&literal).unwrap_or_default()
         }
         _ => {
-            let text = key.text().to_string();
+            let text = key.text_string();
             let text = text.trim();
             let text = text.strip_suffix(':').unwrap_or(text).trim();
             text.trim_matches(['\'', '"', '`']).to_owned()

@@ -32,7 +32,7 @@ pub fn test_expressions(root: &SyntaxNode) -> Vec<TestExpression> {
         else {
             continue;
         };
-        let name = name_node.text().to_string().trim().to_owned();
+        let name = name_node.text_string().trim().to_owned();
         let range = name_node.range_trimmed_trivia();
         if name.is_empty() || range.is_empty() {
             continue;

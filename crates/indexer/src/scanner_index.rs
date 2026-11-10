@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossbeam_channel::{RecvTimeoutError, SendTimeoutError};
 
@@ -20,7 +20,7 @@ use crate::scanner::{
     log_skipped_file, log_skipped_file_count,
 };
 use crate::store::lock;
-use crate::workspace_symbols::{WorkspaceSymbol, WorkspaceSymbolDocument};
+use crate::workspace_symbols::{WorkspaceSymbolRow, WorkspaceSymbolRows};
 use crate::{Mutation, ParsedFile};
 
 /// Bound preparation by source weight as well as file count: tiny files share
@@ -32,6 +32,10 @@ pub(crate) const MAX_PREPARATION_BATCH_BYTES: usize = 128 << 10;
 /// negligible while an interrupted run loses at most this many files.
 const FILE_STATE_PUBLISH_THRESHOLD: usize = 512;
 const BULK_STATE_LOOKUP_THRESHOLD: usize = 1024;
+/// Prepared batches waiting for the writer, and written ones waiting to be
+/// released. The writer is the slower side, so a longer queue would only
+/// keep more prepared values alive.
+const WRITER_QUEUE_BATCHES: usize = 2;
 const CHANNEL_POLL: Duration = Duration::from_millis(10);
 
 pub(crate) fn preparation_batch_ready(file_count: usize, source_bytes: usize) -> bool {
@@ -65,7 +69,13 @@ struct PreparedFileWork {
     meta: FileMeta,
     hash: i64,
     prepared: Vec<Option<Prepared>>,
+    /// Catalog rows of the symbols contributed from the prepared values.
+    symbols: Vec<WorkspaceSymbolRow>,
 }
+
+/// A written batch on its way to the finisher: the prepared files to
+/// release and the states of the files that are durable.
+type Written = (Vec<PreparedFileWork>, Vec<FileState>);
 
 enum Change {
     Unchanged,
@@ -300,15 +310,32 @@ impl Run<'_> {
     }
 
     /// Returns `false` when the producer observed cancellation.
+    ///
+    /// With a store, the workers only prepare: one writer thread persists
+    /// their batches, so a worker waiting for the single write transaction
+    /// keeps no core idle, and a finisher releases the written batches and
+    /// records their file states off the writer.
     fn run_workers(&self, files: Vec<String>, stored_states: Option<Vec<StoredFileState>>) -> bool {
         let workers = self.scanner.configured_workers().min(files.len()).max(1);
         let (sender, receiver) = crossbeam_channel::bounded::<Candidate>(100);
         std::thread::scope(|scope| {
+            let prepared = self.scanner.store.is_some().then(|| {
+                let (prepared, batches) =
+                    crossbeam_channel::bounded::<Vec<PreparedFileWork>>(WRITER_QUEUE_BATCHES);
+                let (written, finished) =
+                    crossbeam_channel::bounded::<Written>(WRITER_QUEUE_BATCHES);
+                scope.spawn(move || self.writer(&batches, &written));
+                scope.spawn(move || self.finisher(&finished));
+                prepared
+            });
             for _ in 0..workers {
                 let receiver = receiver.clone();
-                scope.spawn(move || self.worker(&receiver));
+                let prepared = prepared.clone();
+                scope.spawn(move || self.worker(&receiver, prepared.as_ref()));
             }
             drop(receiver);
+            // The writer stops once every worker has dropped its sender.
+            drop(prepared);
             // Owned by the producer so workers observe disconnection as soon
             // as it returns, before the scope joins them.
             let sender = sender;
@@ -333,20 +360,68 @@ impl Run<'_> {
         })
     }
 
-    fn worker(&self, receiver: &crossbeam_channel::Receiver<Candidate>) {
+    /// Persists prepared batches in arrival order. Batches still queued when
+    /// the run is cancelled are rejected by [`Run::index_with_store`].
+    fn writer(
+        &self,
+        batches: &crossbeam_channel::Receiver<Vec<PreparedFileWork>>,
+        written: &crossbeam_channel::Sender<Written>,
+    ) {
+        let started = Instant::now();
+        let mut busy = Duration::ZERO;
+        for mut batch in batches {
+            let begun = Instant::now();
+            self.index_with_store(&mut batch);
+            busy += begun.elapsed();
+            let durable = std::mem::take(&mut *lock(&self.durable));
+            // Without a finisher the batch is released here.
+            let _ = written.send((batch, durable));
+        }
+        // A writer busy for the whole run is what bounds it: more workers
+        // would not help.
+        log::debug!("Index writer was busy {busy:?} of {:?}", started.elapsed());
+    }
+
+    fn finisher(&self, written: &crossbeam_channel::Receiver<Written>) {
+        for (batch, durable) in written {
+            // Release prepared values before recording the states.
+            drop(batch);
+            self.record_successful(durable);
+        }
+    }
+
+    fn record_successful(&self, successful: Vec<FileState>) {
+        if successful.is_empty() {
+            return;
+        }
+        let due = {
+            let mut results = lock(&self.results);
+            results.pending_states.extend(successful);
+            results.pending_states.len() >= FILE_STATE_PUBLISH_THRESHOLD
+        };
+        if due {
+            self.publish_file_states();
+        }
+    }
+
+    fn worker(
+        &self,
+        receiver: &crossbeam_channel::Receiver<Candidate>,
+        prepared: Option<&crossbeam_channel::Sender<Vec<PreparedFileWork>>>,
+    ) {
         let mut batch: Vec<FileWork> = Vec::with_capacity(MAX_PREPARATION_BATCH_FILES);
         let mut batch_bytes = 0;
         loop {
             if self.cancel.is_cancelled() {
                 self.record_error(Error::Cancelled);
-                self.process_batch(std::mem::take(&mut batch));
+                self.process_batch(std::mem::take(&mut batch), prepared);
                 return;
             }
             let candidate = match receiver.recv_timeout(CHANNEL_POLL) {
                 Ok(candidate) => candidate,
                 Err(RecvTimeoutError::Timeout) => continue,
                 Err(RecvTimeoutError::Disconnected) => {
-                    self.process_batch(std::mem::take(&mut batch));
+                    self.process_batch(std::mem::take(&mut batch), prepared);
                     return;
                 }
             };
@@ -378,7 +453,7 @@ impl Run<'_> {
                 } => (content, meta, hash),
             };
             if preparation_batch_would_overflow(batch.len(), batch_bytes, content.len()) {
-                self.process_batch(std::mem::take(&mut batch));
+                self.process_batch(std::mem::take(&mut batch), prepared);
                 batch_bytes = 0;
             }
             batch_bytes += content.len();
@@ -389,7 +464,7 @@ impl Run<'_> {
                 hash,
             });
             if preparation_batch_ready(batch.len(), batch_bytes) {
-                self.process_batch(std::mem::take(&mut batch));
+                self.process_batch(std::mem::take(&mut batch), prepared);
                 batch_bytes = 0;
             }
         }
@@ -420,32 +495,28 @@ impl Run<'_> {
         }
     }
 
-    fn process_batch(&self, items: Vec<FileWork>) {
+    fn process_batch(
+        &self,
+        items: Vec<FileWork>,
+        writer: Option<&crossbeam_channel::Sender<Vec<PreparedFileWork>>>,
+    ) {
         if items.is_empty() {
             return;
         }
-        let mut prepared = self.prepare_batch(items);
+        let prepared = self.prepare_batch(items);
         if prepared.is_empty() {
             return;
         }
-        let successful = if self.scanner.store.is_some() {
-            self.index_with_store(&mut prepared);
-            std::mem::take(&mut *lock(&self.durable))
-        } else {
-            self.index_without_store(&prepared)
-        };
-        // Release syntax trees before the next batch is read.
-        drop(prepared);
-        if successful.is_empty() {
-            return;
-        }
-        let due = {
-            let mut results = lock(&self.results);
-            results.pending_states.extend(successful);
-            results.pending_states.len() >= FILE_STATE_PUBLISH_THRESHOLD
-        };
-        if due {
-            self.publish_file_states();
+        match writer {
+            // A closed channel means the writer thread is gone; its panic
+            // surfaces when the scope joins.
+            Some(writer) => drop(writer.send(prepared)),
+            None => {
+                let successful = self.index_without_store(&prepared);
+                // Release syntax trees before the next batch is read.
+                drop(prepared);
+                self.record_successful(successful);
+            }
         }
     }
 
@@ -460,14 +531,17 @@ impl Run<'_> {
             if self.scanner.should_preparse_path(file.path()) {
                 let _ = file.syntax_tree();
             }
-            let values = self.prepare_file(&file);
+            let values = self
+                .prepare_file(&file)
+                .and_then(|values| Ok((self.contributed_symbols(&file, &values)?, values)));
             file.clear_memoized();
             match values {
-                Ok(values) => prepared.push(PreparedFileWork {
+                Ok((symbols, values)) => prepared.push(PreparedFileWork {
                     file,
                     meta: item.meta,
                     hash: item.hash,
                     prepared: values,
+                    symbols,
                 }),
                 Err(error) => self.record_error(error),
             }
@@ -592,7 +666,8 @@ impl Run<'_> {
     ) -> Vec<Error> {
         let mut errors = Vec::new();
         let symbols = self.scanner.symbols.as_ref();
-        let mut documents = Vec::with_capacity(if symbols.is_some() { batch.len() } else { 0 });
+        // Symbols the indexers publish while writing, per file.
+        let mut published = Vec::with_capacity(if symbols.is_some() { batch.len() } else { 0 });
         for item in batch.iter_mut() {
             item.file.clear_workspace_symbols();
             item.file.set_mutation(Some(mutation.clone()));
@@ -600,46 +675,54 @@ impl Run<'_> {
             if !errors.is_empty() {
                 break;
             }
-            if symbols.is_none() {
-                continue;
-            }
-            match self.workspace_symbols(item) {
-                Ok(symbols) => documents.push(WorkspaceSymbolDocument {
-                    path: item.file.path().to_owned(),
-                    symbols,
-                }),
-                Err(error) => {
-                    errors.push(error);
-                    break;
-                }
+            if symbols.is_some() {
+                published.push(WorkspaceSymbolRow::of_all(
+                    item.file.take_workspace_symbols(),
+                ));
             }
         }
         if errors.is_empty()
             && let Some(symbols) = symbols
-            && let Err(error) = symbols.replace_files_in(mutation, &documents)
         {
-            errors.push(error.context(format!(
-                "catalog workspace symbol batch starting at {}",
-                batch[0].file.path()
-            )));
+            let documents: Vec<WorkspaceSymbolRows<'_>> = batch
+                .iter()
+                .zip(&published)
+                .map(|(item, published)| WorkspaceSymbolRows {
+                    path: item.file.path(),
+                    rows: [published, &item.symbols],
+                })
+                .collect();
+            if let Err(error) = symbols.replace_rows_in(mutation, &documents) {
+                errors.push(error.context(format!(
+                    "catalog workspace symbol batch starting at {}",
+                    batch[0].file.path()
+                )));
+            }
         }
         errors
     }
 
-    fn workspace_symbols(&self, item: &PreparedFileWork) -> Result<Vec<WorkspaceSymbol>> {
-        let mut symbols = item.file.take_workspace_symbols();
+    /// The catalog rows of the symbols contributed from `prepared`, derived
+    /// during preparation so the writer only inserts them.
+    fn contributed_symbols(
+        &self,
+        file: &ParsedFile,
+        prepared: &[Option<Prepared>],
+    ) -> Result<Vec<WorkspaceSymbolRow>> {
+        if self.scanner.symbols.is_none() {
+            return Ok(Vec::new());
+        }
+        let mut symbols = Vec::new();
         for (index, indexer) in self.scanner.indexers.iter().enumerate() {
             let Some(contributor) = indexer.as_workspace_symbol_contributor() else {
                 continue;
             };
             let current = contributor
-                .workspace_symbols(&item.file, item.prepared[index].as_ref())
-                .with_context(|| {
-                    format!("{} workspace symbols {}", indexer.id(), item.file.path())
-                })?;
+                .workspace_symbols(file, prepared[index].as_ref())
+                .with_context(|| format!("{} workspace symbols {}", indexer.id(), file.path()))?;
             symbols.extend(current);
         }
-        Ok(symbols)
+        Ok(WorkspaceSymbolRow::of_all(symbols))
     }
 
     /// Records the files whose index mutations already committed. The write

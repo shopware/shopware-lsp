@@ -2,9 +2,9 @@
 
 use std::io::Write;
 
-// musl's malloc takes a global lock and scales poorly across the indexer's
-// threads; the static musl release builds use mimalloc instead.
-#[cfg(target_env = "musl")]
+// The indexer allocates on its workers and frees on other threads: musl's
+// malloc takes a global lock and glibc's contends on cross-thread frees.
+#[cfg(target_os = "linux")]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 

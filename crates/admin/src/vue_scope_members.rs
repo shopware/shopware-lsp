@@ -563,7 +563,7 @@ pub(crate) fn vue_arrow_parameter_is_local(expression: &str, name: &str, target:
             if u32::from(identifier.range_trimmed_trivia().end()) > arrow_start {
                 continue;
             }
-            if identifier.text().to_string().trim() == name {
+            if identifier.text_string().trim() == name {
                 return true;
             }
         }

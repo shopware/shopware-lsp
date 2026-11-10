@@ -50,14 +50,14 @@ impl Analyzer {
 
     /// Analyzes a copy of `document`.
     pub fn analyze(&self, document: &Document, root: &SyntaxNode) -> Document {
-        let source = root.text().to_string();
+        let source = root.text_string();
         self.run(document.clone(), root, &source, false, true)
     }
 
     /// Enriches a document exclusively owned by the caller. Use this in the
     /// indexing pipeline, where binder output has not been published.
     pub fn analyze_owned(&self, document: Document, root: &SyntaxNode) -> Document {
-        let source = root.text().to_string();
+        let source = root.text_string();
         self.analyze_owned_with_source(document, root, &source)
     }
 

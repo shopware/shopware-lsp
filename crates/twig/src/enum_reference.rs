@@ -39,7 +39,7 @@ fn enum_reference(literal: &SyntaxNode) -> Option<EnumReference> {
         return None;
     }
     let mut start = u32::from(literal.range_trimmed_trivia().start());
-    if let Some(relative) = literal.text().to_string().find(&raw) {
+    if let Some(relative) = literal.text_string().find(&raw) {
         start = u32::from(literal.text_range().start()) + relative as u32;
     }
     Some(EnumReference {

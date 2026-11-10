@@ -61,7 +61,7 @@ pub fn php_service_argument_references(
     root: &SyntaxNode,
     line_index: &LineIndex,
 ) -> Vec<ServiceArgumentReference> {
-    let source = root.text().to_string();
+    let source = root.text_string();
     let has_fluent = source.contains("->arg");
     let has_legacy = source.contains("'arguments'") || source.contains("\"arguments\"");
     if !has_fluent && !has_legacy {
@@ -86,7 +86,7 @@ pub fn php_service_method_references(
     root: &SyntaxNode,
     line_index: &LineIndex,
 ) -> Vec<ServiceMethodReference> {
-    let source = root.text().to_string();
+    let source = root.text_string();
     let has_fluent = source.contains("->call");
     let has_array = source.contains("'calls'") || source.contains("\"calls\"");
     if !has_fluent && !has_array {
@@ -189,7 +189,7 @@ pub(crate) fn sort_parameters(parameters: &mut [Parameter]) {
 }
 
 fn configurator_callbacks(root: &SyntaxNode, resolver: &NameResolver) -> Vec<(String, SyntaxNode)> {
-    let source = root.text().to_string();
+    let source = root.text_string();
     let blocks = phpquery::nodes(root, &[phpsyntax::PHP_BLOCK]);
     let mut callbacks = Vec::new();
     let mut claimed: HashSet<TextRange> = HashSet::new();
@@ -468,7 +468,7 @@ impl PhpServiceEvaluator<'_> {
         };
         phpquery::array_items(array)
             .iter()
-            .filter_map(|item| static_php_value(&item.text().to_string(), self.resolver, self.path))
+            .filter_map(|item| static_php_value(&item.text_string(), self.resolver, self.path))
             .collect()
     }
 
@@ -572,7 +572,7 @@ pub(crate) fn php_service_argument_references_for_calls(
             };
             reference.parameter_index = index as i32;
             if let Some(key) = phpquery::array_item_key(item)
-                && let Some(value) = static_php_value(&key.text().to_string(), resolver, path)
+                && let Some(value) = static_php_value(&key.text_string(), resolver, path)
             {
                 if value.starts_with('$') {
                     reference.parameter_name = value;
@@ -641,7 +641,7 @@ fn php_service_reference_expression(
         }
         return Some(base);
     }
-    let value = static_php_value(&expression.text().to_string(), resolver, path)?;
+    let value = static_php_value(&expression.text_string(), resolver, path)?;
     if let Some((service_id, _)) = parse_service_reference(&value) {
         base.service_id = service_id;
         base.range = php_expression_content_range(Some(expression));
@@ -662,10 +662,7 @@ pub(crate) fn php_expression_content_range(expression: Option<&SyntaxNode>) -> T
     let Some(expression) = expression else {
         return TextRange::default();
     };
-    unquoted_range(
-        expression.range_trimmed_trivia(),
-        &expression.text().to_string(),
-    )
+    unquoted_range(expression.range_trimmed_trivia(), &expression.text_string())
 }
 
 fn unquoted_range(range: TextRange, text: &str) -> TextRange {
@@ -722,7 +719,7 @@ fn legacy_php_service_definition(
     let config = phpquery::array_item_value(definition)
         .filter(|config| config.kind() == phpsyntax::PHP_ARRAY)?;
     let owner_id =
-        static_php_value(&key.text().to_string(), resolver, path).filter(|id| !id.is_empty())?;
+        static_php_value(&key.text_string(), resolver, path).filter(|id| !id.is_empty())?;
     let mut owner_class = if owner_id.contains('\\') {
         owner_id.clone()
     } else {
@@ -746,11 +743,11 @@ fn legacy_php_service_class(
 ) -> Option<String> {
     let key = phpquery::array_item_key(option)?;
     let value = phpquery::array_item_value(option)?;
-    let name = static_php_value(&key.text().to_string(), resolver, path)?;
+    let name = static_php_value(&key.text_string(), resolver, path)?;
     if name != "class" {
         return None;
     }
-    static_php_value(&value.text().to_string(), resolver, path)
+    static_php_value(&value.text_string(), resolver, path)
 }
 
 fn legacy_php_service_argument_arrays(
@@ -769,8 +766,7 @@ fn legacy_php_service_argument_arrays(
         if arguments.kind() != phpsyntax::PHP_ARRAY {
             continue;
         }
-        if static_php_value(&key.text().to_string(), resolver, path).as_deref() == Some("arguments")
-        {
+        if static_php_value(&key.text_string(), resolver, path).as_deref() == Some("arguments") {
             result.push(arguments);
         }
     }
@@ -811,7 +807,7 @@ fn set_legacy_php_reference_parameter(
     let Some(key) = phpquery::array_item_key(item) else {
         return true;
     };
-    let Some(value) = static_php_value(&key.text().to_string(), resolver, path) else {
+    let Some(value) = static_php_value(&key.text_string(), resolver, path) else {
         return false;
     };
     if value.starts_with('$') {

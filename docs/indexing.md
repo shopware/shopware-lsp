@@ -58,7 +58,10 @@ $SHOPWARE_LSP_CACHE_DIR (or the user cache dir)/shopware-lsp/<sha256 of root>/
 
 The directory name is the SHA-256 of the normalized absolute workspace root
 (`crates/app/src/cache.rs`), so each root gets its own directory without
-aliasing or path-length problems.
+aliasing or path-length problems. On Linux the directory is marked
+no-copy-on-write (`FS_NOCOW_FL`), which files created in it inherit: on btrfs
+every page SQLite rewrites is otherwise copied, checksummed and possibly
+compressed. Other filesystems reject the flag; that is ignored.
 
 `indexes.db` holds one wide table plus the workspace-symbol catalog:
 
@@ -341,9 +344,10 @@ index_all(cancel)
  ├─ discover_files                     parallel walk + filters + sort
  ├─ scan_file_states                   aligned single pass; collect stale paths
  ├─ remove_files(stale)
- ├─ symbols.begin_bulk_population      defer FTS maintenance
+ ├─ symbols.begin_bulk_population      defer FTS maintenance (and, for an
+ │                                     empty catalog, the priority index)
  ├─ index_files(files, stored_states)  ── see below
- ├─ symbols.end_bulk_population        build the inverted index once
+ ├─ symbols.end_bulk_population        build the deferred indexes once
  └─ symbols.set_ready(true)
 
 index_files
@@ -352,15 +356,21 @@ index_files
  ├─ load_file_states                   bulk lookup at 1024 files or more
  ├─ run_workers (std::thread::scope)
  │    producer: files → crossbeam channel (cap 100)
- │    N workers, N = min(clamp(CPUs, 1, 4) or override, len(files)):
+ │    N workers, N = min(clamp(CPUs * 3/4, 1, 8) or override, len(files)):
  │      for each candidate:
  │        file_change → skip or read content
  │        accumulate into a preparation batch
  │        flush at 50 files or 128 KiB
  │      process_batch:
  │        prepare_batch    → ParsedFile::new, optional pre-parse,
- │                           every PreparingIndexer::prepare (read-only)
- │        index_with_store → one Mutation per batch
+ │                           every PreparingIndexer::prepare (read-only),
+ │                           contributed workspace symbols and their
+ │                           search text
+ │        send the batch to the writer (queue of 2)
+ │    1 writer:
+ │      index_with_store   → one Mutation per batch
+ │    1 finisher:
+ │      release the written batch, record its file states
  ├─ publish file states                only for committed, successful files
  └─ end_indexing_batch (reverse order) + release encode buffers
 ```
@@ -409,6 +419,15 @@ commit, and so do the batch's file states, which are handed over by an
 `after_commit` callback. Any non-grouped mutation first commits a pending
 group, so standalone writes stay durable when they return.
 
+**One writer thread.** SQLite has one writer, so a worker that persisted its
+own batch spent most of a cold index waiting for the others. Workers now only
+prepare and hand their batch to a single writer thread through a bounded
+queue; while the writer is busy they keep preparing. Whatever does not need
+the transaction stays off that thread: workspace-symbol rows are derived
+during preparation, and a finisher thread drops the written batch (freeing
+its prepared values is measurable) and records its file states. Without a
+store (some tests) a worker indexes its batch in place.
+
 **Cancellation.** The producer, the workers, and `index_with_store` all check
 the `CancelToken`. A cancelled batch is rolled back; batches that already
 succeeded are committed. File states are still published on the cancelled
@@ -416,12 +435,16 @@ path, but only for batches whose mutation committed, so nothing is recorded as
 indexed that was not fully committed.
 
 **Memory reclamation.** Prepared values and parse trees live only for their
-batch. After the run, `index_files` drops the per-thread MessagePack encode
+batch; at most two prepared batches wait for the writer. After the run, `index_files` drops the per-thread MessagePack encode
 buffers.
 
-**Worker count.** `default_index_worker_count` is `clamp(CPUs, 1, 4)` —
-capped deliberately, because the bottleneck is the serialized writer, not the
-CPU. `set_worker_count(n)` overrides it (the CLI's `check --workers` uses the
+**Worker count.** `default_index_worker_count` is three quarters of the
+cores, between one and eight: the writer thread and the editor keep a core,
+and beyond eight workers the single writer cannot keep up, so more would only
+hold more prepared batches in memory (on a 16-core machine a cold Shopware
+index took 13.6 s with four workers, 9.0 s with eight and 8.1 s with sixteen).
+The writer logs how long it was busy at debug level; a writer busy for the
+whole run is the bound. `set_worker_count(n)` overrides it (the CLI's `check --workers` uses the
 same idea for diagnostics).
 
 ## Transactions and the single-writer gate
@@ -615,7 +638,10 @@ pub trait WorkspaceSymbolContributor: Send + Sync {
 ```
 
 An indexer that already computed a prepared value returns its declarations from
-it — no second parse. An indexer can also push symbols mid-pass with
+it — no second parse. The scanner calls contributors on the preparation
+worker, right after `prepare`, and derives the catalog columns (aliases,
+search text) there, so a contributor must not depend on `index_prepared`
+having run. An indexer can also push symbols mid-pass with
 `file.add_workspace_symbols(...)`. Both sets are persisted in the same file
 transaction as the domain data. Symbol rows reference their owning file by
 interned path id (`owner_id`, see [storage layout](#storage-layout)).
@@ -624,7 +650,14 @@ Two mechanics matter:
 
 - **Bulk population.** `begin_bulk_population` defers FTS maintenance while a
   cold index writes thousands of small transactions; `end_bulk_population`
-  builds the inverted index once from the completed content table.
+  builds the inverted index once from the completed content table. When the
+  catalog is empty it also drops `idx_workspace_symbols_priority`
+  (`priority DESC, name`) and rebuilds it at the end: its keys arrive in
+  random order, and maintaining it per row made symbol inserts the largest
+  single cost inside the write transaction. A populated catalog keeps the
+  index, because rebuilding it would cost a warm start more than a few
+  changed files save. Opening the catalog recreates an index that an
+  interrupted cold run left dropped.
 - **The ready marker.** `index_all` sets ready to `false` before reconciling and
   to `true` only after a fully successful run. Request-time consumers check it
   to refuse destructive previews against a partial or stale index. A warm cache

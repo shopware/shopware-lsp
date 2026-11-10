@@ -310,7 +310,7 @@ pub(crate) fn service_implementation_name(call: &SyntaxNode) -> String {
     // argument nodes around `new`; inspect the complete factory tail.
     let mut text = String::new();
     for argument in &arguments[1..] {
-        text.push_str(&argument.text().to_string());
+        text.push_str(&argument.text_string());
     }
     for pattern in SERVICE_IMPLEMENTATION_PATTERNS.iter() {
         if let Some(captures) = pattern.captures(&text)
@@ -415,7 +415,7 @@ pub(crate) fn parse_admin_store_factory(
 
 pub(crate) fn returned_setup_object(function: &SyntaxNode) -> Option<SyntaxNode> {
     let mut arrow_fallback = None;
-    let text = function.text().to_string();
+    let text = function.text_string();
     let function_start = u32::from(function.text_range().start());
     for object in jsquery::nodes(function, &[jssyntax::JS_OBJECT]) {
         if closest_javascript_function(&object).as_ref() != Some(function) {
@@ -478,7 +478,7 @@ pub(crate) fn parse_setup_store_members(
         if name.is_empty() {
             continue;
         }
-        if property.text().to_string().contains("...") {
+        if property.text_string().contains("...") {
             let Some(object) = bindings
                 .get(&name)
                 .and_then(|binding| binding.object.as_ref())
@@ -548,7 +548,7 @@ pub(crate) fn setup_bindings(
             continue;
         };
         let name = jsquery::identifier_text(&name_node).unwrap_or_default();
-        let text = compact_javascript_text(&declaration.text().to_string());
+        let text = compact_javascript_text(&declaration.text_string());
         let kind = if text.contains("=computed(") || text.contains("=computed<") {
             AdminStoreMemberKind::Getter
         } else if text.contains("=>") || text.contains("=function") {
@@ -573,7 +573,7 @@ pub(crate) fn setup_store_binding_type(
     declaration: &SyntaxNode,
     kind: AdminStoreMemberKind,
 ) -> String {
-    let full = declaration.text().to_string();
+    let full = declaration.text_string();
     let text = full.trim();
     let Some(equals) = text.find('=') else {
         return String::new();

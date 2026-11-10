@@ -150,7 +150,7 @@ fn twig_controller_string_range(node: &SyntaxNode) -> TextRange {
         return inner.syntax().range_trimmed_trivia();
     }
     let range = node.range_trimmed_trivia();
-    let text = node.text().to_string();
+    let text = node.text_string();
     let text = text.trim().as_bytes();
     if text.len() >= 2
         && (text[0] == b'\'' || text[0] == b'"')

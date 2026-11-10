@@ -498,10 +498,10 @@ fn hash_key_name(node: &SyntaxNode) -> (String, TextRange) {
         && let Some(inner) = TwigLiteralString::cast(literal).and_then(|literal| literal.inner())
     {
         let range = inner.syntax().range_trimmed_trivia();
-        return (inner.syntax().text().to_string(), range);
+        return (inner.syntax().text_string(), range);
     }
     (
-        node.text().to_string().trim().to_owned(),
+        node.text_string().trim().to_owned(),
         node.range_trimmed_trivia(),
     )
 }
@@ -539,7 +539,7 @@ fn include_function_propagates_context(call: &SyntaxNode) -> bool {
         return true;
     };
     for (index, child) in arguments.syntax().children().enumerate() {
-        let text = child.text().to_string().replace([' ', '\t'], "");
+        let text = child.text_string().replace([' ', '\t'], "");
         let lower = swlsp_textutil::lowercase(&text);
         if child.kind() == TWIG_NAMED_ARGUMENT
             && (lower.starts_with("with_context=") || lower.starts_with("with_context:"))
@@ -547,7 +547,7 @@ fn include_function_propagates_context(call: &SyntaxNode) -> bool {
             return !lower.ends_with("false");
         }
         if index == 2 {
-            return swlsp_textutil::lowercase(&child.text().to_string()).trim() != "false";
+            return swlsp_textutil::lowercase(&child.text_string()).trim() != "false";
         }
     }
     true

@@ -49,8 +49,31 @@ pub fn project_cache_folder_in(
     let digest = Sha256::digest(filepath::clean(&root).as_bytes());
     let expected = cache_base.join("shopware-lsp").join(format!("{digest:x}"));
     std::fs::create_dir_all(&expected).map_err(CacheDirError::Create)?;
+    disable_copy_on_write(&expected);
     Ok(expected)
 }
+
+/// Marks `directory` no-copy-on-write, which the files created in it
+/// inherit. On a copy-on-write filesystem (btrfs) every page SQLite rewrites
+/// is otherwise copied and checksummed, and compressed where compression is
+/// on. The cache can be rebuilt, so it does not need that protection. Other
+/// filesystems reject the flag, which is fine.
+#[cfg(target_os = "linux")]
+fn disable_copy_on_write(directory: &Path) {
+    use rustix::fs::{IFlags, ioctl_getflags, ioctl_setflags};
+
+    let Ok(handle) = std::fs::File::open(directory) else {
+        return;
+    };
+    if let Ok(flags) = ioctl_getflags(&handle)
+        && !flags.contains(IFlags::NOCOW)
+    {
+        let _ = ioctl_setflags(&handle, flags | IFlags::NOCOW);
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn disable_copy_on_write(_directory: &Path) {}
 
 /// The cache base: `SHOPWARE_LSP_CACHE_DIR`, the platform user cache
 /// directory, or `~/.config` as a last resort.

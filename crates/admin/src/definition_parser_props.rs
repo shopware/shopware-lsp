@@ -51,7 +51,7 @@ pub(crate) fn parse_props(node: &SyntaxNode, line_index: &LineIndex) -> Vec<VueC
         };
 
         if value.kind() == jssyntax::JS_IDENTIFIER {
-            prop.type_ = value.text().to_string().trim().to_owned();
+            prop.type_ = value.text_string().trim().to_owned();
         } else if value.kind() == jssyntax::JS_OBJECT {
             if let Some(type_property) = jsquery::property(&value, "type") {
                 prop.type_ = parse_vue_prop_type(&value, &type_property);
@@ -226,7 +226,7 @@ pub(crate) fn parse_vue_prop_validator_values(
     if parameter.is_empty() {
         return (Vec::new(), false);
     }
-    let mut callable_source = callable.text().to_string();
+    let mut callable_source = callable.text_string();
     let arrow_function = callable.kind() == jssyntax::JS_ARROW_FUNCTION;
     let mut accepts_empty_string = false;
     if vue_prop_value_type(prop_type) == "string" {
@@ -527,7 +527,7 @@ pub(crate) fn vue_validator_block_return(body: &str) -> Option<String> {
 /// Preserves both Vue's runtime constructor and its optional TypeScript
 /// assertion (`Object as PropType<Foo>`) by scanning to the top-level comma.
 pub(crate) fn parse_vue_prop_type(config: &SyntaxNode, type_property: &SyntaxNode) -> String {
-    let source = config.text().to_string();
+    let source = config.text_string();
     let bytes = source.as_bytes();
     let config_start = u32::from(config.text_range().start());
     let type_start = u32::from(type_property.range_trimmed_trivia().start());

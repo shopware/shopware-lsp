@@ -36,7 +36,7 @@ type ScanEntry = (AdminTwigReference, bool, bool);
 fn admin_twig_scans(root: &SyntaxNode) -> Arc<Vec<ScanEntry>> {
     static MEMO: DocumentMemo<Vec<ScanEntry>> = DocumentMemo::new(4);
     MEMO.get_or_compute(root, "", || {
-        let source = root.text().to_string();
+        let source = root.text_string();
         let mut result = Vec::new();
         let mut offset = 0;
         while offset < source.len() {
@@ -239,7 +239,7 @@ mod tests {
     /// The unmemoized implementation, kept as the reference the memoized one
     /// is tested against.
     fn fresh_reference_at_offset(root: &SyntaxNode, offset: u32) -> Option<AdminTwigReference> {
-        let source = root.text().to_string();
+        let source = root.text_string();
         let mut cursor = 0;
         while cursor < source.len() {
             let Some(scan) = scan_admin_twig_reference(&source, cursor) else {

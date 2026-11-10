@@ -8,6 +8,7 @@
 //! same value.
 
 use std::collections::HashMap;
+use swlsp_syntax::SyntaxNodeExt as _;
 
 use swlsp_parser_xml::query as xmlquery;
 use swlsp_parser_xml::syntax::*;
@@ -253,7 +254,7 @@ fn decode_element(
         let end_name = end
             .children()
             .find(|child| child.kind() == XML_NAME)
-            .map(|name| name.text().to_string().trim().to_owned())
+            .map(|name| name.text_string().trim().to_owned())
             .unwrap_or_default();
         if end_name != name {
             return Err(error(format!("element <{name}> closed by </{end_name}>")));
@@ -302,12 +303,12 @@ fn decode_element(
                 XML_ELEMENT => element.children.push(decode_element(&child, &scope)?),
                 XML_TEXT => element
                     .chardata
-                    .push_str(&normalize_newlines(&child.text().to_string())),
+                    .push_str(&normalize_newlines(&child.text_string())),
                 XML_ENTITY_REFERENCE => element
                     .chardata
-                    .push_str(&decode_text(&child.text().to_string())?),
+                    .push_str(&decode_text(&child.text_string())?),
                 XML_CDATA => {
-                    let text = child.text().to_string();
+                    let text = child.text_string();
                     let text = text.strip_prefix("<![CDATA[").unwrap_or(&text);
                     let text = text.strip_suffix("]]>").unwrap_or(text);
                     element.chardata.push_str(&normalize_newlines(text));

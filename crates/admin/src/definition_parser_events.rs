@@ -307,5 +307,5 @@ pub(crate) fn parse_method_names(node: Option<&SyntaxNode>) -> Vec<String> {
 }
 
 pub(crate) fn node_text(node: Option<&SyntaxNode>) -> String {
-    node.map(|node| node.text().to_string()).unwrap_or_default()
+    node.map(|node| node.text_string()).unwrap_or_default()
 }

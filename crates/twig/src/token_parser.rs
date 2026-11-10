@@ -269,7 +269,7 @@ fn php_string_value_range(node: &SyntaxNode, value: &str) -> TextRange {
         return TextRange::default();
     }
     let trimmed = node.range_trimmed_trivia();
-    let text = node.text().to_string();
+    let text = node.text_string();
     let node_start = u32::from(node.text_range().start());
     let start = (u32::from(trimmed.start()) - node_start) as usize;
     let end = (u32::from(trimmed.end()) - node_start) as usize;
@@ -289,7 +289,7 @@ fn leading_php_doc(node: &SyntaxNode) -> Option<(String, TextRange)> {
     if trimmed.start() <= full.start() {
         return None;
     }
-    let text = node.text().to_string();
+    let text = node.text_string();
     let prefix_length = (u32::from(trimmed.start() - full.start()) as usize).min(text.len());
     let prefix = text.get(..prefix_length)?;
     let start = prefix.rfind("/**")?;

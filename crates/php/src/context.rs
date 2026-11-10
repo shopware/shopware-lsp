@@ -1,6 +1,7 @@
 //! Request-scoped PHP analysis state.
 
 use std::sync::{Arc, Mutex};
+use swlsp_syntax::SyntaxNodeExt as _;
 
 use swlsp_indexer::ParsedFile;
 use swlsp_parser_php::query;
@@ -23,7 +24,7 @@ impl NameResolver {
     pub fn new(root: &SyntaxNode) -> Self {
         let mut context = NameContext::new(&query::namespace(root));
         query::visit(root, &[PHP_USE_DECLARATION], |declaration| {
-            context.add_use_declaration(&declaration.text().to_string());
+            context.add_use_declaration(&declaration.text_string());
             true
         });
         NameResolver { context }

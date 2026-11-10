@@ -20,7 +20,7 @@ pub(crate) fn xml_value_range(node: Option<&SyntaxNode>) -> TextRange {
         return TextRange::default();
     };
     let full = node.range_trimmed_trivia();
-    let raw = node.text().to_string();
+    let raw = node.text_string();
     let text = raw.trim();
     let Some(equals) = text.find('=') else {
         return full;
@@ -47,7 +47,7 @@ pub(crate) fn yaml_scalar_range(node: Option<&SyntaxNode>) -> TextRange {
         return TextRange::default();
     };
     let full = node.range_trimmed_trivia();
-    let raw = node.text().to_string();
+    let raw = node.text_string();
     let text = raw.trim().as_bytes();
     let mut start = u32::from(full.start());
     let mut end = u32::from(full.end());

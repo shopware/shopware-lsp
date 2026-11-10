@@ -133,7 +133,7 @@ pub fn parse_component_object(
 }
 
 fn node_text_contains(node: Option<&SyntaxNode>, needle: &str) -> bool {
-    node.is_some_and(|node| node.text().to_string().contains(needle))
+    node.is_some_and(|node| node.text_string().contains(needle))
 }
 
 pub(crate) fn parse_definition_object(
@@ -144,7 +144,7 @@ pub(crate) fn parse_definition_object(
     for property in jsquery::properties(object) {
         let name = jsquery::property_name(&property).unwrap_or_default();
         let value = jsquery::property_value(&property);
-        let property_text = property.text().to_string();
+        let property_text = property.text_string();
         if name.is_empty() && property_text.trim().starts_with("...") {
             definition.open_runtime_members = true;
         }

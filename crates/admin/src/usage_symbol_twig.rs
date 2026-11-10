@@ -131,7 +131,7 @@ fn twig_object_binding_symbol_at_offset(
 ) -> Option<AdminSymbolTarget> {
     let inner = attribute.value()?.inner()?;
     let (fields, _) = vue_object_binding_fields(
-        &inner.syntax().text().to_string(),
+        &inner.syntax().text_string(),
         u32::from(inner.syntax().text_range().start()),
     );
     fields
@@ -187,7 +187,7 @@ fn twig_slot_declaration_at_offset(
         if !range_contains(inner.syntax().text_range(), offset) {
             continue;
         }
-        let text = inner.syntax().text().to_string();
+        let text = inner.syntax().text_string();
         let name = text.trim();
         if !name.is_empty() {
             return Some(target(AdminSymbolKind::ComponentSlot, "", name));

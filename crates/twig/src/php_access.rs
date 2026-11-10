@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use swlsp_syntax::SyntaxNodeExt as _;
 
 use swlsp_parser_twig::query as twigquery;
 use swlsp_parser_twig::syntax::*;
@@ -76,7 +77,7 @@ fn direct_loop_accessor(accessor: &SyntaxNode) -> bool {
         return false;
     };
     first_twig_child(first).is_some_and(|root| {
-        root.kind() == TWIG_LITERAL_NAME && eq_ignore_case(root.text().to_string().trim(), "loop")
+        root.kind() == TWIG_LITERAL_NAME && eq_ignore_case(root.text_string().trim(), "loop")
     })
 }
 
@@ -180,7 +181,7 @@ impl<'a> PhpAccessResolver<'a> {
         accessor: &SyntaxNode,
     ) -> Option<PhpMemberResolution> {
         let name_node = accessor_member_name_node(accessor)?;
-        let name = name_node.text().to_string().trim().to_owned();
+        let name = name_node.text_string().trim().to_owned();
         let receiver = self.accessor_receiver_type(template_path, root, accessor);
         if receiver.is_unknown() {
             return None;
@@ -229,7 +230,7 @@ impl<'a> PhpAccessResolver<'a> {
                 self.expression_type(template_path, root, first_twig_child(node).as_ref())
             }
             TWIG_LITERAL_NAME => {
-                let name = node.text().to_string().trim().to_owned();
+                let name = node.text_string().trim().to_owned();
                 if let Some(local) = self.loop_variable_type(template_path, root, node, &name) {
                     return local;
                 }
@@ -240,11 +241,7 @@ impl<'a> PhpAccessResolver<'a> {
                     return Type::unknown();
                 };
                 let receiver = self.accessor_receiver_type(template_path, root, node);
-                resolve_php_member_type(
-                    &self.snapshot,
-                    &receiver,
-                    name_node.text().to_string().trim(),
-                )
+                resolve_php_member_type(&self.snapshot, &receiver, name_node.text_string().trim())
             }
             TWIG_FUNCTION_CALL => {
                 let operands = direct_twig_children(node, TWIG_OPERAND);
@@ -255,7 +252,7 @@ impl<'a> PhpAccessResolver<'a> {
                 if let Some(name_expression) = &name_expression
                     && name_expression.kind() == TWIG_LITERAL_NAME
                 {
-                    return self.twig_function_type(name_expression.text().to_string().trim());
+                    return self.twig_function_type(name_expression.text_string().trim());
                 }
                 self.expression_type(template_path, root, name_expression.as_ref())
             }
@@ -704,7 +701,7 @@ pub struct TwigTypeDeclaration {
 pub fn twig_type_declarations(root: &SyntaxNode) -> HashMap<String, TwigTypeDeclaration> {
     let mut result = HashMap::new();
     for comment in twigquery::iterate_nodes(root, &[TWIG_COMMENT]) {
-        let text = comment.text().to_string();
+        let text = comment.text_string();
         let mut source = text.as_str();
         while let Some(index) = source.find("@var") {
             source = &source[index + "@var".len()..];
@@ -743,7 +740,7 @@ pub fn twig_type_declarations(root: &SyntaxNode) -> HashMap<String, TwigTypeDecl
             }
         }
     }
-    for declaration in types_tag_declarations(root.text().to_string().as_bytes()) {
+    for declaration in types_tag_declarations(root.text_string().as_bytes()) {
         if declaration.name.is_empty() || declaration.ty.is_empty() {
             continue;
         }

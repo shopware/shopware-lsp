@@ -172,7 +172,7 @@ pub(crate) fn visible_javascript_shopware_utils_binding(
         }
         let binding = match analysis {
             Some(analysis) => analysis.variable_binding(&declaration, identifier).cloned(),
-            None => javascript_variable_binding_named(&declaration.text().to_string(), identifier),
+            None => javascript_variable_binding_named(&declaration.text_string(), identifier),
         };
         let Some(binding) = binding else {
             continue;
@@ -326,7 +326,7 @@ pub(crate) fn javascript_function_binds_parameter(function: &SyntaxNode, identif
     if !is_static_vue_identifier(identifier) {
         return false;
     }
-    let full = function.text().to_string();
+    let full = function.text_string();
     let text = full.trim();
     let parameters: String;
     if function.kind() == jssyntax::JS_ARROW_FUNCTION {

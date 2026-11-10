@@ -1,6 +1,7 @@
 use swlsp_parser_js::query;
 use swlsp_parser_js::syntax::{JS_OBJECT, JS_PROPERTY, JS_STRING};
 use swlsp_syntax::SyntaxNode;
+use swlsp_syntax::SyntaxNodeExt as _;
 
 /// Whether `node` belongs to a static Administration snippet reference.
 /// Besides translation calls, Shopware module manifests store snippet keys
@@ -109,7 +110,7 @@ fn is_admin_module_snippet_property(string: &SyntaxNode) -> bool {
 
 /// Template literals with an unescaped `${` are dynamic.
 fn is_static_admin_javascript_string(node: &SyntaxNode) -> bool {
-    let text = node.text().to_string();
+    let text = node.text_string();
     let text = text.trim().as_bytes();
     if text.len() < 2 || text[0] != b'`' {
         return true;

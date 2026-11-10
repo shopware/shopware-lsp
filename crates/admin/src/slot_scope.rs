@@ -425,7 +425,7 @@ fn scoped_slots_for_tags(tags: impl IntoIterator<Item = SyntaxNode>) -> Vec<Twig
             };
             let inner = inner.syntax();
             let binding_range = inner.range_trimmed_trivia();
-            let raw_bindings = inner.text().to_string();
+            let raw_bindings = inner.text_string();
             let mut scope = TwigScopedSlot {
                 component_name: component_name.clone(),
                 slot_name,

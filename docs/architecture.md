@@ -107,7 +107,7 @@ change, not a bug fix.
 ```
 
 `crates/cli/src/main.rs` is short: it installs an interrupt handler that
-cancels the run, selects mimalloc as the allocator on musl builds, and hands
+cancels the run, selects mimalloc as the allocator on Linux builds, and hands
 the arguments to `swlsp_cli::Runner`.
 
 The cache directory is derived from the workspace root
@@ -574,8 +574,8 @@ files. The costs that matter, and where they are controlled:
 
 | Cost | Controlled by |
 | --- | --- |
-| Cold index wall time | Scanner worker fan-out, `PreparingIndexer` moving work out of the write transaction, cheap path/content rejection before parsing |
-| Cold index peak RSS | Per-file memoized analysis released right after preparation, mimalloc on musl builds, interned PHP graph identifiers |
+| Cold index wall time | Scanner worker fan-out feeding one writer thread, `PreparingIndexer` moving work out of the write transaction, mimalloc on Linux, cheap path/content rejection before parsing |
+| Cold index peak RSS | Per-file memoized analysis released right after preparation, a two-batch writer queue, interned PHP graph identifiers |
 | Warm start time | Persisted compact index values, `visit_all_values` streaming instead of materializing catalogs, FTS symbol catalog read directly |
 | Disk size | MessagePack-encoded values, per-path rows, index-version invalidation instead of migrations |
 | Request latency | Indexes answer lookups; documents are parsed once per snapshot; `TextDocument::memoized_analysis` shares derived analysis across features |

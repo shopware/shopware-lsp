@@ -114,7 +114,7 @@ fn is_type_node(kind: Kind) -> bool {
 
 /// Full source text of `node`.
 pub fn node_text(node: &SyntaxNode) -> String {
-    node.text().to_string()
+    node.text_string()
 }
 
 /// Source text of `node` without leading trivia.

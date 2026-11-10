@@ -59,7 +59,7 @@ fn lower_extension(path: &str) -> String {
 }
 
 fn text(node: &SyntaxNode) -> String {
-    node.text().to_string()
+    node.text_string()
 }
 
 fn empty_at(offset: TextSize) -> TextRange {

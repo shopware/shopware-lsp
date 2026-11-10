@@ -54,11 +54,12 @@ an artifact named `server-<triple>`:
 - Linux ships two builds. The default (`linux_*`, the `linux-*` VSIX
   packages and Homebrew) is a dynamically linked glibc build, compiled by
   cargo-zigbuild against glibc 2.17 so it runs on every mainstream
-  distribution; it uses the system resolver and allocator. CI fails the
+  distribution; it uses the system resolver. CI fails the
   build if a binary needs a newer glibc symbol. The `*_musl` archives and
-  the `alpine-*` VSIX packages carry a fully static musl build that uses
-  mimalloc instead of musl's slow multi-threaded malloc
-  (`crates/cli/src/main.rs`).
+  the `alpine-*` VSIX packages carry a fully static musl build. Every
+  Linux build uses mimalloc (`crates/cli/src/main.rs`): the indexer frees on
+  other threads than it allocates on, where musl's malloc serializes on one
+  lock and glibc's contends.
 - the tag is embedded at compile time through `SHOPWARE_LSP_VERSION`
   (`option_env!`, `dev` for local builds)
 - release binaries keep symbol names but drop DWARF line tables

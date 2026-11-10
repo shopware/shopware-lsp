@@ -120,7 +120,8 @@ pub trait BatchIndexer: Send + Sync {
 }
 
 /// Publishes declarations from the same prepared value an indexer already
-/// computed for persistence.
+/// computed for persistence. The scanner calls it on the preparation worker,
+/// before `index_prepared`, so it must only read the file and that value.
 pub trait WorkspaceSymbolContributor: Send + Sync {
     fn workspace_symbols(
         &self,

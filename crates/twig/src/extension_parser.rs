@@ -460,7 +460,7 @@ fn twig_attribute_callable_deprecation(
 }
 
 fn raw_lower(node: &SyntaxNode) -> String {
-    swlsp_textutil::lowercase(node.text().to_string().trim())
+    swlsp_textutil::lowercase(node.text_string().trim())
 }
 
 fn twig_attribute_argument_expression(argument: &SyntaxNode) -> Option<SyntaxNode> {
@@ -676,7 +676,7 @@ fn callback_name(expression: Option<&SyntaxNode>) -> String {
             if items.len() < 2 {
                 return String::new();
             }
-            let receiver = compact_callback_receiver(&items[0].text().to_string());
+            let receiver = compact_callback_receiver(&items[0].text_string());
             let method = phpquery::nodes(&items[1], &[PHP_STRING])
                 .first()
                 .map(phpquery::string_value)

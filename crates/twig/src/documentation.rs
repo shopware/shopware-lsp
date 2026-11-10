@@ -2,6 +2,7 @@
 
 use swlsp_parser_twig::syntax::{BODY, TWIG_COMMENT};
 use swlsp_syntax::SyntaxNode;
+use swlsp_syntax::SyntaxNodeExt as _;
 use swlsp_syntax::rowan::NodeOrToken;
 
 /// The normalized contents of a Twig 3.29 documentation comment. Accepts
@@ -48,7 +49,7 @@ pub fn documentation_before(node: &SyntaxNode) -> String {
         if comment.kind() != TWIG_COMMENT {
             break;
         }
-        if let Some(value) = documentation_comment_text(&comment.text().to_string())
+        if let Some(value) = documentation_comment_text(&comment.text_string())
             && !value.is_empty()
         {
             documentation.push(value);

@@ -147,7 +147,7 @@ pub(crate) fn enrich_definition_collection_element_members(
         }
         for statement in jsquery::nodes(&callback, &[jssyntax::JS_EXPRESSION_STATEMENT]) {
             let Some((name, expression)) =
-                direct_named_member_assignment(&statement.text().to_string(), &parameter)
+                direct_named_member_assignment(&statement.text_string(), &parameter)
             else {
                 continue;
             };
@@ -244,7 +244,7 @@ pub(crate) fn parse_component_assignments(
     let mut result = Vec::new();
     for statement in jsquery::nodes(object, &[jssyntax::JS_EXPRESSION_STATEMENT]) {
         let Some((target, mut expression)) =
-            direct_vue_instance_assignment(&statement.text().to_string())
+            direct_vue_instance_assignment(&statement.text_string())
         else {
             continue;
         };
@@ -280,7 +280,7 @@ pub(crate) fn component_const_initializers(object: &SyntaxNode) -> Vec<Component
     let mut result = Vec::new();
     for declaration in jsquery::nodes(object, &[jssyntax::JS_VARIABLE_DECLARATION]) {
         let Some((name, expression)) =
-            direct_component_const_initializer(&declaration.text().to_string())
+            direct_component_const_initializer(&declaration.text_string())
         else {
             continue;
         };
@@ -486,7 +486,7 @@ pub(crate) fn callback_first_parameter(function: Option<&SyntaxNode>) -> String 
     let Some(function) = function else {
         return String::new();
     };
-    let full_text = function.text().to_string();
+    let full_text = function.text_string();
     let text = full_text.trim();
     let parameters: String = if function.kind() == jssyntax::JS_ARROW_FUNCTION {
         let Some(arrow) = text.find("=>") else {
@@ -544,7 +544,7 @@ pub(crate) fn static_callback_call_receiver(call: &SyntaxNode, method: &str) -> 
     if callee.kind() != jssyntax::JS_MEMBER_EXPRESSION {
         return None;
     }
-    let full_text = callee.text().to_string();
+    let full_text = callee.text_string();
     let text = full_text.trim();
     let bytes = text.as_bytes();
     let mut end = bytes.len();

@@ -150,7 +150,7 @@ pub(crate) fn collect_slot_declaration(
         let Some(inner) = attribute.value().and_then(|value| value.inner()) else {
             return;
         };
-        let text = inner.syntax().text().to_string();
+        let text = inner.syntax().text_string();
         let name = text.trim();
         if name.is_empty() || name.contains(['{', '}', '%']) {
             return;

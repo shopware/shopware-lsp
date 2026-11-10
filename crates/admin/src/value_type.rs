@@ -134,7 +134,7 @@ pub(crate) fn set_definition_member_cms_registry(
     name: &str,
     method: &SyntaxNode,
 ) {
-    let Some(registry_kind) = cms_registry_kind_from_expression(&method.text().to_string()) else {
+    let Some(registry_kind) = cms_registry_kind_from_expression(&method.text_string()) else {
         return;
     };
     if let Some(member) = definition
@@ -166,7 +166,7 @@ pub(crate) fn vue_method_return_object_member_types(
     method: &SyntaxNode,
 ) -> HashMap<String, String> {
     let mut result = HashMap::new();
-    let Some((_, return_type)) = vue_method_header(&method.text().to_string()) else {
+    let Some((_, return_type)) = vue_method_header(&method.text_string()) else {
         return result;
     };
     if return_type.is_empty() {
@@ -202,7 +202,7 @@ pub(crate) fn set_definition_member_inference(
 }
 
 pub(crate) fn vue_property_has_inferred_object_shape(property: &SyntaxNode) -> bool {
-    let text = property.text().to_string();
+    let text = property.text_string();
     if VUE_JSDOC_TYPE_PATTERN.is_match(&text) || !vue_type_assertion(&text).is_empty() {
         return false;
     }
@@ -210,7 +210,7 @@ pub(crate) fn vue_property_has_inferred_object_shape(property: &SyntaxNode) -> b
 }
 
 pub(crate) fn vue_method_has_inferred_object_shape(method: &SyntaxNode) -> bool {
-    let text = method.text().to_string();
+    let text = method.text_string();
     if VUE_JSDOC_RETURN_PATTERN.is_match(&text) {
         return false;
     }
@@ -244,7 +244,7 @@ pub(crate) fn vue_runtime_object_literal_expression(value: &str) -> bool {
 
 pub(crate) fn vue_property_source_expression(property: &SyntaxNode) -> String {
     jsquery::property_value(property)
-        .map(|value| trim_vue_source_expression(&value.text().to_string()))
+        .map(|value| trim_vue_source_expression(&value.text_string()))
         .unwrap_or_default()
 }
 
@@ -253,7 +253,7 @@ pub(crate) fn vue_property_value_type<'k>(
     known: impl Into<Option<&'k HashMap<String, String>>>,
 ) -> String {
     let known: Option<&HashMap<String, String>> = known.into();
-    let text = property.text().to_string();
+    let text = property.text_string();
     if let Some(captures) = VUE_JSDOC_TYPE_PATTERN.captures(&text) {
         return captures[1].trim().to_owned();
     }
@@ -311,7 +311,7 @@ pub(crate) fn vue_expression_type<'k>(
             format!("{{ {} }}", fields.join("; "))
         }
         JS_MEMBER_EXPRESSION | JS_IDENTIFIER => {
-            let value = compact_vue_expression(&node.text().to_string());
+            let value = compact_vue_expression(&node.text_string());
             if let Some(name) = value.strip_prefix("this.")
                 && !name.contains(['.', '[', '(', ')', '?'])
             {
@@ -357,7 +357,7 @@ pub(crate) fn vue_method_return_type<'k>(
 ) -> String {
     let known: Option<&HashMap<String, String>> = known.into();
     let method = vue_method_implementation(method);
-    let text = method.text().to_string();
+    let text = method.text_string();
     if let Some(captures) = VUE_JSDOC_RETURN_PATTERN.captures(&text) {
         return captures[1].trim().to_owned();
     }
@@ -384,7 +384,7 @@ pub(crate) fn vue_method_return_type<'k>(
 
 pub(crate) fn vue_method_declared_return_type(method: &SyntaxNode) -> String {
     let method = vue_method_implementation(method);
-    match vue_method_header(&method.text().to_string()) {
+    match vue_method_header(&method.text_string()) {
         Some((_, return_type)) => return_type.trim().to_owned(),
         None => String::new(),
     }
@@ -445,7 +445,7 @@ pub(crate) fn vue_method_return_expressions(method: &SyntaxNode) -> Vec<String> 
     if method.kind() != JS_ARROW_FUNCTION {
         return Vec::new();
     }
-    let text = method.text().to_string();
+    let text = method.text_string();
     let Some(arrow) = text.find("=>") else {
         return Vec::new();
     };
@@ -460,7 +460,7 @@ pub(crate) fn vue_loose_return_expressions(node: &SyntaxNode) -> Vec<String> {
     let node_range = node.text_range();
     let range_start = u32::from(node_range.start());
     let range_end = u32::from(node_range.end());
-    let text = node.text().to_string();
+    let text = node.text_string();
     let mut result = Vec::new();
     let mut pending: Vec<u32> = Vec::new();
     visit_vue_syntax_tokens(node, &mut |token: &SyntaxToken| {
@@ -703,7 +703,7 @@ pub(crate) fn vue_return_statement_expression(statement: &SyntaxNode) -> String 
             return String::new();
         }
         let relative = usize::from(start - statement_range.start());
-        let text = statement.text().to_string();
+        let text = statement.text_string();
         return match text.get(relative..) {
             Some(rest) => trim_vue_source_expression(rest),
             None => String::new(),
@@ -743,7 +743,7 @@ pub(crate) fn vue_method_signature<'k>(
     known: impl Into<Option<&'k HashMap<String, String>>>,
 ) -> String {
     let known: Option<&HashMap<String, String>> = known.into();
-    let Some((parameters, mut return_type)) = vue_method_header(&method.text().to_string()) else {
+    let Some((parameters, mut return_type)) = vue_method_header(&method.text_string()) else {
         return String::new();
     };
     if return_type.is_empty() {

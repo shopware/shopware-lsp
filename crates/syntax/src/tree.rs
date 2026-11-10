@@ -117,6 +117,10 @@ pub trait SyntaxNodeExt {
     fn descendant_for_range(&self, range: TextRange) -> Option<SyntaxElement>;
     /// Smallest node containing `offset`.
     fn node_at(&self, offset: TextSize) -> Option<SyntaxNode>;
+    /// The node's source text as an owned string. Reads the green tree
+    /// directly, which is several times faster than `text().to_string()`:
+    /// that walks red nodes and allocates one per visited element.
+    fn text_string(&self) -> String;
 }
 
 impl SyntaxNodeExt for SyntaxNode {
@@ -214,6 +218,23 @@ impl SyntaxNodeExt for SyntaxNode {
             }
             return Some(result);
         }
+    }
+
+    fn text_string(&self) -> String {
+        let green = self.green();
+        let mut text = String::with_capacity(u32::from(green.text_len()) as usize);
+        // An explicit stack: expression chains nest thousands of levels deep.
+        let mut pending = vec![green.children()];
+        while let Some(children) = pending.last_mut() {
+            match children.next() {
+                Some(NodeOrToken::Node(node)) => pending.push(node.children()),
+                Some(NodeOrToken::Token(token)) => text.push_str(token.text()),
+                None => {
+                    pending.pop();
+                }
+            }
+        }
+        text
     }
 
     fn node_at(&self, offset: TextSize) -> Option<SyntaxNode> {

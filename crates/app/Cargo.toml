@@ -91,6 +91,10 @@ swlsp-parser-scss = { path = "../parser-scss" }
 swlsp-parser-xml = { path = "../parser-xml" }
 swlsp-parser-yaml = { path = "../parser-yaml" }
 
+# Marks new workspace cache directories no-copy-on-write (`cache.rs`).
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { version = "1", default-features = false, features = ["std", "fs"] }
+
 [dev-dependencies]
 tempfile = "3"
 serde = { version = "1", features = ["derive"] }

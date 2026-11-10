@@ -46,7 +46,7 @@ pub fn twig_dynamic_component_selector(
             });
         };
         let range_value = inner.syntax().range_trimmed_trivia();
-        let expression = inner.syntax().text().to_string().trim().to_owned();
+        let expression = inner.syntax().text_string().trim().to_owned();
         let mut selector = VueDynamicComponentSelector {
             attribute_name: attribute_name.clone(),
             expression: expression.clone(),

@@ -424,7 +424,7 @@ pub(crate) fn static_html_attribute_value_range(
     attribute: &twigast::HtmlAttribute,
 ) -> Option<(String, TextRange)> {
     let inner = attribute.value()?.inner()?;
-    let raw = inner.syntax().text().to_string();
+    let raw = inner.syntax().text_string();
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return None;

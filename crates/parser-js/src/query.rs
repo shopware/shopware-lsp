@@ -5,6 +5,7 @@
 //! callers can pass the node under the editor cursor directly.
 
 use std::collections::HashMap;
+use swlsp_syntax::SyntaxNodeExt as _;
 
 use swlsp_syntax::{Kind, SyntaxNode, rowan::NodeOrToken};
 
@@ -411,7 +412,7 @@ fn contains(parent: &SyntaxNode, child: &SyntaxNode) -> bool {
 }
 
 fn trimmed_text(node: &SyntaxNode) -> String {
-    node.text().to_string().trim().to_owned()
+    node.text_string().trim().to_owned()
 }
 
 fn has_identifier(node: &SyntaxNode, name: &str) -> bool {
@@ -426,7 +427,7 @@ fn has_identifier(node: &SyntaxNode, name: &str) -> bool {
 /// Node text without outer whitespace and, when it may contain trivia,
 /// without any trivia tokens.
 fn compact_node_expression(node: &SyntaxNode) -> String {
-    let text = node.text().to_string();
+    let text = node.text_string();
     let trimmed = text.trim();
     if !may_contain_trivia(trimmed) {
         return trimmed.to_owned();

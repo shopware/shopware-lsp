@@ -408,8 +408,12 @@ pub fn should_skip_relative_path(relative_path: &str) -> bool {
     false
 }
 
+/// Preparation workers of an indexing run: three quarters of the cores, so
+/// the writer thread and the editor keep one, and at most eight. The single
+/// writer cannot keep up with more, which would only hold more prepared
+/// batches in memory.
 pub(crate) fn default_index_worker_count(cpu_count: usize) -> usize {
-    cpu_count.clamp(1, 4)
+    (cpu_count * 3 / 4).clamp(1, 8)
 }
 
 pub(crate) fn available_cpus() -> usize {

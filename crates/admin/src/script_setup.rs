@@ -349,7 +349,7 @@ pub(crate) fn script_setup_reactive_prop_bindings(
     let mut result: Vec<ScriptSetupPropBinding> = Vec::new();
     let mut positions: HashMap<String, usize> = HashMap::new();
     for declaration in jsquery::nodes(program, &[jssyntax::JS_VARIABLE_DECLARATION]) {
-        let declaration_text = compact_javascript_text(&declaration.text().to_string());
+        let declaration_text = compact_javascript_text(&declaration.text_string());
         if closest_javascript_function(&declaration).is_some()
             || (!declaration_text.contains("defineProps(")
                 && !declaration_text.contains("defineProps<"))
@@ -359,7 +359,7 @@ pub(crate) fn script_setup_reactive_prop_bindings(
         let Some(pattern) = script_setup_destructuring_object(&declaration) else {
             continue;
         };
-        let text = pattern.text().to_string();
+        let text = pattern.text_string();
         let leading = leading_space_len(&text);
         if text.len() - leading < 2 || text.as_bytes()[leading] != b'{' {
             continue;
@@ -807,7 +807,7 @@ pub(crate) fn script_setup_bindings(
                 .trim()
                 .to_owned();
             if name.is_empty()
-                || compact_javascript_text(&property.text().to_string()).starts_with("...")
+                || compact_javascript_text(&property.text_string()).starts_with("...")
             {
                 continue;
             }
@@ -858,7 +858,7 @@ pub(crate) fn script_setup_bindings(
 }
 
 pub(crate) fn script_setup_destructuring_object(declaration: &SyntaxNode) -> Option<SyntaxNode> {
-    let text = declaration.text().to_string();
+    let text = declaration.text_string();
     let equals = index_slot_top_level(&text, b'=')?;
     let cutoff = u32::from(declaration.text_range().start()) + equals as u32;
     let mut result: Option<SyntaxNode> = None;
@@ -890,7 +890,7 @@ pub(crate) fn script_setup_imports(
     let mut components = Vec::new();
     for statement in jsquery::nodes(program, &[jssyntax::JS_IMPORT_STATEMENT]) {
         let path = jsquery::import_path(&statement, "").unwrap_or_default();
-        let statement_text = statement.text().to_string();
+        let statement_text = statement.text_string();
         let statement_start = u32::from(statement.text_range().start());
         for binding in script_setup_import_bindings(&statement_text) {
             if binding.is_empty() {

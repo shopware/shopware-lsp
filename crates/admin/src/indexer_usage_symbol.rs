@@ -79,7 +79,7 @@ impl AdminComponentIndexer {
         node: &SyntaxNode,
     ) -> IndexResult<Option<AdminSymbolTarget>> {
         let root = node.ancestors().last().unwrap_or_else(|| node.clone());
-        let line_index = LineIndex::new(root.text().to_string());
+        let line_index = LineIndex::new(root.text_string());
         let range = node.range_trimmed_trivia();
         if let Some(event) =
             self.shopware_event_bus_event_at_definition_range(file_path, range, &line_index)?

@@ -187,7 +187,7 @@ pub(crate) fn parse_raw_vue_application_component_collections(
     file_path: &str,
     line_index: &LineIndex,
 ) -> Vec<VueComponent> {
-    let source = root.text().to_string();
+    let source = root.text_string();
     let collections = raw_vue_application_component_collections(&source);
     let mut result = Vec::new();
     // The caller sorts the combined result.
@@ -416,7 +416,7 @@ pub(crate) fn is_vue_application_component_collection(
         let Some(callback) = jsquery::argument_expression(&call, 0) else {
             continue;
         };
-        let text = compact_javascript_text(&callback.text().to_string());
+        let text = compact_javascript_text(&callback.text_string());
         if !text.contains("kebabCase(") {
             continue;
         }
@@ -705,7 +705,7 @@ pub(crate) fn admin_javascript_function_name(function: Option<&SyntaxNode>) -> S
     function
         .children()
         .find(|child| child.kind() == jssyntax::JS_IDENTIFIER)
-        .map(|child| child.text().to_string().trim().to_owned())
+        .map(|child| child.text_string().trim().to_owned())
         .unwrap_or_default()
 }
 

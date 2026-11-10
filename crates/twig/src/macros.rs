@@ -137,7 +137,7 @@ pub fn macros_in_document(path: &str, root: &SyntaxNode) -> Vec<Macro> {
                 match child.kind() {
                     TWIG_COMMENT => {
                         if let Some(documentation) =
-                            documentation_comment_text(&child.text().to_string())
+                            documentation_comment_text(&child.text_string())
                             && !documentation.is_empty()
                         {
                             parameter_documentation.push(documentation);
@@ -367,7 +367,7 @@ pub(crate) fn literal_name(node: &SyntaxNode) -> (String, TextRange) {
         return (token.text().to_owned(), token.text_range());
     }
     (
-        node.text().to_string().trim().to_owned(),
+        node.text_string().trim().to_owned(),
         node.range_trimmed_trivia(),
     )
 }
@@ -393,7 +393,7 @@ fn macro_parameter(node: &SyntaxNode) -> Option<MacroParameter> {
         ..MacroParameter::default()
     };
     if node.kind() == TWIG_NAMED_ARGUMENT {
-        let text = node.text().to_string();
+        let text = node.text_string();
         if let Some(equal) = text.find('=') {
             parameter.default = text[equal + 1..].trim().to_owned();
         }

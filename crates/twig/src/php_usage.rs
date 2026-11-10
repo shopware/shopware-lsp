@@ -166,7 +166,7 @@ pub fn php_usage_references_in_document(
             let Some(mut target) = php_usage_target_for_symbol(&snapshot, &member.symbol) else {
                 continue;
             };
-            target.access = resolution.name_node.text().to_string().trim().to_owned();
+            target.access = resolution.name_node.text_string().trim().to_owned();
             target.file_path = template_path.to_owned();
             target.range = resolution.name_node.range_trimmed_trivia();
             result.push(target);
@@ -188,7 +188,7 @@ pub fn php_usage_references_in_document(
 fn twig_var_class_references(template_path: &str, root: &SyntaxNode) -> Vec<PhpUsageReference> {
     let mut result = Vec::new();
     for comment in twigquery::iterate_nodes(root, &[TWIG_COMMENT]) {
-        let source = comment.text().to_string();
+        let source = comment.text_string();
         let comment_start = u32::from(comment.text_range().start()) as usize;
         for captures in TWIG_VAR_ANNOTATION.captures_iter(&source) {
             let (Some(first), Some(second)) = (captures.get(1), captures.get(2)) else {
@@ -222,7 +222,7 @@ fn twig_var_class_references(template_path: &str, root: &SyntaxNode) -> Vec<PhpU
             }
         }
     }
-    for reference in types_tag_class_references(root.text().to_string().as_bytes()) {
+    for reference in types_tag_class_references(root.text_string().as_bytes()) {
         result.push(PhpUsageReference {
             class: reference.name,
             access: reference.raw,
@@ -487,7 +487,7 @@ fn unescape_twig_constant(value: &str) -> String {
 fn twig_string_content_range(literal: &SyntaxNode) -> TextRange {
     let raw = twigquery::string_value(literal).unwrap_or_default();
     let mut result = literal.range_trimmed_trivia();
-    if let Some(relative) = literal.text().to_string().find(&raw) {
+    if let Some(relative) = literal.text_string().find(&raw) {
         let start = u32::from(literal.text_range().start()) as usize + relative;
         result = range(start, start + raw.len());
     }

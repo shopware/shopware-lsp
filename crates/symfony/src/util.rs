@@ -71,7 +71,7 @@ pub(crate) fn xml_attribute_content_range(attribute: Option<&SyntaxNode>) -> Tex
         if child.kind() != xmlsyntax::XML_ATTRIBUTE_VALUE {
             continue;
         }
-        return unquoted_range(child.range_trimmed_trivia(), &child.text().to_string());
+        return unquoted_range(child.range_trimmed_trivia(), &child.text_string());
     }
     TextRange::default()
 }
@@ -82,7 +82,7 @@ pub(crate) fn xml_element_text(node: &SyntaxNode) -> (String, TextRange) {
         if xmlquery::element_at(&text).as_ref() != Some(node) {
             continue;
         }
-        let raw = text.text().to_string();
+        let raw = text.text_string();
         let trimmed = raw.trim_matches(|c: char| c.is_whitespace());
         if trimmed.is_empty() {
             continue;
@@ -111,7 +111,7 @@ pub(crate) fn yaml_scalar_content_range(node: Option<&SyntaxNode>) -> TextRange 
     let Some(node) = node else {
         return TextRange::default();
     };
-    unquoted_range(node.range_trimmed_trivia(), &node.text().to_string())
+    unquoted_range(node.range_trimmed_trivia(), &node.text_string())
 }
 
 /// The shortest lexically equivalent slash-separated path: `.` and empty

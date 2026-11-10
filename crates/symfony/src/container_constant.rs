@@ -6,6 +6,7 @@ use swlsp_parser_xml::syntax as xmlsyntax;
 use swlsp_php::PhpIndex;
 use swlsp_php_project::{Model, Version};
 use swlsp_php_semantic::{Symbol, SymbolKind};
+use swlsp_syntax::SyntaxNodeExt as _;
 use swlsp_syntax::{SyntaxNode, TextRange, TextSize};
 
 use crate::util::xml_attr;
@@ -255,7 +256,7 @@ fn yaml_container_value_marker(content: &[u8]) -> Option<(&'static str, Containe
 }
 
 fn trimmed_constant_text(node: &SyntaxNode) -> Option<(String, TextRange)> {
-    let text = node.text().to_string();
+    let text = node.text_string();
     let left = text.len() - text.trim_start_matches([' ', '\t', '\r', '\n']).len();
     let right = text.trim_end_matches([' ', '\t', '\r', '\n']).len();
     if right <= left {

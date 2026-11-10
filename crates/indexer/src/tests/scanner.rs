@@ -41,9 +41,11 @@ fn none() -> CancelToken {
 fn default_worker_count_is_lightweight_and_cpu_aware() {
     assert_eq!(default_index_worker_count(0), 1);
     assert_eq!(default_index_worker_count(1), 1);
-    assert_eq!(default_index_worker_count(2), 2);
-    assert_eq!(default_index_worker_count(8), 4);
-    assert_eq!(default_index_worker_count(64), 4);
+    assert_eq!(default_index_worker_count(2), 1);
+    assert_eq!(default_index_worker_count(4), 3);
+    assert_eq!(default_index_worker_count(8), 6);
+    assert_eq!(default_index_worker_count(12), 8);
+    assert_eq!(default_index_worker_count(64), 8);
 }
 
 #[test]

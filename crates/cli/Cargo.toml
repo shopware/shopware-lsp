@@ -51,10 +51,12 @@ humantime = "2.3"
 libc = "0.2"
 pprof = { version = "0.15", default-features = false, features = ["prost-codec"], optional = true }
 
-# musl's allocator serializes on one lock and is slow under the indexer's
-# thread pool; the static musl release builds use mimalloc instead.
-[target.'cfg(target_env = "musl")'.dependencies]
-mimalloc = { version = "0.1", default-features = false }
+# The indexer allocates on its workers and frees on the writer and finisher
+# threads. musl's allocator serializes on one lock and glibc's contends on
+# cross-thread frees, so the Linux builds use mimalloc.
+[target.'cfg(target_os = "linux")'.dependencies.mimalloc]
+version = "0.1"
+default-features = false
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }

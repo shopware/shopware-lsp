@@ -1,6 +1,7 @@
 //! `renderBlock()` references and template block catalogs.
 
 use std::collections::HashSet;
+use swlsp_syntax::SyntaxNodeExt as _;
 
 use swlsp_parser_php::query as phpquery;
 use swlsp_parser_php::syntax::*;
@@ -63,13 +64,10 @@ pub fn render_block_references_in_php(root: &SyntaxNode) -> Vec<RenderBlockRefer
             template: normalize_template_reference(&phpquery::string_value(&template_node)),
             block: phpquery::string_value(&block_node),
             template_range: string_content_range(
-                &template_node.text().to_string(),
+                &template_node.text_string(),
                 template_node.text_range(),
             ),
-            block_range: string_content_range(
-                &block_node.text().to_string(),
-                block_node.text_range(),
-            ),
+            block_range: string_content_range(&block_node.text_string(), block_node.text_range()),
             call,
         });
     }

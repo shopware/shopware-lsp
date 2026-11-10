@@ -146,6 +146,71 @@ fn store_restores_workspace_graphs() {
 }
 
 #[test]
+fn store_restores_workspace_graphs_on_several_threads() {
+    let names: Vec<String> = (0..300)
+        .map(|index| format!("App\\Service{index}"))
+        .collect();
+    let rows: Vec<Vec<u8>> = names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| {
+            let path = format!("/service{index}.php");
+            WorkspaceGraph::pack_owned(class_document(&path, &format!("service{index}"), name))
+                .encode()
+        })
+        .collect();
+    let restore = |threads: usize| {
+        let store = Store::new();
+        store
+            .restore_workspace_graphs_parallel(
+                WorkspaceRestoreCapacity::default(),
+                &[class_document("/stub.php", "stub", "App\\Stub")],
+                threads,
+                |accept| {
+                    rows.iter().cloned().for_each(accept);
+                    Ok::<(), DecodeError>(())
+                },
+                |decoder, row| decoder.decode(row),
+            )
+            .unwrap()
+    };
+    for threads in [1, 4] {
+        let snapshot = restore(threads);
+        assert_eq!(snapshot.revision, 1);
+        assert_eq!(snapshot.classes("App\\Stub").len(), 1);
+        for name in &names {
+            assert_eq!(
+                snapshot.classes(name).len(),
+                1,
+                "{name} with {threads} threads"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_parallel_restore_reports_a_failing_row_and_keeps_the_generation() {
+    let store = Store::new();
+    let before = store.replace(&class_document("/a.php", "a", "App\\A"));
+    let valid = WorkspaceGraph::pack_owned(class_document("/b.php", "b", "App\\B")).encode();
+    let result = store.restore_workspace_graphs_parallel(
+        WorkspaceRestoreCapacity::default(),
+        &[],
+        4,
+        |accept| {
+            for _ in 0..200 {
+                accept(valid.clone());
+            }
+            accept(vec![0xff]);
+            Ok::<(), DecodeError>(())
+        },
+        |decoder, row| decoder.decode(row),
+    );
+    assert!(result.is_err());
+    assert!(std::sync::Arc::ptr_eq(&before, &store.snapshot()));
+}
+
+#[test]
 fn store_consumes_canonical_graphs_without_mutating_older_snapshots() {
     let store = Store::new();
     let first = store.replace(&class_document("/a.php", "a", "App\\A"));

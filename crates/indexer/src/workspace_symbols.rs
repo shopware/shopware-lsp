@@ -128,6 +128,38 @@ pub struct WorkspaceSymbolDocument {
     pub symbols: Vec<WorkspaceSymbol>,
 }
 
+/// A symbol with its derived catalog columns. Deriving them splits and
+/// lowercases every identifier, so the scanner does it during preparation
+/// instead of inside the write transaction.
+#[derive(Debug, Clone)]
+pub(crate) struct WorkspaceSymbolRow {
+    symbol: WorkspaceSymbol,
+    aliases: String,
+    search_text: String,
+}
+
+impl WorkspaceSymbolRow {
+    /// The rows of `symbols`; unnamed symbols are not catalogued.
+    pub(crate) fn of_all(symbols: impl IntoIterator<Item = WorkspaceSymbol>) -> Vec<Self> {
+        symbols
+            .into_iter()
+            .filter(|symbol| !symbol.name.is_empty())
+            .map(|symbol| Self {
+                aliases: workspace_symbol_aliases(&symbol.aliases),
+                search_text: workspace_symbol_index_text(&symbol),
+                symbol,
+            })
+            .collect()
+    }
+}
+
+/// The rows owned by one source path, in two runs so the scanner can append
+/// prepared rows to the ones an indexer published while writing.
+pub(crate) struct WorkspaceSymbolRows<'a> {
+    pub path: &'a str,
+    pub rows: [&'a [WorkspaceSymbolRow]; 2],
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct WorkspaceSymbolQueryOptions {
     pub excluded_domains: Vec<String>,
@@ -152,8 +184,6 @@ const WORKSPACE_SYMBOL_SCHEMA: &str = "
     );
     CREATE INDEX IF NOT EXISTS idx_workspace_symbols_owner
         ON workspace_symbols(owner_id);
-    CREATE INDEX IF NOT EXISTS idx_workspace_symbols_priority
-        ON workspace_symbols(priority DESC, name);
     CREATE VIRTUAL TABLE IF NOT EXISTS workspace_symbols_fts USING fts4(
         search_text,
         content='workspace_symbols',
@@ -165,9 +195,11 @@ const WORKSPACE_SYMBOL_SCHEMA: &str = "
     );
 ";
 
-/// Thirteen parameters per symbol stay below SQLite's traditional 999
-/// parameter limit.
-const INSERT_BATCH_SIZE: usize = 75;
+/// The candidate order of queries. Its keys arrive in random order, so a
+/// cold index builds it once at the end instead of maintaining it per row
+/// (see [`WorkspaceSymbolCatalog::begin_bulk_population`]).
+const PRIORITY_INDEX: &str = "CREATE INDEX IF NOT EXISTS idx_workspace_symbols_priority
+    ON workspace_symbols(priority DESC, name)";
 const DELETE_BATCH_SIZE: usize = 128;
 const ALIAS_SEPARATOR: char = '\u{1f}';
 
@@ -181,6 +213,8 @@ pub struct WorkspaceSymbolCatalog {
     backend: Backend,
     bulk: AtomicBool,
     bulk_dirty: AtomicBool,
+    /// The priority index was dropped for the current bulk population.
+    index_deferred: AtomicBool,
 }
 
 impl std::fmt::Debug for WorkspaceSymbolCatalog {
@@ -206,6 +240,8 @@ impl WorkspaceSymbolCatalog {
                         )?;
                     }
                     connection.execute_batch(WORKSPACE_SYMBOL_SCHEMA)?;
+                    // Also restores the index an interrupted cold run dropped.
+                    connection.execute_batch(PRIORITY_INDEX)?;
                     Ok(())
                 })
             })
@@ -214,6 +250,7 @@ impl WorkspaceSymbolCatalog {
             backend: Backend::Store(store.clone()),
             bulk: AtomicBool::new(false),
             bulk_dirty: AtomicBool::new(false),
+            index_deferred: AtomicBool::new(false),
         })
     }
 
@@ -244,6 +281,7 @@ impl WorkspaceSymbolCatalog {
             backend: Backend::ReadOnly(Mutex::new(Some(connection))),
             bulk: AtomicBool::new(false),
             bulk_dirty: AtomicBool::new(false),
+            index_deferred: AtomicBool::new(false),
         })
     }
 
@@ -298,10 +336,43 @@ impl WorkspaceSymbolCatalog {
 
     /// Defers FTS maintenance while a cold index writes many small file
     /// transactions; [`end_bulk_population`](Self::end_bulk_population)
-    /// builds the inverted index once.
+    /// builds the inverted index once. Populating an empty catalog also
+    /// defers the priority index.
     pub fn begin_bulk_population(&self) {
         self.bulk_dirty.store(false, Ordering::Release);
         self.bulk.store(true, Ordering::Release);
+        let deferred = self.defer_priority_index().unwrap_or(false);
+        self.index_deferred.store(deferred, Ordering::Release);
+    }
+
+    /// Drops the priority index of an empty catalog. A populated catalog
+    /// keeps it: rebuilding it would cost a warm start more than the few
+    /// changed files save.
+    fn defer_priority_index(&self) -> Result<bool> {
+        let Ok(store) = self.store() else {
+            return Ok(false);
+        };
+        let empty = self.read(|connection| {
+            connection
+                .query_row(
+                    "SELECT NOT EXISTS (SELECT 1 FROM workspace_symbols)",
+                    [],
+                    |row| row.get::<_, bool>(0),
+                )
+                .context("inspect workspace symbol catalog")
+        })?;
+        if !empty {
+            return Ok(false);
+        }
+        store.write(|mutation| {
+            mutation.with_connection(|connection| {
+                connection
+                    .connection()
+                    .execute_batch("DROP INDEX IF EXISTS idx_workspace_symbols_priority")
+                    .context("defer workspace symbol priority index")
+            })
+        })?;
+        Ok(true)
     }
 
     /// Forces the deferred FTS rebuild even when the run indexes no file: an
@@ -315,15 +386,25 @@ impl WorkspaceSymbolCatalog {
             return Ok(());
         }
         self.bulk.store(false, Ordering::Release);
-        if !self.bulk_dirty.swap(false, Ordering::AcqRel) {
+        let dirty = self.bulk_dirty.swap(false, Ordering::AcqRel);
+        let deferred = self.index_deferred.swap(false, Ordering::AcqRel);
+        if !dirty && !deferred {
             return Ok(());
         }
         self.in_mutation(cancel, |mutation| {
             mutation.with_connection(|connection| {
-                connection
-                    .connection()
-                    .execute_batch("INSERT INTO workspace_symbols_fts(workspace_symbols_fts) VALUES('rebuild')")
-                    .context("rebuild workspace symbol FTS")
+                let connection = connection.connection();
+                if deferred {
+                    connection
+                        .execute_batch(PRIORITY_INDEX)
+                        .context("build workspace symbol priority index")?;
+                }
+                if dirty {
+                    connection
+                        .execute_batch("INSERT INTO workspace_symbols_fts(workspace_symbols_fts) VALUES('rebuild')")
+                        .context("rebuild workspace symbol FTS")?;
+                }
+                Ok(())
             })
         })
     }
@@ -397,9 +478,31 @@ impl WorkspaceSymbolCatalog {
         mutation: &Mutation,
         files: &[WorkspaceSymbolDocument],
     ) -> Result<()> {
+        let rows: Vec<Vec<WorkspaceSymbolRow>> = files
+            .iter()
+            .map(|file| WorkspaceSymbolRow::of_all(file.symbols.iter().cloned()))
+            .collect();
+        let files: Vec<WorkspaceSymbolRows<'_>> = files
+            .iter()
+            .zip(&rows)
+            .map(|(file, rows)| WorkspaceSymbolRows {
+                path: &file.path,
+                rows: [rows.as_slice(), &[]],
+            })
+            .collect();
+        self.replace_rows_in(mutation, &files)
+    }
+
+    /// Replaces every document's symbols inside `mutation` with rows whose
+    /// derived columns were computed ahead of the transaction.
+    pub(crate) fn replace_rows_in(
+        &self,
+        mutation: &Mutation,
+        files: &[WorkspaceSymbolRows<'_>],
+    ) -> Result<()> {
         let paths: Vec<&str> = files
             .iter()
-            .map(|file| file.path.as_str())
+            .map(|file| file.path)
             .filter(|path| !path.is_empty())
             .collect();
         let bulk = self.bulk.load(Ordering::Acquire);
@@ -408,91 +511,52 @@ impl WorkspaceSymbolCatalog {
         }
         self.delete_files_in(mutation, &paths)?;
 
-        struct Insert<'a> {
-            owner_id: i64,
-            location_path: &'a str,
-            symbol: &'a WorkspaceSymbol,
-            aliases: String,
-            search_text: String,
-        }
-        let mut inserts: Vec<Insert<'_>> = Vec::with_capacity(INSERT_BATCH_SIZE);
-        let flush = |inserts: &mut Vec<Insert<'_>>| -> Result<()> {
-            if inserts.is_empty() {
-                return Ok(());
-            }
-            mutation.with_connection(|connection| {
-                let mut statement =
-                    connection.prepare_cached(&workspace_symbol_insert_sql(inserts.len()))?;
-                let mut arguments: Vec<rusqlite::types::Value> =
-                    Vec::with_capacity(inserts.len() * 13);
-                for insert in inserts.iter() {
-                    let symbol = insert.symbol;
-                    arguments.extend([
-                        insert.owner_id.into(),
-                        insert.location_path.to_owned().into(),
-                        symbol.name.clone().into(),
-                        symbol.container_name.clone().into(),
-                        insert.aliases.clone().into(),
-                        insert.search_text.clone().into(),
-                        symbol.domain.clone().into(),
-                        i64::from(symbol.kind.0).into(),
-                        i64::from(symbol.priority).into(),
-                        i64::from(symbol.range.start.line.max(0)).into(),
-                        i64::from(symbol.range.start.character.max(0)).into(),
-                        i64::from(symbol.range.end.line.max(0)).into(),
-                        i64::from(symbol.range.end.character.max(0)).into(),
-                    ]);
-                }
-                statement
-                    .execute(rusqlite::params_from_iter(arguments))
-                    .context("insert workspace symbol batch")?;
-                if !bulk {
-                    let last_id = connection.connection().last_insert_rowid();
-                    let first_id = last_id - inserts.len() as i64 + 1;
-                    let mut statement = connection
-                        .prepare_cached(&workspace_symbol_fts_insert_sql(inserts.len()))?;
-                    let mut arguments: Vec<rusqlite::types::Value> =
-                        Vec::with_capacity(inserts.len() * 2);
-                    for (index, insert) in inserts.iter().enumerate() {
-                        arguments.push((first_id + index as i64).into());
-                        arguments.push(insert.search_text.clone().into());
-                    }
-                    statement
-                        .execute(rusqlite::params_from_iter(arguments))
-                        .context("index workspace symbol batch")?;
-                }
-                Ok(())
-            })?;
-            inserts.clear();
-            Ok(())
-        };
-        for file in files {
-            if file.path.is_empty() || file.symbols.iter().all(|symbol| symbol.name.is_empty()) {
-                continue;
-            }
-            let owner_id = mutation.with_connection(|connection| connection.path_id(&file.path))?;
-            for symbol in &file.symbols {
-                if symbol.name.is_empty() {
+        mutation.with_connection(|connection| {
+            for file in files {
+                if file.path.is_empty() || file.rows.iter().all(|rows| rows.is_empty()) {
                     continue;
                 }
-                let location_path = if symbol.path == file.path {
-                    ""
-                } else {
-                    symbol.path.as_str()
-                };
-                inserts.push(Insert {
-                    owner_id,
-                    location_path,
-                    symbol,
-                    aliases: workspace_symbol_aliases(&symbol.aliases),
-                    search_text: workspace_symbol_index_text(symbol),
-                });
-                if inserts.len() == INSERT_BATCH_SIZE {
-                    flush(&mut inserts)?;
+                let owner_id = connection.path_id(file.path)?;
+                let mut insert = connection.prepare_cached(WORKSPACE_SYMBOL_INSERT)?;
+                let mut index = (!bulk)
+                    .then(|| connection.prepare_cached(WORKSPACE_SYMBOL_FTS_INSERT))
+                    .transpose()?;
+                for row in file.rows.iter().flat_map(|rows| rows.iter()) {
+                    let symbol = &row.symbol;
+                    let location_path = if symbol.path == file.path {
+                        ""
+                    } else {
+                        symbol.path.as_str()
+                    };
+                    insert
+                        .execute(rusqlite::params![
+                            owner_id,
+                            location_path,
+                            symbol.name,
+                            symbol.container_name,
+                            row.aliases,
+                            row.search_text,
+                            symbol.domain,
+                            i64::from(symbol.kind.0),
+                            i64::from(symbol.priority),
+                            i64::from(symbol.range.start.line.max(0)),
+                            i64::from(symbol.range.start.character.max(0)),
+                            i64::from(symbol.range.end.line.max(0)),
+                            i64::from(symbol.range.end.character.max(0)),
+                        ])
+                        .context("insert workspace symbol")?;
+                    if let Some(index) = &mut index {
+                        index
+                            .execute(rusqlite::params![
+                                connection.connection().last_insert_rowid(),
+                                row.search_text,
+                            ])
+                            .context("index workspace symbol")?;
+                    }
                 }
             }
-        }
-        flush(&mut inserts)
+            Ok(())
+        })
     }
 
     /// Deletes the symbols owned by `paths` inside `mutation`.
@@ -634,23 +698,13 @@ impl WorkspaceSymbolCatalog {
     }
 }
 
-fn workspace_symbol_insert_sql(count: usize) -> String {
-    let mut sql = String::from(
-        "INSERT INTO workspace_symbols(
-            owner_id, file_path, name, container_name, aliases, search_text, domain,
-            kind, priority, start_line, start_character, end_line, end_character
-        ) VALUES ",
-    );
-    sql.push_str(&vec!["(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"; count].join(","));
-    sql
-}
+const WORKSPACE_SYMBOL_INSERT: &str = "INSERT INTO workspace_symbols(
+        owner_id, file_path, name, container_name, aliases, search_text, domain,
+        kind, priority, start_line, start_character, end_line, end_character
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
-fn workspace_symbol_fts_insert_sql(count: usize) -> String {
-    format!(
-        "INSERT INTO workspace_symbols_fts(docid, search_text) VALUES {}",
-        vec!["(?, ?)"; count].join(",")
-    )
-}
+const WORKSPACE_SYMBOL_FTS_INSERT: &str =
+    "INSERT INTO workspace_symbols_fts(docid, search_text) VALUES (?, ?)";
 
 /// Trimmed, deduplicated aliases joined by the unit separator.
 fn workspace_symbol_aliases(aliases: &[String]) -> String {

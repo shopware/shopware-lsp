@@ -49,7 +49,7 @@ pub(crate) fn parse_component_setup_members(
 
     for returned in component_setup_returned_objects(&setup) {
         for returned_property in jsquery::properties(&returned) {
-            let property_text = returned_property.text().to_string();
+            let property_text = returned_property.text_string();
             if compact_javascript_text(&property_text).starts_with("...") {
                 continue;
             }
@@ -97,7 +97,7 @@ pub(crate) fn parse_component_setup_members(
                     cms_registry_kind_from_expression(&property_text).unwrap_or_default();
             } else if let Some(value) = &value {
                 member.type_ = vue_expression_type(value, None);
-                member.source_expression = trim_vue_source_expression(&value.text().to_string());
+                member.source_expression = trim_vue_source_expression(&value.text_string());
                 member.open_runtime_shape = value.kind() == jssyntax::JS_OBJECT;
             }
             member.binding_name = binding_name;
@@ -159,7 +159,7 @@ fn surrounding_text(container: &SyntaxNode, object: &SyntaxNode) -> Option<(Stri
     {
         return None;
     }
-    let text = container.text().to_string();
+    let text = container.text_string();
     let start = usize::from(object_range.start() - container_range.start());
     let end = usize::from(object_range.end() - container_range.start());
     Some((text.get(..start)?.to_owned(), text.get(end..)?.to_owned()))
@@ -230,7 +230,7 @@ pub(crate) fn component_setup_bindings(
         let (member_type, source_expression, open_runtime_shape) =
             component_setup_binding_inference(&declaration, kind, &known);
         let cms_registry_kind =
-            cms_registry_kind_from_expression(&declaration.text().to_string()).unwrap_or_default();
+            cms_registry_kind_from_expression(&declaration.text_string()).unwrap_or_default();
         if !member_type.is_empty() {
             known.insert(name.clone(), member_type.clone());
         }
@@ -260,7 +260,7 @@ pub(crate) fn component_setup_bindings(
             continue;
         }
         let cms_registry_kind =
-            cms_registry_kind_from_expression(&function.text().to_string()).unwrap_or_default();
+            cms_registry_kind_from_expression(&function.text_string()).unwrap_or_default();
         bindings.insert(
             name,
             ComponentSetupBinding {
@@ -276,7 +276,7 @@ pub(crate) fn component_setup_bindings(
 }
 
 pub(crate) fn component_setup_binding_kind(declaration: &SyntaxNode) -> VueComponentMemberKind {
-    let compact = compact_javascript_text(&declaration.text().to_string());
+    let compact = compact_javascript_text(&declaration.text_string());
     if compact.contains("=computed(") || compact.contains("=computed<") {
         return VueComponentMemberKind::Computed;
     }
@@ -344,7 +344,7 @@ pub(crate) fn component_setup_binding_inference(
             }
             open_runtime_shape = vue_runtime_object_literal_expression(&source_expression);
         } else {
-            source_expression = trim_vue_source_expression(&argument.text().to_string());
+            source_expression = trim_vue_source_expression(&argument.text_string());
             let inferred = vue_expression_type(&argument, Some(known));
             if !inferred.is_empty() {
                 member_type = inferred;
@@ -380,7 +380,7 @@ pub(crate) fn unwrap_component_setup_expression(value: &str) -> String {
 }
 
 pub(crate) fn component_setup_initializer(declaration: &SyntaxNode) -> String {
-    let full_text = declaration.text().to_string();
+    let full_text = declaration.text_string();
     let text = full_text.trim();
     let Some(equals) = text.find('=') else {
         return String::new();

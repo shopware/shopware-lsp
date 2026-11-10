@@ -123,7 +123,7 @@ pub(crate) fn parse_admin_javascript_usages(
         if method == "addServiceProvider" {
             collector.add_js_string(AdminSymbolKind::Service, "", argument(0).as_ref(), true);
         }
-        if method == "register" && call.text().to_string().contains("Service()") {
+        if method == "register" && call.text_string().contains("Service()") {
             collector.add_js_string(AdminSymbolKind::Service, "", argument(0).as_ref(), true);
         }
     }

@@ -61,7 +61,7 @@ pub(crate) fn javascript_static_member_name_node(
 pub(crate) fn javascript_trimmed_node_text(node: &SyntaxNode) -> String {
     let full = node.text_range();
     let trimmed = node.range_trimmed_trivia();
-    let text = node.text().to_string();
+    let text = node.text_string();
     let start = usize::from(trimmed.start() - full.start());
     let end = usize::from(trimmed.end() - full.start());
     if start > end || end > text.len() {

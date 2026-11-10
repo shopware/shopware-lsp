@@ -166,7 +166,7 @@ fn extract_route_from_attribute(
 fn php_route_constant_reference(argument: &SyntaxNode, resolver: &NameResolver) -> String {
     let value = collapse_route_expression(&phpquery::argument_value(argument));
     for access in phpquery::nodes(argument, &[PHP_SCOPED_ACCESS, PHP_MEMBER_ACCESS]) {
-        let text = collapse_route_expression(&access.text().to_string());
+        let text = collapse_route_expression(&access.text_string());
         if text != value {
             continue;
         }
@@ -526,7 +526,7 @@ pub(crate) fn php_route_literal_argument(call: &SyntaxNode, index: usize) -> Opt
     if expression.kind() != PHP_STRING {
         return None;
     }
-    let text = expression.text().to_string();
+    let text = expression.text_string();
     let text = text.trim().as_bytes();
     if text.len() < 2 || (text[0] != b'\'' && text[0] != b'"') || text[text.len() - 1] != text[0] {
         return None;
@@ -582,7 +582,7 @@ fn php_route_method_value(expression: Option<&SyntaxNode>) -> String {
     if expression.kind() != PHP_MEMBER_ACCESS && expression.kind() != PHP_SCOPED_ACCESS {
         return String::new();
     }
-    let text = expression.text().to_string();
+    let text = expression.text_string();
     let text = text.trim();
     let Some(separator) = text.rfind("::") else {
         return String::new();

@@ -19,7 +19,7 @@ pub(crate) fn javascript_literal_symbol_at(literal: &SyntaxNode) -> Option<Admin
     {
         let method = jsquery::call_method_name(call).unwrap_or_default();
         if method == "addServiceProvider"
-            || (method == "register" && call.text().to_string().contains("Service()"))
+            || (method == "register" && call.text_string().contains("Service()"))
         {
             return string_target(AdminSymbolKind::Service, literal);
         }
