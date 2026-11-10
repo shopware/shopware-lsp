@@ -15,7 +15,7 @@ once, and said so for months.
 | MCP server | yes, as a context server |
 | Snippets (1 PHP, 6 config XML) | yes, ported and confirmed working |
 | `yamlValidation` for `lsp.yaml` | via `examples/settings.json`, pointing at the server's own schema |
-| 20 palette commands | no palette; 10 full equivalents as tasks. See [Command parity](#command-parity) |
+| 21 palette commands | no palette; 10 full equivalents as tasks. See [Command parity](#command-parity) |
 | 21 client commands behind code actions | 10 full equivalents as tasks; the menu entries are filtered out |
 | Explorer and editor context menus | no, Zed has no extension menu API |
 | Code lenses | yes, text renders; clicking does nothing. See [Code lenses](#code-lenses) |
@@ -28,16 +28,17 @@ Two lists, counted separately because they are easy to conflate. The
 The **client commands** are the ones the server asks a client to run, almost
 all attached to code actions rather than to the palette.
 
-10 of 20 palette commands and 10 of 21 client commands have a full task
+10 of 21 palette commands and 10 of 21 client commands have a full task
 equivalent. 3 actions serve both lists, so those are 17 distinct
 actions, and with the partial and standalone ones below that is the
-19 in the action table above. The examples expose them through 20 tasks;
+20 in the action table above. The examples expose them through 21 tasks;
 tasks and upstream commands are not a one-to-one mapping.
 
 Partial, and counted as a gap rather than as parity:
 
 | Upstream | Action | What is missing |
 |---|---|---|
+| `clearCache` | `cache-clear` | clearCache offers this workspace, stale caches or all caches; cache-clear deletes the stale caches of other projects, reindex rebuilds this workspace, and `shopware-lsp cache clear --all` deletes all of them |
 | `configure` | `config` | configure is an interactive editor that writes feature toggles and picks a scope; config only prints the effective configuration |
 
 Standalone, with no upstream counterpart:

@@ -42,6 +42,16 @@ document snapshot; no custom request is required.
 * **Action:** Forces a rebuild of all indexes by invoking `indexAll` with `forceReindex` set to `true`.
 * **Returns:** `{ "message": "Force reindexing started" }`
 
+### `shopware/cache/list`
+* **Parameters:** none
+* **Action:** Lists the workspace caches of this machine without opening them.
+* **Returns:** `{ directory, caches }`; each cache has `path`, `root` (the project it belongs to, `null` when the cache does not record one), `state` (`current`, `outdated`, `projectGone`, `unknown`), `inUse`, `bytes`, `files`, `idleSeconds` and `stale`.
+
+### `shopware/cache/clear`
+* **Parameters:** `{ scope?: "stale" | "all", dryRun?: boolean }`; the scope defaults to `stale`.
+* **Action:** Deletes the caches of other projects: the stale ones (the project is gone, or the cache is outdated or unidentified and was not written for a week) or all of them. A cache a workspace has open, including the server's own, is never deleted; `shopware/forceReindex` rebuilds the server's own cache in place.
+* **Returns:** `{ cleared, inUse, freedBytes, dryRun }`, with `cleared` and `inUse` holding cache entries as in `shopware/cache/list`.
+
 ### `shopware/extension/all`
 * **Parameters:** none
 * **Action:** Returns all detected Shopware extensions via the `ExtensionIndexer`.

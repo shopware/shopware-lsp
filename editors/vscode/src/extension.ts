@@ -9,6 +9,7 @@ import {
 } from 'vscode-languageclient/node';
 import {registerEditorCommands} from './commands/editorCommands';
 import {registerScaffoldCommands} from './commands/scaffoldCommands';
+import {registerCacheCommands} from './commands/cacheCommands';
 import {registerSymfonyCatalogCommands} from './commands/symfonyCatalogCommands';
 import {registerSymfonyGenerationCommands} from './commands/symfonyGenerationCommands';
 import {registerTwigCatalogCommands} from './commands/twigCatalogCommands';
@@ -312,6 +313,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   }));
 
+  registerCacheCommands(context, manager);
   registerSymfonyCatalogCommands(context, manager);
   registerTwigCatalogCommands(context, manager);
   registerTwigVariableCommands(context, manager);

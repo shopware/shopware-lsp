@@ -230,7 +230,7 @@ server. Re-run `zed: install dev extension` first.
       every completion was being discarded client-side, so a working hover
       says nothing about completion. Cross-check against the server's own CLI,
       which takes the editor out of the loop:
-      `shopware-lsp --root <project> completion <file>:<line>:<col>`, with the
+      `shopware-lsp --root <project> lsp completion <file>:<line>:<col>`, with the
       cursor inside the string of `Feature::isActive('')`. If that returns
       items and Zed shows none, the response is being rejected, not missed --
       `~/Library/Logs/Zed/Zed.log` names the field. Confirmed 2026-09-09, but

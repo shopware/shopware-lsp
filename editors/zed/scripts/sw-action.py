@@ -71,7 +71,7 @@ def resolve_class(binary, root, path):
     back as kind 3 with classes as kind 5 children.
     """
     result = subprocess.run(
-        [binary, "--root", root, "--json", "symbols", path],
+        [binary, "--root", root, "--json", "lsp", "symbols", path],
         capture_output=True,
         text=True,
     )
@@ -118,6 +118,7 @@ OTHER_ACTIONS = {
     "config": "Show the effective configuration and where it comes from",
     "config-open": "Open the project configuration, creating a valid stub",
     "reindex": "Rebuild the workspace index from scratch",
+    "cache-clear": "Delete the stale index caches of other projects",
     "uuid": "Insert a Shopware-style UUID at the cursor",
 }
 
@@ -183,7 +184,7 @@ def server_binary():
 
 def execute(binary, root, method, payload):
     result = subprocess.run(
-        [binary, "--root", root, "execute", method, json.dumps(payload)],
+        [binary, "--root", root, "lsp", "execute", method, json.dumps(payload)],
         capture_output=True,
         text=True,
     )
@@ -1109,16 +1110,16 @@ version: 1
 def run_config(args, binary):
     """Show the effective configuration and where it comes from."""
     result = subprocess.run(
-        [binary, "--root", args.root, "config"],
+        [binary, "--root", args.root, "--json", "info"],
         capture_output=True,
         text=True,
     )
     if result.returncode != 0:
         sys.exit((result.stderr or result.stdout).strip()[:400])
     try:
-        report = json.loads(result.stdout)
+        report = json.loads(result.stdout).get("configuration") or {}
     except ValueError:
-        sys.exit(f"unexpected config output: {result.stdout[:200]}")
+        sys.exit(f"unexpected info output: {result.stdout[:200]}")
 
     path = report.get("path") or ""
     exists = bool(path) and os.path.isfile(path)
@@ -1133,11 +1134,14 @@ def run_config(args, binary):
 def run_config_open(args, binary):
     """Open the project configuration, creating a valid stub when absent."""
     result = subprocess.run(
-        [binary, "--root", args.root, "config"], capture_output=True, text=True
+        [binary, "--root", args.root, "--json", "info"],
+        capture_output=True,
+        text=True,
     )
     path = ""
     try:
-        path = (json.loads(result.stdout) or {}).get("path") or ""
+        report = (json.loads(result.stdout) or {}).get("configuration") or {}
+        path = report.get("path") or ""
     except ValueError:
         pass
     if not path:
@@ -1169,6 +1173,21 @@ def run_reindex(args, binary):
         text=True,
     )
     print((result.stdout or result.stderr).strip()[:400])
+    if result.returncode != 0:
+        sys.exit(result.returncode)
+
+
+def run_cache_clear(args, binary):
+    """Delete the stale index caches of other projects."""
+    if args.print_only:
+        print("would run: shopware-lsp cache clear --stale")
+        return
+    result = subprocess.run(
+        [binary, "cache", "clear", "--stale"],
+        capture_output=True,
+        text=True,
+    )
+    print((result.stdout or result.stderr).strip()[:2000])
     if result.returncode != 0:
         sys.exit(result.returncode)
 
@@ -1312,6 +1331,7 @@ def main():
         "config": run_config,
         "config-open": run_config_open,
         "reindex": run_reindex,
+        "cache-clear": run_cache_clear,
     }
     if args.action in standalone:
         standalone[args.action](args, binary)

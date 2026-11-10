@@ -1,27 +1,6 @@
-//! `project-info` and the supported-project gate.
+//! The supported-project gate.
 
 use crate::{CliError, Runner};
-
-pub(crate) fn run_project_info(runner: &Runner) -> Result<(), CliError> {
-    let root = runner.workspace_root()?;
-    let result =
-        swlsp_projectdetect::detect(&root).map_err(|error| CliError::fail(error.to_string()))?;
-    if runner.json {
-        return runner.write_json(&result);
-    }
-    let mut lines = vec![format!("Project type: {}", result.kind.as_str())];
-    if result.evidence.is_empty() {
-        lines.push("Supported: no".into());
-        lines.push("Evidence: none".into());
-    } else {
-        lines.push("Supported: yes".into());
-        lines.push("Evidence:".into());
-        for evidence in &result.evidence {
-            lines.push(format!("  {}: {}", evidence.path, evidence.reason));
-        }
-    }
-    runner.write_text(&format!("{}\n", lines.join("\n")))
-}
 
 impl Runner {
     /// Fails unless `root` looks like a Shopware or Symfony project (or

@@ -58,6 +58,7 @@ async function main() {
       symfonyGenerationCommands: 'src/commands/symfonyGenerationCommands.ts',
       serverExecutable: 'src/serverExecutable.ts',
       projectDetection: 'src/projectDetection.ts',
+      cacheReport: 'src/cacheReport.ts',
       languageConfigurationModel: 'src/languageConfigurationModel.ts',
       workspaceRoots: 'src/workspaceRoots.ts',
       workspaceClientManager: 'src/workspaceClientManager.ts'

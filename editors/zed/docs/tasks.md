@@ -35,7 +35,7 @@ anything project-specific: Zed sets `$ZED_WORKTREE_ROOT` per window and
 project you open. They point at `scripts/sw-action.py` inside this checkout,
 so `git pull` here updates every project at once.
 
-That means **moving or deleting this checkout breaks all 20 tasks**, with the
+That means **moving or deleting this checkout breaks all 21 tasks**, with the
 same symptom as any other task misconfiguration: `task: spawn` runs and
 nothing happens. The clone already has to stay put for the dev extension, so
 this is not a new constraint, just a second thing depending on it.
@@ -75,6 +75,7 @@ ones.
 | `config` | Show the effective configuration and where it comes from | verified |
 | `config-open` | Open the project configuration, creating a valid stub | verified |
 | `reindex` | Rebuild the workspace index from scratch | verified |
+| `cache-clear` | Delete the stale index caches of other projects | verified |
 | `uuid` | Insert a 32-character hex UUID at the cursor, as `Uuid::randomHex()` produces | verified |
 
 `config-open` writes a stub containing `version: 1`, because the server

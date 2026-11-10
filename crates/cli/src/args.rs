@@ -13,7 +13,10 @@ use usage_rs::{Args, Cli, Subcommands};
 #[derive(Debug, Cli)]
 #[usage(
     bin = "shopware-lsp",
-    after_help = "With no command, the stdio language server is started."
+    after_help = "With no command, the stdio language server is started.",
+    example = "shopware-lsp check src",
+    example = "shopware-lsp check --fix src",
+    example = "shopware-lsp info"
 )]
 pub(crate) struct ShopwareLsp {
     /// Workspace root (defaults to the current directory)
@@ -55,105 +58,225 @@ pub(crate) struct ShopwareLsp {
 
 #[derive(Debug, Subcommands)]
 pub(crate) enum Command {
+    /// Report problems in files and directories, and fix them with --fix
+    #[usage(
+        name = "check",
+        help_heading = "Analyze",
+        display_order = 1,
+        example = "shopware-lsp check src",
+        example = "shopware-lsp check --fix custom/plugins/MyPlugin"
+    )]
+    Check(Check),
+    /// Build or refresh the workspace index
+    #[usage(name = "index", help_heading = "Analyze", display_order = 2)]
+    Index(Index),
+    /// Show how the project is detected and configured
+    #[usage(
+        name = "info",
+        help_heading = "Analyze",
+        display_order = 3,
+        example = "shopware-lsp info",
+        example = "shopware-lsp info --stats"
+    )]
+    Info(Info),
+    /// List the index caches on this machine, or clear them
+    #[usage(
+        name = "cache",
+        help_heading = "Analyze",
+        display_order = 4,
+        example = "shopware-lsp cache",
+        example = "shopware-lsp cache clear",
+        example = "shopware-lsp cache clear --stale"
+    )]
+    Cache(Cache),
     /// Run the Shopware language server (the default)
-    #[usage(name = "serve")]
+    #[usage(name = "serve", help_heading = "Servers", display_order = 5)]
     Serve(Serve),
     /// Run the Shopware MCP server
-    #[usage(name = "mcp")]
+    #[usage(name = "mcp", help_heading = "Servers", display_order = 6)]
     Mcp,
+    /// Ask the language server what an editor would ask, for debugging and scripts
+    #[usage(
+        name = "lsp",
+        help_heading = "Debugging",
+        display_order = 7,
+        example = "shopware-lsp lsp hover src/Controller.php:24:18",
+        example = "shopware-lsp lsp rename -d src/Controller.php:24:18 NewName"
+    )]
+    Lsp(Lsp),
     /// Print version information
-    #[usage(name = "version")]
+    #[usage(name = "version", help_heading = "About", display_order = 8)]
     Version,
-    /// Print the supported CLI and language API
-    #[usage(name = "api-json")]
-    ApiJson,
     /// Print license and third-party notices
-    #[usage(name = "licenses")]
+    #[usage(name = "licenses", help_heading = "About", display_order = 9)]
     Licenses,
-    /// Validate and print the effective project configuration
-    #[usage(name = "config")]
-    Config,
-    /// Detect the workspace project type
-    #[usage(name = "project-info")]
-    ProjectInfo,
-    /// Build or refresh the workspace index
-    #[usage(name = "index")]
-    Index(Index),
-    /// Print indexing, workspace, cache, and memory statistics
-    #[usage(name = "stats")]
-    Stats,
-    /// Show diagnostics for files and directories
-    #[usage(name = "check")]
-    Check(Check),
-    /// Show completion items at a position
-    #[usage(name = "completion")]
-    Completion(At),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct Lsp {
+    #[usage(subcommand)]
+    pub request: LspCommand,
+}
+
+/// One request to the language server.
+#[derive(Debug, Subcommands)]
+pub(crate) enum LspCommand {
+    /// Show hover information at a position
+    #[usage(name = "hover", help_heading = "At a position", display_order = 10)]
+    Hover(At),
     /// Show definitions at a position
-    #[usage(name = "definition")]
+    #[usage(
+        name = "definition",
+        help_heading = "At a position",
+        display_order = 11
+    )]
     Definition(At),
     /// Show implementations at a position
-    #[usage(name = "implementation")]
+    #[usage(
+        name = "implementation",
+        help_heading = "At a position",
+        display_order = 12
+    )]
     Implementation(At),
     /// Show references at a position
-    #[usage(name = "references")]
+    #[usage(
+        name = "references",
+        help_heading = "At a position",
+        display_order = 13
+    )]
     References(At),
-    /// Show hover information at a position
-    #[usage(name = "hover")]
-    Hover(At),
+    /// Show completion items at a position
+    #[usage(
+        name = "completion",
+        help_heading = "At a position",
+        display_order = 14
+    )]
+    Completion(At),
     /// Show signature help at a position
-    #[usage(name = "signature")]
+    #[usage(name = "signature", help_heading = "At a position", display_order = 15)]
     Signature(At),
     /// Show incoming and outgoing calls
-    #[usage(name = "call-hierarchy")]
+    #[usage(
+        name = "call-hierarchy",
+        help_heading = "At a position",
+        display_order = 16
+    )]
     CallHierarchy(At),
     /// Show supertypes and subtypes
-    #[usage(name = "type-hierarchy")]
+    #[usage(
+        name = "type-hierarchy",
+        help_heading = "At a position",
+        display_order = 17
+    )]
     TypeHierarchy(At),
-    /// Show a document outline
-    #[usage(name = "symbols")]
-    Symbols(File),
-    /// Search workspace symbols
-    #[usage(name = "workspace-symbol")]
-    WorkspaceSymbol(WorkspaceSymbol),
     /// Show document highlights at a position
-    #[usage(name = "highlights")]
+    #[usage(
+        name = "highlights",
+        help_heading = "At a position",
+        display_order = 18
+    )]
     Highlights(At),
-    /// Show folding ranges for a document
-    #[usage(name = "folding-ranges")]
-    FoldingRanges(File),
-    /// Show document links
-    #[usage(name = "links")]
-    Links(File),
-    /// Show semantic tokens
-    #[usage(name = "semtok")]
-    Semtok(File),
-    /// Show inlay hints
-    #[usage(name = "inlay-hints")]
-    InlayHints(File),
-    /// Show code lenses
-    #[usage(name = "codelens")]
-    Codelens(File),
     /// Show expandable selection ranges
-    #[usage(name = "selection-ranges")]
+    #[usage(
+        name = "selection-ranges",
+        help_heading = "At a position",
+        display_order = 19
+    )]
     SelectionRanges(At),
     /// Show linked editing ranges
-    #[usage(name = "linked-editing")]
+    #[usage(
+        name = "linked-editing",
+        help_heading = "At a position",
+        display_order = 20
+    )]
     LinkedEditing(At),
+    /// Show a document outline
+    #[usage(name = "symbols", help_heading = "For a file", display_order = 21)]
+    Symbols(File),
+    /// Show folding ranges for a document
+    #[usage(
+        name = "folding-ranges",
+        help_heading = "For a file",
+        display_order = 22
+    )]
+    FoldingRanges(File),
+    /// Show document links
+    #[usage(name = "links", help_heading = "For a file", display_order = 23)]
+    Links(File),
+    /// Show semantic tokens
+    #[usage(
+        name = "semantic-tokens",
+        help_heading = "For a file",
+        display_order = 24
+    )]
+    SemanticTokens(File),
+    /// Show inlay hints
+    #[usage(name = "inlay-hints", help_heading = "For a file", display_order = 25)]
+    InlayHints(File),
+    /// Show code lenses
+    #[usage(name = "codelens", help_heading = "For a file", display_order = 26)]
+    Codelens(File),
     /// Show document colors
-    #[usage(name = "colors")]
+    #[usage(name = "colors", help_heading = "For a file", display_order = 27)]
     Colors(File),
+    /// Search workspace symbols
+    #[usage(
+        name = "workspace-symbol",
+        help_heading = "For the workspace",
+        display_order = 28
+    )]
+    WorkspaceSymbol(WorkspaceSymbol),
     /// List or apply code actions
-    #[usage(name = "codeaction")]
+    #[usage(name = "codeaction", help_heading = "Changes", display_order = 29)]
     Codeaction(Codeaction),
     /// Preview or apply a rename
-    #[usage(name = "rename")]
+    #[usage(name = "rename", help_heading = "Changes", display_order = 30)]
     Rename(Rename),
     /// Execute a Shopware custom command (lists them without a method)
-    #[usage(name = "execute")]
+    #[usage(name = "execute", help_heading = "Raw requests", display_order = 31)]
     Execute(Execute),
     /// Send an arbitrary LSP request
-    #[usage(name = "request")]
+    #[usage(name = "request", help_heading = "Raw requests", display_order = 32)]
     Request(Request),
+    /// Print the supported CLI and language API
+    #[usage(name = "api-json", help_heading = "Raw requests", display_order = 33)]
+    ApiJson,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct Cache {
+    #[usage(subcommand)]
+    pub command: Option<CacheCommand>,
+}
+
+#[derive(Debug, Subcommands)]
+pub(crate) enum CacheCommand {
+    /// Delete the cache of this project, or with a flag those of others
+    #[usage(name = "clear")]
+    Clear(CacheClear),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct CacheClear {
+    /// Delete the caches that are outdated or whose project is gone
+    #[usage(long, conflicts = "all")]
+    pub stale: bool,
+    /// Delete the caches of all projects
+    #[usage(long)]
+    pub all: bool,
+    /// Show what would be deleted
+    #[usage(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct Info {
+    /// Also index the workspace and show index, cache, and memory statistics
+    #[usage(long)]
+    pub stats: bool,
+    /// Only detect the project: fast, and the workspace is not opened
+    #[usage(long, conflicts = "stats")]
+    pub project_only: bool,
 }
 
 #[derive(Debug, Default, Args)]
@@ -295,42 +418,50 @@ pub(crate) struct Request {
 }
 
 impl Command {
-    /// The name the command is invoked with.
+    /// The name the command is invoked with; a request below `lsp` goes
+    /// by its own name.
     pub(crate) fn name(&self) -> &'static str {
         match self {
+            Command::Check(_) => "check",
+            Command::Index(_) => "index",
+            Command::Info(_) => "info",
+            Command::Cache(_) => "cache",
             Command::Serve(_) => "serve",
             Command::Mcp => "mcp",
+            Command::Lsp(lsp) => lsp.request.name(),
             Command::Version => "version",
-            Command::ApiJson => "api-json",
             Command::Licenses => "licenses",
-            Command::Config => "config",
-            Command::ProjectInfo => "project-info",
-            Command::Index(_) => "index",
-            Command::Stats => "stats",
-            Command::Check(_) => "check",
-            Command::Completion(_) => "completion",
-            Command::Definition(_) => "definition",
-            Command::Implementation(_) => "implementation",
-            Command::References(_) => "references",
-            Command::Hover(_) => "hover",
-            Command::Signature(_) => "signature",
-            Command::CallHierarchy(_) => "call-hierarchy",
-            Command::TypeHierarchy(_) => "type-hierarchy",
-            Command::Symbols(_) => "symbols",
-            Command::WorkspaceSymbol(_) => "workspace-symbol",
-            Command::Highlights(_) => "highlights",
-            Command::FoldingRanges(_) => "folding-ranges",
-            Command::Links(_) => "links",
-            Command::Semtok(_) => "semtok",
-            Command::InlayHints(_) => "inlay-hints",
-            Command::Codelens(_) => "codelens",
-            Command::SelectionRanges(_) => "selection-ranges",
-            Command::LinkedEditing(_) => "linked-editing",
-            Command::Colors(_) => "colors",
-            Command::Codeaction(_) => "codeaction",
-            Command::Rename(_) => "rename",
-            Command::Execute(_) => "execute",
-            Command::Request(_) => "request",
+        }
+    }
+}
+
+impl LspCommand {
+    pub(crate) fn name(&self) -> &'static str {
+        match self {
+            LspCommand::Hover(_) => "hover",
+            LspCommand::Definition(_) => "definition",
+            LspCommand::Implementation(_) => "implementation",
+            LspCommand::References(_) => "references",
+            LspCommand::Completion(_) => "completion",
+            LspCommand::Signature(_) => "signature",
+            LspCommand::CallHierarchy(_) => "call-hierarchy",
+            LspCommand::TypeHierarchy(_) => "type-hierarchy",
+            LspCommand::Highlights(_) => "highlights",
+            LspCommand::SelectionRanges(_) => "selection-ranges",
+            LspCommand::LinkedEditing(_) => "linked-editing",
+            LspCommand::Symbols(_) => "symbols",
+            LspCommand::FoldingRanges(_) => "folding-ranges",
+            LspCommand::Links(_) => "links",
+            LspCommand::SemanticTokens(_) => "semantic-tokens",
+            LspCommand::InlayHints(_) => "inlay-hints",
+            LspCommand::Codelens(_) => "codelens",
+            LspCommand::Colors(_) => "colors",
+            LspCommand::WorkspaceSymbol(_) => "workspace-symbol",
+            LspCommand::Codeaction(_) => "codeaction",
+            LspCommand::Rename(_) => "rename",
+            LspCommand::Execute(_) => "execute",
+            LspCommand::Request(_) => "request",
+            LspCommand::ApiJson => "api-json",
         }
     }
 }

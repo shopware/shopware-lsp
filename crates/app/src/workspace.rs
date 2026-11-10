@@ -10,6 +10,7 @@ use swlsp_lsp::{BoxError, Context, Server, WorkspaceFactory, WorkspaceRuntime};
 use swlsp_php::PhpIndex;
 
 use crate::cache;
+use crate::cache_manage::{self, CacheUse};
 use swlsp_ide::{Registrar, Registration, Services};
 
 /// The resources of one initialized workspace root.
@@ -23,6 +24,8 @@ pub struct Workspace {
     registrations: Vec<Registration>,
     initial_force: bool,
     close_result: Mutex<Option<Result<(), CloseError>>>,
+    /// Keeps `cache clear` away while the workspace is open.
+    _cache_use: CacheUse,
 }
 
 /// Resources created so far; closed in reverse order when construction
@@ -229,6 +232,15 @@ fn build(
     )
     .map_err(context("migrate structurally configured cache"))?;
     cache_cleared = cache_cleared || configuration_cleared;
+    // After the migrations: they empty the directory.
+    let cache_use = CacheUse::begin(cache_dir, root);
+    // `<base>/shopware-lsp/<hash>`: editors manage the caches next to this
+    // one through the server.
+    if let Some(cache_base) = cache_dir.parent().and_then(Path::parent) {
+        for (name, command) in cache_manage::commands(cache_base) {
+            server.register_command(name, command);
+        }
+    }
 
     let store = Store::open(cache_dir.join("indexes.db")).map_err(context("create index store"))?;
     partial.store = Some(store.clone());
@@ -477,6 +489,7 @@ fn build(
         registrations,
         initial_force: cache_cleared,
         close_result: Mutex::new(None),
+        _cache_use: cache_use,
     })
 }
 

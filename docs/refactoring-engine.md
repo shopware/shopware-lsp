@@ -525,8 +525,8 @@ edits but cannot execute editor-only commands. See
 [`lsp-server.md`](lsp-server.md#gating-features-domains-client-profiles).
 
 Also: **code actions must never write files directly.** Returning a workspace
-edit is what lets the editor, the CLI (`codeaction --exec`), and MCP validate and
-apply the change consistently — and what makes `codeaction` able to preview a
+edit is what lets the editor, the CLI (`lsp codeaction --exec`), and MCP validate and
+apply the change consistently — and what makes `lsp codeaction` able to preview a
 unified diff without touching the disk.
 
 ## Design rules
@@ -582,8 +582,8 @@ operations; the `codeaction` and `inspections` modules of the domain crates
 ```bash
 cargo test -p swlsp-rewrite -p swlsp-php-rewrite
 cargo test -p swlsp-ide-symfony -p swlsp-ide-twig -p swlsp-ide-admin
-shopware-lsp --root /path/to/project codeaction --kind quickfix src/Controller.php:24:18
-shopware-lsp --root /path/to/project rename -d src/Controller.php:24:18 NewName
+shopware-lsp --root /path/to/project lsp codeaction --kind quickfix src/Controller.php:24:18
+shopware-lsp --root /path/to/project lsp rename -d src/Controller.php:24:18 NewName
 ```
 
 The last two print a unified diff without writing, which is the fastest way to

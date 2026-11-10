@@ -205,16 +205,16 @@ refactoring engine used by the editor.
 
 ```bash
 # Inspect project detection without creating a workspace cache.
-shopware-lsp --root /path/to/project --json project-info
+shopware-lsp --root /path/to/project --json info
 
 # Index once, then run configured diagnostics over source and tests.
 shopware-lsp --root /path/to/project index
 shopware-lsp --root /path/to/project check src tests
 
 # Query framework-aware navigation from scripts or CI.
-shopware-lsp --root /path/to/project definition src/Controller.php:24:18
-shopware-lsp --root /path/to/project references src/Controller.php:24:18
-shopware-lsp --root /path/to/project workspace-symbol customer.detail
+shopware-lsp --root /path/to/project lsp definition src/Controller.php:24:18
+shopware-lsp --root /path/to/project lsp references src/Controller.php:24:18
+shopware-lsp --root /path/to/project lsp workspace-symbol customer.detail
 ```
 
 CLI positions are one-based `file:line:column` values. `check` can fail on a

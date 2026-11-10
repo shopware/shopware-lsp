@@ -1,5 +1,5 @@
 //! The `shopware-lsp` command line: the stdio
-//! language server, the MCP server, workspace commands (`index`, `stats`,
+//! language server, the MCP server, workspace commands (`index`, `info`,
 //! `check`), read-only feature commands and previewing refactors.
 //!
 //! Every workspace command drives the production LSP session (an in-process
@@ -9,9 +9,11 @@
 
 mod args;
 mod autofix;
+mod cache;
 mod edit;
 mod features_read;
 mod features_write;
+mod info;
 mod logger;
 mod mcp;
 mod project_info;
@@ -28,7 +30,7 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
-use crate::args::{Command, ShopwareLsp};
+use crate::args::{Command, LspCommand, ShopwareLsp};
 use crate::terminal::{ColorChoice, Status};
 
 pub use edit::{EditMode, TextEditError, apply_protocol_text_edits, apply_workspace_edit};
@@ -246,7 +248,8 @@ pub type Input = Box<dyn Read + Send>;
 /// One command as `api-json` describes it, generated from the CLI spec.
 #[derive(Clone, Serialize)]
 pub struct CommandDefinition {
-    pub name: &'static str,
+    /// The words after `shopware-lsp`, such as `check` or `lsp hover`.
+    pub name: String,
     pub summary: &'static str,
     pub usage: String,
 }
@@ -311,7 +314,6 @@ impl Runner {
         self.out = out;
         self.err_out = err_out.clone();
         install_logger();
-        set_log_sink(LogSink::Writer(err_out.clone()));
 
         let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
         let cli = match ShopwareLsp::parse_from(&argv) {
@@ -364,69 +366,81 @@ impl Runner {
 
     fn dispatch(&self, command: Command) -> Result<(), CliError> {
         let name = command.name();
-        if name != "serve" && !self.verbose {
-            set_log_sink(LogSink::Discard);
-        }
-        let one = |value: String| vec![value];
+        // The sink is process-wide: a command that shows no logs never
+        // installs its writer, so it cannot receive those of another
+        // session in the same process.
+        set_log_sink(if name == "serve" || self.verbose {
+            LogSink::Writer(self.err_out.clone())
+        } else {
+            LogSink::Discard
+        });
         let result = match command {
+            Command::Check(check) => workspace_commands::run_check(self, &check),
+            Command::Index(index) => workspace_commands::run_index(self, index.force),
+            Command::Info(info) => info::run_info(self, &info),
+            Command::Cache(cache) => cache::run_cache(self, &cache),
             Command::Serve(serve) => serve::run_serve(self, &serve),
             Command::Mcp => mcp::run_mcp(self),
+            Command::Lsp(lsp) => self.dispatch_lsp(lsp.request),
             Command::Version => run_version(self),
-            Command::ApiJson => run_api_json(self),
             Command::Licenses => run_licenses(self),
-            Command::Config => run_config(self),
-            Command::ProjectInfo => project_info::run_project_info(self),
-            Command::Index(index) => workspace_commands::run_index(self, index.force),
-            Command::Stats => workspace_commands::run_stats(self),
-            Command::Check(check) => workspace_commands::run_check(self, &check),
-            Command::Completion(at) => features_read::run_completion(self, &one(at.position)),
-            Command::Definition(at) => features_read::run_definition(self, &one(at.position)),
-            Command::Implementation(at) => {
-                features_read::run_implementation(self, &one(at.position))
-            }
-            Command::References(at) => features_read::run_references(self, &one(at.position)),
-            Command::Hover(at) => features_read::run_hover(self, &one(at.position)),
-            Command::Signature(at) => features_read::run_signature(self, &one(at.position)),
-            Command::CallHierarchy(at) => {
-                features_read::run_call_hierarchy(self, &one(at.position))
-            }
-            Command::TypeHierarchy(at) => {
-                features_read::run_type_hierarchy(self, &one(at.position))
-            }
-            Command::Symbols(file) => features_read::run_symbols(self, &one(file.file)),
-            Command::WorkspaceSymbol(query) => {
-                features_read::run_workspace_symbols(self, query.fresh, &query.query)
-            }
-            Command::Highlights(at) => features_read::run_highlights(self, &one(at.position)),
-            Command::FoldingRanges(file) => {
-                features_read::run_folding_ranges(self, &one(file.file))
-            }
-            Command::Links(file) => features_read::run_links(self, &one(file.file)),
-            Command::Semtok(file) => features_read::run_semantic_tokens(self, &one(file.file)),
-            Command::InlayHints(file) => features_read::run_inlay_hints(self, &one(file.file)),
-            Command::Codelens(file) => features_read::run_code_lens(self, &one(file.file)),
-            Command::SelectionRanges(at) => {
-                features_read::run_selection_ranges(self, &one(at.position))
-            }
-            Command::LinkedEditing(at) => {
-                features_read::run_linked_editing(self, &one(at.position))
-            }
-            Command::Colors(file) => features_read::run_colors(self, &one(file.file)),
-            Command::Codeaction(action) => features_write::run_code_action(self, &action),
-            Command::Rename(rename) => features_write::run_rename(self, &rename),
-            Command::Execute(execute) => features_write::run_execute(
-                self,
-                execute.method.as_deref(),
-                execute.arguments.as_deref(),
-            ),
-            Command::Request(request) => {
-                features_write::run_request(self, &request.method, request.params.as_deref())
-            }
         };
         match result {
             Ok(()) => Ok(()),
             Err(error) if error.exit => Err(error),
             Err(error) => Err(error.wrap(name)),
+        }
+    }
+
+    fn dispatch_lsp(&self, request: LspCommand) -> Result<(), CliError> {
+        let one = |value: String| vec![value];
+        match request {
+            LspCommand::Hover(at) => features_read::run_hover(self, &one(at.position)),
+            LspCommand::Definition(at) => features_read::run_definition(self, &one(at.position)),
+            LspCommand::Implementation(at) => {
+                features_read::run_implementation(self, &one(at.position))
+            }
+            LspCommand::References(at) => features_read::run_references(self, &one(at.position)),
+            LspCommand::Completion(at) => features_read::run_completion(self, &one(at.position)),
+            LspCommand::Signature(at) => features_read::run_signature(self, &one(at.position)),
+            LspCommand::CallHierarchy(at) => {
+                features_read::run_call_hierarchy(self, &one(at.position))
+            }
+            LspCommand::TypeHierarchy(at) => {
+                features_read::run_type_hierarchy(self, &one(at.position))
+            }
+            LspCommand::Highlights(at) => features_read::run_highlights(self, &one(at.position)),
+            LspCommand::SelectionRanges(at) => {
+                features_read::run_selection_ranges(self, &one(at.position))
+            }
+            LspCommand::LinkedEditing(at) => {
+                features_read::run_linked_editing(self, &one(at.position))
+            }
+            LspCommand::Symbols(file) => features_read::run_symbols(self, &one(file.file)),
+            LspCommand::FoldingRanges(file) => {
+                features_read::run_folding_ranges(self, &one(file.file))
+            }
+            LspCommand::Links(file) => features_read::run_links(self, &one(file.file)),
+            LspCommand::SemanticTokens(file) => {
+                features_read::run_semantic_tokens(self, &one(file.file))
+            }
+            LspCommand::InlayHints(file) => features_read::run_inlay_hints(self, &one(file.file)),
+            LspCommand::Codelens(file) => features_read::run_code_lens(self, &one(file.file)),
+            LspCommand::Colors(file) => features_read::run_colors(self, &one(file.file)),
+            LspCommand::WorkspaceSymbol(query) => {
+                features_read::run_workspace_symbols(self, query.fresh, &query.query)
+            }
+            LspCommand::Codeaction(action) => features_write::run_code_action(self, &action),
+            LspCommand::Rename(rename) => features_write::run_rename(self, &rename),
+            LspCommand::Execute(execute) => features_write::run_execute(
+                self,
+                execute.method.as_deref(),
+                execute.arguments.as_deref(),
+            ),
+            LspCommand::Request(request) => {
+                features_write::run_request(self, &request.method, request.params.as_deref())
+            }
+            LspCommand::ApiJson => run_api_json(self),
         }
     }
 
@@ -530,40 +544,32 @@ impl Runner {
 /// The commands `api-json` reports, in name order, generated from the CLI
 /// declaration so they cannot drift from what the parser accepts.
 pub fn commands() -> Vec<CommandDefinition> {
-    let mut commands: Vec<CommandDefinition> = ShopwareLsp::spec()
-        .root
-        .subcommands
-        .iter()
-        .filter(|meta| !meta.hide)
-        .map(|meta| CommandDefinition {
-            name: meta.cmd.name,
+    let mut commands = Vec::new();
+    for meta in ShopwareLsp::spec().root.subcommands.iter() {
+        if meta.hide {
+            continue;
+        }
+        commands.push(CommandDefinition {
+            name: meta.cmd.name.to_owned(),
             summary: meta.about.unwrap_or_default(),
             usage: usage_rs::help::usage_line(&[meta.cmd.name], meta),
-        })
-        .collect();
+        });
+        for nested in meta.subcommands.iter().filter(|nested| !nested.hide) {
+            commands.push(CommandDefinition {
+                name: format!("{} {}", meta.cmd.name, nested.cmd.name),
+                summary: nested.about.unwrap_or_default(),
+                usage: usage_rs::help::usage_line(&[meta.cmd.name, nested.cmd.name], nested),
+            });
+        }
+    }
     // `help` is generated by the parser rather than declared.
     commands.push(CommandDefinition {
-        name: "help",
+        name: "help".to_owned(),
         summary: "Print this message or the help of the given command",
         usage: "help [COMMAND]".into(),
     });
-    commands.sort_by(|left, right| left.name.cmp(right.name));
+    commands.sort_by(|left, right| left.name.cmp(&right.name));
     commands
-}
-
-fn run_config(runner: &Runner) -> Result<(), CliError> {
-    let session = runner.connect_without_index()?;
-    let configuration = session.configuration.clone();
-    let _ = session.close();
-    if runner.json {
-        return runner.write_json(&configuration.raw);
-    }
-    let raw = &configuration.raw;
-    runner.write_json(&serde_json::json!({
-        "effective": raw["effective"],
-        "path": raw.get("path").cloned().unwrap_or_else(|| "".into()),
-        "scopes": raw["scopes"],
-    }))
 }
 
 fn run_version(runner: &Runner) -> Result<(), CliError> {
@@ -642,7 +648,7 @@ fn run_api_json(runner: &Runner) -> Result<(), CliError> {
     }
     runner.write_json(&Api {
         commands: commands(),
-        custom_command_discovery: "shopware-lsp execute",
+        custom_command_discovery: "shopware-lsp lsp execute",
         languages,
         lsp_methods: LSP_METHODS,
         name: "shopware-lsp",

@@ -249,6 +249,10 @@
         "title": "Shopware: Force Reindex"
       },
       {
+        "command": "shopwareLSP.clearCache",
+        "title": "Shopware: Clear Index Cache…"
+      },
+      {
         "command": "shopwareLSP.configure",
         "title": "Shopware: Configure Language Server…"
       },

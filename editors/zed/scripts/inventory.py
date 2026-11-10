@@ -104,7 +104,7 @@ def server_binary():
 
 
 def execute(binary, root, method, payload=None):
-    args = [binary, "--root", root, "execute", method]
+    args = [binary, "--root", root, "lsp", "execute", method]
     if payload is not None:
         args.append(json.dumps(payload))
     result = subprocess.run(args, capture_output=True, text=True, timeout=300)
@@ -285,12 +285,15 @@ def collect(binary, root, extension_dir=None):
     catalog = execute(binary, root, "shopware/integration/catalog", {})
     config = json.loads(
         subprocess.run(
-            [binary, "--root", root, "config"], capture_output=True, text=True, timeout=300
+            [binary, "--root", root, "--json", "info"],
+            capture_output=True,
+            text=True,
+            timeout=300,
         ).stdout
-    )["effective"]
+    )["configuration"]["effective"]
     api = json.loads(
         subprocess.run(
-            [binary, "api-json"], capture_output=True, text=True, timeout=300
+            [binary, "lsp", "api-json"], capture_output=True, text=True, timeout=300
         ).stdout
     )
 

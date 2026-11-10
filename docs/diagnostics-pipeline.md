@@ -989,11 +989,11 @@ shopware-lsp --root /path/to/project check --fail-on error src/Controller.php
 shopware-lsp --root /path/to/project --json check src
 ```
 
-`codeaction` exercises the fix path, previewing a unified diff unless `-w` is
+`lsp codeaction` exercises the fix path, previewing a unified diff unless `-w` is
 passed:
 
 ```bash
-shopware-lsp --root /path/to/project codeaction --kind quickfix src/Controller.php:24:18
+shopware-lsp --root /path/to/project lsp codeaction --kind quickfix src/Controller.php:24:18
 ```
 
 ### Tracing

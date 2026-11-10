@@ -17,6 +17,7 @@ fn cli_extract_function_selection_preview() {
         "--root",
         root.path().to_str().unwrap(),
         "--allow-unsupported-project",
+        "lsp",
         "codeaction",
         "--end-line",
         "4",

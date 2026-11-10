@@ -12,6 +12,7 @@
 //! applied.
 
 mod cache;
+mod cache_manage;
 mod domains;
 mod integration;
 mod precedence;
@@ -24,6 +25,10 @@ use swlsp_lsp::Server;
 pub use cache::{
     CACHE_DIR_ENV, CacheDirError, PlatformCacheDirError, project_cache_folder,
     project_cache_folder_in, user_cache_dir,
+};
+pub use cache_manage::{
+    CacheEntry, CacheState, ClearError, ClearReport, ClearScope, caches_dir, clear_caches,
+    list_caches,
 };
 pub use domains::DOMAINS;
 pub use integration::{CATALOG_COMMAND, Provider as IntegrationProvider};

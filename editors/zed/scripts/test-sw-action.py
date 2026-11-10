@@ -684,7 +684,7 @@ class Examples(unittest.TestCase):
         self.assertEqual(len(self.labels), len(self.tasks))
 
     def test_labels_are_verb_first(self):
-        verbs = {"go", "insert", "create", "show", "open", "rebuild"}
+        verbs = {"go", "insert", "create", "show", "open", "rebuild", "clear"}
         for label in self.labels:
             self.assertTrue(label.startswith("Shopware: "), label)
             self.assertIn(label.split(": ", 1)[1].split()[0], verbs, label)

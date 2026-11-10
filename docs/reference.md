@@ -21,33 +21,56 @@ the terminal:
 ```bash
 shopware-lsp help
 shopware-lsp version
-shopware-lsp --root /path/to/project --json project-info
+shopware-lsp --root /path/to/project --json info
 shopware-lsp --root /path/to/project index
 shopware-lsp --root /path/to/project index --force
-shopware-lsp --root /path/to/project stats
+shopware-lsp --root /path/to/project info --stats
+shopware-lsp cache
+shopware-lsp --root /path/to/project cache clear
+shopware-lsp cache clear --stale
 shopware-lsp --root /path/to/project check src tests
 shopware-lsp --root /path/to/project check --fail-on error src/Controller.php
-shopware-lsp --root /path/to/project definition src/Controller.php:24:18
-shopware-lsp --root /path/to/project references src/Controller.php:24:18
-shopware-lsp --root /path/to/project workspace-symbol customer.detail
-shopware-lsp --root /path/to/project workspace-symbol --fresh customer.detail
-shopware-lsp --root /path/to/project codeaction --kind quickfix src/Controller.php:24:18
-shopware-lsp --root /path/to/project codeaction --kind refactor.extract --end-line 30 --end-column 1 src/Controller.php:24:1
-shopware-lsp --root /path/to/project rename -d src/Controller.php:24:18 NewName
+shopware-lsp --root /path/to/project lsp definition src/Controller.php:24:18
+shopware-lsp --root /path/to/project lsp references src/Controller.php:24:18
+shopware-lsp --root /path/to/project lsp workspace-symbol customer.detail
+shopware-lsp --root /path/to/project lsp workspace-symbol --fresh customer.detail
+shopware-lsp --root /path/to/project lsp codeaction --kind quickfix src/Controller.php:24:18
+shopware-lsp --root /path/to/project lsp codeaction --kind refactor.extract --end-line 30 --end-column 1 src/Controller.php:24:1
+shopware-lsp --root /path/to/project lsp rename -d src/Controller.php:24:18 NewName
 shopware-lsp --root /path/to/project mcp
 ```
 
 Workspace commands run only for detected Shopware or Symfony roots. Detection
 is intentionally bounded to root metadata: Shopware Composer metadata or app
 manifest files, `symfony/framework-bundle` or `config/bundles.php`, and the
-committed `.config/shopware/lsp.yaml` opt-in. Use `project-info` to see
-the detected kind and its evidence without creating a workspace cache. For an
+committed `.config/shopware/lsp.yaml` opt-in. Use `info` to see
+the detected kind, its evidence and the configuration in effect; `info --stats`
+adds index, cache and memory statistics, and `info --json` prints the complete
+effective configuration. For an
 unusual but intentional root, either add the project configuration or pass the
 global `--allow-unsupported-project` flag. The same guard is
 enforced by the language-server and MCP entry points.
 
+The commands people and CI run are at the top level: `check`, `index`, `info`,
+`cache`, `serve` and `mcp`. Everything that asks the language server what an editor
+would ask (hover, definition, rename, code actions, raw requests) is below
+`lsp`; `shopware-lsp lsp --help` lists the requests by what they take.
+`info --project-only` only detects the project, without opening the workspace:
+editors use it to decide whether to start the server.
+
+`cache` lists the index caches of every project on this machine with their
+size, when they were last written and their state; it opens no workspace, so
+it also works when a cache does not. `cache clear` deletes the cache of the
+current project, `cache clear --stale` those whose project is gone or that are
+outdated or unidentified and were not written for a week, and
+`cache clear --all` all of them; `--dry-run` shows what would go. A cache that
+a running server or command has open is kept: stop it first, or rebuild the
+index in place with `index --force`. Editors offer the same through
+`shopware/cache/list` and `shopware/cache/clear` (VS Code: "Shopware: Clear
+Index Cache…").
+
 Positions are one-based `file:line:column` values. Structured feature commands
-emit JSON. `check` and `stats` default to readable text; pass the global `--json` flag
+emit JSON. `check` and `info` default to readable text; pass the global `--json` flag
 for machine-readable output. Global flags work before or after the command,
 and `shopware-lsp help <command>` (or `<command> --help`) lists every flag.
 Flags are GNU-style (`--root DIR`, `--root=DIR`, `-w`); the single-dash
@@ -79,7 +102,7 @@ findings only. A finding is fixable when the server offers exactly one
 preferred quick fix for it and that fix edits nothing but the checked file.
 Fixes that need a choice between alternatives, an editor command, or a change
 to another file (creating a template, adding a service argument to
-`services.xml`) are not applied: use `codeaction` for them. The fixes of one
+`services.xml`) are not applied: use `lsp codeaction` for them. The fixes of one
 file are applied one after another, checking the file again after each, so
 fixes that affect each other (two renamed references sharing an import) come
 out right. Review the result with `git diff`.
@@ -90,10 +113,10 @@ terminals only, `NO_COLOR` turns colors off and `FORCE_COLOR` or
 for the other workspace commands while they wait for the index; `-v` replaces
 it with plain progress lines.
 
-`codeaction --exec` and `rename` preview a unified diff unless `-w` is
+`lsp codeaction --exec` and `lsp rename` preview a unified diff unless `-w` is
 supplied, so commands do not modify source files by default.
 
-`workspace-symbol` normally reads the populated SQLite FTS catalog directly,
+`lsp workspace-symbol` normally reads the populated SQLite FTS catalog directly,
 without restoring the PHP semantic graph or rescanning the workspace. Use
 `--fresh` when a one-shot command must validate the filesystem through the
 full production LSP session first. Textual relevance is ranked before explicit
@@ -104,8 +127,8 @@ The CLI exposes completion, definition, implementation, references, hover,
 signature help, call/type hierarchy, document and workspace symbols,
 highlights, folding ranges, links, semantic tokens, inlay hints, code lenses,
 selection ranges, linked editing, colors, code actions, and rename. Use
-`shopware-lsp execute` to list the registered `shopware/...` analytics and
-generator requests, or `shopware-lsp request` as a generic JSON-RPC escape
+`shopware-lsp lsp execute` to list the registered `shopware/...` analytics and
+generator requests, or `shopware-lsp lsp request` as a generic JSON-RPC escape
 hatch.
 
 Operational flags include `--profile-cpu`, `--profile-mem`, and
@@ -489,7 +512,7 @@ uncertain effects. Comments in later occurrences prevent their replacement.
 Both actions add numeric suffixes to avoid name collisions; use ordinary
 rename afterward to choose another name. Edits preserve comments, indentation,
 literal contents, line endings and the current document version. LSP, CLI and
-MCP share the same analysis and validated rewrite plans. CLI `codeaction`
+MCP share the same analysis and validated rewrite plans. CLI `lsp codeaction`
 accepts `--end-line` and `--end-column`; MCP code-action tools accept `endLine`
 and `endColumn`. Endpoints are exclusive, one-based UTF-16 positions; omitted
 endpoints retain caret behavior. List actions first and use their exact titles
@@ -1444,6 +1467,8 @@ validation and must use the new ones.
 
 ### Commands
 - `shopware/forceReindex` - Trigger a full re-index of the workspace
+- `shopware/cache/list` - List the workspace caches of this machine
+- `shopware/cache/clear` - Delete the stale or all caches of other projects
 
 ## Supported File Types
 
@@ -1708,7 +1733,7 @@ components are rejected. Changing exclusions requires a server restart and
 invalidates the structurally incompatible workspace cache.
 
 `indexing.maxFileSizeMiB` defaults to `8`. Larger source files are skipped
-before reading or parsing and are listed by `shopware-lsp stats`. Set it to `0`
+before reading or parsing and are listed by `shopware-lsp info --stats`. Set it to `0`
 to disable the configurable ceiling; files outside the parser's 32-bit source
 range are always rejected. The corresponding local VS Code override is
 `shopwareLSP.indexing.maxFileSizeMiB`. Changing the limit requires a server
@@ -1734,7 +1759,7 @@ extension-local file. Every Shopware diagnostic also offers a configuration
 quick fix for suppressing its rule—or all diagnostics—for a file, directory,
 extension, or workspace.
 
-For CI, `shopware-lsp config` validates and prints the effective configuration.
+For CI, `shopware-lsp info --json` validates and prints the effective configuration.
 `shopware-lsp check` fails before indexing when the committed configuration is
 invalid. Its command-line severity flags override the `check` defaults from the
 file; use `--fail-on off` to explicitly suppress the configured failure threshold

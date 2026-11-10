@@ -8,18 +8,20 @@ const {
   ProjectDetector,
 } = require('../dist/projectDetection.js');
 
-test('parses typed project-info output', () => {
-  assert.deepEqual(parseProjectInfo(JSON.stringify({
+test('parses typed info output', () => {
+  assert.deepEqual(parseProjectInfo(JSON.stringify({project: {
     supported: true,
     kind: 'shopware',
     evidence: [{path: 'composer.json', reason: 'requires shopware/core'}],
-  })), {
+  }})), {
     supported: true,
     kind: 'shopware',
     evidence: [{path: 'composer.json', reason: 'requires shopware/core'}],
   });
-  assert.throws(() => parseProjectInfo('{"supported":true,"kind":"unknown","evidence":[]}'));
-  assert.throws(() => parseProjectInfo('{"supported":false,"kind":"other","evidence":[]}'));
+  assert.throws(() => parseProjectInfo('{"project":{"supported":true,"kind":"unknown","evidence":[]}}'));
+  assert.throws(() => parseProjectInfo('{"project":{"supported":false,"kind":"other","evidence":[]}}'));
+  // The shape of the former project-info command is not accepted.
+  assert.throws(() => parseProjectInfo('{"supported":true,"kind":"shopware","evidence":[]}'));
 });
 
 test('recognizes capability-free inactive server initialization', () => {
@@ -52,7 +54,7 @@ test('caches detection per executable and root and supports invalidation', async
   let calls = 0;
   const detector = new ProjectDetector(async () => {
     calls++;
-    return '{"supported":true,"kind":"configured","evidence":[]}';
+    return '{"project":{"supported":true,"kind":"configured","evidence":[]}}';
   });
   await detector.detect('/bin/shopware-lsp', '/workspace/project');
   await detector.detect('/bin/shopware-lsp', '/workspace/project');
@@ -67,7 +69,7 @@ test('does not retain a failed detection', async () => {
   const detector = new ProjectDetector(async () => {
     calls++;
     if (calls === 1) throw new Error('temporary failure');
-    return '{"supported":false,"kind":"unknown","evidence":[]}';
+    return '{"project":{"supported":false,"kind":"unknown","evidence":[]}}';
   });
   await assert.rejects(detector.detect('/bin/shopware-lsp', '/workspace/project'));
   assert.equal((await detector.detect('/bin/shopware-lsp', '/workspace/project')).kind, 'unknown');

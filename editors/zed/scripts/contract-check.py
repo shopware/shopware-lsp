@@ -120,14 +120,14 @@ def fixture_project(workdir):
 def check_project_detection(binary, root):
     print("\nproject detection")
     result = subprocess.run(
-        [binary, "--root", root, "project-info"],
+        [binary, "--root", root, "info", "--project-only"],
         capture_output=True,
         text=True,
         timeout=120,
     )
     check(
         ".config/shopware/lsp.yaml is accepted as a project marker",
-        "Supported: yes" in result.stdout,
+        "Supported:      yes" in result.stdout,
         (result.stdout or result.stderr).strip().replace("\n", " | ")[:90],
     )
 

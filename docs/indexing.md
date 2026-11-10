@@ -678,7 +678,7 @@ Ranking is textual relevance first, then symbol-kind priority, so an exact
 member match stays useful while equally good type matches sort above members and
 framework aliases. Aliases are searchable but are not returned to LSP clients.
 
-`workspace-symbol` in the CLI reads this catalog directly without restoring any
+`lsp workspace-symbol` in the CLI reads this catalog directly without restoring any
 language-specific object graph; `--fresh` forces a full production session
 first.
 
@@ -929,13 +929,15 @@ Specific rules that come up repeatedly:
 ```bash
 shopware-lsp --root /path/to/project index          # build or refresh
 shopware-lsp --root /path/to/project index --force   # clear hashes and rebuild
-shopware-lsp --root /path/to/project stats          # tracked files, cache size, memory
-shopware-lsp --root /path/to/project --json stats
+shopware-lsp --root /path/to/project info --stats          # tracked files, cache size, memory
+shopware-lsp --root /path/to/project --json info --stats
+shopware-lsp cache                                  # every project's cache: size, age, state
+shopware-lsp cache clear --stale                    # delete caches nothing uses any more
 ```
 
 Persistent indexing skips source files larger than `indexing.maxFileSizeMiB`
 (8 MiB by default). Set it to `0` to disable the configurable ceiling. Files
-outside the parser's 32-bit source range are always rejected. `stats` reports
+outside the parser's 32-bit source range are always rejected. `info --stats` reports
 the ten largest indexed files plus the count, total size, and largest examples
 of skipped oversized files.
 

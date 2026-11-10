@@ -240,5 +240,14 @@
       "reindex"
     ],
     "reveal": "always"
+  },
+  {
+    "label": "Shopware: clear stale index caches",
+    "command": "python3",
+    "args": [
+      "$ZED_WORKTREE_ROOT/.zed/sw-action.py",
+      "cache-clear"
+    ],
+    "reveal": "always"
   }
 ]

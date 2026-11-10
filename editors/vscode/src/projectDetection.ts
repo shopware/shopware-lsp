@@ -50,24 +50,26 @@ export function inactiveServerProject(experimental: unknown): InactiveServerProj
 
 export function parseProjectInfo(source: string): ProjectInfo {
   const value: unknown = JSON.parse(source);
-  if (!value || typeof value !== 'object') throw new Error('project-info returned no object');
-  const record = value as Record<string, unknown>;
+  if (!value || typeof value !== 'object') throw new Error('info returned no object');
+  const project = (value as Record<string, unknown>).project;
+  if (!project || typeof project !== 'object') throw new Error('info returned no project');
+  const record = project as Record<string, unknown>;
   const kinds: ProjectKind[] = ['shopware', 'symfony', 'configured', 'unknown'];
   if (typeof record.supported !== 'boolean' || !kinds.includes(record.kind as ProjectKind) ||
     !Array.isArray(record.evidence)) {
-    throw new Error('project-info returned an invalid result');
+    throw new Error('info returned an invalid project');
   }
   const evidence = record.evidence.map((item: unknown) => {
-    if (!item || typeof item !== 'object') throw new Error('project-info returned invalid evidence');
+    if (!item || typeof item !== 'object') throw new Error('info returned invalid evidence');
     const entry = item as Record<string, unknown>;
     if (typeof entry.path !== 'string' || typeof entry.reason !== 'string') {
-      throw new Error('project-info returned invalid evidence');
+      throw new Error('info returned invalid evidence');
     }
     return {path: entry.path, reason: entry.reason};
   });
   const kind = record.kind as ProjectKind;
   if (record.supported !== (kind !== 'unknown')) {
-    throw new Error('project-info returned inconsistent support state');
+    throw new Error('info returned inconsistent support state');
   }
   return {supported: record.supported, kind, evidence};
 }
@@ -110,7 +112,7 @@ function executeProjectInfo(serverPath: string, workspaceRoot: string): Promise<
   return new Promise((resolve, reject) => {
     execFile(
       serverPath,
-      ['--root', workspaceRoot, '--json', 'project-info'],
+      ['--root', workspaceRoot, '--json', 'info', '--project-only'],
       {timeout: 5000, maxBuffer: 1024 * 1024, windowsHide: true},
       (error, stdout, stderr) => {
         if (!error) {

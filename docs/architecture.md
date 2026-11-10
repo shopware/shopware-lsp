@@ -42,7 +42,7 @@ The same binary is three frontends over one engine:
 | Frontend | Entry | Transport |
 | --- | --- | --- |
 | Language server | `shopware-lsp` (no command) or `shopware-lsp serve` | JSON-RPC over stdin/stdout |
-| CLI | `shopware-lsp check`, `definition`, `rename`, … | In-process LSP session over an in-memory stream |
+| CLI | `shopware-lsp check`, `lsp definition`, `lsp rename`, … | In-process LSP session over an in-memory stream |
 | MCP server | `shopware-lsp mcp` | MCP over stdio, backed by the same session |
 
 The CLI and MCP paths are *not* a second implementation. They start the real
@@ -590,7 +590,7 @@ Measurement entry points:
 cargo bench -p swlsp-bench                # parser and PHP benchmarks (CodSpeed in CI)
 scripts/bench/lsp_bench.py --server target/release/shopware-lsp --root ~/shopware --out out.json
 SHOPWARE_LSP_TRACE_DIAGNOSTICS=1 shopware-lsp
-shopware-lsp --root /path/to/project stats
+shopware-lsp --root /path/to/project info --stats
 ```
 
 When comparing revisions, use isolated cache directories and reverse the run

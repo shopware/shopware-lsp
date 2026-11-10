@@ -43,7 +43,8 @@ fn core_commands_do_not_start_a_workspace() {
         third_party_notices: "dependency notice".into(),
     };
     for (args, contains) in [
-        (vec!["help"], "workspace-symbol"),
+        (vec!["help"], "check"),
+        (vec!["help", "lsp"], "workspace-symbol"),
         (vec!["-h"], "Usage:"),
         (vec!["version"], "shopware-lsp 1.2.3"),
         (vec!["--stdio", "version"], "shopware-lsp 1.2.3"),
@@ -105,7 +106,7 @@ fn profile_write_failure_is_returned() {
 
 #[test]
 fn api_json_describes_commands_and_languages() {
-    let output = run_ok(&["--json", "api-json"]);
+    let output = run_ok(&["--json", "lsp", "api-json"]);
     let result: Value = serde_json::from_str(&output).unwrap();
     let names: Vec<&str> = result["commands"]
         .as_array()
@@ -115,7 +116,9 @@ fn api_json_describes_commands_and_languages() {
         .collect();
     assert!(names.len() >= 30);
     assert!(names.contains(&"mcp"));
-    assert!(names.contains(&"project-info"));
+    assert!(names.contains(&"info"));
+    assert!(names.contains(&"lsp hover"));
+    assert!(!names.contains(&"project-info") && !names.contains(&"hover"));
     assert!(names.contains(&"help"));
     let php: Vec<&str> = result["languages"]["php"]
         .as_array()
@@ -146,12 +149,13 @@ fn project_info_reports_unknown_without_creating_workspace_cache() {
             run_unlocked(
                 test_options(),
                 &Cancel::new(),
-                &["--root", &root_path, "--json", "project-info"],
+                &["--root", &root_path, "--json", "info", "--project-only"],
             )
         },
     );
     assert!(run.result.is_ok(), "{}", run.err);
     let result: Value = serde_json::from_str(&run.out).unwrap();
+    let result = &result["project"];
     assert_eq!(result["supported"], false);
     assert_eq!(result["kind"], "unknown");
     assert!(directory_is_empty(cache_root.path()));
@@ -489,11 +493,20 @@ fn config_command_prints_effective_project_configuration() {
         "check": {"severity": "information", "failOn": "error"}
     }"#,
     );
-    let output = run_ok(&["--root", root.path().to_str().unwrap(), "--json", "config"]);
+    let output = run_ok(&["--root", root.path().to_str().unwrap(), "--json", "info"]);
     let result: Value = serde_json::from_str(&output).unwrap();
-    assert_eq!(result["effective"]["features"]["hover"], false);
-    assert_eq!(result["effective"]["check"]["severity"], "information");
-    assert_eq!(result["effective"]["check"]["failOn"], "error");
+    assert_eq!(
+        result["configuration"]["effective"]["features"]["hover"],
+        false
+    );
+    assert_eq!(
+        result["configuration"]["effective"]["check"]["severity"],
+        "information"
+    );
+    assert_eq!(
+        result["configuration"]["effective"]["check"]["failOn"],
+        "error"
+    );
 }
 
 #[test]
@@ -579,7 +592,7 @@ fn workspace_cli_index_check_and_execute_use_production_lsp() {
     let diagnostics = run_json(&["check", "--workers", "4", &src]);
     assert!(diagnostics.is_array() || diagnostics.is_null());
 
-    let commands = run_json(&["execute"]);
+    let commands = run_json(&["lsp", "execute"]);
     assert!(
         commands
             .as_array()
@@ -587,42 +600,45 @@ fn workspace_cli_index_check_and_execute_use_production_lsp() {
             .iter()
             .any(|command| command == "shopware/symfony/analytics/routes")
     );
-    assert!(run_json(&["semtok", &php]).is_array());
-    let symbols = run_json(&["workspace-symbol", "FixtureController"]);
+    assert!(run_json(&["lsp", "semantic-tokens", &php]).is_array());
+    let symbols = run_json(&["lsp", "workspace-symbol", "FixtureController"]);
     assert!(!symbols.as_array().unwrap().is_empty());
 
     let position = format!("{php}:3:13");
     let signature = format!("{php}:5:37");
     let call = format!("{php}:5:21");
     for request in [
-        vec!["codeaction", position.as_str()],
-        vec!["completion", &position],
-        vec!["definition", &position],
-        vec!["implementation", &position],
-        vec!["references", &position],
-        vec!["hover", &position],
-        vec!["signature", &signature],
-        vec!["call-hierarchy", &call],
-        vec!["type-hierarchy", &position],
-        vec!["highlights", &position],
-        vec!["folding-ranges", &php],
-        vec!["links", &php],
-        vec!["inlay-hints", &php],
-        vec!["codelens", &php],
-        vec!["selection-ranges", &position],
-        vec!["linked-editing", &position],
-        vec!["colors", &php],
-        vec!["symbols", &php],
+        vec!["lsp", "codeaction", position.as_str()],
+        vec!["lsp", "completion", &position],
+        vec!["lsp", "definition", &position],
+        vec!["lsp", "implementation", &position],
+        vec!["lsp", "references", &position],
+        vec!["lsp", "hover", &position],
+        vec!["lsp", "signature", &signature],
+        vec!["lsp", "call-hierarchy", &call],
+        vec!["lsp", "type-hierarchy", &position],
+        vec!["lsp", "highlights", &position],
+        vec!["lsp", "folding-ranges", &php],
+        vec!["lsp", "links", &php],
+        vec!["lsp", "inlay-hints", &php],
+        vec!["lsp", "codelens", &php],
+        vec!["lsp", "selection-ranges", &position],
+        vec!["lsp", "linked-editing", &position],
+        vec!["lsp", "colors", &php],
+        vec!["lsp", "symbols", &php],
     ] {
         run_json(&request);
     }
 
-    assert_eq!(run_json(&["stats"])["root"], root_path.as_str());
     assert_eq!(
-        run_json(&["request", "shopware/index/stats"])["trackedFiles"],
+        run_json(&["info", "--stats"])["stats"]["root"],
+        root_path.as_str()
+    );
+    assert_eq!(
+        run_json(&["lsp", "request", "shopware/index/stats"])["trackedFiles"],
         5
     );
-    let extensions = run_json(&["execute", "shopware/extension/all"]);
+    let extensions = run_json(&["lsp", "execute", "shopware/extension/all"]);
     assert!(extensions.is_array() || extensions.is_null());
     assert_eq!(run_json(&["index", "--force"])["forced"], true);
 
@@ -631,6 +647,7 @@ fn workspace_cli_index_check_and_execute_use_production_lsp() {
         &root_path,
         "--allow-unsupported-project",
         "--json",
+        "lsp",
         "rename",
         &position,
         "RenamedController",
@@ -646,6 +663,7 @@ fn workspace_cli_index_check_and_execute_use_production_lsp() {
         &root_path,
         "--allow-unsupported-project",
         "--json",
+        "lsp",
         "rename",
         "-w",
         &position,
@@ -700,6 +718,7 @@ fn workspace_symbol_uses_populated_catalog_without_session() {
             "--root",
             &root_path,
             "--allow-unsupported-project",
+            "lsp",
             "workspace-symbol",
             "CachedFixture",
         ],
@@ -743,7 +762,12 @@ fn unsupported_profiles_are_created_and_reported() {
 fn help_goes_to_stdout_and_succeeds() {
     let output = run_ok(&["--help"]);
     assert!(output.contains("Usage: shopware-lsp"), "{output}");
-    assert!(output.contains("workspace-symbol"));
+    // The top level lists what people run; editor requests are below `lsp`.
+    assert!(output.contains("Analyze:") && output.contains("Debugging:"));
+    assert!(!output.contains("workspace-symbol") && !output.contains("project-info"));
+    let lsp = run_ok(&["lsp", "--help"]);
+    assert!(lsp.contains("workspace-symbol") && lsp.contains("At a position:"));
+    assert!(run_ok(&["lsp", "hover", "-h"]).contains("Usage: shopware-lsp lsp hover"));
     let check = run_ok(&["help", "check"]);
     assert!(check.contains("--fail-on <LEVEL>"), "{check}");
     assert!(run_ok(&["check", "-h"]).contains("Usage: shopware-lsp check"));
@@ -759,7 +783,7 @@ fn global_flags_are_accepted_after_the_command() {
 
 #[test]
 fn single_dash_long_flags_are_rejected_with_a_hint() {
-    let run = run(&["-root", "/tmp", "project-info"]);
+    let run = run(&["-root", "/tmp", "info"]);
     let error = run.result.unwrap_err();
     assert_eq!(error.code, 2);
     assert!(
@@ -793,4 +817,177 @@ fn language_client_transport_flags_parse_for_the_default_server() {
         assert!(cli.stdio);
         assert!(cli.client_process_id.is_some());
     }
+}
+
+/// A minimal supported project with a configured check policy.
+fn configured_project() -> (tempfile::TempDir, String) {
+    let root = temp_dir();
+    write(
+        &path(root.path(), "src/Service.php"),
+        "<?php\nnamespace App;\nfinal class Service {}\n",
+    );
+    write(
+        &path(root.path(), ".config/shopware/lsp.yaml"),
+        r#"{"version": 1, "check": {"failOn": "error"}, "features": {"hover": false}}"#,
+    );
+    let root_path = root.path().to_str().unwrap().to_owned();
+    (root, root_path)
+}
+
+#[test]
+fn info_describes_the_project_and_its_configuration() {
+    let (_root, root) = configured_project();
+    let text = run_ok(&["--root", &root, "info"]);
+    assert!(text.starts_with("Project\n  Root:"), "{text}");
+    assert!(text.contains("  Type:           configured\n"), "{text}");
+    assert!(text.contains("  Supported:      yes\n"), "{text}");
+    assert!(text.contains("lsp.yaml\n"), "{text}");
+    assert!(
+        text.contains("  Check:          reports warning and above, fails on error and above\n"),
+        "{text}"
+    );
+    assert!(text.contains("  Features off:   hover\n"), "{text}");
+    // Statistics need the index, so they are opt-in.
+    assert!(
+        !text.contains("\nIndex\n") && text.contains("info --stats"),
+        "{text}"
+    );
+
+    let with_stats = run_ok(&["--root", &root, "info", "--stats"]);
+    assert!(with_stats.contains("\nIndex\n  Workspace:"), "{with_stats}");
+    assert!(with_stats.contains("  Tracked files:   "), "{with_stats}");
+
+    let json: Value = serde_json::from_str(&run_ok(&["--root", &root, "--json", "info"])).unwrap();
+    assert_eq!(json["project"]["supported"], true);
+    assert_eq!(
+        json["configuration"]["effective"]["check"]["failOn"],
+        "error"
+    );
+    assert!(json.get("stats").is_none());
+    let json: Value =
+        serde_json::from_str(&run_ok(&["--root", &root, "--json", "info", "--stats"])).unwrap();
+    assert!(json["stats"]["index"]["trackedFiles"].as_i64().unwrap() >= 1);
+}
+
+#[test]
+fn info_explains_an_unsupported_project_instead_of_failing() {
+    let root = temp_dir();
+    write(&path(root.path(), "Example.php"), "<?php\n");
+    let root_path = root.path().to_str().unwrap();
+    let text = run_ok(&["--root", root_path, "info"]);
+    assert!(text.contains("  Supported:      no\n"), "{text}");
+    assert!(text.contains("--allow-unsupported-project"), "{text}");
+    let json: Value =
+        serde_json::from_str(&run_ok(&["--root", root_path, "--json", "info"])).unwrap();
+    assert_eq!(json["project"]["kind"], "unknown");
+    assert!(json["configuration"].is_null());
+}
+
+#[test]
+fn info_project_only_detects_without_opening_the_workspace() {
+    let (_root, root) = configured_project();
+    let text = run_ok(&["--root", &root, "info", "--project-only"]);
+    assert!(text.contains("  Type:           configured\n"), "{text}");
+    assert!(!text.contains("Configuration"), "{text}");
+    let json: Value = serde_json::from_str(&run_ok(&[
+        "--root",
+        &root,
+        "--json",
+        "info",
+        "--project-only",
+    ]))
+    .unwrap();
+    assert_eq!(json, serde_json::json!({"project": json["project"]}));
+    assert_eq!(json["project"]["supported"], true);
+}
+
+#[test]
+fn editor_requests_exist_below_lsp_only() {
+    let (_root, root) = configured_project();
+    let file = path(std::path::Path::new(&root), "src/Service.php");
+    let symbols = run_ok(&["--root", &root, "--json", "lsp", "symbols", &file]);
+    assert!(symbols.contains("Service"), "{symbols}");
+    // Global flags are accepted behind the request too.
+    assert_eq!(
+        run_ok(&["lsp", "symbols", &file, "--json", "--root", &root]),
+        symbols
+    );
+    for old in [
+        vec!["symbols", file.as_str()],
+        vec!["hover", &file],
+        vec!["semtok", &file],
+        vec!["project-info"],
+        vec!["config"],
+        vec!["stats"],
+        vec!["lsp"],
+    ] {
+        let error = run(&old).result.unwrap_err();
+        assert_eq!(error.code, 2, "{old:?}: {}", error.message);
+    }
+}
+
+#[test]
+fn cache_lists_and_clears_without_opening_a_workspace() {
+    let (_root, root) = configured_project();
+    let cache_root = temp_dir();
+    let run_in = |args: &[&str]| {
+        let run = with_env(
+            swlsp_app::CACHE_DIR_ENV,
+            cache_root.path().to_str().unwrap(),
+            || run_unlocked(test_options(), &Cancel::new(), args),
+        );
+        assert!(run.result.is_ok(), "{args:?}: {:?} {}", run.result, run.err);
+        run.out
+    };
+    assert!(run_in(&["cache"]).starts_with("No caches in "));
+    assert_eq!(
+        run_in(&["--root", &root, "cache", "clear"]),
+        "This project has no cache.\n"
+    );
+    // Neither command created one.
+    assert!(run_in(&["cache"]).starts_with("No caches in "));
+
+    run_in(&["--root", &root, "index"]);
+    let listed = run_in(&["cache"]);
+    assert!(
+        listed.contains(&format!("  current       just now        {root}\n")),
+        "{listed}"
+    );
+    assert!(listed.contains("\n1 cache, "), "{listed}");
+    let json: Value = serde_json::from_str(&run_in(&["--json", "cache"])).unwrap();
+    assert_eq!(json["caches"][0]["root"], root.as_str());
+    assert_eq!(json["caches"][0]["inUse"], false);
+
+    // Editors reach the same through the server.
+    let commands = run_in(&["--root", &root, "--json", "lsp", "execute"]);
+    assert!(commands.contains("shopware/cache/clear") && commands.contains("shopware/cache/list"));
+    let through_server: Value = serde_json::from_str(&run_in(&[
+        "--root",
+        &root,
+        "--json",
+        "lsp",
+        "execute",
+        "shopware/cache/list",
+    ]))
+    .unwrap();
+    // The session asking has the cache open.
+    assert_eq!(through_server["caches"][0]["inUse"], true);
+
+    assert!(run_in(&["cache", "clear", "--stale"]).starts_with("No stale caches."));
+    let preview = run_in(&["--root", &root, "cache", "clear", "--dry-run"]);
+    assert!(
+        preview.starts_with(&format!("Would clear {root} (")),
+        "{preview}"
+    );
+    let cleared = run_in(&["--root", &root, "cache", "clear"]);
+    assert!(
+        cleared.starts_with(&format!("Cleared {root} (")),
+        "{cleared}"
+    );
+    assert!(run_in(&["cache"]).starts_with("No caches in "));
+
+    let error = run(&["cache", "clear", "--stale", "--all"])
+        .result
+        .unwrap_err();
+    assert_eq!(error.code, 2);
 }

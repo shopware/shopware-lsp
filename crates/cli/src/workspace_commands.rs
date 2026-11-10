@@ -1,4 +1,4 @@
-//! `index`, `stats` and `check`.
+//! `index`, `check` and the statistics of `info --stats`.
 
 use std::collections::{BTreeMap, HashSet};
 use std::fmt::Write as _;
@@ -169,7 +169,9 @@ fn memory_stats() -> MemoryStats {
     }
 }
 
-pub(crate) fn run_stats(runner: &Runner) -> Result<(), CliError> {
+/// Index, cache and memory statistics of the indexed workspace, as JSON
+/// and as text.
+pub(crate) fn stats_report(runner: &Runner) -> Result<(serde_json::Value, String), CliError> {
     let session = runner.connect()?;
     let scanner: ScannerStats = session
         .call::<Option<ScannerStats>>("shopware/index/stats", json!({}))?
@@ -181,7 +183,7 @@ pub(crate) fn run_stats(runner: &Runner) -> Result<(), CliError> {
     let root = session.root.clone();
     let initial = session.initial_index;
     let _ = session.close();
-    if runner.json {
+    let json = {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
         struct Output<'a> {
@@ -192,15 +194,16 @@ pub(crate) fn run_stats(runner: &Runner) -> Result<(), CliError> {
             root: &'a str,
             version: &'a str,
         }
-        return runner.write_json(&Output {
+        serde_json::to_value(Output {
             cache: &cache,
             index: &scanner,
             initial_index_in_seconds: initial.time_in_seconds,
             memory: &memory,
             root: &root,
             version: runner.version(),
-        });
-    }
+        })
+        .map_err(|error| CliError::fail(format!("encode statistics: {error}")))?
+    };
     let mut formatted = String::new();
     let _ = write!(
         formatted,
@@ -246,7 +249,7 @@ pub(crate) fn run_stats(runner: &Runner) -> Result<(), CliError> {
             );
         }
     }
-    runner.write_text(&formatted)
+    Ok((json, formatted))
 }
 
 fn inspect_cache(path: &str) -> Result<CacheStats, CliError> {

@@ -53,6 +53,10 @@
       "action": "config",
       "partial": "configure is an interactive editor that writes feature toggles and picks a scope; config only prints the effective configuration"
     },
+    "shopwareLSP.clearCache": {
+      "action": "cache-clear",
+      "partial": "clearCache offers this workspace, stale caches or all caches; cache-clear deletes the stale caches of other projects, reindex rebuilds this workspace, and `shopware-lsp cache clear --all` deletes all of them"
+    },
     "shopwareLSP.forceReindex": {
       "action": "reindex"
     },

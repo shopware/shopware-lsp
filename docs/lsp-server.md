@@ -634,6 +634,8 @@ Beyond standard LSP the server exposes Shopware-specific methods:
 | `shopware/configuration/reload` | Re-read configuration from disk |
 | `shopware/forceReindex` | Clear hashes and reindex |
 | `shopware/index/stats` | Indexing statistics |
+| `shopware/cache/list` | The workspace caches of this machine |
+| `shopware/cache/clear` | Delete stale or all caches of other projects |
 | `shopware/commands` | Enumerate available custom commands |
 
 Plus notifications the server sends: `shopware/indexingCompleted`,
@@ -689,8 +691,8 @@ Consequences that are easy to get wrong:
 
 - **CLI and MCP positions are one-based `file:line:column`.** LSP positions are
   zero-based UTF-16. Convert at the adapter boundary, nowhere else.
-- **Read-only commands must not mutate workspace files.** `codeaction` and
-  `rename` preview a unified diff and write only with an explicit `-w`/`--write`.
+- **Read-only commands must not mutate workspace files.** `lsp codeaction` and
+  `lsp rename` preview a unified diff and write only with an explicit `-w`/`--write`.
 - **MCP tools must validate every path against the workspace root.**
 - **MCP is served by the official Rust SDK (`rmcp`) over stdio**
   (`crates/cli/src/mcp/mod.rs`). Tool definitions and input schemas come from
@@ -699,7 +701,7 @@ Consequences that are easy to get wrong:
   has its own cancellation (`ToolCall`), cancelled by the client's
   `notifications/cancelled` or the CLI; a cancelled session request sends
   `$/cancelRequest`, so the analysis stops on the server too.
-- **`workspace-symbol` keeps its fast direct FTS path** unless `--fresh` is
+- **`lsp workspace-symbol` keeps its fast direct FTS path** unless `--fresh` is
   requested; do not make it restore semantic graphs by default.
 - **CLI mode changes behavior in a few places** (`initializationOptions.cliMode`):
   no watcher unless `initializationOptions.watchFiles` opts back in, no debounced
@@ -708,7 +710,7 @@ Consequences that are easy to get wrong:
   every tool call.
 
 Commands and their GNU-style flags are declared with `usage-rs` in
-`crates/cli/src/args.rs`; `shopware-lsp help` and `shopware-lsp api-json`
+`crates/cli/src/args.rs`; `shopware-lsp help` and `shopware-lsp lsp api-json`
 enumerate them authoritatively. See
 [`reference.md#command-line-interface`](reference.md#command-line-interface).
 
