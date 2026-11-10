@@ -393,3 +393,57 @@ fn effective_component_refines_empty_array_from_literal_writes() {
         .expect("shape");
     assert!(vue_member_names(&shape.members).contains(&"length".to_owned()));
 }
+
+#[test]
+fn a_default_for_an_unresolved_value_stays_open() {
+    let root_dir = tempfile::tempdir().unwrap();
+    let idx = new_indexer(&root_dir.path().join("cache"));
+    let admin_root = path_string(
+        root_dir.path(),
+        "src/Administration/Resources/app/administration/src",
+    );
+    let definition_path = filepath::join(&[&admin_root, "component/sw-status/index.js"]);
+    let template_path = filepath::join(&[&admin_root, "component/sw-status/sw-status.html.twig"]);
+    // `status` is loaded at runtime; the only shape the source shows is
+    // the one a later assignment spreads it into.
+    let source = r#"
+export default {
+    data() {
+        return { status: null };
+    },
+    computed: {
+        apps() { return this.status?.apps ?? []; },
+        store() { return this.status?.store ?? null; },
+    },
+    methods: {
+        async load() { this.status = await this.service.getStatus(); },
+        check(reachability) { this.status = { ...this.status, reachability }; },
+    },
+};"#;
+    let mut definition =
+        parse_component_definition_with_line_index(&parse_js(source), &LineIndex::new(source));
+    set_definition_file_path(&mut definition, &definition_path);
+    definition.template_path = template_path.clone();
+    idx.save_component_definition(&normalize_definition_path(&definition_path), &definition)
+        .expect("save definition");
+    idx.save_component(&VueComponent {
+        name: "sw-status".to_owned(),
+        file_path: definition_path.clone(),
+        definition_path: definition_path.clone(),
+        template_path,
+        ..Default::default()
+    })
+    .expect("save component");
+    let component = idx
+        .get_effective_component("sw-status")
+        .expect("effective component")
+        .expect("component exists");
+    // The members `status.apps` and `status.store` are unknown: the value
+    // is not `status` itself, and the default is only one possibility, so
+    // `apps.length` or `store.loggedIn` cannot be reported as unknown.
+    for (name, type_) in [("apps", "Array"), ("store", "null")] {
+        let member = component.template_member(name).expect(name);
+        assert_eq!(member.type_, type_, "{name}");
+        assert!(member.open_runtime_shape, "{name}");
+    }
+}

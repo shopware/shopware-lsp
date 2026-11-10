@@ -1306,6 +1306,9 @@ impl AdminComponentIndexer {
                 self.resolve_twig_vue_iterable_expression_type(&left, visible, component)?;
             let (right_resolved, right_found) =
                 self.resolve_twig_vue_iterable_expression_type(&right, visible, component)?;
+            if !left_found {
+                return Ok(unknown_or_default(right_resolved, right_found));
+            }
             let mut result = left_resolved.clone();
             result.type_ = merge_vue_nullish_types(&left_resolved.type_, &right_resolved.type_);
             if result.context_path.is_empty() {
@@ -1313,7 +1316,7 @@ impl AdminComponentIndexer {
             }
             result.open_runtime_shape =
                 left_resolved.open_runtime_shape || right_resolved.open_runtime_shape;
-            let found = (left_found || right_found) && !result.type_.is_empty();
+            let found = !result.type_.is_empty();
             return Ok((result, found));
         }
         let context_path = component

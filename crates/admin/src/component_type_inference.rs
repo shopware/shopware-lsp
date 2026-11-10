@@ -41,6 +41,19 @@ fn resolved(type_: String, context_path: &str) -> ResolvedVueExpressionType {
     }
 }
 
+/// `unknown ?? default`: an unresolved left side holds where its member
+/// chain stopped, not its value, so only the default is known. The value
+/// may be anything else too, which makes the shape open: its members are
+/// offered but none is reported as unknown.
+pub(crate) fn unknown_or_default(
+    mut default: ResolvedVueExpressionType,
+    found: bool,
+) -> (ResolvedVueExpressionType, bool) {
+    default.open_runtime_shape = true;
+    let found = found && !default.type_.is_empty();
+    (default, found)
+}
+
 fn not_found() -> ResolvedExpression {
     Ok((ResolvedVueExpressionType::default(), false))
 }
@@ -327,12 +340,15 @@ impl AdminComponentIndexer {
                 self.resolve_component_expression_type(component, &left, context_path)?;
             let (right_resolved, right_found) =
                 self.resolve_component_expression_type(component, &right, context_path)?;
+            if !left_found {
+                return Ok(unknown_or_default(right_resolved, right_found));
+            }
             let mut result = left_resolved.clone();
             result.type_ = merge_vue_nullish_types(&left_resolved.type_, &right_resolved.type_);
             if result.context_path.is_empty() {
                 result.context_path = right_resolved.context_path;
             }
-            let found = (left_found || right_found) && !result.type_.is_empty();
+            let found = !result.type_.is_empty();
             return Ok((result, found));
         }
         let asserted = vue_type_assertion(&expression);
@@ -937,10 +953,12 @@ impl AdminComponentIndexer {
                 parameter_type,
                 context_path,
             )?;
-            return Ok((
-                merge_vue_nullish_types(&left_type, &right_type),
-                left_found || right_found,
-            ));
+            if !left_found {
+                // The left type is then where its chain stopped, not the
+                // value: only the default is known.
+                return Ok((right_type, right_found));
+            }
+            return Ok((merge_vue_nullish_types(&left_type, &right_type), true));
         }
         if let Some((left, right)) = split_vue_top_level_operator(&expression, "||") {
             let (left_type, left_found) = self.resolve_vue_bound_expression_type(
