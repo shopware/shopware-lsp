@@ -1207,3 +1207,51 @@ function created(?Method $setUp, bool $expects): ?string {
     // Only the call after the reassignment lost the tie to the condition.
     assert_eq!(messages.len(), 1, "{messages:?}");
 }
+
+#[test]
+fn a_collection_is_an_iterable_of_what_it_binds_to_traversable() {
+    let source = r#"<?php
+class Entity {}
+class AppEntity extends Entity {}
+class Other {}
+/**
+ * @template TElement
+ * @template TKey of array-key = array-key
+ * @implements \IteratorAggregate<TKey, TElement>
+ */
+abstract class Collection implements \IteratorAggregate {
+    public function getIterator(): \Traversable { yield from []; }
+}
+/**
+ * @template TElement of Entity
+ * @extends Collection<TElement, string>
+ */
+class EntityCollection extends Collection {}
+/** @extends EntityCollection<AppEntity> */
+class AppCollection extends EntityCollection {}
+
+/** @return iterable<AppEntity> */
+function apps(AppCollection $apps): iterable { return $apps; }
+/** @return iterable<string, Entity> */
+function entities(AppCollection $apps): iterable { return $apps; }
+/** @return iterable<Other> */
+function others(AppCollection $apps): iterable { return $apps; }
+/** @return iterable<int, AppEntity> */
+function byPosition(AppCollection $apps): iterable { return $apps; }
+"#;
+    let (_, analyzed, _) = analyze_source("/collection-iterable.php", source, true, builtins());
+    let messages: Vec<&str> = analyzed
+        .issues
+        .iter()
+        .filter(|issue| &*issue.code == "php.returnType")
+        .map(|issue| &*issue.message)
+        .collect();
+    // Only the wrong value type and the wrong key type are reported.
+    assert_eq!(
+        messages,
+        [
+            "Expected return type iterable<array-key,Other>, got AppCollection",
+            "Expected return type iterable<int,AppEntity>, got AppCollection",
+        ]
+    );
+}

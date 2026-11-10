@@ -339,9 +339,20 @@ impl<'h> Relations<'h> {
             return false;
         }
         let target_args = target.arguments();
-        target_args.len() == 2
-            && self.is_subtype(&Type::ARRAY_KEY, &target_args[0])
-            && self.is_subtype(&Type::MIXED, &target_args[1])
+        if target_args.len() != 2 {
+            return false;
+        }
+        // What the object yields is what its class binds to Traversable
+        // through the extends/implements graph (an IteratorAggregate, a
+        // collection). A class that binds nothing yields unknown values.
+        let projected = self
+            .hierarchy
+            .and_then(|hierarchy| hierarchy.as_supertype(candidate, "Traversable"));
+        let (key, value) = match projected.as_ref().map(Type::arguments) {
+            Some([key, value]) => (key, value),
+            _ => (&Type::ARRAY_KEY, &Type::MIXED),
+        };
+        self.is_subtype(key, &target_args[0]) && self.is_subtype(value, &target_args[1])
     }
 
     // ----- assignability -----
