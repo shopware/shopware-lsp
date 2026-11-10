@@ -38,6 +38,8 @@ pub struct Document {
     pub deprecated: bool,
     pub internal: bool,
     pub is_final: bool,
+    /// `@abstract` on a declaration that is not abstract yet.
+    pub is_abstract: bool,
 }
 
 /// A PHPStan/Psalm type alias imported from another class-like declaration.
@@ -217,6 +219,7 @@ fn apply_tag(document: &mut Document, tag: &str, value: &str) {
         "@deprecated" => document.deprecated = true,
         "@internal" => document.internal = true,
         "@final" => document.is_final = true,
+        "@abstract" => document.is_abstract = true,
         _ => {}
     }
 }

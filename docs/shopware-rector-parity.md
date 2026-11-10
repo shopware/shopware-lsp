@@ -49,6 +49,10 @@ the PHP index, so it follows whatever the installed Shopware announces, for
 | `ParameterDefaultValueChange` | `shopware.migration.arguments.add_default` on a `new` call that omits the parameter | passes the current default by name |
 | `ClassMoved` | `shopware.migration.api.class.rename` on a reference to the previous name (which Shopware keeps as a `class_alias`) | renames the reference |
 
+Uses of announced changes that no rewrite can adapt (calls, property
+accesses and subclasses) are reported by `shopware.migration.announced`; see
+[phpstan-shopware parity](phpstan-shopware-parity.md#future-compatibility-future-compatibilityneon).
+
 The version in the message is the one the attribute names. These diagnostics
 do not depend on the target version: the change is safe to make as soon as
 it is announced, and the attributes disappear from Shopware once it happened.

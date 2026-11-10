@@ -35,6 +35,13 @@ pub const SHOPWARE_PHP_SCHEDULED_TASK_INTERVAL_CODE: &str = "shopware.php.schedu
 pub const SHOPWARE_PHP_USER_STORE_TOKEN_CODE: &str = "shopware.php.user.store_token";
 pub const SHOPWARE_PHP_CONCRETE_DECORATOR_EXTENSION_CODE: &str =
     "shopware.php.decorator.concrete_extension";
+pub const SHOPWARE_PHP_DEFAULT_CONTEXT_CODE: &str = "shopware.php.context.default";
+pub const SHOPWARE_PHP_SYSTEM_CONFIG_SALES_CHANNEL_CODE: &str =
+    "shopware.php.system_config.sales_channel";
+pub const SHOPWARE_PHP_ROUTE_LISTENER_CODE: &str = "shopware.php.listener.route_condition";
+pub const SHOPWARE_PHP_SYMFONY_COOKIE_CODE: &str = "shopware.php.cookie.symfony_insecure";
+pub const SHOPWARE_PHP_EMPTY_RESPONSE_CODE: &str = "shopware.php.response.empty";
+pub const SHOPWARE_PHP_LOCAL_WRITE_CODE: &str = "shopware.php.filesystem.local_write";
 
 const ENTITY_REPOSITORY_CLASS: &str =
     "Shopware\\Core\\Framework\\DataAbstractionLayer\\EntityRepository";
@@ -62,7 +69,7 @@ impl ShopwarePhpSemanticAnalyzer {
 impl DeclaredAnalyzer for ShopwarePhpSemanticAnalyzer {
     const INSPECTION: InspectionSpec = InspectionSpec {
         id: "shopware.php.semantic",
-        description: "Store review rules needing type information: internal API use, repositories queried in loops, session access in Store API routes and payment handlers, and scheduled task intervals.",
+        description: "Store review rules needing type information: internal API use, repositories queried in loops, session access in Store API routes and payment handlers, scheduled task intervals, default contexts, system config reads ignoring the sales channel, kernel listeners checking the route, insecure Symfony cookies, empty responses and writes to the local disk.",
         domain: "shopware",
         scope: InspectionScope::Framework,
         languages: &[LanguageId::Php],
@@ -78,6 +85,12 @@ impl DeclaredAnalyzer for ShopwarePhpSemanticAnalyzer {
             SHOPWARE_PHP_SCHEDULED_TASK_INTERVAL_CODE,
             SHOPWARE_PHP_USER_STORE_TOKEN_CODE,
             SHOPWARE_PHP_CONCRETE_DECORATOR_EXTENSION_CODE,
+            SHOPWARE_PHP_DEFAULT_CONTEXT_CODE,
+            SHOPWARE_PHP_SYSTEM_CONFIG_SALES_CHANNEL_CODE,
+            SHOPWARE_PHP_ROUTE_LISTENER_CODE,
+            SHOPWARE_PHP_SYMFONY_COOKIE_CODE,
+            SHOPWARE_PHP_EMPTY_RESPONSE_CODE,
+            SHOPWARE_PHP_LOCAL_WRITE_CODE,
         ],
     };
 }
@@ -104,23 +117,51 @@ impl ProblemAnalyzer for ShopwarePhpSemanticAnalyzer {
         let Some(state) = swlsp_lsp_phpanalysis::for_document(php_index, document)? else {
             return Ok(Vec::new());
         };
+        let mut references: Vec<&Reference> = state.document.references.iter().collect();
+        references.sort_by_key(|reference| reference.range.start());
         let mut run = Run {
             semantic: &state.document,
             snapshot: &state.snapshot,
+            references,
             problems: Vec::new(),
             store_api_classes: HashMap::new(),
         };
         phpquery::visit(
             &root,
-            &[PHP_CLASS_DECLARATION, PHP_MEMBER_CALL, PHP_FUNCTION_CALL],
+            &[
+                PHP_CLASS_DECLARATION,
+                PHP_MEMBER_CALL,
+                PHP_FUNCTION_CALL,
+                PHP_SCOPED_CALL,
+                PHP_OBJECT_CREATION,
+            ],
             |node| {
                 if ctx.is_cancelled() {
                     return false;
                 }
                 match node.kind() {
-                    PHP_CLASS_DECLARATION => run.check_class(node),
-                    PHP_MEMBER_CALL => run.check_member_call(node),
-                    PHP_FUNCTION_CALL => run.check_function_call(node),
+                    PHP_CLASS_DECLARATION => {
+                        run.check_class(node);
+                        run.check_route_listeners(node);
+                    }
+                    PHP_MEMBER_CALL => {
+                        run.check_member_call(node);
+                        run.check_system_config_call(node);
+                        run.check_cookie_secure_call(node);
+                        run.check_filesystem_method(node);
+                    }
+                    PHP_FUNCTION_CALL => {
+                        run.check_function_call(node);
+                        run.check_filesystem_function(node);
+                    }
+                    PHP_SCOPED_CALL => {
+                        run.check_default_context(node);
+                        run.check_cookie_creation(node);
+                    }
+                    PHP_OBJECT_CREATION => {
+                        run.check_cookie_creation(node);
+                        run.check_empty_response(node);
+                    }
                     _ => {}
                 }
                 true
@@ -138,15 +179,17 @@ impl ProblemAnalyzer for ShopwarePhpSemanticAnalyzer {
     }
 }
 
-struct Run<'a> {
-    semantic: &'a Document,
-    snapshot: &'a Snapshot,
+pub(super) struct Run<'a> {
+    pub(super) semantic: &'a Document,
+    pub(super) snapshot: &'a Snapshot,
+    /// The references of the document, by start.
+    references: Vec<&'a Reference>,
     problems: Vec<Problem>,
     store_api_classes: HashMap<SymbolId, bool>,
 }
 
 impl Run<'_> {
-    fn add(&mut self, code: &str, range: TextRange, message: String) {
+    pub(super) fn add(&mut self, code: &str, range: TextRange, message: String) {
         self.problems.push(warning(code, range, message));
     }
 
@@ -344,7 +387,7 @@ impl Run<'_> {
         }
     }
 
-    fn class_symbol(&self, node: Option<&SyntaxNode>) -> Option<Symbol> {
+    pub(super) fn class_symbol(&self, node: Option<&SyntaxNode>) -> Option<Symbol> {
         let name = phpquery::direct_child(node?, PHP_NAME)?;
         let name_range = name.range_trimmed_trivia();
         self.semantic
@@ -369,14 +412,26 @@ impl Run<'_> {
         class_node.range_trimmed_trivia()
     }
 
-    fn resolved_symbols(&self, node: Option<&SyntaxNode>, kind: SymbolKind) -> Vec<Symbol> {
+    pub(super) fn resolved_symbols(
+        &self,
+        node: Option<&SyntaxNode>,
+        kind: SymbolKind,
+    ) -> Vec<Symbol> {
         let Some(node) = node else {
             return Vec::new();
         };
         let range = node.range_trimmed_trivia();
         let mut seen: HashSet<SymbolId> = HashSet::new();
         let mut result = Vec::new();
-        for reference in &self.semantic.references {
+        // A reference lies inside the name it resolves, so the ones touching
+        // `range` start in it.
+        let first = self
+            .references
+            .partition_point(|reference| reference.range.start() < range.start());
+        for reference in &self.references[first..] {
+            if reference.range.start() >= range.end() && reference.range != range {
+                break;
+            }
             if !reference_can_resolve_symbol_kind(reference, kind)
                 || !ranges_touch(range, reference.range)
             {
@@ -525,18 +580,44 @@ impl Run<'_> {
     }
 
     fn expression_string_equals(&self, node: Option<&SyntaxNode>, expected: &str) -> bool {
+        self.expression_strings(node)
+            .iter()
+            .any(|value| eq_ignore_case(value, expected))
+    }
+
+    /// The strings `node` stands for: a literal, or the class constants it
+    /// may resolve to.
+    pub(super) fn expression_strings(&self, node: Option<&SyntaxNode>) -> Vec<String> {
         let Some(node) = node.map(unwrap_php_parentheses) else {
-            return false;
+            return Vec::new();
         };
         if node.kind() == PHP_STRING {
-            return eq_ignore_case(&phpquery::string_value(&node), expected);
+            return vec![phpquery::string_value(&node)];
         }
         self.resolved_symbols(Some(&node), SymbolKind::ClassConstant)
             .iter()
-            .any(|constant| {
-                constant.ty.kind() == TypeKind::LiteralString
-                    && eq_ignore_case(constant.ty.name(), expected)
+            .filter(|constant| constant.ty.kind() == TypeKind::LiteralString)
+            .map(|constant| constant.ty.name().to_owned())
+            .collect()
+    }
+
+    /// Whether the class named by `name` is `target` or a subclass of it.
+    pub(super) fn names_subtype(&self, name: Option<&SyntaxNode>, target: &str) -> bool {
+        self.resolved_symbols(name, SymbolKind::Class)
+            .iter()
+            .any(|class| {
+                self.snapshot
+                    .is_subtype_of(trim_php_name(&class.fully_qualified), target)
             })
+    }
+
+    /// Whether `expression` is an object of `target` or of a subclass.
+    pub(super) fn is_instance(&self, expression: &SyntaxNode, target: &str) -> bool {
+        php_type_is_subtype(
+            &self.semantic.type_of(expression).ty,
+            Some(self.snapshot),
+            target,
+        )
     }
 }
 

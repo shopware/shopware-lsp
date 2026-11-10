@@ -421,7 +421,7 @@ fn foreign_key_problem(literal: &SyntaxNode, resolver: &NameResolver) -> Option<
     ))
 }
 
-fn normalized_local_function_name(call: &SyntaxNode) -> String {
+pub(super) fn normalized_local_function_name(call: &SyntaxNode) -> String {
     let name = phpquery::direct_child(call, PHP_NAME)
         .map(|node| phpquery::name_value(&node))
         .unwrap_or_default();
@@ -474,7 +474,7 @@ fn local_array_string_entry(
 }
 
 /// `Some(value)` for literal booleans, `null` and integer literals.
-fn php_boolean_literal(node: Option<&SyntaxNode>) -> Option<bool> {
+pub(super) fn php_boolean_literal(node: Option<&SyntaxNode>) -> Option<bool> {
     let node = unwrap_php_parentheses(node?);
     match node.kind() {
         PHP_BOOLEAN => {
@@ -495,7 +495,7 @@ fn is_disabled_php_boolean(node: Option<&SyntaxNode>) -> bool {
     php_boolean_literal(node) == Some(false)
 }
 
-fn php_integer_literal(node: Option<&SyntaxNode>) -> Option<i64> {
+pub(super) fn php_integer_literal(node: Option<&SyntaxNode>) -> Option<i64> {
     let node = node?;
     if node.kind() != PHP_NUMBER {
         return None;

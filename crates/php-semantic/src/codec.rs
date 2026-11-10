@@ -989,7 +989,7 @@ fn decode_in(
         let ranges = [decoder.r.range()?, decoder.r.range()?, decoder.r.range()?];
         let types = [decoder.ty()?, decoder.ty()?, decoder.ty()?, decoder.ty()?];
         let flags = decoder.r.u32()?;
-        if flags >> 14 != 0 {
+        if flags >> 15 != 0 {
             return error(format!("invalid symbol flags {flags:#x}"));
         }
         let kind = decoder.r.u8()?;

@@ -84,6 +84,21 @@ const BEHAVIOR_CODES: &[&str] = &[
     "shopware.migration.reflection_helper.native",
 ];
 
+const ANNOUNCED_CODES: &[&str] = &[
+    "shopware.migration.announced.internal",
+    "shopware.migration.announced.final",
+    "shopware.migration.announced.abstract",
+    "shopware.migration.announced.visibility",
+    "shopware.migration.announced.parameter.removed",
+    "shopware.migration.announced.parameter.renamed",
+    "shopware.migration.announced.parameter.required",
+    "shopware.migration.announced.parameter.type",
+    "shopware.migration.announced.property.readonly",
+    "shopware.migration.announced.property.type",
+    "shopware.migration.announced.property.redeclared",
+    "shopware.migration.announced.type.widened",
+];
+
 /// The Shopware migration inspections, split by kind of change. They share one
 /// run of [`ShopwareMigrationAnalyzer`] per document.
 pub fn new_shopware_migration_inspections(
@@ -134,6 +149,11 @@ pub fn new_shopware_migration_inspections(
             "shopware.migration.behavior",
             "Code relying on behavior the upgrade to the target version replaces: entity search results, entity extension names, reverse proxy invalidation, scheduled task logging, context metadata, Faker properties, product stream criteria, route defaults, message handlers, cart recalculation checks, filterable price definitions and the reflection test helper.",
             BEHAVIOR_CODES,
+        ),
+        inspection(
+            "shopware.migration.announced",
+            "Calls, property accesses and subclasses that stop working with a change the installed Shopware announces through its BCChange attributes: API becoming internal, final, abstract, readonly or less visible, parameters that are removed, renamed, added or narrowed, and return and property types that are widened.",
+            ANNOUNCED_CODES,
         ),
     ]
 }

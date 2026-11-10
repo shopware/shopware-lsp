@@ -188,6 +188,20 @@ Languages: php. Domain: `shopware.dal`.
 |---|---|---|
 | `shopware.criteria.id-filter` | warning | yes |
 
+## `shopware.dal.definition`
+
+Entity definition fields the entity class cannot hold: no property of that name, a private or readonly property, or a protected property without a getter or setter.
+
+Languages: php. Domain: `shopware`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `shopware.dal.entity_property.getter_missing` | warning | yes |
+| `shopware.dal.entity_property.missing` | warning | yes |
+| `shopware.dal.entity_property.private` | warning | yes |
+| `shopware.dal.entity_property.readonly` | warning | yes |
+| `shopware.dal.entity_property.setter_missing` | warning | yes |
+
 ## `shopware.dal.entity`
 
 Administration repository calls for entity names no entity definition declares.
@@ -223,6 +237,27 @@ Languages: json. Domain: `shopware.entitySchema`.
 | `shopware.entity_snapshot.parent_missing` | warning | yes |
 | `shopware.entity_snapshot.reconcile` | warning | yes |
 | `shopware.entity_snapshot.schema_drift` | warning | yes |
+
+## `shopware.migration.announced`
+
+Calls, property accesses and subclasses that stop working with a change the installed Shopware announces through its BCChange attributes: API becoming internal, final, abstract, readonly or less visible, parameters that are removed, renamed, added or narrowed, and return and property types that are widened.
+
+Languages: php. Domain: `shopware.migrations`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `shopware.migration.announced.abstract` | warning | yes |
+| `shopware.migration.announced.final` | warning | yes |
+| `shopware.migration.announced.internal` | warning | yes |
+| `shopware.migration.announced.parameter.removed` | warning | yes |
+| `shopware.migration.announced.parameter.renamed` | warning | yes |
+| `shopware.migration.announced.parameter.required` | warning | yes |
+| `shopware.migration.announced.parameter.type` | warning | yes |
+| `shopware.migration.announced.property.readonly` | warning | yes |
+| `shopware.migration.announced.property.redeclared` | warning | yes |
+| `shopware.migration.announced.property.type` | warning | yes |
+| `shopware.migration.announced.type.widened` | warning | yes |
+| `shopware.migration.announced.visibility` | warning | yes |
 
 ## `shopware.migration.api`
 
@@ -295,21 +330,27 @@ Languages: php. Domain: `shopware`.
 
 ## `shopware.php.semantic`
 
-Store review rules needing type information: internal API use, repositories queried in loops, session access in Store API routes and payment handlers, and scheduled task intervals.
+Store review rules needing type information: internal API use, repositories queried in loops, session access in Store API routes and payment handlers, scheduled task intervals, default contexts, system config reads ignoring the sales channel, kernel listeners checking the route, insecure Symfony cookies, empty responses and writes to the local disk.
 
 Languages: php. Domain: `shopware`.
 
 | Code | Default severity | Enabled by default |
 |---|---|---|
+| `shopware.php.context.default` | warning | yes |
+| `shopware.php.cookie.symfony_insecure` | warning | yes |
 | `shopware.php.decorator.concrete_extension` | warning | yes |
+| `shopware.php.filesystem.local_write` | warning | yes |
 | `shopware.php.internal.class_extension` | warning | yes |
 | `shopware.php.internal.function_call` | warning | yes |
 | `shopware.php.internal.method_call` | warning | yes |
+| `shopware.php.listener.route_condition` | warning | yes |
 | `shopware.php.repository.in_loop` | warning | yes |
+| `shopware.php.response.empty` | warning | yes |
 | `shopware.php.scheduled_task.interval` | warning | yes |
 | `shopware.php.session.constructor` | warning | yes |
 | `shopware.php.session.payment_handler` | warning | yes |
 | `shopware.php.session.store_api` | warning | yes |
+| `shopware.php.system_config.sales_channel` | warning | yes |
 | `shopware.php.user.store_token` | warning | yes |
 
 ## `shopware.snippet`

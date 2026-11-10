@@ -61,8 +61,10 @@ impl PhpIndex {
         self.analyze_against(&self.semantic_snapshot(), path, version, root, source)
     }
 
-    /// [`PhpIndex::analyze_document`] against the generation `base`.
-    pub(crate) fn analyze_against(
+    /// [`PhpIndex::analyze_document`] against the generation `base`, which
+    /// may differ from the indexed one (declarations as they are announced
+    /// to become, for instance).
+    pub fn analyze_against(
         &self,
         base: &Arc<Snapshot>,
         path: &str,

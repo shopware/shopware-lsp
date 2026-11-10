@@ -251,6 +251,9 @@ impl Flags {
     /// may depend on other files. A snapshot with return inference
     /// recomputes it on demand.
     pub const INFERRED_RETURN: Flags = Flags(1 << 13);
+    /// A concrete method its PHPDoc marks `@abstract`: it is going to
+    /// become abstract, so subclasses should implement it.
+    pub const SOFT_ABSTRACT: Flags = Flags(1 << 14);
 
     pub const fn empty() -> Flags {
         Flags(0)

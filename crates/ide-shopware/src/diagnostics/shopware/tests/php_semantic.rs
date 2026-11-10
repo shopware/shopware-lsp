@@ -17,7 +17,7 @@ pub(super) fn php_index_with(fixtures: &[(&str, &str)]) -> (TempDir, PhpIndex) {
     (dir, index)
 }
 
-fn semantic_test_index() -> (TempDir, PhpIndex) {
+pub(super) fn semantic_test_index() -> (TempDir, PhpIndex) {
     php_index_with(&[
         (
             "/project/vendor/EntityRepository.php",

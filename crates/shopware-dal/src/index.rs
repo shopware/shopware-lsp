@@ -219,6 +219,15 @@ fn extract_definitions(file: &ParsedFile) -> PreparedDefinitions {
     }))
 }
 
+/// The entity definitions an open document declares, read from its current
+/// tree rather than from the index.
+pub fn document_definitions(root: &SyntaxNode, path: &str, lines: &LineIndex) -> Vec<Definition> {
+    phpquery::classes(root)
+        .iter()
+        .filter_map(|class| parse_definition(class, root, path, lines))
+        .collect()
+}
+
 impl Indexer for Index {
     fn id(&self) -> &str {
         "shopware.dal"

@@ -30,7 +30,7 @@ const ADD_DEFAULT_ARGUMENT_CODE: &str = "shopware.migration.arguments.add_defaul
 const BC_CHANGE_NAMESPACE: &str = "shopware\\core\\framework\\deprecation\\bcchange\\";
 
 /// The announced changes of one method, by the short name of the attribute.
-fn bc_changes(method: &Symbol) -> impl Iterator<Item = (String, &Attribute)> {
+pub(super) fn bc_changes(method: &Symbol) -> impl Iterator<Item = (String, &Attribute)> {
     method.attributes().iter().filter_map(|attribute| {
         let name = lowercase(attribute.name.trim_matches('\\'));
         let kind = name.strip_prefix(BC_CHANGE_NAMESPACE)?.to_owned();
@@ -307,7 +307,7 @@ fn ancestors(snapshot: &Snapshot, class: &str) -> Vec<String> {
 }
 
 /// The methods named `method` that `class` itself declares.
-fn methods(snapshot: &Snapshot, class: &str, method: &str) -> Vec<Symbol> {
+pub(super) fn methods(snapshot: &Snapshot, class: &str, method: &str) -> Vec<Symbol> {
     snapshot
         .classes(class)
         .iter()
@@ -320,11 +320,11 @@ fn own_method(snapshot: &Snapshot, class: &str, method: &str) -> Option<Symbol> 
     methods(snapshot, class, method).into_iter().next()
 }
 
-fn is_parameter_name(declared: &str, name: &str) -> bool {
+pub(super) fn is_parameter_name(declared: &str, name: &str) -> bool {
     eq_ignore_case(declared.trim_start_matches('$'), name)
 }
 
-fn parameter_named<'a>(
+pub(super) fn parameter_named<'a>(
     method: &'a Symbol,
     name: &str,
 ) -> Option<(usize, &'a swlsp_php_semantic::Parameter)> {
@@ -335,14 +335,14 @@ fn parameter_named<'a>(
         .find(|(_, parameter)| is_parameter_name(&parameter.name, name))
 }
 
-fn string_argument(attribute: &Attribute, name: &str, index: usize) -> Option<String> {
+pub(super) fn string_argument(attribute: &Attribute, name: &str, index: usize) -> Option<String> {
     let value = attribute.argument(name, index)?;
     (value.kind == AttributeValueKind::String && !value.value.is_empty())
         .then(|| value.value.trim_start_matches('$').to_owned())
 }
 
 /// `6.8` for `version: 'v6.8.0'`.
-fn version_label(attribute: &Attribute) -> Option<String> {
+pub(super) fn version_label(attribute: &Attribute) -> Option<String> {
     let version = string_argument(attribute, "version", 0)?;
     let mut parts = version.trim_start_matches(['v', 'V']).split('.');
     let (major, minor) = (parts.next()?, parts.next()?);
@@ -359,7 +359,7 @@ const TYPE_KEYWORDS: &[&str] = &[
 
 /// The PHP source of an announced type, with fully qualified class names.
 /// `None` for what is no plain or union type.
-fn type_source(value: &AttributeValue) -> Option<String> {
+pub(super) fn type_source(value: &AttributeValue) -> Option<String> {
     let text = match value.kind {
         AttributeValueKind::String => value.value.to_string(),
         AttributeValueKind::ClassConstant => {

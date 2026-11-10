@@ -1,5 +1,6 @@
 //! Tests of the migration inspections.
 
+mod announced;
 mod api;
 mod arguments;
 mod bc_changes;

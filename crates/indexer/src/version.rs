@@ -9,7 +9,7 @@ use crate::error::{Error, Result, ResultExt};
 /// The current version of persisted index contents. Bump it whenever a schema
 /// change or extraction-semantics change requires existing workspace caches
 /// to be rebuilt.
-pub const INDEX_VERSION: u32 = 187;
+pub const INDEX_VERSION: u32 = 188;
 
 const VERSION_FILE_NAME: &str = "index_version";
 const CONFIGURATION_FINGERPRINT_FILE_NAME: &str = "configuration_fingerprint";
@@ -104,8 +104,8 @@ mod tests {
     #[test]
     fn index_version_marker_is_current() {
         // Update together with every INDEX_VERSION bump.
-        assert_eq!(INDEX_VERSION, 187);
-        assert_eq!(index_version_marker(), "187");
+        assert_eq!(INDEX_VERSION, 188);
+        assert_eq!(index_version_marker(), "188");
     }
 
     #[test]

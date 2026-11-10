@@ -171,6 +171,9 @@ pub(crate) fn apply_document_flags(symbol: &mut Symbol, documentation: &PhpDoc) 
     if documentation.is_final {
         symbol.flags |= Flags::SOFT_FINAL;
     }
+    if documentation.is_abstract && !symbol.flags.has(Flags::ABSTRACT) {
+        symbol.flags |= Flags::SOFT_ABSTRACT;
+    }
 }
 
 pub(crate) fn apply_attribute_flags(symbol: &mut Symbol) {

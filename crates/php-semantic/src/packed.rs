@@ -89,7 +89,8 @@ pub(crate) struct PackedSymbol {
     /// has-write-visibility(1) | lazy-detail(1) | range-extra(1) |
     /// type selectors(8).
     bits: u32,
-    /// `DERIVED_ID` | `MEMBER_NAME` | `INFERRED_RETURN`; lives in what was
+    /// `DERIVED_ID` | `MEMBER_NAME` | `INFERRED_RETURN` | `SOFT_ABSTRACT`;
+    /// lives in what was
     /// padding.
     derived: u8,
 }
@@ -98,6 +99,8 @@ const DERIVED_ID: u8 = 1;
 const MEMBER_NAME: u8 = 2;
 /// [`Flags::INFERRED_RETURN`], which does not fit the 13 flag bits.
 const INFERRED_RETURN: u8 = 4;
+/// [`Flags::SOFT_ABSTRACT`], likewise.
+const SOFT_ABSTRACT: u8 = 8;
 
 const FLAG_BITS: u32 = 13;
 const FLAG_MASK: u32 = (1 << FLAG_BITS) - 1;
@@ -376,6 +379,9 @@ impl PackedSymbol {
         let mut flags = Flags(self.bits & FLAG_MASK);
         if self.derived & INFERRED_RETURN != 0 {
             flags.insert(Flags::INFERRED_RETURN);
+        }
+        if self.derived & SOFT_ABSTRACT != 0 {
+            flags.insert(Flags::SOFT_ABSTRACT);
         }
         flags
     }
@@ -760,7 +766,7 @@ impl PackedBuilder {
             bits |= LAZY_DETAIL;
         }
         debug_assert_eq!(
-            core.flags.0 & !(FLAG_MASK | Flags::INFERRED_RETURN.0),
+            core.flags.0 & !(FLAG_MASK | Flags::INFERRED_RETURN.0 | Flags::SOFT_ABSTRACT.0),
             0,
             "flags exceed packed range"
         );
@@ -814,6 +820,9 @@ impl PackedBuilder {
         };
         if core.flags.has(Flags::INFERRED_RETURN) {
             derived |= INFERRED_RETURN;
+        }
+        if core.flags.has(Flags::SOFT_ABSTRACT) {
+            derived |= SOFT_ABSTRACT;
         }
         self.symbols.push(PackedSymbol {
             id: AtomicU32::new(id),

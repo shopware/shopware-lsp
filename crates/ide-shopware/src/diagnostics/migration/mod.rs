@@ -1,6 +1,7 @@
 //! Versioned shopware-rector migrations and the Criteria ID-filter check.
 
 mod annotations;
+mod announced;
 mod api;
 mod arguments;
 mod bc_changes;
@@ -236,6 +237,7 @@ impl ProblemAnalyzer for ShopwareMigrationAnalyzer {
         result.extend(self.argument_migration_problems(ctx, &root, semantic, snapshot, source));
         result.extend(self.declaration_migration_problems(ctx, &root, snapshot));
         result.extend(self.bc_change_problems(ctx, &root, snapshot));
+        result.extend(self.announced_use_problems(ctx, document, &root, &analysis));
         result.extend(self.route_annotation_migration_problems(ctx, &root));
         result.extend(self.message_handler_migration_problems(ctx, &root));
         if self.at_least(7, 0) {

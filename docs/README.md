@@ -48,6 +48,7 @@ After that, read the subsystem you are changing.
 | [`phpstorm-integration.md`](phpstorm-integration.md) | The versioned editor-integration contract and the framework-only presentation profile |
 | [`symfony-plugin-roadmap.md`](symfony-plugin-roadmap.md) | Symfony feature coverage mapped against the PhpStorm Symfony plugin |
 | [`shopware-rector-parity.md`](shopware-rector-parity.md) | Shopware migration inspections and their Rector counterparts |
+| [`phpstan-shopware-parity.md`](phpstan-shopware-parity.md) | Store-review and future-compatibility inspections and their phpstan-shopware counterparts |
 
 ## Reading paths by task
 
