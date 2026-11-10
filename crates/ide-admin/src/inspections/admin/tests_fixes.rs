@@ -97,6 +97,11 @@ fn admin_twig_migration_inspection_builds_versioned_fix() {
 #[test]
 fn admin_twig_migration_inspection_reports_unsafe_without_fix() {
     let fixture = Fixture::new();
+    fixture.save(vue_component! {
+        name: "sw-card".into(),
+        file_path: fixture.path("sw-card.ts"),
+        deprecated: "tag:v6.8.0 - Will be removed, use mt-card instead.".into(),
+    });
     let inspection: Arc<dyn Inspection> = Arc::new(crate::inspections::test_support::Combined(
         new_admin_inspections(Some(fixture.index.clone()), known_version(6, 7, 0)),
     ));
@@ -119,10 +124,65 @@ fn admin_twig_migration_inspection_owns_missing_legacy_component() {
         new_admin_inspections(Some(fixture.index.clone()), known_version(6, 8, 0)),
     ));
     // No `admin.component.not-found` problem: the migration owns the tag.
-    check_diagnostics(
+    let (_, problems) = check_diagnostics(
         inspection.as_ref(),
         &uri(&fixture.path("src/Resources/app/administration/src/component.html.twig")),
         "<{|admin.twig.migration.loader:sw-loader|} />",
+    );
+    assert_eq!(problems[0].message, "sw-loader is removed; use mt-loader");
+}
+
+#[test]
+fn admin_twig_migration_inspection_follows_the_registered_component() {
+    let fixture = Fixture::new();
+    // Shopware keeps replaced components as compatibility wrappers: some
+    // carry a deprecation note, some do not.
+    fixture.save(vue_component! {
+        name: "sw-switch-field".into(),
+        file_path: fixture.path("sw-switch-field.ts"),
+        deprecated: "tag:v6.8.0 - Will be removed, use mt-switch instead.".into(),
+    });
+    fixture.save(vue_component! {
+        name: "sw-loader".into(),
+        file_path: fixture.path("sw-loader.ts"),
+    });
+    let inspection: Arc<dyn Inspection> = Arc::new(crate::inspections::test_support::Combined(
+        new_admin_inspections(Some(fixture.index.clone()), known_version(6, 7, 0)),
+    ));
+    let uri = uri(&fixture.path("src/Resources/app/administration/src/component.html.twig"));
+
+    // Deprecated and still registered: a warning that says so, and no
+    // second `admin.component.deprecated` problem.
+    let (_, problems) = check_diagnostics(
+        inspection.as_ref(),
+        &uri,
+        "<{|admin.twig.migration.switch-field:sw-switch-field|} />",
+    );
+    assert_eq!(
+        problems[0].message,
+        "sw-switch-field is deprecated (tag:v6.8.0 - Will be removed, use mt-switch instead); \
+         use mt-switch and review props, events, and slots"
+    );
+    assert_eq!(
+        problems[0].severity,
+        Some(swlsp_lsp_protocol::DiagnosticSeverity::WARNING)
+    );
+
+    // Registered without a deprecation note: nothing to report.
+    check_diagnostics(inspection.as_ref(), &uri, "<sw-loader />");
+}
+
+#[test]
+fn admin_twig_migration_inspection_waits_for_the_index() {
+    // An empty index is no evidence that a component is gone.
+    let fixture = Fixture::new();
+    let inspection: Arc<dyn Inspection> = Arc::new(crate::inspections::test_support::Combined(
+        new_admin_inspections(Some(fixture.index.clone()), known_version(6, 7, 0)),
+    ));
+    check_diagnostics(
+        inspection.as_ref(),
+        &uri(&fixture.path("src/Resources/app/administration/src/component.html.twig")),
+        "<sw-loader /><sw-switch-field />",
     );
 }
 

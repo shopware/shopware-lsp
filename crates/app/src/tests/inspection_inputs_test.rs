@@ -62,7 +62,7 @@ const PAGE: &str = r#"{% import 'storefront/macros.html.twig' as macros %}
 
 /// The indexed files, their initial content (`None`: created by the change)
 /// and the version each change writes.
-const CHANGES: [(&str, Option<&str>, &str); 10] = [
+const CHANGES: [(&str, Option<&str>, &str); 11] = [
     (
         "src/Resources/config/services.xml",
         Some("<container><services/></container>\n"),
@@ -110,6 +110,13 @@ const CHANGES: [(&str, Option<&str>, &str); 10] = [
         "src/Resources/app/storefront/src/scss/variables.scss",
         None,
         "$acme-color: red;\n",
+    ),
+    // The Administration index: a replaced component is reported once its
+    // registration carries a deprecation note.
+    (
+        "src/Resources/app/administration/src/component/sw-switch-field/index.js",
+        Some("Component.register('sw-switch-field', {});\n"),
+        "/**\n * @deprecated tag:v6.8.0 - Will be removed, use mt-switch instead.\n */\nComponent.register('sw-switch-field', {});\n",
     ),
 ];
 
@@ -179,7 +186,7 @@ fn inspections_declaring_inputs_report_the_same_while_their_revision_is_unchange
     write_file(
         root,
         "composer.json",
-        r#"{"name":"acme/plugin","type":"shopware-platform-plugin","require":{"shopware/core":"6.6.0.0"},"autoload":{"psr-4":{"Acme\\":"src/"}},"extra":{"shopware-plugin-class":"Acme\\AcmePlugin"}}"#,
+        r#"{"name":"acme/plugin","type":"shopware-platform-plugin","require":{"shopware/core":"6.7.0.0"},"autoload":{"psr-4":{"Acme\\":"src/"}},"extra":{"shopware-plugin-class":"Acme\\AcmePlugin"}}"#,
     );
     write_file(
         root,
@@ -193,6 +200,11 @@ fn inspections_declaring_inputs_report_the_same_while_their_revision_is_unchange
         ".acme { color: $acme-color; }\n",
     );
     write_file(root, "src/Resources/views/storefront/page.html.twig", PAGE);
+    write_file(
+        root,
+        "src/Resources/app/administration/src/view.html.twig",
+        "<sw-switch-field />\n",
+    );
     for (path, before, _) in CHANGES {
         if let Some(before) = before {
             write_file(root, path, before);
@@ -219,6 +231,11 @@ fn inspections_declaring_inputs_report_the_same_while_their_revision_is_unchange
             "src/Resources/app/storefront/src/scss/base.scss",
         ),
         open(&client, root, "composer.json"),
+        open(
+            &client,
+            root,
+            "src/Resources/app/administration/src/view.html.twig",
+        ),
     ];
     let uri_refs: Vec<&str> = uris.iter().map(String::as_str).collect();
     client.wait_diagnostics(&uri_refs);

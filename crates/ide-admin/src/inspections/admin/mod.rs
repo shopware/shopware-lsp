@@ -136,8 +136,10 @@ fn severity(code: &str) -> DiagnosticSeverity {
 
 /// The Administration inspections, split by concern. The component, component
 /// API, member and module inspections share one run of [`AdminAnalyzer`] per
-/// document. From Shopware 6.7 the version-aware `sw-*` → `mt-*` migrations own
-/// their component tags.
+/// document. From Shopware 6.7 the `sw-*` → `mt-*` migrations own their
+/// component tags: they report a replaced component as deprecated or removed,
+/// whichever the project's Administration says, so the generic deprecation
+/// and not-found problems stay off those tags.
 pub fn new_admin_inspections(
     index: Option<Arc<AdminComponentIndexer>>,
     version: ResolvedVersion,
@@ -245,10 +247,10 @@ pub fn new_admin_inspections(
     migration_codes.push("admin.vue-i18n.tc-deprecated".to_owned());
     let migration = inspection(
         "shopware.admin.migration",
-        "Administration syntax to migrate: Twig components the Meteor component library replaces, deprecated slot syntax, and vue-i18n's `$tc`.",
+        "Administration syntax to migrate: Twig components the Meteor component library replaces, once the project's Administration marks them deprecated or no longer registers them; deprecated slot syntax; and vue-i18n's `$tc`.",
         migration_codes,
         vec![
-            Arc::new(AdminTwigMigrationAnalyzer::new(version)),
+            Arc::new(AdminTwigMigrationAnalyzer::new(index.clone(), version)),
             Arc::new(AdminSlotMigrationAnalyzer::new()),
             Arc::new(AdminI18nDeprecationAnalyzer::new()),
         ],

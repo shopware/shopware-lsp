@@ -127,7 +127,7 @@ Languages: javascript, twig, vue. Domain: `administration`.
 
 ## `shopware.admin.migration`
 
-Administration syntax to migrate: Twig components the Meteor component library replaces, deprecated slot syntax, and vue-i18n's `$tc`.
+Administration syntax to migrate: Twig components the Meteor component library replaces, once the project's Administration marks them deprecated or no longer registers them; deprecated slot syntax; and vue-i18n's `$tc`.
 
 Languages: javascript, twig, vue. Domain: `administration`.
 

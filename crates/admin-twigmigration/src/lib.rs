@@ -51,20 +51,39 @@ pub struct Rule {
     pub id: &'static str,
     pub source_tag: &'static str,
     pub target_tag: &'static str,
-    pub message: &'static str,
+    /// What to do instead and what to review (`use mt-switch and review …`).
+    pub advice: &'static str,
+}
+
+impl Rule {
+    /// The message for a project whose Administration no longer registers
+    /// the component.
+    pub fn removed_message(&self) -> String {
+        format!("{} is removed; {}", self.source_tag, self.advice)
+    }
+
+    /// The message for a component that is still registered but carries the
+    /// deprecation `note` of its source.
+    pub fn deprecated_message(&self, note: &str) -> String {
+        let note = note.trim().trim_end_matches('.');
+        format!(
+            "{} is deprecated ({note}); {}",
+            self.source_tag, self.advice
+        )
+    }
 }
 
 const fn rule(
     id: &'static str,
     source_tag: &'static str,
     target_tag: &'static str,
-    message: &'static str,
+    advice: &'static str,
 ) -> Rule {
     Rule {
         id,
         source_tag,
         target_tag,
-        message,
+        advice,
     }
 }
 
@@ -73,115 +92,110 @@ static RULES: &[Rule] = &[
         "alert",
         "sw-alert",
         "mt-banner",
-        "sw-alert is removed; use mt-banner and review variant changes",
+        "use mt-banner and review variant changes",
     ),
     rule(
         "button",
         "sw-button",
         "mt-button",
-        "sw-button is removed; use mt-button and review variant and router-link behavior",
+        "use mt-button and review variant and router-link behavior",
     ),
     rule(
         "card",
         "sw-card",
         "mt-card",
-        "sw-card is removed; use mt-card and review aiBadge and contentPadding",
+        "use mt-card and review aiBadge and contentPadding",
     ),
     rule(
         "checkbox-field",
         "sw-checkbox-field",
         "mt-checkbox",
-        "sw-checkbox-field is removed; use mt-checkbox and review props, events, and slots",
+        "use mt-checkbox and review props, events, and slots",
     ),
     rule(
         "colorpicker",
         "sw-colorpicker",
         "mt-colorpicker",
-        "sw-colorpicker is removed; use mt-colorpicker and review its label",
+        "use mt-colorpicker and review its label",
     ),
     rule(
         "datepicker",
         "sw-datepicker",
         "mt-datepicker",
-        "sw-datepicker is removed; use mt-datepicker and review its label",
+        "use mt-datepicker and review its label",
     ),
     rule(
         "email-field",
         "sw-email-field",
         "mt-email-field",
-        "sw-email-field is removed; use mt-email-field and review props, events, and slots",
+        "use mt-email-field and review props, events, and slots",
     ),
     rule(
         "icon",
         "sw-icon",
         "mt-icon",
-        "sw-icon is removed; use mt-icon with an explicit size",
+        "use mt-icon with an explicit size",
     ),
-    rule(
-        "loader",
-        "sw-loader",
-        "mt-loader",
-        "sw-loader is removed; use mt-loader",
-    ),
+    rule("loader", "sw-loader", "mt-loader", "use mt-loader"),
     rule(
         "number-field",
         "sw-number-field",
         "mt-number-field",
-        "sw-number-field is removed; use mt-number-field and review props, events, and slots",
+        "use mt-number-field and review props, events, and slots",
     ),
     rule(
         "password-field",
         "sw-password-field",
         "mt-password-field",
-        "sw-password-field is removed; use mt-password-field and review label and hint values",
+        "use mt-password-field and review label and hint values",
     ),
     rule(
         "progress-bar",
         "sw-progress-bar",
         "mt-progress-bar",
-        "sw-progress-bar is removed; use mt-progress-bar",
+        "use mt-progress-bar",
     ),
     rule(
         "select-field",
         "sw-select-field",
         "mt-select",
-        "sw-select-field is removed; use mt-select and review props, options, events, and slots",
+        "use mt-select and review props, options, events, and slots",
     ),
     rule(
         "skeleton-bar",
         "sw-skeleton-bar",
         "mt-skeleton-bar",
-        "sw-skeleton-bar is removed; use mt-skeleton-bar",
+        "use mt-skeleton-bar",
     ),
     rule(
         "switch-field",
         "sw-switch-field",
         "mt-switch",
-        "sw-switch-field is removed; use mt-switch and review props, events, and slots",
+        "use mt-switch and review props, events, and slots",
     ),
     rule(
         "text-field",
         "sw-text-field",
         "mt-text-field",
-        "sw-text-field is removed; use mt-text-field and review props, events, and slots",
+        "use mt-text-field and review props, events, and slots",
     ),
     rule(
         "textarea-field",
         "sw-textarea-field",
         "mt-textarea",
-        "sw-textarea-field is removed; use mt-textarea and review its API",
+        "use mt-textarea and review its API",
     ),
     rule(
         "url-field",
         "sw-url-field",
         "mt-url-field",
-        "sw-url-field is removed; use mt-url-field and review props, events, and slots",
+        "use mt-url-field and review props, events, and slots",
     ),
     rule(
         "popover",
         "sw-popover",
         "mt-floating-ui",
-        "sw-popover is removed; use mt-floating-ui",
+        "use mt-floating-ui",
     ),
 ];
 
