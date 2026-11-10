@@ -5,9 +5,10 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
-use swlsp_indexer::FileScanner;
+use swlsp_indexer::{FileScanner, IndexProgress};
 use swlsp_lsp_protocol as protocol;
 use swlsp_projectconfig as projectconfig;
+use swlsp_textutil::number::grouped;
 use swlsp_uriutil::filepath;
 
 use crate::client::ClientContractError;
@@ -33,6 +34,19 @@ pub type WorkspaceFactory = Arc<
 
 /// Completes an indexing progress report with the elapsed time and error.
 type FinishProgress = Box<dyn FnOnce(Duration, Option<&str>) + Send>;
+
+/// What an indexing progress report says: the files looked at, then the
+/// phase after the last one (writing the rest and publishing the indexes).
+fn indexing_progress_message(progress: IndexProgress) -> String {
+    if progress.done >= progress.total {
+        return "finishing".to_owned();
+    }
+    format!(
+        "{}/{} files",
+        grouped(progress.done),
+        grouped(progress.total)
+    )
+}
 
 /// Failure of the `initialize` request.
 #[derive(Debug, thiserror::Error)]
@@ -304,8 +318,9 @@ impl Server {
         suspension: Option<&DiagnosticsSuspension>,
     ) -> Result<(), String> {
         let started = Instant::now();
-        let finish = self.begin_indexing_progress(ctx);
+        let finish = self.begin_indexing_progress(ctx, scanner);
         let result = self.index_all_inner(ctx, scanner, force, started, suspension);
+        scanner.set_on_progress(None);
         finish(started.elapsed(), result.as_ref().err().map(String::as_str));
         result
     }
@@ -349,7 +364,7 @@ impl Server {
         Ok(())
     }
 
-    fn begin_indexing_progress(&self, ctx: &Context) -> FinishProgress {
+    fn begin_indexing_progress(&self, ctx: &Context, scanner: &FileScanner) -> FinishProgress {
         let noop: FinishProgress = Box::new(|_, _| {});
         if !read(&self.session).work_done_progress {
             return noop;
@@ -386,6 +401,24 @@ impl Server {
                 log::warn!("Publish indexing progress: {error}");
             }
             return noop;
+        }
+        {
+            // The scan reports the files it has looked at; failing to send
+            // one report is not worth a log line per report.
+            let (conn, token) = (conn.clone(), token.clone());
+            scanner.set_on_progress(Some(Arc::new(move |progress: IndexProgress| {
+                let _ = conn.notify(
+                    "$/progress",
+                    json!({
+                        "token": token,
+                        "value": {
+                            "kind": "report",
+                            "message": indexing_progress_message(progress),
+                            "percentage": progress.done * 100 / progress.total.max(1),
+                        },
+                    }),
+                );
+            })));
         }
         let ctx = ctx.clone();
         Box::new(move |elapsed: Duration, cause: Option<&str>| {

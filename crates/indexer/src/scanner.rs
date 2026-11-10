@@ -156,6 +156,15 @@ pub(crate) struct FileState {
 }
 
 type UpdateCallback = Arc<dyn Fn() + Send + Sync>;
+pub(crate) type ProgressCallback = Arc<dyn Fn(IndexProgress) + Send + Sync>;
+
+/// How far a full workspace scan is: files looked at (changed or not) of
+/// the files discovered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IndexProgress {
+    pub done: usize,
+    pub total: usize,
+}
 
 pub(crate) struct Inner {
     pub(crate) project_root: String,
@@ -165,6 +174,7 @@ pub(crate) struct Inner {
     pub(crate) symbols: Option<Arc<WorkspaceSymbolCatalog>>,
     pub(crate) indexers: Vec<Arc<dyn Indexer>>,
     pub(crate) on_update: RwLock<Option<UpdateCallback>>,
+    pub(crate) on_progress: RwLock<Option<ProgressCallback>>,
     pub(crate) worker_count: AtomicUsize,
     exclusions: PathExclusions,
     pub(crate) vendors: VendorPackages,
@@ -232,6 +242,7 @@ impl FileScanner {
                 symbols: None,
                 indexers: Vec::new(),
                 on_update: RwLock::new(None),
+                on_progress: RwLock::new(None),
                 worker_count: AtomicUsize::new(0),
                 exclusions: PathExclusions::default(),
                 max_file_size: AtomicI64::new(DEFAULT_MAX_FILE_SIZE_BYTES),
@@ -266,6 +277,17 @@ impl FileScanner {
             .on_update
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Arc::new(on_update));
+    }
+
+    /// Installs (or with `None` removes) the callback that follows a full
+    /// workspace scan. It runs on the indexing workers, a few times per
+    /// second at most, so it must be cheap and must not call the scanner.
+    pub fn set_on_progress(&self, on_progress: Option<Arc<dyn Fn(IndexProgress) + Send + Sync>>) {
+        *self
+            .inner
+            .on_progress
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = on_progress;
     }
 
     pub fn set_workspace_symbol_catalog(&mut self, catalog: Arc<WorkspaceSymbolCatalog>) {

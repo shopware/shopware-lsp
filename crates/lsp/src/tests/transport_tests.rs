@@ -66,6 +66,7 @@ fn disconnect_cancels_running_request_before_teardown() {
 #[test]
 fn indexing_publishes_standard_and_legacy_progress() {
     let dir = temp_dir();
+    std::fs::write(dir.path().join("a.php"), "<?php").unwrap();
     let state = temp_dir();
     let scanner =
         FileScanner::new(root_string(&dir), state.path().join("scanner.db"), None).unwrap();
@@ -77,10 +78,11 @@ fn indexing_publishes_standard_and_legacy_progress() {
             let _ = progress_sender.send("create".to_owned());
         }
         "$/progress" => {
-            let kind = params["value"]["kind"]
-                .as_str()
-                .unwrap_or_default()
-                .to_owned();
+            let value = &params["value"];
+            let mut kind = value["kind"].as_str().unwrap_or_default().to_owned();
+            if kind == "report" {
+                kind = format!("report {} {}", value["message"], value["percentage"]);
+            }
             let _ = progress_sender.send(kind);
         }
         "shopware/indexingStarted" | "shopware/indexingCompleted" => {
@@ -100,6 +102,12 @@ fn indexing_publishes_standard_and_legacy_progress() {
     client.notify("initialized", json!({}));
     assert_eq!(recv(&progress, "missing create"), "create");
     assert_eq!(recv(&progress, "missing begin"), "begin");
+    // The scan reports the files it looked at; after the last one it is
+    // finishing.
+    assert_eq!(
+        recv(&progress, "missing report"),
+        "report \"finishing\" 100"
+    );
     assert_eq!(recv(&progress, "missing end"), "end");
     assert_eq!(recv(&legacy, "missing start"), "shopware/indexingStarted");
     assert_eq!(

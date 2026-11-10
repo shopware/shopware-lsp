@@ -38,7 +38,7 @@ pub use parsed_file::ParsedFile;
 pub use path_exclusions::PathExclusions;
 pub use revisioned::Revisioned;
 pub use scanner::{
-    DEFAULT_MAX_FILE_SIZE_BYTES, FileScanner, FileScannerStats, FileSizeStats,
+    DEFAULT_MAX_FILE_SIZE_BYTES, FileScanner, FileScannerStats, FileSizeStats, IndexProgress,
     MAXIMUM_SOURCE_FILE_BYTES, SkippedFileStats, should_skip_relative_path,
 };
 pub use store::{Mutation, MutationCache, MutationConnection, Store};

@@ -793,6 +793,37 @@ fn notifies_update_after_batch_indexers_publish() {
 }
 
 #[test]
+fn a_full_scan_reports_its_progress() {
+    let root = tempfile::tempdir().unwrap();
+    for name in ["a.php", "b.php", "c.php"] {
+        write(&root.path().join(name), "<?php");
+    }
+    let scanner = scanner(root.path(), &root.path().join("scanner.db"), None);
+    let (sender, reports) = crossbeam_channel::unbounded();
+    scanner.set_on_progress(Some(Arc::new(move |progress| {
+        sender.send(progress).unwrap();
+    })));
+    scanner.index_all(&none()).unwrap();
+    // Reports are throttled, but the last file is always reported.
+    let last = reports.try_iter().last().unwrap();
+    assert_eq!((last.done, last.total), (3, 3));
+
+    // Unchanged files count as well: a warm scan still looks at each.
+    scanner.index_all(&none()).unwrap();
+    let last = reports.try_iter().last().unwrap();
+    assert_eq!((last.done, last.total), (3, 3));
+
+    // Only full scans report: a watcher batch is not a workspace scan.
+    let path = text(&write(&root.path().join("d.php"), "<?php"));
+    scanner.index_files(&none(), &[&path]).unwrap();
+    assert!(reports.try_iter().next().is_none());
+
+    scanner.set_on_progress(None);
+    scanner.index_all(&none()).unwrap();
+    assert!(reports.try_iter().next().is_none());
+}
+
+#[test]
 fn prepares_before_workspace_mutation() {
     let root = tempfile::tempdir().unwrap();
     let path = text(&write(&root.path().join("prepared.php"), "<?php"));

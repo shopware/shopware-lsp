@@ -55,7 +55,30 @@ spelling of earlier releases (`-root`) is rejected with a hint. `check` recursiv
 expands directory targets and accepts multiple, overlapping files or
 directories. It uses up to four diagnostic workers by default; pass
 `--workers 1` for serial analysis or another positive limit for a particular
-machine. `codeaction --exec` and `rename` preview a unified diff unless `-w` is
+machine.
+
+On a terminal `check` groups the findings below their file and shows a live
+status line while the workspace indexes and the files are checked; elsewhere
+(a pipe, a CI log) it prints one `path:line:column: severity: message [code]`
+line per finding and no status. Choose the layout explicitly with
+`--format pretty` or `--format concise`: the concise lines are what terminals
+and editors link to a position. Either way:
+
+- paths are relative to the current directory when the file is below it,
+  otherwise to the workspace root (`--json` keeps full URIs);
+- findings are written to standard output as each file finishes, in path
+  order, and the summary (counts per severity, files, duration) goes to
+  standard error;
+- the exit code is 1 when a finding reaches `--fail-on`, and the summary is
+  the only message.
+
+Colors follow the global `--color auto|always|never` flag: `auto` colors
+terminals only, `NO_COLOR` turns colors off and `FORCE_COLOR` or
+`CLICOLOR_FORCE` turn them on. The status line also appears for `index` and
+for the other workspace commands while they wait for the index; `-v` replaces
+it with plain progress lines.
+
+`codeaction --exec` and `rename` preview a unified diff unless `-w` is
 supplied, so commands do not modify source files by default.
 
 `workspace-symbol` normally reads the populated SQLite FTS catalog directly,

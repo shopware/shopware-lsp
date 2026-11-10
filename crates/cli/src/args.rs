@@ -25,6 +25,9 @@ pub(crate) struct ShopwareLsp {
     /// Verbose progress output
     #[usage(short = 'v', long, global)]
     pub verbose: bool,
+    /// Color output: auto (terminals only), always, never
+    #[usage(long, global, value_name = "WHEN")]
+    pub color: Option<String>,
     /// Allow workspace commands outside detected Shopware or Symfony projects
     #[usage(long, global)]
     pub allow_unsupported_project: bool,
@@ -190,6 +193,9 @@ pub(crate) struct Check {
     /// Maximum concurrent diagnostic requests (default: CPU count, at most 4)
     #[usage(long, value_name = "COUNT")]
     pub workers: Option<i64>,
+    /// Output layout: pretty (grouped by file, the default on a terminal) or concise (one line per finding)
+    #[usage(long, value_name = "FORMAT")]
+    pub format: Option<String>,
     /// Files or directories to check
     #[usage(arg, required, value_name = "PATH")]
     pub paths: Vec<String>,

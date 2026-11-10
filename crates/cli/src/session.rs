@@ -37,6 +37,8 @@ pub struct IndexingResult {
 }
 
 enum IndexEvent {
+    /// The server's progress message, such as `1,200/40,000 files`.
+    Progress(String),
     Done(IndexingResult),
     Failed(String),
 }
@@ -358,6 +360,7 @@ impl CliSession {
                 "name": swlsp_uriutil::filepath::base(&options.root),
             }],
             "capabilities": {
+                "window": {"workDoneProgress": true},
                 "textDocument": {
                     "diagnostic": {},
                     "codeAction": {
@@ -426,9 +429,19 @@ impl CliSession {
 
     /// Waits for `shopware/indexingCompleted`.
     pub fn wait_for_index(&self) -> Result<IndexingResult, CliError> {
+        self.wait_for_index_with(|_| {})
+    }
+
+    /// [`Self::wait_for_index`], passing the progress the server reports
+    /// (such as `1200/40000 files`) to `on_progress`.
+    pub fn wait_for_index_with(
+        &self,
+        on_progress: impl Fn(&str),
+    ) -> Result<IndexingResult, CliError> {
         loop {
             crossbeam_channel::select! {
                 recv(self.index_events) -> event => match event {
+                    Ok(IndexEvent::Progress(message)) => on_progress(&message),
                     Ok(IndexEvent::Done(result)) => return Ok(result),
                     Ok(IndexEvent::Failed(message)) => {
                         return Err(CliError::fail(format!("index workspace: {message}")));
@@ -688,6 +701,13 @@ fn handle_server_message(
                 time_in_seconds: params["timeInSeconds"].as_f64().unwrap_or(0.0),
             };
             let _ = index_events.send(IndexEvent::Done(result));
+        }
+        // Reports of the indexing progress; begin and end carry nothing the
+        // completion notification does not.
+        "$/progress" if params["value"]["kind"] == "report" => {
+            if let Some(message) = params["value"]["message"].as_str() {
+                let _ = index_events.send(IndexEvent::Progress(message.to_owned()));
+            }
         }
         "shopware/indexingFailed" => {
             let message = params["message"].as_str().unwrap_or("").to_owned();

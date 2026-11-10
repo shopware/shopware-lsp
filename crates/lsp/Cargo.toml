@@ -19,6 +19,7 @@ swlsp-projectconfig = { path = "../projectconfig" }
 swlsp-projectdetect = { path = "../projectdetect" }
 swlsp-integration = { path = "../integration" }
 swlsp-uriutil = { path = "../uriutil" }
+swlsp-textutil = { path = "../textutil" }
 swlsp-indexer = { path = "../indexer" }
 swlsp-rewrite = { path = "../rewrite" }
 swlsp-parser-vue = { path = "../parser-vue" }

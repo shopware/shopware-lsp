@@ -509,7 +509,9 @@ fn check_uses_project_failure_policy_and_explicit_flag_wins() {
     }"#,
     );
     let root_path = root.path().to_str().unwrap();
-    assert_err_contains(&run(&["--root", root_path, "check", &php]), "fail-on error");
+    let failed = run(&["--root", root_path, "check", &php]);
+    assert_eq!(failed.result.unwrap_err().code, 1);
+    assert!(failed.err.starts_with("Found 1 error"), "{}", failed.err);
     let off = run(&["--root", root_path, "check", "--fail-on", "off", &php]);
     assert!(off.result.is_ok(), "{:?} {}", off.result, off.err);
 }

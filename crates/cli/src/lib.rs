@@ -14,18 +14,21 @@ mod features_write;
 mod logger;
 mod mcp;
 mod project_info;
+mod report;
 mod serve;
 mod session;
 mod target;
+mod terminal;
 mod workspace_commands;
 
-use std::io::{self, Read, Write};
+use std::io::{self, IsTerminal, Read, Write};
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
 use crate::args::{Command, ShopwareLsp};
+use crate::terminal::{ColorChoice, Status};
 
 pub use edit::{EditMode, TextEditError, apply_protocol_text_edits, apply_workspace_edit};
 pub use logger::{LogSink, install_logger, set_log_sink};
@@ -74,6 +77,9 @@ impl Cancel {
         &self.0
     }
 }
+
+/// The status line while the workspace indexes.
+pub(crate) const INDEXING: &str = "Indexing workspace…";
 
 /// A command failure, carrying the process exit code.
 ///
@@ -159,19 +165,27 @@ pub fn exit_code(result: &Result<(), CliError>) -> i32 {
 
 /// A cloneable, thread-safe writer (stdout, stderr or a test buffer).
 #[derive(Clone)]
-pub struct Output(Arc<Mutex<Box<dyn Write + Send>>>);
+pub struct Output(Arc<Mutex<Box<dyn Write + Send>>>, bool);
 
 impl Output {
     pub fn new(writer: impl Write + Send + 'static) -> Self {
-        Self(Arc::new(Mutex::new(Box::new(writer))))
+        Self(Arc::new(Mutex::new(Box::new(writer))), false)
     }
 
     pub fn stdout() -> Self {
-        Self::new(io::stdout())
+        let terminal = io::stdout().is_terminal();
+        Self(Self::new(io::stdout()).0, terminal)
     }
 
     pub fn stderr() -> Self {
-        Self::new(io::stderr())
+        let terminal = io::stderr().is_terminal();
+        Self(Self::new(io::stderr()).0, terminal)
+    }
+
+    /// Whether this writes to a terminal: live status lines and, by
+    /// default, colors are only used there.
+    pub fn is_terminal(&self) -> bool {
+        self.1
     }
 }
 
@@ -242,6 +256,7 @@ pub struct Runner {
     pub(crate) root: String,
     pub(crate) json: bool,
     pub(crate) verbose: bool,
+    pub(crate) color: ColorChoice,
     pub(crate) allow_unsupported_project: bool,
     pub(crate) cancel: Cancel,
     input: Mutex<Option<Input>>,
@@ -259,6 +274,7 @@ impl Runner {
             root: String::new(),
             json: false,
             verbose: false,
+            color: ColorChoice::Auto,
             allow_unsupported_project: false,
             cancel: Cancel::new(),
             input: Mutex::new(None),
@@ -312,6 +328,7 @@ impl Runner {
         self.root = cli.root.clone().unwrap_or_default();
         self.json = cli.json;
         self.verbose = cli.verbose;
+        self.color = ColorChoice::parse(cli.color.as_deref())?;
         self.allow_unsupported_project = cli.allow_unsupported_project;
         if cli.version {
             return run_version(self);
@@ -464,6 +481,15 @@ impl Runner {
         }
     }
 
+    /// A live status line on stderr; none for JSON output, or with `-v`,
+    /// whose progress lines would interleave with it.
+    pub(crate) fn status(&self, message: &str) -> Status {
+        if self.json || self.verbose {
+            return Status::disabled();
+        }
+        Status::start(&self.err_out, self.color.style(&self.err_out), message)
+    }
+
     /// Opens an indexed production session.
     pub(crate) fn connect(&self) -> Result<CliSession, CliError> {
         let root = self.workspace_root()?;
@@ -473,7 +499,11 @@ impl Runner {
         }
         let mut session = CliSession::new(&self.cancel, self.session_options(&root, true))?;
         let started = std::time::Instant::now();
-        let result = session.wait_for_index()?;
+        let status = self.status(INDEXING);
+        let result =
+            session.wait_for_index_with(|files| status.set_message(format!("{INDEXING} {files}")));
+        drop(status);
+        let result = result?;
         session.initial_index = result;
         if self.verbose {
             let mut seconds = result.time_in_seconds;

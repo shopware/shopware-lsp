@@ -1,4 +1,17 @@
-//! Integer literals with a base prefix.
+//! Integer literals with a base prefix, and counts for people.
+
+/// A count with thousands separators (`18,412`).
+pub fn grouped(count: usize) -> String {
+    let digits = count.to_string();
+    let mut text = String::with_capacity(digits.len() + digits.len() / 3);
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
+            text.push(',');
+        }
+        text.push(digit);
+    }
+    text
+}
 
 /// Parses an integer literal: an optional sign, then decimal digits, `0x`
 /// hexadecimal, `0o` or `0` octal, or `0b` binary digits (prefixes are case

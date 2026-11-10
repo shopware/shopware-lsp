@@ -34,6 +34,7 @@ swlsp-projectconfig = { path = "../projectconfig" }
 swlsp-projectdetect = { path = "../projectdetect" }
 swlsp-shopware-entityschema = { path = "../shopware-entityschema" }
 swlsp-uriutil = { path = "../uriutil" }
+swlsp-textutil = { path = "../textutil" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 crossbeam-channel = "0.5"

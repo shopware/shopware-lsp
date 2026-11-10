@@ -101,6 +101,12 @@ document snapshot; no custom request is required.
 
 ## Notifications
 
+### `$/progress` (indexing)
+For clients that advertise `window.workDoneProgress`, a full workspace scan
+is a standard work-done progress: `begin`, then `report` values with the
+files looked at (`"message": "1,200/40,721 files"`, `percentage`) a few times
+per second, `"message": "finishing"` after the last file, and `end`.
+
 ### `shopware/indexingStarted`
 Sent when the server begins indexing. No parameters are required.
 

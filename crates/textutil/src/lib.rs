@@ -163,6 +163,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn grouped_separates_thousands() {
+        for (count, text) in [
+            (7, "7"),
+            (1000, "1,000"),
+            (18412, "18,412"),
+            (1234567, "1,234,567"),
+        ] {
+            assert_eq!(number::grouped(count), text);
+        }
+    }
+
+    #[test]
     fn compact_whitespace_removes_ascii_whitespace() {
         assert_eq!(compact_whitespace(" \tFoo\\\r\nBar "), "Foo\\Bar");
         assert_eq!(compact_whitespace("Grö ße"), "Größe");

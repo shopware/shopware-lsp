@@ -15,6 +15,7 @@ fn main() {
     let version = option_env!("SHOPWARE_LSP_VERSION").unwrap_or("dev");
     let cancel = swlsp_cli::Cancel::new();
     install_interrupt_handler(cancel.clone());
+    enable_terminal_sequences();
     let mut runner = swlsp_cli::Runner::new(swlsp_cli::Options {
         version: version.to_owned(),
         license: LICENSE.to_owned(),
@@ -28,7 +29,9 @@ fn main() {
         swlsp_cli::Output::stdout(),
         swlsp_cli::Output::stderr(),
     );
-    if let Err(error) = &result {
+    if let Err(error) = &result
+        && !error.message.is_empty()
+    {
         let mut stderr = std::io::stderr();
         let _ = writeln!(stderr, "{}", error.message);
         let _ = stderr.flush();
@@ -91,3 +94,29 @@ fn install_interrupt_handler(cancel: swlsp_cli::Cancel) {
 
 #[cfg(not(any(unix, windows)))]
 fn install_interrupt_handler(_cancel: swlsp_cli::Cancel) {}
+
+/// Windows consoles interpret colors and the status line's cursor
+/// sequences only once virtual terminal processing is enabled. A handle
+/// that is no console (a pipe, a file) is left alone.
+#[cfg(windows)]
+fn enable_terminal_sequences() {
+    use windows_sys::Win32::System::Console::{
+        ENABLE_VIRTUAL_TERMINAL_PROCESSING, GetConsoleMode, GetStdHandle, STD_ERROR_HANDLE,
+        STD_OUTPUT_HANDLE, SetConsoleMode,
+    };
+
+    for stream in [STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        // SAFETY: console API calls on the process's own standard handles;
+        // `mode` is a local the call initializes on success.
+        unsafe {
+            let handle = GetStdHandle(stream);
+            let mut mode = 0;
+            if GetConsoleMode(handle, &mut mode) != 0 {
+                SetConsoleMode(handle, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn enable_terminal_sequences() {}

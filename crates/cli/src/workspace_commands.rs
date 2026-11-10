@@ -1,9 +1,9 @@
 //! `index`, `stats` and `check`.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt::Write as _;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -11,8 +11,11 @@ use swlsp_indexer::{PathExclusions, VendorPackages, is_scanned_path, should_skip
 use swlsp_uriutil::filepath;
 
 use crate::args::Check;
+use crate::report::{DisplayPaths, Format, Report};
 use crate::session::{DiagnosticOutput, diagnostic_severity_value};
-use crate::{Cancel, CliError, Runner};
+use crate::terminal::{DIM, GREEN, short_duration};
+use crate::{Cancel, CliError, INDEXING, Runner};
+use swlsp_textutil::number::grouped;
 
 /// Mirror of the indexer's `FileScannerStats` wire shape.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -63,7 +66,11 @@ pub(crate) fn run_index(runner: &Runner, force: bool) -> Result<(), CliError> {
     let mut result = session.initial_index;
     if force {
         session.call_raw("shopware/forceReindex", json!({}))?;
-        result = session.wait_for_index()?;
+        let status = runner.status(INDEXING);
+        let reindexed =
+            session.wait_for_index_with(|files| status.set_message(format!("{INDEXING} {files}")));
+        drop(status);
+        result = reindexed?;
     }
     let scanner: ScannerStats = session
         .call::<Option<ScannerStats>>("shopware/index/stats", json!({}))?
@@ -86,12 +93,18 @@ pub(crate) fn run_index(runner: &Runner, force: bool) -> Result<(), CliError> {
             time_in_seconds: result.time_in_seconds,
         });
     }
+    let style = runner.color.style(&runner.out);
+    let mark = if runner.out.is_terminal() {
+        format!("{} ", style.paint(GREEN, "✓"))
+    } else {
+        String::new()
+    };
     let mut formatted = format!(
-        "Indexed {} files ({}) with {} indexers in {}\n",
-        scanner.tracked_files,
+        "{mark}Indexed {} files ({}) with {} indexers in {}\n",
+        grouped(scanner.tracked_files.max(0) as usize),
         format_bytes(scanner.tracked_bytes),
         scanner.indexers,
-        seconds_duration(result.time_in_seconds),
+        short_duration(Duration::from_secs_f64(result.time_in_seconds.max(0.0))),
     );
     if scanner.skipped_oversized_count > 0 {
         let _ = writeln!(
@@ -324,93 +337,126 @@ pub(crate) fn run_check(runner: &Runner, flags: &Check) -> Result<(), CliError> 
     if !effective_fail_on.is_empty() && !effective_fail_on.eq_ignore_ascii_case("off") {
         fail_on = diagnostic_severity(&effective_fail_on)?;
     }
-    if paths.is_empty() {
-        let _ = session.close();
-        if runner.json {
-            return runner.write_json(&Vec::<DiagnosticOutput>::new());
-        }
-        return Ok(());
+    let format = Format::parse(flags.format.as_deref(), runner.out.is_terminal())?;
+    let mut report = Report::new(
+        format,
+        runner.color.style(&runner.out),
+        DisplayPaths::new(&session.root),
+    );
+    let err_style = runner.color.style(&runner.err_out);
+    let mut status = runner.status("Checking…");
+    if status.is_live() {
+        // The live line replaced the one `connect` showed while indexing.
+        let files = session
+            .call::<Option<ScannerStats>>("shopware/index/stats", json!({}))
+            .ok()
+            .flatten()
+            .map(|stats| format!(" ({} files)", grouped(stats.tracked_files.max(0) as usize)))
+            .unwrap_or_default();
+        let ready = format!(
+            "{} Workspace ready{files} in {}\n",
+            err_style.paint(GREEN, "✓"),
+            err_style.paint(
+                DIM,
+                &short_duration(Duration::from_secs_f64(
+                    session.initial_index.time_in_seconds.max(0.0)
+                ))
+            ),
+        );
+        status.suspend(|| runner.write_err(&ready))?;
     }
-    type Slot = Mutex<Option<Result<Vec<DiagnosticOutput>, CliError>>>;
-    let results: Vec<Slot> = paths.iter().map(|_| Mutex::new(None)).collect();
+    let started = Instant::now();
+    let total = paths.len();
+    let progress = |done: usize| format!("Checking {}/{} files", grouped(done), grouped(total));
+    status.set_message(progress(0));
+
     let next = AtomicUsize::new(0);
-    let worker_count = (workers as usize).min(paths.len());
+    let worker_count = (workers as usize).min(total);
+    let mut findings = Vec::new();
+    let mut failed = false;
+    let mut errors = Vec::new();
+    let mut write_error = None;
     std::thread::scope(|scope| {
+        let (sender, results) = crossbeam_channel::unbounded();
         for _ in 0..worker_count {
-            scope.spawn(|| {
+            let sender = sender.clone();
+            let (session, paths, next) = (&session, &paths, &next);
+            scope.spawn(move || {
                 loop {
                     let index = next.fetch_add(1, Ordering::Relaxed);
                     if index >= paths.len() {
                         break;
                     }
                     let result = session.check_document(&paths[index], cutoff);
-                    *results[index].lock().unwrap_or_else(|p| p.into_inner()) = Some(result);
+                    if sender.send((index, result)).is_err() {
+                        break;
+                    }
                 }
             });
         }
-    });
-    let mut findings = Vec::new();
-    let mut errors = Vec::new();
-    for result in results {
-        match result.into_inner().unwrap_or_else(|p| p.into_inner()) {
-            Some(Ok(items)) => findings.extend(items),
-            Some(Err(error)) => errors.push(error.message),
-            None => {}
+        drop(sender);
+        // Files finish out of order; each is reported once every file
+        // before it is, so the report reads in path order while it streams.
+        let mut finished = BTreeMap::new();
+        let mut reported = 0;
+        for (done, (index, result)) in results.iter().enumerate() {
+            status.set_message(progress(done + 1));
+            match result {
+                Ok(items) => {
+                    finished.insert(index, items);
+                }
+                Err(error) => {
+                    errors.push((index, error.message));
+                    finished.insert(index, Vec::new());
+                }
+            }
+            while let Some(items) = finished.remove(&reported) {
+                reported += 1;
+                failed |= findings_at_severity(&items, fail_on);
+                if runner.json {
+                    findings.extend(items);
+                    continue;
+                }
+                let text = report.file(&items);
+                if text.is_empty() || write_error.is_some() {
+                    continue;
+                }
+                if let Err(error) = status.suspend(|| runner.write_text(&text)) {
+                    // Nobody reads the report any more: stop checking.
+                    write_error = Some(error);
+                    next.store(paths.len(), Ordering::Relaxed);
+                }
+            }
         }
-    }
+    });
+    status.finish();
     let _ = session.close();
-    if !errors.is_empty() {
-        return Err(CliError::fail(errors.join("\n")));
+    if let Some(error) = write_error {
+        return Err(error);
     }
-    let failed = || {
-        CliError::exit(
-            1,
-            format!("diagnostics matched fail-on {effective_fail_on}"),
-        )
-    };
+    if !errors.is_empty() {
+        errors.sort();
+        let messages: Vec<String> = errors.into_iter().map(|(_, message)| message).collect();
+        return Err(CliError::fail(messages.join("\n")));
+    }
     if runner.json {
         runner.write_json(&findings)?;
-        if findings_at_severity(&findings, fail_on) {
-            return Err(failed());
+        if failed {
+            return Err(CliError::exit(
+                1,
+                format!("diagnostics matched fail-on {effective_fail_on}"),
+            ));
         }
         return Ok(());
     }
-    for finding in &findings {
-        let path = swlsp_uriutil::path(&finding.uri).unwrap_or_else(|_| finding.uri.clone());
-        let diagnostic = &finding.diagnostic;
-        runner.write_text(&format!(
-            "{}:{}:{}: {}: {}{}\n",
-            path,
-            diagnostic.range.start.line + 1,
-            diagnostic.range.start.character + 1,
-            severity_label(diagnostic_severity_raw(diagnostic)).to_lowercase(),
-            diagnostic.message,
-            diagnostic_code_suffix(diagnostic.code.as_ref()),
-        ))?;
-        for related in finding.related.iter().flatten() {
-            let related_path = swlsp_uriutil::path(&related.location.uri)
-                .unwrap_or_else(|_| related.location.uri.clone());
-            runner.write_text(&format!(
-                "  {}:{}:{}: {}\n",
-                related_path,
-                related.location.range.start.line + 1,
-                related.location.range.start.character + 1,
-                related.message
-            ))?;
-        }
-    }
-    if findings_at_severity(&findings, fail_on) {
-        return Err(failed());
+    // The summary goes to stderr: stdout stays one finding per line for
+    // whatever reads the concise report.
+    runner.write_err(&report.summary(err_style, total, started.elapsed()))?;
+    if failed {
+        // The summary already says what was found.
+        return Err(CliError::exit(1, ""));
     }
     Ok(())
-}
-
-/// The raw severity number, 0 when absent (labelled as a warning).
-fn diagnostic_severity_raw(diagnostic: &swlsp_lsp_protocol::Diagnostic) -> i32 {
-    diagnostic
-        .severity
-        .map(crate::session::severity_number)
-        .unwrap_or(0)
 }
 
 /// Expands targets to scanned files, honoring exclusions below the
@@ -591,14 +637,6 @@ pub(crate) fn severity_label(severity: i32) -> &'static str {
         3 => "Information",
         4 => "Hint",
         _ => "Warning",
-    }
-}
-
-/// ` [code]` for a diagnostic code, empty when there is none.
-pub(crate) fn diagnostic_code_suffix(code: Option<&serde_json::Value>) -> String {
-    match code {
-        None | Some(serde_json::Value::Null) => String::new(),
-        Some(code) => format!(" [{}]", code_text(code)),
     }
 }
 

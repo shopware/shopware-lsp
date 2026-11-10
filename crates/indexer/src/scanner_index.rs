@@ -8,6 +8,7 @@
 
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{RecvTimeoutError, SendTimeoutError};
@@ -19,6 +20,7 @@ use crate::scanner::{
     FILE_STATS_LIMIT, FileMeta, FileState, Inner, SkippedFileStats, StoredFileState, content_hash,
     log_skipped_file, log_skipped_file_count,
 };
+use crate::scanner::{IndexProgress, ProgressCallback};
 use crate::store::lock;
 use crate::workspace_symbols::{WorkspaceSymbolRow, WorkspaceSymbolRows};
 use crate::{Mutation, ParsedFile};
@@ -114,6 +116,44 @@ struct Run<'a> {
     /// States of files whose grouped index mutation committed durably,
     /// filled by after-commit callbacks on whichever worker commits.
     durable: Arc<Mutex<Vec<FileState>>>,
+    /// Set for a full workspace scan somebody follows.
+    progress: Option<Progress>,
+}
+
+/// Reports the files a full scan has looked at, at most once per
+/// [`PROGRESS_INTERVAL`].
+struct Progress {
+    callback: ProgressCallback,
+    total: usize,
+    done: AtomicUsize,
+    reported: Mutex<Instant>,
+}
+
+const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
+
+impl Progress {
+    fn advance(&self) {
+        let done = self.done.fetch_add(1, Ordering::Relaxed) + 1;
+        let mut reported = if done >= self.total {
+            // The last file is always reported.
+            lock(&self.reported)
+        } else {
+            // Another worker reporting right now is recent enough.
+            let Ok(reported) = self.reported.try_lock() else {
+                return;
+            };
+            if reported.elapsed() < PROGRESS_INTERVAL {
+                return;
+            }
+            reported
+        };
+        *reported = Instant::now();
+        drop(reported);
+        (self.callback)(IndexProgress {
+            done,
+            total: self.total,
+        });
+    }
 }
 
 impl Inner {
@@ -156,6 +196,21 @@ impl Inner {
             results: Mutex::new(RunResults::default()),
             publish: Mutex::new(()),
             durable: Arc::default(),
+            // Only a full scan passes the stored states.
+            progress: stored_states
+                .as_ref()
+                .and_then(|_| {
+                    self.on_progress
+                        .read()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .clone()
+                })
+                .map(|callback| Progress {
+                    callback,
+                    total: files.len(),
+                    done: AtomicUsize::new(0),
+                    reported: Mutex::new(Instant::now()),
+                }),
         };
         let result = run.execute(files, stored_states);
 
@@ -425,6 +480,9 @@ impl Run<'_> {
                     return;
                 }
             };
+            if let Some(progress) = &self.progress {
+                progress.advance();
+            }
             let change =
                 match self
                     .scanner
