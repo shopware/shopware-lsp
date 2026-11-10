@@ -146,6 +146,12 @@ class ProductCollection implements \IteratorAggregate {
             Some(protocol::DiagnosticSeverity::WARNING)
         );
     }
+    // The same accesses in an Administration template are Vue expressions.
+    check_problems(
+        &TwigMemberMissingAnalyzer::new(None, Some(php.clone())),
+        "file:///project/src/Resources/app/administration/src/module/demo/demo.html.twig",
+        "{# @var product \\App\\Product #}\n{{ product.missing }}\n",
+    );
     Indexer::close(&php).unwrap();
     drop(php);
 

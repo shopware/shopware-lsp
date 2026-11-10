@@ -61,7 +61,7 @@ impl ProblemAnalyzer for TwigMemberDeprecationAnalyzer {
         let Some(php_index) = &self.php_index else {
             return Ok(Vec::new());
         };
-        if !lowercase(&document.uri).ends_with(".twig") {
+        if !lowercase(&document.uri).ends_with(".twig") || is_vue_template(&document.uri) {
             return Ok(Vec::new());
         }
         let Some(root) = document.root() else {
@@ -173,7 +173,7 @@ impl ProblemAnalyzer for TwigMemberMissingAnalyzer {
         let Some(php_index) = &self.php_index else {
             return Ok(Vec::new());
         };
-        if !lowercase(&document.uri).ends_with(".twig") {
+        if !lowercase(&document.uri).ends_with(".twig") || is_vue_template(&document.uri) {
             return Ok(Vec::new());
         }
         let Some(root) = document.root() else {
@@ -208,4 +208,11 @@ impl ProblemAnalyzer for TwigMemberMissingAnalyzer {
         }
         Ok(result)
     }
+}
+
+/// Administration templates are Vue templates in Twig block syntax: their
+/// `{{ app.name }}` is a Vue expression over component state, not an access
+/// to a Twig variable (such as the `app` global) with a PHP type.
+fn is_vue_template(uri: &str) -> bool {
+    uri.contains("/Resources/app/administration/")
 }
