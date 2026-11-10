@@ -11,6 +11,7 @@ use swlsp_indexer::{PathExclusions, VendorPackages, is_scanned_path, should_skip
 use swlsp_uriutil::filepath;
 
 use crate::args::Check;
+use crate::autofix::{CheckedFile, FixMode};
 use crate::report::{DisplayPaths, Format, Report};
 use crate::session::{DiagnosticOutput, diagnostic_severity_value};
 use crate::terminal::{DIM, GREEN, short_duration};
@@ -372,7 +373,13 @@ pub(crate) fn run_check(runner: &Runner, flags: &Check) -> Result<(), CliError> 
 
     let next = AtomicUsize::new(0);
     let worker_count = (workers as usize).min(total);
+    let mode = if flags.fix {
+        FixMode::Apply
+    } else {
+        FixMode::Report
+    };
     let mut findings = Vec::new();
+    let mut fixed = (0, 0);
     let mut failed = false;
     let mut errors = Vec::new();
     let mut write_error = None;
@@ -387,7 +394,7 @@ pub(crate) fn run_check(runner: &Runner, flags: &Check) -> Result<(), CliError> 
                     if index >= paths.len() {
                         break;
                     }
-                    let result = session.check_document(&paths[index], cutoff);
+                    let result = session.check_file(&paths[index], cutoff, mode);
                     if sender.send((index, result)).is_err() {
                         break;
                     }
@@ -402,16 +409,20 @@ pub(crate) fn run_check(runner: &Runner, flags: &Check) -> Result<(), CliError> 
         for (done, (index, result)) in results.iter().enumerate() {
             status.set_message(progress(done + 1));
             match result {
-                Ok(items) => {
-                    finished.insert(index, items);
+                Ok(checked) => {
+                    finished.insert(index, checked);
                 }
                 Err(error) => {
                     errors.push((index, error.message));
-                    finished.insert(index, Vec::new());
+                    finished.insert(index, CheckedFile::default());
                 }
             }
-            while let Some(items) = finished.remove(&reported) {
+            while let Some(checked) = finished.remove(&reported) {
                 reported += 1;
+                if checked.fixed > 0 {
+                    fixed = (fixed.0 + checked.fixed, fixed.1 + 1);
+                }
+                let items = checked.findings;
                 failed |= findings_at_severity(&items, fail_on);
                 if runner.json {
                     findings.extend(items);
@@ -442,6 +453,11 @@ pub(crate) fn run_check(runner: &Runner, flags: &Check) -> Result<(), CliError> 
     }
     if runner.json {
         runner.write_json(&findings)?;
+        if fixed.0 > 0
+            && let Some(text) = report.fixes(err_style, fixed)
+        {
+            runner.write_err(&text)?;
+        }
         if failed {
             return Err(CliError::exit(
                 1,
@@ -459,6 +475,9 @@ pub(crate) fn run_check(runner: &Runner, flags: &Check) -> Result<(), CliError> 
         ))?;
     }
     runner.write_err(&report.summary(err_style, total, started.elapsed()))?;
+    if let Some(text) = report.fixes(err_style, fixed) {
+        runner.write_err(&text)?;
+    }
     if failed {
         // The summary already says what was found.
         return Err(CliError::exit(1, ""));

@@ -20,6 +20,7 @@ use swlsp_lsp::async_io::{FrameSender, Input, Output as StreamOutput};
 use swlsp_lsp_protocol::{Diagnostic, DiagnosticRelatedInformation, DiagnosticResult, Position};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader};
 
+use crate::autofix::FixMode;
 use crate::{Cancel, CliError, Output};
 
 const POLL: Duration = Duration::from_millis(25);
@@ -541,36 +542,43 @@ impl CliSession {
         path: &str,
         cutoff: i32,
     ) -> Result<Vec<DiagnosticOutput>, CliError> {
+        Ok(self.check_file(path, cutoff, FixMode::Ignore)?.findings)
+    }
+
+    /// Opens `path`, runs `inspect` on it and closes it again.
+    pub(crate) fn with_document<T>(
+        &self,
+        path: &str,
+        inspect: impl FnOnce(&CliDocument) -> Result<T, CliError>,
+    ) -> Result<T, CliError> {
         let document = self.open_document(path)?;
-        let result: Result<Option<DiagnosticResult>, CliError> = self.call(
+        let result = inspect(&document);
+        match (result, self.close_document(&document)) {
+            (Ok(result), Ok(())) => Ok(result),
+            (Err(error), Ok(())) | (Ok(_), Err(error)) => Err(error),
+            (Err(first), Err(second)) => Err(CliError::fail(format!(
+                "{}\n{}",
+                first.message, second.message
+            ))),
+        }
+    }
+
+    /// The diagnostics of an open document at or above `cutoff`.
+    pub(crate) fn diagnostics(
+        &self,
+        document: &CliDocument,
+        cutoff: i32,
+    ) -> Result<Vec<Diagnostic>, CliError> {
+        let result: Option<DiagnosticResult> = self.call(
             "textDocument/diagnostic",
             text_document_params(&document.uri),
-        );
-        let closed = self.close_document(&document);
-        let result = match (result, closed) {
-            (Ok(result), Ok(())) => result.unwrap_or_default(),
-            (Err(error), Ok(())) | (Ok(_), Err(error)) => return Err(error),
-            (Err(first), Err(second)) => {
-                return Err(CliError::fail(format!(
-                    "{}\n{}",
-                    first.message, second.message
-                )));
-            }
-        };
-        let mut findings = Vec::new();
-        for diagnostic in result.items {
-            let severity = diagnostic_severity_value(&diagnostic);
-            if severity > cutoff {
-                continue;
-            }
-            findings.push(DiagnosticOutput {
-                uri: document.uri.clone(),
-                related: Some(diagnostic.related_information.clone())
-                    .filter(|items| !items.is_empty()),
-                diagnostic,
-            });
-        }
-        Ok(findings)
+        )?;
+        Ok(result
+            .unwrap_or_default()
+            .items
+            .into_iter()
+            .filter(|diagnostic| diagnostic_severity_value(diagnostic) <= cutoff)
+            .collect())
     }
 
     /// The server's notices about the project (a prerequisite an
@@ -774,6 +782,10 @@ pub struct DiagnosticOutput {
     pub diagnostic: Diagnostic,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub related: Option<Vec<DiagnosticRelatedInformation>>,
+    /// Whether `check --fix` fixes the finding. Absent where it was not
+    /// determined (the MCP diagnostics tool lists fixes itself).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fixable: Option<bool>,
 }
 
 /// The effective numeric severity (missing means warning).

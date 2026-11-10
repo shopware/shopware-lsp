@@ -196,6 +196,9 @@ pub(crate) struct Check {
     /// Output layout: pretty (grouped by file, the default on a terminal) or concise (one line per finding)
     #[usage(long, value_name = "FORMAT")]
     pub format: Option<String>,
+    /// Apply the quick fixes that need no decision and report what is left
+    #[usage(long)]
+    pub fix: bool,
     /// Files or directories to check
     #[usage(arg, required, value_name = "PATH")]
     pub paths: Vec<String>,

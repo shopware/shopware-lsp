@@ -72,6 +72,18 @@ and editors link to a position. Either way:
 - the exit code is 1 when a finding reaches `--fail-on`, and the summary is
   the only message.
 
+A finding that `check` can fix on its own ends in `[fixable]` (`"fixable": true`
+in `--json`), and the summary counts them. `check --fix` applies those fixes to
+the files and reports what is left; the exit code then reflects the remaining
+findings only. A finding is fixable when the server offers exactly one
+preferred quick fix for it and that fix edits nothing but the checked file.
+Fixes that need a choice between alternatives, an editor command, or a change
+to another file (creating a template, adding a service argument to
+`services.xml`) are not applied: use `codeaction` for them. The fixes of one
+file are applied one after another, checking the file again after each, so
+fixes that affect each other (two renamed references sharing an import) come
+out right. Review the result with `git diff`.
+
 Colors follow the global `--color auto|always|never` flag: `auto` colors
 terminals only, `NO_COLOR` turns colors off and `FORCE_COLOR` or
 `CLICOLOR_FORCE` turn them on. The status line also appears for `index` and

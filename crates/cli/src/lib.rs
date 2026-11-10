@@ -8,6 +8,7 @@
 //! converted at this boundary.
 
 mod args;
+mod autofix;
 mod edit;
 mod features_read;
 mod features_write;

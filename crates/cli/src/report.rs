@@ -93,6 +93,7 @@ pub(crate) struct Report {
     paths: DisplayPaths,
     counts: [usize; 4],
     files: usize,
+    fixable: usize,
 }
 
 impl Report {
@@ -103,6 +104,7 @@ impl Report {
             paths,
             counts: [0; 4],
             files: 0,
+            fixable: 0,
         }
     }
 
@@ -119,6 +121,7 @@ impl Report {
         });
         for finding in &findings {
             self.counts[severity_index(finding)] += 1;
+            self.fixable += usize::from(fixable(finding));
         }
         let path = self.paths.display(&first.uri);
         match self.format {
@@ -135,7 +138,7 @@ impl Report {
             let label = severity_label(diagnostic_severity_value(diagnostic)).to_lowercase();
             let _ = writeln!(
                 text,
-                "{}:{}:{}: {}: {}{}",
+                "{}:{}:{}: {}: {}{}{}",
                 path,
                 diagnostic.range.start.line + 1,
                 diagnostic.range.start.character + 1,
@@ -147,6 +150,7 @@ impl Report {
                         .map(|code| format!(" [{code}]"))
                         .unwrap_or_default()
                 ),
+                self.fixable_mark(finding, " "),
             );
             for related in finding.related.iter().flatten() {
                 let _ = writeln!(
@@ -180,7 +184,7 @@ impl Report {
             .unwrap_or(0);
         let message_width = findings
             .iter()
-            .filter(|finding| code(finding).is_some())
+            .filter(|finding| code(finding).is_some() || fixable(finding))
             .map(|finding| first_line(finding))
             .filter(|width| *width <= MESSAGE_COLUMN)
             .max()
@@ -200,13 +204,15 @@ impl Report {
                     .paint(DIM, &format!("{:>position_width$}", position(finding))),
                 self.style.paint(color, &format!("{label:<label_width$}")),
             );
-            if let Some(code) = code(finding) {
+            let code = code(finding);
+            if code.is_some() || fixable(finding) {
                 let padding = message_width.saturating_sub(first_line(finding));
                 let _ = write!(
                     text,
-                    "{}  {}",
+                    "{}  {}{}",
                     " ".repeat(padding),
-                    self.style.paint(DIM, &code)
+                    self.style.paint(DIM, code.as_deref().unwrap_or_default()),
+                    self.fixable_mark(finding, if code.is_some() { "  " } else { "" }),
                 );
             }
             text.push('\n');
@@ -225,6 +231,41 @@ impl Report {
             }
         }
         text
+    }
+
+    /// The mark of a finding `check --fix` fixes, after `separator`.
+    fn fixable_mark(&self, finding: &DiagnosticOutput, separator: &str) -> String {
+        if !fixable(finding) {
+            return String::new();
+        }
+        format!("{separator}{}", self.style.paint(GREEN, "[fixable]"))
+    }
+
+    /// What `--fix` did or would do, for below the summary; `None` when
+    /// that is nothing. `fixed` is the number of fixes applied and the
+    /// number of files they were applied to.
+    pub(crate) fn fixes(&self, style: Style, fixed: (usize, usize)) -> Option<String> {
+        let problems = |count: usize| {
+            let noun = if count == 1 { "problem" } else { "problems" };
+            format!("{} {noun}", grouped(count))
+        };
+        let (count, files) = fixed;
+        if count > 0 {
+            let noun = if files == 1 { "file" } else { "files" };
+            return Some(format!(
+                "{} {} in {} {noun}\n",
+                style.paint(GREEN, "Fixed"),
+                problems(count),
+                grouped(files)
+            ));
+        }
+        (self.fixable > 0).then(|| {
+            format!(
+                "{} fixable with {}\n",
+                problems(self.fixable),
+                style.paint(BOLD, "--fix")
+            )
+        })
     }
 
     /// Whether anything was reported.
@@ -282,6 +323,10 @@ impl Report {
 /// The index into [`SEVERITIES`]; a missing severity reads as a warning.
 fn severity_index(finding: &DiagnosticOutput) -> usize {
     (diagnostic_severity_value(&finding.diagnostic).clamp(1, 4) - 1) as usize
+}
+
+fn fixable(finding: &DiagnosticOutput) -> bool {
+    finding.fixable == Some(true)
 }
 
 fn code(finding: &DiagnosticOutput) -> Option<String> {

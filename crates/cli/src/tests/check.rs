@@ -120,6 +120,7 @@ fn finding(uri: &str, line: u32, column: u32, severity: u32, message: &str) -> D
         }))
         .unwrap(),
         related: None,
+        fixable: None,
     }
 }
 
@@ -251,4 +252,91 @@ class Service {
         with.err
     );
     assert!(!with.err.contains("note:"), "{}", with.err);
+}
+
+const UNUSED_IMPORTS: &str = "<?php\n\nnamespace App;\n\nuse App\\First;\nuse App\\Second;\nuse App\\Used;\n\nfunction run(Used $used): void {}\n";
+
+/// A workspace with two unused imports (fixable) and a syntax error (not).
+fn fixable_workspace() -> (tempfile::TempDir, String, String) {
+    let (root, root_path) = workspace();
+    let imports = path(root.path(), "src/Imports.php");
+    write(&imports, UNUSED_IMPORTS);
+    write(
+        &path(root.path(), "src/Used.php"),
+        "<?php\n\nnamespace App;\n\nclass Used {}\n",
+    );
+    (root, root_path, imports)
+}
+
+#[test]
+fn check_marks_the_findings_it_can_fix() {
+    let (_root, root, imports) = fixable_workspace();
+    let run = run(&["--root", &root, "check", &root]);
+    assert_eq!(
+        run.out,
+        "src/Broken.php:1:17: error: expected ) but reached end of file [php.parse]\n\
+         src/Imports.php:5:5: hint: Import First is never used [php.unusedImport] [fixable]\n\
+         src/Imports.php:6:5: hint: Import Second is never used [php.unusedImport] [fixable]\n"
+    );
+    assert!(
+        run.err.ends_with(")\n2 problems fixable with --fix\n"),
+        "{}",
+        run.err
+    );
+    // Reporting changes nothing.
+    assert_eq!(std::fs::read_to_string(&imports).unwrap(), UNUSED_IMPORTS);
+
+    let pretty = super::common::run(&["--root", &root, "check", "--format", "pretty", &imports]);
+    assert_eq!(
+        pretty.out,
+        "\nsrc/Imports.php\n  \
+         5:5  hint     Import First is never used   php.unusedImport  [fixable]\n  \
+         6:5  hint     Import Second is never used  php.unusedImport  [fixable]\n"
+    );
+
+    let json = super::common::run(&["--root", &root, "--json", "check", &root]);
+    let findings: serde_json::Value = serde_json::from_str(&json.out).unwrap();
+    let fixable: Vec<bool> = findings
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|finding| finding["fixable"].as_bool().unwrap())
+        .collect();
+    assert_eq!(fixable, [false, true, true]);
+}
+
+#[test]
+fn check_fix_applies_the_fixes_and_reports_the_rest() {
+    let (_root, root, imports) = fixable_workspace();
+    let broken = path(std::path::Path::new(&root), "src/Broken.php");
+    let run = run(&["--root", &root, "check", "--fix", &root]);
+    assert_eq!(
+        run.out,
+        "src/Broken.php:1:17: error: expected ) but reached end of file [php.parse]\n"
+    );
+    assert!(
+        run.err.starts_with("Found 1 error in 1 of 5 files (")
+            && run.err.ends_with(")\nFixed 2 problems in 1 file\n"),
+        "{}",
+        run.err
+    );
+    assert_eq!(
+        std::fs::read_to_string(&imports).unwrap(),
+        "<?php\n\nnamespace App;\n\nuse App\\Used;\n\nfunction run(Used $used): void {}\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&broken).unwrap(),
+        "<?php function (\n"
+    );
+
+    // Nothing is left to fix.
+    let again = super::common::run(&["--root", &root, "check", "--fix", &imports]);
+    assert!(again.result.is_ok(), "{:?}", again.result);
+    assert_eq!(again.out, "");
+    assert!(
+        again.err.starts_with("No problems in 1 file ("),
+        "{}",
+        again.err
+    );
+    assert!(!again.err.contains("Fixed"), "{}", again.err);
 }
