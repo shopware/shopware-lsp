@@ -1,4 +1,5 @@
-//! Deprecated and missing members accessed in Twig expressions.
+//! Deprecated and missing members accessed in Twig expressions, and the
+//! PHP calls those accesses make.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -12,12 +13,14 @@ use swlsp_php::PhpIndex;
 use swlsp_php_semantic::{Flags, Snapshot, Symbol, SymbolKind};
 use swlsp_syntax::SyntaxNodeExt;
 use swlsp_textutil::lowercase;
-use swlsp_twig::{PhpAccessResolver, TwigIndexer};
+use swlsp_twig::{PhpAccessResolver, PhpCallProblemKind, TwigIndexer};
 
 use crate::diagnostics::{DeclaredAnalyzer, ProblemAnalyzer};
 
 const DEPRECATED_TWIG_MEMBER_CODE: &str = "twig.member.deprecated";
 const MISSING_TWIG_MEMBER_CODE: &str = "twig.member.missing";
+const TWIG_MEMBER_ARGUMENTS_CODE: &str = "twig.member.arguments";
+const TWIG_MEMBER_NOT_CALLABLE_CODE: &str = "twig.member.not-callable";
 
 pub struct TwigMemberDeprecationAnalyzer {
     twig_index: Option<Arc<TwigIndexer>>,
@@ -201,6 +204,82 @@ impl ProblemAnalyzer for TwigMemberMissingAnalyzer {
                     "Field or method '{}' not found on {}",
                     resolution.name, resolution.receiver
                 ),
+                source: "twig".into(),
+                severity: Some(protocol::DiagnosticSeverity::WARNING),
+                ..Problem::default()
+            });
+        }
+        Ok(result)
+    }
+}
+
+pub struct TwigMemberCallAnalyzer {
+    twig_index: Option<Arc<TwigIndexer>>,
+    php_index: Option<PhpIndex>,
+}
+
+impl TwigMemberCallAnalyzer {
+    pub fn new(twig_index: Option<Arc<TwigIndexer>>, php_index: Option<PhpIndex>) -> Self {
+        Self {
+            twig_index,
+            php_index,
+        }
+    }
+}
+
+impl DeclaredAnalyzer for TwigMemberCallAnalyzer {
+    const INSPECTION: InspectionSpec = InspectionSpec {
+        id: "twig.member.call",
+        description: "PHP method calls from Twig whose arguments match no method of the variable's type.",
+        domain: "twig",
+        scope: InspectionScope::Framework,
+        languages: &[LanguageId::Twig],
+        source: "twig",
+        codes: &[TWIG_MEMBER_ARGUMENTS_CODE, TWIG_MEMBER_NOT_CALLABLE_CODE],
+    };
+}
+
+impl ProblemAnalyzer for TwigMemberCallAnalyzer {
+    fn input_revision(&self, _document: &swlsp_lsp::TextDocument) -> Option<u64> {
+        Some(
+            crate::diagnostics::inputs(&self.twig_index)
+                + crate::diagnostics::inputs(&self.php_index),
+        )
+    }
+
+    fn analyze(
+        &self,
+        ctx: &Context,
+        document: &Arc<TextDocument>,
+    ) -> Result<Vec<Problem>, BoxError> {
+        let Some(php_index) = &self.php_index else {
+            return Ok(Vec::new());
+        };
+        if !lowercase(&document.uri).ends_with(".twig") || is_vue_template(&document.uri) {
+            return Ok(Vec::new());
+        }
+        let Some(root) = document.root() else {
+            return Ok(Vec::new());
+        };
+        let template_path = swlsp_uriutil::path(&document.uri)?;
+        let resolver =
+            PhpAccessResolver::new(Some(php_index), self.twig_index.as_deref()).for_document(&root);
+        let mut result = Vec::new();
+        for accessor in twigquery::iterate_nodes(&root, &[TWIG_ACCESSOR]) {
+            if ctx.is_cancelled() {
+                return Ok(Vec::new());
+            }
+            let Some(problem) = resolver.inspect_call(&template_path, &root, &accessor) else {
+                continue;
+            };
+            result.push(Problem {
+                id: match problem.kind {
+                    PhpCallProblemKind::Arguments => TWIG_MEMBER_ARGUMENTS_CODE,
+                    PhpCallProblemKind::NotCallable => TWIG_MEMBER_NOT_CALLABLE_CODE,
+                }
+                .into(),
+                range: problem.name_node.range_trimmed_trivia(),
+                message: problem.message,
                 source: "twig".into(),
                 severity: Some(protocol::DiagnosticSeverity::WARNING),
                 ..Problem::default()

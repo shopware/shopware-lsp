@@ -6,7 +6,9 @@ use swlsp_php::PhpIndex;
 use swlsp_twig::TwigIndexer;
 
 use super::*;
-use crate::diagnostics::twig::{TwigMemberDeprecationAnalyzer, TwigMemberMissingAnalyzer};
+use crate::diagnostics::twig::{
+    TwigMemberCallAnalyzer, TwigMemberDeprecationAnalyzer, TwigMemberMissingAnalyzer,
+};
 
 fn member_indexes() -> (tempfile::TempDir, PhpIndex, Arc<TwigIndexer>) {
     let cache = tempdir();
@@ -203,4 +205,114 @@ fn twig_member_missing_diagnostics_uses_twig_callable_return_types() {
 {{ 'value'|u.{|twig.member.missing:unknownFilterMember|} }}
 ",
     );
+}
+
+#[test]
+fn twig_member_call_diagnostics_check_the_method_twig_calls() {
+    let cache = tempdir();
+    let source_dir = tempdir();
+    let php = php_index(cache.path());
+    index_file(
+        &php,
+        &source_dir.path().join("src/Model.php").to_string_lossy(),
+        r#"<?php
+namespace App;
+class Context {}
+class Price {}
+class Product {
+    public string $name;
+    public function getPrice(Context $context): Price {}
+    public function getLabel(string $locale = 'en'): string {}
+    public function label(): string {}
+    public function isActive(): bool {}
+    public function getTags(string ...$groups): array {}
+    public function withOptions(array $options, ?Context $context): self {}
+    public function translate(int|string $key, bool $strict = false): string {}
+}
+class MagicModel {
+    public function __call(string $name, array $arguments): mixed {}
+    public function known(Context $context): string {}
+}
+/** @implements \IteratorAggregate<int, Product> */
+class ProductCollection implements \IteratorAggregate {
+    public function getIterator(): \Traversable {}
+    public function first(Context $context): ?Product {}
+}
+"#,
+    );
+    let fixture = r#"{# @var product \App\Product #}
+{# @var context \App\Context #}
+{# @var price \App\Price #}
+{# @var nullable \App\Product|null #}
+{# @var magic \App\MagicModel #}
+{# @var collection \App\ProductCollection #}
+{# @var unknown \App\NotIndexed #}
+{{ product.getPrice(context) }}
+{{ product.price(context) }}
+{{ product.{|twig.member.arguments:getPrice|}() }}
+{{ product.{|twig.member.arguments:price|} }}
+{{ product.{|twig.member.arguments:price|}(price) }}
+{{ product.{|twig.member.arguments:price|}('EUR') }}
+{{ product.{|twig.member.arguments:price|}(null) }}
+{{ product.price(someValue) }}
+{{ product.price(context, 'extra') }}
+{{ product.price(...arguments) }}
+{{ product.price(context: context) }}
+{{ product.label }}
+{{ product.label('de') }}
+{{ product.getLabel(5) }}
+{{ product.{|twig.member.arguments:getLabel|}([1, 2]) }}
+{{ product.active }}
+{{ product.tags }}
+{{ product.tags('a', 'b', 3) }}
+{{ product.{|twig.member.arguments:tags|}('a', {key: 1}) }}
+{{ product.withOptions({key: 1}, null) }}
+{{ product.withOptions([], context) }}
+{{ product.{|twig.member.arguments:withOptions|}('x', context) }}
+{{ product.translate(5) }}
+{{ product.translate('key', 1) }}
+{{ product.name }}
+{{ product.{|twig.member.not-callable:name|}() }}
+{{ nullable.{|twig.member.arguments:price|} }}
+{{ magic.known }}
+{{ magic.known() }}
+{{ collection.first }}
+{{ collection.{|twig.member.arguments:first|}() }}
+{{ collection.first(context).{|twig.member.arguments:price|} }}
+{{ unknown.price() }}
+"#;
+    let uri = "file:///project/templates/product.html.twig";
+    let (_, problems) = check_problems(
+        &TwigMemberCallAnalyzer::new(None, Some(php.clone())),
+        uri,
+        fixture,
+    );
+    let messages: Vec<&str> = problems
+        .iter()
+        .map(|problem| problem.message.as_str())
+        .collect();
+    assert_eq!(
+        &messages[..5],
+        [
+            "No matching signature for App\\Product::getPrice(): missing argument for parameter #1 ($context)",
+            "No matching signature for App\\Product::getPrice(): missing argument for parameter #1 ($context)",
+            "No matching signature for App\\Product::getPrice(): parameter #1 ($context) expects App\\Context, App\\Price given",
+            "No matching signature for App\\Product::getPrice(): parameter #1 ($context) expects App\\Context, a scalar value given",
+            "No matching signature for App\\Product::getPrice(): parameter #1 ($context) expects App\\Context, null given",
+        ]
+    );
+    assert!(
+        messages.contains(
+            &"'name' is a property of App\\Product, not a method: with parentheses Twig only calls a method"
+        ),
+        "{messages:?}"
+    );
+    // The same calls in an Administration template are Vue expressions.
+    check_problems(
+        &TwigMemberCallAnalyzer::new(None, Some(php.clone())),
+        "file:///project/src/Resources/app/administration/src/module/demo/demo.html.twig",
+        "{# @var product \\App\\Product #}\n{{ product.getPrice() }}\n",
+    );
+    Indexer::close(&php).unwrap();
+    drop(php);
 }

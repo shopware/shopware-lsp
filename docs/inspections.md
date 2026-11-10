@@ -625,6 +625,17 @@ Languages: twig. Domain: `twig`.
 |---|---|---|
 | `twig.macro.missing` | warning | yes |
 
+## `twig.member.call`
+
+PHP method calls from Twig whose arguments match no method of the variable's type.
+
+Languages: twig. Domain: `twig`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `twig.member.arguments` | warning | yes |
+| `twig.member.not-callable` | warning | yes |
+
 ## `twig.member.deprecation`
 
 Twig member access to deprecated properties and methods.

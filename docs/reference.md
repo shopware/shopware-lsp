@@ -713,6 +713,15 @@ include these hints.
   including getter aliases, constants, unions, and function/filter return
   types, while dynamic, collection-like, array, and magic-access receivers stay
   silent
+- Call diagnostics for typed Twig variables: `product.price(context)` and the
+  implicit call behind `product.price` are checked against the method Twig
+  calls (`price()`, `getPrice()`, `isPrice()`, `hasPrice()`, in that order)
+  for missing arguments and for arguments the parameter cannot accept, and
+  `product.name()` is reported when `name` is only a property. Nothing is
+  reported for receivers of unknown type or with a magic `__call`, for
+  arguments of unknown type, or for spread and named arguments; scalars are
+  only rejected by parameters that accept no scalar, as compiled templates
+  do not use strict types
 - Persistent modern and legacy Twig token-parser tags, with custom-tag
   completion, PHP go-to-definition, and opening/closing deprecation diagnostics
   from PHPDoc, `#[Deprecated]`, or `trigger_deprecation()`
@@ -1376,6 +1385,7 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
 | Incompatible service supplied to a constructor/method argument | Warning | XML, YAML, PHP |
 | Deprecated controller action | Hint | PHP, Twig, XML, YAML |
 | Deprecated Twig function, filter, custom tag, or typed PHP member | Hint | Twig |
+| PHP method call from Twig with missing or incompatible arguments | Warning | Twig |
 | Missing or non-enum class in `enum()` / `enum_cases()` | Warning | Twig |
 | Invalid `_self` macro import inside a Twig component | Error | Twig |
 

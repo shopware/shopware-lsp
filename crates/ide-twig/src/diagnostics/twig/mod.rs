@@ -20,7 +20,9 @@ pub use deprecation::TwigDeprecationAnalyzer;
 pub use enums::TwigEnumAnalyzer;
 pub use live_event::LiveComponentEventAnalyzer;
 pub use macros::TwigMacroAnalyzer;
-pub use member::{TwigMemberDeprecationAnalyzer, TwigMemberMissingAnalyzer};
+pub use member::{
+    TwigMemberCallAnalyzer, TwigMemberDeprecationAnalyzer, TwigMemberMissingAnalyzer,
+};
 pub use render_block::TwigRenderBlockAnalyzer;
 pub use snippet::SnippetAnalyzer;
 pub use template::TemplateAnalyzer;

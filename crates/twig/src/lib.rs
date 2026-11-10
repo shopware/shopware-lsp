@@ -13,6 +13,7 @@ mod macros;
 mod parser;
 mod path;
 mod php_access;
+mod php_call;
 mod php_usage;
 mod reference;
 mod render_block;
@@ -39,6 +40,7 @@ pub use path::{
     is_template_asset_path, is_upstream_template, template_names,
 };
 pub use php_access::*;
+pub use php_call::*;
 pub use php_usage::*;
 pub use reference::*;
 pub use render_block::*;

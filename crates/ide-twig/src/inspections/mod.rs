@@ -27,6 +27,10 @@ pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
         twig(),
         php(),
     )));
+    add(analyzer(diagnostics::TwigMemberCallAnalyzer::new(
+        twig(),
+        php(),
+    )));
     add(new_template(&s.root, twig(), php()));
     add(analyzer(diagnostics::TwigRenderBlockAnalyzer::new(
         twig(),

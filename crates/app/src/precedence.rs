@@ -190,6 +190,7 @@ pub(crate) const PRECEDENCE: Precedence = Precedence(&[
             "twig.deprecation",
             "twig.member.missing",
             "twig.member.deprecation",
+            "twig.member.call",
             "symfony.duplicate",
             "symfony.route.redefined",
             "symfony.services_xml_migration",
