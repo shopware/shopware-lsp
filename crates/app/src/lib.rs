@@ -3,27 +3,18 @@
 //!
 //! [`Workspace`] is the only place that knows the whole system. It opens the
 //! shared store, constructs every domain index with its dependencies, adds
-//! the indexers of enabled domains to the file scanner and registers every
-//! provider, inspection, context enricher and document observer on the
+//! the indexers of enabled domains to the file scanner and lets every
+//! domain ([`DOMAINS`], the `swlsp-ide-*` crates) register its providers,
+//! inspections, context enrichers and document observers on the
 //! [`swlsp_lsp::Server`]. The server installs the scanner's update callback
-//! itself. Registration order, feature gating and domain gating live in the
-//! `providers*` modules and `inspections`; [`Workspace::registrations`]
-//! records them.
+//! itself. The domains gate their own features; the order between their
+//! providers is `precedence`. [`Workspace::registrations`] records what was
+//! applied.
 
 mod cache;
-mod inspections;
+mod domains;
 mod integration;
-mod providers;
-mod providers_actions;
-mod providers_codelens;
-mod providers_completion;
-mod providers_definition;
-mod providers_editor;
-mod providers_extension_config;
-mod providers_hover;
-mod providers_reference;
-mod providers_symbols;
-mod registrar;
+mod precedence;
 mod workspace;
 
 use std::io::{Read, Write};
@@ -34,10 +25,11 @@ pub use cache::{
     CACHE_DIR_ENV, CacheDirError, PlatformCacheDirError, project_cache_folder,
     project_cache_folder_in, user_cache_dir,
 };
+pub use domains::DOMAINS;
 pub use integration::{CATALOG_COMMAND, Provider as IntegrationProvider};
-pub use registrar::Registration;
+pub use swlsp_ide::{Registration, Services};
 pub use workspace::{
-    CloseError, Services, Workspace, WorkspaceError, domain_for_indexer, workspace_factory,
+    CloseError, Workspace, WorkspaceError, domain_for_indexer, workspace_factory,
     workspace_factory_in,
 };
 

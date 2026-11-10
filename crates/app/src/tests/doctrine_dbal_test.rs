@@ -87,15 +87,17 @@ function write(Connection $connection): void {
         hover_params.text_document.uri = uri.clone();
         hover_params.position = position;
 
-        let items =
-            swlsp_lsp_completion::DoctrineCompletionProvider::new(dbal.clone(), Some(php.clone()))
-                .get_completions(
-                    &ctx,
-                    &CompletionRequest {
-                        params: completion_params,
-                        syntax: syntax.clone(),
-                    },
-                );
+        let items = swlsp_ide_symfony::completion::DoctrineCompletionProvider::new(
+            dbal.clone(),
+            Some(php.clone()),
+        )
+        .get_completions(
+            &ctx,
+            &CompletionRequest {
+                params: completion_params,
+                syntax: syntax.clone(),
+            },
+        );
         let labels: Vec<&str> = items.iter().map(|item| item.label.as_str()).collect();
         if needle == "product'" {
             assert!(labels.contains(&"product"), "{needle}: {labels:?}");
@@ -104,7 +106,7 @@ function write(Connection $connection): void {
             assert!(labels.contains(&"product_name"), "{needle}: {labels:?}");
             assert!(!labels.contains(&"category_id"), "{needle}: {labels:?}");
         }
-        let locations = swlsp_lsp_definition::DoctrineDefinitionProvider::new(
+        let locations = swlsp_ide_symfony::definition::DoctrineDefinitionProvider::new(
             Some(dbal.clone()),
             Some(php.clone()),
         )
@@ -117,17 +119,19 @@ function write(Connection $connection): void {
         );
         assert_eq!(1, locations.len(), "{needle}: {locations:?}");
         assert_eq!(definition_uri, locations[0].uri);
-        let hover =
-            swlsp_lsp_hover::DoctrineHoverProvider::new(Some(dbal.clone()), Some(php.clone()))
-                .get_hover(
-                    &ctx,
-                    &HoverRequest {
-                        params: hover_params,
-                        syntax,
-                    },
-                )
-                .unwrap()
-                .expect("hover");
+        let hover = swlsp_ide_symfony::hover::DoctrineHoverProvider::new(
+            Some(dbal.clone()),
+            Some(php.clone()),
+        )
+        .get_hover(
+            &ctx,
+            &HoverRequest {
+                params: hover_params,
+                syntax,
+            },
+        )
+        .unwrap()
+        .expect("hover");
         assert!(
             hover.contents.value.contains("ProductDefinition"),
             "{needle}: {}",

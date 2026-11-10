@@ -8,47 +8,9 @@ use std::sync::{Arc, Mutex};
 use swlsp_indexer::{FileScanner, Indexer, Store, WorkspaceSymbolCatalog};
 use swlsp_lsp::{BoxError, Context, Server, WorkspaceFactory, WorkspaceRuntime};
 use swlsp_php::PhpIndex;
-use swlsp_shopware::ResolvedVersion;
 
 use crate::cache;
-use crate::registrar::{Registrar, Registration};
-
-/// Every domain index and service the providers are built from. Indexes of disabled structural domains (`scss`,
-/// `administration`) are `None`.
-#[derive(Clone)]
-pub struct Services {
-    pub root: String,
-    pub paths: Arc<FileScanner>,
-    pub symbols: Arc<WorkspaceSymbolCatalog>,
-    pub php: PhpIndex,
-    pub services: Arc<swlsp_symfony::ServiceIndex>,
-    pub routes: Arc<swlsp_symfony::RouteIndexer>,
-    pub route_usage: Arc<swlsp_symfony::RouteUsageIndexer>,
-    pub console: Arc<swlsp_console::Index>,
-    pub events: Arc<swlsp_event::Index>,
-    pub messenger: Arc<swlsp_messenger::Index>,
-    pub environment: Arc<swlsp_environment::Index>,
-    pub configuration: Arc<swlsp_symfonyconfig::Index>,
-    pub serializer: Arc<swlsp_serializer::Index>,
-    pub doctrine: Arc<swlsp_doctrine::Index>,
-    pub assets: Arc<swlsp_asset::Index>,
-    pub styles: Option<Arc<swlsp_style::Index>>,
-    pub twig: Arc<swlsp_twig::TwigIndexer>,
-    pub twig_versioning: Arc<swlsp_twig::VersioningService>,
-    pub twig_components: Arc<swlsp_twigcomponent::Index>,
-    pub snippets: Arc<swlsp_snippet::SnippetIndexer>,
-    pub translations: Arc<swlsp_translation::Index>,
-    pub features: Arc<swlsp_feature::FeatureIndexer>,
-    pub system_config: Arc<swlsp_systemconfig::SystemConfigIndexer>,
-    pub theme: Arc<swlsp_theme::ThemeConfigIndexer>,
-    pub extensions: Arc<swlsp_extension::ExtensionIndexer>,
-    pub extension_config: Arc<swlsp_extension::ConfigIndex>,
-    pub admin: Option<Arc<swlsp_admin::AdminComponentIndexer>>,
-    pub dal: Arc<swlsp_shopware_dal::Index>,
-    pub entity_schema_sources: Arc<swlsp_shopware_entityschema::SourceIndex>,
-    pub app_scripts: Arc<swlsp_appscript::Index>,
-    pub shopware_version: ResolvedVersion,
-}
+use swlsp_ide::{Registrar, Registration, Services};
 
 /// The resources of one initialized workspace root.
 pub struct Workspace {
@@ -183,7 +145,7 @@ impl Workspace {
     }
 
     /// Every provider, inspection, enricher and observer registration in
-    /// registration order.
+    /// the order they were applied to the server.
     pub fn registrations(&self) -> &[Registration] {
         &self.registrations
     }
@@ -469,6 +431,7 @@ fn build(
         root: root.to_owned(),
         paths: scanner.clone(),
         symbols,
+        php_features: Arc::new(swlsp_lsp_phpsemantic::Provider::new(Some(php.clone()))),
         php,
         services,
         routes,
@@ -500,9 +463,7 @@ fn build(
     };
     // Registration panics only on invalid inspection definitions, which are
     // programming errors rather than workspace conditions.
-    let registrar = Registrar::new(server);
-    crate::providers::register_features(&registrar, &services);
-    let registrations = registrar.into_log();
+    let registrations = crate::domains::register_features(Registrar::new(server), &services);
 
     let store = partial.store.take().expect("store was created");
     let indexers = std::mem::take(&mut partial.indexers);

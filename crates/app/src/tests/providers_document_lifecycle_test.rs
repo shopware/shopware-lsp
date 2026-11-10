@@ -8,8 +8,8 @@ use swlsp_indexer::Indexer;
 use swlsp_lsp::Server;
 
 use super::support::{TestClient, file_uri};
-use crate::providers::register_administration_document_observer;
-use crate::registrar::Registrar;
+use swlsp_ide::{Precedence, Registrar};
+use swlsp_ide_admin::register_administration_document_observer;
 
 #[test]
 fn administration_document_close_removes_overlay_and_refreshes_dependents() {
@@ -18,11 +18,9 @@ fn administration_document_close_removes_overlay_and_refreshes_dependents() {
     let cache = root.join("cache");
     let admin_index = Arc::new(AdminComponentIndexer::new(&cache.to_string_lossy(), None).unwrap());
     let server = Server::new(None, &root.to_string_lossy(), "test");
-    register_administration_document_observer(
-        &Registrar::new(&server),
-        Some(admin_index.clone()),
-        None,
-    );
+    let registrar = Registrar::new(&server);
+    register_administration_document_observer(&registrar, Some(admin_index.clone()), None);
+    registrar.finish(Precedence(&[]));
     let client = TestClient::start(&server);
     let admin_root = root.join("src/Administration/Resources/app/administration/src");
     let definition_uri = file_uri(&admin_root.join("component/live.js"));

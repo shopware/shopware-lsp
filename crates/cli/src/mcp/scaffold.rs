@@ -4,16 +4,16 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use swlsp_lsp_protocol::{
-    CREATE_FILE_OPERATION, DocumentChange, OptionalVersionedTextDocumentIdentifier, Range,
-    TextEdit, WorkspaceEdit,
-};
-use swlsp_lsp_scaffold::{
+use swlsp_ide_shopware::scaffold::{
     self as scaffold, EntitySchemaApplyRequest, EntitySchemaApplyResponse,
     EntitySchemaBootstrapRequest, EntitySchemaBootstrapResponse, EntitySchemaEditableTarget,
     EntitySchemaFieldType, EntitySchemaGraph, EntitySchemaLoadRequest, EntitySchemaPreviewRequest,
     EntitySchemaPreviewResponse, EntitySchemaReconcileRequest, EntitySchemaRelationTarget,
     EntitySchemaSearchRequest,
+};
+use swlsp_lsp_protocol::{
+    CREATE_FILE_OPERATION, DocumentChange, OptionalVersionedTextDocumentIdentifier, Range,
+    TextEdit, WorkspaceEdit,
 };
 use swlsp_shopware_entityschema::{
     self as es, Decision, EntityRenameQuestion, EntitySpec, FieldSpec, PluginContext,

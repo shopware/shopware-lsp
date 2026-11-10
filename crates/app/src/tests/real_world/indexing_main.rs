@@ -352,8 +352,9 @@ mod admin {
     use std::sync::Arc;
 
     use swlsp_admin::*;
+    use swlsp_ide::diagnostics::ProblemAnalyzer;
+    use swlsp_ide_admin::diagnostics::AdminAnalyzer;
     use swlsp_lsp::*;
-    use swlsp_lsp_diagnostics::{AdminAnalyzer, ProblemAnalyzer};
     use swlsp_lsp_protocol as protocol;
     use swlsp_syntax::{SyntaxNodeExt, TextSize};
 
@@ -381,7 +382,7 @@ mod admin {
         index: &Arc<AdminComponentIndexer>,
         request: &CompletionRequest,
     ) -> Vec<protocol::CompletionItem> {
-        swlsp_lsp_completion::AdminCompletionProvider::new(index.clone())
+        swlsp_ide_admin::completion::AdminCompletionProvider::new(index.clone())
             .get_completions(&ctx(), request)
     }
 
@@ -390,7 +391,7 @@ mod admin {
         index: &Arc<AdminComponentIndexer>,
         request: &HoverRequest,
     ) -> Option<protocol::Hover> {
-        swlsp_lsp_hover::AdminHoverProvider::new(root, index.clone())
+        swlsp_ide_admin::hover::AdminHoverProvider::new(root, index.clone())
             .get_hover(&ctx(), request)
             .expect("hover")
     }
@@ -399,7 +400,7 @@ mod admin {
         index: &Arc<AdminComponentIndexer>,
         request: &DefinitionRequest,
     ) -> Vec<protocol::Location> {
-        swlsp_lsp_definition::AdminDefinitionProvider::new(index.clone())
+        swlsp_ide_admin::definition::AdminDefinitionProvider::new(index.clone())
             .get_definition(&ctx(), request)
     }
 
@@ -407,7 +408,7 @@ mod admin {
         index: &Arc<AdminComponentIndexer>,
         request: &ReferenceRequest,
     ) -> Vec<protocol::Location> {
-        swlsp_lsp_reference::AdminReferenceProvider::new(Some(index.clone()))
+        swlsp_ide_admin::reference::AdminReferenceProvider::new(Some(index.clone()))
             .get_references(&ctx(), request)
             .expect("references")
     }
@@ -416,7 +417,7 @@ mod admin {
         index: &Arc<AdminComponentIndexer>,
         document: &Arc<TextDocument>,
     ) -> Vec<SemanticToken> {
-        swlsp_lsp_semantic::AdminMarkupProvider::new(index.clone())
+        swlsp_ide_admin::semantic::AdminMarkupProvider::new(index.clone())
             .get_semantic_tokens(
                 &ctx(),
                 &SemanticTokensRequest {
@@ -821,7 +822,7 @@ mod admin {
         let mut params = protocol::InlayHintParams::default();
         params.text_document.uri = document.uri.clone();
         params.range.end = position(document, document.source().len() as u32);
-        swlsp_lsp_inlay::AdminParameterProvider::new(index.clone())
+        swlsp_ide_admin::inlay::AdminParameterProvider::new(index.clone())
             .get_inlay_hints(
                 &ctx(),
                 &InlayHintRequest {
@@ -861,7 +862,7 @@ mod admin {
         let model_source = r#"<button @click="changeModelPosition({ x: 1, y: 2, z: 3 })" />"#;
         let model_document = template_document(&model_editor.template_path, model_source, 1);
         let model_offset = (offset_of(model_source, "z: 3") + "z: ".len()) as u32;
-        let signature = swlsp_lsp_signature::AdminSignatureProvider::new(index.clone())
+        let signature = swlsp_ide_admin::signature::AdminSignatureProvider::new(index.clone())
             .get_signature_help(
                 &ctx(),
                 &real_world_signature_request(&model_document, model_offset),
@@ -1277,7 +1278,7 @@ mod admin {
         let rename_source = r#"<component :is="entityMode ? 'sw-data-grid' : 'sw-entity-listing'"><template #column-name="{ item: row }">{{ row.id }}</template></component>"#;
         let rename_document = template_document(&slot_card.template_path, rename_source, 6);
         let rename_offset = (offset_of(rename_source, "row.id") + 1) as u32;
-        let rename = swlsp_lsp_refactor::AdminRenameProvider::new(Some(index.clone()))
+        let rename = swlsp_ide_admin::refactor::AdminRenameProvider::new(Some(index.clone()))
             .rename(
                 &ctx(),
                 &real_world_rename_request(&rename_document, rename_offset, "record"),
@@ -1369,8 +1370,10 @@ mod admin {
         check_ge!(dynamic_references, 1);
     }
 
-    fn snippet_analyzer(f: &RealWorldWorkspaceFixture) -> swlsp_lsp_diagnostics::SnippetAnalyzer {
-        swlsp_lsp_diagnostics::SnippetAnalyzer::new(
+    fn snippet_analyzer(
+        f: &RealWorldWorkspaceFixture,
+    ) -> swlsp_ide_twig::diagnostics::SnippetAnalyzer {
+        swlsp_ide_twig::diagnostics::SnippetAnalyzer::new(
             Some(f.workspace.services().snippets.clone()),
             None,
         )
@@ -1434,11 +1437,13 @@ mod admin {
         );
         let snippet_completion = |document: &Arc<TextDocument>, offset: usize| {
             real_world_completion_labels(
-                &swlsp_lsp_completion::SnippetCompletionProvider::new(Some(snippets.clone()))
-                    .get_completions(
-                        &ctx(),
-                        &real_world_completion_request(document, offset as u32),
-                    ),
+                &swlsp_ide_shopware::completion::SnippetCompletionProvider::new(Some(
+                    snippets.clone(),
+                ))
+                .get_completions(
+                    &ctx(),
+                    &real_world_completion_request(document, offset as u32),
+                ),
             )
         };
         let source = r#"<mt-button :label="$t('global.default.sa')" />"#;
@@ -1454,7 +1459,7 @@ mod admin {
         let document = new_document(markup_uri.clone(), source, 3);
         let offset = (offset_of(source, "global.default.save") + 3) as u32;
         let locations =
-            swlsp_lsp_definition::SnippetDefinitionProvider::new(Some(snippets.clone()))
+            swlsp_ide_shopware::definition::SnippetDefinitionProvider::new(Some(snippets.clone()))
                 .get_definition(&ctx(), &real_world_definition_request_at(&document, offset));
         assert!(!locations.is_empty());
         check!(
@@ -1882,7 +1887,7 @@ mod admin {
         for location in &refs {
             check_eq!(document.uri, location.uri);
         }
-        let rename = swlsp_lsp_refactor::AdminRenameProvider::new(Some(index.clone()))
+        let rename = swlsp_ide_admin::refactor::AdminRenameProvider::new(Some(index.clone()))
             .rename(
                 &ctx(),
                 &real_world_rename_request(&document, usage_offset, "headerColumn"),
@@ -2628,7 +2633,7 @@ mod admin {
         check_ge!(refs.len(), 4);
         require_location_uri(&refs, &item_click.file_path);
         require_location_uri(&refs, &cms_list_path);
-        let renamer = swlsp_lsp_refactor::AdminRenameProvider::new(Some(index.clone()));
+        let renamer = swlsp_ide_admin::refactor::AdminRenameProvider::new(Some(index.clone()));
         let rename = renamer
             .rename(
                 &ctx(),
@@ -2879,8 +2884,8 @@ mod admin_utils {
     use std::sync::Arc;
 
     use swlsp_admin::*;
+    use swlsp_ide::diagnostics::ProblemAnalyzer;
     use swlsp_lsp::*;
-    use swlsp_lsp_diagnostics::ProblemAnalyzer;
     use swlsp_lsp_protocol as protocol;
 
     use super::admin::{analyze, completions, definitions, effective, hover, template_document};
@@ -2910,7 +2915,7 @@ mod admin_utils {
         document: &Arc<TextDocument>,
         offset: usize,
     ) -> protocol::SignatureHelp {
-        swlsp_lsp_signature::AdminSignatureProvider::new(index.clone())
+        swlsp_ide_admin::signature::AdminSignatureProvider::new(index.clone())
             .get_signature_help(
                 &ctx(),
                 &real_world_signature_request(document, offset as u32),
@@ -3049,7 +3054,7 @@ mod admin_utils {
         let location = one_definition(index, &bus_document, bus_offset);
         check_eq!(file_uri(&bus_path), location.uri);
         check_gt!(location.range.start.character, 0);
-        let refs = swlsp_lsp_reference::AdminReferenceProvider::new(Some(index.clone()))
+        let refs = swlsp_ide_admin::reference::AdminReferenceProvider::new(Some(index.clone()))
             .get_references(
                 &ctx(),
                 &real_world_reference_request(&bus_document, bus_offset as u32, true),
@@ -3066,7 +3071,7 @@ mod admin_utils {
         let rename_source = read(&rename_path);
         let rename_document = template_document(&rename_path, &rename_source, 1);
         let rename_offset = (offset_of(&rename_source, "sw-media-library-item-updated") + 2) as u32;
-        let rename = swlsp_lsp_refactor::AdminRenameProvider::new(Some(index.clone()))
+        let rename = swlsp_ide_admin::refactor::AdminRenameProvider::new(Some(index.clone()))
             .rename(
                 &ctx(),
                 &real_world_rename_request(
@@ -3235,7 +3240,8 @@ mod admin_utils {
                 problem.message
             );
         }
-        let symbols = swlsp_lsp_symbol::AdminWorkspaceSymbolProvider::new(Some(index.clone()));
+        let symbols =
+            swlsp_ide_admin::symbol::AdminWorkspaceSymbolProvider::new(Some(index.clone()));
         for (name, container) in [
             ("acl", "Administration service"),
             ("session", "Administration store"),
@@ -3259,7 +3265,7 @@ mod admin_utils {
             "{root}/src/Administration/Resources/app/administration/src/app/component/base/sw-card/index.ts"
         );
         let lenses = real_world_code_lenses(
-            &swlsp_lsp_codelens::AdminComponentCodeLensProvider::new(Some(index.clone())),
+            &swlsp_ide_admin::codelens::AdminComponentCodeLensProvider::new(Some(index.clone())),
             &card_template,
         );
         require_related_lens_file_targets(
@@ -3269,7 +3275,7 @@ mod admin_utils {
             1,
         );
         let document_symbols =
-            swlsp_lsp_symbol::AdminDocumentSymbolProvider::new(Some(index.clone()));
+            swlsp_ide_admin::symbol::AdminDocumentSymbolProvider::new(Some(index.clone()));
         let definition_symbols = real_world_document_symbols(&document_symbols, &card_definition);
         require_len!(definition_symbols, 1);
         check_eq!("sw-card", definition_symbols[0].name);
@@ -3280,7 +3286,7 @@ mod admin_utils {
         check_eq!("sw-card", template_symbols[0].name);
         require_document_symbol_named(&template_symbols[0].children, "sw_card");
         require_document_symbol_named_recursive(&template_symbols[0].children, "default");
-        let selection = swlsp_lsp_selection::AdminSelectionRangeProvider::new();
+        let selection = swlsp_ide_admin::selection::AdminSelectionRangeProvider::new();
         let texts = real_world_selection_texts(&selection, &card_definition, "getSlots");
         check_ge!(texts.len(), 5);
         check_eq!("getSlots", texts[0]);
@@ -3289,7 +3295,7 @@ mod admin_utils {
         check_ge!(texts.len(), 7);
         check_eq!("getSlots", texts[0]);
         require_real_world_selection_containing(&texts, r#"v-for="(index, name) in getSlots()""#);
-        let folding = swlsp_lsp_folding::AdminFoldingProvider::new();
+        let folding = swlsp_ide_admin::folding::AdminFoldingProvider::new();
         let folds = real_world_folding_ranges(&folding, &card_definition);
         require_real_world_folding_range(&folds, 2, 10, protocol::FOLDING_RANGE_KIND_COMMENT);
         require_real_world_folding_range(&folds, 11, 26, "");
@@ -3300,7 +3306,7 @@ mod admin_utils {
         require_real_world_folding_range(&folds, 1, 17, "");
         require_real_world_folding_range(&folds, 2, 16, "");
         require_real_world_folding_range(&folds, 21, 35, "");
-        let colors = swlsp_lsp_color::AdminScssColorProvider::new();
+        let colors = swlsp_ide_style::color::AdminScssColorProvider::new();
         let variables = format!(
             "{root}/src/Administration/Resources/app/administration/src/app/assets/scss/variables.scss"
         );
@@ -3341,7 +3347,7 @@ mod admin_utils {
             .expect("real Administration mixins must expose rgba percentage alpha");
         check!((shadow.color.alpha - 0.08).abs() < 0.00001);
         let highlights = real_world_document_highlights(
-            &swlsp_lsp_highlight::AdminDocumentHighlightProvider::new(Some(index.clone())),
+            &swlsp_ide_admin::highlight::AdminDocumentHighlightProvider::new(Some(index.clone())),
             &card_template,
             "getSlots",
         );
@@ -3350,13 +3356,13 @@ mod admin_utils {
             check_eq!(Some(protocol::DocumentHighlightKind::TEXT), item.kind);
         }
         let linked = real_world_linked_editing_ranges(
-            &swlsp_lsp_linkedediting::AdminLinkedEditingProvider::new(),
+            &swlsp_ide_admin::linkedediting::AdminLinkedEditingProvider::new(),
             &card_template,
             "sw-card-deprecated",
         )
         .expect("linked editing ranges");
         require_len!(linked.ranges, 2);
-        let calls = swlsp_lsp_callhierarchy::AdminCallHierarchyProvider::new(index.clone());
+        let calls = swlsp_ide_admin::callhierarchy::AdminCallHierarchyProvider::new(index.clone());
         let items = real_world_call_hierarchy_items(&calls, &card_definition, "getSlots");
         require_len!(items, 1);
         check_eq!("getSlots", items[0].name);
@@ -3427,8 +3433,8 @@ mod domains {
     use std::sync::Arc;
 
     use serde_json::Value;
+    use swlsp_ide::diagnostics::ProblemAnalyzer;
     use swlsp_lsp::*;
-    use swlsp_lsp_diagnostics::ProblemAnalyzer;
     use swlsp_lsp_protocol as protocol;
 
     use super::*;
@@ -3467,10 +3473,11 @@ mod domains {
         ));
         let completion = |document: &Arc<TextDocument>, offset: usize| {
             real_world_completion_labels(
-                &swlsp_lsp_completion::DalCompletionProvider::new(dal.clone()).get_completions(
-                    &ctx(),
-                    &real_world_completion_request(document, offset as u32),
-                ),
+                &swlsp_ide_shopware::completion::DalCompletionProvider::new(dal.clone())
+                    .get_completions(
+                        &ctx(),
+                        &real_world_completion_request(document, offset as u32),
+                    ),
             )
         };
         let source = "Shopware.EntityDefinition.get('prod')";
@@ -3482,17 +3489,18 @@ mod domains {
         let source = "Shopware.EntityDefinition.get('product')";
         let document = new_document(entity_uri.clone(), source, 2);
         let offset = (offset_of(source, "product") + 2) as u32;
-        let locations = swlsp_lsp_definition::DalDefinitionProvider::new(Some(dal.clone()))
-            .get_definition(&ctx(), &real_world_definition_request_at(&document, offset));
+        let locations =
+            swlsp_ide_shopware::definition::DalDefinitionProvider::new(Some(dal.clone()))
+                .get_definition(&ctx(), &real_world_definition_request_at(&document, offset));
         assert!(!locations.is_empty());
         check_str!(slash(&locations[0].uri), "/ProductDefinition.php");
-        let hover = swlsp_lsp_hover::DalHoverProvider::new(Some(dal.clone()))
+        let hover = swlsp_ide_shopware::hover::DalHoverProvider::new(Some(dal.clone()))
             .get_hover(&ctx(), &real_world_hover_request(&document, offset))
             .expect("hover")
             .expect("DAL entity hover");
         check_str!(hover.contents.value, "Shopware DAL entity");
         check_str!(hover.contents.value, "ProductDefinition");
-        let problems = swlsp_lsp_diagnostics::DalEntityAnalyzer::new(Some(dal.clone()))
+        let problems = swlsp_ide_shopware::diagnostics::DalEntityAnalyzer::new(Some(dal.clone()))
             .analyze(
                 &ctx(),
                 &new_document(
@@ -3504,9 +3512,10 @@ mod domains {
             .expect("analyze");
         require_len!(problems, 1);
         check_eq!("shopware.dal.entity-not-found", problems[0].id.to_string());
-        let symbols = swlsp_lsp_symbol::DalWorkspaceSymbolProvider::new(Some(dal.clone()))
-            .workspace_symbols(&ctx(), "ProductDefinition")
-            .expect("symbols");
+        let symbols =
+            swlsp_ide_shopware::symbol::DalWorkspaceSymbolProvider::new(Some(dal.clone()))
+                .workspace_symbols(&ctx(), "ProductDefinition")
+                .expect("symbols");
         check!(symbols.iter().any(|symbol| symbol.name == "product"));
         let criteria_uri = file_uri(&format!(
             "{root}/src/Administration/Resources/app/administration/src/dal-real-world.js"
@@ -3520,8 +3529,9 @@ mod domains {
         let source = "Criteria.equals('manufacturer.name', value)";
         let document = new_document(criteria_uri.clone(), source, 2);
         let offset = (offset_of(source, "manufacturer") + 2) as u32;
-        let locations = swlsp_lsp_definition::DalDefinitionProvider::new(Some(dal.clone()))
-            .get_definition(&ctx(), &real_world_definition_request_at(&document, offset));
+        let locations =
+            swlsp_ide_shopware::definition::DalDefinitionProvider::new(Some(dal.clone()))
+                .get_definition(&ctx(), &real_world_definition_request_at(&document, offset));
         assert!(!locations.is_empty());
         check!(
             locations
@@ -3529,7 +3539,7 @@ mod domains {
                 .any(|location| slash(&location.uri).contains("/ProductDefinition.php"))
         );
         let name_offset = (offset_of(source, ".name") + ".n".len()) as u32;
-        let hover = swlsp_lsp_hover::DalHoverProvider::new(Some(dal.clone()))
+        let hover = swlsp_ide_shopware::hover::DalHoverProvider::new(Some(dal.clone()))
             .get_hover(&ctx(), &real_world_hover_request(&document, name_offset))
             .expect("hover")
             .expect("DAL field hover");
@@ -3595,7 +3605,7 @@ mod domains {
             "",
             1,
         );
-        let hints = swlsp_lsp_inlay::TwigVariableProvider::new(Some(php.clone()))
+        let hints = swlsp_ide_twig::inlay::TwigVariableProvider::new(Some(php.clone()))
             .get_inlay_hints(
                 &ctx(),
                 &InlayHintRequest {
@@ -3609,7 +3619,7 @@ mod domains {
         require_len!(parts, 1);
         check_eq!(format!("Variables ({})", variables.len()), parts[0].value);
         check_eq!(
-            Some(swlsp_lsp_inlay::BROWSE_TWIG_VARIABLES_COMMAND.to_owned()),
+            Some(swlsp_ide_twig::inlay::BROWSE_TWIG_VARIABLES_COMMAND.to_owned()),
             parts[0]
                 .command
                 .as_ref()
@@ -3622,7 +3632,7 @@ mod domains {
         );
         let mut params = protocol::DocumentLinkParams::default();
         params.text_document.uri = administration.uri.clone();
-        let links = swlsp_lsp_documentlink::RelatedProvider::new(
+        let links = swlsp_ide_twig::documentlink::RelatedProvider::new(
             Some(services.twig.clone()),
             Some(services.configuration.clone()),
             Some(php.clone()),
@@ -3647,7 +3657,7 @@ mod domains {
             "src/Storefront/Controller/NavigationController.php",
             1,
         );
-        let hints = swlsp_lsp_inlay::RouteControllerProvider::new(
+        let hints = swlsp_ide_symfony::inlay::RouteControllerProvider::new(
             Some(services.services.clone()),
             Some(php.clone()),
         )
@@ -3675,7 +3685,7 @@ mod domains {
             "<?php\nnamespace App\\Controller;\nuse Symfony\\Bridge\\Twig\\Attribute\\Template;\nclass RealWorldController\n{\n    #[Template('@Storefront/storefront/page/content/product-detail.html.twig')]\n    public function existing(): array { return []; }\n\n    #[Template]\n    public function missingAction(): array { return []; }\n}\n",
             1,
         );
-        let problems = swlsp_lsp_diagnostics::TemplateAnalyzer::new(
+        let problems = swlsp_ide_twig::diagnostics::TemplateAnalyzer::new(
             Some(services.twig.clone()),
             Some(php.clone()),
         )
@@ -3710,7 +3720,7 @@ mod domains {
             catalog[0].class
         );
         check!(!catalog[0].file_path.is_empty());
-        check!(swlsp_lsp_analytics::ant_path_match(
+        check!(swlsp_ide::analytics::ant_path_match(
             &request.file_glob,
             &catalog[0].file_path
         ));
@@ -3725,9 +3735,10 @@ mod domains {
             "<?php\nuse Symfony\\Component\\Console\\Attribute\\AsCommand;\nuse Symfony\\Component\\Console\\Command\\Command;\n\n#[AsCommand(name: 'app:real-world')]\nclass RealWorldCommand\n{\n    public function __invoke()\n    {\n        if (random_int(0, 1)) {\n            return Command::SUCCESS;\n        }\n        return 'invalid';\n    }\n}\n",
             1,
         );
-        let problems = swlsp_lsp_diagnostics::InvokableCommandAnalyzer::new(Some(php.clone()))
-            .analyze(&ctx(), &invokable)
-            .expect("analyze");
+        let problems =
+            swlsp_ide_symfony::diagnostics::InvokableCommandAnalyzer::new(Some(php.clone()))
+                .analyze(&ctx(), &invokable)
+                .expect("analyze");
         let types = problems
             .iter()
             .filter(|p| p.id.to_string() == "symfony.console.invoke.return_type")
@@ -3802,7 +3813,7 @@ mod domains {
         params.text_document.uri = document.uri.clone();
         params.position = position(&document, offset);
         let labels = real_world_completion_labels(
-            &swlsp_lsp_completion::ServiceCompletionProvider::new(
+            &swlsp_ide_symfony::completion::ServiceCompletionProvider::new(
                 Some(s.services.clone()),
                 Some(php.clone()),
             )
@@ -3815,7 +3826,7 @@ mod domains {
             ),
         );
         check_contains!(labels, parameter_name.to_owned());
-        let locations = swlsp_lsp_definition::ServiceDefinitionProvider::new(
+        let locations = swlsp_ide_symfony::definition::ServiceDefinitionProvider::new(
             Some(s.services.clone()),
             Some(php.clone()),
         )
@@ -3825,7 +3836,7 @@ mod domains {
         );
         require_len!(locations, 1);
         check_eq!(file_uri(&parameter.path), locations[0].uri);
-        let problems = swlsp_lsp_diagnostics::ServiceAnalyzer::new(
+        let problems = swlsp_ide_symfony::diagnostics::ServiceAnalyzer::new(
             Some(s.services.clone()),
             Some(php.clone()),
         )
@@ -3874,7 +3885,7 @@ mod domains {
                 let mut params = protocol::CompletionParams::default();
                 params.text_document.uri = document.uri.clone();
                 params.position = position(&document, offset);
-                let items = swlsp_lsp_completion::ServiceCompletionProvider::new(
+                let items = swlsp_ide_symfony::completion::ServiceCompletionProvider::new(
                     Some(s.services.clone()),
                     Some(php.clone()),
                 )
@@ -3890,7 +3901,7 @@ mod domains {
                     Some(method.to_string()),
                     completion.text_edit.map(|edit| edit.new_text)
                 );
-                let locations = swlsp_lsp_definition::ServiceDefinitionProvider::new(
+                let locations = swlsp_ide_symfony::definition::ServiceDefinitionProvider::new(
                     Some(s.services.clone()),
                     Some(php.clone()),
                 )
@@ -3903,8 +3914,9 @@ mod domains {
             }
         }
         let services_yaml = file_uri(&format!("{root}/config/services.yaml"));
-        let authoring =
-            swlsp_lsp_completion::YamlServiceAuthoringCompletionProvider::new(php.project());
+        let authoring = swlsp_ide_symfony::completion::YamlServiceAuthoringCompletionProvider::new(
+            php.project(),
+        );
         let source = "services:\n  app.real_world:\n    aut";
         let document = new_document(services_yaml.clone(), source, 1);
         let items = authoring.get_completions(
@@ -3928,7 +3940,9 @@ mod domains {
         check_not_contains!(labels, "!tagged".to_owned());
         let routes_yaml = file_uri(&format!("{root}/config/routes.yaml"));
         let route_authoring =
-            swlsp_lsp_completion::YamlRouteAuthoringCompletionProvider::new(Some(s.routes.clone()));
+            swlsp_ide_symfony::completion::YamlRouteAuthoringCompletionProvider::new(Some(
+                s.routes.clone(),
+            ));
         let source = "real_world.catalog:\n  path: /real-world/{id}\n  meth";
         let document = new_document(routes_yaml.clone(), source, 1);
         let items = route_authoring.get_completions(
@@ -3962,13 +3976,13 @@ mod domains {
             .expect("NotificationDefinition service");
         check!(notification.deprecated);
         let started = std::time::Instant::now();
-        let located = swlsp_lsp_analytics::ServiceLocatorProvider::new(
+        let located = swlsp_ide_symfony::analytics::ServiceLocatorProvider::new(
             Some(s.services.clone()),
             Some(php.clone()),
         )
         .locate(
             &ctx(),
-            &swlsp_lsp_analytics::ServiceLocatorRequest {
+            &swlsp_ide_symfony::analytics::ServiceLocatorRequest {
                 identifier: notification.id.clone(),
                 ..Default::default()
             },
@@ -3986,13 +4000,13 @@ mod domains {
         check_eq!(notification.class, entry.resolved_class);
         check!(entry.deprecated);
         check!(!entry.definitions.is_empty());
-        let collection = swlsp_lsp_codeaction::SymfonyGeneratorProvider::new(
+        let collection = swlsp_ide_symfony::codeaction::SymfonyGeneratorProvider::new(
             Some(php.clone()),
             Some(s.services.clone()),
         )
         .collect_service_definitions(
             &ctx(),
-            &swlsp_lsp_codeaction::SymfonyServiceDefinitionCollectionRequest {
+            &swlsp_ide_symfony::codeaction::SymfonyServiceDefinitionCollectionRequest {
                 class_names: notification.class.clone(),
                 output: "yaml".into(),
                 class_as_id: true,
@@ -4107,7 +4121,7 @@ mod domains {
                 server: Server::new(None, root, "test"),
                 file: file.clone(),
             });
-            let provider = swlsp_lsp_codeaction::TwigTranslationExtractProvider::new(
+            let provider = swlsp_ide_twig::codeaction::TwigTranslationExtractProvider::new(
                 Some(translations.clone()),
                 Some(host.clone()),
             );
@@ -4158,8 +4172,8 @@ mod domains {
 mod analytics {
     use std::sync::Arc;
 
+    use swlsp_ide::diagnostics::ProblemAnalyzer;
     use swlsp_lsp::*;
-    use swlsp_lsp_diagnostics::ProblemAnalyzer;
     use swlsp_lsp_protocol as protocol;
 
     use super::*;
@@ -4182,7 +4196,7 @@ mod analytics {
             .find_routes_by_path("/sitemap/shop.xml.gz")
             .expect("routes");
         assert!(!html_routes.is_empty());
-        let provider = swlsp_lsp_analytics::RouteCatalogProvider::new(
+        let provider = swlsp_ide_symfony::analytics::RouteCatalogProvider::new(
             root,
             Some(s.routes.clone()),
             Some(s.services.clone()),
@@ -4191,7 +4205,10 @@ mod analytics {
         );
         let started = std::time::Instant::now();
         let all = provider
-            .catalog(&ctx(), &swlsp_lsp_analytics::RouteCatalogRequest::default())
+            .catalog(
+                &ctx(),
+                &swlsp_ide_symfony::analytics::RouteCatalogRequest::default(),
+            )
             .expect("catalog");
         check_gt!(all.len(), 100);
         eprintln!(
@@ -4199,14 +4216,14 @@ mod analytics {
             started.elapsed(),
             all.len()
         );
-        match swlsp_lsp_analytics::ProfilerCatalogProvider::new(
+        match swlsp_ide_symfony::analytics::ProfilerCatalogProvider::new(
             root,
             Some(php.clone()),
             Some(s.twig.clone()),
         )
         .catalog(
             &ctx(),
-            &swlsp_lsp_analytics::ProfilerRequestCatalogRequest {
+            &swlsp_ide_symfony::analytics::ProfilerRequestCatalogRequest {
                 limit: 3,
                 ..Default::default()
             },
@@ -4228,7 +4245,7 @@ mod analytics {
                 }
             }
         }
-        let request = swlsp_lsp_analytics::RouteCatalogRequest {
+        let request = swlsp_ide_symfony::analytics::RouteCatalogRequest {
             route_name: "frontend.home.page".into(),
             file_glob: "src/**/NavigationController.php".into(),
             ..Default::default()
@@ -4250,8 +4267,9 @@ mod analytics {
             "@Storefront/storefront/page/content/index.html.twig".to_owned()
         );
         let routes_yaml = file_uri(&format!("{root}/config/routes.yaml"));
-        let authoring =
-            swlsp_lsp_completion::YamlRouteAuthoringCompletionProvider::new(Some(s.routes.clone()));
+        let authoring = swlsp_ide_symfony::completion::YamlRouteAuthoringCompletionProvider::new(
+            Some(s.routes.clone()),
+        );
         let source = "real_world.draft:\n  path: /site";
         let document = new_document(routes_yaml.clone(), source, 1);
         let items = authoring.get_completions(
@@ -4264,8 +4282,10 @@ mod analytics {
             Some(html_routes[0].path.clone()),
             sitemap.text_edit.map(|edit| edit.new_text)
         );
-        let php_provider =
-            swlsp_lsp_completion::RouteCompletionProvider::new(s.routes.clone(), Some(php.clone()));
+        let php_provider = swlsp_ide_symfony::completion::RouteCompletionProvider::new(
+            s.routes.clone(),
+            Some(php.clone()),
+        );
         let source = "<?php\nuse Symfony\\Component\\Routing\\Attribute\\Route;\n\n#[Route('/site')]\nfunction draft(): void {}\n";
         let document = new_document(
             file_uri(&format!("{root}/src/DraftController.php")),
@@ -4354,7 +4374,7 @@ mod analytics {
         let import_source = read(&import_path);
         let import_document = new_document(file_uri(&import_path), &import_source, 1);
         let bundle_offset = (offset_of(&import_source, "@FrameworkBundle") + 3) as u32;
-        let locations = swlsp_lsp_definition::RouteDefinitionProvider::new(
+        let locations = swlsp_ide_symfony::definition::RouteDefinitionProvider::new(
             Some(s.routes.clone()),
             Some(php.clone()),
         )
@@ -4368,19 +4388,21 @@ mod analytics {
         params.text_document.uri = import_document.uri.clone();
         params.position = position(&import_document, bundle_offset);
         let started = std::time::Instant::now();
-        let items =
-            swlsp_lsp_completion::BundleResourceCompletionProvider::new(Some(php.clone()), None)
-                .get_completions(
-                    &ctx(),
-                    &CompletionRequest {
-                        params,
-                        syntax: syntax(
-                            &import_document,
-                            node_at(&import_document, bundle_offset),
-                            None,
-                        ),
-                    },
-                );
+        let items = swlsp_ide_symfony::completion::BundleResourceCompletionProvider::new(
+            Some(php.clone()),
+            None,
+        )
+        .get_completions(
+            &ctx(),
+            &CompletionRequest {
+                params,
+                syntax: syntax(
+                    &import_document,
+                    node_at(&import_document, bundle_offset),
+                    None,
+                ),
+            },
+        );
         eprintln!(
             "bundle resource completion: {:?} ({} candidates)",
             started.elapsed(),
@@ -4412,7 +4434,7 @@ mod analytics {
                 swlsp_uriutil::filepath::base(&compiled[0].file_path)
             );
         }
-        let analyzer = swlsp_lsp_diagnostics::RouteAnalyzer::new(
+        let analyzer = swlsp_ide_symfony::diagnostics::RouteAnalyzer::new(
             Some(s.routes.clone()),
             Some(s.services.clone()),
             Some(php.clone()),
@@ -4428,9 +4450,11 @@ mod analytics {
                 .collect::<Vec<_>>()
         );
         let offset = (offset_of(source, "frontend.sitemap.proxy") + 3) as u32;
-        let locations =
-            swlsp_lsp_definition::RouteDefinitionProvider::new(Some(s.routes.clone()), None)
-                .get_definition(&ctx(), &real_world_definition_request_at(&document, offset));
+        let locations = swlsp_ide_symfony::definition::RouteDefinitionProvider::new(
+            Some(s.routes.clone()),
+            None,
+        )
+        .get_definition(&ctx(), &real_world_definition_request_at(&document, offset));
         assert!(!locations.is_empty());
         require_route_definition_path(&locations, &html_routes[0].file_path);
         let document = new_document(
@@ -4454,7 +4478,7 @@ mod analytics {
             1,
         );
         let actions =
-            swlsp_lsp_codeaction::RouteAttributeCodeActionProvider::new(Some(php.clone()))
+            swlsp_ide_symfony::codeaction::RouteAttributeCodeActionProvider::new(Some(php.clone()))
                 .get_code_actions(
                     &ctx(),
                     &real_world_code_action_request(&document, "editAction"),
@@ -4471,7 +4495,7 @@ mod analytics {
             "<?php\nnamespace App\\Controller;\nuse Symfony\\Component\\Routing\\Attribute\\Route;\nclass ProductController\n{\n    #[Route('/product/{id}')]\n    public function detail(?string $format = null): void {}\n}",
             1,
         );
-        let actions = swlsp_lsp_codeaction::RouteActionParameterCodeActionProvider::new()
+        let actions = swlsp_ide_symfony::codeaction::RouteActionParameterCodeActionProvider::new()
             .get_code_actions(&ctx(), &real_world_code_action_request(&document, "detail"));
         require_len!(actions, 2);
         check_eq!(
@@ -4491,13 +4515,14 @@ mod analytics {
         );
         let source = "<?php\nnamespace App\\Command;\nuse Symfony\\Component\\Console\\Attribute\\AsCommand;\nuse Symfony\\Component\\Console\\Command\\Command;\nuse Symfony\\Component\\Console\\Input\\InputArgument;\nuse Symfony\\Component\\Console\\Input\\InputInterface;\nuse Symfony\\Component\\Console\\Input\\InputOption;\nuse Symfony\\Component\\Console\\Output\\OutputInterface;\n\n#[AsCommand(name: 'app:index-migrate')]\nclass IndexMigrateCommand extends Command\n{\n    protected function configure(): void\n    {\n        $this->addArgument(\n            'project',\n            InputArgument::REQUIRED,\n            'Project'\n        );\n        $this->addOption(\n            'dry-run',\n            'd',\n            InputOption::VALUE_NONE,\n            'Dry run'\n        );\n    }\n\n    protected function execute(\n        InputInterface $input,\n        OutputInterface $output,\n    ): int {\n        $project = $input->getArgument('project');\n        $dryRun = $input->getOption('dry-run');\n        $output->writeln($project);\n\n        return $dryRun ? self::SUCCESS : Command::SUCCESS;\n    }\n}";
         let document = new_document("file:///real-world-command-migration.php", source, 1);
-        let actions = swlsp_lsp_codeaction::InvokableCommandMigrationCodeActionProvider::new(Some(
-            php.clone(),
-        ))
-        .get_code_actions(
-            &ctx(),
-            &real_world_code_action_request(&document, "IndexMigrateCommand"),
-        );
+        let actions =
+            swlsp_ide_symfony::codeaction::InvokableCommandMigrationCodeActionProvider::new(Some(
+                php.clone(),
+            ))
+            .get_code_actions(
+                &ctx(),
+                &real_world_code_action_request(&document, "IndexMigrateCommand"),
+            );
         require_len!(actions, 1);
         let edits = edits_for(&actions[0], &document.uri);
         require_len!(edits, 1);
@@ -4543,12 +4568,13 @@ mod analytics {
             "<?php\nnamespace App\\Command;\nuse Symfony\\Component\\Console\\Attribute\\AsCommand;\n#[AsCommand(name: 'app:index-test')]\nclass IndexTestCommand\n{\n    public function __invoke(?string $format = null): int\n    {\n        return 0;\n    }\n}",
             1,
         );
-        let actions =
-            swlsp_lsp_codeaction::CommandInvokeParameterCodeActionProvider::new(Some(php.clone()))
-                .get_code_actions(
-                    &ctx(),
-                    &real_world_code_action_request(&document, "IndexTestCommand"),
-                );
+        let actions = swlsp_ide_symfony::codeaction::CommandInvokeParameterCodeActionProvider::new(
+            Some(php.clone()),
+        )
+        .get_code_actions(
+            &ctx(),
+            &real_world_code_action_request(&document, "IndexTestCommand"),
+        );
         require_len!(actions, 5);
         let style = actions
             .iter()
@@ -4567,12 +4593,13 @@ mod analytics {
             "<?php\nnamespace App\\Twig;\nuse Twig\\Extension\\AbstractExtension;\nuse Twig\\TwigFunction;\nclass IndexTestExtension extends AbstractExtension\n{\n    public function getFunctions(): array\n    {\n        return [\n            new TwigFunction('index_test', [$this, 'indexTest']),\n        ];\n    }\n\n    public function indexTest(string $value): string\n    {\n        return $value;\n    }\n}",
             1,
         );
-        let actions =
-            swlsp_lsp_codeaction::TwigExtensionAttributeCodeActionProvider::new(Some(php.clone()))
-                .get_code_actions(
-                    &ctx(),
-                    &real_world_code_action_request(&document, "IndexTestExtension"),
-                );
+        let actions = swlsp_ide_twig::codeaction::TwigExtensionAttributeCodeActionProvider::new(
+            Some(php.clone()),
+        )
+        .get_code_actions(
+            &ctx(),
+            &real_world_code_action_request(&document, "IndexTestExtension"),
+        );
         require_len!(actions, 1);
         let edits = edits_for(&actions[0], &document.uri);
         require_len!(edits, 1);
@@ -4598,7 +4625,7 @@ mod analytics {
             "{# @var header \\Shopware\\Storefront\\Pagelet\\Header\\HeaderPagelet #}\n{{ header.activeLanguage }}",
             1,
         );
-        let problems = swlsp_lsp_diagnostics::TwigMemberDeprecationAnalyzer::new(
+        let problems = swlsp_ide_twig::diagnostics::TwigMemberDeprecationAnalyzer::new(
             Some(s.twig.clone()),
             Some(php.clone()),
         )
@@ -4610,7 +4637,7 @@ mod analytics {
         check_eq!(vec![protocol::DiagnosticTag::DEPRECATED], problems[0].tags);
         let source = "{# @var context \\Shopware\\Core\\Framework\\Context #}\n{{ context.versionId }}\n{{ context.SYSTEM_SCOPE }}\n{{ context.definitelyMissing }}";
         let document = new_document("file:///real-world-missing-member.twig", source, 1);
-        let problems = swlsp_lsp_diagnostics::TwigMemberMissingAnalyzer::new(
+        let problems = swlsp_ide_twig::diagnostics::TwigMemberMissingAnalyzer::new(
             Some(s.twig.clone()),
             Some(php.clone()),
         )
@@ -4630,11 +4657,12 @@ mod analytics {
             "services:\n  app.cart_merged_subscriber:\n    class: Shopware\\Storefront\\Event\\CartMergedSubscriber\n",
             1,
         );
-        let actions = swlsp_lsp_codeaction::ServiceTagCodeActionProvider::new(Some(php.clone()))
-            .get_code_actions(
-                &ctx(),
-                &real_world_code_action_request(&document, "CartMergedSubscriber"),
-            );
+        let actions =
+            swlsp_ide_symfony::codeaction::ServiceTagCodeActionProvider::new(Some(php.clone()))
+                .get_code_actions(
+                    &ctx(),
+                    &real_world_code_action_request(&document, "CartMergedSubscriber"),
+                );
         require_len!(actions, 1);
         check_eq!(
             "Symfony: Add service tag 'kernel.event_subscriber'",
@@ -4648,7 +4676,7 @@ mod analytics {
             "<container>\n  <services>\n    <service id=\"app.cart_merged\" class=\"Shopware\\Storefront\\Event\\CartMergedSubscriber\">\n      <argument/>\n    </service>\n  </services>\n</container>",
             1,
         );
-        let actions = swlsp_lsp_codeaction::XmlServiceSuggestionCodeActionProvider::new(
+        let actions = swlsp_ide_symfony::codeaction::XmlServiceSuggestionCodeActionProvider::new(
             Some(s.services.clone()),
             Some(php.clone()),
         )
@@ -4673,8 +4701,8 @@ mod inlays {
     use std::sync::Arc;
 
     use serde_json::Value;
+    use swlsp_ide::diagnostics::ProblemAnalyzer;
     use swlsp_lsp::*;
-    use swlsp_lsp_diagnostics::ProblemAnalyzer;
     use swlsp_lsp_protocol as protocol;
 
     use super::domains::full_range_params;
@@ -4720,7 +4748,7 @@ mod inlays {
             "services:\n  app.cart_merged:\n    class: Shopware\\Storefront\\Event\\CartMergedSubscriber\n    arguments: ['@translator', '@request_stack']\n",
             1,
         );
-        let hints = swlsp_lsp_inlay::ServiceArgumentProvider::new(
+        let hints = swlsp_ide_symfony::inlay::ServiceArgumentProvider::new(
             Some(s.services.clone()),
             Some(php.clone()),
         )
@@ -4746,7 +4774,7 @@ mod inlays {
             "<?php\nnamespace Shopware\\Storefront\\Event;\nclass CartMergedSubscriber\n{\n    public function indexTest(): void\n    {\n        $this->indexTestLogger->info('indexed');\n    }\n}",
             1,
         );
-        let actions = swlsp_lsp_codeaction::PropertyServiceCodeActionProvider::new(
+        let actions = swlsp_ide_symfony::codeaction::PropertyServiceCodeActionProvider::new(
             Some(php.clone()),
             Some(s.services.clone()),
         )
@@ -4767,7 +4795,7 @@ mod inlays {
         check_str!(edits[1].new_text, "use Psr\\Log\\LoggerInterface;");
         let bundle =
             super::domains::document_at(&f.root, "src/Core/Framework/Test/TestBundle.php", 1);
-        let actions = swlsp_lsp_codeaction::SymfonyGeneratorProvider::new(
+        let actions = swlsp_ide_symfony::codeaction::SymfonyGeneratorProvider::new(
             Some(php.clone()),
             Some(s.services.clone()),
         )
@@ -4791,9 +4819,10 @@ mod inlays {
             "services:\n  invalid_extension:\n    class: Shopware\\Core\\Kernel\n    tags:\n      - { name: twig.extension }\n",
             1,
         );
-        let problems = swlsp_lsp_diagnostics::TaggedServiceAnalyzer::new(Some(php.clone()))
-            .analyze(&ctx(), &document)
-            .expect("analyze");
+        let problems =
+            swlsp_ide_symfony::diagnostics::TaggedServiceAnalyzer::new(Some(php.clone()))
+                .analyze(&ctx(), &document)
+                .expect("analyze");
         require_len!(problems, 1);
         check_eq!("symfony.service.tag_type", problems[0].id.to_string());
         check_str!(problems[0].message, "twig.extension");
@@ -4801,11 +4830,12 @@ mod inlays {
         check_http_client_options(php);
         let source = "<?php\nuse Symfony\\Contracts\\HttpClient\\HttpClientInterface;\nfunction fetch(HttpClientInterface $client): void\n{\n    $client->request('GET', '/', [\n        'headers' => [],\n        'ti' => null,\n    ]);\n}\n";
         let document = new_document("file:///real-world-http-client.php", source, 1);
-        let items = swlsp_lsp_completion::HttpClientCompletionProvider::new(Some(php.clone()))
-            .get_completions(
-                &ctx(),
-                &php_request(&document, (offset_of(source, "'ti'") + 2) as u32),
-            );
+        let items =
+            swlsp_ide_symfony::completion::HttpClientCompletionProvider::new(Some(php.clone()))
+                .get_completions(
+                    &ctx(),
+                    &php_request(&document, (offset_of(source, "'ti'") + 2) as u32),
+                );
         let mut timeout = false;
         for item in &items {
             check!(item.label != "headers");
@@ -4834,14 +4864,15 @@ mod inlays {
         let offset = (offset_of(source, "'que'") + 2) as u32;
         let mut params = protocol::CompletionParams::default();
         params.text_document.uri = document.uri.clone();
-        let items = swlsp_lsp_completion::ConsoleHelperCompletionProvider::new(Some(php.clone()))
-            .get_completions(
-                &ctx(),
-                &CompletionRequest {
-                    params,
-                    syntax: syntax(&document, node_at(&document, offset), None),
-                },
-            );
+        let items =
+            swlsp_ide_symfony::completion::ConsoleHelperCompletionProvider::new(Some(php.clone()))
+                .get_completions(
+                    &ctx(),
+                    &CompletionRequest {
+                        params,
+                        syntax: syntax(&document, node_at(&document, offset), None),
+                    },
+                );
         let question = items.iter().find(|item| item.label == "question");
         check!(question.is_some());
         check_eq!(
@@ -4879,15 +4910,16 @@ mod inlays {
             "parameters:\n  language: !php/const Shopware\\Core\\Defaults::LANGUAGE_SYSTEM\n  invalid: !php/const Shopware\\Core\\Defaults::MISSING\n",
             1,
         );
-        let problems = swlsp_lsp_diagnostics::ContainerConstantAnalyzer::new(Some(php.clone()))
-            .analyze(&ctx(), &document)
-            .expect("analyze");
+        let problems =
+            swlsp_ide_symfony::diagnostics::ContainerConstantAnalyzer::new(Some(php.clone()))
+                .analyze(&ctx(), &document)
+                .expect("analyze");
         require_len!(problems, 1);
         check_eq!("symfony.constant.missing", problems[0].id.to_string());
         let constructors = php.find_methods("Shopware\\Core\\Kernel", "__construct");
         assert!(!constructors.is_empty());
         check_ge!(constructors[0].parameters.len(), 7);
-        let analyzer = swlsp_lsp_diagnostics::ServiceArgumentAnalyzer::new(
+        let analyzer = swlsp_ide_symfony::diagnostics::ServiceArgumentAnalyzer::new(
             Some(s.services.clone()),
             Some(php.clone()),
         );
@@ -4951,8 +4983,8 @@ mod twig_catalog {
     use std::sync::Arc;
 
     use serde_json::Value;
+    use swlsp_ide::diagnostics::ProblemAnalyzer;
     use swlsp_lsp::*;
-    use swlsp_lsp_diagnostics::ProblemAnalyzer;
     use swlsp_lsp_protocol as protocol;
 
     use super::*;
@@ -5027,13 +5059,13 @@ mod twig_catalog {
         require_twig_tag(&tags, "sw_extends");
         require_twig_tag(&tags, "sw_icon");
         require_twig_tag(&tags, "macro");
-        let catalog = swlsp_lsp_analytics::TwigExtensionCatalogProvider::new(
+        let catalog = swlsp_ide_twig::analytics::TwigExtensionCatalogProvider::new(
             Some(twig.clone()),
             Some(php.clone()),
         )
         .catalog(
             &ctx(),
-            &swlsp_lsp_analytics::TwigExtensionCatalogRequest::default(),
+            &swlsp_ide_twig::analytics::TwigExtensionCatalogRequest::default(),
         )
         .expect("catalog");
         check_gt!(catalog.len(), functions.len() + tests.len() + tags.len());
@@ -5061,7 +5093,7 @@ mod twig_catalog {
             .get_template_references(&["@Storefront/storefront/base.html.twig"])
             .expect("references");
         check_ge!(base_references.len(), 10);
-        let usage_catalog = swlsp_lsp_analytics::TwigTemplateUsageCatalogProvider::new(
+        let usage_catalog = swlsp_ide_twig::analytics::TwigTemplateUsageCatalogProvider::new(
             root,
             Some(twig.clone()),
             Some(php.clone()),
@@ -5071,7 +5103,7 @@ mod twig_catalog {
         )
         .catalog(
             &ctx(),
-            &swlsp_lsp_analytics::TwigTemplateUsageCatalogRequest {
+            &swlsp_ide_twig::analytics::TwigTemplateUsageCatalogRequest {
                 template: "@Storefront/storefront/base.html.twig".into(),
                 file_glob: "src/Storefront/Resources/views/storefront/base.html.twig".into(),
                 ..Default::default()
@@ -5123,7 +5155,7 @@ mod twig_catalog {
             ])
             .expect("variables");
         require_twig_template_input(&inputs, "page");
-        let variable_catalog = swlsp_lsp_analytics::TwigTemplateVariableCatalogProvider::new(
+        let variable_catalog = swlsp_ide_twig::analytics::TwigTemplateVariableCatalogProvider::new(
             root,
             Some(twig.clone()),
             Some(php.clone()),
@@ -5131,7 +5163,7 @@ mod twig_catalog {
         )
         .catalog(
             &ctx(),
-            &swlsp_lsp_analytics::TwigTemplateVariableCatalogRequest {
+            &swlsp_ide_twig::analytics::TwigTemplateVariableCatalogRequest {
                 template: "@Storefront/storefront/page/content/product-detail.html.twig".into(),
                 file_glob: "src/Storefront/Resources/views/storefront/page/content/product-detail.html.twig".into(),
                 ..Default::default()
@@ -5165,7 +5197,7 @@ mod twig_catalog {
             "{% sw_extends '@Storefront/storefront/page/content/product-detail.html.twig' %}\n";
         let document = new_document("file:///real-world-template-generator.html.twig", source, 1);
         let generator =
-            swlsp_lsp_codeaction::TwigTemplateGeneratorProvider::new(Some(twig.clone()));
+            swlsp_ide_twig::codeaction::TwigTemplateGeneratorProvider::new(Some(twig.clone()));
         let actions = generator.get_code_actions(
             &ctx(),
             &real_world_code_action_request(&document, "sw_extends"),
@@ -5190,7 +5222,7 @@ mod twig_catalog {
                 .as_array()
                 .is_some_and(|b| b.iter().any(|v| v.as_str() == Some("page_content")))
         );
-        let scaffolds = swlsp_lsp_scaffold::Provider::new(
+        let scaffolds = swlsp_ide_shopware::scaffold::Provider::new(
             root,
             Some(php.clone()),
             Some(s.console.clone()),
@@ -5198,13 +5230,13 @@ mod twig_catalog {
         );
         let commands = CommandProvider::commands(&scaffolds, &ctx());
         let scaffold = commands
-            .get(swlsp_lsp_scaffold::CREATE_SYMFONY_SCAFFOLD_COMMAND)
+            .get(swlsp_ide_shopware::scaffold::CREATE_SYMFONY_SCAFFOLD_COMMAND)
             .expect("scaffold command");
         let directory = format!("{root}/src/Core/Framework/Feature/Command");
         let value = scaffold(
             &ctx(),
             Some(
-                &serde_json::to_value(swlsp_lsp_scaffold::Request {
+                &serde_json::to_value(swlsp_ide_shopware::scaffold::Request {
                     kind: "command".into(),
                     directory_uri: file_uri(&directory),
                     name: "LspScaffoldProbe".into(),
@@ -5214,7 +5246,7 @@ mod twig_catalog {
             ),
         )
         .expect("scaffold");
-        let response: swlsp_lsp_scaffold::Response =
+        let response: swlsp_ide_shopware::scaffold::Response =
             serde_json::from_value(value).expect("scaffold response");
         check_eq!(
             "Shopware\\Core\\Framework\\Feature\\Command",
@@ -5228,7 +5260,7 @@ mod twig_catalog {
         let value = scaffold(
             &ctx(),
             Some(
-                &serde_json::to_value(swlsp_lsp_scaffold::Request {
+                &serde_json::to_value(swlsp_ide_shopware::scaffold::Request {
                     kind: "services-yaml".into(),
                     directory_uri: file_uri(&format!("{root}/config")),
                     name: "lsp-scaffold-probe".into(),
@@ -5238,7 +5270,7 @@ mod twig_catalog {
             ),
         )
         .expect("scaffold");
-        let response: swlsp_lsp_scaffold::Response =
+        let response: swlsp_ide_shopware::scaffold::Response =
             serde_json::from_value(value).expect("scaffold response");
         check_str!(response.content, "  Shopware\\:");
         check_str!(response.content, "resource: '../src/'");
@@ -5256,10 +5288,11 @@ mod twig_catalog {
             "<twig:Alert>\n  {% from _self import message %}\n</twig:Alert>",
             1,
         );
-        let problems =
-            swlsp_lsp_diagnostics::TwigComponentAnalyzer::new(Some(s.twig_components.clone()))
-                .analyze(&ctx(), &document)
-                .expect("analyze");
+        let problems = swlsp_ide_twig::diagnostics::TwigComponentAnalyzer::new(Some(
+            s.twig_components.clone(),
+        ))
+        .analyze(&ctx(), &document)
+        .expect("analyze");
         check_eq!(
             1,
             problems
@@ -5269,13 +5302,14 @@ mod twig_catalog {
         );
         real_world_twig_ux_semantic_token_snapshot(&ctx());
         let component_names = s.twig_components.names().expect("names");
-        let component_catalog =
-            swlsp_lsp_analytics::TwigComponentCatalogProvider::new(Some(s.twig_components.clone()))
-                .catalog(
-                    &ctx(),
-                    &swlsp_lsp_analytics::TwigComponentCatalogRequest::default(),
-                )
-                .expect("component catalog");
+        let component_catalog = swlsp_ide_twig::analytics::TwigComponentCatalogProvider::new(Some(
+            s.twig_components.clone(),
+        ))
+        .catalog(
+            &ctx(),
+            &swlsp_ide_twig::analytics::TwigComponentCatalogRequest::default(),
+        )
+        .expect("component catalog");
         check_eq!(component_names.len(), component_catalog.len());
         let constant = swlsp_twig::ConstantReference {
             class: "Shopware\\Core\\Content\\Product\\ProductDefinition".into(),
@@ -5383,8 +5417,8 @@ mod twig_catalog {
 mod restore {
     use std::sync::Arc;
 
+    use swlsp_ide::diagnostics::ProblemAnalyzer;
     use swlsp_lsp::*;
-    use swlsp_lsp_diagnostics::ProblemAnalyzer;
     use swlsp_lsp_protocol as protocol;
     use swlsp_php::PhpIndex;
 
@@ -5452,15 +5486,17 @@ mod restore {
             false,
         );
         let request = real_world_completion_request(&document, offset);
-        let items =
-            swlsp_lsp_completion::RouteCompletionProvider::new(s.routes.clone(), Some(php.clone()))
-                .get_completions(&ctx(), &request);
+        let items = swlsp_ide_symfony::completion::RouteCompletionProvider::new(
+            s.routes.clone(),
+            Some(php.clone()),
+        )
+        .get_completions(&ctx(), &request);
         check_eq!(
             Some(ROUTE.to_owned()),
             edit_text(&real_world_completion_by_label(&items, ROUTE))
         );
         // The PHP index is passed through the request context.
-        let locations = swlsp_lsp_definition::RouteDefinitionProvider::new(
+        let locations = swlsp_ide_symfony::definition::RouteDefinitionProvider::new(
             Some(s.routes.clone()),
             Some(php.clone()),
         )
@@ -5486,7 +5522,7 @@ mod restore {
             false,
         );
         let request = real_world_completion_request(&document, offset);
-        let items = swlsp_lsp_completion::ServiceCompletionProvider::new(
+        let items = swlsp_ide_symfony::completion::ServiceCompletionProvider::new(
             Some(s.services.clone()),
             Some(php.clone()),
         )
@@ -5494,7 +5530,7 @@ mod restore {
         let item = real_world_completion_by_label(&items, NOTIFICATION);
         check_eq!(Some(NOTIFICATION.to_owned()), edit_text(&item));
         check!(item.deprecated);
-        let locations = swlsp_lsp_definition::ServiceDefinitionProvider::new(
+        let locations = swlsp_ide_symfony::definition::ServiceDefinitionProvider::new(
             Some(s.services.clone()),
             Some(php.clone()),
         )
@@ -5517,7 +5553,7 @@ mod restore {
             false,
         );
         let request = real_world_completion_request(&document, offset);
-        let items = swlsp_lsp_completion::ServiceCompletionProvider::new(
+        let items = swlsp_ide_symfony::completion::ServiceCompletionProvider::new(
             Some(s.services.clone()),
             Some(php.clone()),
         )
@@ -5526,7 +5562,7 @@ mod restore {
             Some(PARAMETER.to_owned()),
             edit_text(&real_world_completion_by_label(&items, PARAMETER))
         );
-        let locations = swlsp_lsp_definition::ServiceDefinitionProvider::new(
+        let locations = swlsp_ide_symfony::definition::ServiceDefinitionProvider::new(
             Some(s.services.clone()),
             Some(php.clone()),
         )
@@ -5568,7 +5604,7 @@ mod restore {
             false,
         );
         let request = real_world_completion_request(&document, offset);
-        let items = swlsp_lsp_completion::TwigCompletionProvider::new(
+        let items = swlsp_ide_twig::completion::TwigCompletionProvider::new(
             root,
             Some(s.twig.clone()),
             None,
@@ -5579,7 +5615,7 @@ mod restore {
             Some(TEMPLATE.to_owned()),
             edit_text(&real_world_completion_by_label(&items, TEMPLATE))
         );
-        let locations = swlsp_lsp_definition::TwigDefinitionProvider::new(
+        let locations = swlsp_ide_twig::definition::TwigDefinitionProvider::new(
             root,
             Some(s.twig.clone()),
             None,
@@ -5599,7 +5635,7 @@ mod restore {
             true,
         );
         let request = real_world_completion_request(&document, offset);
-        let items = swlsp_lsp_completion::TranslationCompletionProvider::new(
+        let items = swlsp_ide_symfony::completion::TranslationCompletionProvider::new(
             Some(s.translations.clone()),
             Some(php.clone()),
         )
@@ -5608,7 +5644,7 @@ mod restore {
             Some(key.clone()),
             edit_text(&real_world_completion_by_label(&items, &key))
         );
-        let locations = swlsp_lsp_definition::TranslationDefinitionProvider::new(
+        let locations = swlsp_ide_symfony::definition::TranslationDefinitionProvider::new(
             Some(s.translations.clone()),
             Some(php.clone()),
         )
@@ -5623,7 +5659,7 @@ mod restore {
             &format!("<?php real_world_route_assistant('{typo}');"),
             1,
         );
-        let problems = swlsp_lsp_diagnostics::RouteAnalyzer::new(
+        let problems = swlsp_ide_symfony::diagnostics::RouteAnalyzer::new(
             Some(s.routes.clone()),
             Some(s.services.clone()),
             Some(php.clone()),
@@ -5643,7 +5679,7 @@ mod restore {
             &format!("<?php real_world_service_assistant('{typo}');"),
             1,
         );
-        let problems = swlsp_lsp_diagnostics::ServiceAnalyzer::new(
+        let problems = swlsp_ide_symfony::diagnostics::ServiceAnalyzer::new(
             Some(s.services.clone()),
             Some(php.clone()),
         )
@@ -5662,7 +5698,7 @@ mod restore {
             &format!("<?php real_world_translation_assistant(domain: '{domain}', key: '{typo}');"),
             1,
         );
-        let problems = swlsp_lsp_diagnostics::TranslationAnalyzer::new(
+        let problems = swlsp_ide_twig::diagnostics::TranslationAnalyzer::new(
             Some(s.translations.clone()),
             Some(php.clone()),
             None,
@@ -5776,7 +5812,8 @@ mod restore {
                 .find(|slot| slot.name == "iconFront")
                 .cloned(),
         );
-        let references = swlsp_lsp_reference::AdminReferenceProvider::new(Some(admin.clone()));
+        let references =
+            swlsp_ide_admin::reference::AdminReferenceProvider::new(Some(admin.clone()));
         let cms_list = format!(
             "{root}/src/Administration/Resources/app/administration/src/module/sw-cms/page/sw-cms-list/sw-cms-list.html.twig"
         );
@@ -5812,7 +5849,7 @@ mod restore {
         push(
             &mut p,
             "admin.event_rename",
-            swlsp_lsp_refactor::AdminRenameProvider::new(Some(admin.clone()))
+            swlsp_ide_admin::refactor::AdminRenameProvider::new(Some(admin.clone()))
                 .rename(
                     &ctx(),
                     &real_world_rename_request(&cms_document, click, "item-selected"),
@@ -5973,7 +6010,7 @@ mod restore {
         push(
             &mut p,
             "twig.missing_member",
-            swlsp_lsp_diagnostics::TwigMemberMissingAnalyzer::new(
+            swlsp_ide_twig::diagnostics::TwigMemberMissingAnalyzer::new(
                 Some(s.twig.clone()),
                 Some(php.clone()),
             )
@@ -6047,8 +6084,9 @@ mod restore {
             "services.len",
             s.services.get_all_service_definitions().map(|v| v.len()),
         );
-        let authoring =
-            swlsp_lsp_completion::YamlServiceAuthoringCompletionProvider::new(php.project());
+        let authoring = swlsp_ide_symfony::completion::YamlServiceAuthoringCompletionProvider::new(
+            php.project(),
+        );
         let services_yaml = file_uri(&format!("{root}/config/services.yaml"));
         for source in [
             "services:\n  app.real_world:\n    aut",
@@ -6066,7 +6104,9 @@ mod restore {
         }
         let routes_yaml = file_uri(&format!("{root}/config/routes.yaml"));
         let route_authoring =
-            swlsp_lsp_completion::YamlRouteAuthoringCompletionProvider::new(Some(s.routes.clone()));
+            swlsp_ide_symfony::completion::YamlRouteAuthoringCompletionProvider::new(Some(
+                s.routes.clone(),
+            ));
         for source in [
             "real_world.catalog:\n  path: /real-world/{id}\n  meth",
             "real_world.catalog:\n  path: /real-world/{id}/{slug}\n  requirements:\n    sl",
@@ -6091,13 +6131,13 @@ mod restore {
         push(
             &mut p,
             "analytics.service_locator",
-            swlsp_lsp_analytics::ServiceLocatorProvider::new(
+            swlsp_ide_symfony::analytics::ServiceLocatorProvider::new(
                 Some(s.services.clone()),
                 Some(php.clone()),
             )
             .locate(
                 &ctx(),
-                &swlsp_lsp_analytics::ServiceLocatorRequest {
+                &swlsp_ide_symfony::analytics::ServiceLocatorRequest {
                     identifier,
                     ..Default::default()
                 },
@@ -6107,13 +6147,13 @@ mod restore {
         push(
             &mut p,
             "codeaction.collect",
-            swlsp_lsp_codeaction::SymfonyGeneratorProvider::new(
+            swlsp_ide_symfony::codeaction::SymfonyGeneratorProvider::new(
                 Some(php.clone()),
                 Some(s.services.clone()),
             )
             .collect_service_definitions(
                 &ctx(),
-                &swlsp_lsp_codeaction::SymfonyServiceDefinitionCollectionRequest {
+                &swlsp_ide_symfony::codeaction::SymfonyServiceDefinitionCollectionRequest {
                     class_names: notification
                         .as_ref()
                         .map(|n| n.class.clone())
@@ -6147,7 +6187,7 @@ mod restore {
                 .find_routes_by_path("/sitemap/shop.xml.gz")
                 .map_err(|e| e.to_string()),
         );
-        let route_catalog = swlsp_lsp_analytics::RouteCatalogProvider::new(
+        let route_catalog = swlsp_ide_symfony::analytics::RouteCatalogProvider::new(
             root,
             Some(s.routes.clone()),
             Some(s.services.clone()),
@@ -6167,7 +6207,7 @@ mod restore {
             route_catalog
                 .catalog(
                     &ctx(),
-                    &swlsp_lsp_analytics::RouteCatalogRequest {
+                    &swlsp_ide_symfony::analytics::RouteCatalogRequest {
                         route_name: "frontend.home.page".into(),
                         file_glob: "src/**/NavigationController.php".into(),
                         ..Default::default()
@@ -6175,8 +6215,10 @@ mod restore {
                 )
                 .map_err(|e| e.to_string()),
         );
-        let route_provider =
-            swlsp_lsp_completion::RouteCompletionProvider::new(s.routes.clone(), Some(php.clone()));
+        let route_provider = swlsp_ide_symfony::completion::RouteCompletionProvider::new(
+            s.routes.clone(),
+            Some(php.clone()),
+        );
         for (file, source, needle) in [
             (
                 "DraftController.php",
@@ -6229,7 +6271,7 @@ mod restore {
         push(
             &mut p,
             "assistant.route.definition",
-            swlsp_lsp_definition::RouteDefinitionProvider::new(
+            swlsp_ide_symfony::definition::RouteDefinitionProvider::new(
                 Some(s.routes.clone()),
                 Some(php.clone()),
             )
@@ -6238,11 +6280,11 @@ mod restore {
                 &real_world_definition_request(&document, request.syntax.node.clone(), offset),
             ),
         );
-        let service_completion = swlsp_lsp_completion::ServiceCompletionProvider::new(
+        let service_completion = swlsp_ide_symfony::completion::ServiceCompletionProvider::new(
             Some(s.services.clone()),
             Some(php.clone()),
         );
-        let service_definition = swlsp_lsp_definition::ServiceDefinitionProvider::new(
+        let service_definition = swlsp_ide_symfony::definition::ServiceDefinitionProvider::new(
             Some(s.services.clone()),
             Some(php.clone()),
         );
@@ -6313,7 +6355,7 @@ mod restore {
         push(
             &mut p,
             "assistant.template.completions",
-            swlsp_lsp_completion::TwigCompletionProvider::new(
+            swlsp_ide_twig::completion::TwigCompletionProvider::new(
                 root,
                 Some(s.twig.clone()),
                 None,
@@ -6324,7 +6366,7 @@ mod restore {
         push(
             &mut p,
             "assistant.template.definition",
-            swlsp_lsp_definition::TwigDefinitionProvider::new(
+            swlsp_ide_twig::definition::TwigDefinitionProvider::new(
                 root,
                 Some(s.twig.clone()),
                 None,
@@ -6349,7 +6391,7 @@ mod restore {
             push(
                 &mut p,
                 "assistant.translation.completions",
-                swlsp_lsp_completion::TranslationCompletionProvider::new(
+                swlsp_ide_symfony::completion::TranslationCompletionProvider::new(
                     Some(s.translations.clone()),
                     Some(php.clone()),
                 )
@@ -6358,7 +6400,7 @@ mod restore {
             push(
                 &mut p,
                 "assistant.translation.definition",
-                swlsp_lsp_definition::TranslationDefinitionProvider::new(
+                swlsp_ide_symfony::definition::TranslationDefinitionProvider::new(
                     Some(s.translations.clone()),
                     Some(php.clone()),
                 )
@@ -6378,7 +6420,7 @@ mod restore {
             push(
                 &mut p,
                 "assistant.translation.diagnostics",
-                swlsp_lsp_diagnostics::TranslationAnalyzer::new(
+                swlsp_ide_twig::diagnostics::TranslationAnalyzer::new(
                     Some(s.translations.clone()),
                     Some(php.clone()),
                     None,
@@ -6404,7 +6446,7 @@ mod restore {
             &format!("<?php real_world_route_assistant('{ROUTE}x');"),
             1,
         );
-        let route_analyzer = swlsp_lsp_diagnostics::RouteAnalyzer::new(
+        let route_analyzer = swlsp_ide_symfony::diagnostics::RouteAnalyzer::new(
             Some(s.routes.clone()),
             Some(s.services.clone()),
             Some(php.clone()),
@@ -6436,7 +6478,7 @@ mod restore {
         push(
             &mut p,
             "assistant.service.diagnostics",
-            swlsp_lsp_diagnostics::ServiceAnalyzer::new(
+            swlsp_ide_symfony::diagnostics::ServiceAnalyzer::new(
                 Some(s.services.clone()),
                 Some(php.clone()),
             )
@@ -6479,7 +6521,7 @@ mod restore {
         push(
             &mut p,
             "routes.bundle_definition",
-            swlsp_lsp_definition::RouteDefinitionProvider::new(
+            swlsp_ide_symfony::definition::RouteDefinitionProvider::new(
                 Some(s.routes.clone()),
                 Some(php.clone()),
             )
@@ -6494,18 +6536,21 @@ mod restore {
         push(
             &mut p,
             "routes.bundle_completions",
-            swlsp_lsp_completion::BundleResourceCompletionProvider::new(Some(php.clone()), None)
-                .get_completions(
-                    &ctx(),
-                    &CompletionRequest {
-                        params,
-                        syntax: syntax(
-                            &import_document,
-                            node_at(&import_document, bundle_offset),
-                            None,
-                        ),
-                    },
-                ),
+            swlsp_ide_symfony::completion::BundleResourceCompletionProvider::new(
+                Some(php.clone()),
+                None,
+            )
+            .get_completions(
+                &ctx(),
+                &CompletionRequest {
+                    params,
+                    syntax: syntax(
+                        &import_document,
+                        node_at(&import_document, bundle_offset),
+                        None,
+                    ),
+                },
+            ),
         );
         let source = "{% if app.request.attributes.get('_route') in ['frontend.sitemap.proxy'] %}{% endif %}";
         let document = new_document("file:///real-world-route-comparison.twig", source, 1);
@@ -6520,14 +6565,17 @@ mod restore {
         push(
             &mut p,
             "routes.comparison_definition",
-            swlsp_lsp_definition::RouteDefinitionProvider::new(Some(s.routes.clone()), None)
-                .get_definition(
-                    &ctx(),
-                    &real_world_definition_request_at(
-                        &document,
-                        (offset_of(source, "frontend.sitemap.proxy") + 3) as u32,
-                    ),
+            swlsp_ide_symfony::definition::RouteDefinitionProvider::new(
+                Some(s.routes.clone()),
+                None,
+            )
+            .get_definition(
+                &ctx(),
+                &real_world_definition_request_at(
+                    &document,
+                    (offset_of(source, "frontend.sitemap.proxy") + 3) as u32,
                 ),
+            ),
         );
         push(&mut p, "assets", capture_workspace_assets(workspace));
         let twig = &s.twig;
@@ -6565,7 +6613,7 @@ mod restore {
         push(
             &mut p,
             "twig.extension_catalog",
-            swlsp_lsp_analytics::TwigExtensionCatalogProvider::new(
+            swlsp_ide_twig::analytics::TwigExtensionCatalogProvider::new(
                 Some(twig.clone()),
                 Some(php.clone()),
             )
@@ -6586,7 +6634,7 @@ mod restore {
         push(
             &mut p,
             "twig.base_usage_catalog",
-            swlsp_lsp_analytics::TwigTemplateUsageCatalogProvider::new(
+            swlsp_ide_twig::analytics::TwigTemplateUsageCatalogProvider::new(
                 root,
                 Some(twig.clone()),
                 Some(php.clone()),
@@ -6596,7 +6644,7 @@ mod restore {
             )
             .catalog(
                 &ctx(),
-                &swlsp_lsp_analytics::TwigTemplateUsageCatalogRequest {
+                &swlsp_ide_twig::analytics::TwigTemplateUsageCatalogRequest {
                     template: "@Storefront/storefront/base.html.twig".into(),
                     file_glob: "src/Storefront/Resources/views/storefront/base.html.twig".into(),
                     ..Default::default()
@@ -6623,7 +6671,7 @@ mod restore {
             twig.get_template_variables(&[product])
                 .map_err(|e| e.to_string()),
         );
-        push(&mut p, "twig.product_variable_catalog", swlsp_lsp_analytics::TwigTemplateVariableCatalogProvider::new(root, Some(twig.clone()), Some(php.clone()), Some(s.twig_components.clone())).catalog(&ctx(), &swlsp_lsp_analytics::TwigTemplateVariableCatalogRequest { template: product.into(), file_glob: "src/Storefront/Resources/views/storefront/page/content/product-detail.html.twig".into(), ..Default::default() }).map_err(|e| e.to_string()));
+        push(&mut p, "twig.product_variable_catalog", swlsp_ide_twig::analytics::TwigTemplateVariableCatalogProvider::new(root, Some(twig.clone()), Some(php.clone()), Some(s.twig_components.clone())).catalog(&ctx(), &swlsp_ide_twig::analytics::TwigTemplateVariableCatalogRequest { template: product.into(), file_glob: "src/Storefront/Resources/views/storefront/page/content/product-detail.html.twig".into(), ..Default::default() }).map_err(|e| e.to_string()));
         push(
             &mut p,
             "twig.product_blocks",
@@ -6668,9 +6716,11 @@ mod restore {
         push(
             &mut p,
             "twigcomponent.catalog",
-            swlsp_lsp_analytics::TwigComponentCatalogProvider::new(Some(s.twig_components.clone()))
-                .catalog(&ctx(), &Default::default())
-                .map_err(|e| e.to_string()),
+            swlsp_ide_twig::analytics::TwigComponentCatalogProvider::new(Some(
+                s.twig_components.clone(),
+            ))
+            .catalog(&ctx(), &Default::default())
+            .map_err(|e| e.to_string()),
         );
         let constant = swlsp_twig::ConstantReference {
             class: "Shopware\\Core\\Content\\Product\\ProductDefinition".into(),

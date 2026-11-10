@@ -34,7 +34,7 @@ for a concrete crate or feature that needs them (see the open questions).
 | MCP | separate process (`shopware-lsp mcp`); **hand-rolled newline JSON-RPC** with hand-built error texts; tools dispatched synchronously; one lazily created, mutex-serialized `CliSession` | `crates/cli/src/mcp/` (about 2,700 lines), `crates/cli/src/session.rs` |
 | MCP → analysis | the MCP process starts an in-process LSP server and talks to it over OS pipes with its own JSON-RPC client, the same path `check` uses | `crates/cli/src/session.rs` |
 | Indexing | `notify` watcher thread, scanner and settle workers on OS threads | `crates/indexer`, `crates/php/src/settle.rs` |
-| HTTP | blocking `ureq`, one call site | `crates/lsp-commands/src/twig.rs` |
+| HTTP | blocking `ureq`, one call site | `crates/ide-twig/src/commands/twig.rs` |
 | MCP tests | 15 Rust tests, the VS Code `test:mcp` suite, `make zed-contracts` | `crates/cli/src/tests/mcp.rs`, `editors/vscode/test/mcpServer.test.js`, `editors/zed` |
 
 Two properties are deliberate and must survive (`crates/lsp/src/lib.rs`

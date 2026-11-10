@@ -1,0 +1,8 @@
+//! Inspections of the SCSS domain.
+
+mod scss_variable;
+
+pub use scss_variable::new_scss_variable;
+// The shared inspection contract, so the inspections find it beside themselves.
+#[allow(unused_imports)]
+pub(crate) use swlsp_ide::inspections::*;

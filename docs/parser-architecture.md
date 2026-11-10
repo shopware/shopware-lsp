@@ -569,7 +569,7 @@ literals that hold JSON, CSS, or XPath are recognized by
 only when an analyzer needs it:
 
 ```rust
-// crates/lsp-diagnostics/src/symfony/embedded.rs
+// crates/ide-symfony/src/diagnostics/symfony/embedded.rs
 for literal in embedded_language_strings(
     php_index, &path, i64::from(document.version), document.source(), &root,
 ) {
@@ -658,7 +658,7 @@ expression shape.
 A real consumer, from the Shopware 6.5 message-handler migration inspection:
 
 ```rust
-// crates/lsp-diagnostics/src/migration/message_handler.rs
+// crates/ide-shopware/src/diagnostics/migration/message_handler.rs
 let resolver = scan::resolver(root);
 for class in scan::classes(root) {
     if ctx.is_cancelled() {

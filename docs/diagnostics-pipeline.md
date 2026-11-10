@@ -155,11 +155,11 @@ to run on both PHP and Twig declares both.
 ### The BoundInspection adapter
 
 Most inspections are not written as bare `Inspection` implementations. They use
-the `BoundInspection` adapter in `crates/lsp-inspections/src/inspection.rs`,
+the `BoundInspection` adapter in `crates/ide/src/inspections/inspection.rs`,
 which separates three concerns:
 
 ```rust
-// crates/lsp-inspections/src/inspection.rs
+// crates/ide/src/inspections/inspection.rs
 pub struct BoundInspection {
     pub definition: InspectionDefinition,
     pub analyzers: Vec<Arc<dyn ProblemAnalyzer>>,  // run in order under one inspection
@@ -174,8 +174,10 @@ An analyzer implements only the `ProblemAnalyzer` trait
 the LSP protocol. `BoundInspection` then re-checks every returned problem against the declared
 codes and attaches bound fixes through `bind`.
 
-Analyzers live in `swlsp-lsp-diagnostics`; the inspections that wire them up
-live in `swlsp-lsp-inspections`. That split is why a diagnostic can be unit
+Analyzers live in the `diagnostics` module of their domain crate
+(`crates/ide-<domain>`); the inspections that wire them up live in its
+`inspections` module. The contracts both share are `swlsp_ide::diagnostics`
+and `swlsp_ide::inspections`. That split is why a diagnostic can be unit
 tested against a source string without a server.
 
 ### Declared analyzers
@@ -185,7 +187,7 @@ source and the suggestion quick fix, declares that inspection beside its
 implementation:
 
 ```rust
-// crates/lsp-diagnostics/src/symfony/console.rs
+// crates/ide-symfony/src/diagnostics/symfony/console.rs
 impl DeclaredAnalyzer for ConsoleAnalyzer {
     const INSPECTION: InspectionSpec = InspectionSpec {
         id: "symfony.console",
@@ -205,7 +207,7 @@ impl DeclaredAnalyzer for ConsoleAnalyzer {
 The composition root only supplies services:
 `analyzer_inspection(ConsoleAnalyzer::new(console, php))`. Inspections with
 their own quick fixes build an `InspectionDefinition` in
-`swlsp-lsp-inspections` and state `domain` and `scope` the same way.
+the domain's `inspections` module and state `domain` and `scope` the same way.
 
 ### One analyzer behind several inspections
 
@@ -220,7 +222,7 @@ the same document.
 ### Project analyses
 
 A rule about the project as a whole ("this route name is also defined in
-another file") implements `ProjectAnalysis` (`swlsp-lsp-diagnostics`,
+another file") implements `ProjectAnalysis` (`swlsp_ide::diagnostics`,
 `project.rs`) in two phases, like PHPStan collectors:
 
 - `summarize` derives a summary from index data. `Project` memoizes it per
@@ -292,7 +294,7 @@ A complete, real analyzer — the Shopware 6.5 `AbstractMessageHandler`
 migration:
 
 ```rust
-// crates/lsp-diagnostics/src/migration/message_handler.rs
+// crates/ide-shopware/src/diagnostics/migration/message_handler.rs
 pub(super) fn message_handler_migration_problems(
     &self,
     ctx: &Context,
@@ -715,7 +717,7 @@ Analyzers declare their inputs beside the fields they read, through
 (`None` if any analyzer does not declare):
 
 ```rust
-// crates/lsp-diagnostics/src/symfony/console.rs
+// crates/ide-symfony/src/diagnostics/symfony/console.rs
 impl ProblemAnalyzer for ConsoleAnalyzer {
     fn input_revision(&self) -> Option<u64> {
         Some(crate::inputs(&self.index) + crate::inputs(&self.php_index))
@@ -849,7 +851,7 @@ literal JSON, CSS, or XPath, and each sub-language runs its own frontend over
 just that literal:
 
 ```rust
-// crates/lsp-diagnostics/src/symfony/embedded.rs
+// crates/ide-symfony/src/diagnostics/symfony/embedded.rs
 for literal in embedded_language_strings(
     php_index, &path, i64::from(document.version), document.source(), &root,
 ) {
@@ -895,22 +897,22 @@ slow.
 
 ## Registering a new inspection
 
-1. **Write the analyzer** in `swlsp-lsp-diagnostics`, implementing
+1. **Write the analyzer** in `crates/ide-<domain>/src/diagnostics`, implementing
    `ProblemAnalyzer::analyze`. Guard on a missing syntax tree, check
    cancellation in loops, use the language's `query` module, and report
    trimmed ranges.
 2. **Declare the inspection** with its ID, a description for users,
    configuration domain, scope, languages and every code it can emit. For a single analyzer with warnings
    and suggestion fixes, implement `DeclaredAnalyzer` beside it. Otherwise
-   build an `InspectionDefinition` in `swlsp-lsp-inspections` with a
+   build an `InspectionDefinition` in `crates/ide-<domain>/src/inspections` with a
    `ProblemDefinition` per code — each with a `source` and a
    `default_severity`; set `disabled_by_default` for opt-in checks.
 3. **Add quick fixes** implementing `RewriteQuickFix` or `CommandQuickFix`, and
    wire them in `bind` so each code offers the right fixes with the right
    payloads.
-4. **Register it** from the application composition root
-   (`crates/app/src/inspections.rs`): `analyzer_inspection(Analyzer::new(…))`
-   or the `swlsp-lsp-inspections` constructor. Composition fails on a missing
+4. **Register it** in its domain crate
+   (`crates/ide-<domain>/src/inspections/mod.rs`):
+   `analyzer_inspection(Analyzer::new(…))` or the inspection's constructor. Composition fails on a missing
    description or a missing or unknown domain. Regenerate
    [`inspections.md`](inspections.md) with
    `SHOPWARE_LSP_UPDATE_REFERENCE=1 cargo test -p swlsp-app inspection_reference`;
@@ -930,7 +932,7 @@ involved. Write the expected problems into the source as markup
 `text`, markers may nest, and `{|code:|}` marks an empty range.
 
 ```rust
-// crates/lsp-diagnostics: one analyzer
+// crates/ide-<domain>/src/diagnostics: one analyzer
 let (_, problems) = check_problems(
     &AssetAnalyzer::new(Some(index), None),
     "file:///project/templates/page.html.twig",
@@ -938,7 +940,7 @@ let (_, problems) = check_problems(
 );
 assert!(problems[0].message.contains("build/ap.css"));
 
-// crates/lsp-inspections: a whole inspection and one of its fixes
+// crates/ide-<domain>/src/inspections: a whole inspection and one of its fixes
 check_diagnostics(inspection.as_ref(), uri, before);
 check_fix(inspection.as_ref(), uri, before, FIX_ID, after);
 ```

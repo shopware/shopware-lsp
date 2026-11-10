@@ -1,0 +1,61 @@
+[package]
+name = "swlsp-ide-shopware"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swlsp-ide = { path = "../ide" }
+swlsp-lsp = { path = "../lsp" }
+swlsp-language = { path = "../language" }
+swlsp-extension = { path = "../extension" }
+swlsp-uriutil = { path = "../uriutil" }
+swlsp-textutil = { path = "../textutil" }
+swlsp-console = { path = "../console" }
+swlsp-lsp-phpanalysis = { path = "../lsp-phpanalysis" }
+swlsp-lsp-protocol = { path = "../lsp-protocol" }
+swlsp-parser-js = { path = "../parser-js" }
+swlsp-parser-json = { path = "../parser-json" }
+swlsp-parser-php = { path = "../parser-php" }
+swlsp-parser-twig = { path = "../parser-twig" }
+swlsp-parser-xml = { path = "../parser-xml" }
+swlsp-parser-yaml = { path = "../parser-yaml" }
+swlsp-php = { path = "../php" }
+swlsp-php-imports = { path = "../php-imports" }
+swlsp-php-resolver = { path = "../php-resolver" }
+swlsp-php-semantic = { path = "../php-semantic" }
+swlsp-php-types = { path = "../php-types" }
+swlsp-rewrite = { path = "../rewrite" }
+swlsp-snippet = { path = "../snippet" }
+swlsp-symfony = { path = "../symfony" }
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+swlsp-syntax.workspace = true
+thiserror.workspace = true
+strsim = "0.11"
+swlsp-appscript = { path = "../appscript" }
+swlsp-indexer = { path = "../indexer" }
+swlsp-parser-scss = { path = "../parser-scss" }
+swlsp-php-project = { path = "../php-project" }
+swlsp-php-rewrite = { path = "../php-rewrite" }
+swlsp-shopware = { path = "../shopware" }
+swlsp-shopware-dal = { path = "../shopware-dal" }
+swlsp-shopware-entityschema = { path = "../shopware-entityschema" }
+swlsp-theme = { path = "../theme" }
+sha2 = "0.10"
+unicode-general-category = "1.1.0"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
+swlsp-feature = { path = "../feature" }
+swlsp-systemconfig = { path = "../systemconfig" }
+
+[dev-dependencies]
+swlsp-ide = { path = "../ide", features = ["testing"] }
+swlsp-indexer = { path = "../indexer" }
+tempfile = "3"
+swlsp-ide-admin = { path = "../ide-admin" }
+swlsp-ide-twig = { path = "../ide-twig" }
+swlsp-admin = { path = "../admin" }

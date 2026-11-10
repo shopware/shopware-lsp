@@ -4,13 +4,13 @@ use std::sync::Arc;
 
 use serde_json::json;
 use swlsp_extension::{CONFIG_LOCATIONS, ConfigIndex};
+use swlsp_ide_shopware::diagnostics::{ShopwareStoreComposerAnalyzer, StoreComplianceResolver};
 use swlsp_indexer::{Indexer, ParsedFile};
 use swlsp_lsp::Server;
-use swlsp_lsp_diagnostics::{ShopwareStoreComposerAnalyzer, StoreComplianceResolver};
 
 use super::support::{TestClient, file_uri};
-use crate::providers_extension_config::register_extension_config_document_observer;
-use crate::registrar::Registrar;
+use swlsp_ide::{Precedence, Registrar};
+use swlsp_ide_shopware::register_extension_config_document_observer;
 
 fn diagnostics_empty(params: &serde_json::Value) -> bool {
     params["diagnostics"].as_array().is_none_or(Vec::is_empty)
@@ -36,9 +36,10 @@ fn extension_config_overlay(location: &str) {
     let registrar = Registrar::new(&server);
     register_extension_config_document_observer(&registrar, &compliance);
     let resolver: Arc<dyn StoreComplianceResolver> = compliance.clone();
-    registrar.inspection(swlsp_lsp_inspections::analyzer_inspection(
+    registrar.inspection(swlsp_ide::inspections::analyzer_inspection(
         ShopwareStoreComposerAnalyzer::new(Some(resolver)),
     ));
+    registrar.finish(Precedence(&[]));
     let client = TestClient::start(&server);
     // A standalone plugin at the workspace root must support the same opt-in.
     let composer_uri = file_uri(&root.join("composer.json"));

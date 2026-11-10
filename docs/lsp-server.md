@@ -5,7 +5,7 @@ response, how open documents are managed, how feature providers are declared
 and registered, and how capabilities and gating work.
 
 Everything here lives in [`crates/lsp`](../crates/lsp) (`swlsp-lsp`) and the
-`crates/lsp-<feature>` provider crates, wired together by
+`crates/ide-<domain>` domain crates, wired together by
 [`crates/app`](../crates/app). For the
 system-wide picture see [`architecture.md`](architecture.md).
 
@@ -297,8 +297,8 @@ language-specific semantic state can ride along in the request `Context`
 crate. PHP uses it to attach the analysis for the file under the cursor:
 
 ```rust
-// crates/app/src/providers.rs
-pub(crate) fn enrich_php_context(ctx: &Context, index: &PhpIndex, syntax: &SyntaxContext) -> Context {
+// crates/ide-php/src/context.rs
+pub fn enrich_php_context(ctx: &Context, index: &PhpIndex, syntax: &SyntaxContext) -> Context {
     let Some(document) = syntax.document.as_deref() else {
         return ctx.clone();
     };
@@ -315,7 +315,7 @@ each rebuilding it.
 ## The provider pattern
 
 Provider traits are declared in `crates/lsp/src/providers.rs`; implementations
-live in the `crates/lsp-<feature>` crates. Each is a small `Send + Sync` trait
+live in the `crates/ide-<domain>` crates. Each is a small `Send + Sync` trait
 returning protocol types (`ProviderResult<T>` is `Result<T, BoxError>`):
 
 ```rust
@@ -373,8 +373,8 @@ The full set, with its registration method:
 | `Inspection` | `register_inspection` | diagnostics and quick fixes — see [diagnostics](diagnostics-pipeline.md) |
 
 Do not rely on a fixed provider count anywhere; registration changes often.
-`crates/app/src/providers*.rs` and `crates/app/src/inspections.rs` are the
-authoritative lists.
+Each `crates/ide-<domain>/src/lib.rs` is the authoritative list of what its
+domain registers.
 
 `SemanticTokensProvider` is slightly different from the rest: it returns
 byte-oriented `SemanticToken` values, and the server encodes the LSP delta
@@ -395,7 +395,7 @@ Providers therefore never compute delta-encoded UTF-16 triples by hand.
 A complete provider — feature-flag completion across four languages:
 
 ```rust
-// crates/lsp-completion/src/domain/feature.rs
+// crates/ide-shopware/src/completion/shopware/feature.rs
 pub struct FeatureCompletionProvider {
     index: Arc<FeatureIndexer>,
 }
@@ -463,30 +463,56 @@ The checklist, in the order it appears above:
 
 ## Registration
 
-`crates/app/src/providers.rs` is the adapter layer from domain repositories to
-LSP capabilities. Construction stays in `workspace.rs`; protocol wiring stays
-here and in the `providers_*.rs` modules.
+Features are grouped by domain. Each domain crate (`crates/ide-php`,
+`ide-symfony`, `ide-twig`, `ide-style`, `ide-admin`, `ide-shopware`) exports
+one `Domain` whose `register` function adds everything the domain offers to a
+`Registrar`: providers, inspections, suppression readers, observers. Gating by
+configuration domain happens inside the domain. The composition root only
+lists the domains:
 
 ```rust
-pub(crate) fn register_features(server: &Registrar<'_>, services: &Services) {
-    if server.domain_enabled("administration") {
-        register_administration_document_observer(server, services.admin.clone(), /* ... */);
-    }
-    server.context_enricher(LanguageId::Php, /* enrich_php_context */);
-    let php_features = Arc::new(PhpFeatures::new(Some(services.php.clone())));
+// crates/app/src/domains.rs
+pub const DOMAINS: &[Domain] = &[
+    swlsp_ide_php::DOMAIN,
+    swlsp_ide_symfony::DOMAIN,
+    swlsp_ide_twig::DOMAIN,
+    swlsp_ide_style::DOMAIN,
+    swlsp_ide_admin::DOMAIN,
+    swlsp_ide_shopware::DOMAIN,
+];
 
-    crate::providers_symbols::register_symbol_and_document_providers(server, services);
-    crate::providers_completion::register_completion_providers(server, &php_features, services);
-    crate::providers_definition::register_definition_providers(server, &php_features, services);
-    crate::providers_codelens::register_code_lens_providers(server, services);
-    crate::providers_reference::register_reference_providers(server, &php_features, services);
-    crate::inspections::register_diagnostic_inspections(server, &php_features, services);
-    let versioning =
-        crate::providers_hover::register_hover_providers(server, &php_features, services);
-    crate::providers_editor::register_editor_providers(server, &php_features, services);
-    crate::providers_actions::register_action_and_command_providers(server, versioning, services);
+pub(crate) fn register_features(registrar: Registrar<'_>, services: &Services) -> Vec<Registration> {
+    for domain in DOMAINS {
+        (domain.register)(&registrar, services);
+    }
+    registrar.command(Arc::new(crate::integration::Provider));
+    register_workspace_symbols(&registrar, services);
+    registrar.finish(PRECEDENCE)
 }
 ```
+
+```rust
+// crates/ide-twig/src/lib.rs (excerpt)
+fn register(server: &Registrar<'_>, s: &Services) {
+    server.formatting(Arc::new(formatting::TwigProvider::new()));
+    server.code_lens(Arc::new(codelens::TwigCodeLensProvider::new(Some(s.twig.clone()))));
+    inspections::register(server, s);
+    // ...
+}
+```
+
+**Order is decided centrally.** Hover and signature help take the first
+provider that answers; the other requests concatenate results in provider
+order. Which provider goes first is a decision between domains, so the
+`Registrar` only collects registrations and `finish` applies them in the
+order of `crates/app/src/precedence.rs` (request kind → provider names). A
+provider that is not listed runs after the listed ones of its request kind,
+in registration order, so a new provider needs an entry there only when its
+position matters.
+
+Workspace symbols are the one composite: domains contribute sources with
+`workspace_symbol_source`, and the composition root wraps them into the single
+catalog-backed workspace symbol provider.
 
 `Services` is a plain struct of every constructed domain index (mostly `Arc`s,
 with `Option` for indexes an optional domain may not construct). Each registration function borrows it, which
@@ -691,7 +717,7 @@ enumerate them authoritatively. See
 ### Provider tests
 
 Construct the domain index and the provider directly, build a `TextDocument`,
-and assert on protocol values. `crates/lsp-completion/src/test_support.rs` has
+and assert on protocol values. `crates/ide/src/completion/test_support.rs` has
 request builders (`request_at`, `request_with_cursor`) that resolve the cursor
 exactly like the server:
 
@@ -732,7 +758,7 @@ error-prone part of the stack.
 
 ```bash
 cargo test -p swlsp-lsp
-cargo test -p swlsp-lsp-completion
+cargo test -p swlsp-ide-twig completion
 cargo test -p swlsp-app providers
 make rust-test
 ```

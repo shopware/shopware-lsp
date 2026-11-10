@@ -1,0 +1,38 @@
+[package]
+name = "swlsp-ide-php"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swlsp-ide = { path = "../ide" }
+swlsp-lsp = { path = "../lsp" }
+swlsp-language = { path = "../language" }
+swlsp-lsp-phpsemantic = { path = "../lsp-phpsemantic" }
+swlsp-lsp-phpanalysis = { path = "../lsp-phpanalysis" }
+swlsp-php = { path = "../php" }
+swlsp-textutil = { path = "../textutil" }
+swlsp-lsp-protocol = { path = "../lsp-protocol" }
+swlsp-parser-json = { path = "../parser-json" }
+swlsp-parser-php = { path = "../parser-php" }
+swlsp-php-imports = { path = "../php-imports" }
+swlsp-php-refactoring = { path = "../php-refactoring" }
+swlsp-php-resolver = { path = "../php-resolver" }
+swlsp-php-semantic = { path = "../php-semantic" }
+swlsp-php-types = { path = "../php-types" }
+swlsp-rewrite = { path = "../rewrite" }
+swlsp-uriutil = { path = "../uriutil" }
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+swlsp-syntax.workspace = true
+thiserror.workspace = true
+unicode-general-category = "1.1.0"
+swlsp-parser-scss = { path = "../parser-scss" }
+swlsp-parser-xpath = { path = "../parser-xpath" }
+
+[dev-dependencies]
+swlsp-ide = { path = "../ide", features = ["testing"] }
+swlsp-indexer = { path = "../indexer" }
+tempfile = "3"

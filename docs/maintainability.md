@@ -25,7 +25,7 @@ The largest non-test Rust source files are:
 | `crates/shopware-entityschema/src/render.rs` | 2,500 | Entity-schema PHP rendering for every field and association kind. |
 | `crates/shopware-entityschema/src/validate_spec.rs` | 2,300 | Ordered validation passes for identity, fields, and relations. |
 | `crates/admin-twigmigration/src/entities.rs` | 2,200 | Entity tables for Administration Twig migration. |
-| `crates/lsp-scaffold/src/entity_schema.rs` | 2,200 | Entity-schema load, import, and response assembly for the designer. |
+| `crates/ide-shopware/src/scaffold/entity_schema.rs` | 2,200 | Entity-schema load, import, and response assembly for the designer. |
 | `crates/parser-php/src/parser.rs` | 1,700 | Central grammar dispatch; performance and recovery matter more than raw branch count. |
 | `crates/admin/src/type_index.rs` | 1,600 | TypeScript declaration indexing and Vue contract resolution share one module. |
 

@@ -1,0 +1,55 @@
+[package]
+name = "swlsp-ide-twig"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swlsp-ide-symfony = { path = "../ide-symfony" }
+swlsp-syntax.workspace = true
+swlsp-ide = { path = "../ide" }
+swlsp-lsp = { path = "../lsp" }
+swlsp-language = { path = "../language" }
+swlsp-twig = { path = "../twig" }
+swlsp-parser-twig = { path = "../parser-twig" }
+swlsp-lsp-phpanalysis = { path = "../lsp-phpanalysis" }
+swlsp-lsp-protocol = { path = "../lsp-protocol" }
+swlsp-parser-php = { path = "../parser-php" }
+swlsp-parser-yaml = { path = "../parser-yaml" }
+swlsp-php = { path = "../php" }
+swlsp-php-semantic = { path = "../php-semantic" }
+swlsp-textutil = { path = "../textutil" }
+swlsp-symfony = { path = "../symfony" }
+swlsp-symfonyconfig = { path = "../symfonyconfig" }
+swlsp-translation = { path = "../translation" }
+swlsp-twigcomponent = { path = "../twigcomponent" }
+swlsp-uriutil = { path = "../uriutil" }
+serde_json = "1"
+swlsp-extension = { path = "../extension" }
+swlsp-parser-js = { path = "../parser-js" }
+swlsp-php-languagelevel = { path = "../php-languagelevel" }
+swlsp-php-resolver = { path = "../php-resolver" }
+swlsp-php-types = { path = "../php-types" }
+swlsp-rewrite = { path = "../rewrite" }
+swlsp-snippet = { path = "../snippet" }
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+thiserror.workspace = true
+strsim = "0.11"
+swlsp-indexer = { path = "../indexer" }
+swlsp-suggestion = { path = "../suggestion" }
+swlsp-theme = { path = "../theme" }
+unicode-general-category = "1.1.0"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
+flate2 = "1"
+url = "2"
+
+[dev-dependencies]
+swlsp-ide = { path = "../ide", features = ["testing"] }
+swlsp-indexer = { path = "../indexer" }
+tempfile = "3"
+swlsp-ide-php = { path = "../ide-php" }
+swlsp-lsp-phpsemantic = { path = "../lsp-phpsemantic" }

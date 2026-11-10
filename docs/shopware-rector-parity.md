@@ -59,8 +59,8 @@ Symfony set imports and therefore add no Shopware-owned migration table entry.
 
 ## Verification
 
-Mapping tests in `crates/lsp-diagnostics/src/migration/tests/api.rs` and
-`crates/lsp-diagnostics/src/migration/tests/declarations.rs` check that every
+Mapping tests in `crates/ide-shopware/src/diagnostics/migration/tests/api.rs` and
+`crates/ide-shopware/src/diagnostics/migration/tests/declarations.rs` check that every
 explicit mapping produces a diagnostic. Diagnostic and inspection tests
 cover version boundaries, semantic type matching, safe/unsafe edits, and
 parse-valid output for every custom rule family.

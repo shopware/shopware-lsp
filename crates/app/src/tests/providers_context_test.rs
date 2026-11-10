@@ -8,7 +8,7 @@ use swlsp_lsp_phpanalysis::State;
 use swlsp_php::PhpIndex;
 use swlsp_syntax::{SyntaxNodeExt, TextSize};
 
-use crate::providers::enrich_php_context;
+use swlsp_ide_php::enrich_php_context;
 
 #[test]
 fn enrich_php_context_reuses_document_analysis() {

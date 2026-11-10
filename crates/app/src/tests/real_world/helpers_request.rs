@@ -106,7 +106,7 @@ pub fn real_world_php_attribute_completions(
     let Some(request) = completion_at_needle(&document, source, needle) else {
         return Vec::new();
     };
-    swlsp_lsp_completion::PhpAttributeCompletionProvider::new(Some(php.clone()))
+    swlsp_ide_twig::completion::PhpAttributeCompletionProvider::new(Some(php.clone()))
         .get_completions(&Context::background(), &request)
 }
 
@@ -121,7 +121,7 @@ pub fn real_world_twig_completions(
     let Some(request) = completion_at_needle(&document, source, needle) else {
         return Vec::new();
     };
-    swlsp_lsp_completion::TwigCompletionProvider::new(
+    swlsp_ide_twig::completion::TwigCompletionProvider::new(
         root,
         Some(twig.clone()),
         None,
@@ -187,7 +187,7 @@ pub fn real_world_twig_ux_semantic_token_snapshot(ctx: &Context) -> Vec<String> 
         "{# @prop title string Visible title #}\n{# @block content Main content #}",
         1,
     );
-    let tokens = swlsp_lsp_semantic::TwigUxToolkitProvider::new()
+    let tokens = swlsp_ide_twig::semantic::TwigUxToolkitProvider::new()
         .get_semantic_tokens(
             ctx,
             &SemanticTokensRequest {

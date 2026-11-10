@@ -125,10 +125,12 @@ the lockfile.
 | Path | Responsibility |
 |---|---|
 | `crates/cli` | Shipped `shopware-lsp` binary: `serve`, `check`, `index`, feature commands, MCP; flags declared in `src/args.rs` |
-| `crates/app` | Workspace construction, ownership, indexer wiring, inspections (`src/inspections.rs`), and provider registration (`src/providers*.rs`) |
+| `crates/app` | Workspace construction, ownership, indexer wiring, the list of domains (`src/domains.rs`) and the order between their providers (`src/precedence.rs`) |
+| `crates/ide` | The contract of the domain crates: `Registrar`, `Services`, `Domain`; the analyzer and inspection contracts (`diagnostics`, `inspections`); and one module per request kind with the helpers and test fixtures the domains share |
+| `crates/ide-<domain>` | One domain's IDE features (`php`, `symfony`, `twig`, `style`, `admin`, `shopware`): its `register` function and one module per request kind (`completion`, `definition`, `hover`, `reference`, `codelens`, `codeaction`, `diagnostics`, `inspections`, …) |
 | `crates/lsp` | JSON-RPC/LSP server, document lifecycle, configuration, protocol conversion, inspection and quick-fix infrastructure |
 | `crates/lsp-protocol` | LSP types (`lsp-types`) plus Shopware protocol extensions |
-| `crates/lsp-<feature>` | Providers: completion, definition, hover, reference, symbol, codeaction, refactor, inspections, diagnostics, and others |
+| `crates/lsp-phpsemantic`, `crates/lsp-phpanalysis` | The PHP language features and the per-document PHP analysis they share with every domain |
 | `crates/syntax` | Language-neutral lossless tree, byte ranges, kinds, line index, and the event parser |
 | `crates/parser-<language>` | Native lexer, parser, syntax kinds, and `query` helpers for one language (PHP, Twig, JS, XML, XPath, YAML, JSON, SCSS, Vue) |
 | `crates/language` | Built-in language registry and extension-to-parser mapping |
@@ -146,8 +148,9 @@ the lockfile.
 | `third_party/phpstorm-stubs` | Pinned source metadata for generated PHP runtime stubs |
 
 Avoid fixed provider or crate counts in documentation or tests; registration
-changes frequently. `crates/app/src/providers.rs` and
-`crates/app/src/inspections.rs` are the authoritative composition roots.
+changes frequently. Each `crates/ide-<domain>/src/lib.rs` is the authoritative
+list of what its domain registers; `crates/app/src/domains.rs` lists the
+domains.
 
 ## Runtime data flow
 
@@ -240,8 +243,15 @@ diagnostics instead of touching a developer's normal workspace cache.
 
 ## LSP providers
 
-Provider traits live in `crates/lsp/src/providers.rs`; implementations live in
-the `crates/lsp-<feature>` crates. A normal new provider change should:
+Provider traits live in `crates/lsp/src/providers.rs`. IDE features are
+grouped by domain: `crates/ide-<domain>` holds a domain's providers and
+registers them (each request kind is a module of the domain crate, such as
+`crates/ide-twig/src/hover`). What several domains share for one request kind
+lives in the module of the same name in `crates/ide`. Domain crates depend
+on each other in one direction only (`ide-twig` on `ide-symfony`, `ide-admin`
+on `ide-twig`); the others depend on no domain. Do not add a dependency the
+other way round: move the shared piece into `crates/ide` instead. A normal new
+provider change should:
 
 1. depend on domain indexes/services through its constructor;
 2. return quickly for unsupported languages or contexts;
@@ -249,7 +259,9 @@ the `crates/lsp-<feature>` crates. A normal new provider change should:
 4. use `swlsp-uriutil` for file URI conversion;
 5. use the current `SyntaxContext` rather than reparsing when it is available;
 6. return deterministic, deduplicated results with exact ranges;
-7. be constructed and registered in `crates/app/src/providers*.rs`;
+7. be constructed and registered in the `register` function of its domain
+   crate (`crates/ide-<domain>`); list it in `crates/app/src/precedence.rs`
+   only when it must run before or after a provider of another domain;
 8. be gated by the appropriate feature and domain configuration;
 9. have focused provider tests plus a server-level test when protocol routing
    or document lifecycle matters.
@@ -279,7 +291,8 @@ code-action rediscovery pass.
    can reject stale document versions.
 9. Declare the inspection's configuration domain and scope in its
    definition (`DeclaredAnalyzer::INSPECTION` for a single analyzer), next to
-   the code, and register it in `crates/app/src/inspections.rs`. Registration
+   the code, and register it in its domain crate
+   (`crates/ide-<domain>/src/inspections/mod.rs`). Registration
    fails on a missing or unknown domain.
    A rule about the whole project (facts from several files) is a
    `ProjectAnalysis` run through `Project`: a summary memoized per index

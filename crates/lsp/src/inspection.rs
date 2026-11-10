@@ -239,7 +239,7 @@ pub trait Inspection: Send + Sync {
     /// reuses the inspection's previous diagnostics instead of running it
     /// again. `None`, the default, means the inputs are not declared: the
     /// inspection runs on every refresh. Analyzer-backed inspections derive
-    /// it from `ProblemAnalyzer::input_revision` (`swlsp-lsp-diagnostics`).
+    /// it from `ProblemAnalyzer::input_revision` (`swlsp_ide::diagnostics`).
     fn input_revision(&self, _document: &TextDocument) -> Option<u64> {
         None
     }

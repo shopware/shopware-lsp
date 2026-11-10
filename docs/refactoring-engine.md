@@ -333,7 +333,7 @@ A disabled action with a reason is good UX; a broken edit is not.
 Replacing a deprecated Vue I18n `$tc` call with `$t`, complete:
 
 ```rust
-// crates/lsp-inspections/src/admin/fixes.rs
+// crates/ide-admin/src/inspections/admin/fixes.rs
 impl RewriteQuickFix for AdminI18nTcFix {
     fn build(&self, _ctx: &Context, fix: &FixContext) -> Result<WorkspacePlan, BoxError> {
         // 1. decode the payload the analyzer bound when it reported the problem
@@ -365,7 +365,7 @@ impl RewriteQuickFix for AdminI18nTcFix {
 }
 ```
 
-`resolve_anchor` (`crates/lsp-inspections/src/inspection.rs`) calls
+`resolve_anchor` (`crates/ide/src/inspections/inspection.rs`) calls
 `ElementHandle::resolve` with the fix document's URI, version, language, and
 tree. `single_document_plan` builds one `DocumentPlan` with
 `Some(document.version)` and reuses the document's line index.
@@ -453,7 +453,8 @@ providers' rename edits would produce a conflicting or double-applied refactor.
 A rename provider must therefore be confident about ownership — return `None`
 unless the symbol under the cursor is clearly yours.
 
-Rename providers live in `crates/lsp-refactor/src`:
+Rename providers live in the `refactor` modules of the domain crates
+(`crates/ide-twig/src/refactor`, `crates/ide-admin/src/refactor`):
 
 - `php_twig_rename.rs` — a PHP symbol whose name also appears in Twig
 - `twig_template_rename.rs` — template paths and block names
@@ -491,7 +492,7 @@ too, not just indexed files.
 
 ## Scaffolding
 
-`swlsp-lsp-scaffold` generates new code — entities, plugins, DAL
+`swlsp_ide_shopware::scaffold` generates new code — entities, plugins, DAL
 definitions, Administration components. It uses the same machinery:
 `CreateFilePlan` for new files, `DocumentPlan` for registration edits in
 existing files, one `WorkspacePlan` for the whole operation.
@@ -575,12 +576,12 @@ exercised; a hand-built range skips the most error-prone step.
 Also assert the **validation** path: a fix that would introduce parser errors
 must be rejected. `crates/rewrite/src/tests.rs` covers builder conflicts,
 coalescing, and `apply`; `crates/php-rewrite/src/tests` covers the PHP editor
-operations; `swlsp-lsp-codeaction` and `swlsp-lsp-inspections` cover
-presentation and end-to-end fix behavior.
+operations; the `codeaction` and `inspections` modules of the domain crates
+(`crates/ide-<domain>`) cover presentation and end-to-end fix behavior.
 
 ```bash
 cargo test -p swlsp-rewrite -p swlsp-php-rewrite
-cargo test -p swlsp-lsp-inspections -p swlsp-lsp-codeaction -p swlsp-lsp-refactor
+cargo test -p swlsp-ide-symfony -p swlsp-ide-twig -p swlsp-ide-admin
 shopware-lsp --root /path/to/project codeaction --kind quickfix src/Controller.php:24:18
 shopware-lsp --root /path/to/project rename -d src/Controller.php:24:18 NewName
 ```
@@ -610,7 +611,7 @@ client checks target versions again immediately before applying the returned edi
 and retains compatibility with older custom
 servers that apply the command themselves and return no edit.
 
-Command adapters live in `swlsp-lsp-commands`; domain indexes expose plain Rust
+Command adapters live in the `commands` modules of the domain crates; domain indexes expose plain Rust
 APIs. The same server snapshot resolver and plan validator serve these commands
 and rewrite quick fixes.
 

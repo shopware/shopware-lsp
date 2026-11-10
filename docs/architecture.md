@@ -98,7 +98,7 @@ change, not a bug fix.
                        │         └─ swlsp_lsp::Server  │  JSON-RPC, documents
                        │              └─ swlsp-app     │  composition root
                        │                   ├─ indexes  │  domain crates
-                       │                   ├─ providers│  crates/lsp-<feature>
+                       │                   ├─ providers│  crates/ide-<domain>  
                        │                   └─ store    │  one SQLite file
                        └──────────────────────────────┘
                                      │
@@ -128,13 +128,16 @@ Dependencies point **downward** only. A lower layer never imports a higher one.
 ├────────────────────────────────────────────────────────────────┤
 │  Composition          crates/app                               │
 │                       workspace.rs    → constructs indexes     │
-│                       providers*.rs   → registers providers    │
-│                       inspections.rs  → registers inspections  │
+│                       domains.rs      → lists the domains      │
+│                       precedence.rs   → orders their providers │
+├────────────────────────────────────────────────────────────────┤
+│  Domains              crates/ide-<domain>, crates/ide          │
+│                       register providers and inspections       │
 ├────────────────────────────────────────────────────────────────┤
 │  Protocol             crates/lsp, crates/lsp-protocol          │
 │                       server, documents, capabilities,         │
 │                       diagnostics infrastructure, protocol DTOs │
-│                       crates/lsp-<feature>  → providers        │
+│                       crates/ide-<domain>   → providers        │
 ├────────────────────────────────────────────────────────────────┤
 │  Domain               crates/symfony  crates/twig              │
 │                       crates/php      crates/admin             │
@@ -157,8 +160,9 @@ Two rules follow from this and are worth stating explicitly:
   provider, the wiring probably belongs in `app`.
 - **Domain crates do not depend on `swlsp-lsp`.** They expose plain Rust APIs
   over their indexes. The adapters that turn those into protocol responses live
-  in `crates/lsp-<feature>` and are wired in `crates/app/src/providers*.rs`.
-  (Analyzers in `swlsp-lsp-diagnostics` are the deliberate exception: they
+  in `crates/ide-<domain>`
+  and are registered by the domain's `register` function.
+  (Analyzers in the `diagnostics` modules of the domain crates are the deliberate exception: they
   sit in the LSP layer precisely because they produce `Problem` values.)
 
 ## Crate inventory
@@ -230,9 +234,8 @@ They are registered as `swlsp_indexer::Indexer` implementations in
 | --- | --- |
 | `lsp` | JSON-RPC server, method dispatch, document manager, capabilities, inspection/quick-fix infrastructure, protocol conversion |
 | `lsp-protocol` | Wire DTOs on top of `lsp-types`. No parser or domain state |
-| `lsp-completion`, `-definition`, `-hover`, `-reference`, `-codelens`, `-codeaction`, `-symbol`, `-semantic`, `-signature`, `-inlay`, `-folding`, `-formatting`, `-selection`, `-highlight`, `-linkedediting`, `-documentlink`, `-color`, `-callhierarchy`, `-refactor`, `-scaffold`, `-commands`, `-analytics` | Provider implementations |
-| `lsp-diagnostics` | Analyzers producing `Problem` values |
-| `lsp-inspections` | Inspection declarations binding analyzers to codes and fixes |
+| `ide` | The contract of the domain crates (`Registrar`, `Services`, `Domain`), the analyzer and inspection contracts, and per request kind the helpers the domains share |
+| `ide-php`, `ide-symfony`, `ide-twig`, `ide-style`, `ide-admin`, `ide-shopware` | One domain each: its providers for every request kind (`completion`, `definition`, `hover`, `reference`, `codelens`, `codeaction`, …), its analyzers (`diagnostics`) and inspections with quick fixes (`inspections`), and the `register` function that adds them to the server |
 | `lsp-phpsemantic`, `lsp-phpanalysis` | Adapters from the PHP semantic graph to LSP features |
 
 See [`lsp-server.md`](lsp-server.md) and
@@ -294,9 +297,9 @@ function (`build`). It:
 6. Resolves the Shopware target version.
 7. Registers each index with the scanner **if its domain is enabled**
    (`domain_for_indexer(index.id())` → domain name → configuration lookup).
-8. Calls `providers::register_features`, which fans out to
-   `providers_completion.rs`, `providers_definition.rs`, `providers_hover.rs`,
-   … and `inspections.rs`.
+8. Calls `domains::register_features`: every domain crate in `DOMAINS`
+   registers its providers and inspections on a `Registrar`, which then
+   applies them to the server in the order of `precedence.rs`.
 
 `close_workspace` tears down in reverse construction order: scanner, then indexers
 back-to-front, then the store.
@@ -467,11 +470,11 @@ for pair in tree.root().descendants().filter(|node| node.kind() == YAML_PAIR) {
 }
 ```
 
-**4. Serve.** `FeatureCompletionProvider` (`swlsp-lsp-completion`) answers in
+**4. Serve.** `FeatureCompletionProvider` (`swlsp-ide-shopware`) answers in
 four languages by asking each language's query module the same question:
 
 ```rust
-// crates/lsp-completion/src/domain/feature.rs
+// crates/ide-shopware/src/completion/shopware/feature.rs
 let matches = match swlsp_uriutil::filepath::ext(&request.params.text_document.uri) {
     ".twig" => swlsp_parser_twig::query::string_in_function(node, &["feature"]),
     ".scss" => swlsp_parser_scss::query::string_in_function(node, &["feature"]),
@@ -489,9 +492,9 @@ let matches = match swlsp_uriutil::filepath::ext(&request.params.text_document.u
 `request.node` is the CST node under the cursor, already resolved by
 `SyntaxContext`. The provider does no parsing and no scanning.
 
-**5. Register.** In `crates/app/src/providers_completion.rs`, constructed with
-its index and registered on the server. That is the only place the wiring
-exists.
+**5. Register.** In the `register` function of the feature's domain crate
+(`crates/ide-<domain>`), constructed with its index from `Services`. That is
+the only place the wiring exists.
 
 The whole feature is a small amount of production code across three files,
 because every layer it needs already exists.
@@ -504,9 +507,10 @@ because every layer it needs already exists.
 | Add a whole new language | a new `crates/parser-<lang>` + `crates/language/src/lib.rs` | [parser: adding a language](parser-architecture.md#adding-a-language) |
 | Ask a new question about a tree | `crates/parser-<lang>/src/query` | [parser: querying](parser-architecture.md#querying-nodes) |
 | Index a new kind of file or field | the domain crate + `crates/app/src/workspace.rs` | [indexing](indexing.md) |
-| Add completion / definition / hover / … | `crates/lsp-<feature>` + `crates/app/src/providers_*.rs` | [lsp server](lsp-server.md) |
-| Add a diagnostic | `crates/lsp-diagnostics` + `crates/lsp-inspections` + `crates/app/src/inspections.rs` | [diagnostics](diagnostics-pipeline.md) |
-| Add a quick fix or refactoring | `crates/rewrite`, `crates/lsp-codeaction`, `crates/lsp-refactor` | [refactoring](refactoring-engine.md) |
+| Add completion / definition / hover / … | `crates/ide-<domain>/src/<request kind>` + its `register` function | [lsp server](lsp-server.md) |
+| Add a diagnostic | `crates/ide-<domain>/src/diagnostics` (analyzer) + `src/inspections` (inspection, quick fix, registration) | [diagnostics](diagnostics-pipeline.md) |
+| Add a code lens or code action | `crates/ide-<domain>/src/codelens`, `src/codeaction` | [lsp server](lsp-server.md) |
+| Add a quick fix or refactoring | `crates/rewrite`, `crates/ide-<domain>/src/inspections`, `crates/ide-<domain>/src/refactor` | [refactoring](refactoring-engine.md) |
 | Change PHP type or inference behavior | `crates/php-types`, `crates/php-resolver`, `crates/php-inference` | [php engine](php-semantic-engine.md) |
 | Add a setting, domain, or rule | `crates/projectconfig` (+ schema, + gating, + VS Code model) | [reference](reference.md#project-configuration) |
 | Add a CLI command | `crates/cli` (`src/args.rs` declares commands and flags) | — |
@@ -530,7 +534,7 @@ higher-level test for the boundary a unit test cannot cover.
 | Parser | `crates/parser-<lang>` tests | Losslessness (root text == source), recovery on incomplete input, debug-tree shape |
 | Index | the domain crate | Extraction, update, removal, persistence across restart |
 | Query | `crates/parser-<lang>/src/query` tests | Structural questions, including negative cases |
-| Provider / analyzer | `crates/lsp-<feature>` | Domain behavior from a source string |
+| Provider / analyzer | `crates/ide-<domain>` | Domain behavior from a source string |
 | Server | `crates/lsp`, `crates/app` | Routing, UTF-16 positions, document lifecycle, lazy fixes |
 | Adapter | `crates/cli`, `editors/vscode`, `editors/zed` | One-based positions, diff previews, MCP shapes |
 

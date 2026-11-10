@@ -91,7 +91,7 @@ pub fn real_world_symbol_snapshot(
     workspace: &Workspace,
 ) -> BTreeMap<String, Vec<protocol::SymbolInformation>> {
     let s = workspace.services();
-    let provider = swlsp_lsp_symbol::SymfonyWorkspaceSymbolProvider::new(
+    let provider = swlsp_ide_symfony::symbol::SymfonyWorkspaceSymbolProvider::new(
         None,
         Some(s.routes.clone()),
         Some(s.console.clone()),
@@ -140,7 +140,7 @@ pub fn real_world_route_endpoint_snapshot(
         ],
     );
     let lenses = real_world_code_lenses(
-        &swlsp_lsp_codelens::RouteEndpointCodeLensProvider::new(
+        &swlsp_ide_symfony::codelens::RouteEndpointCodeLensProvider::new(
             Some(workspace.services().services.clone()),
             Some(php.clone()),
         ),
@@ -167,7 +167,7 @@ pub fn real_world_console_command_lens_snapshot(root: &str) -> Vec<protocol::Cod
         ],
     );
     let lenses = real_world_code_lenses(
-        &swlsp_lsp_codelens::ConsoleCommandCodeLensProvider::new(root),
+        &swlsp_ide_symfony::codelens::ConsoleCommandCodeLensProvider::new(root),
         &command,
     );
     require_code_lens_command(
@@ -216,7 +216,7 @@ pub fn real_world_related_navigation_snapshot(
         ],
     );
     let s = workspace.services();
-    let provider = swlsp_lsp_codelens::RelatedNavigationCodeLensProvider::new(
+    let provider = swlsp_ide_symfony::codelens::RelatedNavigationCodeLensProvider::new(
         Some(s.twig.clone()),
         Some(php.clone()),
         Some(s.routes.clone()),
@@ -543,7 +543,7 @@ pub fn real_world_controller_usage_snapshot(
         .expect("controller usages");
     assert!(!usages.is_empty());
     require_controller_usage_path(&usages, &template);
-    let provider = swlsp_lsp_codelens::ControllerRelatedCodeLensProvider::new(
+    let provider = swlsp_ide_symfony::codelens::ControllerRelatedCodeLensProvider::new(
         Some(s.route_usage.clone()),
         Some(s.services.clone()),
         Some(php.clone()),
@@ -606,7 +606,7 @@ pub fn real_world_service_navigation_snapshot(
             "data-abstraction-layer.php",
         ],
     );
-    let provider = swlsp_lsp_codelens::ServiceRelatedCodeLensProvider::new(
+    let provider = swlsp_ide_symfony::codelens::ServiceRelatedCodeLensProvider::new(
         Some(workspace.services().services.clone()),
         Some(php.clone()),
     );

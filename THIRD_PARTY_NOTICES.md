@@ -31,7 +31,7 @@ domain). The list covers every release target.
 
 | License | Crates |
 |---|---:|
-| MIT License | 277 |
+| MIT License | 263 |
 | Unicode License v3 | 19 |
 | Apache License 2.0 | 5 |
 | ISC License | 5 |
@@ -1574,6 +1574,41 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+
+````
+
+#### MIT License
+
+Used by:
+
+- [errno 0.3.14](https://github.com/lambda-fairy/rust-errno)
+
+````text
+Copyright (c) 2014 Chris Wong
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
 
 ````
 
@@ -3734,37 +3769,20 @@ Used by:
 - [swlsp-extension 0.1.0](https://crates.io/crates/swlsp-extension)
 - [swlsp-feature 0.1.0](https://crates.io/crates/swlsp-feature)
 - [swlsp-httpclient 0.1.0](https://crates.io/crates/swlsp-httpclient)
+- [swlsp-ide 0.1.0](https://crates.io/crates/swlsp-ide)
+- [swlsp-ide-admin 0.1.0](https://crates.io/crates/swlsp-ide-admin)
+- [swlsp-ide-php 0.1.0](https://crates.io/crates/swlsp-ide-php)
+- [swlsp-ide-shopware 0.1.0](https://crates.io/crates/swlsp-ide-shopware)
+- [swlsp-ide-style 0.1.0](https://crates.io/crates/swlsp-ide-style)
+- [swlsp-ide-symfony 0.1.0](https://crates.io/crates/swlsp-ide-symfony)
+- [swlsp-ide-twig 0.1.0](https://crates.io/crates/swlsp-ide-twig)
 - [swlsp-indexer 0.1.0](https://crates.io/crates/swlsp-indexer)
 - [swlsp-integration 0.1.0](https://crates.io/crates/swlsp-integration)
 - [swlsp-language 0.1.0](https://crates.io/crates/swlsp-language)
 - [swlsp-lsp 0.1.0](https://crates.io/crates/swlsp-lsp)
-- [swlsp-lsp-analytics 0.1.0](https://crates.io/crates/swlsp-lsp-analytics)
-- [swlsp-lsp-callhierarchy 0.1.0](https://crates.io/crates/swlsp-lsp-callhierarchy)
-- [swlsp-lsp-codeaction 0.1.0](https://crates.io/crates/swlsp-lsp-codeaction)
-- [swlsp-lsp-codelens 0.1.0](https://crates.io/crates/swlsp-lsp-codelens)
-- [swlsp-lsp-color 0.1.0](https://crates.io/crates/swlsp-lsp-color)
-- [swlsp-lsp-commands 0.1.0](https://crates.io/crates/swlsp-lsp-commands)
-- [swlsp-lsp-completion 0.1.0](https://crates.io/crates/swlsp-lsp-completion)
-- [swlsp-lsp-definition 0.1.0](https://crates.io/crates/swlsp-lsp-definition)
-- [swlsp-lsp-diagnostics 0.1.0](https://crates.io/crates/swlsp-lsp-diagnostics)
-- [swlsp-lsp-documentlink 0.1.0](https://crates.io/crates/swlsp-lsp-documentlink)
-- [swlsp-lsp-folding 0.1.0](https://crates.io/crates/swlsp-lsp-folding)
-- [swlsp-lsp-formatting 0.1.0](https://crates.io/crates/swlsp-lsp-formatting)
-- [swlsp-lsp-highlight 0.1.0](https://crates.io/crates/swlsp-lsp-highlight)
-- [swlsp-lsp-hover 0.1.0](https://crates.io/crates/swlsp-lsp-hover)
-- [swlsp-lsp-inlay 0.1.0](https://crates.io/crates/swlsp-lsp-inlay)
-- [swlsp-lsp-inspections 0.1.0](https://crates.io/crates/swlsp-lsp-inspections)
-- [swlsp-lsp-linkedediting 0.1.0](https://crates.io/crates/swlsp-lsp-linkedediting)
 - [swlsp-lsp-phpanalysis 0.1.0](https://crates.io/crates/swlsp-lsp-phpanalysis)
 - [swlsp-lsp-phpsemantic 0.1.0](https://crates.io/crates/swlsp-lsp-phpsemantic)
 - [swlsp-lsp-protocol 0.1.0](https://crates.io/crates/swlsp-lsp-protocol)
-- [swlsp-lsp-refactor 0.1.0](https://crates.io/crates/swlsp-lsp-refactor)
-- [swlsp-lsp-reference 0.1.0](https://crates.io/crates/swlsp-lsp-reference)
-- [swlsp-lsp-scaffold 0.1.0](https://crates.io/crates/swlsp-lsp-scaffold)
-- [swlsp-lsp-selection 0.1.0](https://crates.io/crates/swlsp-lsp-selection)
-- [swlsp-lsp-semantic 0.1.0](https://crates.io/crates/swlsp-lsp-semantic)
-- [swlsp-lsp-signature 0.1.0](https://crates.io/crates/swlsp-lsp-signature)
-- [swlsp-lsp-symbol 0.1.0](https://crates.io/crates/swlsp-lsp-symbol)
 - [swlsp-messenger 0.1.0](https://crates.io/crates/swlsp-messenger)
 - [swlsp-parser-js 0.1.0](https://crates.io/crates/swlsp-parser-js)
 - [swlsp-parser-json 0.1.0](https://crates.io/crates/swlsp-parser-json)
@@ -4052,6 +4070,7 @@ Used by:
 - [dyn-clone 1.0.20](https://github.com/dtolnay/dyn-clone)
 - [inventory 0.3.25](https://github.com/dtolnay/inventory)
 - [itoa 1.0.18](https://github.com/dtolnay/itoa)
+- [linux-raw-sys 0.12.1](https://github.com/sunfishcode/linux-raw-sys)
 - [once_cell 1.21.4](https://github.com/matklad/once_cell)
 - [pastey 0.2.3](https://github.com/as1100k/pastey)
 - [pin-project-lite 0.2.17](https://github.com/taiki-e/pin-project-lite)
@@ -4061,6 +4080,7 @@ Used by:
 - [ref-cast 1.0.27](https://github.com/dtolnay/ref-cast)
 - [rowan 0.16.1](https://github.com/rust-analyzer/rowan)
 - [rustc-hash 1.1.0](https://github.com/rust-lang-nursery/rustc-hash)
+- [rustix 1.1.6](https://github.com/bytecodealliance/rustix)
 - [serde 1.0.229](https://github.com/serde-rs/serde)
 - [serde_core 1.0.229](https://github.com/serde-rs/serde)
 - [serde_derive 1.0.229](https://github.com/serde-rs/serde)

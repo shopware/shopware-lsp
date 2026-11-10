@@ -18,6 +18,7 @@ name = "shopware-lsp"
 path = "src/main.rs"
 
 [dependencies]
+swlsp-ide-shopware = { path = "../ide-shopware" }
 tokio.workspace = true
 tokio-util.workspace = true
 rmcp.workspace = true
@@ -31,7 +32,6 @@ swlsp-integration = { path = "../integration" }
 swlsp-language = { path = "../language" }
 swlsp-projectconfig = { path = "../projectconfig" }
 swlsp-projectdetect = { path = "../projectdetect" }
-swlsp-lsp-scaffold = { path = "../lsp-scaffold" }
 swlsp-shopware-entityschema = { path = "../shopware-entityschema" }
 swlsp-uriutil = { path = "../uriutil" }
 serde = { version = "1", features = ["derive"] }

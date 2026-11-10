@@ -751,3 +751,44 @@ fn workspace_indexes_and_restores_inherited_twig_blocks() {
     assert_eq!(blocks, restored);
     reopened.close_workspace().unwrap();
 }
+
+#[test]
+fn every_domain_registers_and_the_precedence_lists_only_registered_providers() {
+    let cache = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let workspace = open_workspace(project.path(), cache.path());
+    let registered = |method: &str| -> Vec<&str> {
+        workspace
+            .registrations()
+            .iter()
+            .filter(|registration| registration.method == method)
+            .map(|registration| registration.name.as_str())
+            .collect()
+    };
+
+    for (method, names) in crate::precedence::PRECEDENCE.0 {
+        if *method == "workspaceSymbolSource" {
+            // Sources are folded into the one workspace symbol provider.
+            continue;
+        }
+        // Listed providers come first, in the listed order: a stale entry
+        // or a renamed type shows up here.
+        let applied = registered(method);
+        assert_eq!(
+            applied[..names.len().min(applied.len())],
+            **names,
+            "precedence of {method}"
+        );
+    }
+    assert_eq!(
+        registered("workspaceSymbol"),
+        ["ide.CatalogWorkspaceSymbolProvider"]
+    );
+    assert_eq!(registered("contextEnricher"), ["php"]);
+    assert_eq!(
+        registered("suppressions"),
+        ["php", "twig", "yaml", "xml", "javascript", "scss"]
+    );
+    assert_eq!(crate::DOMAINS.len(), 6);
+    workspace.close_workspace().unwrap();
+}

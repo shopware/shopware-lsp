@@ -239,7 +239,7 @@ server. Re-run `zed: install dev extension` first.
       valid `MarkupKind`, so Zed drops the whole list. Fixed upstream in
       shopware/shopware-lsp#65.
 - [x] Diagnostics appear (unused imports are a reliable source). Expect no
-      squiggle: `crates/lsp-inspections/src/shopware/php_imports.rs` sends unused imports as severity
+      squiggle: `crates/ide-shopware/src/inspections/shopware/php_imports.rs` sends unused imports as severity
       Hint tagged Unnecessary, which Zed renders as faded text, so the import
       just looks dimmer than its neighbours. Hover names the rule
       (`shopware-php php.unusedImport`). Turn on `diagnostics.inline` if that

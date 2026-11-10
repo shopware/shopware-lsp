@@ -11,8 +11,9 @@ use swlsp_admin::{
     normalize_prop_name, static_component_name_for_tag, twig_directive_references,
     twig_dynamic_component_selector, vue_object_binding_fields, vue_prop_allowed_values,
 };
+use swlsp_ide::diagnostics::ProblemAnalyzer;
+use swlsp_ide_admin::diagnostics::AdminAnalyzer;
 use swlsp_lsp::{Context, TextDocument};
-use swlsp_lsp_diagnostics::{AdminAnalyzer, ProblemAnalyzer};
 use swlsp_parser_twig::ast::AstNode;
 use swlsp_parser_twig::{ast as twigast, query as twigquery, syntax as twigsyntax};
 
