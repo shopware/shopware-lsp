@@ -1,6 +1,7 @@
 //! Global class completion qualification and import planning.
 
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use swlsp_lsp::CompletionRequest;
 use swlsp_lsp_protocol::TextEdit;
@@ -33,6 +34,9 @@ pub(crate) struct GlobalCompletionContext<'a> {
     local_classes: HashMap<String, String>,
     import_offset: u32,
     has_imports: bool,
+    /// The Composer ownership of namespaces and the package of the current
+    /// document, built on first use: sorting asks for every candidate.
+    packages: OnceLock<(Packages, String)>,
 }
 
 impl<'a> GlobalCompletionContext<'a> {
@@ -54,6 +58,7 @@ impl<'a> GlobalCompletionContext<'a> {
             local_classes: HashMap::new(),
             import_offset: 0,
             has_imports: false,
+            packages: OnceLock::new(),
         };
         if let Some(document) = document {
             context.namespace = document.namespace.to_string();
@@ -186,11 +191,7 @@ impl<'a> GlobalCompletionContext<'a> {
             0
         } else if imported {
             1
-        } else if same_completion_package(
-            self.project,
-            &symbol.fully_qualified,
-            &format!("{}\\_CurrentDocument", self.namespace),
-        ) {
+        } else if self.in_current_package(&symbol.fully_qualified) {
             2
         } else {
             3
@@ -270,6 +271,94 @@ fn completion_match(prefix: &str, name: &str, fully_qualified: &str) -> u8 {
     }
 }
 
+impl GlobalCompletionContext<'_> {
+    /// Whether `fully_qualified` belongs to the Composer package of the
+    /// current document; without Composer ownership, whether both share
+    /// the first namespace segment.
+    fn in_current_package(&self, fully_qualified: &str) -> bool {
+        let current_document = || format!("{}\\_CurrentDocument", self.namespace);
+        let (packages, current) = self.packages.get_or_init(|| {
+            let packages = Packages::of(self.project);
+            let current = packages.package(&current_document()).into_owned();
+            (packages, current)
+        });
+        let package = packages.package(fully_qualified);
+        if !package.is_empty() && !current.is_empty() {
+            return eq_ignore_case(&package, current);
+        }
+        same_namespace_package(
+            namespace_name(fully_qualified),
+            namespace_name(&current_document()),
+        )
+    }
+}
+
+/// Which Composer package owns a namespace, by PSR-4 prefix. Completion
+/// ranks every global class by it, so the prefixes are hashed once instead
+/// of being compared against each candidate.
+pub(crate) struct Packages {
+    /// Lowercased prefix without surrounding backslashes → package name
+    /// (`@root` for the project itself).
+    by_prefix: HashMap<String, String>,
+    /// The model, for names or prefixes outside ASCII: their case folding
+    /// is not plain lowercasing.
+    fallback: Option<Model>,
+}
+
+impl Packages {
+    pub(crate) fn of(model: Option<&Model>) -> Self {
+        let mut by_prefix = HashMap::new();
+        let Some(model) = model else {
+            return Packages {
+                by_prefix,
+                fallback: None,
+            };
+        };
+        let root = model.psr4.keys().map(|prefix| (prefix, "@root"));
+        let dependencies = model.dependencies.iter().flat_map(|dependency| {
+            dependency
+                .psr4
+                .keys()
+                .map(|prefix| (prefix, dependency.name.as_str()))
+        });
+        let mut ascii = true;
+        // The first owner of a prefix wins, as in `completion_package`.
+        for (prefix, package) in root.chain(dependencies) {
+            let prefix = prefix.trim_matches('\\');
+            ascii &= prefix.is_ascii();
+            if !prefix.is_empty() {
+                by_prefix
+                    .entry(prefix.to_ascii_lowercase())
+                    .or_insert_with(|| package.to_owned());
+            }
+        }
+        Packages {
+            by_prefix,
+            fallback: (!ascii).then(|| model.clone()),
+        }
+    }
+
+    /// The package owning `fully_qualified`: the longest prefix that ends
+    /// at a namespace boundary. Empty when no package claims it.
+    pub(crate) fn package(&self, fully_qualified: &str) -> std::borrow::Cow<'_, str> {
+        let name = fully_qualified.trim_matches('\\');
+        if self.fallback.is_some() || !name.is_ascii() {
+            return completion_package(self.fallback.as_ref(), name).into();
+        }
+        let name = name.to_ascii_lowercase();
+        let mut end = name.len();
+        loop {
+            if let Some(package) = self.by_prefix.get(&name[..end]) {
+                return package.as_str().into();
+            }
+            match name[..end].rfind('\\') {
+                Some(separator) => end = separator,
+                None => return "".into(),
+            }
+        }
+    }
+}
+
 pub(crate) fn namespace_name(name: &str) -> &str {
     let name = name.trim_matches('\\');
     name.rfind('\\').map_or("", |separator| &name[..separator])
@@ -287,16 +376,7 @@ fn same_namespace_package(left: &str, right: &str) -> bool {
     !left.is_empty() && !right.is_empty() && eq_ignore_case(left, right)
 }
 
-pub(crate) fn same_completion_package(model: Option<&Model>, left: &str, right: &str) -> bool {
-    let left_package = completion_package(model, left);
-    let right_package = completion_package(model, right);
-    if !left_package.is_empty() && !right_package.is_empty() {
-        return eq_ignore_case(&left_package, &right_package);
-    }
-    same_namespace_package(namespace_name(left), namespace_name(right))
-}
-
-fn completion_package(model: Option<&Model>, fully_qualified: &str) -> String {
+pub(crate) fn completion_package(model: Option<&Model>, fully_qualified: &str) -> String {
     let Some(model) = model else {
         return String::new();
     };

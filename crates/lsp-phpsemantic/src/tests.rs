@@ -25,7 +25,7 @@ use swlsp_uriutil::file_uri;
 use tempfile::TempDir;
 
 use crate::Provider;
-use crate::completion_imports::same_completion_package;
+use crate::completion_imports::{Packages, completion_package};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1370,30 +1370,50 @@ class Consumer { public function run(): void { Pro } }
 
 #[test]
 fn php_completion_package_uses_composer_psr4_ownership() {
+    let package = |name: &str, prefixes: &[&str]| Package {
+        name: name.into(),
+        psr4: prefixes
+            .iter()
+            .map(|prefix| ((*prefix).to_owned(), vec![PathBuf::from("src")]))
+            .collect(),
+        ..Package::default()
+    };
     let model = Model {
         psr4: [("App\\".to_owned(), vec![PathBuf::from("src")])].into(),
-        dependencies: vec![Package {
-            name: "vendor/library".into(),
-            psr4: [("Vendor\\Library\\".to_owned(), vec![PathBuf::from("src")])].into(),
-            ..Package::default()
-        }],
+        dependencies: vec![
+            package("vendor/library", &["Vendor\\Library\\", "Vendor\\"]),
+            // A later owner of the same prefix loses.
+            package("vendor/duplicate", &["vendor\\library\\"]),
+        ],
         ..Model::default()
     };
-    assert!(same_completion_package(
-        Some(&model),
-        "App\\Domain\\Product",
-        "App\\Service\\Consumer"
-    ));
-    assert!(!same_completion_package(
-        Some(&model),
-        "Vendor\\Library\\Product",
-        "App\\Service\\Consumer"
-    ));
-    assert!(same_completion_package(
-        Some(&model),
-        "Vendor\\Library\\Product",
-        "Vendor\\Library\\Factory"
-    ));
+    let packages = Packages::of(Some(&model));
+    for (name, expected) in [
+        ("App\\Domain\\Product", "@root"),
+        ("\\app\\Service\\Consumer", "@root"),
+        // The longest prefix wins, and only at a namespace boundary.
+        ("Vendor\\Library\\Product", "vendor/library"),
+        ("VENDOR\\LIBRARY", "vendor/library"),
+        ("Vendor\\LibraryTools\\Product", "vendor/library"),
+        ("Vendor\\Other", "vendor/library"),
+        ("Application\\Product", ""),
+        ("Unowned", ""),
+        ("", ""),
+    ] {
+        assert_eq!(packages.package(name), expected, "{name}");
+        // The hashed lookup answers exactly like the linear scan.
+        assert_eq!(completion_package(Some(&model), name), expected, "{name}");
+    }
+    assert_eq!(Packages::of(None).package("App\\Product"), "");
+
+    // Outside ASCII, case folding is not lowercasing: the scan decides.
+    let model = Model {
+        psr4: [("Stra\u{df}e\\".to_owned(), vec![PathBuf::from("src")])].into(),
+        ..Model::default()
+    };
+    let packages = Packages::of(Some(&model));
+    assert_eq!(packages.package("Stra\u{df}e\\Haus"), "@root");
+    assert_eq!(packages.package("Other\\Haus"), "");
 }
 
 // ---------------------------------------------------------------------------
