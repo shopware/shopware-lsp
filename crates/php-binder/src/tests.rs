@@ -131,8 +131,6 @@ fn binder_declares_top_level_foreach_locals() {
 #[test]
 fn non_class_native_type_name_matches_builtin_type_vocabulary() {
     let builtins = [
-        "unknown",
-        "error",
         "never",
         "mixed",
         "void",
@@ -148,7 +146,6 @@ fn non_class_native_type_name_matches_builtin_type_vocabulary() {
         "non-negative-int",
         "float",
         "double",
-        "number",
         "string",
         "non-empty-string",
         "numeric-string",
@@ -162,7 +159,6 @@ fn non_class_native_type_name_matches_builtin_type_vocabulary() {
         "non-empty-list",
         "iterable",
         "callable",
-        "closure",
         "class-string",
         "interface-string",
         "trait-string",
@@ -175,6 +171,11 @@ fn non_class_native_type_name_matches_builtin_type_vocabulary() {
         assert!(non_class_native_type_name(&format!("\\{name}")), "{name}");
     }
     for name in [
+        // Ordinary class names, although the type parser reads them as types.
+        "Closure",
+        "Error",
+        "Number",
+        "Unknown",
         "App\\Product",
         "Product",
         "self",
@@ -1274,4 +1275,61 @@ fn declaration_set_tracks_identities_and_deduplicates() {
         .filter(|reference| &*reference.name == "$first")
         .count();
     assert_eq!(first_refs, 2);
+}
+
+#[test]
+fn constant_expressions_and_commented_names_reference_their_classes() {
+    let source = r#"<?php
+namespace App;
+
+use Lib\{Acl, Service, Field, Types, Flag, Size, Fallback, Result, Closure, Error, Rule};
+
+#[Route(defaults: ['_acl' => [Acl::READ]])]
+enum Example: string
+{
+    case One = Flag::ONE;
+    private const TYPES = [Field::class => Types::JSON];
+    public static array $sizes = [Size::SMALL];
+
+    public function __construct(
+        #[Autowire(service: Service::class)]
+        private object $service = new Fallback(),
+    ) {}
+
+    public function run(Closure $callback): void
+    {
+        try {
+            $callback(
+                // a comment before the name
+                Result::info('x'),
+            );
+        } catch (Error) {
+        }
+        array_map(static fn (array $tax) => new Rule($tax), []);
+    }
+}
+"#;
+    let document = bind("/example.php", source);
+    let mut classes: Vec<&str> = document
+        .references
+        .iter()
+        .filter(|reference| reference.kind == NameKind::Class)
+        .map(|reference| &*reference.name)
+        .collect();
+    classes.sort_unstable();
+    classes.dedup();
+    assert_eq!(
+        classes,
+        [
+            "Acl", "Autowire", "Closure", "Error", "Fallback", "Field", "Flag", "Result", "Route",
+            "Rule", "Service", "Size", "Types",
+        ]
+    );
+    // The reference starts at the name, not at the comment before it.
+    let result = document
+        .references
+        .iter()
+        .find(|reference| &*reference.name == "Result")
+        .unwrap();
+    assert_eq!(&source[result.range], "Result");
 }

@@ -78,6 +78,32 @@ impl Builder<'_> {
                         &SymbolId::default(),
                     );
                 }
+                // `#[Route(defaults: ['_acl' => [Privileges::READ]])]`
+                if let Some(arguments) = attribute.child_node_of_kind(PHP_ARGUMENT_LIST) {
+                    self.bind_body(&arguments, scope, context, &SymbolId::default());
+                }
+            }
+        }
+    }
+
+    /// Binds the references in the values a declaration assigns with `=`:
+    /// constant values, property and parameter defaults, enum case values
+    /// (`const TYPES = [Field::class => Types::JSON]`).
+    pub(crate) fn bind_value_references(
+        &mut self,
+        node: &SyntaxNode,
+        scope: ScopeId,
+        context: &NameContext,
+        owner: &SymbolId,
+    ) {
+        let mut value = false;
+        for child in node.children_with_tokens() {
+            if child.kind() == TK_EQUALS {
+                value = true;
+            } else if let Some(child) = child.as_node()
+                && std::mem::take(&mut value)
+            {
+                self.bind_body_node(child, scope, context, owner);
             }
         }
     }
@@ -125,7 +151,7 @@ impl Builder<'_> {
         qualified: Vec<String>,
     ) {
         let mut reference = Reference {
-            name: compact_name(self.text(node)).into(),
+            name: compact_name(&self.source[node.trimmed()]).into(),
             kind,
             range: node.trimmed(),
             scope,
@@ -143,7 +169,7 @@ impl Builder<'_> {
         qualified: &str,
     ) {
         let mut reference = Reference {
-            name: compact_name(self.text(node)).into(),
+            name: compact_name(&self.source[node.trimmed()]).into(),
             kind,
             range: node.trimmed(),
             scope,
@@ -168,7 +194,10 @@ impl Builder<'_> {
     }
 }
 
-/// Mirrors the scalar/composite names accepted by the shared type parser.
+/// Mirrors the scalar/composite names accepted by the shared type parser,
+/// except the ones that are ordinary class names in PHP (`Closure`,
+/// `Error`, `Number`, `Unknown`): a native type or a `::` receiver with
+/// such a name refers to that class and uses its import.
 /// Native CST references only need to distinguish these builtins from class
 /// names.
 pub(crate) fn non_class_native_type_name(name: &str) -> bool {
@@ -176,9 +205,9 @@ pub(crate) fn non_class_native_type_name(name: &str) -> bool {
     let candidates: &[&str] = match name.len() {
         3 => &["int"],
         4 => &["void", "null", "bool", "true", "list"],
-        5 => &["error", "never", "mixed", "false", "float", "array"],
-        6 => &["double", "number", "string", "object"],
-        7 => &["unknown", "boolean", "integer", "closure"],
+        5 => &["never", "mixed", "false", "float", "array"],
+        6 => &["double", "string", "object"],
+        7 => &["boolean", "integer"],
         8 => &["resource", "iterable", "callable"],
         9 => &["array-key"],
         11 => &["enum-string"],

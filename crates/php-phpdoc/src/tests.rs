@@ -297,3 +297,26 @@ fn visit_reference_names_collects_type_and_annotation_names() {
         ]
     );
 }
+
+#[test]
+fn visit_reference_names_collects_inline_see_and_link_targets() {
+    let mut names = Vec::new();
+    visit_reference_names(
+        r#"/**
+ * Telemetry collaborator for {@see CartCalculator}: times a cart.
+ * Decoded as {@see UnknownConditionRule::match()}, see {@link Docs\Page}
+ * and {@link https://example.com/docs}; {@see self::run()} is local.
+ * {@inheritDoc}
+ */"#,
+        |name| names.push(name.to_owned()),
+    );
+    assert_eq!(
+        names,
+        [
+            "CartCalculator",
+            "UnknownConditionRule",
+            "Docs\\Page",
+            "self"
+        ]
+    );
+}

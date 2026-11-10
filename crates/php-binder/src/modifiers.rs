@@ -151,7 +151,7 @@ pub(crate) fn bind_attributes(
             let Some(name_node) = attribute.child_node_of_kind(PHP_NAME) else {
                 continue;
             };
-            let name = context.resolve_class(&compact_name(text(source, &name_node)));
+            let name = context.resolve_class(&compact_name(&source[name_node.trimmed()]));
             let arguments = if retain_attribute_arguments(&name) {
                 bind_attribute_arguments(&attribute, context, source)
             } else {

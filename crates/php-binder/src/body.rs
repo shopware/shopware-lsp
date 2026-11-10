@@ -519,7 +519,9 @@ impl Builder<'_> {
             .filter(|child| child.kind() != PHP_PARAMETER_LIST && !is_type_node(child.kind()))
             .last();
         if let Some(child) = last {
-            self.bind_body(&child, closure_scope, context, &id);
+            // The arrow function's expression is itself a reference
+            // (`fn () => new Rule()`), not only a parent of references.
+            self.bind_body_node(&child, closure_scope, context, &id);
         }
     }
 

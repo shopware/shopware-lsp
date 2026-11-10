@@ -713,6 +713,7 @@ impl<'s> Builder<'s> {
         self.mark_declaration(variable.as_ref());
         self.bind_direct_type_references(node, scope, context, container);
         self.bind_attribute_references(node, scope, context);
+        self.bind_value_references(node, scope, context, container);
         let identity = variable.as_ref().map(node_identity).unwrap_or_default();
         self.doc.set_type_fact(
             identity,
@@ -756,6 +757,7 @@ impl<'s> Builder<'s> {
             self.bind_native_type(&crate::fast::direct_type_text(node, self.source), context);
         self.bind_direct_type_references(node, scope, context, container);
         self.bind_attribute_references(node, scope, context);
+        self.bind_value_references(node, scope, context, container);
         let documentation = swlsp_php_phpdoc::parse(leading_doc_comment(node, self.source));
         let templates = self.container_template_names(container);
         for variable in node.children().filter(|child| child.kind() == PHP_VARIABLE) {
@@ -828,6 +830,7 @@ impl<'s> Builder<'s> {
         };
         self.bind_direct_type_references(node, scope, context, container);
         self.bind_attribute_references(node, scope, context);
+        self.bind_value_references(node, scope, context, container);
         let documentation = swlsp_php_phpdoc::parse(leading_doc_comment(node, self.source));
         let attributes = bind_attributes(node, context, self.source);
         let mut expect_name = false;
@@ -949,6 +952,7 @@ impl<'s> Builder<'s> {
         self.add_symbol(scope, symbol);
         self.mark_declaration(name_node.as_ref());
         self.bind_attribute_references(node, scope, context);
+        self.bind_value_references(node, scope, context, container);
     }
 
     pub(crate) fn bind_native_type(&self, source: &str, context: &NameContext) -> Type {

@@ -7,6 +7,7 @@ use crate::{LogicalLineScanner, split_tag, split_type_and_description, split_typ
 pub fn visit_reference_names(source: &str, mut visit: impl FnMut(&str)) {
     let mut lines = LogicalLineScanner::new(source);
     while let Some(line) = lines.next_line() {
+        visit_inline_references(&line, &mut visit);
         if !line.starts_with('@') {
             continue;
         }
@@ -36,6 +37,35 @@ pub fn visit_reference_names(source: &str, mut visit: impl FnMut(&str)) {
             annotation,
         );
         visit_doc_names(value, &mut visit, annotation);
+    }
+}
+
+/// The class of an inline `{@see Name}`, `{@see Name::member()}` or
+/// `{@link Name}`, wherever it stands in the text.
+fn visit_inline_references(line: &str, visit: &mut dyn FnMut(&str)) {
+    let mut rest = line;
+    while let Some(start) = rest.find("{@") {
+        rest = &rest[start + 2..];
+        let Some(target) = ["see", "link", "uses"]
+            .iter()
+            .find_map(|tag| rest.strip_prefix(tag))
+            .and_then(|after| after.strip_prefix([' ', '\t']))
+        else {
+            continue;
+        };
+        let target = target.trim_start();
+        let end = target
+            .find(|character: char| {
+                !(character.is_alphanumeric() || character == '_' || character == '\\')
+            })
+            .unwrap_or(target.len());
+        let name = &target[..end];
+        // A URL (`{@link https://…}`) or a member of the current class
+        // (`{@see self::run()}`) names no import.
+        let follows = &target[end..];
+        if !name.is_empty() && !follows.starts_with("://") {
+            visit(name);
+        }
     }
 }
 
