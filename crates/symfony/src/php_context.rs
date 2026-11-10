@@ -128,7 +128,20 @@ pub fn php_attribute_reference_at(node: &SyntaxNode) -> PhpConfigReferenceKind {
             }
             Kind::None
         }
-        "AutowireLocator" if first || argument_name == "services" || argument_name == "exclude" => {
+        // `services` is a tag name when it is a string and a list of service
+        // ids when it is an array.
+        "AutowireLocator" if argument_name == "services" || (first && argument_name.is_empty()) => {
+            let direct = index
+                .and_then(|index| phpquery::argument_expression(&attribute, index))
+                .is_some_and(|value| value.text_range() == literal.text_range());
+            if direct { Kind::Tag } else { Kind::Service }
+        }
+        "AutowireIterator" if argument_name == "tag" || (first && argument_name.is_empty()) => {
+            Kind::Tag
+        }
+        "AutowireLocator" | "AutowireIterator" | "TaggedIterator" | "TaggedLocator"
+            if argument_name == "exclude" =>
+        {
             Kind::Service
         }
         "AutowireServiceClosure" | "AutowireMethodOf" if first || argument_name == "service" => {

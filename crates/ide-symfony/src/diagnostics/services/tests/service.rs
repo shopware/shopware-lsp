@@ -126,6 +126,10 @@ class Example {
         services: ['{|symfony.service.missing:app.locator_missing|}', 'app.existing'],
         exclude: '{|symfony.service.missing:app.exclude_missing|}',
     )]
+    // A string names a tag, not a service: Symfony collects whatever
+    // carries it.
+    #[\Symfony\Component\DependencyInjection\Attribute\AutowireLocator('app.some_tag', indexAttribute: 'name')]
+    #[\Symfony\Component\DependencyInjection\Attribute\AutowireIterator('app.some_tag', exclude: '{|symfony.service.missing:app.iterator_exclude_missing|}')]
     public function run(ContainerInterface $container, Other $other): void {
         $container->get('{|symfony.service.missing:app.missing|}');
         $container->get('app.existing');

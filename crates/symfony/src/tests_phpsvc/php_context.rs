@@ -70,6 +70,40 @@ class Example {}
 }
 
 #[test]
+fn php_attribute_reference_at_tells_locator_tags_from_services() {
+    use PhpConfigReferenceKind::{None as N, Service as S, Tag as T};
+    for (attribute, expected) in [
+        // A string is a tag name, an array lists service ids.
+        (
+            "#[AutowireLocator('app.tag', indexAttribute: 'name')]",
+            vec![T, N],
+        ),
+        ("#[AutowireLocator(services: 'app.tag')]", vec![T]),
+        ("#[AutowireLocator(['app.one', 'app.two'])]", vec![S, S]),
+        (
+            "#[AutowireIterator('app.tag', exclude: 'app.excluded')]",
+            vec![T, S],
+        ),
+        (
+            "#[AutowireIterator(tag: 'app.tag', exclude: ['app.excluded'])]",
+            vec![T, S],
+        ),
+        (
+            "#[TaggedIterator('app.tag', exclude: 'app.excluded')]",
+            vec![T, S],
+        ),
+    ] {
+        let root =
+            swlsp_parser_php::parse(&format!("<?php\n{attribute}\nclass Example {{}}\n")).root();
+        let references: Vec<_> = phpquery::nodes(&root, &[PHP_STRING])
+            .iter()
+            .map(php_attribute_reference_at)
+            .collect();
+        assert_eq!(references, expected, "{attribute}");
+    }
+}
+
+#[test]
 fn php_autowire_callable_method_at_reads_receiver() {
     let root = swlsp_parser_php::parse(
         r"<?php
