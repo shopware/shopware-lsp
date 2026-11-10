@@ -1333,3 +1333,46 @@ enum Example: string
         .unwrap();
     assert_eq!(&source[result.range], "Result");
 }
+
+#[test]
+fn bc_change_attributes_keep_their_arguments() {
+    let document = bind(
+        "/project/vendor/Entity.php",
+        r#"<?php
+namespace Shopware\Core\Checkout;
+
+use Shopware\Core\Framework\Context;
+use Shopware\Core\Framework\Deprecation\BCChange\ParameterDefaultValueChange;
+use Shopware\Core\Framework\Deprecation\BCChange\ParameterTypeWidening;
+
+class Address {}
+
+class Entity
+{
+    #[ParameterTypeWidening(version: 'v6.8.0', parameterName: 'address', newType: '?' . Address::class)]
+    #[ParameterDefaultValueChange(version: 'v6.8.0', parameterName: 'scopes', newDefaultValue: [])]
+    public function assign(Address $address, array $scopes = [Context::SYSTEM_SCOPE], int $limit = 5): void {}
+}
+"#,
+    );
+    let method = find(&document, SymbolKind::Method, "assign");
+    let widening = &method.attributes()[0];
+    assert_eq!(
+        widening.argument("version", 0).unwrap().value.as_str(),
+        "v6.8.0"
+    );
+    // A concatenation of strings and class names is a string.
+    let new_type = widening.argument("newType", 2).unwrap();
+    assert_eq!(new_type.kind, AttributeValueKind::String);
+    assert_eq!(
+        new_type.value.as_str(),
+        "?Shopware\\Core\\Checkout\\Address"
+    );
+    // Only the default that is announced to change is kept.
+    let scopes = method.parameters[1].default_value.as_deref().unwrap();
+    assert_eq!(
+        scopes.items[0].value.value.as_str(),
+        "Shopware\\Core\\Framework\\Context::SYSTEM_SCOPE"
+    );
+    assert!(method.parameters[2].default_value.is_none());
+}

@@ -549,8 +549,10 @@ impl<'s> Builder<'s> {
         self.bind_direct_type_references(node, function_scope, context, container);
         self.bind_attribute_references(node, function_scope, context);
         let constructor = !container.is_empty() && eq_ignore_case(&name, "__construct");
+        let changing_defaults =
+            crate::planned_parameters::changing_defaults(&self.doc.symbols[symbol_index as usize]);
         for parameter_node in &parameters {
-            let parameter = self.bind_parameter(
+            let mut parameter = self.bind_parameter(
                 parameter_node,
                 function_scope,
                 context,
@@ -558,6 +560,20 @@ impl<'s> Builder<'s> {
                 &documentation,
                 &doc_templates,
             );
+            // The current default is what callers must pass to keep it.
+            if parameter.default_value.is_none()
+                && changing_defaults
+                    .iter()
+                    .any(|name| eq_ignore_case(name, parameter.name.trim_start_matches('$')))
+                && let Some(default) = query::parameter_default(parameter_node)
+            {
+                parameter.default_value = Some(Box::new(bind_attribute_value(
+                    &default,
+                    context,
+                    0,
+                    self.source,
+                )));
+            }
             let promoted = constructor && parameter.flags.has(Flags::PROMOTED);
             if promoted {
                 self.bind_promoted_property(

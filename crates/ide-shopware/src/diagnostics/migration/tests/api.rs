@@ -9,7 +9,7 @@ use crate::diagnostics::ProblemAnalyzer;
 
 #[test]
 fn shopware_api_migration_tables_cover_rector_configuration() {
-    assert_eq!(API_CLASS_MIGRATIONS.len(), 19);
+    assert_eq!(API_CLASS_MIGRATIONS.len(), 25);
     assert_eq!(API_METHOD_MIGRATIONS.len(), 53);
     assert_eq!(API_STATIC_METHOD_MIGRATIONS.len(), 1);
     assert_eq!(API_CONSTANT_MIGRATIONS.len(), 35);

@@ -29,7 +29,7 @@ impl QuickFix for DeclarationMigrationFix {
                 "interface-class" | "interface-parameter" | "interface-property" => {
                     "Shopware: Replace interface with abstract class"
                 }
-                "parameter-add" => "Shopware: Add required method parameter",
+                "parameter-add" => "Shopware: Add method parameter",
                 "parameter-type" | "return-type" => "Shopware: Update native type",
                 _ => "Shopware: Update declaration",
             }
@@ -124,21 +124,25 @@ impl RewriteQuickFix for DeclarationMigrationFix {
     }
 }
 
-/// Imports a class type (keeping `?`) and returns native types unchanged.
+/// Imports the classes of a native type (keeping `?` and `|`) and returns
+/// the other alternatives unchanged.
 fn migration_type_reference(editor: &mut Editor, type_text: &str) -> Result<String, BoxError> {
     let type_text = type_text.trim();
     if type_text.is_empty() {
         return Err(invalid("migration type is empty"));
     }
-    let unprefixed = type_text.strip_prefix('?').unwrap_or(type_text);
-    if !unprefixed.contains('\\') {
-        return Ok(type_text.to_owned());
+    let (alternatives, nullable) = match type_text.strip_prefix('?') {
+        Some(rest) => (rest, "?"),
+        None => (type_text, ""),
+    };
+    let mut references = Vec::new();
+    for alternative in alternatives.split('|') {
+        let alternative = alternative.trim();
+        references.push(if alternative.contains('\\') {
+            editor.class_reference(alternative.trim_matches('\\'))?
+        } else {
+            alternative.to_owned()
+        });
     }
-    let nullable = type_text.starts_with('?');
-    let reference = editor.class_reference(unprefixed.trim_matches('\\'))?;
-    Ok(if nullable {
-        format!("?{reference}")
-    } else {
-        reference
-    })
+    Ok(format!("{nullable}{}", references.join("|")))
 }

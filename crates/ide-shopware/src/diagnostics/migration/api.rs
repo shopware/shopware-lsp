@@ -15,6 +15,7 @@ use swlsp_php_semantic::{Document, NameKind, Reference, Snapshot, SymbolKind};
 use swlsp_syntax::{Kind, SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
 use swlsp_textutil::{eq_ignore_case, lowercase};
 
+use super::bc_changes::announced_class_move;
 use super::{
     ShopwareMigrationAnalyzer, ShopwareMigrationEdit, ShopwareMigrationPayload, migration_problem,
     node_text,
@@ -206,6 +207,36 @@ pub(crate) const API_CLASS_MIGRATIONS: &[ApiClassMigration] = &[
         since(6, 0),
         "Shopware\\Core\\Framework\\Api\\Exception\\ExceptionFailedException",
         "Shopware\\Core\\Framework\\Api\\Exception\\ExpectationFailedException",
+    ),
+    class(
+        since(8, 0),
+        "Shopware\\Administration\\Controller\\NotificationController",
+        "Shopware\\Core\\Framework\\Notification\\Api\\NotificationController",
+    ),
+    class(
+        since(8, 0),
+        "Shopware\\Administration\\Notification\\NotificationCollection",
+        "Shopware\\Core\\Framework\\Notification\\NotificationCollection",
+    ),
+    class(
+        since(8, 0),
+        "Shopware\\Administration\\Notification\\NotificationDefinition",
+        "Shopware\\Core\\Framework\\Notification\\NotificationDefinition",
+    ),
+    class(
+        since(8, 0),
+        "Shopware\\Administration\\Notification\\NotificationEntity",
+        "Shopware\\Core\\Framework\\Notification\\NotificationEntity",
+    ),
+    class(
+        since(8, 0),
+        "Shopware\\Core\\Framework\\Plugin\\Util\\AssetService",
+        "Shopware\\Core\\Framework\\Adapter\\Asset\\AssetService",
+    ),
+    class(
+        since(8, 0),
+        "Shopware\\Elasticsearch\\Product\\SearchConfigLoader",
+        "Shopware\\Core\\Framework\\DataAbstractionLayer\\Search\\SearchConfigLoader",
     ),
 ];
 
@@ -486,7 +517,7 @@ pub(crate) static API_CONSTANT_MIGRATIONS: LazyLock<Vec<ApiMemberMigration>> =
                 since(8, 0),
                 "Shopware\\Core\\Checkout\\Cart\\Delivery\\DeliveryProcessor",
                 "SKIP_DELIVERY_PRICE_RECALCULATION",
-                "SKIP_PRODUCT_STOCK_VALIDATION",
+                "SKIP_DELIVERY_PRICE_RECALCULATION",
                 "Shopware\\Core\\Checkout\\CheckoutPermissions",
             ),
             member(
@@ -598,9 +629,36 @@ static API_PROPERTY_MIGRATIONS_BY_NAME: LazyLock<MemberIndex> =
 static API_CONSTANT_MIGRATIONS_BY_NAME: LazyLock<MemberIndex> =
     LazyLock::new(|| index_api_member_migrations(&API_CONSTANT_MIGRATIONS));
 
+/// A class that moved to another name, from the table or announced by the
+/// indexed Shopware source.
+#[derive(Clone, Debug)]
+pub(crate) struct ClassMove {
+    pub label: String,
+    pub from: String,
+    pub to: String,
+}
+
+/// The moves that apply to this document: the active table rules, and the
+/// announced ones looked up once per class name.
+struct ClassMoves<'a> {
+    snapshot: Option<&'a Snapshot>,
+    known: HashMap<String, Option<ClassMove>>,
+}
+
+impl ClassMoves<'_> {
+    fn get(&mut self, name: &str) -> Option<ClassMove> {
+        let name = trim_backslashes(name);
+        let snapshot = self.snapshot;
+        self.known
+            .entry(lowercase(name))
+            .or_insert_with(|| snapshot.and_then(|snapshot| announced_class_move(snapshot, name)))
+            .clone()
+    }
+}
+
 struct ApiClassOccurrence {
     range: TextRange,
-    rule: ApiClassMigration,
+    rule: ClassMove,
     node: SyntaxNode,
     in_use: bool,
     explicit_alias: bool,
@@ -630,7 +688,7 @@ impl ShopwareMigrationAnalyzer {
         snapshot: Option<&Snapshot>,
         source: &str,
     ) -> Vec<Problem> {
-        let mut result = self.api_class_migration_problems(ctx, root, document, source);
+        let mut result = self.api_class_migration_problems(ctx, root, document, snapshot, source);
         result.extend(self.api_member_migration_problems(ctx, root, document, snapshot, source));
         result.extend(self.api_factory_migration_problems(ctx, root, source));
         result
@@ -641,12 +699,23 @@ impl ShopwareMigrationAnalyzer {
         ctx: &Context,
         root: &SyntaxNode,
         document: &Document,
+        snapshot: Option<&Snapshot>,
         source: &str,
     ) -> Vec<Problem> {
-        let mut active: HashMap<String, ApiClassMigration> = HashMap::new();
+        let mut active = ClassMoves {
+            snapshot,
+            known: HashMap::new(),
+        };
         for rule in API_CLASS_MIGRATIONS {
             if rule.since.active(self) {
-                active.insert(lowercase(rule.from), *rule);
+                active.known.insert(
+                    lowercase(rule.from),
+                    Some(ClassMove {
+                        label: rule.since.label(),
+                        from: rule.from.to_owned(),
+                        to: rule.to.to_owned(),
+                    }),
+                );
             }
         }
         let mut occurrences = Vec::new();
@@ -656,16 +725,17 @@ impl ShopwareMigrationAnalyzer {
                 if imported.kind != ImportKind::Class {
                     continue;
                 }
-                let Some(rule) = active.get(&lowercase(trim_backslashes(&imported.target))) else {
+                let Some(rule) = active.get(&imported.target) else {
                     continue;
                 };
                 let Some(range) = php_use_target_range(&declaration, &imported.target, source)
                 else {
                     continue;
                 };
+                imports.insert(lowercase(&rule.from), true);
                 occurrences.push(ApiClassOccurrence {
                     range,
-                    rule: *rule,
+                    rule,
                     node: declaration.clone(),
                     in_use: true,
                     explicit_alias: !eq_ignore_case(
@@ -673,7 +743,6 @@ impl ShopwareMigrationAnalyzer {
                         short_php_name(&imported.target),
                     ),
                 });
-                imports.insert(lowercase(rule.from), true);
             }
         }
         for reference in &document.references {
@@ -683,7 +752,7 @@ impl ShopwareMigrationAnalyzer {
             if reference.kind != NameKind::Class {
                 continue;
             }
-            let Some(rule) = class_migration_for_reference(reference, &active) else {
+            let Some(rule) = class_migration_for_reference(reference, &mut active) else {
                 continue;
             };
             let range = reference.range;
@@ -695,7 +764,7 @@ impl ShopwareMigrationAnalyzer {
             };
             let in_use = ancestor_php_kind(&node, PHP_USE_DECLARATION).is_some();
             if in_use {
-                imports.insert(lowercase(rule.from), true);
+                imports.insert(lowercase(&rule.from), true);
             }
             occurrences.push(ApiClassOccurrence {
                 range,
@@ -708,7 +777,7 @@ impl ShopwareMigrationAnalyzer {
         let mut result = Vec::with_capacity(occurrences.len());
         for occurrence in &occurrences {
             if imports
-                .get(&lowercase(occurrence.rule.from))
+                .get(&lowercase(&occurrence.rule.from))
                 .copied()
                 .unwrap_or(false)
                 && !occurrence.in_use
@@ -724,10 +793,10 @@ impl ShopwareMigrationAnalyzer {
                 API_CLASS_RENAME_CODE,
                 occurrence.range,
                 &occurrence.node,
-                occurrence.rule.since,
+                &occurrence.rule.label,
                 "class",
-                occurrence.rule.from,
-                occurrence.rule.to,
+                &occurrence.rule.from,
+                &occurrence.rule.to,
                 original,
                 replacement,
                 safe,
@@ -766,7 +835,7 @@ impl ShopwareMigrationAnalyzer {
                     API_EXCEPTION_FACTORY_CODE,
                     range,
                     &creation,
-                    rule.since,
+                    &rule.since.label(),
                     "exception-factory",
                     &format!("new {}", rule.from),
                     &format!("{}::{}", rule.to, rule.method),
@@ -814,7 +883,7 @@ impl ShopwareMigrationAnalyzer {
                         API_PROPERTY_MIGRATION_CODE,
                         range,
                         &node,
-                        rule.since,
+                        &rule.since.label(),
                         "property",
                         &format!("{}::${}", rule.owner, rule.from),
                         &format!("{}::{}()", rule.owner, rule.to),
@@ -834,7 +903,7 @@ impl ShopwareMigrationAnalyzer {
                         API_METHOD_RENAME_CODE,
                         range,
                         &node,
-                        rule.since,
+                        &rule.since.label(),
                         "method",
                         &format!("{}::{}", rule.owner, rule.from),
                         &format!("{}::{}", rule.owner, rule.to),
@@ -863,7 +932,7 @@ impl ShopwareMigrationAnalyzer {
                         API_STATIC_METHOD_RENAME_CODE,
                         call_range,
                         &call,
-                        rule.since,
+                        &rule.since.label(),
                         "static-method",
                         &format!("{}::{}", rule.owner, rule.from),
                         &format!("{}::{}", rule.new_owner, rule.to),
@@ -891,7 +960,7 @@ impl ShopwareMigrationAnalyzer {
                     API_CONSTANT_RENAME_CODE,
                     access_range,
                     &access,
-                    rule.since,
+                    &rule.since.label(),
                     "constant",
                     &format!("{}::{}", rule.owner, rule.from),
                     &format!("{}::{}", rule.new_owner, rule.to),
@@ -955,10 +1024,10 @@ fn api_class_migration_edits(
         start,
         end,
         original,
-        replacement: occurrence.rule.to.to_owned(),
+        replacement: occurrence.rule.to.clone(),
     }];
-    let old_short = short_php_name(occurrence.rule.from);
-    let new_short = short_php_name(occurrence.rule.to);
+    let old_short = short_php_name(&occurrence.rule.from);
+    let new_short = short_php_name(&occurrence.rule.to);
     if eq_ignore_case(old_short, new_short) || occurrence.explicit_alias {
         return (edits, true);
     }
@@ -968,7 +1037,7 @@ fn api_class_migration_edits(
         return (edits, true);
     }
     for other in occurrences {
-        if other.in_use || !eq_ignore_case(other.rule.from, occurrence.rule.from) {
+        if other.in_use || !eq_ignore_case(&other.rule.from, &occurrence.rule.from) {
             continue;
         }
         let (other_start, other_end) =
@@ -1037,7 +1106,7 @@ fn api_migration_problem(
     code: &str,
     range: TextRange,
     element: &SyntaxNode,
-    since: Since,
+    label: &str,
     kind: &str,
     from: &str,
     to: &str,
@@ -1050,7 +1119,7 @@ fn api_migration_problem(
         code,
         range,
         element,
-        format!("Shopware {}: replace {from} with {to}", since.label()),
+        format!("Shopware {label}: replace {from} with {to}"),
         &ShopwareMigrationPayload {
             rule: "api-rename".into(),
             kind: kind.into(),
@@ -1067,16 +1136,14 @@ fn api_migration_problem(
 
 fn class_migration_for_reference(
     reference: &Reference,
-    active: &HashMap<String, ApiClassMigration>,
-) -> Option<ApiClassMigration> {
+    active: &mut ClassMoves<'_>,
+) -> Option<ClassMove> {
     for name in reference.qualified_names() {
-        if let Some(rule) = active.get(&lowercase(trim_backslashes(name))) {
-            return Some(*rule);
+        if let Some(rule) = active.get(name) {
+            return Some(rule);
         }
     }
-    active
-        .get(&lowercase(trim_backslashes(&reference.name)))
-        .copied()
+    active.get(&reference.name)
 }
 
 /// `node` or its nearest ancestor of `kind`.

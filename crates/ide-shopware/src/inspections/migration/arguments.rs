@@ -77,11 +77,13 @@ impl QuickFix for AddDefaultArgumentFix {
     }
 
     fn present(&self, _: &Context, fix: &FixContext) -> Result<Option<FixPresentation>, BoxError> {
-        present_migration(
-            fix,
-            "argument-migration",
-            |_| "Shopware: Add new default argument",
-        )
+        present_migration(fix, "argument-migration", |payload| {
+            if payload.kind == "named-argument" {
+                "Shopware: Pass the current default explicitly"
+            } else {
+                "Shopware: Add new default argument"
+            }
+        })
     }
 
     fn as_rewrite(&self) -> Option<&dyn RewriteQuickFix> {
@@ -100,12 +102,20 @@ impl RewriteQuickFix for AddDefaultArgumentFix {
             return Err(invalid("default argument insertion is no longer safe"));
         }
         let element = resolve_anchor(fix)?;
-        let Some(call) = ancestor_node(&element, PHP_MEMBER_CALL) else {
-            return Err(invalid("default argument target changed"));
-        };
         let root = document_root(&fix.document)?;
         let mut editor = Editor::new(fix.document.source(), Some(&root));
-        editor.insert_argument(&call, payload.argument_index as usize, &payload.value)?;
+        if payload.kind == "named-argument" {
+            // `name: value` goes after every argument the call passes.
+            let Some(call) = migration_call_or_creation(&element) else {
+                return Err(invalid("default argument target changed"));
+            };
+            editor.append_argument(&call, &payload.value)?;
+        } else {
+            let Some(call) = ancestor_node(&element, PHP_MEMBER_CALL) else {
+                return Err(invalid("default argument target changed"));
+            };
+            editor.insert_argument(&call, payload.argument_index as usize, &payload.value)?;
+        }
         finish_php_rewrite(fix, &editor)
     }
 }

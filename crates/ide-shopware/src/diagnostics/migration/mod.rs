@@ -3,10 +3,12 @@
 mod annotations;
 mod api;
 mod arguments;
+mod bc_changes;
 mod calls;
 mod criteria;
 mod declarations;
 mod message_handler;
+mod replacements;
 mod scan;
 
 #[cfg(test)]
@@ -233,14 +235,18 @@ impl ProblemAnalyzer for ShopwareMigrationAnalyzer {
         result.extend(self.api_migration_problems(ctx, &root, semantic, snapshot, source));
         result.extend(self.argument_migration_problems(ctx, &root, semantic, snapshot, source));
         result.extend(self.declaration_migration_problems(ctx, &root, snapshot));
+        result.extend(self.bc_change_problems(ctx, &root, snapshot));
         result.extend(self.route_annotation_migration_problems(ctx, &root));
         result.extend(self.message_handler_migration_problems(ctx, &root));
         if self.at_least(7, 0) {
             result.extend(self.scheduled_task_logger_problems(ctx, &root, snapshot));
+            result.extend(self.filterable_price_definition_problems(ctx, &root, snapshot));
+            result.extend(self.reflection_helper_problems(ctx, &root, source));
         }
         if !self.at_least(8, 0) {
             return Ok(result);
         }
+        result.extend(self.cart_behavior_problems(ctx, &root, semantic, snapshot));
         result.extend(self.product_stream_builder_problems(ctx, &root, semantic, snapshot, source));
 
         for call in scan::member_calls(&root) {

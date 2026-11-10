@@ -8,6 +8,7 @@ mod calls;
 mod criteria;
 mod declarations;
 mod message_handler;
+mod replacements;
 
 #[cfg(test)]
 mod tests;
@@ -78,6 +79,9 @@ const BEHAVIOR_CODES: &[&str] = &[
     "shopware.migration.product_stream.enrich_criteria",
     "shopware.migration.annotation.route_defaults",
     "shopware.migration.message_handler.subscriber",
+    "shopware.migration.cart_behavior.permission",
+    "shopware.migration.price_definition.filterable",
+    "shopware.migration.reflection_helper.native",
 ];
 
 /// The Shopware migration inspections, split by kind of change. They share one
@@ -118,17 +122,17 @@ pub fn new_shopware_migration_inspections(
     vec![
         inspection(
             "shopware.migration.api",
-            "Shopware API that the upgrade to the target version renames or removes: classes, methods, static methods, constants, properties and exception factories, with automated fixes where the change is safe.",
+            "Shopware API that the upgrade to the target version renames or removes: classes (including the moves the installed Shopware announces), methods, static methods, constants, properties and exception factories, with automated fixes where the change is safe.",
             API_CODES,
         ),
         inspection(
             "shopware.migration.signature",
-            "Declarations and calls whose signature changes with the upgrade to the target version: interfaces replaced by abstract classes, added or removed parameters and arguments, and changed native types.",
+            "Declarations and calls whose signature changes with the upgrade to the target version: interfaces replaced by abstract classes, added or removed parameters and arguments, and changed native types, including the changes the installed Shopware announces through its BCChange attributes.",
             SIGNATURE_CODES,
         ),
         inspection(
             "shopware.migration.behavior",
-            "Code relying on behavior the upgrade to the target version replaces: entity search results, entity extension names, reverse proxy invalidation, scheduled task logging, context metadata, Faker properties, product stream criteria, route defaults and message handlers.",
+            "Code relying on behavior the upgrade to the target version replaces: entity search results, entity extension names, reverse proxy invalidation, scheduled task logging, context metadata, Faker properties, product stream criteria, route defaults, message handlers, cart recalculation checks, filterable price definitions and the reflection test helper.",
             BEHAVIOR_CODES,
         ),
     ]
@@ -150,6 +154,9 @@ fn migration_fixes() -> Vec<Arc<dyn QuickFix>> {
         Arc::new(declarations::DeclarationMigrationFix),
         Arc::new(annotations::RouteAnnotationMigrationFix),
         Arc::new(message_handler::MessageHandlerSubscriberFix),
+        Arc::new(replacements::CartBehaviorPermissionFix),
+        Arc::new(replacements::FilterablePriceDefinitionFix),
+        Arc::new(replacements::ReflectionHelperFix),
     ]
 }
 
@@ -187,6 +194,13 @@ fn bind_migration_fix(code: &DiagnosticId, payload: &Map<String, Value>) -> Vec<
         "shopware.migration.message_handler.subscriber" => {
             message_handler::MESSAGE_HANDLER_SUBSCRIBER_FIX_ID
         }
+        "shopware.migration.cart_behavior.permission" => {
+            replacements::CART_BEHAVIOR_PERMISSION_FIX_ID
+        }
+        "shopware.migration.price_definition.filterable" => {
+            replacements::FILTERABLE_PRICE_DEFINITION_FIX_ID
+        }
+        "shopware.migration.reflection_helper.native" => replacements::REFLECTION_HELPER_FIX_ID,
         _ => return Vec::new(),
     };
     vec![bind_fix(fix_id, Value::Object(payload.clone()))]

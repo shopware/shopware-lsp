@@ -5,7 +5,7 @@ use crate::fast::Fast;
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;
 use swlsp_php_resolver::NameContext;
-use swlsp_php_semantic::{Flags, Parameter, Str, SymbolKind, new_symbol_id};
+use swlsp_php_semantic::{Flags, Parameter, Str, Symbol, SymbolKind, new_symbol_id};
 use swlsp_php_types::{Kind as TypeKind, Type};
 use swlsp_syntax::SyntaxNode;
 use swlsp_syntax::rowan::NodeOrToken;
@@ -17,6 +17,26 @@ const NEW_OPTIONAL_PARAMETER_ATTRIBUTE: &str =
     "Shopware\\Core\\Framework\\Deprecation\\BCChange\\NewOptionalParameter";
 const NEW_REQUIRED_PARAMETER_ATTRIBUTE: &str =
     "Shopware\\Core\\Framework\\Deprecation\\BCChange\\NewRequiredParameter";
+
+const PARAMETER_DEFAULT_VALUE_CHANGE_ATTRIBUTE: &str =
+    "Shopware\\Core\\Framework\\Deprecation\\BCChange\\ParameterDefaultValueChange";
+
+/// The parameters of `function` whose default value is announced to change
+/// (`#[ParameterDefaultValueChange]`), without the leading `$`.
+pub(crate) fn changing_defaults(function: &Symbol) -> Vec<Str> {
+    function
+        .attributes()
+        .iter()
+        .filter(|attribute| {
+            eq_ignore_case(
+                attribute.name.trim_matches('\\'),
+                PARAMETER_DEFAULT_VALUE_CHANGE_ATTRIBUTE,
+            )
+        })
+        .filter_map(|attribute| attribute.argument("parameterName", 1))
+        .map(|name| Str::from(name.value.trim_start_matches('$')))
+        .collect()
+}
 
 impl Builder<'_> {
     /// Exposes parameters that live in repeatable attributes during a

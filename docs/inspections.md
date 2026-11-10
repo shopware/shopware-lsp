@@ -226,7 +226,7 @@ Languages: json. Domain: `shopware.entitySchema`.
 
 ## `shopware.migration.api`
 
-Shopware API that the upgrade to the target version renames or removes: classes, methods, static methods, constants, properties and exception factories, with automated fixes where the change is safe.
+Shopware API that the upgrade to the target version renames or removes: classes (including the moves the installed Shopware announces), methods, static methods, constants, properties and exception factories, with automated fixes where the change is safe.
 
 Languages: php. Domain: `shopware.migrations`.
 
@@ -241,25 +241,28 @@ Languages: php. Domain: `shopware.migrations`.
 
 ## `shopware.migration.behavior`
 
-Code relying on behavior the upgrade to the target version replaces: entity search results, entity extension names, reverse proxy invalidation, scheduled task logging, context metadata, Faker properties, product stream criteria, route defaults and message handlers.
+Code relying on behavior the upgrade to the target version replaces: entity search results, entity extension names, reverse proxy invalidation, scheduled task logging, context metadata, Faker properties, product stream criteria, route defaults, message handlers, cart recalculation checks, filterable price definitions and the reflection test helper.
 
 Languages: php. Domain: `shopware.migrations`.
 
 | Code | Default severity | Enabled by default |
 |---|---|---|
 | `shopware.migration.annotation.route_defaults` | warning | yes |
+| `shopware.migration.cart_behavior.permission` | warning | yes |
 | `shopware.migration.context_metadata.state` | warning | yes |
 | `shopware.migration.entity_extension.entity_name` | warning | yes |
 | `shopware.migration.entity_search_result.get_entities` | warning | yes |
 | `shopware.migration.faker.property_call` | warning | yes |
 | `shopware.migration.message_handler.subscriber` | warning | yes |
+| `shopware.migration.price_definition.filterable` | warning | yes |
 | `shopware.migration.product_stream.enrich_criteria` | warning | yes |
+| `shopware.migration.reflection_helper.native` | warning | yes |
 | `shopware.migration.reverse_proxy.ban_all` | warning | yes |
 | `shopware.migration.scheduled_task.exception_logger` | warning | yes |
 
 ## `shopware.migration.signature`
 
-Declarations and calls whose signature changes with the upgrade to the target version: interfaces replaced by abstract classes, added or removed parameters and arguments, and changed native types.
+Declarations and calls whose signature changes with the upgrade to the target version: interfaces replaced by abstract classes, added or removed parameters and arguments, and changed native types, including the changes the installed Shopware announces through its BCChange attributes.
 
 Languages: php. Domain: `shopware.migrations`.
 

@@ -4,7 +4,7 @@ The `shopware.migration.api`, `shopware.migration.signature` and
 `shopware.migration.behavior` inspections are the native LSP counterpart of the
 Shopware-specific transformations in `frosh/shopware-rector`. The current
 matrix was audited against commit
-`8cae3156e421142bcd0dc75fe3ae904c080d6cb7`.
+`c4437da` ("generate generic BC migrations for the Shopware 6.8 set").
 
 The LSP treats migration sets cumulatively: when a project targets Shopware
 6.8, diagnostics from the 6.5, 6.6, 6.7, and 6.8 sets can all apply. An
@@ -22,7 +22,9 @@ unknown Shopware version disables the inspection rather than guessing.
 | `v6.6/exceptions.php` | 12 exception-constructor to static-factory migrations |
 | `v6.7/renaming.php` | 9 constant moves |
 | `v6.7.0` | EntityExtension cleanup, ScheduledTaskHandler exception logger, and Elasticsearch return type |
-| `v6.8/renaming.php` | EntitySearchResult delegation, ProductStream criteria migration, ProductStreamBuilder abstract class, and 12 constant moves |
+| `v6.7/migrations.php` | `FilterableInterface` on price definitions with `getFilter()`, and `ReflectionHelper` calls replaced by native reflection |
+| `v6.8/renaming.php` | EntitySearchResult delegation, ProductStream criteria migration, ProductStreamBuilder abstract class, `CartBehavior::isRecalculation()` permission check, and 12 constant moves |
+| `v6.8/bc-changes.php` | Read from the indexed Shopware source instead of the generated file; see below. Its 6 class renames are also in the table |
 
 `ContextMetadataExtensionToStateRector` is also supported as a 6.5 migration,
 although the audited upstream set does not currently register that local rule.
@@ -31,13 +33,39 @@ The generic `MakeClassConstructorArgumentRequiredRector` has no Shopware set
 configuration in the audited revision, so there is no versioned class and
 argument mapping to activate in the LSP.
 
+## Announced changes (`BCChange` attributes)
+
+Upstream generates `v6.8/bc-changes.php` by reflecting over the attributes in
+`Shopware\Core\Framework\Deprecation\BCChange` that Shopware puts on the
+declarations it is going to change. The LSP reads the same attributes from
+the PHP index, so it follows whatever the installed Shopware announces, for
+6.8 and for later versions, without a copied table:
+
+| Attribute | Diagnostic | Quick fix |
+| --- | --- | --- |
+| `ReturnTypeNarrowing` | `shopware.migration.declaration.type` on an override that still declares the inherited return type | sets the announced type |
+| `ParameterTypeWidening` | `shopware.migration.declaration.type` on the parameter of an override that still declares the inherited type | sets the announced type |
+| `NewOptionalParameter` | `shopware.migration.declaration.parameter.add` on an override without the parameter | adds it with its default |
+| `ParameterDefaultValueChange` | `shopware.migration.arguments.add_default` on a `new` call that omits the parameter | passes the current default by name |
+| `ClassMoved` | `shopware.migration.api.class.rename` on a reference to the previous name (which Shopware keeps as a `class_alias`) | renames the reference |
+
+The version in the message is the one the attribute names. These diagnostics
+do not depend on the target version: the change is safe to make as soon as
+it is announced, and the attributes disappear from Shopware once it happened.
+As in Rector, an override is only rewritten when it declares exactly the
+type the inherited method declares today. Constructors are skipped for the
+declaration changes because a constructor is not bound to the signature it
+overrides. Default-value changes are checked for constructor calls only,
+which is where Shopware uses the attribute.
+
 ## Quick-fix safety
 
 Every covered transformation produces a diagnostic. A quick-fix is bound only
 when the lossless CST and semantic index prove that the edit is mechanical.
 Examples that intentionally remain diagnostic-only include conflicting parent
 classes, a Faker property used as an assignment target, named-argument layouts
-whose position cannot be changed safely, and EntityExtension implementations
+whose position cannot be changed safely, `ReflectionHelper` calls with named
+arguments or an object expression that would be evaluated twice, and EntityExtension implementations
 where an entity-name constant cannot be derived.
 
 ProductStream patterns recognized by Rector are rewritten directly. Other

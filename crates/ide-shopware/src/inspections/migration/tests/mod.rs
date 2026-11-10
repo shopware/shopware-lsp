@@ -2,8 +2,10 @@
 
 mod api;
 mod arguments;
+mod bc_changes;
 mod calls;
 mod declarations;
+mod replacements;
 mod rules;
 
 use std::sync::Arc;

@@ -167,8 +167,15 @@ pub(crate) fn bind_attributes(
     result
 }
 
+/// Shopware announces signature changes through these attributes; the
+/// migration inspections read their arguments.
+const BC_CHANGE_NAMESPACE: &str = "shopware\\core\\framework\\deprecation\\bcchange\\";
+
 fn retain_attribute_arguments(name: &str) -> bool {
     let name = lowercase(name.trim_matches('\\'));
+    if name.starts_with(BC_CHANGE_NAMESPACE) {
+        return true;
+    }
     [
         "arrayshape",
         "deprecated",
@@ -286,6 +293,12 @@ pub(crate) fn bind_attribute_value(
                 result.items.push(bound);
             }
         }
+        PHP_BINARY_EXPRESSION => {
+            if let Some(value) = concatenated_string(node, context, depth, source) {
+                result.kind = AttributeValueKind::String;
+                result.value = Str::from(value);
+            }
+        }
         _ => {
             if expression.contains("::")
                 && !expression.contains(|c: char| "|&.+-*/%?()[]{}'\"".contains(c))
@@ -296,6 +309,43 @@ pub(crate) fn bind_attribute_value(
         }
     }
     result
+}
+
+/// The value of `'a' . Foo::class . 'b'`: strings and resolved class names
+/// joined by the concatenation operator.
+fn concatenated_string(
+    node: &SyntaxNode,
+    context: &NameContext,
+    depth: usize,
+    source: &str,
+) -> Option<String> {
+    let mut result = String::new();
+    let mut operands = 0;
+    for child in node.children_with_tokens() {
+        match child {
+            NodeOrToken::Node(child) => {
+                let value = bind_attribute_value(&child, context, depth + 1, source);
+                match value.kind {
+                    AttributeValueKind::String => result.push_str(&value.value),
+                    AttributeValueKind::ClassConstant => {
+                        let (class, member) = value.value.rsplit_once("::")?;
+                        if !eq_ignore_case(member, "class") {
+                            return None;
+                        }
+                        result.push_str(class);
+                    }
+                    _ => return None,
+                }
+                operands += 1;
+            }
+            NodeOrToken::Token(token) => {
+                if !token.kind().is_trivia() && token.text().trim() != "." {
+                    return None;
+                }
+            }
+        }
+    }
+    (operands >= 2).then_some(result)
 }
 
 fn resolve_attribute_class_constant(expression: &str, context: &NameContext) -> String {
