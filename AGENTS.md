@@ -61,7 +61,7 @@ make rust-fmt-check              # cargo fmt --all --check
 make rust-test-integration-compile   # clippy over the opt-in real-world suite
 make rust-check                  # all of the above
 make notices                     # regenerate THIRD_PARTY_NOTICES.md (cargo-about)
-cargo run -p swlsp-parser-php --bin dump-cst-php -- FILE   # print a CST
+echo FILE | cargo run -q -p swlsp-parser-php --bin dump-cst-php   # print a CST
 scripts/bench/lsp_bench.py --server BIN --root ~/shopware --out OUT.json
 scripts/bench/compare.py A.json B.json       # end-to-end comparison of two runs
 
