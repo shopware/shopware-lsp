@@ -146,6 +146,26 @@ impl WeakServer {
     pub fn upgrade(&self) -> Option<Server> {
         self.0.upgrade().map(|inner| Server { inner })
     }
+
+    /// [`Server::notice`], unless the server has been dropped.
+    pub fn notice(&self, message: &str) {
+        if let Some(server) = self.upgrade() {
+            server.notice(message);
+        }
+    }
+}
+
+impl Server {
+    /// Tells the person at the client a fact about the project they should
+    /// know, such as a prerequisite an inspection is missing: a
+    /// `window/logMessage` warning, which editors show in the server's
+    /// output and the CLI prints after a command's results.
+    pub fn notice(&self, message: &str) {
+        self.notify(
+            "window/logMessage",
+            serde_json::json!({"type": 2, "message": message}),
+        );
+    }
 }
 
 impl std::ops::Deref for Server {

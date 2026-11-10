@@ -185,3 +185,70 @@ fn paths_are_shown_relative_to_the_current_directory_first() {
     // Outside both (a related location in another checkout): unchanged.
     assert_eq!(paths.display("file:///other/b.php"), "/other/b.php");
 }
+
+#[test]
+fn check_notes_a_missing_compiled_container_instead_of_missing_services() {
+    let root = temp_dir();
+    write(
+        &path(root.path(), "composer.json"),
+        r#"{"name":"acme/app","require":{"symfony/framework-bundle":"^7.0"}}"#,
+    );
+    write(
+        &path(
+            root.path(),
+            "vendor/symfony/dependency-injection/Attribute/Autowire.php",
+        ),
+        r"<?php
+namespace Symfony\Component\DependencyInjection\Attribute;
+#[\Attribute]
+class Autowire { public function __construct(public ?string $service = null) {} }
+",
+    );
+    let service = path(root.path(), "src/Service.php");
+    write(
+        &service,
+        r"<?php
+namespace App;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
+class Service {
+    public function __construct(#[Autowire(service: 'cache.object')] private object $cache) {}
+}
+",
+    );
+    let root_path = root.path().to_str().unwrap();
+    let without = run(&["--root", root_path, "check", &service]);
+    assert_eq!(without.out, "", "{}", without.err);
+    assert!(
+        without
+            .err
+            .starts_with("note: No compiled Symfony container found below var/cache"),
+        "{}",
+        without.err
+    );
+    // Once, however many files meet it, and before the summary.
+    assert_eq!(without.err.matches("note:").count(), 1);
+    assert!(
+        without
+            .err
+            .trim_end()
+            .lines()
+            .last()
+            .unwrap()
+            .starts_with("No problems in 1 file")
+    );
+
+    // With a container the reference can be judged.
+    write(
+        &path(root.path(), "var/cache/dev/App_KernelDevDebugContainer.xml"),
+        "<container><services/></container>",
+    );
+    let with = run(&["--root", root_path, "check", &service]);
+    assert!(
+        with.out
+            .contains("Service 'cache.object' not found [symfony.service.missing]"),
+        "{} {}",
+        with.out,
+        with.err
+    );
+    assert!(!with.err.contains("note:"), "{}", with.err);
+}

@@ -430,6 +430,7 @@ pub(crate) fn run_check(runner: &Runner, flags: &Check) -> Result<(), CliError> 
         }
     });
     status.finish();
+    let notices = session.take_notices();
     let _ = session.close();
     if let Some(error) = write_error {
         return Err(error);
@@ -451,6 +452,12 @@ pub(crate) fn run_check(runner: &Runner, flags: &Check) -> Result<(), CliError> 
     }
     // The summary goes to stderr: stdout stays one finding per line for
     // whatever reads the concise report.
+    for notice in notices {
+        runner.write_err(&format!(
+            "{} {notice}\n",
+            err_style.paint(crate::terminal::CYAN, "note:")
+        ))?;
+    }
     runner.write_err(&report.summary(err_style, total, started.elapsed()))?;
     if failed {
         // The summary already says what was found.

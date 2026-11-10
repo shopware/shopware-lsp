@@ -194,6 +194,12 @@ fn inspections_declaring_inputs_report_the_same_while_their_revision_is_unchange
         "<?php\nnamespace Acme;\nclass AcmePlugin {}\n",
     );
     write_file(root, "src/Consumer.php", CONSUMER);
+    // Missing services are only judged against a compiled container.
+    write_file(
+        root,
+        "var/cache/dev/App_KernelDevDebugContainer.xml",
+        "<container><services/></container>\n",
+    );
     write_file(
         root,
         "src/Resources/app/storefront/src/scss/base.scss",

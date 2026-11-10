@@ -13,9 +13,10 @@ fn fixture() -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let php = php_index(
         &dir.path().join("php"),
-        &[(
-            "/project/Existing.php",
-            r"<?php
+        &[
+            (
+                "/project/Existing.php",
+                r"<?php
 namespace App;
 class Existing {}
 interface ExistingInterface {}
@@ -33,7 +34,17 @@ function resolve_interface(string $interface): void {}
 /** @param string $type #ClassInterface */
 function resolve_class_or_interface(string $type): void {}
 ",
-        )],
+            ),
+            (
+                // A bundle whose parameters the container knows (`app.*`) and
+                // one that is not part of it.
+                "/project/Extensions.php",
+                r"<?php
+namespace App\DependencyInjection { class AppExtension {} }
+namespace Acme\Demo\DependencyInjection { class AcmeDemoExtension {} }
+",
+            ),
+        ],
     );
     let services = service_index(
         &dir.path().join("services"),
@@ -130,6 +141,10 @@ class Example {
     // carries it.
     #[\Symfony\Component\DependencyInjection\Attribute\AutowireLocator('app.some_tag', indexAttribute: 'name')]
     #[\Symfony\Component\DependencyInjection\Attribute\AutowireIterator('app.some_tag', exclude: '{|symfony.service.missing:app.iterator_exclude_missing|}')]
+    // Configuration of a bundle the known container does not contain
+    // cannot be judged; an unknown namespace without a bundle can.
+    #[\Symfony\Component\DependencyInjection\Attribute\Autowire(param: 'acme_demo.checker.enabled')]
+    #[\Symfony\Component\DependencyInjection\Attribute\Autowire(param: '{|symfony.parameter.missing:acme_other.enabled|}')]
     public function run(ContainerInterface $container, Other $other): void {
         $container->get('{|symfony.service.missing:app.missing|}');
         $container->get('app.existing');
@@ -355,4 +370,39 @@ class Consumer {
             assert!(!problem.message.contains("%service_id%"));
         }
     }
+}
+
+#[test]
+fn missing_services_and_parameters_need_a_compiled_container() {
+    let dir = tempfile::tempdir().unwrap();
+    let php = php_index(&dir.path().join("php"), &[]);
+    // No `var/cache/*/…DebugContainer.xml`: what bundles register at
+    // compile time is unknown, so nothing can be called missing.
+    let services = Arc::new(
+        ServiceIndex::new(&p(dir.path()), dir.path().join("symfony-cache"), None).unwrap(),
+    );
+    services
+        .index(&ParsedFile::new(
+            "/project/services.yaml",
+            b"services:\n  app.deprecated:\n    class: App\\Existing\n    deprecated: 'old'\n"
+                .to_vec(),
+        ))
+        .unwrap();
+    let analyzer = ServiceAnalyzer::new(Some(services), Some(php));
+    // What the indexed configuration declares is still checked.
+    check_problems(
+        &analyzer,
+        "file:///project/Example.php",
+        r"<?php
+class Example {
+    public function __construct(
+        #[\Symfony\Component\DependencyInjection\Attribute\Autowire(service: 'cache.object')]
+        private object $cache,
+        #[\Symfony\Component\DependencyInjection\Attribute\Autowire(param: 'shopware.cart.storage')]
+        private string $storage,
+        #[\Symfony\Component\DependencyInjection\Attribute\Autowire(service: '{|symfony.service.deprecated:app.deprecated|}')]
+        private object $old,
+    ) {}
+}",
+    );
 }

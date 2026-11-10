@@ -187,3 +187,40 @@ fn compiled_container_path_selection() {
     services.close().unwrap();
     store.close().unwrap();
 }
+
+#[test]
+fn any_environment_container_is_used_preferring_development() {
+    let root_dir = tempfile::tempdir().unwrap();
+    let root = root_dir.path().to_str().unwrap();
+    let write = |directory: &str, file: &str, service: &str| {
+        let directory = format!("{root}/var/cache/{directory}");
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(
+            format!("{directory}/{file}"),
+            format!(r#"<container><services><service id="{service}" class="App\S"/></services></container>"#),
+        )
+        .unwrap();
+    };
+    let config = tempfile::tempdir().unwrap();
+    let index = ServiceIndex::new(root, config.path(), None).unwrap();
+    let has = |service: &str| index.get_service_by_id(service).unwrap().is_some();
+
+    // A project that only compiled its test kernel, or a plain Symfony
+    // kernel: the container is still the source of compiled services.
+    write("test_h1", "App_KernelTestDebugContainer.xml", "from.test");
+    // Not a container dump.
+    write("test_h1", "App_KernelTestDebugContainer.php", "from.php");
+    index.reload_compiled_container().unwrap();
+    assert!(has("from.test"));
+
+    // The development container wins over a newer one of another kernel.
+    write("dev_h2", "App_KernelDevDebugContainer.xml", "from.dev");
+    write(
+        "static_dev",
+        "App_KernelPhpstan_devDebugContainer.xml",
+        "from.static",
+    );
+    index.reload_compiled_container().unwrap();
+    assert!(has("from.dev"));
+    assert!(!has("from.test") && !has("from.static"));
+}

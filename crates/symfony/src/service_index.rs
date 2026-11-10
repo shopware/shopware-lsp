@@ -198,7 +198,9 @@ impl ServiceIndex {
         self.container.get_twig_globals()
     }
 
-    fn container_exists(&self) -> bool {
+    /// Whether a compiled container is loaded. Without one, services and
+    /// parameters registered at compile time are unknown.
+    pub fn container_exists(&self) -> bool {
         self.container.container_exists()
     }
 

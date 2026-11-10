@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde_json::json;
 use swlsp_language::LanguageId;
@@ -78,9 +79,16 @@ const KERNEL_PARAMETERS: &[&str] = &[
 /// container service ids.
 const LOCATOR_TYPES: &[&str] = &["Symfony\\Contracts\\Service\\ServiceProviderInterface"];
 
+/// Tells the person at the client a fact about the project.
+type Notice = Arc<dyn Fn(&str) + Send + Sync>;
+
 pub struct ServiceAnalyzer {
     service_index: Option<Arc<ServiceIndex>>,
     php_index: Option<PhpIndex>,
+    /// Tells the person at the client that the container is missing.
+    notice: Option<Notice>,
+    /// Whether that was already said.
+    noticed_missing_container: AtomicBool,
 }
 
 impl ServiceAnalyzer {
@@ -88,9 +96,23 @@ impl ServiceAnalyzer {
         Self {
             service_index,
             php_index,
+            notice: None,
+            noticed_missing_container: AtomicBool::new(false),
         }
     }
+
+    /// Reports, once, that missing services and parameters cannot be
+    /// judged without a compiled container.
+    pub fn with_notice(mut self, notice: impl Fn(&str) + Send + Sync + 'static) -> Self {
+        self.notice = Some(Arc::new(notice));
+        self
+    }
 }
+
+const MISSING_CONTAINER_NOTICE: &str = "No compiled Symfony container found below var/cache: \
+     services and parameters that bundles register at compile time are unknown, so missing \
+     services and parameters are not reported. Compile the container once, for example with \
+     bin/console cache:warmup.";
 
 impl DeclaredAnalyzer for ServiceAnalyzer {
     const INSPECTION: InspectionSpec = InspectionSpec {
@@ -144,12 +166,20 @@ impl ProblemAnalyzer for ServiceAnalyzer {
             service_names: None,
             parameter_names: None,
             class_names: None,
+            container: services.container_exists(),
+            unjudged: false,
         };
         match lower_ext(&document.uri).as_str() {
             ".php" => collector.collect_php(&root)?,
             ".xml" => collector.collect_xml(&root)?,
             ".yaml" | ".yml" => collector.collect_yaml(&root)?,
             _ => return Ok(Vec::new()),
+        }
+        if collector.unjudged
+            && let Some(notice) = &self.notice
+            && !self.noticed_missing_container.swap(true, Ordering::Relaxed)
+        {
+            notice(MISSING_CONTAINER_NOTICE);
         }
         Ok(collector.diagnostics)
     }
@@ -173,6 +203,12 @@ struct Collector<'a> {
     service_names: Option<Vec<String>>,
     parameter_names: Option<Vec<String>>,
     class_names: Option<Arc<[String]>>,
+    /// Whether a compiled container is loaded. Without one, a name the
+    /// indexed configuration does not declare may still be registered at
+    /// compile time, so it is not reported as missing.
+    container: bool,
+    /// Whether such a name was met.
+    unjudged: bool,
 }
 
 impl Collector<'_> {
@@ -427,6 +463,10 @@ impl Collector<'_> {
         if optional || name == ".inner" || name.ends_with(".inner") {
             return Ok(());
         }
+        if !self.container {
+            self.unjudged = true;
+            return Ok(());
+        }
         let candidates = self.all_service_names()?;
         let suggestions = similar_value(&name, candidates);
         self.add(
@@ -521,7 +561,14 @@ impl Collector<'_> {
         let found = self.services.get_parameter_by_name(name).map_err(|error| {
             LookupError::new(format!("query Symfony parameter {name:?}"), error)
         })?;
-        if found.is_none() && !self.is_optional_configuration_key(name)? {
+        if found.is_none() && !self.container {
+            self.unjudged = true;
+            return Ok(());
+        }
+        if found.is_none()
+            && !self.is_optional_configuration_key(name)?
+            && !self.is_configuration_of_unloaded_bundle(name)?
+        {
             let candidates = self.all_parameter_names()?;
             let suggestions = similar_value(name, candidates);
             self.add(
@@ -555,6 +602,38 @@ impl Collector<'_> {
             }
         }
         Ok(false)
+    }
+
+    /// A bundle's extension turns its processed configuration into
+    /// parameters below its alias (`frosh_tools.*` for
+    /// `FroshToolsExtension`). They exist only in a container compiled with
+    /// that bundle: when the workspace has the extension class but no
+    /// parameter below its alias is known, the bundle is not part of the
+    /// known container (a plugin that is not installed or active) and its
+    /// parameters cannot be judged.
+    fn is_configuration_of_unloaded_bundle(&mut self, name: &str) -> Result<bool, BoxError> {
+        let Some((alias, _)) = name.split_once('.') else {
+            return Ok(false);
+        };
+        let prefix = format!("{}.", lowercase(alias));
+        if self
+            .all_parameter_names()?
+            .iter()
+            .any(|known| lowercase(known).starts_with(&prefix))
+        {
+            return Ok(false);
+        }
+        let extension = format!("{}extension", lowercase(alias).replace('_', ""));
+        let php = self.php;
+        let names = self
+            .class_names
+            .get_or_insert_with(|| php.class_names_view())
+            .clone();
+        Ok(names.iter().any(|class| {
+            class.rsplit_once('\\').is_some_and(|(namespace, short)| {
+                namespace.ends_with("DependencyInjection") && lowercase(short) == extension
+            })
+        }))
     }
 
     fn check_class(&mut self, node: &SyntaxNode, name: &str) {

@@ -36,6 +36,12 @@ fn indexing_a_service_definition_refreshes_open_php_documents() {
         r#"{"name":"acme/plugin","type":"shopware-platform-plugin","require":{"shopware/core":"6.6.0.0"},"autoload":{"psr-4":{"Acme\\":"src/"}}}"#,
     );
     let consumer = write_file(root, "src/Consumer.php", CONSUMER);
+    // Missing services are only judged against a compiled container.
+    write_file(
+        root,
+        "var/cache/dev/App_KernelDevDebugContainer.xml",
+        "<container><services/></container>\n",
+    );
     write_file(
         root,
         "src/Resources/config/services.xml",

@@ -17,7 +17,7 @@ use swlsp_indexer::{
 use crate::compiled_route_catalog::{
     CompiledRouteCatalog, is_compiled_route_file_name, parse_compiled_routes_tree,
 };
-use crate::container_catalog::ContainerCatalog;
+use crate::container_catalog::{ContainerCatalog, is_compiled_container_file_name};
 use crate::model::{ContainerTwigComponent, ContainerTwigGlobal, Parameter, Route, Service};
 use crate::twig_components::parse_xml_twig_components_tree;
 use crate::twig_globals::parse_xml_twig_globals_tree;
@@ -158,7 +158,7 @@ impl CompiledCatalogIndex {
         }
         let path = path.as_ref();
         if self.is_container() {
-            return base_name(path) == "Shopware_Core_KernelDevDebugContainer.xml";
+            return is_compiled_container_file_name(base_name(path));
         }
         is_compiled_route_file_name(base_name(path))
     }
@@ -220,12 +220,18 @@ impl CompiledCatalogIndex {
 impl Shared {
     fn publish(&self, records: &HashMap<String, CompiledCatalogRecord>) {
         let mut sorted: Vec<&CompiledCatalogRecord> = records.values().collect();
+        let dev =
+            |record: &CompiledCatalogRecord| base_name(&dir_path(&record.path)).starts_with("dev");
         match &self.target {
-            Target::Container(_) => sorted.sort_by(|a, b| a.path.cmp(&b.path)),
+            // A development container, then the newest one: a project may
+            // only have compiled its test or static-analysis kernel.
+            Target::Container(_) => sorted.sort_by(|a, b| {
+                dev(b)
+                    .cmp(&dev(a))
+                    .then_with(|| b.modified.cmp(&a.modified))
+                    .then_with(|| a.path.cmp(&b.path))
+            }),
             Target::Routes(_) => sorted.sort_by(|a, b| {
-                let dev = |record: &CompiledCatalogRecord| {
-                    base_name(&dir_path(&record.path)).starts_with("dev")
-                };
                 let modern = |record: &CompiledCatalogRecord| {
                     base_name(&record.path) == "url_generating_routes.php"
                 };

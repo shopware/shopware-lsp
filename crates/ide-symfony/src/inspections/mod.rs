@@ -51,10 +51,11 @@ pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
         Some(s.services.clone()),
         php(),
     ));
-    add(analyzer(diagnostics::ServiceAnalyzer::new(
-        Some(s.services.clone()),
-        php(),
-    )));
+    let client = server.server.downgrade();
+    add(analyzer(
+        diagnostics::ServiceAnalyzer::new(Some(s.services.clone()), php())
+            .with_notice(move |message| client.notice(message)),
+    ));
     add(analyzer(diagnostics::TaggedServiceAnalyzer::new(php())));
     add(analyzer(diagnostics::ContainerConstantAnalyzer::new(php())));
     add(new_service_argument(Some(s.services.clone()), php()));

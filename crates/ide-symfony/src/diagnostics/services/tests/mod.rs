@@ -38,7 +38,19 @@ pub(super) fn service_index(
     php: Option<&PhpIndex>,
     files: &[(&str, &str)],
 ) -> Arc<ServiceIndex> {
+    // A compiled container: without one, missing services and parameters
+    // are not reported.
+    let compiled = dir.join("var/cache/dev");
+    std::fs::create_dir_all(&compiled).expect("container directory");
+    std::fs::write(
+        compiled.join("App_KernelDevDebugContainer.xml"),
+        "<container><services/></container>",
+    )
+    .expect("container");
     let services = ServiceIndex::new(&p(dir), dir.join("symfony-cache"), None).expect("services");
+    services
+        .reload_compiled_container()
+        .expect("compiled container");
     if let Some(php) = php {
         services.set_php_index(Some(php.clone()));
     }

@@ -226,8 +226,13 @@ Run `check` on a fully set-up project: dependencies installed (`composer
 install`, the Administration and Storefront `npm ci`) and the Symfony container
 compiled once, for example with `bin/console` (or `bin/ci` in the Shopware
 repository). The compiled container under `var/cache` supplies the services
-and parameters that bundles register at compile time; without it, such
-references are reported as missing. In the Shopware repository, the
+and parameters that bundles register at compile time; without it, missing
+services and parameters are not reported and `check` prints a note saying
+so (editors show it in the server's output). Any environment's debug container
+(`var/cache/<env>/*DebugContainer.xml`) is read: the development one is
+preferred, then the newest. Configuration parameters of a bundle that is not
+part of that container, such as a plugin that is not installed, are not
+reported. In the Shopware repository, the
 Storefront's SCSS libraries must also be copied to its `vendor` directory
 (`node copy-to-vendor.js`) for Bootstrap's variables to resolve.
 

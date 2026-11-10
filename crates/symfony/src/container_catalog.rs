@@ -48,7 +48,8 @@ impl ContainerCatalog {
         self.state.write().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Locates and loads `var/cache/dev*/Shopware_Core_KernelDevDebugContainer.xml`.
+    /// Locates and loads the compiled container (see
+    /// [`is_compiled_container_file_name`]).
     pub(crate) fn find_and_load_container(&self) -> std::io::Result<()> {
         match self.find_container_file() {
             Ok(path) => {
@@ -74,25 +75,38 @@ impl ContainerCatalog {
 
     fn find_container_file(&self) -> std::io::Result<String> {
         let cache_dir = Path::new(&self.project_root).join("var").join("cache");
-        let mut matches: Vec<String> = Vec::new();
-        for entry in std::fs::read_dir(&cache_dir)? {
-            let Ok(entry) = entry else { continue };
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if !name.starts_with("dev") {
+        let mut matches: Vec<(bool, std::time::SystemTime, String)> = Vec::new();
+        for environment in std::fs::read_dir(&cache_dir)?.flatten() {
+            let development = environment.file_name().to_string_lossy().starts_with("dev");
+            let Ok(files) = std::fs::read_dir(environment.path()) else {
                 continue;
-            }
-            let candidate = entry
-                .path()
-                .join("Shopware_Core_KernelDevDebugContainer.xml");
-            if std::fs::symlink_metadata(&candidate).is_ok() {
-                matches.push(candidate.to_string_lossy().into_owned());
+            };
+            for file in files.flatten() {
+                if !is_compiled_container_file_name(&file.file_name().to_string_lossy()) {
+                    continue;
+                }
+                let modified = file
+                    .metadata()
+                    .and_then(|metadata| metadata.modified())
+                    .unwrap_or(std::time::UNIX_EPOCH);
+                matches.push((
+                    development,
+                    modified,
+                    file.path().to_string_lossy().into_owned(),
+                ));
             }
         }
-        // filepath.Glob returns matches in lexical order.
-        matches.sort();
+        // The same preference as the scanner-fed catalog: a development
+        // container, then the newest, then the path.
+        matches.sort_by(|a, b| {
+            b.0.cmp(&a.0)
+                .then_with(|| b.1.cmp(&a.1))
+                .then_with(|| a.2.cmp(&b.2))
+        });
         matches
             .into_iter()
             .next()
+            .map(|(_, _, path)| path)
             .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))
     }
 
@@ -172,4 +186,13 @@ impl ContainerCatalog {
     pub fn last_updated(&self) -> Option<SystemTime> {
         self.read().last_updated
     }
+}
+
+/// Whether `name` is the XML dump of a compiled debug container:
+/// `<Kernel class><Environment>DebugContainer.xml`, such as
+/// `Shopware_Core_KernelDevDebugContainer.xml` or
+/// `App_KernelTestDebugContainer.xml`. Every environment's dump is admitted;
+/// the development one is preferred, then the newest.
+pub(crate) fn is_compiled_container_file_name(name: &str) -> bool {
+    name.ends_with("DebugContainer.xml")
 }

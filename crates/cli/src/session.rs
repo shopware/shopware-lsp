@@ -277,6 +277,9 @@ pub struct CliSession {
     pub configuration: Configuration,
     pub initial_index: IndexingResult,
     close_result: Mutex<Option<Result<(), String>>>,
+    /// Notices of the server that no command has printed yet.
+    notices: Arc<Mutex<Vec<String>>>,
+    err_out: Option<Output>,
 }
 
 impl CliSession {
@@ -318,11 +321,13 @@ impl CliSession {
                 .map_err(|error| CliError::fail(format!("start LSP client: {error}")))?;
         let client = Arc::new(RpcClient::new(frames));
         let (index_sender, index_events) = unbounded();
+        let notices = Arc::new(Mutex::new(Vec::new()));
         executor.spawn(read_server_messages(
             client.clone(),
             client_reader,
             index_sender,
             options.err_out.clone(),
+            notices.clone(),
         ));
         drop(_entered);
 
@@ -339,6 +344,8 @@ impl CliSession {
             configuration: Configuration::default(),
             initial_index: IndexingResult::default(),
             close_result: Mutex::new(None),
+            notices,
+            err_out: options.err_out.clone(),
             executor: Some(executor),
         };
         let root_uri = swlsp_uriutil::file_uri(&options.root);
@@ -566,11 +573,23 @@ impl CliSession {
         Ok(findings)
     }
 
+    /// The server's notices about the project (a prerequisite an
+    /// inspection is missing) that were not printed yet.
+    pub fn take_notices(&self) -> Vec<String> {
+        std::mem::take(&mut *lock(&self.notices))
+    }
+
     /// Shuts the server down. Idempotent.
     pub fn close(&self) -> Result<(), CliError> {
         let mut result = lock(&self.close_result);
         if let Some(result) = result.as_ref() {
             return result.clone().map_err(CliError::fail);
+        }
+        // Whatever the command did not print itself.
+        if let Some(mut err_out) = self.err_out.clone() {
+            for notice in self.take_notices() {
+                let _ = writeln!(err_out, "note: {notice}");
+            }
         }
         let mut errors: Vec<String> = Vec::new();
         let shutdown_deadline = Instant::now() + Duration::from_secs(10);
@@ -638,6 +657,7 @@ async fn read_server_messages(
     reader: tokio::io::ReadHalf<tokio::io::DuplexStream>,
     index_events: Sender<IndexEvent>,
     err_out: Option<Output>,
+    notices: Arc<Mutex<Vec<String>>>,
 ) {
     let mut reader = BufReader::new(reader);
     while let Ok(Some(text)) = read_message(&mut reader).await {
@@ -668,6 +688,7 @@ async fn read_server_messages(
                     message.params.as_deref(),
                     &index_events,
                     err_out.as_ref(),
+                    &notices,
                 );
                 if let Some(id) = id {
                     let response = match result {
@@ -691,6 +712,7 @@ fn handle_server_message(
     params: Option<&RawValue>,
     index_events: &Sender<IndexEvent>,
     err_out: Option<&Output>,
+    notices: &Mutex<Vec<String>>,
 ) -> Result<Value, String> {
     let params: Value = params
         .and_then(|raw| serde_json::from_str(raw.get()).ok())
@@ -713,7 +735,19 @@ fn handle_server_message(
             let message = params["message"].as_str().unwrap_or("").to_owned();
             let _ = index_events.send(IndexEvent::Failed(message));
         }
-        "window/logMessage" | "window/showMessage" => {
+        // Notices about the project (`Server::notice`): kept until the
+        // command has printed its results, so they do not interleave.
+        "window/logMessage" => {
+            if let Some(message) = params["message"].as_str()
+                && !message.is_empty()
+            {
+                let mut notices = lock(notices);
+                if !notices.iter().any(|known| known == message) {
+                    notices.push(message.to_owned());
+                }
+            }
+        }
+        "window/showMessage" => {
             if let Some(err_out) = err_out
                 && let Some(message) = params["message"].as_str()
                 && !message.is_empty()
