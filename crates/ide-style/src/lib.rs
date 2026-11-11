@@ -25,6 +25,19 @@ fn register(server: &Registrar<'_>, s: &Services) {
             swlsp_parser_scss::syntax::TK_BLOCK_COMMENT,
         ]),
     );
+    server.rule_help(
+        "scss",
+        &[swlsp_lsp::RuleHelp {
+            code: "scss.variable.unknown",
+            fix: "Define the variable, or correct its name to one the workspace or a Shopware \
+                  theme provides. A variable of a theme field must be declared in the theme's \
+                  theme.json.",
+            exceptions: "Module variables (math.$pi) and named arguments are not checked. A \
+                         variable bound anywhere in the file (a parameter, a loop variable) \
+                         counts as defined. Nothing is reported until indexing has finished.",
+            opt_out: "",
+        }],
+    );
     server.inspection(inspections::new_scss_variable(
         s.styles.clone(),
         Some(s.symbols.clone()),

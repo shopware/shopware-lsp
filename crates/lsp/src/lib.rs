@@ -66,7 +66,7 @@ pub use inspection::{
     BoundFix, CommandQuickFix, DiagnosticId, DocumentResolver, DocumentSnapshot, FixContext, FixId,
     FixPresentation, FixResolution, Inspection, InspectionDefinition, InspectionScope,
     InspectionSpec, Problem, ProblemDefinition, ProblemReporter, QuickFix, RewriteQuickFix,
-    SuppressionReader, Suppressions, bind_fix,
+    RuleHelp, SuppressionReader, Suppressions, bind_fix,
 };
 pub use providers::*;
 pub use server::{CloseError, Server, WeakServer};

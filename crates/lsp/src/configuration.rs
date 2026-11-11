@@ -100,6 +100,20 @@ pub struct ConfigurationDiagnostic {
     pub source: String,
     pub default_severity: String,
     pub default_enabled: bool,
+    /// What to do about the diagnostic, when its rule explains it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub help: Option<ConfigurationRuleHelp>,
+}
+
+/// See [`crate::RuleHelp`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigurationRuleHelp {
+    pub fix: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub exceptions: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub opt_out: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
@@ -417,6 +431,13 @@ impl Server {
                         default_severity: diagnostic_severity_name(problem.default_severity)
                             .to_owned(),
                         default_enabled: !problem.disabled_by_default,
+                        help: registry.rule_help.get(problem.id.0.as_str()).map(|help| {
+                            ConfigurationRuleHelp {
+                                fix: help.fix.to_owned(),
+                                exceptions: help.exceptions.to_owned(),
+                                opt_out: help.opt_out.to_owned(),
+                            }
+                        }),
                     })
                     .collect();
                 rules.sort_by(|left, right| left.id.cmp(&right.id));

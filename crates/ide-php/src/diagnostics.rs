@@ -28,6 +28,7 @@ impl swlsp_ide::diagnostics::DeclaredAnalyzer for PhpSemanticAnalyzer {
 }
 
 pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
+    server.rule_help("php", crate::inspections::help::PHP);
     server.inspection(analyzer_inspection(PhpSemanticAnalyzer(
         s.php_features.clone(),
     )));

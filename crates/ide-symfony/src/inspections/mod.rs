@@ -1,6 +1,7 @@
 //! Inspections of the Symfony domain: each declares its languages and
 //! codes, runs analyzers of [`crate::diagnostics`] and binds quick fixes.
 
+mod help;
 mod services;
 
 pub use services::*;
@@ -14,6 +15,7 @@ use crate::diagnostics;
 
 pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
     let php = || s.php();
+    server.rule_help("symfony", help::SYMFONY);
     let add = |inspection| server.inspection(inspection);
 
     add(analyzer(diagnostics::EmbeddedLanguageAnalyzer::new(php())));

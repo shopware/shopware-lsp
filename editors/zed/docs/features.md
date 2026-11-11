@@ -146,7 +146,7 @@ project. Full list and behaviour in [tasks.md](tasks.md).
 
 ## Agent Panel tools
 
-The same server also speaks MCP, so Zed's Agent Panel gets 16 Shopware tools —
+The same server also speaks MCP, so Zed's Agent Panel gets 17 Shopware tools —
 diagnostics, hover, definitions, references, workspace symbols, code actions,
 scaffolding, and the DAL entity-schema workflow.
 

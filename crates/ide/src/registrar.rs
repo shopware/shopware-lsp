@@ -192,6 +192,14 @@ impl<'a> Registrar<'a> {
         });
     }
 
+    /// Explains diagnostic codes (see [`RuleHelp`]); `name` is the group
+    /// they belong to, for the registration log.
+    pub fn rule_help(&self, name: &str, help: &'static [RuleHelp]) {
+        self.defer("ruleHelp", name, Vec::new(), move |server| {
+            server.register_rule_help(help)
+        });
+    }
+
     pub fn context_enricher(&self, language: LanguageId, enricher: ContextEnricher) {
         self.defer(
             "contextEnricher",

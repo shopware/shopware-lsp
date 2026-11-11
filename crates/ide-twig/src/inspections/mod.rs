@@ -1,6 +1,7 @@
 //! Inspections of the Twig domain: each declares its languages and
 //! codes, runs analyzers of [`crate::diagnostics`] and binds quick fixes.
 
+mod help;
 mod twig;
 
 use swlsp_ide::inspections::analyzer_inspection as analyzer;
@@ -19,6 +20,8 @@ pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
 
     add(analyzer(diagnostics::TwigEnumAnalyzer::new(php())));
     add(analyzer(diagnostics::TwigDeprecationAnalyzer::new(twig())));
+    server.rule_help("twig.markup", help::MARKUP);
+    server.rule_help("twig", help::TWIG);
     add(analyzer(diagnostics::TwigMarkupAnalyzer::new()));
     add(analyzer(diagnostics::TwigMemberMissingAnalyzer::new(
         twig(),

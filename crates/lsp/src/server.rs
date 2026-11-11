@@ -19,7 +19,9 @@ use crate::configuration::{
 use crate::context::{BoxError, CancellationToken, Context, RpcError, codes, lock};
 use crate::diagnostics::DiagnosticsState;
 use crate::document::{DocumentManager, DocumentObserver, SyntaxContext};
-use crate::inspection::{Inspection, InspectionRegistry, SuppressionReader};
+use crate::inspection::{
+    DiagnosticId, Inspection, InspectionRegistry, RuleHelp, SuppressionReader,
+};
 use crate::providers::*;
 use crate::transport::{self, Connection, Dispatcher, Handler, Work};
 use crate::workspace::{WorkspaceFactory, WorkspaceRuntime};
@@ -56,6 +58,8 @@ pub(crate) struct Registry {
     pub enrichers: HashMap<LanguageId, ContextEnricher>,
     pub inspections: InspectionRegistry,
     pub suppressions: HashMap<LanguageId, SuppressionReader>,
+    /// By diagnostic code.
+    pub rule_help: BTreeMap<&'static str, RuleHelp>,
 }
 
 /// Client integration negotiated in `initialize`.
@@ -422,6 +426,37 @@ impl Server {
         if let Err(error) = result {
             panic!("register inspection: {error}");
         }
+    }
+
+    /// Adds what to do about diagnostic codes to the configuration catalog.
+    /// A code may be explained once.
+    pub fn register_rule_help(&self, help: &'static [RuleHelp]) {
+        self.update_registry(|registry| {
+            for entry in help {
+                assert!(
+                    registry.rule_help.insert(entry.code, *entry).is_none(),
+                    "diagnostic {:?} is explained more than once",
+                    entry.code
+                );
+            }
+        });
+    }
+
+    /// The explained codes no inspection declares: a renamed or removed
+    /// rule left its explanation behind.
+    pub fn unknown_rule_help(&self) -> Vec<&'static str> {
+        let registry = self.registry();
+        registry
+            .rule_help
+            .keys()
+            .filter(|code| {
+                !registry
+                    .inspections
+                    .by_code
+                    .contains_key(&DiagnosticId::from(**code))
+            })
+            .copied()
+            .collect()
     }
 
     /// Adds language-specific semantic context without exposing domain

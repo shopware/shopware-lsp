@@ -74,6 +74,23 @@ pub struct ProblemDefinition {
     pub disabled_by_default: bool,
 }
 
+/// What to do about one diagnostic code, for people and agents who meet it:
+/// the part of a rule its one-line message cannot carry. Declared next to
+/// the rule and registered with [`crate::Server::register_rule_help`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuleHelp {
+    pub code: &'static str,
+    /// How to resolve a finding.
+    pub fix: &'static str,
+    /// What the rule deliberately does not report, so a similar-looking
+    /// place without a finding is not a gap; empty when there is nothing
+    /// to say.
+    pub exceptions: &'static str,
+    /// A way to tell the rule that a finding is intended, beyond switching
+    /// the code off or suppressing the line; empty when there is none.
+    pub opt_out: &'static str,
+}
+
 /// Which clients an inspection is presented to.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum InspectionScope {

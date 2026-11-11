@@ -1,6 +1,7 @@
 //! Inspections of the Shopware domain: each declares its languages and
 //! codes, runs analyzers of [`crate::diagnostics`] and binds quick fixes.
 
+mod help;
 mod migration;
 mod shopware;
 
@@ -22,6 +23,11 @@ pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
     let php = || s.php();
     let add = |inspection| server.inspection(inspection);
 
+    server.rule_help("shopware.storeReview", help::STORE_REVIEW);
+    server.rule_help("shopware.dalDefinition", help::DAL_DEFINITION);
+    server.rule_help("shopware.announced", help::ANNOUNCED);
+    server.rule_help("shopware.migration", help::MIGRATION);
+    server.rule_help("shopware.project", help::PROJECT);
     add(analyzer(diagnostics::ShopwarePhpLocalAnalyzer::new()));
     add(analyzer(diagnostics::ShopwarePhpSemanticAnalyzer::new(
         php(),

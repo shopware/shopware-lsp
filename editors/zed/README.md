@@ -26,7 +26,7 @@ so this small WASM extension is the route.
 - **Organize imports and apply quick fixes** from the code action menu.
 - **Run Shopware's generators** — scaffolds, entity schemas, Twig overrides,
   snippet creation. Ask the Agent Panel, or run them as Zed tasks.
-- **Give the Agent Panel real tools** — 16 MCP tools over the same index, so
+- **Give the Agent Panel real tools** — 17 MCP tools over the same index, so
   an agent can look things up instead of guessing.
 - **Run the same checks in CI** — the server has a headless `check` mode, so a
   job can fail on what the editor would have underlined.

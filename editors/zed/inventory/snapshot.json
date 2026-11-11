@@ -132,6 +132,7 @@
     "shopware_entity_schema_preview",
     "shopware_entity_schema_reconcile",
     "shopware_entity_schema_search",
+    "shopware_explain_diagnostic",
     "shopware_hover",
     "shopware_references",
     "shopware_scaffold",

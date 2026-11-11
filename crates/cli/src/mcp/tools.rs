@@ -58,6 +58,7 @@ pub(crate) fn dispatch(
             true,
         )?),
         "shopware_workspace_symbols" => output(&workspace_symbols(runtime, decode(arguments)?)?),
+        "shopware_explain_diagnostic" => output(&explain_diagnostic(runtime, decode(arguments)?)?),
         _ => scaffold::dispatch(runtime, name, arguments),
     }
 }
@@ -69,6 +70,56 @@ struct DiagnosticsInput {
     severity: String,
     max_results: i64,
 }
+
+#[derive(Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+struct ExplainInput {
+    code: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExplainOutput {
+    query: String,
+    rules: Vec<ExplainedRule>,
+    configuration: ExplainConfiguration,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExplainedRule {
+    code: String,
+    inspection: String,
+    description: String,
+    languages: Vec<String>,
+    default_severity: String,
+    enabled_by_default: bool,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    fix: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    exceptions: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    opt_out: String,
+}
+
+/// How any code is configured or suppressed.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExplainConfiguration {
+    file: &'static str,
+    rule: &'static str,
+    inspection: &'static str,
+    suppress: &'static str,
+}
+
+const EXPLAIN_CONFIGURATION: ExplainConfiguration = ExplainConfiguration {
+    file: ".config/shopware/lsp.yaml",
+    rule: "diagnostics.rules.<code>: off, hint, info, warning or error",
+    inspection: "diagnostics.inspections.<inspection>: false",
+    suppress: "PHP: a `@phpstan-ignore <code>` or `@noinspection <code>` comment. Twig, YAML, \
+               XML, JavaScript/TypeScript and SCSS: an `@noinspection <code>` comment. A comment \
+               on a line of its own applies to the next line with code.",
+};
 
 #[derive(Deserialize, Default)]
 #[serde(default, rename_all = "camelCase")]
@@ -291,6 +342,78 @@ fn diagnostics(
             truncated: total > findings.len(),
             diagnostics: findings,
         })
+    })
+}
+
+/// The rules named by a diagnostic code or an inspection ID, from the
+/// catalog the editor's configuration UI reads.
+fn explain_diagnostic(
+    runtime: &ToolCall<'_>,
+    input: ExplainInput,
+) -> Result<ExplainOutput, CliError> {
+    let query = input.code.trim().to_owned();
+    if query.is_empty() {
+        return Err(CliError::fail("code must not be empty"));
+    }
+    let catalog: Value = runtime
+        .with_session(|session| session.call("shopware/configuration/catalog", json!({})))?;
+    let inspections = catalog["inspections"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let text = |value: &Value| value.as_str().unwrap_or_default().to_owned();
+    let mut rules = Vec::new();
+    let mut known = Vec::new();
+    for inspection in &inspections {
+        let id = text(&inspection["id"]);
+        let whole = id == query;
+        for rule in inspection["rules"].as_array().into_iter().flatten() {
+            let code = text(&rule["id"]);
+            if !whole && code != query {
+                known.push(code);
+                continue;
+            }
+            rules.push(ExplainedRule {
+                code,
+                inspection: id.clone(),
+                description: text(&inspection["description"]),
+                languages: inspection["languages"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(text)
+                    .collect(),
+                default_severity: text(&rule["defaultSeverity"]),
+                enabled_by_default: rule["defaultEnabled"] == json!(true),
+                fix: text(&rule["help"]["fix"]),
+                exceptions: text(&rule["help"]["exceptions"]),
+                opt_out: text(&rule["help"]["optOut"]),
+            });
+        }
+    }
+    if rules.is_empty() {
+        // The codes sharing the most leading segments with the query.
+        let shared = |code: &str| {
+            code.split('.')
+                .zip(query.split('.'))
+                .take_while(|(left, right)| left == right)
+                .count()
+        };
+        known.sort_by(|left, right| {
+            shared(right)
+                .cmp(&shared(left))
+                .then_with(|| left.cmp(right))
+        });
+        known.truncate(8);
+        return Err(CliError::fail(format!(
+            "unknown diagnostic code or inspection {query:?}; similar codes: {}",
+            known.join(", ")
+        )));
+    }
+    Ok(ExplainOutput {
+        query,
+        rules,
+        configuration: EXPLAIN_CONFIGURATION,
     })
 }
 

@@ -487,6 +487,7 @@ pub static FEATURE_CATALOG: &[CatalogEntry] = &[
 /// configuration. Tools default to enabled.
 pub static MCP_TOOL_CATALOG: &[CatalogEntry] = &[
     entry("shopware_diagnostics", "Diagnostics"),
+    entry("shopware_explain_diagnostic", "Explain Diagnostic"),
     entry("shopware_code_actions", "Code Actions"),
     entry("shopware_apply_code_action", "Apply Code Action"),
     entry("shopware_hover", "Hover"),

@@ -1,5 +1,6 @@
 //! Inspections of the PHP domain.
 
+pub(crate) mod help;
 mod php_imports;
 
 pub use php_imports::{UNUSED_IMPORT_FIX_ID, new_php_imports};

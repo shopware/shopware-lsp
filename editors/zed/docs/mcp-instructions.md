@@ -1,6 +1,6 @@
 # Shopware MCP tools
 
-Exposes the Shopware Language Server's 16 MCP tools to the Agent Panel:
+Exposes the Shopware Language Server's 17 MCP tools to the Agent Panel:
 diagnostics, hover, definitions, references, workspace symbols, code actions,
 scaffolding, and the DAL entity-schema workflow.
 

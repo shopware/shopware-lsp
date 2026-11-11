@@ -154,7 +154,12 @@ example, an MCP client configuration can launch one server per workspace:
 ```
 
 The server advertises diagnostics, code actions, hover, definitions,
-references, and workspace-symbol search. It also exposes the production
+references, and workspace-symbol search. `shopware_explain_diagnostic` takes a
+diagnostic code or an inspection ID and returns what the rule reports, how to
+fix a finding, what the rule deliberately leaves alone, how to opt out in the
+code, and how to configure or suppress it: the explanations of the
+[inspection reference](inspections.md), so an agent does not have to guess
+from a one-line message. It also exposes the production
 Shopware/Symfony scaffold generators through `shopware_scaffold_catalog` and
 `shopware_scaffold`. A scaffold call previews a unified diff by default; pass
 `write: true` to create its validated files. The typed DAL entity workflow is

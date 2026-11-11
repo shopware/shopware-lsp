@@ -301,7 +301,13 @@ code-action rediscovery pass.
    fields, only when the list is complete (no disk reads, no undeclared
    index); a refresh then reuses its results while they are unchanged. Cover each new input in
    `crates/app/src/tests/inspection_inputs_test.rs`.
-10. Test the diagnostic, fix presentation, generated edit, stale-state
+10. Explain every diagnostic code with a `RuleHelp` entry in the `help.rs`
+    beside the domain's inspections (`Registrar::rule_help`): how to fix a
+    finding, what the rule deliberately leaves alone, and how to mark a
+    finding as intended. The configuration catalog, `docs/inspections.md` and
+    the MCP tool `shopware_explain_diagnostic` show it; a code without one
+    fails `inspection_reference_is_up_to_date`.
+11. Test the diagnostic, fix presentation, generated edit, stale-state
     behavior, configuration override, and MCP/CLI path when externally useful.
     Write diagnostic and fix tests with the fixture markup helpers
     (`check_problems`, `check_diagnostics`, `check_fix`; see

@@ -76,6 +76,7 @@ fn mcp_server_advertises_analysis_and_write_tools() {
         "shopware_definition",
         "shopware_references",
         "shopware_workspace_symbols",
+        "shopware_explain_diagnostic",
         "shopware_scaffold_catalog",
         "shopware_scaffold",
         "shopware_entity_schema_bootstrap",
@@ -99,6 +100,7 @@ fn mcp_server_advertises_analysis_and_write_tools() {
         ("shopware_definition", "locations"),
         ("shopware_references", "locations"),
         ("shopware_workspace_symbols", "symbols"),
+        ("shopware_explain_diagnostic", "rules"),
         ("shopware_scaffold_catalog", "scaffolds"),
         ("shopware_scaffold", "diff"),
         ("shopware_entity_schema_bootstrap", "spec"),
@@ -879,6 +881,65 @@ fn mcp_twig_versioning_quick_fix_uses_production_index() {
     let content = std::fs::read_to_string(&override_path).unwrap();
     assert!(!content.contains("deadbeef"));
     assert!(content.contains("{# shopware-block: "));
+}
+
+#[test]
+fn mcp_explains_diagnostic_codes_and_inspections() {
+    let root = temp_dir();
+    let mut client = McpClient::connect(root.path());
+
+    let explained = client.call_ok(
+        "shopware_explain_diagnostic",
+        json!({"code": "shopware.php.route.acl_missing"}),
+    );
+    let [rule] = explained["rules"].as_array().unwrap().as_slice() else {
+        panic!("expected one rule: {explained}");
+    };
+    assert_eq!(rule["code"], "shopware.php.route.acl_missing");
+    assert_eq!(rule["inspection"], "shopware.php.semantic");
+    assert_eq!(rule["defaultSeverity"], "warning");
+    assert_eq!(rule["enabledByDefault"], true);
+    assert!(rule["fix"].as_str().unwrap().contains("_acl"), "{rule}");
+    assert!(
+        rule["exceptions"].as_str().unwrap().contains("GET-only"),
+        "{rule}"
+    );
+    assert!(
+        rule["optOut"].as_str().unwrap().contains("'_acl' => []"),
+        "{rule}"
+    );
+    assert_eq!(
+        explained["configuration"]["file"],
+        ".config/shopware/lsp.yaml"
+    );
+
+    // An inspection ID explains all of its codes.
+    let inspection = client.call_ok(
+        "shopware_explain_diagnostic",
+        json!({"code": "twig.markup"}),
+    );
+    let codes: Vec<&str> = inspection["rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|rule| rule["code"].as_str().unwrap())
+        .collect();
+    assert!(codes.contains(&"twig.html.button_type"), "{codes:?}");
+    assert!(codes.len() > 1);
+    for rule in inspection["rules"].as_array().unwrap() {
+        assert!(!rule["fix"].as_str().unwrap().is_empty(), "{rule}");
+    }
+
+    let unknown = client.call_tool(
+        "shopware_explain_diagnostic",
+        json!({"code": "shopware.php.route.acl"}),
+    );
+    assert!(unknown.is_error);
+    assert!(
+        unknown.text.contains("shopware.php.route.acl_missing"),
+        "{}",
+        unknown.text
+    );
 }
 
 #[test]
