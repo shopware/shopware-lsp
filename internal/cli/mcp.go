@@ -62,7 +62,16 @@ func (r *Runner) runMCP(ctx context.Context, args []string) error {
 		return err
 	}
 	if err := r.requireSupportedProject(root); err != nil {
-		return err
+		var unsupported *unsupportedProjectError
+		if !errors.As(err, &unsupported) {
+			return err
+		}
+		// Editors that register MCP servers globally, such as Zed's context
+		// servers, launch this for every project and report an exit as a
+		// failed start. Mirror the language server's inactive mode instead:
+		// complete the handshake, advertise no tools, never index the root.
+		_ = writeFormatted(r.errOut, "Shopware MCP inactive: %v\n", err)
+		return r.serveMCP(ctx, newInactiveMCPServer(r.options.Version, err))
 	}
 	editorConfiguration, err := mcpEditorConfiguration()
 	if err != nil {
@@ -81,7 +90,10 @@ func (r *Runner) runMCP(ctx context.Context, args []string) error {
 			_ = writeFormatted(r.errOut, "Close MCP workspace: %v\n", closeErr)
 		}
 	}()
-	server := newMCPServer(runtime)
+	return r.serveMCP(ctx, newMCPServer(runtime))
+}
+
+func (r *Runner) serveMCP(ctx context.Context, server *mcp.Server) error {
 	transport := &mcp.IOTransport{
 		Reader: io.NopCloser(r.in),
 		Writer: mcpNopWriteCloser{Writer: r.out},
@@ -90,6 +102,21 @@ func (r *Runner) runMCP(ctx context.Context, args []string) error {
 		return fmt.Errorf("run stdio MCP server: %w", err)
 	}
 	return nil
+}
+
+// newInactiveMCPServer serves a root that is not a Shopware or Symfony
+// project. It registers no tools, and its instructions carry the reason so a
+// client that surfaces them can tell the user how to opt in.
+func newInactiveMCPServer(version string, reason error) *mcp.Server {
+	return mcp.NewServer(
+		&mcp.Implementation{Name: "shopware-lsp", Version: version},
+		&mcp.ServerOptions{
+			Instructions: fmt.Sprintf(
+				"Shopware LSP is inactive and provides no tools for this workspace: %v.", reason,
+			),
+			Capabilities: &mcp.ServerCapabilities{},
+		},
+	)
 }
 
 func mcpConfiguration(

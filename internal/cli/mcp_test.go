@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1041,3 +1042,44 @@ func actionTitles(actions []mcpCodeAction) []string {
 }
 
 func mcpBoolPointer(value bool) *bool { return &value }
+
+func TestMCPServesInactiveForUnsupportedProject(t *testing.T) {
+	root := t.TempDir()
+	cacheRoot := t.TempDir()
+	t.Setenv("SHOPWARE_LSP_CACHE_DIR", cacheRoot)
+	// Run decodes this only on the active path; an invalid value proves the
+	// inactive server never reaches the configuration it does not need.
+	t.Setenv("SHOPWARE_LSP_EDITOR_CONFIGURATION", "{")
+
+	serverIn, clientOut := io.Pipe()
+	clientIn, serverOut := io.Pipe()
+	var errOut bytes.Buffer
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		err := New(Options{Version: "test"}).Run(
+			ctx, []string{"-root", root, "mcp"}, serverIn, serverOut, &errOut,
+		)
+		// A server that exits early must fail Connect, not leave the client
+		// blocked writing into a pipe nobody reads.
+		_ = serverIn.Close()
+		_ = serverOut.Close()
+		done <- err
+	}()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "shopware-lsp-test", Version: "test"}, nil)
+	session, err := client.Connect(ctx, &mcp.IOTransport{Reader: clientIn, Writer: clientOut}, nil)
+	require.NoError(t, err)
+	instructions := session.InitializeResult().Instructions
+	require.Contains(t, instructions, "inactive")
+	require.Contains(t, instructions, "unsupported project root")
+	require.Nil(t, session.InitializeResult().Capabilities.Tools)
+
+	require.NoError(t, session.Close())
+	cancel()
+	require.NoError(t, <-done)
+	require.Contains(t, errOut.String(), "Shopware MCP inactive: unsupported project root")
+	entries, err := os.ReadDir(cacheRoot)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+}

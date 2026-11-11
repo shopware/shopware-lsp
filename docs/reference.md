@@ -43,8 +43,11 @@ manifest files, `symfony/framework-bundle` or `config/bundles.php`, and the
 committed `.config/shopware/lsp.yaml` opt-in. Use `project-info` to see
 the detected kind and its evidence without creating a workspace cache. For an
 unusual but intentional root, either add the project configuration or pass the
-global `-allow-unsupported-project` flag before the command. The same guard is
-enforced by the language-server and MCP entry points.
+global `-allow-unsupported-project` flag before the command. The language
+server and `mcp` apply the same guard but do not exit, because editors start
+them for every project: the language server initializes with an inactive
+capability set, and `mcp` completes the handshake with no tools, logging the
+reason to stderr. Neither indexes the root.
 
 Positions are one-based `file:line:column` values. Structured feature commands
 emit JSON. `check` and `stats` default to readable text; put the global `-json`
