@@ -6,6 +6,7 @@ mod dal_entity;
 mod decoration;
 mod entity_snapshot;
 mod php_local;
+mod php_preflight;
 mod php_review;
 mod php_semantic;
 mod services_xml;

@@ -42,6 +42,16 @@ pub const SHOPWARE_PHP_ROUTE_LISTENER_CODE: &str = "shopware.php.listener.route_
 pub const SHOPWARE_PHP_SYMFONY_COOKIE_CODE: &str = "shopware.php.cookie.symfony_insecure";
 pub const SHOPWARE_PHP_EMPTY_RESPONSE_CODE: &str = "shopware.php.response.empty";
 pub const SHOPWARE_PHP_LOCAL_WRITE_CODE: &str = "shopware.php.filesystem.local_write";
+pub const SHOPWARE_PHP_UNBOUNDED_SEARCH_CODE: &str = "shopware.php.repository.unbounded_search";
+pub const SHOPWARE_PHP_SYSTEM_CONFIG_CONSTRUCTOR_CODE: &str =
+    "shopware.php.system_config.constructor";
+pub const SHOPWARE_PHP_STATE_NAME_CODE: &str = "shopware.php.state.translated_name";
+pub const SHOPWARE_PHP_MESSAGE_PAYLOAD_CODE: &str = "shopware.php.message.entity_payload";
+pub const SHOPWARE_PHP_GET_MUTATION_CODE: &str = "shopware.php.route.get_mutation";
+pub const SHOPWARE_PHP_ROUTE_ACL_CODE: &str = "shopware.php.route.acl_missing";
+pub const SHOPWARE_PHP_GETCWD_CODE: &str = "shopware.php.filesystem.getcwd";
+pub const SHOPWARE_PHP_DEBUG_OUTPUT_CODE: &str = "shopware.php.function.debug_output";
+pub const SHOPWARE_PHP_EMPTY_CATCH_CODE: &str = "shopware.php.catch.empty";
 
 const ENTITY_REPOSITORY_CLASS: &str =
     "Shopware\\Core\\Framework\\DataAbstractionLayer\\EntityRepository";
@@ -69,7 +79,7 @@ impl ShopwarePhpSemanticAnalyzer {
 impl DeclaredAnalyzer for ShopwarePhpSemanticAnalyzer {
     const INSPECTION: InspectionSpec = InspectionSpec {
         id: "shopware.php.semantic",
-        description: "Store review rules needing type information: internal API use, repositories queried in loops, session access in Store API routes and payment handlers, scheduled task intervals, default contexts, system config reads ignoring the sales channel, kernel listeners checking the route, insecure Symfony cookies, empty responses and writes to the local disk.",
+        description: "Store review rules needing type information: internal API use, repositories queried in loops, session access in Store API routes and payment handlers, scheduled task intervals, default contexts, system config reads ignoring the sales channel, kernel listeners checking the route, insecure Symfony cookies, empty responses, writes to the local disk, unrestricted searches, config reads in constructors, translated state names, entities in queue messages, GET routes that change data, Admin API write routes without privileges, getcwd(), debug output and empty catch blocks.",
         domain: "shopware",
         scope: InspectionScope::Framework,
         languages: &[LanguageId::Php],
@@ -91,6 +101,15 @@ impl DeclaredAnalyzer for ShopwarePhpSemanticAnalyzer {
             SHOPWARE_PHP_SYMFONY_COOKIE_CODE,
             SHOPWARE_PHP_EMPTY_RESPONSE_CODE,
             SHOPWARE_PHP_LOCAL_WRITE_CODE,
+            SHOPWARE_PHP_UNBOUNDED_SEARCH_CODE,
+            SHOPWARE_PHP_SYSTEM_CONFIG_CONSTRUCTOR_CODE,
+            SHOPWARE_PHP_STATE_NAME_CODE,
+            SHOPWARE_PHP_MESSAGE_PAYLOAD_CODE,
+            SHOPWARE_PHP_GET_MUTATION_CODE,
+            SHOPWARE_PHP_ROUTE_ACL_CODE,
+            SHOPWARE_PHP_GETCWD_CODE,
+            SHOPWARE_PHP_DEBUG_OUTPUT_CODE,
+            SHOPWARE_PHP_EMPTY_CATCH_CODE,
         ],
     };
 }
@@ -134,6 +153,7 @@ impl ProblemAnalyzer for ShopwarePhpSemanticAnalyzer {
                 PHP_FUNCTION_CALL,
                 PHP_SCOPED_CALL,
                 PHP_OBJECT_CREATION,
+                PHP_CATCH_CLAUSE,
             ],
             |node| {
                 if ctx.is_cancelled() {
@@ -143,21 +163,27 @@ impl ProblemAnalyzer for ShopwarePhpSemanticAnalyzer {
                     PHP_CLASS_DECLARATION => {
                         run.check_class(node);
                         run.check_route_listeners(node);
+                        run.check_preflight_class(node);
                     }
                     PHP_MEMBER_CALL => {
                         run.check_member_call(node);
                         run.check_system_config_call(node);
                         run.check_cookie_secure_call(node);
                         run.check_filesystem_method(node);
+                        run.check_unbounded_search(node);
+                        run.check_system_config_in_constructor(node);
+                        run.check_state_name_comparison(node);
                     }
                     PHP_FUNCTION_CALL => {
                         run.check_function_call(node);
                         run.check_filesystem_function(node);
+                        run.check_preflight_function(node);
                     }
                     PHP_SCOPED_CALL => {
                         run.check_default_context(node);
                         run.check_cookie_creation(node);
                     }
+                    PHP_CATCH_CLAUSE => run.check_empty_catch(node),
                     PHP_OBJECT_CREATION => {
                         run.check_cookie_creation(node);
                         run.check_empty_response(node);

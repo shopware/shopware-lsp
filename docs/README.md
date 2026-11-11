@@ -49,6 +49,7 @@ After that, read the subsystem you are changing.
 | [`symfony-plugin-roadmap.md`](symfony-plugin-roadmap.md) | Symfony feature coverage mapped against the PhpStorm Symfony plugin |
 | [`shopware-rector-parity.md`](shopware-rector-parity.md) | Shopware migration inspections and their Rector counterparts |
 | [`phpstan-shopware-parity.md`](phpstan-shopware-parity.md) | Store-review and future-compatibility inspections and their phpstan-shopware counterparts |
+| [`store-review-rules.md`](store-review-rules.md) | The LSP's own rules for recurring Store review findings, with what each leaves alone |
 
 ## Reading paths by task
 

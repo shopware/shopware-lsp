@@ -330,26 +330,35 @@ Languages: php. Domain: `shopware`.
 
 ## `shopware.php.semantic`
 
-Store review rules needing type information: internal API use, repositories queried in loops, session access in Store API routes and payment handlers, scheduled task intervals, default contexts, system config reads ignoring the sales channel, kernel listeners checking the route, insecure Symfony cookies, empty responses and writes to the local disk.
+Store review rules needing type information: internal API use, repositories queried in loops, session access in Store API routes and payment handlers, scheduled task intervals, default contexts, system config reads ignoring the sales channel, kernel listeners checking the route, insecure Symfony cookies, empty responses, writes to the local disk, unrestricted searches, config reads in constructors, translated state names, entities in queue messages, GET routes that change data, Admin API write routes without privileges, getcwd(), debug output and empty catch blocks.
 
 Languages: php. Domain: `shopware`.
 
 | Code | Default severity | Enabled by default |
 |---|---|---|
+| `shopware.php.catch.empty` | warning | yes |
 | `shopware.php.context.default` | warning | yes |
 | `shopware.php.cookie.symfony_insecure` | warning | yes |
 | `shopware.php.decorator.concrete_extension` | warning | yes |
+| `shopware.php.filesystem.getcwd` | warning | yes |
 | `shopware.php.filesystem.local_write` | warning | yes |
+| `shopware.php.function.debug_output` | warning | yes |
 | `shopware.php.internal.class_extension` | warning | yes |
 | `shopware.php.internal.function_call` | warning | yes |
 | `shopware.php.internal.method_call` | warning | yes |
 | `shopware.php.listener.route_condition` | warning | yes |
+| `shopware.php.message.entity_payload` | warning | yes |
 | `shopware.php.repository.in_loop` | warning | yes |
+| `shopware.php.repository.unbounded_search` | warning | yes |
 | `shopware.php.response.empty` | warning | yes |
+| `shopware.php.route.acl_missing` | warning | yes |
+| `shopware.php.route.get_mutation` | warning | yes |
 | `shopware.php.scheduled_task.interval` | warning | yes |
 | `shopware.php.session.constructor` | warning | yes |
 | `shopware.php.session.payment_handler` | warning | yes |
 | `shopware.php.session.store_api` | warning | yes |
+| `shopware.php.state.translated_name` | warning | yes |
+| `shopware.php.system_config.constructor` | warning | yes |
 | `shopware.php.system_config.sales_channel` | warning | yes |
 | `shopware.php.user.store_token` | warning | yes |
 

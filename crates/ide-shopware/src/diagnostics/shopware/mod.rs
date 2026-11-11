@@ -15,6 +15,7 @@ mod php_conventions;
 mod php_filesystem;
 mod php_http;
 mod php_local;
+mod php_preflight;
 mod php_semantic;
 mod services_xml;
 mod store_composer;

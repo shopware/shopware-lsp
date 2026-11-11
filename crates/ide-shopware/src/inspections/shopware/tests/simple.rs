@@ -30,7 +30,7 @@ fn shopware_php_semantic_inspection_declares_independent_rules() {
         analyzer_inspection(ShopwarePhpSemanticAnalyzer::new(Some(index))).definition();
     assert_eq!(definition.id, "shopware.php.semantic");
     assert_eq!(definition.languages, vec![LanguageId::Php]);
-    assert_eq!(definition.problems.len(), 16);
+    assert_eq!(definition.problems.len(), 25);
     let mut seen = HashSet::new();
     for problem in &definition.problems {
         assert!(seen.insert(problem.id.clone()), "{}", problem.id);
