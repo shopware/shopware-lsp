@@ -19,6 +19,7 @@ pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
 
     add(analyzer(diagnostics::TwigEnumAnalyzer::new(php())));
     add(analyzer(diagnostics::TwigDeprecationAnalyzer::new(twig())));
+    add(analyzer(diagnostics::TwigMarkupAnalyzer::new()));
     add(analyzer(diagnostics::TwigMemberMissingAnalyzer::new(
         twig(),
         php(),

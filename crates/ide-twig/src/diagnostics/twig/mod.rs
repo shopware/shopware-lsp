@@ -5,6 +5,7 @@ mod deprecation;
 mod enums;
 mod live_event;
 mod macros;
+mod markup;
 mod member;
 mod render_block;
 mod snippet;
@@ -20,6 +21,7 @@ pub use deprecation::TwigDeprecationAnalyzer;
 pub use enums::TwigEnumAnalyzer;
 pub use live_event::LiveComponentEventAnalyzer;
 pub use macros::TwigMacroAnalyzer;
+pub use markup::TwigMarkupAnalyzer;
 pub use member::{
     TwigMemberCallAnalyzer, TwigMemberDeprecationAnalyzer, TwigMemberMissingAnalyzer,
 };

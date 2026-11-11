@@ -50,6 +50,7 @@ After that, read the subsystem you are changing.
 | [`shopware-rector-parity.md`](shopware-rector-parity.md) | Shopware migration inspections and their Rector counterparts |
 | [`phpstan-shopware-parity.md`](phpstan-shopware-parity.md) | Store-review and future-compatibility inspections and their phpstan-shopware counterparts |
 | [`store-review-rules.md`](store-review-rules.md) | The LSP's own rules for recurring Store review findings, with what each leaves alone |
+| [`twig-markup-rules.md`](twig-markup-rules.md) | The Storefront template rules of `twig.markup`, with what each leaves alone |
 
 ## Reading paths by task
 

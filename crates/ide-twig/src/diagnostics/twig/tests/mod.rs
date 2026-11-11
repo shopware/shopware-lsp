@@ -3,6 +3,7 @@
 mod component;
 mod deprecation;
 mod enums_macros;
+mod markup;
 mod member;
 mod render_block;
 mod snippet;

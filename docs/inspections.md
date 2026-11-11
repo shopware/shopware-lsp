@@ -678,6 +678,22 @@ Languages: twig. Domain: `twig`.
 |---|---|---|
 | `twig.macro.missing` | warning | yes |
 
+## `twig.markup`
+
+Storefront templates printing unescaped or wrongly escaped output (raw or sw_sanitize in an attribute, raw after trans), and HTML that needs an attribute it lacks: links opening a new window, buttons without a type, images without alt text, and attributes written twice.
+
+Languages: twig. Domain: `twig`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `twig.html.button_type` | warning | yes |
+| `twig.html.duplicate_attribute` | warning | yes |
+| `twig.html.img_alt` | warning | yes |
+| `twig.html.target_blank` | warning | yes |
+| `twig.raw.attribute` | warning | yes |
+| `twig.raw.translation` | warning | yes |
+| `twig.sanitize.attribute` | warning | yes |
+
 ## `twig.member.call`
 
 PHP method calls from Twig whose arguments match no method of the variable's type.
