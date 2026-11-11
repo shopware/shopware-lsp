@@ -26,9 +26,10 @@ pub const SHOPWARE_PHP_WEAK_KEY_CODE: &str = "shopware.php.crypto.weak_key";
 pub const SHOPWARE_PHP_INSECURE_COOKIE_CODE: &str = "shopware.php.cookie.insecure";
 pub const SHOPWARE_PHP_FOREIGN_KEY_CHECKS_CODE: &str = "shopware.php.foreign_key_checks.disabled";
 
-/// `(?i)\bFOREIGN_KEY_CHECKS\s*=\s*0\b` with ASCII `\b` and `\s`.
+/// Any mention of `FOREIGN_KEY_CHECKS`, with the value it is set to:
+/// switching the checks back on belongs to switching them off.
 static DISABLED_FOREIGN_KEY_CHECKS: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)(?-u:\b)FOREIGN_KEY_CHECKS[\t\n\x0C\r ]*=[\t\n\x0C\r ]*0(?-u:\b)")
+    Regex::new(r"(?i)FOREIGN_KEY_CHECKS(?:[\t\n\x0C\r ]*=[\t\n\x0C\r ]*[0-9]+)?")
         .expect("foreign key pattern")
 });
 
@@ -416,7 +417,7 @@ fn foreign_key_problem(literal: &SyntaxNode, resolver: &NameResolver) -> Option<
     Some(local_problem(
         SHOPWARE_PHP_FOREIGN_KEY_CHECKS_CODE,
         range,
-        "Do not disable foreign-key checks in migrations; delete data in dependency order"
+        "Do not switch foreign-key checks in migrations; delete data in dependency order"
             .to_owned(),
     ))
 }

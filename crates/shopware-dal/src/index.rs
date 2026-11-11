@@ -42,6 +42,10 @@ pub struct Definition {
     pub fields: Vec<Field>,
     pub version_aware: bool,
     pub inheritance_aware: bool,
+    /// Whether the definition has its own `getEntityClass()`; without
+    /// one, `entity_class` is the conventional name and the DAL hydrates
+    /// the generic `ArrayEntity`.
+    pub entity_class_declared: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -57,6 +61,10 @@ pub struct Field {
     pub primary: bool,
     pub line: u32,
     pub range: TextRange,
+    /// Flagged `Runtime`: filled by PHP code after loading.
+    pub runtime: bool,
+    /// Flagged `Computed`: written by the database or an indexer.
+    pub computed: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -219,15 +227,6 @@ fn extract_definitions(file: &ParsedFile) -> PreparedDefinitions {
     }))
 }
 
-/// The entity definitions an open document declares, read from its current
-/// tree rather than from the index.
-pub fn document_definitions(root: &SyntaxNode, path: &str, lines: &LineIndex) -> Vec<Definition> {
-    phpquery::classes(root)
-        .iter()
-        .filter_map(|class| parse_definition(class, root, path, lines))
-        .collect()
-}
-
 impl Indexer for Index {
     fn id(&self) -> &str {
         "shopware.dal"
@@ -328,6 +327,7 @@ fn parse_definition(
     let mut explicit_version_aware = None;
     let mut inheritance_aware = false;
     let mut defines_fields = false;
+    let mut entity_class_declared = false;
     for method in phpquery::methods(class) {
         match phpquery::method_name(&method).as_str() {
             "getEntityName" => {
@@ -343,7 +343,10 @@ fn parse_definition(
                     version_aware = true;
                 }
             }
-            "getEntityClass" => entity_class = returned_class_name(&method, &resolver),
+            "getEntityClass" => {
+                entity_class = returned_class_name(&method, &resolver);
+                entity_class_declared = !entity_class.is_empty();
+            }
             "getCollectionClass" => collection_class = returned_class_name(&method, &resolver),
             "isInheritanceAware" => {
                 inheritance_aware = literal_boolean_return_value(&method) == Some(true);
@@ -403,6 +406,7 @@ fn parse_definition(
         fields,
         version_aware,
         inheritance_aware,
+        entity_class_declared,
     })
 }
 
@@ -479,11 +483,17 @@ fn parse_fields(method: &SyntaxNode, lines: &LineIndex, resolver: &ClassResolver
         let (line, _) = lines.position(range.start().into());
         let mut primary = short_type == "IdField" || short_type == "VersionField";
         let mut stored = !association && short_type != "TranslatedField";
+        let mut runtime = false;
+        let mut computed = false;
         if let Some(item) = phpquery::array_item_at(&creation) {
             for flag in phpquery::object_creations(&item, &[]) {
                 match short_name(phpquery::object_class_name(&flag).trim_matches('\\')) {
                     "PrimaryKey" => primary = true,
-                    "Runtime" => stored = false,
+                    "Runtime" => {
+                        stored = false;
+                        runtime = true;
+                    }
+                    "Computed" => computed = true,
                     _ => {}
                 }
             }
@@ -498,6 +508,8 @@ fn parse_fields(method: &SyntaxNode, lines: &LineIndex, resolver: &ClassResolver
             primary,
             line: line + 1,
             range,
+            runtime,
+            computed,
         });
     }
     fields

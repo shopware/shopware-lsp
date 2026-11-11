@@ -41,32 +41,31 @@ without a PHPStan run. Suppression comments written for PHPStan
 | `ForbidDisabledSslVerificationRule` | `shopware.php.tls.verification_disabled` |
 | `NoEmptyResponseRule` | `shopware.php.response.empty` |
 
-### Deliberate differences
+### Notes on individual rules
 
-- **Internal API.** PHPStan reports any `@internal` parent class. The LSP
-  reports Shopware's, from outside the package that declares it, as it does
-  for internal methods and functions.
-- **Foreign key checks.** PHPStan reports every string mentioning
-  `FOREIGN_KEY_CHECKS`; the LSP reports the ones that set it to `0`.
-- **Repositories in loops.** The LSP also looks into `while` and `do … while`
-  loops and accepts subclasses of `EntityRepository`.
-- **`@abstract` docblocks.** `MethodBecomesAbstractRule` reads `@abstract`
-  in the PHPDoc of a parent method. The index keeps that tag, and
-  `shopware.migration.announced.abstract` reports a concrete subclass
-  without an implementation, as it does for `#[BecomesAbstract]`. Abstract
-  subclasses are left alone; they do not have to implement it yet.
-- **Entity definitions.** PHPStan collects definitions and entities over the
-  whole run and reports in the entity file. The LSP checks a definition
-  against the indexed entity class when the definition is analyzed, and
-  reports on the field, where the name can be corrected. Only definitions
-  with their own `getEntityClass()` are checked; the default `ArrayEntity`
-  needs no properties. Fields the DAL index gives no property name
+- **Internal parent class.** As in PHPStan, extending any `@internal` class
+  is reported, whoever declares it. Calls of internal methods and functions
+  are reported for Shopware's, from outside the package that declares them,
+  which is also PHPStan's behavior.
+- **Foreign key checks.** Every string mentioning `FOREIGN_KEY_CHECKS` in
+  the `update()` of a migration or plugin is reported, including the
+  statement that switches the checks back on.
+- **`@abstract` docblocks.** The index keeps the `@abstract` PHPDoc tag of a
+  method, and every subclass without an implementation is reported.
+- **Entity definitions.** Findings are reported in the entity file: on the
+  property, or on the class when the property is missing or inherited. The
+  definitions come from the DAL index, which records the `Runtime` and
+  `Computed` flags and whether the definition has its own
+  `getEntityClass()`; without one the DAL hydrates `ArrayEntity`, which
+  needs no properties. Fields the index gives no property name
   (`CustomFields`, `ReferenceVersionField`, `TranslationsAssociationField`
-  and the other fields without a name argument) are skipped.
+  and the other fields without a name argument) are not checked.
+- **Repositories in loops.** The LSP also looks into `while` and
+  `do … while` loops and accepts subclasses of `EntityRepository`.
 - **Local disk writes.** A path counts as temporary when it mentions
   `sys_get_temp_dir()`, `tempnam()`, or something named `temp` or `tmp`, or
-  is a standard stream. PHPStan's check is the same heuristic over variable
-  names and concatenations.
+  is a standard stream: PHPStan's heuristic over variable names and
+  concatenations.
 - **Empty responses.** The index keeps no default values, so
   `new Response()` is recognized by the optional string body parameter of
   the constructor rather than by its `''` default.

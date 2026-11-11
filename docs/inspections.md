@@ -190,7 +190,7 @@ Languages: php. Domain: `shopware.dal`.
 
 ## `shopware.dal.definition`
 
-Entity definition fields the entity class cannot hold: no property of that name, a private or readonly property, or a protected property without a getter or setter.
+Entity classes that cannot hold a field of their entity definition: no property of that name, a private or readonly property, or a protected property without a getter or setter.
 
 Languages: php. Domain: `shopware`.
 

@@ -863,7 +863,6 @@ impl Run<'_> {
                 // in its PHPDoc.
                 if member.kind == SymbolKind::Method
                     && member.flags.has(Flags::SOFT_ABSTRACT)
-                    && !own.flags.has(Flags::ABSTRACT)
                     && !self.implements(&nearer, &member.name)
                     && !bc_changes(&member).any(|(kind, _)| kind == "becomesabstract")
                 {

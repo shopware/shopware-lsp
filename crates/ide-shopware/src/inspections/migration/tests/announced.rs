@@ -363,13 +363,14 @@ class Present extends LegacyExtension
     public function getEntityName(): string { return 'acme'; }
 }
 
-abstract class Deferred extends LegacyExtension {}
+abstract class {|shopware.migration.announced.abstract:Deferred|} extends LegacyExtension {}
 ",
     );
     assert_eq!(
         messages,
         [
-            "Shopware: Shopware\\Core\\Checkout\\Cart\\LegacyExtension::getEntityName() is marked @abstract and becomes abstract; implement it in Missing"
+            "Shopware: Shopware\\Core\\Checkout\\Cart\\LegacyExtension::getEntityName() is marked @abstract and becomes abstract; implement it in Missing",
+            "Shopware: Shopware\\Core\\Checkout\\Cart\\LegacyExtension::getEntityName() is marked @abstract and becomes abstract; implement it in Deferred",
         ]
     );
 }

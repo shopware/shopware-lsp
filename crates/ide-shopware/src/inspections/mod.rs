@@ -36,7 +36,10 @@ pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
     add(analyzer(diagnostics::DalEntityAnalyzer::new(Some(
         s.dal.clone(),
     ))));
-    add(analyzer(diagnostics::DalDefinitionAnalyzer::new(php())));
+    add(analyzer(diagnostics::DalDefinitionAnalyzer::new(
+        php(),
+        Some(s.dal.clone()),
+    )));
     add(new_shopware_criteria());
     add(analyzer(
         diagnostics::ShopwareDecorationAnalyzer::new(php()),

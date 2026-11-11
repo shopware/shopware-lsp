@@ -104,8 +104,8 @@ final class Migration extends BaseMigration
     public function update(): void
     {
         $connection->executeStatement('SET {|shopware.php.foreign_key_checks.disabled:FOREIGN_KEY_CHECKS = 0|}');
-        $current = 'SELECT @@FOREIGN_KEY_CHECKS';
-        $connection->executeStatement('SET FOREIGN_KEY_CHECKS = 1');
+        $current = 'SELECT @@{|shopware.php.foreign_key_checks.disabled:FOREIGN_KEY_CHECKS|}';
+        $connection->executeStatement('SET {|shopware.php.foreign_key_checks.disabled:FOREIGN_KEY_CHECKS = 1|}');
     }
 
     public function updateDestructive(): void

@@ -205,12 +205,12 @@ impl Run<'_> {
                 continue;
             };
             let range = self.parent_range(class_node, &parent);
-            if internal_shopware_use(&parent, &class_namespace(&class), Some(self.snapshot)) {
+            if parent.flags.has(Flags::INTERNAL) {
                 self.add(
                     SHOPWARE_PHP_INTERNAL_CLASS_EXTENSION_CODE,
                     range,
                     format!(
-                        "Class {} extends internal Shopware class {}; internal APIs are not extension points",
+                        "Class {} extends internal class {}; internal APIs are not extension points",
                         &*class.name,
                         trim_php_name(&parent.fully_qualified),
                     ),
