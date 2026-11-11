@@ -47,8 +47,19 @@ func (r *Runner) requireSupportedProject(root string) error {
 	if result.Supported {
 		return nil
 	}
-	return fmt.Errorf(
+	return &unsupportedProjectError{root: root}
+}
+
+// unsupportedProjectError separates "this root is not a Shopware or Symfony
+// project" from a detection failure, so long-running entry points can go
+// inactive on the former and still fail on the latter.
+type unsupportedProjectError struct {
+	root string
+}
+
+func (err *unsupportedProjectError) Error() string {
+	return fmt.Sprintf(
 		"unsupported project root %s: no Shopware or Symfony project markers found; add %s or pass -allow-unsupported-project",
-		root, projectconfig.ProjectRelativePath,
+		err.root, projectconfig.ProjectRelativePath,
 	)
 }
