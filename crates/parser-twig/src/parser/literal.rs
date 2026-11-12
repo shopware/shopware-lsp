@@ -56,7 +56,8 @@ pub(crate) fn parse_postfix_operators(
         p,
         |_| false,
         |p| {
-            if p.at(TK_DOT) {
+            // `?.` is the null-safe accessor (Twig 3.23).
+            if p.at(TK_DOT) || p.at_following(&[TK_QUESTION_MARK, TK_DOT]) {
                 node = parse_twig_accessor(p, node);
             } else if p.at(TK_OPEN_SQUARE) {
                 node = parse_twig_indexer(p, node);
@@ -288,6 +289,9 @@ fn parse_twig_accessor(p: &mut Parser<'_>, last: CompletedMarker) -> CompletedMa
     let m = p.precede(last);
     let last = p.complete(m, TWIG_OPERAND);
     let outer = p.precede(last);
+    if p.at(TK_QUESTION_MARK) {
+        p.bump();
+    }
     p.bump();
 
     let rhs = p.start();

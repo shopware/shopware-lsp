@@ -146,6 +146,40 @@ pub fn template_input_variables_in_document(
     result
 }
 
+/// The first read of every name in every macro body that the macro does not
+/// bind itself. A macro has its own scope: what the template around it
+/// reads does not count.
+pub(crate) fn macro_reads_in_document(file_path: &str, root: &SyntaxNode) -> Vec<TemplateVariable> {
+    let global_locals = collect_global_template_locals(file_path, root);
+    let scoped_locals = collect_scoped_template_locals(root);
+    let mut result = Vec::new();
+    for macro_node in twigquery::iterate_nodes(root, &[TWIG_MACRO]) {
+        let mut seen = HashSet::new();
+        for name_node in twigquery::iterate_nodes(&macro_node, &[TWIG_LITERAL_NAME]) {
+            let (name, range) = literal_name(&name_node);
+            if name.is_empty()
+                || BUILTIN_TEMPLATE_VARIABLES.contains(&name.as_str())
+                || global_locals.contains(&name)
+                || is_template_declaration(&name_node)
+                || is_function_or_filter_name(&name_node)
+                || twigquery::closest_node_of_kind(&name_node, &[TWIG_LITERAL_HASH_KEY]).is_some()
+                || is_accessor_member(&name_node)
+                || is_component_invocation_name(&name_node)
+                || is_scoped_template_local(&name, &name_node, &scoped_locals)
+                || !seen.insert(name.clone())
+            {
+                continue;
+            }
+            result.push(TemplateVariable {
+                name,
+                file_path: file_path.to_owned(),
+                range,
+            });
+        }
+    }
+    result
+}
+
 const DEPENDENCY_KINDS: [Kind; 5] = [
     TWIG_EXTENDS,
     SHOPWARE_TWIG_SW_EXTENDS,
@@ -466,7 +500,7 @@ pub(crate) fn direct_template_string(node: &SyntaxNode) -> String {
     String::new()
 }
 
-fn direct_with_hash(node: &SyntaxNode) -> Option<SyntaxNode> {
+pub(crate) fn direct_with_hash(node: &SyntaxNode) -> Option<SyntaxNode> {
     direct_expression_hash(&direct_child(node, TWIG_INCLUDE_WITH)?)
 }
 
@@ -475,7 +509,7 @@ fn direct_expression_hash(container: &SyntaxNode) -> Option<SyntaxNode> {
         .find(|hash| !has_nesting_ancestor(hash, container))
 }
 
-fn direct_function_hash(call: &SyntaxNode) -> Option<SyntaxNode> {
+pub(crate) fn direct_function_hash(call: &SyntaxNode) -> Option<SyntaxNode> {
     twigquery::iterate_nodes(call, &[TWIG_LITERAL_HASH]).find(|hash| {
         twigquery::function_call_at(hash).as_ref() == Some(call)
             && twigquery::function_argument_index(hash) == Some(1)
@@ -520,7 +554,7 @@ pub(crate) fn first_token_offset(node: &SyntaxNode, kind: Kind) -> Option<u32> {
         })
 }
 
-fn has_token(node: &SyntaxNode, kind: Kind) -> bool {
+pub(crate) fn has_token(node: &SyntaxNode, kind: Kind) -> bool {
     first_token_offset(node, kind).is_some()
 }
 
@@ -533,7 +567,7 @@ pub(crate) fn range_contains_offset(range: TextRange, offset: u32) -> bool {
     offset >= range.start() && offset <= range.end()
 }
 
-fn include_function_propagates_context(call: &SyntaxNode) -> bool {
+pub(crate) fn include_function_propagates_context(call: &SyntaxNode) -> bool {
     let Some(arguments) = TwigFunctionCall::cast(call.clone()).and_then(|call| call.arguments())
     else {
         return true;

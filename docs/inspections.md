@@ -1926,6 +1926,21 @@ Languages: twig. Domain: `twig`.
 
 - Fix: Use the replacement the deprecation message names.
 
+## `twig.dump_type`
+
+The type the analysis has for the variable a `{% dump_type %}` tag names, or for the whole context.
+
+Languages: twig. Domain: `twig`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `twig.type.dumped` | information | yes |
+
+**`twig.type.dumped`**
+
+- Fix: Remove the {% dump_type %} tag once the type is clear; Twig itself does not know the tag.
+- Exceptions: Takes a variable or an attribute path (product.name); without an argument it lists the variables known at that position.
+
 ## `twig.enum`
 
 Twig `enum()` calls naming classes that are not enums, or cases that do not exist.
@@ -2058,7 +2073,23 @@ Languages: twig. Domain: `twig`.
 **`twig.member.missing`**
 
 - Fix: Use a property or method the PHP class has (Twig also tries getX(), isX() and hasX()), or correct the declared type of the variable.
-- Exceptions: Reported only for a variable with a definite object type. Arrays, values of unknown type, ArrayAccess and Traversable objects, stdClass and classes with __get or __call are not checked.
+- Exceptions: Reported only for a variable with a definite object type. Arrays, values of unknown type, ArrayAccess and Traversable objects, stdClass and classes with __get or __call are not checked; neither is a member a known subclass of the type has.
+
+## `twig.member.nullable`
+
+Twig member access on a value that can be null, where no condition around it rules null out: an error under strict_variables. Opt-in.
+
+Languages: twig. Domain: `twig`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `twig.member.null` | warning | no |
+
+**`twig.member.null`**
+
+- Fix: Rule null out before the access: wrap it in {% if value %}, use the null-safe accessor (value?.member, Twig 3.23), or give a fallback with ?? or |default.
+- Exceptions: Off by default: Twig yields null for an attribute of null unless strict_variables is on. Accesses inside `is defined`, the left side of ??, the input of |default and a ?. chain are not reported; neither are values of unknown type.
+- Opt out: Leave the rule disabled when the project does not run with strict_variables.
 
 ## `twig.render_block`
 
@@ -2077,16 +2108,38 @@ Languages: php. Domain: `twig`.
 
 ## `twig.template`
 
-References to templates that do not exist.
+References to templates that do not exist, and PHP render calls for templates marked abstract.
 
 Languages: php, twig. Domain: `twig`.
 
 | Code | Default severity | Enabled by default |
 |---|---|---|
+| `twig.template.abstract` | error | yes |
 | `twig.template.missing` | error | yes |
+
+**`twig.template.abstract`**
+
+- Fix: Render a template that extends the abstract one, or remove the {# @twigstan-abstract #} comment when the template is meant to be rendered.
+- Exceptions: Only PHP render calls are checked; extending, including and embedding an abstract template is allowed.
 
 **`twig.template.missing`**
 
 - Fix: Correct the template name, or create the template; quick fixes offer close names and, for a name below templates/, create the file.
 - Exceptions: Names built at runtime, and includes marked `ignore missing`, are not checked.
 - Opt out: Add `ignore missing` to an include whose template is optional.
+
+## `twig.variable`
+
+Twig variables no render call, including or extending template, assignment or global provides. Opt-in.
+
+Languages: twig. Domain: `twig`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `twig.variable.undefined` | warning | no |
+
+**`twig.variable.undefined`**
+
+- Fix: Pass the variable from the render call or the including template, assign it with {% set %}, or declare an optional one with {% types { name?: 'type' } %} and test it with `is defined`.
+- Exceptions: Off by default. Reported only when a PHP render call passes variables to the template or to one that includes or extends it. Variables added at render time by event listeners or extensions are not seen; templates rendered with a context held in a variable, and templates used by too many others, are not checked.
+- Opt out: Declare a variable the analysis cannot see with {# @var name type #} or {% types { name: 'type' } %}.

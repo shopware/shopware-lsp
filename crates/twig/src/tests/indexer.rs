@@ -450,6 +450,40 @@ when@test:
 }
 
 #[test]
+fn globals_in_php_extension_follow_a_returned_variable() {
+    let source = r"<?php
+namespace App\Twig;
+
+class StorefrontExtension extends \Twig\Extension\AbstractExtension implements \Twig\Extension\GlobalsInterface
+{
+    public function getGlobals(): array {
+        if (!$this->request) {
+            return [];
+        }
+        $other = ['ignored' => 1];
+        $globals = [
+            'shopware' => ['dateFormat' => 'c'],
+            'context' => $this->context,
+        ];
+        if ($this->legacy) {
+            /** @deprecated use activeRoute */
+            $globals['controllerName'] = 'a';
+        }
+        return $globals;
+    }
+}
+";
+    let root = swlsp_parser_php::parse(source).root();
+    let mut names: Vec<String> =
+        globals_in_php_extension("/project/src/Twig/StorefrontExtension.php", &root, None)
+            .into_iter()
+            .map(|global| global.name)
+            .collect();
+    names.sort();
+    assert_eq!(names, ["context", "controllerName", "shopware"]);
+}
+
+#[test]
 fn globals_in_php_extension_cases() {
     let source = r"<?php
 namespace App\Twig;
@@ -595,4 +629,30 @@ fn get_template_blocks_follows_extends_and_restores_ranges() {
         blocks
     );
     restored.close().unwrap();
+}
+
+#[test]
+fn render_event_parameters_are_template_variables() {
+    let source = r"<?php
+namespace App;
+
+use Shopware\Storefront\Event\StorefrontRenderEvent;
+
+class Subscriber
+{
+    public function onRender(StorefrontRenderEvent $event): void
+    {
+        $event->setParameter('themeIconConfig', []);
+        $event->setParameter($dynamic, 1);
+        $this->other->setParameter('ignored');
+    }
+}
+";
+    let root = swlsp_parser_php::parse(source).root();
+    let names: Vec<String> =
+        crate::global::globals_in_render_subscriber("/project/src/Subscriber.php", &root, None)
+            .into_iter()
+            .map(|global| global.name)
+            .collect();
+    assert_eq!(names, ["themeIconConfig"]);
 }

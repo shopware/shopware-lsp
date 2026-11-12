@@ -63,6 +63,7 @@ type Records<T> = BTreeMap<String, T>;
 struct Dependencies {
     php: Option<PhpIndex>,
     services: Option<Arc<ServiceIndex>>,
+    routes: Option<Arc<swlsp_symfony::RouteIndexer>>,
 }
 
 /// Twig templates, blocks, macros, references and extension callables of
@@ -126,9 +127,18 @@ enum PreparedFile {
     ExcludedTemplate,
     Template(Box<PreparedTemplate>),
     Php(Box<PreparedPhp>),
-    /// `None` when the file cannot declare globals.
-    Yaml(Option<Vec<Global>>),
+    /// `None` when the file can declare neither globals nor access control.
+    Yaml(Option<YamlConfiguration>),
     Asset(Records<TwigFile>),
+}
+
+/// The key of the includes whose template name is built at runtime.
+const DYNAMIC_INCLUDE_KEY: &str = "*dynamic-include*";
+
+/// What a YAML configuration file contributes.
+struct YamlConfiguration {
+    globals: Vec<Global>,
+    access_control: Vec<crate::security::AccessRule>,
 }
 
 fn repository<T>(
@@ -201,7 +211,60 @@ impl TwigIndexer {
     /// Wires the PHP and service indexes used for globals, constant and
     /// PHP usage resolution.
     pub fn set_dependencies(&self, php: Option<PhpIndex>, services: Option<Arc<ServiceIndex>>) {
-        *write(&self.dependencies) = Dependencies { php, services };
+        let mut dependencies = write(&self.dependencies);
+        dependencies.php = php;
+        dependencies.services = services;
+    }
+
+    /// Wires the route index `app.user` is typed through: a route whose
+    /// access control requires a user renders its templates with one.
+    pub fn set_route_index(&self, routes: Option<Arc<swlsp_symfony::RouteIndexer>>) {
+        write(&self.dependencies).routes = routes;
+    }
+
+    /// Whether every route of the controller method `controller`
+    /// (`Class::method`) requires a user by `security.access_control`.
+    /// `false` for a method without routes.
+    pub fn routes_require_user(&self, controller: &str) -> bool {
+        let Some(routes) = read(&self.dependencies).routes.clone() else {
+            return false;
+        };
+        let Ok(routes) = routes.get_routes_view() else {
+            return false;
+        };
+        let rules = self.access_control();
+        if rules.is_empty() {
+            return false;
+        }
+        let controller = controller.trim_start_matches('\\');
+        let mut found = false;
+        for route in routes.iter() {
+            if !swlsp_textutil::eq_ignore_case(
+                route.controller.trim_start_matches('\\'),
+                controller,
+            ) {
+                continue;
+            }
+            found = true;
+            if !crate::security::route_requires_user(&rules, &route.name, &route.path) {
+                return false;
+            }
+        }
+        found
+    }
+
+    /// The `security.access_control` rules of the workspace, in file and
+    /// declaration order.
+    pub fn access_control(&self) -> Vec<crate::security::AccessRule> {
+        let mut catalogs = self
+            .globals
+            .get_values("access_control")
+            .unwrap_or_default();
+        catalogs.sort_by(|left, right| left.file.cmp(&right.file));
+        catalogs
+            .into_iter()
+            .flat_map(|catalog| catalog.access_control)
+            .collect()
     }
 
     pub(crate) fn php_index(&self) -> Option<PhpIndex> {
@@ -246,6 +309,10 @@ impl TwigIndexer {
                 .services
                 .as_ref()
                 .map_or(0, |services| services.revision())
+            + dependencies
+                .routes
+                .as_ref()
+                .map_or(0, |routes| routes.revision())
     }
 
     // --- preparation ---
@@ -254,7 +321,7 @@ impl TwigIndexer {
         match file.extension() {
             ".twig" => Some(self.prepare_twig(file)),
             ".php" => Some(PreparedFile::Php(Box::new(self.prepare_php(file)))),
-            ".yaml" | ".yml" => Some(PreparedFile::Yaml(prepare_yaml_globals(file))),
+            ".yaml" | ".yml" => Some(PreparedFile::Yaml(prepare_yaml_configuration(file))),
             _ => prepare_template_asset(file).map(PreparedFile::Asset),
         }
     }
@@ -363,6 +430,24 @@ impl TwigIndexer {
 
         prepared.references =
             template_reference_records(path, twig_template_references(path, &root));
+        let dynamic = crate::context::dynamic_include_prefixes(&root);
+        if !dynamic.is_empty() {
+            prepared.references.insert(
+                DYNAMIC_INCLUDE_KEY.to_owned(),
+                TemplateReferenceCatalog {
+                    file_path: path.to_owned(),
+                    references: dynamic
+                        .into_iter()
+                        .map(|(prefix, range)| TemplateReference {
+                            template: format!("{prefix}*"),
+                            file_path: path.to_owned(),
+                            range,
+                            kind: crate::TemplateReferenceKind::Include,
+                        })
+                        .collect(),
+                },
+            );
+        }
         let php = self.php_index();
         let resolver = PhpAccessResolver::new(php.as_ref(), Some(self)).for_document(&root);
         for reference in constant_references_in_document(path, &root, &resolver) {
@@ -454,9 +539,21 @@ impl TwigIndexer {
                 prepared.tags.insert(tag.name.clone(), tag);
             }
         }
-        if content.contains("getGlobals") {
+        let render_parameters = crate::global::may_set_render_parameters(content);
+        if content.contains("getGlobals") || render_parameters {
             let document = self.php_index().map(|php| php.analyze_parsed_file(file));
-            prepared.globals = Some(globals_in_php_extension(path, &root, document.as_deref()));
+            let mut globals = Vec::new();
+            if content.contains("getGlobals") {
+                globals.extend(globals_in_php_extension(path, &root, document.as_deref()));
+            }
+            if render_parameters {
+                globals.extend(crate::global::globals_in_render_subscriber(
+                    path,
+                    &root,
+                    document.as_deref(),
+                ));
+            }
+            prepared.globals = Some(globals);
         }
         prepared.references = template_reference_records(
             path,
@@ -526,36 +623,64 @@ impl TwigIndexer {
                 save(&self.operators, mutation, path, &php.operators)?;
                 save(&self.tags, mutation, path, &php.tags)?;
                 file.add_workspace_symbols(php.symbols.iter().cloned());
-                self.save_globals_or_clear(file, php.globals.as_deref())?;
+                self.save_globals_or_clear(file, php.globals.as_deref(), &[])?;
                 save(&self.template_references, mutation, path, &php.references)
             }
-            PreparedFile::Yaml(globals) => self.save_globals_or_clear(file, globals.as_deref()),
+            PreparedFile::Yaml(configuration) => match configuration {
+                Some(configuration) => self.save_globals_or_clear(
+                    file,
+                    Some(&configuration.globals),
+                    &configuration.access_control,
+                ),
+                None => self.save_globals_or_clear(file, None, &[]),
+            },
             PreparedFile::Asset(names) => save(&self.files, mutation, path, names),
         }
     }
 
-    fn save_globals_or_clear(&self, file: &ParsedFile, globals: Option<&[Global]>) -> Result<()> {
+    fn save_globals_or_clear(
+        &self,
+        file: &ParsedFile,
+        globals: Option<&[Global]>,
+        access_control: &[crate::security::AccessRule],
+    ) -> Result<()> {
         match globals {
-            Some(globals) => self.save_globals(file, globals),
-            None if self.has_global_path(file.path()) => self.save_globals(file, &[]),
+            Some(globals) => self.save_globals(file, globals, access_control),
+            None if self.has_global_path(file.path()) => self.save_globals(file, &[], &[]),
             None => Ok(()),
         }
     }
 
-    fn save_globals(&self, file: &ParsedFile, globals: &[Global]) -> Result<()> {
+    fn save_globals(
+        &self,
+        file: &ParsedFile,
+        globals: &[Global],
+        access_control: &[crate::security::AccessRule],
+    ) -> Result<()> {
         let path = file.path();
         let mut records = Records::new();
+        if !access_control.is_empty() {
+            records.insert(
+                "access_control".to_owned(),
+                GlobalCatalog {
+                    file: path.to_owned(),
+                    globals: Vec::new(),
+                    access_control: access_control.to_vec(),
+                },
+            );
+        }
         if !globals.is_empty() {
             records.insert(
                 "globals".to_owned(),
                 GlobalCatalog {
                     file: path.to_owned(),
                     globals: globals.to_vec(),
+                    access_control: Vec::new(),
                 },
             );
         }
         save(&self.globals, file.mutation(), path, &records)?;
-        let present = !globals.is_empty();
+        let present = !globals.is_empty() || !access_control.is_empty();
         let paths = self.global_paths.clone();
         let owned = path.to_owned();
         let publish = move || {
@@ -797,6 +922,22 @@ impl TwigIndexer {
         Ok(result)
     }
 
+    /// The literal starts of the template names built at runtime that some
+    /// template includes: `'@Storefront/element/cms-element-' ~ type`.
+    pub fn dynamic_include_prefixes(&self) -> Vec<String> {
+        let mut prefixes: Vec<String> = self
+            .template_references
+            .get_values(DYNAMIC_INCLUDE_KEY)
+            .unwrap_or_default()
+            .into_iter()
+            .flat_map(|catalog| catalog.references)
+            .map(|reference| reference.template.trim_end_matches('*').to_owned())
+            .collect();
+        prefixes.sort();
+        prefixes.dedup();
+        prefixes
+    }
+
     pub fn get_template_references_by_path(
         &self,
         file_path: &str,
@@ -806,6 +947,8 @@ impl TwigIndexer {
             .get_values_by_path(file_path)?
             .into_iter()
             .flat_map(|catalog| catalog.references)
+            // An include of a name built at runtime names no template.
+            .filter(|reference| !reference.template.ends_with('*'))
             .collect();
         Ok(unique_template_references(references))
     }
@@ -1258,13 +1401,26 @@ fn template_reference_records(
     records
 }
 
-fn prepare_yaml_globals(file: &ParsedFile) -> Option<Vec<Global>> {
+fn prepare_yaml_configuration(file: &ParsedFile) -> Option<YamlConfiguration> {
     let content = file.source();
-    if !content.contains("twig") || !content.contains("globals") {
+    let globals = content.contains("twig") && content.contains("globals");
+    let access_control = content.contains("security") && content.contains("access_control");
+    if !globals && !access_control {
         return None;
     }
-    let tree = file.syntax_tree()?;
-    Some(globals_in_yaml(file.path(), &tree.root()))
+    let root = file.syntax_tree()?.root();
+    Some(YamlConfiguration {
+        globals: if globals {
+            globals_in_yaml(file.path(), &root)
+        } else {
+            Vec::new()
+        },
+        access_control: if access_control {
+            crate::security::access_rules_in_yaml(&root)
+        } else {
+            Vec::new()
+        },
+    })
 }
 
 /// The names a non-Twig template can be addressed by. Nothing is parsed:

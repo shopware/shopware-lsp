@@ -1,6 +1,7 @@
 //! Twig template, versioning, snippet and translation inspections.
 
 mod snippet;
+mod strict;
 mod template;
 mod translation;
 mod versioning;
@@ -9,6 +10,7 @@ mod versioning;
 mod tests;
 
 pub use snippet::new_snippet;
+pub use strict::{new_twig_dump_type, new_twig_null_access, new_twig_undefined_variable};
 pub use template::new_template;
 pub use translation::new_translation;
 pub use versioning::new_twig_versioning;

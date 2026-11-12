@@ -20,6 +20,7 @@ use crate::diagnostics::LookupError;
 use crate::diagnostics::ProblemAnalyzer;
 
 const MISSING_TEMPLATE_CODE: &str = "twig.template.missing";
+pub const ABSTRACT_TEMPLATE_CODE: &str = "twig.template.abstract";
 
 struct Candidate {
     name: String,
@@ -29,6 +30,9 @@ struct Candidate {
 struct Group {
     candidates: Vec<Candidate>,
     range: TextRange,
+    /// Whether the reference renders the template (a PHP render call), as
+    /// opposed to extending or including it.
+    renders: bool,
 }
 
 pub struct TemplateAnalyzer {
@@ -84,6 +88,7 @@ impl ProblemAnalyzer for TemplateAnalyzer {
                         groups.push(Group {
                             candidates,
                             range: target_group.range,
+                            renders: false,
                         });
                     }
                 }
@@ -93,6 +98,7 @@ impl ProblemAnalyzer for TemplateAnalyzer {
                     groups.push(Group {
                         candidates: vec![Candidate { name, node: None }],
                         range,
+                        renders: true,
                     });
                 }
             }
@@ -115,6 +121,23 @@ impl ProblemAnalyzer for TemplateAnalyzer {
                     })?;
                 if !files.is_empty() {
                     found = true;
+                    if group.renders
+                        && files
+                            .iter()
+                            .any(|file| swlsp_twig::template_file_is_abstract(&file.path))
+                    {
+                        result.push(Problem {
+                            id: ABSTRACT_TEMPLATE_CODE.into(),
+                            range: group.range,
+                            message: format!(
+                                "Template '{}' is abstract: it is meant to be extended, not rendered",
+                                candidate.name
+                            ),
+                            source: "twig".into(),
+                            severity: Some(protocol::DiagnosticSeverity::ERROR),
+                            ..Problem::default()
+                        });
+                    }
                     break;
                 }
             }

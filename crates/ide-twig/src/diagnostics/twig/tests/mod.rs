@@ -5,10 +5,12 @@ mod deprecation;
 mod enums_macros;
 mod markup;
 mod member;
+mod null_access;
 mod render_block;
 mod snippet;
 mod template;
 mod translation;
+mod variable;
 mod versioning;
 
 use std::path::Path;

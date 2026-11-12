@@ -180,6 +180,8 @@ fn retain_attribute_arguments(name: &str) -> bool {
         "arrayshape",
         "deprecated",
         "expectedvalues",
+        // Tells whether a controller action requires a user.
+        "isgranted",
         "noreturn",
         "objectshape",
         "returntypecontract",

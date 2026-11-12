@@ -270,3 +270,22 @@ fn every_prefix_is_lossless() {
         assert_eq!(parse(prefix).root().text().to_string(), prefix);
     }
 }
+
+#[test]
+fn null_safe_accessor_is_an_accessor() {
+    let source = "{{ a?.b.c }}{{ a ?. b() }}{{ a ? b : c }}{{ a?. }}";
+    let parse = crate::parse(source);
+    assert_eq!(parse.root().text().to_string(), source);
+    let accessors = parse
+        .root()
+        .descendants()
+        .filter(|node| node.kind() == crate::syntax::TWIG_ACCESSOR)
+        .count();
+    let conditionals = parse
+        .root()
+        .descendants()
+        .filter(|node| node.kind() == crate::syntax::TWIG_CONDITIONAL_EXPRESSION)
+        .count();
+    // The incomplete `a?.` still is an accessor, with an error.
+    assert_eq!((accessors, conditionals), (4, 1));
+}

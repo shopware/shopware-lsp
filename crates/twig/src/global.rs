@@ -70,6 +70,10 @@ pub struct Global {
 pub struct GlobalCatalog {
     pub file: String,
     pub globals: Vec<Global>,
+    /// The `security.access_control` rules of the file; stored beside the
+    /// globals because both come from the same configuration files.
+    #[serde(default)]
+    pub access_control: Vec<crate::security::AccessRule>,
 }
 
 pub fn globals_in_yaml(path: &str, root: &SyntaxNode) -> Vec<Global> {
@@ -241,24 +245,157 @@ pub fn globals_in_php_extension(
         let Some(method) = method_named(&class, "getGlobals") else {
             continue;
         };
+        // The key and value of every entry the method contributes.
+        let mut entries: Vec<(Option<SyntaxNode>, SyntaxNode)> = Vec::new();
+        let array_entries = |array: &SyntaxNode| -> Vec<(Option<SyntaxNode>, SyntaxNode)> {
+            phpquery::array_items(array)
+                .iter()
+                .filter_map(|item| {
+                    Some((
+                        phpquery::array_item_key(item),
+                        phpquery::array_item_value(item)?,
+                    ))
+                })
+                .collect()
+        };
+        // The variables the method returns: `$globals = […]; return $globals;`.
+        let mut returned: Vec<String> = Vec::new();
         for statement in phpquery::nodes(&method, &[PHP_RETURN_STATEMENT]) {
             if phpquery::function_like_at(&statement).as_ref() != Some(&method) {
                 continue;
             }
-            let Some(array) = statement
-                .children()
-                .next()
-                .and_then(|expression| phpquery::array_at(&expression))
-            else {
+            let Some(expression) = statement.children().next() else {
                 continue;
             };
+            if let Some(name) = variable_name(&expression) {
+                returned.push(name);
+            } else if let Some(array) = phpquery::array_at(&expression) {
+                entries.extend(array_entries(&array));
+            }
+        }
+        for assignment in phpquery::nodes(&method, &[PHP_ASSIGNMENT_EXPRESSION]) {
+            if phpquery::function_like_at(&assignment).as_ref() != Some(&method) {
+                continue;
+            }
+            let mut sides = assignment.children();
+            let (Some(target), Some(value)) = (sides.next(), sides.next()) else {
+                continue;
+            };
+            let is_returned = |variable: &SyntaxNode| {
+                variable_name(variable).is_some_and(|name| returned.contains(&name))
+            };
+            match target.kind() {
+                // `$globals = ['name' => …]`
+                PHP_VARIABLE if is_returned(&target) && value.kind() == PHP_ARRAY => {
+                    entries.extend(array_entries(&value));
+                }
+                // `$globals['name'] = …`
+                PHP_ARRAY_ACCESS => {
+                    let mut parts = target.children();
+                    if let (Some(variable), Some(key)) = (parts.next(), parts.next())
+                        && is_returned(&variable)
+                        && key.kind() == PHP_STRING
+                    {
+                        entries.push((Some(key), value));
+                    }
+                }
+                _ => {}
+            }
+        }
+        for (key, value) in entries {
+            let name = crate::extension_parser::sv(key.as_ref());
+            if name.is_empty() {
+                continue;
+            }
+            result.push(Global {
+                name,
+                ty: php_global_type(&value, document, &resolver),
+                value: value.text_string().trim().to_owned(),
+                file: path.to_owned(),
+                range: php_global_string_range(key.as_ref()),
+                source: GlobalSource::PhpExtension,
+                ..Global::default()
+            });
+        }
+    }
+    unique_globals(result)
+}
+
+/// The event Shopware dispatches before rendering a storefront template;
+/// subscribers add template variables through it.
+const STOREFRONT_RENDER_EVENT: &str = "Shopware\\Storefront\\Event\\StorefrontRenderEvent";
+
+/// Whether a PHP file may add storefront template variables at render time.
+pub(crate) fn may_set_render_parameters(content: &str) -> bool {
+    content.contains("StorefrontRenderEvent")
+        && (content.contains("setParameter") || content.contains("class StorefrontRenderEvent"))
+}
+
+/// The variables a subscriber adds to every storefront template with
+/// `StorefrontRenderEvent::setParameter('name', $value)`. They are known
+/// like globals: no render call lists them.
+pub fn globals_in_render_subscriber(
+    path: &str,
+    root: &SyntaxNode,
+    document: Option<&Document>,
+) -> Vec<Global> {
+    let resolver = NameResolver::new(root);
+    let mut result = Vec::new();
+    for call in phpquery::nodes(root, &[PHP_MEMBER_CALL]) {
+        if phpquery::call_method_name(&call) != "setParameter" {
+            continue;
+        }
+        let (Some(receiver), Some(key), Some(value)) = (
+            phpquery::call_receiver(&call),
+            phpquery::argument_expression(&call, 0),
+            phpquery::argument_expression(&call, 1),
+        ) else {
+            continue;
+        };
+        if key.kind() != PHP_STRING {
+            continue;
+        }
+        // Without type information the file naming the event is enough.
+        let on_event = document.is_none_or(|document| {
+            let receiver = document.type_of(&receiver).ty;
+            receiver.is_unknown()
+                || swlsp_textutil::eq_ignore_case(
+                    receiver.name().trim_matches('\\'),
+                    STOREFRONT_RENDER_EVENT,
+                )
+        });
+        let name = crate::extension_parser::sv(Some(&key));
+        if !on_event || name.is_empty() {
+            continue;
+        }
+        result.push(Global {
+            name,
+            ty: php_global_type(&value, document, &resolver),
+            value: value.text_string().trim().to_owned(),
+            file: path.to_owned(),
+            range: php_global_string_range(Some(&key)),
+            source: GlobalSource::PhpExtension,
+            ..Global::default()
+        });
+    }
+    // The event itself starts with default parameters.
+    for class in phpquery::classes(root) {
+        if phpquery::class_name(&class) != "StorefrontRenderEvent" {
+            continue;
+        }
+        let Some(constructor) = method_named(&class, "__construct") else {
+            continue;
+        };
+        for array in phpquery::nodes(&constructor, &[PHP_ARRAY]) {
             for item in phpquery::array_items(&array) {
-                let key = phpquery::array_item_key(&item);
-                let Some(value) = phpquery::array_item_value(&item) else {
+                let (Some(key), Some(value)) = (
+                    phpquery::array_item_key(&item),
+                    phpquery::array_item_value(&item),
+                ) else {
                     continue;
                 };
-                let name = crate::extension_parser::sv(key.as_ref());
-                if name.is_empty() {
+                let name = crate::extension_parser::sv(Some(&key));
+                if key.kind() != PHP_STRING || name.is_empty() {
                     continue;
                 }
                 result.push(Global {
@@ -266,7 +403,7 @@ pub fn globals_in_php_extension(
                     ty: php_global_type(&value, document, &resolver),
                     value: value.text_string().trim().to_owned(),
                     file: path.to_owned(),
-                    range: php_global_string_range(key.as_ref()),
+                    range: php_global_string_range(Some(&key)),
                     source: GlobalSource::PhpExtension,
                     ..Global::default()
                 });
@@ -274,6 +411,13 @@ pub fn globals_in_php_extension(
         }
     }
     unique_globals(result)
+}
+
+/// The name of a variable expression. A comment before the variable is
+/// part of its node, not of its name.
+fn variable_name(node: &SyntaxNode) -> Option<String> {
+    let name = phpquery::variable_name(node);
+    (node.kind() == PHP_VARIABLE && !name.is_empty()).then_some(name)
 }
 
 pub(crate) fn is_twig_extension_class(class: &SyntaxNode, resolver: &NameResolver) -> bool {

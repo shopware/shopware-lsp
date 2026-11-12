@@ -77,6 +77,14 @@ pub(crate) const TWIG: &[RuleHelp] = &[
         "Add `ignore missing` to an include whose template is optional.",
     ),
     help(
+        "twig.template.abstract",
+        "Render a template that extends the abstract one, or remove the \
+         {# @twigstan-abstract #} comment when the template is meant to be rendered.",
+        "Only PHP render calls are checked; extending, including and embedding an abstract \
+         template is allowed.",
+        "",
+    ),
+    help(
         "twig.template.block.missing",
         "Use a block the template or one of its parents defines; a quick fix offers close names.",
         "Only renderBlock() and renderBlockView() on a controller are checked.",
@@ -177,12 +185,41 @@ pub(crate) const TWIG: &[RuleHelp] = &[
         "",
     ),
     help(
+        "twig.member.null",
+        "Rule null out before the access: wrap it in {% if value %}, use the null-safe \
+         accessor (value?.member, Twig 3.23), or give a fallback with ?? or |default.",
+        "Off by default: Twig yields null for an attribute of null unless strict_variables \
+         is on. Accesses inside `is defined`, the left side of ??, the input of |default \
+         and a ?. chain are not reported; neither are values of unknown type.",
+        "Leave the rule disabled when the project does not run with strict_variables.",
+    ),
+    help(
+        "twig.variable.undefined",
+        "Pass the variable from the render call or the including template, assign it with \
+         {% set %}, or declare an optional one with {% types { name?: 'type' } %} and test \
+         it with `is defined`.",
+        "Off by default. Reported only when a PHP render call passes variables to the \
+         template or to one that includes or extends it. Variables added at render time by \
+         event listeners or extensions are not seen; templates rendered with a context held \
+         in a variable, and templates used by too many others, are not checked.",
+        "Declare a variable the analysis cannot see with {# @var name type #} or \
+         {% types { name: 'type' } %}.",
+    ),
+    help(
+        "twig.type.dumped",
+        "Remove the {% dump_type %} tag once the type is clear; Twig itself does not know \
+         the tag.",
+        "Takes a variable or an attribute path (product.name); without an argument it \
+         lists the variables known at that position.",
+        "",
+    ),
+    help(
         "twig.member.missing",
         "Use a property or method the PHP class has (Twig also tries getX(), isX() and \
          hasX()), or correct the declared type of the variable.",
         "Reported only for a variable with a definite object type. Arrays, values of \
          unknown type, ArrayAccess and Traversable objects, stdClass and classes with __get \
-         or __call are not checked.",
+         or __call are not checked; neither is a member a known subclass of the type has.",
         "",
     ),
     help(

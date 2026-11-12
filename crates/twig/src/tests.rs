@@ -1,8 +1,11 @@
+mod context;
 mod extension;
 mod indexer;
+mod inference;
 mod misc;
 mod parser;
 mod references;
 mod semantic;
+mod symfony_types;
 mod syntax;
 mod versioning;

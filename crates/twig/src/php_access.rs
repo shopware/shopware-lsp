@@ -1,6 +1,8 @@
 //! Twig attribute access resolved against the PHP semantic graph.
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use std::sync::Arc;
 use swlsp_syntax::SyntaxNodeExt as _;
 
@@ -15,6 +17,7 @@ use swlsp_textutil::eq_ignore_case;
 
 use crate::extension_parser::{callback_method_name, last_name_part};
 use crate::indexer::TwigIndexer;
+use crate::inference::{SetIndex, set_index};
 use crate::macros::{direct_child, literal_name};
 use crate::path::template_names;
 use crate::template_variable::{first_token_offset, is_descendant_node};
@@ -98,6 +101,17 @@ pub struct PhpAccessResolver<'a> {
     pub twig: Option<&'a TwigIndexer>,
     snapshot: Arc<Snapshot>,
     type_annotations: Option<(SyntaxNode, Arc<HashMap<String, Type>>)>,
+    sets: Option<(SyntaxNode, Rc<SetIndex>)>,
+    /// The context types of the prepared document by name: they do not
+    /// depend on where a name is read.
+    context_names: Rc<RefCell<HashMap<String, Type>>>,
+    /// What the templates around the prepared document provide.
+    pub(crate) family: Rc<RefCell<Option<Rc<crate::undefined::Family>>>>,
+    /// The types the assignments of the prepared document give, by the
+    /// offset of the `set` tag and the variable name.
+    pub(crate) bindings: Rc<RefCell<HashMap<(u32, String), Type>>>,
+    /// The known subclasses of a class, by its lowercase name.
+    subtypes: Rc<RefCell<HashMap<String, Rc<Vec<String>>>>>,
 }
 
 impl<'a> PhpAccessResolver<'a> {
@@ -111,6 +125,11 @@ impl<'a> PhpAccessResolver<'a> {
             twig,
             snapshot,
             type_annotations: None,
+            sets: None,
+            context_names: Rc::default(),
+            family: Rc::default(),
+            bindings: Rc::default(),
+            subtypes: Rc::default(),
         }
     }
 
@@ -129,7 +148,26 @@ impl<'a> PhpAccessResolver<'a> {
             return self;
         }
         self.type_annotations = Some((root.clone(), Arc::new(twig_type_annotations(root))));
+        self.sets = Some((root.clone(), Rc::new(set_index(root))));
+        self.context_names = Rc::default();
+        self.family = Rc::default();
+        self.bindings = Rc::default();
         self
+    }
+
+    /// Whether [`Self::for_document`] prepared this resolver for `root`.
+    pub(crate) fn is_prepared(&self, root: &SyntaxNode) -> bool {
+        self.type_annotations
+            .as_ref()
+            .is_some_and(|(cached, _)| cached == root)
+    }
+
+    /// The `{% set %}` tags prepared by [`Self::for_document`] for `root`.
+    pub(crate) fn prepared_sets(&self, root: &SyntaxNode) -> Option<Rc<SetIndex>> {
+        self.sets
+            .as_ref()
+            .filter(|(cached, _)| cached == root)
+            .map(|(_, sets)| sets.clone())
     }
 
     pub fn resolve_name(
@@ -172,6 +210,69 @@ impl<'a> PhpAccessResolver<'a> {
             .filter(|resolution| {
                 definite_twig_object_receiver(&self.snapshot, &resolution.receiver)
             })
+            // A value declared as a base class may be one of its subclasses
+            // at runtime: a member only they have is not a mistake.
+            .filter(|resolution| {
+                !resolution.members.is_empty()
+                    || !self.subtype_has_member(&resolution.receiver, &resolution.name)
+            })
+    }
+
+    /// Whether a known subclass of a class in `receiver` has the member
+    /// `name`.
+    fn subtype_has_member(&self, receiver: &Type, name: &str) -> bool {
+        match receiver.kind() {
+            TypeKind::Union | TypeKind::Intersection => receiver
+                .arguments()
+                .iter()
+                .any(|member| self.subtype_has_member(member, name)),
+            TypeKind::Object => {
+                let class = receiver.name().trim_matches('\\');
+                self.subtypes(class).iter().any(|subtype| {
+                    !resolve_php_members(&self.snapshot, &Type::named(subtype, Vec::new()), name)
+                        .is_empty()
+                })
+            }
+            _ => false,
+        }
+    }
+
+    /// The known classes below `class`, found once per class.
+    fn subtypes(&self, class: &str) -> Rc<Vec<String>> {
+        let key = swlsp_textutil::lowercase(class);
+        if let Some(known) = self.subtypes.borrow().get(&key) {
+            return known.clone();
+        }
+        let found: Vec<String> = self
+            .snapshot
+            .global_class_views()
+            .into_iter()
+            .map(|view| view.fully_qualified())
+            .filter(|name| !eq_ignore_case(name, class) && self.snapshot.is_subtype_of(name, class))
+            .map(str::to_owned)
+            .collect();
+        let found = Rc::new(found);
+        self.subtypes.borrow_mut().insert(key, found.clone());
+        found
+    }
+
+    /// An access to a member of a value that can be null where nothing
+    /// around it rules null out or tolerates it. Reported only for a
+    /// receiver that is otherwise a definite object with that member.
+    pub fn inspect_null_access(
+        &self,
+        template_path: &str,
+        root: &SyntaxNode,
+        accessor: &SyntaxNode,
+    ) -> Option<PhpMemberResolution> {
+        let resolution = self.inspect_accessor(template_path, root, accessor)?;
+        if resolution.members.is_empty()
+            || !crate::inference::is_nullable(&resolution.receiver)
+            || crate::narrowing::tolerates_null(accessor)
+        {
+            return None;
+        }
+        Some(resolution)
     }
 
     fn accessor_resolution(
@@ -225,6 +326,25 @@ impl<'a> PhpAccessResolver<'a> {
         let Some(node) = node else {
             return Type::unknown();
         };
+        let Some(_level) = crate::inference::enter() else {
+            return Type::unknown();
+        };
+        let value = self.unnarrowed_type(template_path, root, node);
+        // A condition around the expression may rule out null.
+        if crate::inference::is_nullable(&value)
+            && matches!(
+                node.kind(),
+                TWIG_LITERAL_NAME | TWIG_ACCESSOR | TWIG_FUNCTION_CALL
+            )
+            && let Some(path) = crate::narrowing::expression_path(node)
+            && crate::narrowing::non_null_paths(node).contains(&path)
+        {
+            return crate::inference::without_null(&value);
+        }
+        value
+    }
+
+    fn unnarrowed_type(&self, template_path: &str, root: &SyntaxNode, node: &SyntaxNode) -> Type {
         match node.kind() {
             TWIG_EXPRESSION | TWIG_OPERAND | TWIG_PARENTHESES_EXPRESSION => {
                 self.expression_type(template_path, root, first_twig_child(node).as_ref())
@@ -234,14 +354,28 @@ impl<'a> PhpAccessResolver<'a> {
                 if let Some(local) = self.loop_variable_type(template_path, root, node, &name) {
                     return local;
                 }
-                self.root_name_type(template_path, root, &name)
+                if let Some(local) = self.local_name_type(template_path, root, node, &name) {
+                    return local;
+                }
+                self.context_name_type(template_path, root, node, &name)
             }
             TWIG_ACCESSOR => {
                 let Some(name_node) = accessor_member_name_node(node) else {
                     return Type::unknown();
                 };
                 let receiver = self.accessor_receiver_type(template_path, root, node);
-                resolve_php_member_type(&self.snapshot, &receiver, name_node.text_string().trim())
+                let text = name_node.text_string();
+                let name = text.trim();
+                let value = self.attribute_type(&receiver, name);
+                let value = self.framework_member_type(template_path, root, &receiver, name, value);
+                // `a?.b` is null when `a` is.
+                if crate::narrowing::is_null_safe(node)
+                    && crate::inference::is_nullable(&receiver)
+                    && !value.is_unknown()
+                {
+                    return Type::nullable(value);
+                }
+                value
             }
             TWIG_FUNCTION_CALL => {
                 let operands = direct_twig_children(node, TWIG_OPERAND);
@@ -252,18 +386,56 @@ impl<'a> PhpAccessResolver<'a> {
                 if let Some(name_expression) = &name_expression
                     && name_expression.kind() == TWIG_LITERAL_NAME
                 {
-                    return self.twig_function_type(name_expression.text_string().trim());
+                    let text = name_expression.text_string();
+                    let name = text.trim();
+                    return self
+                        .builtin_function_type(template_path, root, node, name)
+                        .unwrap_or_else(|| self.twig_function_type(name));
                 }
                 self.expression_type(template_path, root, name_expression.as_ref())
             }
-            TWIG_FILTER => self.twig_filter_type(&twigquery::filter_name(node).unwrap_or_default()),
+            TWIG_FILTER => {
+                let name = twigquery::filter_name(node).unwrap_or_default();
+                self.builtin_filter_type(template_path, root, node, &name)
+                    .unwrap_or_else(|| self.twig_filter_type(&name))
+            }
+            TWIG_INDEX_LOOKUP => self.index_lookup_type(template_path, root, node),
+            TWIG_CONDITIONAL_EXPRESSION => self.conditional_type(template_path, root, node),
+            TWIG_BINARY_EXPRESSION => self.binary_type(template_path, root, node),
+            TWIG_UNARY_EXPRESSION => self.unary_type(template_path, root, node),
             TWIG_LITERAL_STRING => Type::string(),
+            TWIG_LITERAL_NUMBER if node.text_string().contains('.') => Type::float(),
             TWIG_LITERAL_NUMBER => Type::int(),
             TWIG_LITERAL_BOOLEAN => Type::bool(),
-            TWIG_LITERAL_ARRAY => Type::list(Type::mixed()),
-            TWIG_LITERAL_HASH => Type::array(Type::string(), Type::mixed()),
+            TWIG_LITERAL_NULL => Type::null(),
+            TWIG_LITERAL_ARRAY => self.array_literal_type(template_path, root, node),
+            TWIG_LITERAL_HASH => self.hash_literal_type(template_path, root, node),
             _ => Type::unknown(),
         }
+    }
+
+    /// The type of a name the template does not bind itself: a declared,
+    /// rendered or global variable. A macro sees only its own annotations
+    /// and the globals.
+    pub(crate) fn context_name_type(
+        &self,
+        template_path: &str,
+        root: &SyntaxNode,
+        node: &SyntaxNode,
+        name: &str,
+    ) -> Type {
+        let in_macro = node
+            .ancestors()
+            .any(|ancestor| ancestor.kind() == TWIG_MACRO);
+        if !in_macro {
+            return self.root_name_type(template_path, root, name);
+        }
+        let annotated = self
+            .type_annotations
+            .as_ref()
+            .filter(|(cached, _)| cached == root)
+            .and_then(|(_, annotations)| annotations.get(name).cloned());
+        annotated.unwrap_or_else(|| self.global_type(name))
     }
 
     pub(crate) fn root_name_type(
@@ -275,6 +447,24 @@ impl<'a> PhpAccessResolver<'a> {
         if name.is_empty() {
             return Type::unknown();
         }
+        let prepared = self
+            .type_annotations
+            .as_ref()
+            .is_some_and(|(cached, _)| cached == root);
+        if !prepared {
+            return self.uncached_root_name_type(template_path, root, name);
+        }
+        if let Some(known) = self.context_names.borrow().get(name) {
+            return known.clone();
+        }
+        let value = self.uncached_root_name_type(template_path, root, name);
+        self.context_names
+            .borrow_mut()
+            .insert(name.to_owned(), value.clone());
+        value
+    }
+
+    fn uncached_root_name_type(&self, template_path: &str, root: &SyntaxNode, name: &str) -> Type {
         let cached = self
             .type_annotations
             .as_ref()
@@ -300,18 +490,36 @@ impl<'a> PhpAccessResolver<'a> {
                 }
             }
         }
-        if values.is_empty()
-            && let Some(twig) = self.twig
-        {
-            for global in twig.get_globals(name).unwrap_or_default() {
-                if let Ok(value) = swlsp_php_types::parse(&global.ty)
-                    && !value.is_unknown()
-                {
-                    values.push(value);
-                }
+        if values.is_empty() {
+            let global = self.global_type(name);
+            if !global.is_unknown() {
+                return global;
             }
+            return self.inherited_name_type(template_path, root, name);
         }
         union_known_types(values)
+    }
+
+    /// The type of the Twig global `name`.
+    pub(crate) fn global_type(&self, name: &str) -> Type {
+        let Some(twig) = self.twig else {
+            return match name {
+                "app" => self.app_variable_type(),
+                _ => Type::unknown(),
+            };
+        };
+        let values = twig
+            .get_globals(name)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|global| swlsp_php_types::parse(&global.ty).ok())
+            .filter(|value| !value.is_unknown())
+            .collect();
+        let global = union_known_types(values);
+        if global.is_unknown() && name == "app" {
+            return self.app_variable_type();
+        }
+        global
     }
 
     pub(crate) fn twig_function_type(&self, name: &str) -> Type {
@@ -416,7 +624,7 @@ impl<'a> PhpAccessResolver<'a> {
 
     /// The key and value variables introduced by enclosing Twig for loops.
     /// Only the loop body owns them.
-    fn loop_variable_type(
+    pub(crate) fn loop_variable_type(
         &self,
         template_path: &str,
         root: &SyntaxNode,

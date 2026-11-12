@@ -11,6 +11,7 @@ mod render_block;
 mod snippet;
 mod template;
 mod translation;
+mod variable;
 mod versioning;
 
 #[cfg(test)]
@@ -23,12 +24,17 @@ pub use live_event::LiveComponentEventAnalyzer;
 pub use macros::TwigMacroAnalyzer;
 pub use markup::TwigMarkupAnalyzer;
 pub use member::{
-    TwigMemberCallAnalyzer, TwigMemberDeprecationAnalyzer, TwigMemberMissingAnalyzer,
+    TWIG_MEMBER_NULL_CODE, TwigMemberCallAnalyzer, TwigMemberDeprecationAnalyzer,
+    TwigMemberMissingAnalyzer, TwigNullAccessAnalyzer,
 };
 pub use render_block::TwigRenderBlockAnalyzer;
 pub use snippet::SnippetAnalyzer;
 pub use template::TemplateAnalyzer;
 pub use translation::TranslationAnalyzer;
+pub use variable::{
+    TWIG_TYPE_DUMPED_CODE, TWIG_VARIABLE_UNDEFINED_CODE, TwigDumpTypeAnalyzer,
+    TwigUndefinedVariableAnalyzer,
+};
 pub use versioning::{
     TWIG_BLOCK_DEPRECATED_CODE, TWIG_BLOCK_REDUNDANT_OVERRIDE_CODE,
     TWIG_VERSIONING_COMMENT_MISSING_CODE, TWIG_VERSIONING_ORIGINAL_MISSING_CODE,

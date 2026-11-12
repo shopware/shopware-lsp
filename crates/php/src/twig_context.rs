@@ -56,6 +56,11 @@ pub struct TwigTemplateVariable {
 pub struct TwigTemplateContext {
     pub template: String,
     pub variables: Vec<TwigTemplateVariable>,
+    /// Whether the file passes variables the analysis cannot list: a
+    /// context held in a parameter, spread from a call, or built by code
+    /// it does not follow.
+    #[serde(default)]
+    pub open: bool,
 }
 
 /// Per-generation cache of merged template variables.
@@ -98,6 +103,7 @@ pub(crate) fn extract_twig_template_contexts(
                     scope,
                     variables: HashMap::new(),
                     visited: HashSet::new(),
+                    open: false,
                 }),
         )
     }
@@ -147,6 +153,7 @@ pub(crate) fn extract_twig_template_contexts(
             TwigTemplateContext {
                 template: collector.template,
                 variables,
+                open: collector.open,
             }
         })
         .collect();
@@ -311,6 +318,8 @@ struct Collector<'a> {
     scope: Option<SyntaxNode>,
     variables: HashMap<String, TwigTemplateVariable>,
     visited: HashSet<String>,
+    /// See [`TwigTemplateContext::open`].
+    open: bool,
 }
 
 impl Collector<'_> {
@@ -319,6 +328,7 @@ impl Collector<'_> {
             return;
         };
         if depth > MAX_TWIG_CONTEXT_DEPTH {
+            self.open = true;
             return;
         }
         match node.kind() {
@@ -334,6 +344,8 @@ impl Collector<'_> {
                     for index in 0..count {
                         self.collect(query::argument_expression(node, index).as_ref(), depth);
                     }
+                } else {
+                    self.open = true;
                 }
             }
             PHP_MEMBER_CALL | PHP_SCOPED_CALL => self.collect_local_method(node, depth),
@@ -342,7 +354,7 @@ impl Collector<'_> {
                     self.collect(Some(&child), depth);
                 }
             }
-            _ => {}
+            _ => self.open = true,
         }
     }
 
@@ -366,6 +378,7 @@ impl Collector<'_> {
                 continue;
             };
             if key.kind() != PHP_STRING {
+                self.open = true;
                 continue;
             }
             let value = query::array_item_value(&item);
@@ -385,9 +398,11 @@ impl Collector<'_> {
 
     fn collect_variable(&mut self, name: &str, before: u32, depth: usize) {
         let Some(scope) = self.scope.clone() else {
+            self.open = true;
             return;
         };
         if name.is_empty() {
+            self.open = true;
             return;
         }
         if !self
@@ -396,6 +411,9 @@ impl Collector<'_> {
         {
             return;
         }
+        // A variable nothing assigns in this function is a parameter or a
+        // property: what it holds is unknown.
+        let mut assigned = false;
         query::visit(&scope, &[PHP_ASSIGNMENT_EXPRESSION], |assignment| {
             if u32::from(assignment.text_range().start()) >= before
                 || query::function_like_at(assignment).as_ref() != Some(&scope)
@@ -410,6 +428,7 @@ impl Collector<'_> {
             match left.kind() {
                 PHP_VARIABLE => {
                     if query::variable_name(left) == name {
+                        assigned = true;
                         self.collect(Some(right), depth);
                     }
                 }
@@ -417,6 +436,7 @@ impl Collector<'_> {
                     if let (base, Some(key)) = array_access_parts(left)
                         && base == name
                     {
+                        assigned = true;
                         self.add(
                             &query::string_value(&key),
                             Some(right),
@@ -428,9 +448,14 @@ impl Collector<'_> {
             }
             true
         });
+        if !assigned {
+            self.open = true;
+        }
     }
 
     fn collect_local_method(&mut self, call: &SyntaxNode, depth: usize) {
+        // Unknown until a method of this class is found to follow.
+        let was_open = std::mem::replace(&mut self.open, true);
         if depth >= MAX_TWIG_CONTEXT_DEPTH {
             return;
         }
@@ -460,6 +485,7 @@ impl Collector<'_> {
             {
                 return;
             }
+            self.open = was_open;
             let previous = self.scope.replace(method.clone());
             query::visit(&method, &[PHP_RETURN_STATEMENT], |statement| {
                 if query::function_like_at(statement).as_ref() == Some(&method) {
@@ -626,6 +652,20 @@ impl PhpIndex {
         let mut result: Vec<TwigTemplateVariable> = merged.into_values().collect();
         sort_by_lower_name(&mut result);
         Ok(result)
+    }
+
+    /// Whether some PHP file renders one of the templates with variables
+    /// the analysis cannot list.
+    pub fn twig_template_context_open<S: AsRef<str>>(&self, template_names: &[S]) -> bool {
+        template_names.iter().any(|template| {
+            let template = normalize_twig_template_name(template.as_ref());
+            !template.is_empty()
+                && self
+                    .inner
+                    .twig_contexts
+                    .get_values_view(&template)
+                    .is_ok_and(|contexts| contexts.iter().any(|context| context.open))
+        })
     }
 
     fn twig_variables_for_template(

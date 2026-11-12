@@ -38,20 +38,26 @@ pub fn new_template(
     Arc::new(BoundInspection {
         definition: InspectionDefinition {
             id: "twig.template".into(),
-            description: "References to templates that do not exist.",
+            description: "References to templates that do not exist, and PHP render calls for templates marked abstract.",
             domain: "twig",
             scope: InspectionScope::Framework,
             languages: vec![LanguageId::Php, LanguageId::Twig],
-            problems: vec![ProblemDefinition {
-                id: "twig.template.missing".into(),
-                source: "twig".into(),
-                default_severity: protocol::DiagnosticSeverity::ERROR,
-                disabled_by_default: false,
-            }],
+            problems: ["twig.template.abstract", "twig.template.missing"]
+                .into_iter()
+                .map(|code| ProblemDefinition {
+                    id: code.into(),
+                    source: "twig".into(),
+                    default_severity: protocol::DiagnosticSeverity::ERROR,
+                    disabled_by_default: false,
+                })
+                .collect(),
         },
         analyzers: vec![Arc::new(TemplateAnalyzer::new(twig_index, php_index))],
         fixes: vec![Arc::new(SuggestionFix), Arc::new(CreateTemplateFix)],
-        bind: Some(Arc::new(move |_, payload| {
+        bind: Some(Arc::new(move |code, payload| {
+            if code.as_str() != "twig.template.missing" {
+                return Vec::new();
+            }
             let mut bound = suggestion_bound_fixes(payload);
             let name = map_string(payload, "templateName");
             if let Some(target) = safe_template_creation_target(&root, &name) {

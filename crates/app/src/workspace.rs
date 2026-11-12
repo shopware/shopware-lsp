@@ -344,6 +344,7 @@ fn build(
         swlsp_twig::TwigIndexer::new(cache_dir, store_ref).map_err(context("create Twig index"))?,
     );
     twig.set_dependencies(Some(php.clone()), Some(services.clone()));
+    twig.set_route_index(Some(routes.clone()));
     let twig_components = partial.push(
         swlsp_twigcomponent::Index::new(cache_dir, store_ref)
             .map_err(context("create Twig component index"))?,

@@ -106,7 +106,11 @@ editing.
   signature help, rename, and diagnostics.
 - Typed Twig variables from controllers, components, globals, and
   annotations, including Twig 3.29 documentation comments, member completion,
-  hover documentation, and navigation back to PHP.
+  hover documentation, and navigation back to PHP. Types follow `{% set %}`,
+  filters such as `first` and `map`, conditions that rule out null, the
+  null-safe `?.`, and `include`, `embed`, `extends` and macro calls across
+  templates. Opt-in strict rules report access on null and undefined
+  variables; see [`docs/twigstan-parity.md`](docs/twigstan-parity.md).
 - Framework-aware diagnostics for missing symbols, incompatible arguments,
   invalid configuration, deprecated APIs, `@final` inheritance, and more.
 

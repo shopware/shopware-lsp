@@ -35,6 +35,9 @@ pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
         twig(),
         php(),
     )));
+    add(new_twig_null_access(twig(), php()));
+    add(new_twig_undefined_variable(twig(), php()));
+    add(new_twig_dump_type(twig(), php()));
     add(new_template(&s.root, twig(), php()));
     add(analyzer(diagnostics::TwigRenderBlockAnalyzer::new(
         twig(),
