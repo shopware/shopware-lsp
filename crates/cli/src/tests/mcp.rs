@@ -942,6 +942,106 @@ fn mcp_explains_diagnostic_codes_and_inspections() {
     );
 }
 
+/// A client starts the server for every project it opens. Outside a
+/// Shopware or Symfony project it must still answer, with no tools and the
+/// reason why.
+#[test]
+fn mcp_starts_inactive_outside_a_supported_project() {
+    let root = temp_dir();
+    write(&path(root.path(), "README.md"), "not a shop");
+    let mut client = McpClient::connect_guarded(root.path());
+    let instructions = client.initialize["instructions"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        instructions.starts_with("The Shopware MCP server is inactive"),
+        "{instructions}"
+    );
+    assert!(
+        instructions.contains("no Shopware or Symfony project markers found"),
+        "{instructions}"
+    );
+    assert!(client.initialize["capabilities"]["tools"].is_null());
+    assert_eq!(client.tool_names(), Vec::<String>::new());
+    let response = client.request(
+        "tools/call",
+        json!({"name": "shopware_diagnostics", "arguments": {"path": "README.md"}}),
+    );
+    assert!(
+        response["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("unknown tool"),
+        "{response}"
+    );
+}
+
+#[test]
+fn mcp_is_active_in_a_supported_project_without_the_override() {
+    let root = temp_dir();
+    write(
+        &path(root.path(), ".config/shopware/lsp.yaml"),
+        "version: 1\n",
+    );
+    let mut client = McpClient::connect_guarded(root.path());
+    assert!(
+        client
+            .tool_names()
+            .contains(&"shopware_diagnostics".to_owned())
+    );
+    assert!(
+        !client.initialize["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("inactive")
+    );
+}
+
+/// A configuration that cannot be read is the project's problem to fix, not
+/// a reason for the client to show a failed server.
+#[test]
+fn mcp_starts_inactive_with_an_invalid_configuration() {
+    let root = temp_dir();
+    write(
+        &path(root.path(), ".config/shopware/lsp.yaml"),
+        "version: 1\nmcp:\n  tools:\n    shopware_no_such_tool: true\n",
+    );
+    let mut client = McpClient::connect_guarded(root.path());
+    let instructions = client.initialize["instructions"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        instructions.contains("invalid project configuration"),
+        "{instructions}"
+    );
+    assert_eq!(client.tool_names(), Vec::<String>::new());
+
+    let root = temp_dir();
+    write(
+        &path(root.path(), ".config/shopware/lsp.yaml"),
+        "version: 1\n",
+    );
+    let mut client = {
+        let _guard = ENV_LOCK.write().unwrap_or_else(|p| p.into_inner());
+        // SAFETY: every other run and MCP startup is excluded by the lock.
+        unsafe { std::env::set_var("SHOPWARE_LSP_EDITOR_CONFIGURATION", "[]") };
+        let client = std::panic::catch_unwind(|| McpClient::connect_unlocked(root.path()));
+        unsafe { std::env::remove_var("SHOPWARE_LSP_EDITOR_CONFIGURATION") };
+        client.unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    };
+    let instructions = client.initialize["instructions"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        instructions.contains("decode MCP editor configuration"),
+        "{instructions}"
+    );
+    assert_eq!(client.tool_names(), Vec::<String>::new());
+}
+
 #[test]
 fn mcp_rejects_paths_outside_workspace_before_indexing() {
     let root = temp_dir();
@@ -965,7 +1065,7 @@ fn mcp_rejects_unsafe_workspace_edits() {
     let root_path = root.path().to_str().unwrap().to_owned();
     let runner = Runner::new(test_options());
     let effective = swlsp_projectconfig::resolve(&Default::default(), &Default::default());
-    let runtime = McpRuntime::new(&runner, root_path, None, effective);
+    let runtime = McpRuntime::new(&runner, root_path, None, effective, None);
     let outside = swlsp_uriutil::file_uri(
         root.path()
             .parent()

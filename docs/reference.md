@@ -48,8 +48,16 @@ the detected kind, its evidence and the configuration in effect; `info --stats`
 adds index, cache and memory statistics, and `info --json` prints the complete
 effective configuration. For an
 unusual but intentional root, either add the project configuration or pass the
-global `--allow-unsupported-project` flag. The same guard is
-enforced by the language-server and MCP entry points.
+global `--allow-unsupported-project` flag. The language server applies
+the same guard.
+
+The MCP server always starts, because clients launch it for every project
+they open and show an exit as a failed server. In a root without those
+markers, or with a project or editor configuration that cannot be read, it
+is inactive: it completes the handshake, offers no tools, gives the reason in
+its instructions and on stderr (`Shopware MCP inactive: …`), and never indexes
+the root. Only a root that does not exist, or a failing project detection,
+still ends it.
 
 The commands people and CI run are at the top level: `check`, `index`, `info`,
 `cache`, `serve` and `mcp`. Everything that asks the language server what an editor

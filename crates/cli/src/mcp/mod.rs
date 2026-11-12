@@ -55,6 +55,10 @@ pub(crate) struct McpRuntime {
     version: String,
     err_out: Output,
     allow_unsupported_project: bool,
+    /// Why the server offers no tools: the root is no Shopware or Symfony
+    /// project, or its configuration is invalid. Clients start an MCP
+    /// server for every project, so it has to start in every project.
+    inactive: Option<String>,
     session: Mutex<Option<McpSession>>,
 }
 
@@ -100,8 +104,10 @@ impl McpRuntime {
         root: String,
         editor_configuration: Option<Partial>,
         configuration: Effective,
+        inactive: Option<String>,
     ) -> Self {
         Self {
+            inactive,
             root,
             editor_configuration,
             configuration,
@@ -114,7 +120,7 @@ impl McpRuntime {
     }
 
     pub fn tool_enabled(&self, name: &str) -> bool {
-        self.configuration.mcp_tool_enabled(name)
+        self.inactive.is_none() && self.configuration.mcp_tool_enabled(name)
     }
 
     /// Runs `operation` on the shared, indexed session,
@@ -169,14 +175,30 @@ impl McpRuntime {
 
 pub(crate) fn run_mcp(runner: &Runner) -> Result<(), CliError> {
     let root = runner.workspace_root()?;
-    runner.require_supported_project(&root)?;
-    let editor_configuration = mcp_editor_configuration()?;
-    let configuration = mcp_configuration(&root, editor_configuration.as_ref())?;
+    // A client registers the server for every project it opens and shows
+    // an exit as a failed server. So what would stop a one-shot command
+    // (no project, a configuration that cannot be read) only makes the
+    // server inactive: it answers the handshake, says why, and offers no
+    // tools. The root is then never indexed.
+    let mut inactive = runner.unsupported_project(&root)?;
+    let editor_configuration = mcp_editor_configuration().unwrap_or_else(|error| {
+        inactive.get_or_insert(error.message);
+        None
+    });
+    let configuration =
+        mcp_configuration(&root, editor_configuration.as_ref()).unwrap_or_else(|error| {
+            inactive.get_or_insert(format!("invalid project configuration: {}", error.message));
+            swlsp_projectconfig::default_effective()
+        });
+    if let Some(reason) = &inactive {
+        let _ = runner.write_err(&format!("Shopware MCP inactive: {reason}\n"));
+    }
     let runtime = Arc::new(McpRuntime::new(
         runner,
         root,
         editor_configuration,
         configuration,
+        inactive,
     ));
     let result = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -380,12 +402,18 @@ impl ServerHandler for McpServer {
         } else {
             ServerCapabilities::default()
         };
+        let instructions = match &self.runtime.inactive {
+            Some(reason) => format!(
+                "The Shopware MCP server is inactive in this workspace and offers no tools: {reason}"
+            ),
+            None => INSTRUCTIONS.to_owned(),
+        };
         ServerConfig::new(capabilities)
             .with_server_info(Implementation::new(
                 "shopware-lsp",
                 self.runtime.version.clone(),
             ))
-            .with_instructions(INSTRUCTIONS)
+            .with_instructions(instructions)
     }
 
     async fn list_tools(

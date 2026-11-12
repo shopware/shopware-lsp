@@ -143,19 +143,36 @@ impl McpClient {
 
     /// Callers must hold `ENV_LOCK` for the startup.
     pub fn connect_unlocked(root: &Path) -> McpClient {
+        Self::start(root, true)
+    }
+
+    /// Connects the way a client does that knows nothing about the project:
+    /// without `--allow-unsupported-project`.
+    pub fn connect_guarded(root: &Path) -> McpClient {
+        let _guard: RwLockReadGuard<'_, ()> = ENV_LOCK.read().unwrap_or_else(|p| p.into_inner());
+        Self::start(root, false)
+    }
+
+    fn start(root: &Path, allow_unsupported_project: bool) -> McpClient {
         init();
         let (reader, writer) = std::io::pipe().expect("pipe");
         let out = Buffer::new();
         let output = out.output();
         let root = root.to_string_lossy().into_owned();
+        let mut arguments = vec!["--root".to_owned(), root];
+        if allow_unsupported_project {
+            arguments.push("--allow-unsupported-project".to_owned());
+        }
+        arguments.push("mcp".to_owned());
         let thread = std::thread::spawn(move || {
+            let arguments: Vec<&str> = arguments.iter().map(String::as_str).collect();
             let mut runner = Runner::new(Options {
                 version: "test".into(),
                 ..Options::default()
             });
             runner.run(
                 &Cancel::new(),
-                &args(&["--root", &root, "--allow-unsupported-project", "mcp"]),
+                &args(&arguments),
                 Box::new(reader),
                 output,
                 Buffer::new().output(),
