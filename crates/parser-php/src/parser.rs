@@ -972,7 +972,13 @@ fn parse_prefix(p: &mut P<'_>, stop: Stop) -> Option<CompletedMarker> {
     if at_kw(p, "clone") {
         let node = p.start();
         p.bump();
-        parse_expression_precedence(p, stop, 19);
+        if p.at(TK_OPEN_PAREN) {
+            // PHP 8.5: `clone($object, ['property' => $value])` is a call,
+            // and a member access after it applies to the clone.
+            parse_arguments(p);
+        } else {
+            parse_expression_precedence(p, stop, 19);
+        }
         return Some(p.complete(node, PHP_CLONE_EXPRESSION));
     }
     if is_cast(p) {

@@ -121,7 +121,21 @@ impl Fs<'_, '_, '_> {
                 }
                 Type::NEVER
             }
-            PHP_CLONE_EXPRESSION => self.infer_opt(last_node(node).as_ref(), env),
+            PHP_CLONE_EXPRESSION => {
+                // The call form clones its first argument.
+                let cloned = match last_node(node) {
+                    Some(arguments) if arguments.kind() == PHP_ARGUMENT_LIST => {
+                        for argument in arguments.children().skip(1) {
+                            self.infer_opt(last_node(&argument).as_ref(), env);
+                        }
+                        arguments
+                            .first_child()
+                            .and_then(|argument| last_node(&argument))
+                    }
+                    other => other,
+                };
+                self.infer_opt(cloned.as_ref(), env)
+            }
             PHP_YIELD_EXPRESSION => {
                 let mut value = Type::MIXED;
                 for expression in node.children() {

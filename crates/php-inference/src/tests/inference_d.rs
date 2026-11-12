@@ -1255,3 +1255,25 @@ function byPosition(AppCollection $apps): iterable { return $apps; }
         ]
     );
 }
+
+#[test]
+fn clone_call_form_has_the_type_of_its_first_argument() {
+    let source = r#"<?php
+class Listing {
+    public function withText(string $text): self {
+        return clone($this, ['text' => $text]);
+    }
+    public function copy(): static {
+        return clone $this;
+    }
+}"#;
+    let (parsed, analyzed, _) = analyze_source("/listing.php", source, false, Vec::new());
+    assert_text_type(
+        &analyzed,
+        &parsed.root,
+        "clone($this, ['text' => $text])",
+        "Listing",
+    );
+    assert_text_type(&analyzed, &parsed.root, "clone $this", "Listing");
+    assert_no_issue(&analyzed, "php.returnType");
+}
