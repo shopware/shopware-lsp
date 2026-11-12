@@ -148,6 +148,11 @@ fn index_resolves_named_bundle_base_path_and_theme_packages() {
             "console.log('admin')",
         ),
         (root.join("public/theme/theme-id/assets/logo.svg"), "<svg/>"),
+        // A theme's source asset: the theme compiler copies it to public.
+        (
+            root.join("src/SwagTheme/Resources/app/storefront/src/assets/pin.png"),
+            "png",
+        ),
         (
             root.join("src/Administration/Resources/config/routes.xml"),
             "<routes/>",
@@ -185,6 +190,13 @@ fn index_resolves_named_bundle_base_path_and_theme_packages() {
             .names_for_package("theme")
             .unwrap()
             .contains(&"assets/logo.svg".to_owned())
+    );
+    assert_eq!(
+        index
+            .find_assets_for_package("/assets/pin.png", "theme")
+            .unwrap()
+            .len(),
+        1
     );
     index.close().unwrap();
 
@@ -413,6 +425,7 @@ fn references_extract_twig_assets_encore_and_php_packages() {
 {{ vite_entry_link_tags('vite-app') }}
 {{ vite_entry_script_tags('vite-admin') }}
 {{ importmap('frontend') }}
+{{ asset('js/', 'theme') }}
 {{ importmap(dynamic) }}
 {{ encore_entry_link_tags(dynamic) }}
 <link rel="stylesheet" href="/build/theme.css">
@@ -433,7 +446,10 @@ fn references_extract_twig_assets_encore_and_php_packages() {
                         "images/logo.svg",
                     ],
                 ),
-                (ReferenceKind::AssetPackage, vec!["@Administration"]),
+                (
+                    ReferenceKind::AssetPackage,
+                    vec!["@Administration", "theme"],
+                ),
                 (ReferenceKind::EncoreEntry, vec!["app"]),
                 (ReferenceKind::ViteEntry, vec!["vite-app", "vite-admin"]),
                 (ReferenceKind::Importmap, vec!["frontend"]),

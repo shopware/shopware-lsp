@@ -104,3 +104,34 @@ fn snippet_file_prefers_en_json_and_ignores_other_json() {
     );
     check_problems(&analyzer, &format!("{other}/de.json"), "{}");
 }
+
+#[test]
+fn snippet_files_pair_by_stem() {
+    let (directory, uri) = snippet_directory("src/Resources/snippet", "storefront.en-GB.json");
+    std::fs::write(
+        directory
+            .path()
+            .join("src/Resources/snippet/gallery.en-GB.json"),
+        r#"{"gallery": {"title": "Gallery"}}"#,
+    )
+    .unwrap();
+    let analyzer = SnippetFileAnalyzer::new();
+    // `gallery.de-DE.json` is compared with `gallery.en-GB.json`, not with
+    // the storefront file sorted before it.
+    check_problems(
+        &analyzer,
+        &format!("{uri}/gallery.de-DE.json"),
+        r#"{"gallery": {"title": "Galerie"}}"#,
+    );
+    check_problems(
+        &analyzer,
+        &format!("{uri}/storefront.de-DE.json"),
+        &plain_main(),
+    );
+    // A file without a locale in its name is not compared.
+    check_problems(&analyzer, &format!("{uri}/schema.json"), "{}");
+}
+
+fn plain_main() -> String {
+    MAIN.to_owned()
+}

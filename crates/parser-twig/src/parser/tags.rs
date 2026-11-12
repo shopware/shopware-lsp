@@ -60,6 +60,16 @@ pub(crate) fn parse_twig_block_statement(
     p: &mut Parser<'_>,
     child_parser: ParseFn,
 ) -> Option<CompletedMarker> {
+    super::html::begin_twig_statement();
+    let completed = parse_twig_block_statement_inner(p, child_parser);
+    super::html::end_twig_statement();
+    completed
+}
+
+fn parse_twig_block_statement_inner(
+    p: &mut Parser<'_>,
+    child_parser: ParseFn,
+) -> Option<CompletedMarker> {
     let m = p.start();
     p.bump();
 

@@ -230,3 +230,24 @@ fn html_queries() {
         .collect();
     assert_eq!(attributes, [":disabled", "class"]);
 }
+
+#[test]
+fn nested_strings_are_neither_arguments_nor_filter_operands() {
+    let root = root_of(
+        "{{ path('a', filter == 'all' ? {} : {}) }}{{ path('b' ~ x) }}{{ asset('c') }}\
+         {{ ('p.' ~ y)|trans }}{{ \"q.#{z ? 'gross' : 'net'}\"|trans }}{{ 'r'|trans }}{{ ('s')|trans }}",
+    );
+    let arguments: Vec<String> = string_arguments_in_functions(&root, &["path", "asset"])
+        .iter()
+        .map(|literal| string_value(literal).unwrap_or_default())
+        .collect();
+    assert_eq!(arguments, ["a", "c"]);
+    let keys: Vec<String> = nodes(&root, &[TWIG_LITERAL_STRING])
+        .iter()
+        .filter(|literal| string_in_filter(literal, &["trans"]))
+        .map(|literal| string_value(literal).unwrap_or_default())
+        .collect();
+    // The interpolated string is the operand itself (its staticness is a
+    // separate question); the literals inside it are not.
+    assert_eq!(keys, ["q.#{z ? 'gross' : 'net'}", "r", "s"]);
+}

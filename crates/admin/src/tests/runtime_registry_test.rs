@@ -221,7 +221,7 @@ Shopware.Service('cmsService').registerCmsBlock({
     index_source(
         &idx,
         &file_path,
-        "Shopware.Service('cmsService').registerCmsElement({ name: 'image' });",
+        "const NAME = 'image';\nShopware.Service('cmsService').registerCmsElement({ name: NAME });",
     );
     let elements = idx
         .get_all_cms_registrations_by_kind(AdminCMSRegistrationKind::Element)

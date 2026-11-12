@@ -718,11 +718,12 @@ fn bind_typed_constants_and_asymmetric_properties() {
         "/modern.php",
         "<?php\nnamespace App;\nclass Modern {\n    public const string KIND = 'modern';\n    public private(set) string $name {\n        get => $this->name;\n    }\n}",
     );
+    // The literal is kept: a route name written as `self::KIND` resolves.
     assert_eq!(
         find(&document, SymbolKind::ClassConstant, "KIND")
             .ty
             .to_string(),
-        "string"
+        "\"modern\""
     );
     let property = find(&document, SymbolKind::Property, "name");
     assert_eq!(property.visibility, Visibility::Public);

@@ -10,9 +10,7 @@ use swlsp_textutil::{eq_ignore_case, lowercase};
 use super::Branches;
 use crate::analyzer::Fs;
 use crate::env::Env;
-use crate::syntax::{
-    compact, condition_flow_expression_key, flow_expression_key, start, trim_backslash,
-};
+use crate::syntax::{condition_flow_expression_key, flow_expression_key, start, trim_backslash};
 use crate::types_util::without_falsy_literals;
 
 impl Fs<'_, '_, '_> {
@@ -141,7 +139,17 @@ impl Fs<'_, '_, '_> {
             self.name_context_at(start(type_node))
                 .resolve_class(&query::name_value(type_node))
         } else {
-            compact(self.src().text(type_node)).into_owned()
+            // `$value instanceof $class`: only a known class-string narrows;
+            // any other class keeps the type as it is.
+            let class = self.infer(type_node, env);
+            match class.kind() {
+                Kind::ClassString
+                    if class.argument_count() == 1 && class.argument(0).kind() == Kind::Object =>
+                {
+                    class.argument(0).name().to_owned()
+                }
+                _ => return (env.fork(), env.fork()),
+            }
         };
         let constraint = Type::named(&class_name, Vec::new());
         let (true_env, false_env) = (env.fork(), env.fork());
@@ -150,6 +158,10 @@ impl Fs<'_, '_, '_> {
         let false_value = self.without_instanceof_constraint(&original, &constraint);
         true_env.set(&key, true_value.clone());
         false_env.set(&key, false_value);
+        if value_node.kind() == PHP_VARIABLE {
+            // An instance is not null: what was tied to that applies.
+            self.apply_non_null_alias(&key, &true_env, env);
+        }
         self.record(value_node, &true_value, TypeSource::Flow, "instanceof");
         (true_env, false_env)
     }

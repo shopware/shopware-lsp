@@ -81,6 +81,8 @@ pub struct Model {
 pub struct Package {
     pub name: String,
     pub version: String,
+    /// The `ext-*` requirements of the package, normalized.
+    pub required_extensions: Vec<String>,
     pub psr4: BTreeMap<String, Vec<PathBuf>>,
     pub classmap: Vec<PathBuf>,
     pub files: Vec<PathBuf>,
@@ -318,10 +320,15 @@ pub fn load(root: &Path) -> Result<Model, Error> {
             required.push(extension);
         }
     }
+    model.dependencies = composer::load_packages(&root);
+    // What the installed packages need is needed as well: Shopware itself
+    // requires openssl, mbstring and more.
+    for package in &model.dependencies {
+        required.extend(package.required_extensions.iter().cloned());
+    }
     model.required_extensions = normalized_extensions(required.iter().map(String::as_str));
     model.disabled_extensions = normalized_extensions(disabled.iter().map(String::as_str));
     bootstrap::add_phpunit_bootstrap_autoloads(&mut model, &root);
-    model.dependencies = composer::load_packages(&root);
     Ok(model)
 }
 
@@ -398,7 +405,7 @@ fn unique_psr4_mappings(mut values: Vec<Psr4Mapping>) -> Vec<Psr4Mapping> {
     values
 }
 
-fn composer_extension_name(name: &str) -> Option<String> {
+pub(crate) fn composer_extension_name(name: &str) -> Option<String> {
     let name = name.trim().to_lowercase();
     let extension = name.strip_prefix("ext-")?;
     if extension.is_empty() {

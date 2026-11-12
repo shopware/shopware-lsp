@@ -323,6 +323,9 @@ impl Fs<'_, '_, '_> {
                     } else {
                         Type::non_empty_array(key.clone(), value.clone())
                     }
+                } else if value_type.kind() == Kind::Mixed {
+                    // The other elements are still anything.
+                    Type::non_empty_array(relations.join(&key_type, key), Type::MIXED)
                 } else {
                     Type::non_empty_array(
                         relations.join(&key_type, key),
@@ -399,6 +402,15 @@ impl Fs<'_, '_, '_> {
                     )
                 }
             }
+            // Writing one key into a value nothing is known about (`mixed`,
+            // a parameter without a type) makes it an array whose other
+            // keys are still anything; only a literal key keeps its value.
+            Kind::Mixed => match array_literal_key(key) {
+                Some(field_name) if !append_value => {
+                    Type::array_shape(vec![ShapeField::new(field_name, value.clone())], true)
+                }
+                _ => Type::non_empty_array(relations.join(&Type::ARRAY_KEY, key), Type::MIXED),
+            },
             _ => Type::array(key.clone(), value.clone()),
         }
     }

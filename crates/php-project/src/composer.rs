@@ -5,7 +5,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use crate::{Package, join};
+use crate::{Package, composer_extension_name, join};
 
 #[derive(Default, Deserialize)]
 #[serde(default)]
@@ -90,6 +90,8 @@ struct LockFile {
 struct LockPackage {
     #[serde(deserialize_with = "null_default")]
     name: String,
+    #[serde(default, deserialize_with = "null_default")]
+    require: BTreeMap<String, serde_json::Value>,
     #[serde(deserialize_with = "null_default")]
     version: String,
     #[serde(deserialize_with = "null_default")]
@@ -119,6 +121,11 @@ pub(crate) fn load_packages(root: &Path) -> Vec<Package> {
             Package {
                 name: package.name.clone(),
                 version: package.version.clone(),
+                required_extensions: package
+                    .require
+                    .keys()
+                    .filter_map(|name| composer_extension_name(name))
+                    .collect(),
                 psr4,
                 classmap: package
                     .autoload

@@ -13,6 +13,10 @@ pub(super) fn translation_index() -> (Vec<tempfile::TempDir>, Arc<Index>) {
     for (filename, source) in [
         ("messages.en.yaml", "hello.world: Hello world\n"),
         ("admin.en.yaml", "admin.dashboard: Dashboard\n"),
+        (
+            "validators.en.yaml",
+            "not.blank: This value should not be blank.\n",
+        ),
     ] {
         let path = root.path().join("translations").join(filename);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -139,4 +143,37 @@ fn suggestions_are_empty_when_nothing_is_similar() {
     );
     let payload = result[0].payload.as_ref().unwrap();
     assert_eq!(payload["suggestions"], serde_json::json!([]));
+}
+
+#[test]
+fn validator_messages_written_as_sentences_are_their_own_fallback() {
+    let (_dirs, index) = translation_index();
+    let provider = TranslationAnalyzer::new(Some(index), None, None);
+    check_problems(
+        &provider,
+        "file:///project/template.twig",
+        "{{ 'The currency with code %code% cannot be found'|trans({}, 'validators') }}\n\
+         {{ '{|symfony.translation.key.missing:not.blnk|}'|trans({}, 'validators') }}\n\
+         {{ '{|symfony.translation.key.missing:A sentence|}'|trans }}",
+    );
+}
+
+#[test]
+fn validator_messages_may_be_storefront_error_snippets() {
+    let (_dirs, index) = translation_index();
+    let snippet_dir = tempdir();
+    let snippets = Arc::new(SnippetIndexer::new(snippet_dir.path(), None).unwrap());
+    index_file(
+        snippets.as_ref(),
+        "/project/src/Resources/snippet/storefront.en-GB.json",
+        r#"{"error": {"VIOLATION::ACCEPT_TERMS": "Accept the terms."}, "plain": "Plain"}"#,
+    );
+    let provider = TranslationAnalyzer::new(Some(index), None, Some(snippets));
+    check_problems(
+        &provider,
+        "file:///project/template.twig",
+        "{{ 'VIOLATION::ACCEPT_TERMS'|trans({}, 'validators') }}\n\
+         {{ 'plain'|trans({}, 'validators') }}\n\
+         {{ '{|symfony.translation.key.missing:VIOLATION::OTHER|}'|trans({}, 'validators') }}",
+    );
 }

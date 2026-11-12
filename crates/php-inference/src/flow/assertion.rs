@@ -4,7 +4,7 @@ use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;
 use swlsp_php_resolver::resolve_signature;
 use swlsp_php_semantic::{Symbol, SymbolKind, TypeSource};
-use swlsp_php_types::{Relations, Type, contains_uncertain, substitute};
+use swlsp_php_types::{Kind, Relations, Type, contains_template, substitute};
 use swlsp_syntax::SyntaxNode;
 
 use super::Branches;
@@ -63,7 +63,7 @@ impl Fs<'_, '_, '_> {
                     key = member_key;
                     original = member_type;
                 }
-                if contains_uncertain(&assertion_type) {
+                if unusable_assertion(&assertion_type) {
                     continue;
                 }
                 if let Some(existing) = env.get(&key) {
@@ -173,7 +173,7 @@ impl Fs<'_, '_, '_> {
                 .filter(|_| receiver_node.is_some() || assertion.target.as_str() != "$this");
                 let key = flow_expression_key(self.src(), target.as_ref());
                 let assertion_type = substitute(&assertion.ty, &resolved.templates);
-                if key.is_empty() || contains_uncertain(&assertion_type) {
+                if key.is_empty() || unusable_assertion(&assertion_type) {
                     continue;
                 }
                 let Some(target) = target else {
@@ -191,6 +191,10 @@ impl Fs<'_, '_, '_> {
     }
 
     fn current_class_is_trait(&self) -> bool {
+        self.class_is_trait()
+    }
+
+    fn class_is_trait(&self) -> bool {
         let container = &self.symbol.container;
         if container.is_empty() {
             return false;
@@ -331,4 +335,28 @@ fn class_identity_operands(
         return None;
     }
     Some((value, class))
+}
+
+/// Whether an asserted type says nothing usable: unknown, `mixed` or a
+/// template at the top, or an unknown or template anywhere inside.
+/// `array<mixed>` is usable: it asserts an array.
+fn unusable_assertion(value: &Type) -> bool {
+    matches!(value.kind(), Kind::Unknown | Kind::Mixed | Kind::Template)
+        || contains_template(value)
+        || contains_unknown(value)
+}
+
+fn contains_unknown(value: &Type) -> bool {
+    value.kind() == Kind::Unknown
+        || value
+            .fields()
+            .iter()
+            .any(|field| contains_unknown(&field.ty))
+        || value.arguments().iter().any(contains_unknown)
+        || (value.kind() == Kind::Callable
+            && (value
+                .parameters()
+                .iter()
+                .any(|parameter| contains_unknown(&parameter.ty))
+                || contains_unknown(value.result())))
 }

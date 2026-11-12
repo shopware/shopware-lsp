@@ -71,7 +71,93 @@ pub(crate) fn html_attribute_name_matches(text: &str) -> bool {
     true
 }
 
+thread_local! {
+    /// The HTML elements open at this point of the parse, innermost last;
+    /// `None` marks the start of a Twig statement body. A closing tag
+    /// that matches none of the elements opened in the current body is a
+    /// stray one: `<div>{% if x %}</div>{% endif %}` closes nothing in the
+    /// branch, and must not end the branch either.
+    static OPEN_ELEMENTS: std::cell::RefCell<Vec<Option<String>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Forgets the open elements of a previous parse.
+pub(crate) fn reset_open_elements() {
+    OPEN_ELEMENTS.with(|elements| elements.borrow_mut().clear());
+}
+
+/// Marks the start of a Twig statement body; [`end_twig_statement`] closes
+/// it together with the elements left open inside.
+pub(crate) fn begin_twig_statement() {
+    OPEN_ELEMENTS.with(|elements| elements.borrow_mut().push(None));
+}
+
+pub(crate) fn end_twig_statement() {
+    OPEN_ELEMENTS.with(|elements| {
+        let mut elements = elements.borrow_mut();
+        while let Some(entry) = elements.pop() {
+            if entry.is_none() {
+                break;
+            }
+        }
+    });
+}
+
+fn open_element(name: &str) {
+    OPEN_ELEMENTS.with(|elements| elements.borrow_mut().push(Some(name.to_lowercase())));
+}
+
+fn close_element() {
+    OPEN_ELEMENTS.with(|elements| {
+        let mut elements = elements.borrow_mut();
+        if elements.last().is_some_and(Option::is_some) {
+            elements.pop();
+        }
+    });
+}
+
+/// Whether no element opened in the current Twig body has `name`.
+fn closes_nothing_here(name: &str) -> bool {
+    let name = name.to_lowercase();
+    OPEN_ELEMENTS.with(|elements| {
+        !elements
+            .borrow()
+            .iter()
+            .rev()
+            .take_while(|entry| entry.is_some())
+            .any(|entry| entry.as_deref() == Some(name.as_str()))
+    })
+}
+
+/// A closing tag that closes nothing opened in the current Twig body: kept
+/// as an error node so the body goes on.
+fn parse_stray_ending_tag(p: &mut Parser<'_>) -> CompletedMarker {
+    let m = p.start();
+    let name = p
+        .peek_nth_token(1)
+        .map(|token| token.text.to_owned())
+        .unwrap_or_default();
+    p.add_error(ErrorBuilder::new(format!(
+        "an element to close; </{name}> closes no element opened in this block or branch"
+    )));
+    p.bump();
+    if p.at(TK_WORD) || p.at(TK_TWIG_COMPONENT_NAME) {
+        p.bump();
+    }
+    if p.at(TK_GREATER_THAN) {
+        p.bump();
+    }
+    p.complete(m, ERROR)
+}
+
 pub(crate) fn parse_any_html(p: &mut Parser<'_>) -> Option<CompletedMarker> {
+    if p.at(TK_LESS_THAN_SLASH)
+        && let Some(name) = p.peek_nth_token(1)
+        && (name.kind == TK_WORD || name.kind == TK_TWIG_COMPONENT_NAME)
+        && closes_nothing_here(name.text)
+    {
+        return Some(parse_stray_ending_tag(p));
+    }
     if p.at(TK_LESS_THAN) {
         let next = p.peek_nth_token(1).map(|token| token.kind);
         // '<' followed by EOF, whitespace, a number or a recovery token is text.
@@ -245,6 +331,7 @@ fn parse_html_element(p: &mut Parser<'_>) -> CompletedMarker {
         return p.complete(m, HTML_TAG);
     }
 
+    open_element(tag_name);
     let body = p.start();
     let matching_end_tag = if HTML_RAW_TEXT_ELEMENTS.contains(&tag_name_lowercase.as_str()) {
         parse_html_raw_text(p, tag_kind, tag_name)
@@ -293,6 +380,7 @@ fn parse_html_element(p: &mut Parser<'_>) -> CompletedMarker {
         p.recover(&[]);
     }
     p.complete(end_tag, HTML_ENDING_TAG);
+    close_element();
 
     p.complete(m, HTML_TAG)
 }

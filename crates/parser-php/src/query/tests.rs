@@ -28,3 +28,11 @@ fn clone_call_form_takes_arguments() {
             .is_some_and(|node| node.kind() == PHP_ARGUMENT_LIST)
     );
 }
+
+#[test]
+fn suppression_operator_after_not() {
+    let source = "<?php\nif (!@mkdir($d, 0o700)) { x(); }\n$a = @f() + -@g();\n";
+    let parse = crate::parse(source);
+    assert_eq!(parse.root().text().to_string(), source);
+    assert!(parse.errors.is_empty(), "{:?}", parse.errors);
+}

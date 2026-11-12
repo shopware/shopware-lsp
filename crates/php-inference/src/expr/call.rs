@@ -94,6 +94,11 @@ impl Fs<'_, '_, '_> {
                     no_matching_signature_message(&format!("{name}()"), &mismatches),
                 );
             }
+            if candidate_count == 0 {
+                // An unknown function (an extension that is not loaded) may
+                // write to any variable it is passed.
+                self.declare_unknown_call_outputs(node, env);
+            }
             return join_types(relations, &results);
         }
 

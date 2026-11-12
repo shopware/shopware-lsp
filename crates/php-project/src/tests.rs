@@ -34,6 +34,7 @@ fn load_composer_model() {
   "packages": [{
     "name": "vendor/package",
     "version": "1.0.0",
+    "require": {"php": ">=8.2", "ext-openssl": "*"},
     "autoload": {"psr-4": {"Vendor\\Package\\": "src/"}}
   }]
 }"#,
@@ -48,7 +49,10 @@ fn load_composer_model() {
             .contains(&root.join("vendor/vendor/package/src"))
     );
     assert_eq!(model.files, vec![root.join("bootstrap.php")]);
-    assert_eq!(model.required_extensions, vec!["curl", "json", "mbstring"]);
+    assert_eq!(
+        model.required_extensions,
+        vec!["curl", "json", "mbstring", "openssl"]
+    );
     assert_eq!(model.disabled_extensions, vec!["imagick"]);
 }
 

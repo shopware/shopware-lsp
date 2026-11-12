@@ -137,7 +137,9 @@ impl<'s> Validator<'s> {
             );
             return;
         }
-        if member.visibility > parent.visibility {
+        // PHP exempts constructors from the visibility rule.
+        if member.visibility > parent.visibility && !member.name.eq_ignore_ascii_case("__construct")
+        {
             state.report_range(
                 member.selection_range,
                 "php.override",

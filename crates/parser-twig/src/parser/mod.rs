@@ -153,6 +153,7 @@ impl TwigParserExt for Parser<'_> {
 
 /// Parses the whole document into a `ROOT` node.
 fn root(p: &mut Parser<'_>) {
+    html::reset_open_elements();
     let m = p.start();
     parse_many(
         p,

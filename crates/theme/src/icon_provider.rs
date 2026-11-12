@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
+use crate::json;
 use swlsp_extension::{ExtensionIndexer, ShopwareExtension, ShopwareExtensionType};
 use swlsp_uriutil::filepath;
 
@@ -61,14 +62,10 @@ impl IconProvider {
     fn fingerprint(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
         for extension in self.extensions() {
-            let directory = Self::icon_directory(&extension, &[]);
-            directory.hash(&mut hasher);
-            let Ok(packs) = std::fs::read_dir(&directory) else {
-                continue;
-            };
-            let mut packs: Vec<_> = packs.flatten().map(|entry| entry.path()).collect();
+            let mut packs = Self::pack_directories(&extension);
             packs.sort();
-            for pack in packs {
+            for (name, pack) in packs {
+                name.hash(&mut hasher);
                 pack.hash(&mut hasher);
                 let Ok(icons) = std::fs::read_dir(&pack) else {
                     continue;
@@ -116,30 +113,75 @@ impl IconProvider {
         extensions
     }
 
-    fn icon_directory(extension: &ShopwareExtension, rest: &[&str]) -> String {
-        // Bundle extensions point at their class file; `Resources/` is next
-        // to it.
-        let base = if filepath::ext(&extension.path).eq_ignore_ascii_case(".php") {
+    /// The extension root: bundle extensions point at their class file,
+    /// `Resources/` is next to it.
+    fn extension_root(extension: &ShopwareExtension) -> String {
+        if filepath::ext(&extension.path).eq_ignore_ascii_case(".php") {
             filepath::dir(&extension.path)
         } else {
             extension.path.clone()
-        };
+        }
+    }
+
+    fn icon_directory(extension: &ShopwareExtension, rest: &[&str]) -> String {
+        let base = Self::extension_root(extension);
         let mut parts = vec![base.as_str()];
         parts.extend(ICON_DIRECTORY);
         parts.extend(rest);
         filepath::join(&parts)
     }
 
+    /// The icon pack directories of an extension: those its `theme.json`
+    /// names under `iconSets` (relative to `Resources/`), and the packs in
+    /// the built default directory.
+    fn pack_directories(extension: &ShopwareExtension) -> Vec<(String, String)> {
+        let root = Self::extension_root(extension);
+        let resources = filepath::join(&[root.as_str(), "Resources"]);
+        let mut result = Vec::new();
+        if let Ok(source) = std::fs::read(filepath::join(&[resources.as_str(), "theme.json"])) {
+            let text = String::from_utf8_lossy(&source);
+            let parse = swlsp_parser_json::parse(&text);
+            if let Some(sets) = json::root_value(&parse.tree.root())
+                .and_then(|root| json::property(&root, "iconSets"))
+            {
+                for pair in json::pairs(&sets) {
+                    let (Some(name), Some(path)) = (json::pair_key(&pair), json::pair_value(&pair))
+                    else {
+                        continue;
+                    };
+                    let (name, path) = (json::string_value(&name), json::string_value(&path));
+                    if name.is_empty() || path.is_empty() {
+                        continue;
+                    }
+                    let directory = if Path::new(&path).is_absolute() {
+                        path
+                    } else {
+                        filepath::join(&[resources.as_str(), path.as_str()])
+                    };
+                    result.push((name, directory));
+                }
+            }
+        }
+        if let Ok(entries) = std::fs::read_dir(Self::icon_directory(extension, &[])) {
+            for entry in entries.flatten() {
+                if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                    let name = entry.file_name().to_string_lossy().into_owned();
+                    if !result.iter().any(|(pack, _)| *pack == name) {
+                        result.push((name, entry.path().to_string_lossy().into_owned()));
+                    }
+                }
+            }
+        }
+        result
+    }
+
     /// Distinct icon pack directory names, sorted.
     pub fn icon_packs(&self) -> Vec<String> {
         let mut packs = BTreeSet::new();
         for extension in self.extensions() {
-            let Ok(entries) = std::fs::read_dir(Self::icon_directory(&extension, &[])) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
-                    packs.insert(entry.file_name().to_string_lossy().into_owned());
+            for (pack, directory) in Self::pack_directories(&extension) {
+                if Path::new(&directory).is_dir() {
+                    packs.insert(pack);
                 }
             }
         }
@@ -150,7 +192,13 @@ impl IconProvider {
     pub fn icons(&self, pack: &str) -> Vec<String> {
         let mut icons = BTreeSet::new();
         for extension in self.extensions() {
-            let Ok(entries) = std::fs::read_dir(Self::icon_directory(&extension, &[pack])) else {
+            let Some((_, directory)) = Self::pack_directories(&extension)
+                .into_iter()
+                .find(|(name, _)| name == pack)
+            else {
+                continue;
+            };
+            let Ok(entries) = std::fs::read_dir(&directory) else {
                 continue;
             };
             for entry in entries.flatten() {
@@ -171,7 +219,12 @@ impl IconProvider {
         let file = format!("{icon}.svg");
         self.extensions()
             .iter()
-            .map(|extension| Self::icon_directory(extension, &[pack, &file]))
+            .filter_map(|extension| {
+                Self::pack_directories(extension)
+                    .into_iter()
+                    .find(|(name, _)| name == pack)
+                    .map(|(_, directory)| filepath::join(&[directory.as_str(), file.as_str()]))
+            })
             .find(|path| Path::new(path).exists())
             .unwrap_or_default()
     }
@@ -195,6 +248,16 @@ mod tests {
         std::fs::create_dir_all(format!("{plugin_icons}/default")).unwrap();
         std::fs::write(format!("{plugin_icons}/default/arrow.svg"), "<svg/>").unwrap();
         std::fs::write(format!("{plugin_icons}/custom/star.svg"), "<svg/>").unwrap();
+        // A pack `theme.json` names lives where it says, relative to
+        // `Resources/`.
+        let source_icons = format!("{plugin}/Resources/app/storefront/src/assets/icon/brand");
+        std::fs::create_dir_all(&source_icons).unwrap();
+        std::fs::write(format!("{source_icons}/car.svg"), "<svg/>").unwrap();
+        std::fs::write(
+            format!("{plugin}/Resources/theme.json"),
+            r#"{"iconSets": {"brand": "app/storefront/src/assets/icon/brand"}}"#,
+        )
+        .unwrap();
 
         let cache = tempfile::tempdir().unwrap();
         let indexer = Arc::new(ExtensionIndexer::new(cache.path(), None).unwrap());
@@ -207,9 +270,14 @@ mod tests {
         // Bundle paths point at the class file; its `Resources/` sibling
         // holds the plugin icons.
         let provider = IconProvider::new(root.clone(), indexer.clone());
-        assert_eq!(provider.icon_packs(), ["custom", "default"]);
+        assert_eq!(provider.icon_packs(), ["brand", "custom", "default"]);
         assert_eq!(provider.icons("default"), ["arrow"]);
         assert_eq!(provider.icons("custom"), ["star"]);
+        assert_eq!(provider.icons("brand"), ["car"]);
+        assert_eq!(
+            provider.icon("brand", "car"),
+            format!("{source_icons}/car.svg")
+        );
         assert_eq!(
             provider.icon("custom", "star"),
             format!("{plugin_icons}/custom/star.svg")

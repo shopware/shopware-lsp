@@ -120,14 +120,25 @@ namespace App;
 abstract class Result { public string $name; }
 class EntityResult extends Result { public array $entities; }
 class Results { public function get(string $name): ?Result { return null; } }
+abstract class Struct { public string $kind; }
+class ArrayStruct extends Struct implements \ArrayAccess {
+    public function offsetExists(mixed $offset): bool { return true; }
+    public function offsetGet(mixed $offset): mixed { return null; }
+    public function offsetSet(mixed $offset, mixed $value): void {}
+    public function offsetUnset(mixed $offset): void {}
+}
+class Plain { public string $kind; }
 ",
     );
     check_problems(
         &TwigMemberMissingAnalyzer::new(None, Some(php)),
         "file:///project/templates/page.html.twig",
         "{# @var results \\App\\Results #}
+{# @var struct \\App\\Struct #}
+{# @var plain \\App\\Plain #}
 {% set result = results.get('a') %}
 {{ result.name }}{{ result.entities }}{{ result.{|twig.member.missing:nothing|} }}
+{{ struct.kind }}{{ struct.anything }}{{ plain.{|twig.member.missing:anything|} }}
 ",
     );
 }

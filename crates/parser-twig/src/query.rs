@@ -460,9 +460,20 @@ fn is_direct_string_value(literal: &SyntaxNode, scope: Option<&SyntaxNode>) -> b
         .skip(1)
         .take_while(|current| current != scope)
         .any(|current| {
+            // A string inside a concatenation, a condition, a filter, an
+            // interpolation or a container is not the value itself.
             matches!(
                 current.kind(),
-                TWIG_LITERAL_HASH | TWIG_LITERAL_ARRAY | TWIG_FUNCTION_CALL
+                TWIG_LITERAL_HASH
+                    | TWIG_LITERAL_ARRAY
+                    | TWIG_FUNCTION_CALL
+                    | TWIG_BINARY_EXPRESSION
+                    | TWIG_CONDITIONAL_EXPRESSION
+                    | TWIG_UNARY_EXPRESSION
+                    | TWIG_FILTER
+                    | TWIG_ARROW_FUNCTION
+                    | TWIG_INDEX_LOOKUP
+                    | TWIG_LITERAL_STRING
             )
         });
     !nested && is_descendant_of(literal, scope)

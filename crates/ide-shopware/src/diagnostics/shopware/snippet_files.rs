@@ -103,22 +103,54 @@ fn is_snippet_file(path: &str) -> bool {
         && (path.contains("/Resources/snippet/") || swlsp_snippet::is_admin_snippet_file(path))
 }
 
-/// The main language file beside `path`: the first sibling ending in
-/// `en.json`, else in `en-GB.json`. `None` when there is none or `path` is
-/// the main file itself.
+/// The main language file beside `path`: the sibling with the same stem in
+/// `en`, else `en-GB` (`storefront.de-DE.json` pairs with
+/// `storefront.en-GB.json`, not with `gallery.en-GB.json`). `None` when
+/// there is none, when `path` is the main file itself, or when its name
+/// carries no locale.
 fn main_snippet_file(path: &str) -> Option<String> {
     let directory = filepath::dir(path);
+    let name = filepath::base(path);
+    let (stem, locale) = split_snippet_locale(&name)?;
     let mut names: Vec<String> = std::fs::read_dir(&directory)
         .ok()?
         .flatten()
         .filter_map(|entry| entry.file_name().into_string().ok())
-        .filter(|name| name.ends_with(".json"))
+        .filter(|candidate| {
+            split_snippet_locale(candidate).is_some_and(|(candidate_stem, candidate_locale)| {
+                candidate_stem == stem && candidate_locale != locale
+            })
+        })
         .collect();
     names.sort();
-    let main = ["en.json", "en-GB.json"]
-        .iter()
-        .find_map(|suffix| names.iter().find(|name| name.ends_with(suffix)))?;
-    (*main != filepath::base(path)).then(|| filepath::join(&[directory.as_str(), main.as_str()]))
+    let main = ["en", "en-GB"].iter().find_map(|wanted| {
+        names
+            .iter()
+            .find(|candidate| split_snippet_locale(candidate).is_some_and(|(_, l)| l == *wanted))
+    })?;
+    Some(filepath::join(&[directory.as_str(), main.as_str()]))
+}
+
+/// `("storefront", "de-DE")` for `storefront.de-DE.json`, `("", "de")`
+/// for `de.json`; `None` without a locale-shaped last segment.
+fn split_snippet_locale(name: &str) -> Option<(&str, &str)> {
+    let stem = name.strip_suffix(".json")?;
+    let (prefix, locale) = match stem.rsplit_once('.') {
+        Some((prefix, locale)) => (prefix, locale),
+        None => ("", stem),
+    };
+    let is_locale = match locale.split_once('-') {
+        Some((language, region)) => {
+            (2..=3).contains(&language.len())
+                && language.bytes().all(|byte| byte.is_ascii_lowercase())
+                && (2..=4).contains(&region.len())
+                && region.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        }
+        None => {
+            (2..=3).contains(&locale.len()) && locale.bytes().all(|byte| byte.is_ascii_lowercase())
+        }
+    };
+    is_locale.then_some((prefix, locale))
 }
 
 struct Comparison<'a> {

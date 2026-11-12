@@ -219,7 +219,8 @@ pub(crate) const TWIG: &[RuleHelp] = &[
          hasX()), or correct the declared type of the variable.",
         "Reported only for a variable with a definite object type. Arrays, values of \
          unknown type, ArrayAccess and Traversable objects, stdClass and classes with __get \
-         or __call are not checked; neither is a member a known subclass of the type has.",
+         or __call are not checked; neither is a member a known subclass of the type has, \
+         nor any member when a known subclass has array or magic access.",
         "",
     ),
     help(

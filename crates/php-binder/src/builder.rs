@@ -867,11 +867,9 @@ impl<'s> Builder<'s> {
                 NodeOrToken::Node(value) => {
                     if expect_value && let Some(current) = current_symbol {
                         let items = constant_array_items(&value, self.source);
-                        let inferred = if native_type.is_unknown() {
-                            constant_literal_type(Some(&value), self.source)
-                        } else {
-                            Type::unknown()
-                        };
+                        // The literal is more precise than a declared type:
+                        // `const string NAME = 'x'` is `'x'`.
+                        let inferred = constant_literal_type(Some(&value), self.source);
                         let symbol = &mut self.doc.symbols[current];
                         symbol.set_constant_array(items);
                         if !inferred.is_unknown() {

@@ -48,10 +48,19 @@ impl TranslationAnalyzer {
         let Some(snippets) = &self.snippet_index else {
             return Ok(false);
         };
-        if !eq_ignore_case(domain, "messages") {
-            return Ok(false);
+        if eq_ignore_case(domain, "messages") {
+            return Ok(!snippets.frontend_snippet(key)?.is_empty());
         }
-        Ok(!snippets.frontend_snippet(key)?.is_empty())
+        // The Shopware storefront shows a violation message as the snippet
+        // `error.<message>` (form-violation.html.twig), so a message such as
+        // `VIOLATION::ACCEPT_TERMS` is a snippet key, not a translation.
+        if eq_ignore_case(domain, "validators") {
+            return Ok(!snippets.frontend_snippet(key)?.is_empty()
+                || !snippets
+                    .frontend_snippet(&format!("error.{key}"))?
+                    .is_empty());
+        }
+        Ok(false)
     }
 }
 
@@ -262,6 +271,11 @@ impl Run<'_> {
             return Ok(());
         }
         if self.analyzer.translation_exists(self.index, domain, key)? {
+            return Ok(());
+        }
+        // A constraint message written as a sentence is shown as it is when
+        // the validators domain has no translation for it.
+        if domain == "validators" && key.contains(char::is_whitespace) {
             return Ok(());
         }
         let keys = self.index.keys(domain).map_err(|error| {

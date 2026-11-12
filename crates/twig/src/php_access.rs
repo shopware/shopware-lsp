@@ -231,6 +231,8 @@ impl<'a> PhpAccessResolver<'a> {
                 self.subtypes(class).iter().any(|subtype| {
                     !resolve_php_members(&self.snapshot, &Type::named(subtype, Vec::new()), name)
                         .is_empty()
+                        || self.snapshot.is_subtype_of(subtype, "ArrayAccess")
+                        || twig_class_has_magic_access(&self.snapshot, subtype)
                 })
             }
             _ => false,

@@ -289,3 +289,51 @@ fn null_safe_accessor_is_an_accessor() {
     // The incomplete `a?.` still is an accessor, with an error.
     assert_eq!((accessors, conditionals), (4, 1));
 }
+
+#[test]
+fn a_closing_tag_inside_a_branch_does_not_end_the_branch() {
+    // Shopware wraps an opening tag and its closing tag in separate `if`s;
+    // the closing tag closes nothing in its branch, and the blocks must
+    // still end at their own `endblock`.
+    let source = "{% block a %}\n<div>\n{% if x %}<div class=\"b\">{% endif %}\n<p>text</p>\n{% if x %}</div>{% endif %}\n</div>\n{% endblock %}\n{% block c %}{% endblock %}\n";
+    let parse = crate::parse(source);
+    assert_eq!(parse.root().text().to_string(), source);
+    let blocks: Vec<(String, String)> = parse
+        .root()
+        .descendants()
+        .filter(|node| node.kind() == crate::syntax::TWIG_BLOCK)
+        .map(|node| {
+            let text = node.text().to_string();
+            let text = text.trim();
+            (text[..16].to_owned(), text[text.len() - 14..].to_owned())
+        })
+        .collect();
+    assert_eq!(
+        blocks,
+        [
+            ("{% block a %}\n<d".to_owned(), "{% endblock %}".to_owned()),
+            ("{% block c %}{% ".to_owned(), "{% endblock %}".to_owned()),
+        ]
+    );
+    // The stray closing tag is the only structural error.
+    let messages: Vec<String> = parse.errors.iter().map(|error| error.to_string()).collect();
+    assert_eq!(messages.len(), 2, "{messages:?}");
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("closes no element")),
+        "{messages:?}"
+    );
+    // A stray closing tag with no Twig around it is kept as well, and a
+    // closing tag of an open ancestor still closes it.
+    for (source, unclosed) in [("<span>text</div></span>", 0), ("<div><span>text</div>", 1)] {
+        let parse = crate::parse(source);
+        assert_eq!(parse.root().text().to_string(), source);
+        let unclosed_spans = parse
+            .errors
+            .iter()
+            .filter(|error| error.to_string().contains("</span> ending tag"))
+            .count();
+        assert_eq!(unclosed_spans, unclosed, "{source}");
+    }
+}

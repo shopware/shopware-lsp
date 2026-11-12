@@ -81,6 +81,30 @@ impl Fs<'_, '_, '_> {
         }
     }
 
+    /// Declares every undefined variable passed to a call whose callee is
+    /// unknown: it may well be an output parameter.
+    pub(crate) fn declare_unknown_call_outputs(&mut self, call: &SyntaxNode, env: &Env) {
+        for argument in query::arguments(call) {
+            let Some(value) = last_node(&argument) else {
+                continue;
+            };
+            if value.kind() != PHP_VARIABLE {
+                continue;
+            }
+            let name = query::variable_key(&value);
+            if name.is_empty() || env.get(&name).is_some() {
+                continue;
+            }
+            env.set(&name, Type::MIXED);
+            self.record(
+                &value,
+                &Type::MIXED,
+                TypeSource::Signature,
+                "unknown call output",
+            );
+        }
+    }
+
     fn declare_by_reference_output(&mut self, node: &SyntaxNode, value: &Type, env: &Env) {
         let name = query::variable_key(node);
         if name.is_empty() {

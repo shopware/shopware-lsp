@@ -496,8 +496,54 @@ impl Index {
     fn public_name(&self, path: &str) -> Option<String> {
         match self.public_relative(path) {
             Some(relative) if !relative.is_empty() => Some(normalize_name(&to_slash(&relative))),
-            _ => self.bundle_public_name(path),
+            _ => self
+                .bundle_public_name(path)
+                .or_else(|| self.theme_source_name(path)),
         }
+    }
+
+    /// Whether `path` is a bundle's `Resources/app/storefront/src/assets`
+    /// directory, something below it, or one of its parents up to
+    /// `Resources`.
+    fn is_theme_source_directory(&self, path: &str) -> bool {
+        const SOURCE: &str = "/Resources/app/storefront/src/assets";
+        let normalized = to_slash(&clean(path));
+        if !slash_path_within(&self.normalized_root, &normalized) {
+            return false;
+        }
+        if normalized.contains(&format!("{SOURCE}/")) || normalized.ends_with(SOURCE) {
+            return true;
+        }
+        let mut prefix = SOURCE;
+        while let Some(position) = prefix.rfind('/') {
+            prefix = &prefix[..position];
+            if prefix.is_empty() {
+                break;
+            }
+            if normalized.ends_with(prefix) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// `theme/<bundle>/assets/<rest>` for a file below a bundle's
+    /// `Resources/app/storefront/src/assets`: the theme compiler copies it
+    /// there, so `asset('assets/<rest>', 'theme')` finds it.
+    fn theme_source_name(&self, path: &str) -> Option<String> {
+        const MARKER: &str = "/Resources/app/storefront/src/assets/";
+        let normalized = to_slash(&clean(path));
+        let position = normalized.rfind(MARKER)?;
+        let bundle_dir = &normalized[..position];
+        if !slash_path_within(&self.normalized_root, bundle_dir) {
+            return None;
+        }
+        let bundle = lowercase(&slash_base(bundle_dir));
+        let rest = &normalized[position + MARKER.len()..];
+        if bundle.is_empty() || rest.is_empty() {
+            return None;
+        }
+        Some(format!("theme/{bundle}/assets/{}", normalize_name(rest)))
     }
 
     fn bundle_public_name(&self, path: &str) -> Option<String> {
@@ -913,7 +959,9 @@ impl TransactionalClearer for Index {
 impl SupplementalPathIndexer for Index {
     fn should_enter_directory(&self, path: &str) -> bool {
         match self.public_relative(path) {
-            None => self.bundle_public_relative(path).is_some(),
+            None => {
+                self.bundle_public_relative(path).is_some() || self.is_theme_source_directory(path)
+            }
             Some(relative) if relative.is_empty() => true,
             Some(relative) => {
                 let first = relative
@@ -932,7 +980,10 @@ impl SupplementalPathIndexer for Index {
                     && is_indexable_public_relative(&relative)
                     && is_static_asset_path(path)
             }
-            None => self.bundle_public_name(path).is_some() && is_static_asset_path(path),
+            None => {
+                (self.bundle_public_name(path).is_some() || self.theme_source_name(path).is_some())
+                    && is_static_asset_path(path)
+            }
         }
     }
 }

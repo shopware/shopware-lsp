@@ -1329,3 +1329,85 @@ class D {
     // Only the variable haystack leaves null in: nothing says what it holds.
     assert_eq!(issues, ["php.returnType: return $date;"]);
 }
+
+#[test]
+fn flow_cases_from_a_shopware_project_report_nothing() {
+    let source = r#"<?php
+namespace PHPUnit\Framework {
+    abstract class Assert {
+        /** @phpstan-assert array<mixed> $actual */
+        final public static function assertIsArray(mixed $actual, string $message = ''): void {}
+        /** @param array<array-key, mixed>|\ArrayAccess<array-key, mixed> $array */
+        final public static function assertArrayHasKey(int|string $key, array|\ArrayAccess $array, string $message = ''): void {}
+        /** @param \Countable|iterable<mixed> $haystack */
+        final public static function assertCount(int $expectedCount, \Countable|iterable $haystack, string $message = ''): void {}
+    }
+    abstract class TestCase extends Assert {}
+}
+namespace {
+    function out_sign(string $data, &$signature, string $key): bool { return true; }
+    class ShopwareException extends \Exception { public function getErrorCode(): string { return ''; } }
+}
+namespace App {
+    use PHPUnit\Framework\TestCase;
+    class ProbeTest extends TestCase {
+        public function testParsed(): void
+        {
+            $parsed = parse_url('http://a/b');
+            self::assertIsArray($parsed, 'x');
+            self::assertArrayHasKey('host', $parsed);
+        }
+        public function testByRef(): void
+        {
+            $added = null;
+            $callback = static function (array $items) use (&$added): void {
+                $added = $items;
+            };
+            $callback([1]);
+            self::assertIsArray($added);
+            self::assertCount(1, $added);
+        }
+        public function signature(string $data, string $key): string
+        {
+            out_sign($data, $signature, $key);
+            return base64_encode($signature);
+        }
+        private function isIgnored(\Throwable $exception): bool
+        {
+            if (!$exception instanceof \ShopwareException) {
+                return false;
+            }
+            foreach ([[\RuntimeException::class, 'x']] as [$class, $errorCode]) {
+                if ($exception instanceof $class && $exception->getErrorCode() === $errorCode) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        private function rows(): array { return []; }
+        private function dates(): void
+        {
+            foreach ($this->rows() as $item) {
+                $item['min'] = $this->toDate($item['min'] ?? null);
+                $item['max'] = $this->toDate($item['max'] ?? null);
+            }
+        }
+        private function toDate(?string $value): ?\DateTime { return null; }
+    }
+}"#;
+    let (parsed, analyzed, _) = analyze_source("/mb.php", source, true, builtins());
+    let text = parsed.root.text().to_string();
+    let issues: Vec<String> = analyzed
+        .issues
+        .iter()
+        .map(|issue| {
+            format!(
+                "{} {} | {}",
+                issue.code,
+                issue.message,
+                &text[usize::from(issue.range.start())..usize::from(issue.range.end())]
+            )
+        })
+        .collect();
+    assert_eq!(issues, Vec::<String>::new());
+}

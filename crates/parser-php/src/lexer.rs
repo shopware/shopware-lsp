@@ -272,8 +272,16 @@ pub(crate) fn compound_operator_length(source: &[u8]) -> usize {
 }
 
 fn scan_operator(source: &[u8], position: usize) -> usize {
+    // `@` is an operator of its own: `!@f()` is two.
+    if source[position] == b'@' {
+        return 1;
+    }
     let mut end = position + 1;
-    while end < source.len() && end - position < 3 && is_operator_byte(source[end]) {
+    while end < source.len()
+        && end - position < 3
+        && is_operator_byte(source[end])
+        && source[end] != b'@'
+    {
         end += 1;
     }
     end - position

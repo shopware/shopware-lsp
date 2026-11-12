@@ -247,17 +247,17 @@ fn twig_reference_at(node: &SyntaxNode) -> Option<Reference> {
     if argument != 0 {
         return None;
     }
+    let value = twig::string_value(&literal).unwrap_or_default();
+    // `asset('js/')` names a directory to build paths from, not a file.
+    if value.ends_with('/') {
+        return None;
+    }
     let package = if kind == ReferenceKind::Asset {
         twig_static_string_value(twig::string_argument(&call, 1).as_ref())
     } else {
         String::new()
     };
-    let mut reference = Reference::new(
-        normalize_name(&twig::string_value(&literal).unwrap_or_default()),
-        kind,
-        literal,
-        call,
-    );
+    let mut reference = Reference::new(normalize_name(&value), kind, literal, call);
     reference.package = package;
     Some(reference)
 }

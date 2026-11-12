@@ -182,6 +182,22 @@ fn php_route_constant_reference(argument: &SyntaxNode, resolver: &NameResolver) 
         {
             continue;
         }
+        // `self::NAME` in the attribute of a method names its own class.
+        let own_class;
+        let class = if swlsp_textutil::eq_ignore_case(class, "self")
+            || swlsp_textutil::eq_ignore_case(class, "static")
+        {
+            let Some(enclosing) = phpquery::class_at(argument) else {
+                continue;
+            };
+            own_class = phpquery::class_name(&enclosing);
+            if own_class.is_empty() {
+                continue;
+            }
+            own_class.as_str()
+        } else {
+            class
+        };
         let resolved = resolver.resolve(class);
         return format!(
             "{}::{member}",

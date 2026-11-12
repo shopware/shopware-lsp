@@ -1177,18 +1177,18 @@ Languages: json. Domain: `shopware.snippets`.
 
 **`shopware.snippet.file.missing-key`**
 
-- Fix: Add the named keys with their translation; the main language file (en.json, else en-GB.json, in the same directory) defines them.
-- Exceptions: A directory without a main language file is not compared.
+- Fix: Add the named keys with their translation; the main language file (the sibling with the same stem in en, else en-GB: storefront.en-GB.json for storefront.de-DE.json) defines them.
+- Exceptions: A file without a main language file beside it, or without a locale in its name, is not compared.
 
 **`shopware.snippet.file.type-mismatch`**
 
 - Fix: Give the key the same shape as in the main language file: a text where it has a text, an object where it has nested keys.
-- Exceptions: A directory without a main language file is not compared.
+- Exceptions: A file without a main language file beside it, or without a locale in its name, is not compared.
 
 **`shopware.snippet.file.unknown-key`**
 
 - Fix: Remove the key, or add it to the main language file when the snippet is used.
-- Exceptions: A directory without a main language file is not compared.
+- Exceptions: A file without a main language file beside it, or without a locale in its name, is not compared.
 
 ## `shopware.store_app_layout`
 
@@ -1821,7 +1821,7 @@ Languages: php, twig. Domain: `symfony`.
 **`symfony.translation.key.missing`**
 
 - Fix: Add the key to a translation file of the domain; quick fixes add it to an existing catalogue or offer close keys.
-- Exceptions: Keys built at runtime are not checked. In the messages domain a Shopware storefront snippet with the key counts.
+- Exceptions: Keys built at runtime are not checked. In the messages domain a Shopware storefront snippet with the key counts; in the validators domain a storefront snippet with the key or with `error.<key>` counts, as the storefront shows violations. A validator message written as a sentence (with spaces) is shown as it is and not reported.
 
 ## `symfony.validation`
 
@@ -2073,7 +2073,7 @@ Languages: twig. Domain: `twig`.
 **`twig.member.missing`**
 
 - Fix: Use a property or method the PHP class has (Twig also tries getX(), isX() and hasX()), or correct the declared type of the variable.
-- Exceptions: Reported only for a variable with a definite object type. Arrays, values of unknown type, ArrayAccess and Traversable objects, stdClass and classes with __get or __call are not checked; neither is a member a known subclass of the type has.
+- Exceptions: Reported only for a variable with a definite object type. Arrays, values of unknown type, ArrayAccess and Traversable objects, stdClass and classes with __get or __call are not checked; neither is a member a known subclass of the type has, nor any member when a known subclass has array or magic access.
 
 ## `twig.member.nullable`
 

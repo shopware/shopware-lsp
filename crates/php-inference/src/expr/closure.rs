@@ -42,13 +42,27 @@ impl Fs<'_, '_, '_> {
         {
             closure_env.set("$this", value);
         }
-        for captured in node.children() {
-            if captured.kind() != PHP_VARIABLE {
-                continue;
-            }
-            let name = query::variable_key(&captured);
-            if let Some(value) = env.get(&name) {
-                closure_env.set(&name, value);
+        // Direct variable children are the `use` list; `&` before one makes
+        // it a reference the body writes through.
+        let mut by_reference = Vec::new();
+        let mut pending_reference = false;
+        for element in node.children_with_tokens() {
+            match element {
+                swlsp_syntax::rowan::NodeOrToken::Token(token) => {
+                    pending_reference = token.kind() == TK_AMPERSAND;
+                }
+                swlsp_syntax::rowan::NodeOrToken::Node(captured) => {
+                    if captured.kind() == PHP_VARIABLE {
+                        let name = query::variable_key(&captured);
+                        if pending_reference {
+                            by_reference.push(name.clone());
+                        }
+                        if let Some(value) = env.get(&name) {
+                            closure_env.set(&name, value);
+                        }
+                    }
+                    pending_reference = false;
+                }
             }
         }
         let parameters = self.callable_parameters(node, &closure_env, parameter_types);
@@ -66,7 +80,18 @@ impl Fs<'_, '_, '_> {
             let mut nested = self.nested(symbol);
             if let Some(body) = query::direct_child(node, PHP_BLOCK) {
                 nested.generator = contains_direct_yield(&body);
-                nested.analyze_block(&body, &closure_env);
+                let flow = nested.analyze_block(&body, &closure_env);
+                // Whatever the body assigns to a reference is what the
+                // variable may hold once the closure has run.
+                for name in &by_reference {
+                    if let Some(inner) = flow.env.get(name) {
+                        let value = match env.get(name) {
+                            Some(outer) => relations.join(&outer, &inner),
+                            None => inner,
+                        };
+                        env.set(name, value);
+                    }
+                }
             }
             std::mem::take(&mut nested.returns)
         };

@@ -83,6 +83,21 @@ impl Fs<'_, '_, '_> {
         source: Option<&SyntaxNode>,
         env: &Env,
     ) {
+        if let Some(receiver) = source.and_then(nullsafe_receiver_variable) {
+            let receiver_key = flow_expression_key(self.src(), Some(&receiver));
+            if !receiver_key.is_empty()
+                && let Some(original) = env.get(&receiver_key)
+            {
+                let non_null = self.relations.without(&original, &Type::NULL);
+                if non_null != original && !non_null.is_unknown() {
+                    env.set(
+                        &format!("{}{receiver_key}", non_null_alias_prefix(name)),
+                        non_null,
+                    );
+                }
+            }
+            return;
+        }
         let Some(source) = source.filter(|source| source.kind() == PHP_TERNARY_EXPRESSION) else {
             return;
         };
@@ -255,5 +270,23 @@ impl Fs<'_, '_, '_> {
         let (truthy, falsy) = self.truthiness_environments(Some(&expression), env);
         // empty() is the inverse of the value's truthiness.
         Some((falsy, truthy))
+    }
+}
+
+/// The variable a null-safe chain starts from: `$a` in `$a?->b()->c`,
+/// whose null makes the whole value null.
+fn nullsafe_receiver_variable(source: &SyntaxNode) -> Option<SyntaxNode> {
+    let mut current = source.clone();
+    let mut null_safe = false;
+    loop {
+        match current.kind() {
+            PHP_MEMBER_CALL | PHP_MEMBER_ACCESS => {
+                null_safe |= has_direct_token(&current, TK_NULLSAFE_OBJECT_OPERATOR);
+                current = first_node(&current)?;
+            }
+            PHP_PARENTHESIZED => current = first_node(&current)?,
+            PHP_VARIABLE => return null_safe.then_some(current),
+            _ => return None,
+        }
     }
 }

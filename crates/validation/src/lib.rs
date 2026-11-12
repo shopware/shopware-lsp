@@ -5,7 +5,7 @@
 use std::collections::HashSet;
 
 use swlsp_parser_php::query;
-use swlsp_parser_php::syntax::PHP_OBJECT_CREATION;
+use swlsp_parser_php::syntax::{PHP_NAMED_ARGUMENT, PHP_OBJECT_CREATION};
 use swlsp_php::{PhpContext, PhpIndex};
 use swlsp_php_resolver::MemberResolver;
 use swlsp_php_semantic::{Snapshot, Symbol, SymbolKind, Visibility};
@@ -43,6 +43,14 @@ pub fn option_reference_at(
     }
     let object = array.ancestor_or_self_of_kind(PHP_OBJECT_CREATION)?;
     if query::argument_expression(&object, 0).as_ref() != Some(&array) {
+        return None;
+    }
+    // `new Collection(fields: [...])` names a constructor parameter; only
+    // an unnamed array, or one named `options`, holds options.
+    if let Some(argument) = array.parent()
+        && argument.kind() == PHP_NAMED_ARGUMENT
+        && !query::argument_name(&argument).eq_ignore_ascii_case("options")
+    {
         return None;
     }
     let resolver = swlsp_php::name_resolver_for(context, root);

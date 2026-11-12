@@ -324,7 +324,10 @@ pub(crate) const SYMFONY: &[RuleHelp] = &[
         "Add the key to a translation file of the domain; quick fixes add it to an existing \
          catalogue or offer close keys.",
         "Keys built at runtime are not checked. In the messages domain a Shopware \
-         storefront snippet with the key counts.",
+         storefront snippet with the key counts; in the validators domain a storefront snippet \
+         with the key or with `error.<key>` counts, as the storefront shows violations. A \
+         validator message written as a sentence (with spaces) is shown as it is and not \
+         reported.",
         "",
     ),
     help(

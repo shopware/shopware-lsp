@@ -824,20 +824,20 @@ pub(crate) const PROJECT: &[RuleHelp] = &[
     ),
     help(
         "shopware.snippet.file.missing-key",
-        "Add the named keys with their translation; the main language file (en.json, else en-GB.json, in the same directory) defines them.",
-        "A directory without a main language file is not compared.",
+        "Add the named keys with their translation; the main language file (the sibling with the same stem in en, else en-GB: storefront.en-GB.json for storefront.de-DE.json) defines them.",
+        "A file without a main language file beside it, or without a locale in its name, is not compared.",
         "",
     ),
     help(
         "shopware.snippet.file.unknown-key",
         "Remove the key, or add it to the main language file when the snippet is used.",
-        "A directory without a main language file is not compared.",
+        "A file without a main language file beside it, or without a locale in its name, is not compared.",
         "",
     ),
     help(
         "shopware.snippet.file.type-mismatch",
         "Give the key the same shape as in the main language file: a text where it has a text, an object where it has nested keys.",
-        "A directory without a main language file is not compared.",
+        "A file without a main language file beside it, or without a locale in its name, is not compared.",
         "",
     ),
     help(

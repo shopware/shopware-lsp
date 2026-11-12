@@ -243,7 +243,13 @@ pub(crate) fn parse_admin_cms_registrations(
         let Some(name_node) = property_value_of(config.as_ref(), "name") else {
             continue;
         };
-        let name = jsquery::string_value(&name_node);
+        let mut name = jsquery::string_value(&name_node);
+        if name.is_empty() {
+            // `const NAME = 'stat-row'; … name: NAME`.
+            name = jsquery::identifier_text(&name_node)
+                .and_then(|identifier| constant_string_value(root, &identifier))
+                .unwrap_or_default();
+        }
         if name.is_empty() {
             continue;
         }
@@ -748,4 +754,24 @@ pub(crate) fn prefer_runtime_definitions<T: Clone>(
 pub(crate) fn is_admin_test_path(file_path: &str) -> bool {
     let base = file_path.to_lowercase();
     base.contains(".spec.") || base.contains(".test.") || base.contains("/__tests__/")
+}
+
+/// The string a top-level `const NAME = '…'` of the file holds.
+fn constant_string_value(root: &SyntaxNode, identifier: &str) -> Option<String> {
+    jsquery::nodes(root, &[jssyntax::JS_VARIABLE_DECLARATION])
+        .into_iter()
+        .find(|declaration| {
+            declaration
+                .children()
+                .find(|child| child.kind() == jssyntax::JS_IDENTIFIER)
+                .and_then(|name| jsquery::identifier_text(&name))
+                .is_some_and(|name| name == identifier)
+        })
+        .and_then(|declaration| {
+            declaration
+                .children()
+                .find(|child| child.kind() == jssyntax::JS_STRING)
+        })
+        .map(|string| jsquery::string_value(&string))
+        .filter(|value| !value.is_empty())
 }
