@@ -542,7 +542,9 @@ impl CliSession {
         path: &str,
         cutoff: i32,
     ) -> Result<Vec<DiagnosticOutput>, CliError> {
-        Ok(self.check_file(path, cutoff, FixMode::Ignore)?.findings)
+        Ok(self
+            .check_file(path, cutoff, FixMode::Ignore, None)?
+            .findings)
     }
 
     /// Opens `path`, runs `inspect` on it and closes it again.

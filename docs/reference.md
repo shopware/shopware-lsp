@@ -115,6 +115,24 @@ file are applied one after another, checking the file again after each, so
 fixes that affect each other (two renamed references sharing an import) come
 out right. Review the result with `git diff`.
 
+`check --only RULE` narrows a run to particular rules, so one kind of problem
+can be reviewed or fixed at a time:
+
+```bash
+shopware-lsp check --only php.unusedImport --fix src
+shopware-lsp check --only 'twig.html.*' --only php.deprecated src
+```
+
+A value is a rule ID or a prefix ending in `.*`; the flag repeats and takes
+comma-separated values. Only the selected rules are reported, count for the
+exit code and are fixed by `--fix`; every other finding of the file stays
+untouched. A value that matches no rule is an error. A selected rule is
+reported whatever its severity unless `--severity` is given, and a rule that
+is off unless configured is turned on for the run. The project configuration
+still decides about a rule it mentions: one it sets to `off` stays off, and
+the run says so. All rules are still analyzed, so a narrowed run is not
+faster.
+
 Colors follow the global `--color auto|always|never` flag: `auto` colors
 terminals only, `NO_COLOR` turns colors off and `FORCE_COLOR` or
 `CLICOLOR_FORCE` turn them on. The status line also appears for `index` and

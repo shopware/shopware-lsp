@@ -340,3 +340,154 @@ fn check_fix_applies_the_fixes_and_reports_the_rest() {
     );
     assert!(!again.err.contains("Fixed"), "{}", again.err);
 }
+
+#[test]
+fn check_only_reports_and_fixes_the_selected_rules() {
+    let (_root, root, imports) = fixable_workspace();
+    let run = run(&["--root", &root, "check", "--only", "php.parse", &root]);
+    assert_eq!(
+        run.out,
+        "src/Broken.php:1:17: error: expected ) but reached end of file [php.parse]\n"
+    );
+    assert!(
+        run.err.starts_with(
+            "note: only php.parse checked; other findings are not reported\nFound 1 error in 1 of 5 files ("
+        ),
+        "{}",
+        run.err
+    );
+    // The fixable imports are not selected: they stay.
+    let unfixed = super::common::run(&[
+        "--root",
+        &root,
+        "check",
+        "--fix",
+        "--only",
+        "php.parse",
+        &root,
+    ]);
+    assert!(!unfixed.err.contains("Fixed"), "{}", unfixed.err);
+    assert_eq!(std::fs::read_to_string(&imports).unwrap(), UNUSED_IMPORTS);
+
+    // A prefix selects every rule below it; values may be comma-separated.
+    // The syntax error is not selected, so the run succeeds.
+    let fixed = super::common::run(&[
+        "--root",
+        &root,
+        "check",
+        "--fix",
+        "--only",
+        "twig.html.*,php.unusedImport",
+        &root,
+    ]);
+    assert!(fixed.result.is_ok(), "{:?}", fixed.result);
+    assert_eq!(fixed.out, "");
+    assert!(
+        fixed.err.ends_with(")\nFixed 2 problems in 1 file\n"),
+        "{}",
+        fixed.err
+    );
+    assert_eq!(
+        std::fs::read_to_string(&imports).unwrap(),
+        "<?php\n\nnamespace App;\n\nuse App\\Used;\n\nfunction run(Used $used): void {}\n"
+    );
+
+    let json = super::common::run(&[
+        "--root",
+        &root,
+        "--json",
+        "check",
+        "--only",
+        "php.parse",
+        &root,
+    ]);
+    let findings: serde_json::Value = serde_json::from_str(&json.out).unwrap();
+    assert_eq!(findings.as_array().unwrap().len(), 1);
+    assert_eq!(findings[0]["diagnostic"]["code"], "php.parse");
+}
+
+#[test]
+fn check_only_rejects_a_rule_that_does_not_exist() {
+    let (_root, root) = workspace();
+    for (value, message) in [
+        (
+            "php.parse,php.nope",
+            "--only matches no diagnostic rule: php.nope",
+        ),
+        ("nope.*", "--only matches no diagnostic rule: nope.*"),
+        // A prefix ends at a dot: `php.pars.*` is not `php.parse`.
+        (
+            "php.pars.*",
+            "--only matches no diagnostic rule: php.pars.*",
+        ),
+        ("php.parse,", "--only needs a diagnostic rule"),
+    ] {
+        let run = run(&["--root", &root, "check", "--only", value, &root]);
+        let error = run.result.unwrap_err();
+        assert_eq!((error.code, error.message.as_str()), (2, message));
+        assert_eq!(run.out, "");
+    }
+}
+
+#[test]
+fn check_only_turns_an_opt_in_rule_on_unless_the_project_configures_it() {
+    let root = temp_dir();
+    let configuration = path(root.path(), ".config/shopware/lsp.yaml");
+    write(
+        &configuration,
+        r#"{"version": 1, "check": {"severity": "error"}}"#,
+    );
+    write(
+        &path(root.path(), "src/PageController.php"),
+        "<?php\n\nnamespace App;\n\nclass PageController\n{\n    public function show(\\Twig\\Environment $twig): string\n    {\n        return $twig->render('page.html.twig', ['title' => 1]);\n    }\n}\n",
+    );
+    write(
+        &path(root.path(), "templates/page.html.twig"),
+        "{{ title }}{{ missing }}\n",
+    );
+    let root_path = root.path().to_str().unwrap().to_owned();
+    let check = |arguments: &[&str]| {
+        let mut all = vec!["--root", &root_path, "--allow-unsupported-project", "check"];
+        all.extend(arguments);
+        all.push(&root_path);
+        run(&all)
+    };
+    let finding = "templates/page.html.twig:1:15: warning: Variable 'missing' is not defined: no render call, template or assignment provides it [twig.variable.undefined]\n";
+
+    // Off unless configured.
+    assert_eq!(
+        check(&["--severity", "hint", "--only", "twig.html.*"]).out,
+        ""
+    );
+    // Named, it reports, whatever the configured minimum severity is.
+    assert_eq!(check(&["--only", "twig.variable.undefined"]).out, finding);
+    assert_eq!(check(&["--only", "twig.variable.*"]).out, finding);
+    // An explicit minimum severity still applies.
+    assert_eq!(
+        check(&["--severity", "error", "--only", "twig.variable.undefined"]).out,
+        ""
+    );
+
+    // The project configuration decides about a rule it mentions.
+    write(
+        &configuration,
+        r#"{"version": 1, "diagnostics": {"rules": {"twig.variable.undefined": "off"}}}"#,
+    );
+    let off = check(&["--only", "twig.variable.undefined"]);
+    assert_eq!(off.out, "");
+    assert!(
+        off.err.contains(
+            "note: twig.variable.undefined is off in the project configuration and was not checked\n"
+        ),
+        "{}",
+        off.err
+    );
+    write(
+        &configuration,
+        r#"{"version": 1, "diagnostics": {"rules": {"twig.variable.undefined": "error"}}}"#,
+    );
+    assert_eq!(
+        check(&["--only", "twig.variable.undefined"]).out,
+        finding.replace("warning", "error")
+    );
+}

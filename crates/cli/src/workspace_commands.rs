@@ -12,6 +12,7 @@ use swlsp_uriutil::filepath;
 
 use crate::args::Check;
 use crate::autofix::{CheckedFile, FixMode};
+use crate::only::Selection;
 use crate::report::{DisplayPaths, Format, Report};
 use crate::session::{DiagnosticOutput, diagnostic_severity_value};
 use crate::terminal::{DIM, GREEN, short_duration};
@@ -321,7 +322,26 @@ pub(crate) fn run_check(runner: &Runner, flags: &Check) -> Result<(), CliError> 
     if workers < 1 {
         return Err(CliError::usage("check workers must be at least 1"));
     }
+    let only = crate::only::patterns(&flags.only)?;
     let session = runner.connect()?;
+    let only = match only {
+        Some(patterns) => match Selection::resolve(patterns, &session.configuration.raw) {
+            Ok(selection) => Some(selection),
+            Err(error) => {
+                let _ = session.close();
+                return Err(error);
+            }
+        },
+        None => None,
+    };
+    if let Some(settings) = only.as_ref().and_then(Selection::settings) {
+        session
+            .notify(
+                "workspace/didChangeConfiguration",
+                json!({"settings": settings}),
+            )
+            .map_err(|error| CliError::fail(format!("select diagnostic rules: {error}")))?;
+    }
     let paths = resolve_check_files_with_exclusions(
         &runner.cancel,
         &session.root,
@@ -330,7 +350,11 @@ pub(crate) fn run_check(runner: &Runner, flags: &Check) -> Result<(), CliError> 
     )?;
     let mut effective_severity = flags.severity.clone().unwrap_or_default();
     if effective_severity.is_empty() {
-        effective_severity = session.configuration.severity.clone();
+        // Rules asked for by name are reported whatever their severity.
+        effective_severity = match only {
+            Some(_) => "hint".to_owned(),
+            None => session.configuration.severity.clone(),
+        };
     }
     let cutoff = diagnostic_severity(&effective_severity)?;
     let mut effective_fail_on = flags.fail_on.clone().unwrap_or_default();
@@ -390,14 +414,14 @@ pub(crate) fn run_check(runner: &Runner, flags: &Check) -> Result<(), CliError> 
         let (sender, results) = crossbeam_channel::unbounded();
         for _ in 0..worker_count {
             let sender = sender.clone();
-            let (session, paths, next) = (&session, &paths, &next);
+            let (session, paths, next, only) = (&session, &paths, &next, only.as_ref());
             scope.spawn(move || {
                 loop {
                     let index = next.fetch_add(1, Ordering::Relaxed);
                     if index >= paths.len() {
                         break;
                     }
-                    let result = session.check_file(&paths[index], cutoff, mode);
+                    let result = session.check_file(&paths[index], cutoff, mode, only);
                     if sender.send((index, result)).is_err() {
                         break;
                     }
@@ -444,7 +468,8 @@ pub(crate) fn run_check(runner: &Runner, flags: &Check) -> Result<(), CliError> 
         }
     });
     status.finish();
-    let notices = session.take_notices();
+    let mut notices = session.take_notices();
+    notices.extend(only.iter().flat_map(Selection::notices));
     let _ = session.close();
     if let Some(error) = write_error {
         return Err(error);

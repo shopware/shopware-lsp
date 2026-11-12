@@ -16,6 +16,7 @@ mod features_write;
 mod info;
 mod logger;
 mod mcp;
+mod only;
 mod project_info;
 mod report;
 mod serve;

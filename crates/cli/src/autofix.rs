@@ -16,7 +16,9 @@ use swlsp_lsp_protocol::{CodeAction, Diagnostic, Position, Range, TextEdit, Work
 
 use crate::CliError;
 use crate::edit::apply_protocol_text_edits;
+use crate::only::Selection;
 use crate::session::{CliDocument, CliSession, DiagnosticOutput};
+use crate::workspace_commands::code_text;
 
 const QUICKFIX: &str = "quickfix";
 
@@ -58,6 +60,7 @@ impl CliSession {
         path: &str,
         cutoff: i32,
         mode: FixMode,
+        only: Option<&Selection>,
     ) -> Result<CheckedFile, CliError> {
         let mut fixed = 0;
         // Contents the file had: a fix leading back to one of them would
@@ -65,7 +68,17 @@ impl CliSession {
         let mut seen = HashSet::new();
         loop {
             let round = self.with_document(path, |document| {
-                let diagnostics = self.diagnostics(document, cutoff)?;
+                let mut diagnostics = self.diagnostics(document, cutoff)?;
+                if let Some(only) = only {
+                    // Fixes are looked up for what is left, so the rest of
+                    // the file stays as it is.
+                    diagnostics.retain(|diagnostic| {
+                        diagnostic
+                            .code
+                            .as_ref()
+                            .is_some_and(|code| only.contains(&code_text(code)))
+                    });
+                }
                 let fixes = match mode {
                     FixMode::Ignore => Vec::new(),
                     FixMode::Report | FixMode::Apply => {

@@ -64,7 +64,8 @@ pub(crate) enum Command {
         help_heading = "Analyze",
         display_order = 1,
         example = "shopware-lsp check src",
-        example = "shopware-lsp check --fix custom/plugins/MyPlugin"
+        example = "shopware-lsp check --fix custom/plugins/MyPlugin",
+        example = "shopware-lsp check --only php.unusedImport --fix src"
     )]
     Check(Check),
     /// Build or refresh the workspace index
@@ -322,6 +323,9 @@ pub(crate) struct Check {
     /// Apply the quick fixes that need no decision and report what is left
     #[usage(long)]
     pub fix: bool,
+    /// Report and fix only these rules: a rule ID or a prefix such as twig.html.* (repeatable, comma-separated)
+    #[usage(long, value_name = "RULE")]
+    pub only: Vec<String>,
     /// Files or directories to check
     #[usage(arg, required, value_name = "PATH")]
     pub paths: Vec<String>,
