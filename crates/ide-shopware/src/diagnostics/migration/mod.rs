@@ -92,6 +92,22 @@ const ENTITY_SEARCH_RESULT_DELEGATED_METHODS: &[&str] = &[
 const ENTITY_SEARCH_RESULT_DELEGATED_FUNCTIONS: &[&str] =
     &["count", "iterator_count", "iterator_to_array", "sizeof"];
 
+/// Whether the EntitySearchResult of the project marks `method` (lowercase)
+/// as deprecated.
+fn entity_search_result_deprecates(snapshot: Option<&Snapshot>, method: &str) -> bool {
+    snapshot.is_some_and(|snapshot| {
+        snapshot
+            .classes(ENTITY_SEARCH_RESULT_CLASS)
+            .iter()
+            .flat_map(|class| snapshot.members_of(class.id.as_str()))
+            .any(|symbol| {
+                symbol.kind == swlsp_php_semantic::SymbolKind::Method
+                    && symbol.flags.has(swlsp_php_semantic::Flags::DEPRECATED)
+                    && lowercase(&symbol.name) == method
+            })
+    })
+}
+
 fn is_zero_u32(value: &u32) -> bool {
     *value == 0
 }
@@ -245,18 +261,27 @@ impl ProblemAnalyzer for ShopwareMigrationAnalyzer {
             result.extend(self.filterable_price_definition_problems(ctx, &root, snapshot));
             result.extend(self.reflection_helper_problems(ctx, &root, source));
         }
-        if !self.at_least(8, 0) {
-            return Ok(result);
+        let next_major = self.at_least(8, 0);
+        if next_major {
+            result.extend(self.cart_behavior_problems(ctx, &root, semantic, snapshot));
+            result.extend(
+                self.product_stream_builder_problems(ctx, &root, semantic, snapshot, source),
+            );
         }
-        result.extend(self.cart_behavior_problems(ctx, &root, semantic, snapshot));
-        result.extend(self.product_stream_builder_problems(ctx, &root, semantic, snapshot, source));
+        // Before 6.8 the delegation is reported as soon as the installed
+        // EntitySearchResult deprecates the method: getEntities() already
+        // works there.
+        let delegated =
+            |method: &str| next_major || entity_search_result_deprecates(snapshot, method);
 
         for call in scan::member_calls(&root) {
             if ctx.is_cancelled() {
                 return Ok(Vec::new());
             }
             let method = lowercase(&phpquery::call_method_name(&call));
-            if !ENTITY_SEARCH_RESULT_DELEGATED_METHODS.contains(&method.as_str()) {
+            if !ENTITY_SEARCH_RESULT_DELEGATED_METHODS.contains(&method.as_str())
+                || !delegated(&method)
+            {
                 continue;
             }
             let Some(receiver) = phpquery::call_receiver(&call) else {
@@ -274,7 +299,8 @@ impl ProblemAnalyzer for ShopwareMigrationAnalyzer {
                 call_name_range(&call),
                 &call,
                 format!(
-                    "Shopware 6.8: delegate EntitySearchResult::{method}() through getEntities()"
+                    "Shopware 6.8: delegate EntitySearchResult::{}() through getEntities()",
+                    phpquery::call_method_name(&call)
                 ),
                 &ShopwareMigrationPayload {
                     rule: "entity-search-result-get-entities".into(),
@@ -292,6 +318,13 @@ impl ProblemAnalyzer for ShopwareMigrationAnalyzer {
             let call_name = phpquery::call_name(&call);
             let name = lowercase(call_name.strip_prefix('\\').unwrap_or(&call_name));
             if !ENTITY_SEARCH_RESULT_DELEGATED_FUNCTIONS.contains(&name.as_str()) {
+                continue;
+            }
+            let method = match name.as_str() {
+                "count" | "sizeof" => "count",
+                _ => "getiterator",
+            };
+            if !delegated(method) {
                 continue;
             }
             let Some(expression) = phpquery::argument(&call, 0)
@@ -327,6 +360,9 @@ impl ProblemAnalyzer for ShopwareMigrationAnalyzer {
             let Some(expression) = php_foreach_expression(&foreach) else {
                 continue;
             };
+            if !delegated("getiterator") {
+                continue;
+            }
             if !php_type_is_subtype(
                 &semantic.type_of(&expression).ty,
                 snapshot,

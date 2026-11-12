@@ -489,7 +489,8 @@ pub(crate) const MIGRATION: &[RuleHelp] = &[
         "shopware.migration.entity_search_result.get_entities",
         "Call the collection method on $result->getEntities(), and iterate or count \
          getEntities(); a quick fix inserts the call.",
-        MIGRATION_SCOPE,
+        "Reported from Shopware 6.8 on, and before that for the methods the installed \
+         EntitySearchResult marks as deprecated.",
         "",
     ),
     help(

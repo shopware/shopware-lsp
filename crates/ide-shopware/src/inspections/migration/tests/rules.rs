@@ -48,6 +48,43 @@ fn entity_search_result_migration_quick_fixes() {
     }
 }
 
+#[test]
+fn entity_search_result_migration_follows_the_installed_deprecation() {
+    // On 6.7 the methods the installed class deprecates are reported: the
+    // delegation through getEntities() already works there.
+    let index = migration_inspection_php_index();
+    index.add(
+        "/project/vendor/EntitySearchResult.php",
+        "<?php\nnamespace Shopware\\Core\\Framework\\DataAbstractionLayer\\Search;\nclass EntitySearchResult {\n    /** @deprecated tag:v6.8.0 - Use getEntities()->first() instead. */\n    public function first() {}\n    /** @deprecated tag:v6.8.0 */\n    public function getIterator() {}\n    public function last() {}\n    public function count() {}\n}",
+    );
+    let inspection = migration(&index, 7);
+    for (before, after) in [
+        (
+            "$result->{|shopware.migration.entity_search_result.get_entities:first|}();",
+            "$result->getEntities()->first();",
+        ),
+        (
+            "foreach ({|shopware.migration.entity_search_result.get_entities:$result|} as $entity) {}",
+            "foreach ($result->getEntities() as $entity) {}",
+        ),
+    ] {
+        check_only_migration_fix(
+            &inspection,
+            "file:///project/src/Migrate.php",
+            &entity_search_result_source(before),
+            ENTITY_SEARCH_RESULT_GET_ENTITIES_FIX_ID,
+            &entity_search_result_source(after),
+        );
+    }
+    // What the installed class does not deprecate stays unreported.
+    let (_, problems) = check_diagnostics(
+        inspection.as_ref(),
+        "file:///project/src/Migrate.php",
+        &entity_search_result_source("$result->last(); count($result);"),
+    );
+    assert!(problems.is_empty(), "{problems:?}");
+}
+
 /// An entity extension source with `members` as the class body.
 fn entity_extension_source(class: &str, members: &str) -> String {
     "<?php\nuse Shopware\\Core\\Framework\\DataAbstractionLayer\\EntityExtension;\nclass PRODUCT_EXTENSION extends EntityExtension\n{\nMEMBERS\n}\n"

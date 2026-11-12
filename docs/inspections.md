@@ -848,7 +848,7 @@ Languages: php. Domain: `shopware.migrations`.
 **`shopware.migration.entity_search_result.get_entities`**
 
 - Fix: Call the collection method on $result->getEntities(), and iterate or count getEntities(); a quick fix inserts the call.
-- Exceptions: Reported only when the Shopware target version is known (shopware.targetVersion, or shopware/core in composer.lock) and has reached the version in the message.
+- Exceptions: Reported from Shopware 6.8 on, and before that for the methods the installed EntitySearchResult marks as deprecated.
 
 **`shopware.migration.faker.property_call`**
 
