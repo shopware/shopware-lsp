@@ -231,7 +231,9 @@ impl Run<'_> {
                 continue;
             };
             let range = self.parent_range(class_node, &parent);
-            if parent.flags.has(Flags::INTERNAL) {
+            // Generated stubs carry the flag for every PHP built-in; only a
+            // declared `@internal` counts.
+            if parent.flags.has(Flags::INTERNAL) && !parent.flags.has(Flags::GENERATED_STUB) {
                 self.add(
                     SHOPWARE_PHP_INTERNAL_CLASS_EXTENSION_CODE,
                     range,

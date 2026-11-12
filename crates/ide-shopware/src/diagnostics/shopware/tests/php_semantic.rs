@@ -264,3 +264,39 @@ fn same_php_namespace_package_accepts_sibling_subtrees() {
     assert!(!same_php_namespace_package("Shopware", "Swag"));
     assert!(!same_php_namespace_package("", r"Shopware\Core"));
 }
+
+#[test]
+fn extending_a_php_builtin_is_not_an_internal_extension() {
+    // The generated runtime stubs flag every built-in symbol as internal;
+    // only a declared `@internal` is one.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).unwrap();
+    let index =
+        PhpIndex::open_project::<&str>(dir.path().join("cache"), None, &root, &[], &[]).unwrap();
+    index
+        .index(&ParsedFile::new(
+            "/project/vendor/Internal.php",
+            br"<?php
+namespace Shopware\Core\Internal;
+/** @internal */
+class InternalBase {}"
+                .to_vec(),
+        ))
+        .unwrap();
+    assert!(
+        index.find_class("RuntimeException").is_some(),
+        "stubs loaded"
+    );
+    check_problems(
+        &ShopwarePhpSemanticAnalyzer::new(Some(index)),
+        "file:///project/src/Exceptions.php",
+        r"<?php
+namespace App\Plugin;
+
+class NotFound extends \RuntimeException {}
+class Invalid extends \InvalidArgumentException {}
+class Internal extends {|shopware.php.internal.class_extension:\Shopware\Core\Internal\InternalBase|} {}
+",
+    );
+}
