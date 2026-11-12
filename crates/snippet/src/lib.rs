@@ -12,7 +12,7 @@ pub use admin_javascript_reference::{
 pub use admin_twig_reference::{
     AdminTwigReference, admin_twig_reference_at_offset, admin_twig_references,
 };
-pub use indexer::SnippetIndexer;
+pub use indexer::{SnippetIndexer, is_admin_snippet_file};
 
 use std::collections::BTreeMap;
 

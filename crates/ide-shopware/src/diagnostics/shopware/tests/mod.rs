@@ -10,5 +10,7 @@ mod php_preflight;
 mod php_review;
 mod php_semantic;
 mod services_xml;
+mod snippet_files;
 mod store_composer;
+mod store_files;
 mod theme;

@@ -52,8 +52,19 @@ pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
     ));
     let compliance: Arc<dyn StoreComplianceResolver> = s.extension_config.clone();
     add(analyzer(diagnostics::ShopwareStoreComposerAnalyzer::new(
+        Some(compliance.clone()),
+    )));
+    add(analyzer(diagnostics::AppManifestAnalyzer::new(Some(
+        compliance.clone(),
+    ))));
+    add(analyzer(diagnostics::StoreThemeAnalyzer::new(Some(
+        compliance.clone(),
+    ))));
+    add(analyzer(diagnostics::AppLayoutAnalyzer::new(
+        s.extensions.clone(),
         Some(compliance),
     )));
+    add(analyzer(diagnostics::SnippetFileAnalyzer::new()));
     add(analyzer(diagnostics::EntitySnapshotAnalyzer::new(Some(
         Arc::new(s.entity_catalog()),
     ))));

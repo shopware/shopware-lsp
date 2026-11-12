@@ -1,16 +1,21 @@
 //! Shopware analyzers: syntax-local and semantic PHP rules, decoration,
-//! Store composer metadata, entity snapshots, DAL entity names and
+//! Store metadata (composer.json, app manifest, theme.json, app file
+//! layout), snippet file consistency, entity snapshots, DAL entity names and
 //! definitions, services.xml deprecation, app scripts and theme icons.
 //!
 //! The semantic PHP rules share one analyzer and one tree walk
 //! (`php_semantic`); `php_conventions`, `php_http` and `php_filesystem` hold
 //! its rules by subject.
 
+mod app_layout;
+mod app_manifest;
 mod app_script;
 mod dal_definition;
 mod dal_entity;
 mod decoration;
+mod disk_stamp;
 mod entity_snapshot;
+mod json_keys;
 mod php_conventions;
 mod php_filesystem;
 mod php_http;
@@ -18,13 +23,20 @@ mod php_local;
 mod php_preflight;
 mod php_semantic;
 mod services_xml;
+mod snippet_files;
 mod store_composer;
+mod store_icon;
+mod store_license;
+mod store_metadata;
+mod store_theme;
 mod theme;
 mod util;
 
 #[cfg(test)]
 mod tests;
 
+pub use app_layout::{AppLayoutAnalyzer, AppLocator};
+pub use app_manifest::AppManifestAnalyzer;
 pub use app_script::AppScriptAnalyzer;
 pub use dal_definition::DalDefinitionAnalyzer;
 pub use dal_entity::DalEntityAnalyzer;
@@ -48,5 +60,7 @@ pub use services_xml::{
     ROUTES_XML_DEPRECATED_CODE, SERVICES_XML_DEPRECATED_CODE, ServicesXmlDeprecationAnalyzer,
     ServicesXmlDeprecationPayload, ServicesXmlImportAnalyzer, ServicesXmlImportPayload,
 };
+pub use snippet_files::SnippetFileAnalyzer;
 pub use store_composer::{ShopwareStoreComposerAnalyzer, StoreComplianceResolver};
+pub use store_theme::StoreThemeAnalyzer;
 pub use theme::{IconProvider, ThemeAnalyzer};

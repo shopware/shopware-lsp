@@ -697,6 +697,150 @@ pub(crate) const PROJECT: &[RuleHelp] = &[
         "",
     ),
     help(
+        "shopware.store.name",
+        "Add the package name (vendor/name) to composer.json.",
+        "Checked only for an extension that sets validation.store_compliance: true in \
+         .shopware-extension.yml.",
+        "",
+    ),
+    help(
+        "shopware.store.composer-description",
+        "Add a top-level description to composer.json.",
+        "Checked only for an extension that sets validation.store_compliance: true in \
+         .shopware-extension.yml.",
+        "",
+    ),
+    help(
+        "shopware.store.license",
+        "Set license to proprietary or to an SPDX identifier or expression such as MIT or (MIT OR Apache-2.0).",
+        "Checked only for an extension that sets validation.store_compliance: true in \
+         .shopware-extension.yml.",
+        "",
+    ),
+    help(
+        "shopware.store.version",
+        "Add a version such as 1.0.0 to composer.json; the Store release is created from it.",
+        "Checked only for an extension that sets validation.store_compliance: true in \
+         .shopware-extension.yml.",
+        "",
+    ),
+    help(
+        "shopware.store.authors",
+        "Add at least one entry to authors in composer.json.",
+        "Checked only for an extension that sets validation.store_compliance: true in \
+         .shopware-extension.yml.",
+        "",
+    ),
+    help(
+        "shopware.store.plugin-class",
+        "Set extra.shopware-plugin-class to the fully qualified name of the plugin class.",
+        "Checked only for an extension that sets validation.store_compliance: true in \
+         .shopware-extension.yml.",
+        "",
+    ),
+    help(
+        "shopware.store.autoload",
+        "Add a psr-4 (or psr-0) namespace mapping to autoload so the plugin class can be loaded.",
+        "Checked only for an extension that sets validation.store_compliance: true in \
+         .shopware-extension.yml.",
+        "",
+    ),
+    help(
+        "shopware.store.icon",
+        "Add the icon as a PNG file at src/Resources/config/plugin.png, or point extra.plugin-icon at the file.",
+        "Checked only for an extension that sets validation.store_compliance: true in \
+         .shopware-extension.yml.",
+        "",
+    ),
+    help(
+        "shopware.store.icon-size",
+        "Scale the icon to between 84x84 and 256x256 pixels and compress it to at most 30 kB.",
+        "Checked only for an extension that sets validation.store_compliance: true in \
+         .shopware-extension.yml.",
+        "",
+    ),
+    help(
+        "shopware.store.app.author",
+        "Add <author> to <meta> in manifest.xml.",
+        "Checked only for an extension that sets validation.store_compliance: true in \
+         .shopware-extension.yml.",
+        "",
+    ),
+    help(
+        "shopware.store.app.copyright",
+        "Add <copyright> to <meta> in manifest.xml.",
+        "Checked only for an extension that sets validation.store_compliance: true in \
+         .shopware-extension.yml.",
+        "",
+    ),
+    help(
+        "shopware.store.app.icon",
+        "Add the icon as a PNG file at Resources/config/plugin.png, or point <icon> in <meta> at the file.",
+        "Checked only for an extension that sets validation.store_compliance: true in \
+         .shopware-extension.yml.",
+        "",
+    ),
+    help(
+        "shopware.store.app.icon-size",
+        "Scale the icon to between 84x84 and 256x256 pixels and compress it to at most 30 kB.",
+        "Checked only for an extension that sets validation.store_compliance: true in \
+         .shopware-extension.yml.",
+        "",
+    ),
+    help(
+        "shopware.store.app.license",
+        "Add <license> to <meta> in manifest.xml.",
+        "Checked only for an extension that sets validation.store_compliance: true in \
+         .shopware-extension.yml.",
+        "",
+    ),
+    help(
+        "shopware.store.app.secret",
+        "Remove <secret> from <setup> before the release; the Store generates the app secret, shown on the extension's detail page.",
+        "Checked only for an extension that sets validation.store_compliance: true in \
+         .shopware-extension.yml.",
+        "",
+    ),
+    help(
+        "shopware.store.app.php-file",
+        "Remove the PHP file from the app; an app runs its logic in app scripts or on its own server.",
+        "Checked only for an extension that sets validation.store_compliance: true in \
+         .shopware-extension.yml.",
+        "",
+    ),
+    help(
+        "shopware.store.app.twig-location",
+        "Move the template to Resources/views, or to Resources/scripts when it is an app script.",
+        "Checked only for an extension that sets validation.store_compliance: true in \
+         .shopware-extension.yml.",
+        "",
+    ),
+    help(
+        "shopware.store.theme.preview-media",
+        "Set previewMedia in theme.json to an image path relative to the Resources directory, and make sure the file exists.",
+        "Checked only for an extension that sets validation.store_compliance: true in \
+         .shopware-extension.yml.",
+        "",
+    ),
+    help(
+        "shopware.snippet.file.missing-key",
+        "Add the named keys with their translation; the main language file (en.json, else en-GB.json, in the same directory) defines them.",
+        "A directory without a main language file is not compared.",
+        "",
+    ),
+    help(
+        "shopware.snippet.file.unknown-key",
+        "Remove the key, or add it to the main language file when the snippet is used.",
+        "A directory without a main language file is not compared.",
+        "",
+    ),
+    help(
+        "shopware.snippet.file.type-mismatch",
+        "Give the key the same shape as in the main language file: a text where it has a text, an object where it has nested keys.",
+        "A directory without a main language file is not compared.",
+        "",
+    ),
+    help(
         "theme.icon.missing",
         "Use the name of an icon the pack contains, or name the pack that has it: \
          {% sw_icon 'name' style {'pack': 'solid'} %}.",

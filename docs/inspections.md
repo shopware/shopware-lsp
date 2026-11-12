@@ -1163,23 +1163,150 @@ Languages: javascript, twig. Domain: `shopware.snippets`.
 - Fix: Add the key to a storefront snippet file of the extension (Resources/snippet/**/*.json); the quick fix "Create snippet" does it. Or correct the key.
 - Exceptions: Keys built at runtime are not checked.
 
+## `shopware.snippet_files`
+
+Snippet files that differ from the main language file (en.json, else en-GB.json) in the same directory: missing keys, keys the main file does not define, and values of another type.
+
+Languages: json. Domain: `shopware.snippets`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `shopware.snippet.file.missing-key` | warning | yes |
+| `shopware.snippet.file.type-mismatch` | warning | yes |
+| `shopware.snippet.file.unknown-key` | warning | yes |
+
+**`shopware.snippet.file.missing-key`**
+
+- Fix: Add the named keys with their translation; the main language file (en.json, else en-GB.json, in the same directory) defines them.
+- Exceptions: A directory without a main language file is not compared.
+
+**`shopware.snippet.file.type-mismatch`**
+
+- Fix: Give the key the same shape as in the main language file: a text where it has a text, an object where it has nested keys.
+- Exceptions: A directory without a main language file is not compared.
+
+**`shopware.snippet.file.unknown-key`**
+
+- Fix: Remove the key, or add it to the main language file when the snippet is used.
+- Exceptions: A directory without a main language file is not compared.
+
+## `shopware.store_app_layout`
+
+Files the Store rejects in an app: PHP files, and Twig files outside Resources/views and Resources/scripts. Opt-in per extension.
+
+Languages: php, twig. Domain: `shopware.store`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `shopware.store.app.php-file` | warning | yes |
+| `shopware.store.app.twig-location` | warning | yes |
+
+**`shopware.store.app.php-file`**
+
+- Fix: Remove the PHP file from the app; an app runs its logic in app scripts or on its own server.
+- Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
+
+**`shopware.store.app.twig-location`**
+
+- Fix: Move the template to Resources/views, or to Resources/scripts when it is an app script.
+- Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
+
+## `shopware.store_app_manifest`
+
+Store requirements for an app's manifest.xml: author, copyright and license, no development secret, and the app icon. Opt-in per extension.
+
+Languages: xml. Domain: `shopware.store`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `shopware.store.app.author` | warning | yes |
+| `shopware.store.app.copyright` | warning | yes |
+| `shopware.store.app.icon` | warning | yes |
+| `shopware.store.app.icon-size` | warning | yes |
+| `shopware.store.app.license` | warning | yes |
+| `shopware.store.app.secret` | warning | yes |
+
+**`shopware.store.app.author`**
+
+- Fix: Add <author> to <meta> in manifest.xml.
+- Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
+
+**`shopware.store.app.copyright`**
+
+- Fix: Add <copyright> to <meta> in manifest.xml.
+- Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
+
+**`shopware.store.app.icon`**
+
+- Fix: Add the icon as a PNG file at Resources/config/plugin.png, or point <icon> in <meta> at the file.
+- Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
+
+**`shopware.store.app.icon-size`**
+
+- Fix: Scale the icon to between 84x84 and 256x256 pixels and compress it to at most 30 kB.
+- Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
+
+**`shopware.store.app.license`**
+
+- Fix: Add <license> to <meta> in manifest.xml.
+- Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
+
+**`shopware.store.app.secret`**
+
+- Fix: Remove <secret> from <setup> before the release; the Store generates the app secret, shown on the extension's detail page.
+- Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
+
 ## `shopware.store_composer`
 
-Store requirements for an extension's composer.json: localized label and description, manufacturer and support links, and a shopware/core requirement. Opt-in per extension.
+Store requirements for an extension's composer.json: name, description, license, version, authors, plugin class, autoloading, localized label and description, manufacturer and support links, a shopware/core requirement and the extension icon. Opt-in per extension.
 
 Languages: json. Domain: `shopware.store`.
 
 | Code | Default severity | Enabled by default |
 |---|---|---|
+| `shopware.store.authors` | warning | yes |
+| `shopware.store.autoload` | warning | yes |
+| `shopware.store.composer-description` | warning | yes |
 | `shopware.store.description` | warning | yes |
+| `shopware.store.icon` | warning | yes |
+| `shopware.store.icon-size` | warning | yes |
 | `shopware.store.label` | warning | yes |
+| `shopware.store.license` | warning | yes |
 | `shopware.store.manufacturer-link` | warning | yes |
+| `shopware.store.name` | warning | yes |
+| `shopware.store.plugin-class` | warning | yes |
 | `shopware.store.require-core` | warning | yes |
 | `shopware.store.support-link` | warning | yes |
+| `shopware.store.version` | warning | yes |
+
+**`shopware.store.authors`**
+
+- Fix: Add at least one entry to authors in composer.json.
+- Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
+
+**`shopware.store.autoload`**
+
+- Fix: Add a psr-4 (or psr-0) namespace mapping to autoload so the plugin class can be loaded.
+- Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
+
+**`shopware.store.composer-description`**
+
+- Fix: Add a top-level description to composer.json.
+- Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
 
 **`shopware.store.description`**
 
 - Fix: Add extra.description with a de-DE and an en-GB text of 150 to 185 characters each.
+- Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
+
+**`shopware.store.icon`**
+
+- Fix: Add the icon as a PNG file at src/Resources/config/plugin.png, or point extra.plugin-icon at the file.
+- Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
+
+**`shopware.store.icon-size`**
+
+- Fix: Scale the icon to between 84x84 and 256x256 pixels and compress it to at most 30 kB.
 - Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
 
 **`shopware.store.label`**
@@ -1187,9 +1314,24 @@ Languages: json. Domain: `shopware.store`.
 - Fix: Add extra.label to composer.json with a de-DE and an en-GB text.
 - Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
 
+**`shopware.store.license`**
+
+- Fix: Set license to proprietary or to an SPDX identifier or expression such as MIT or (MIT OR Apache-2.0).
+- Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
+
 **`shopware.store.manufacturer-link`**
 
 - Fix: Add extra.manufacturerLink with a de-DE and an en-GB URL.
+- Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
+
+**`shopware.store.name`**
+
+- Fix: Add the package name (vendor/name) to composer.json.
+- Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
+
+**`shopware.store.plugin-class`**
+
+- Fix: Set extra.shopware-plugin-class to the fully qualified name of the plugin class.
 - Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
 
 **`shopware.store.require-core`**
@@ -1200,6 +1342,26 @@ Languages: json. Domain: `shopware.store`.
 **`shopware.store.support-link`**
 
 - Fix: Add extra.supportLink with a de-DE and an en-GB URL.
+- Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
+
+**`shopware.store.version`**
+
+- Fix: Add a version such as 1.0.0 to composer.json; the Store release is created from it.
+- Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
+
+## `shopware.store_theme`
+
+Store requirement for a theme's theme.json: a preview image that exists. Opt-in per extension.
+
+Languages: json. Domain: `shopware.store`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `shopware.store.theme.preview-media` | warning | yes |
+
+**`shopware.store.theme.preview-media`**
+
+- Fix: Set previewMedia in theme.json to an image path relative to the Resources directory, and make sure the file exists.
 - Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
 
 ## `shopware.theme`

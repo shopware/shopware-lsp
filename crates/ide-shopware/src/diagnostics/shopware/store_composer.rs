@@ -5,10 +5,12 @@ use std::sync::Arc;
 use serde_json::{Map, Value};
 use swlsp_language::LanguageId;
 use swlsp_lsp::{BoxError, Context, InspectionScope, InspectionSpec, Problem, TextDocument};
-use swlsp_parser_json::syntax::{JSON_OBJECT, JSON_PAIR, JSON_STRING, TK_STRING};
-use swlsp_syntax::{SyntaxNode, TextRange, TextSize};
+use swlsp_syntax::SyntaxNode;
 use swlsp_uriutil::filepath;
 
+use super::disk_stamp::file_stamp;
+use super::json_keys::nearest_key_range;
+use super::store_metadata::{icon_path, metadata_problems};
 use super::util::warning;
 use crate::diagnostics::{DeclaredAnalyzer, ProblemAnalyzer};
 
@@ -43,46 +45,64 @@ impl ShopwareStoreComposerAnalyzer {
     pub fn new(compliance: Option<Arc<dyn StoreComplianceResolver>>) -> Self {
         Self { compliance }
     }
+}
 
-    fn store_compliance_enabled(&self, uri: &str) -> bool {
-        let (Ok(path), Some(compliance)) = (swlsp_uriutil::path(uri), &self.compliance) else {
-            return false;
-        };
-        compliance
-            .store_compliance_enabled(&filepath::dir(&path))
-            .unwrap_or(false)
-    }
+/// Whether the extension rooted at `dir` opted into the Store checks.
+pub(crate) fn store_compliance_enabled(
+    compliance: Option<&Arc<dyn StoreComplianceResolver>>,
+    dir: &str,
+) -> bool {
+    compliance.is_some_and(|compliance| compliance.store_compliance_enabled(dir).unwrap_or(false))
 }
 
 impl DeclaredAnalyzer for ShopwareStoreComposerAnalyzer {
     const INSPECTION: InspectionSpec = InspectionSpec {
         id: "shopware.store_composer",
-        description: "Store requirements for an extension's composer.json: localized label and description, manufacturer and support links, and a shopware/core requirement. Opt-in per extension.",
+        description: "Store requirements for an extension's composer.json: name, description, license, version, authors, plugin class, autoloading, localized label and description, manufacturer and support links, a shopware/core requirement and the extension icon. Opt-in per extension.",
         domain: "shopware.store",
         scope: InspectionScope::Framework,
         languages: &[LanguageId::Json],
         source: "shopware-lsp",
         codes: &[
+            "shopware.store.authors",
+            "shopware.store.autoload",
+            "shopware.store.composer-description",
             "shopware.store.description",
+            "shopware.store.icon",
+            "shopware.store.icon-size",
             "shopware.store.label",
+            "shopware.store.license",
             "shopware.store.manufacturer-link",
+            "shopware.store.name",
+            "shopware.store.plugin-class",
             "shopware.store.require-core",
             "shopware.store.support-link",
+            "shopware.store.version",
         ],
     };
 }
 
 impl ProblemAnalyzer for ShopwareStoreComposerAnalyzer {
     fn input_revision(&self, document: &swlsp_lsp::TextDocument) -> Option<u64> {
-        // Only `composer.json` is checked, against the extension configuration
-        // and its open overlays (and the document itself).
-        if swlsp_uriutil::filepath::base(&document.uri) != "composer.json" {
+        // Only a plugin's `composer.json` is checked: against the extension
+        // configuration and its open overlays, and the icon file on disk.
+        if swlsp_uriutil::filepath::base(&document.uri) != "composer.json"
+            || !document.source().contains("shopware-platform-plugin")
+        {
             return Some(0);
         }
-        match &self.compliance {
-            Some(compliance) => compliance.revision(),
-            None => Some(0),
-        }
+        let Some(compliance) = &self.compliance else {
+            return Some(0);
+        };
+        let revision = compliance.revision()?;
+        let (Ok(path), Ok(Value::Object(composer))) = (
+            swlsp_uriutil::path(&document.uri),
+            serde_json::from_str::<Value>(document.source()),
+        ) else {
+            return Some(revision);
+        };
+        let icon = filepath::join(&[filepath::dir(&path).as_str(), icon_path(&composer)]);
+        Some(revision.wrapping_add(file_stamp(&icon)))
     }
 
     fn analyze(
@@ -98,8 +118,9 @@ impl ProblemAnalyzer for ShopwareStoreComposerAnalyzer {
         let Ok(Value::Object(composer)) = serde_json::from_str::<Value>(document.source()) else {
             return Ok(Vec::new());
         };
+        let extension_root = filepath::dir(&swlsp_uriutil::path(&document.uri)?);
         if composer.get("type").and_then(Value::as_str) != Some("shopware-platform-plugin")
-            || !self.store_compliance_enabled(&document.uri)
+            || !store_compliance_enabled(self.compliance.as_ref(), &extension_root)
         {
             return Ok(Vec::new());
         }
@@ -178,6 +199,7 @@ impl ProblemAnalyzer for ShopwareStoreComposerAnalyzer {
                 "Store: composer require must contain shopware/core",
             ));
         }
+        result.extend(metadata_problems(&root, &composer, &extension_root));
         Ok(result)
     }
 }
@@ -227,46 +249,8 @@ fn validate_localized(
     result
 }
 
-/// A problem on the key at `path`, or on the whole document when the key
-/// does not exist.
+/// A problem on the key at `path`, on the deepest key of it that exists, or
+/// on the whole document.
 fn store_problem(root: &SyntaxNode, id: &str, path: &[&str], message: &str) -> Problem {
-    let range = json_key_range(root, path).unwrap_or_else(|| root.text_range());
-    warning(id, range, message.to_owned())
-}
-
-/// The text of the key at `path` (object keys from the document root),
-/// without its quotes.
-fn json_key_range(root: &SyntaxNode, path: &[&str]) -> Option<TextRange> {
-    let mut object = root.descendants().find(|node| node.kind() == JSON_OBJECT)?;
-    let mut found = None;
-    for (depth, key) in path.iter().enumerate() {
-        let pair = object
-            .children()
-            .filter(|pair| pair.kind() == JSON_PAIR)
-            .find(|pair| pair_key(pair).is_some_and(|(text, _)| text == *key))?;
-        found = pair_key(&pair).map(|(_, range)| range);
-        if depth + 1 < path.len() {
-            object = pair
-                .children()
-                .skip(1)
-                .find(|value| value.kind() == JSON_OBJECT)?;
-        }
-    }
-    found
-}
-
-/// The unquoted text and range of a pair's key.
-fn pair_key(pair: &SyntaxNode) -> Option<(String, TextRange)> {
-    let key = pair.children().find(|child| child.kind() == JSON_STRING)?;
-    let token = key
-        .children_with_tokens()
-        .filter_map(|element| element.into_token())
-        .find(|token| token.kind() == TK_STRING)?;
-    let text = token.text();
-    let inner = text.strip_prefix('"')?.strip_suffix('"')?;
-    let start = token.text_range().start() + TextSize::from(1);
-    Some((
-        inner.to_owned(),
-        TextRange::new(start, start + TextSize::of(inner)),
-    ))
+    warning(id, nearest_key_range(root, path), message.to_owned())
 }
