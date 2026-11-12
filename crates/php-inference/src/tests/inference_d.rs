@@ -1411,3 +1411,141 @@ namespace App {
         .collect();
     assert_eq!(issues, Vec::<String>::new());
 }
+
+#[test]
+fn match_groups_are_strings_unless_flags_change_their_layout() {
+    let source = r#"<?php
+class M {
+    public function all(string $text): ?string
+    {
+        $matches = [];
+        preg_match_all('/x/', $text, $matches);
+        if (empty($matches[0])) {
+            return null;
+        }
+        return str_replace("\n", '', $matches[0][0]);
+    }
+    public function one(string $text): string
+    {
+        if (!preg_match('/x/', $text, $matches)) {
+            return '';
+        }
+        return str_replace("\n", '', $matches[0]);
+    }
+    public function offsets(string $text): string
+    {
+        preg_match('/x/', $text, $matches, PREG_OFFSET_CAPTURE);
+        return $matches[0];
+    }
+}"#;
+    let (parsed, analyzed, _) = analyze_source("/matches.php", source, true, builtins());
+    let issues: Vec<String> = analyzed
+        .issues
+        .iter()
+        .map(|issue| {
+            let text = parsed.root.text().to_string();
+            format!(
+                "{}: {}",
+                issue.code,
+                &text[usize::from(issue.range.start())..usize::from(issue.range.end())]
+            )
+        })
+        .collect();
+    // With flags a group is not known to be a string: nothing is claimed.
+    assert_eq!(issues, Vec::<String>::new());
+}
+
+#[test]
+fn return_cases_from_a_shopware_project_report_nothing() {
+    let source = r#"<?php
+namespace App;
+interface Stub {}
+/** @template T */
+class Repository {}
+class Entity { public function owner(): string { return ''; } }
+class R {
+    /** @return list<string> */
+    public function oneFiltered(string $label): array
+    {
+        return array_filter(['Label: ' . $label], static fn(string $line): bool => !str_ends_with($line, ': '));
+    }
+    /** @return array<string, string> */
+    public function withoutNull(string $name, ?string $phone): array
+    {
+        return array_filter([
+            'name' => $name,
+            'phone' => $phone,
+        ], static fn(?string $value): bool => $value !== null && $value !== '');
+    }
+    public function untilFound(string $id): Entity
+    {
+        while (!($entity = $this->find($id)) instanceof Entity) {
+            $this->create($id);
+        }
+        return $entity;
+    }
+    /**
+     * @param array<string, string> $query
+     * @return array<string, array{min: ?float, max: ?float}>
+     */
+    public function everyElementReplaced(array $query): array
+    {
+        $ranges = [];
+        foreach ($query as $key => $value) {
+            if (str_starts_with($key, 'min-')) {
+                $ranges[substr($key, 4)]['min'] = (float) $value;
+            } elseif (str_starts_with($key, 'max-')) {
+                $ranges[substr($key, 4)]['max'] = (float) $value;
+            }
+        }
+        foreach ($ranges as $group => $range) {
+            $ranges[$group] = ['min' => $range['min'] ?? null, 'max' => $range['max'] ?? null];
+        }
+        return $ranges;
+    }
+    /**
+     * @param Stub&Repository $stub
+     * @return Repository<Entity>
+     */
+    public function rawIntersection($stub): Repository
+    {
+        return $stub;
+    }
+    /** @return array<string, string> */
+    public function nullStays(string $name, ?string $phone): array
+    {
+        return array_filter(['name' => $name, 'phone' => $phone], static fn(?string $value): bool => $value !== '');
+    }
+    public function mayBreak(string $id): Entity
+    {
+        while (!($entity = $this->find($id)) instanceof Entity) {
+            break;
+        }
+        return $entity;
+    }
+    private function find(string $id): ?Entity { return null; }
+    private function create(string $id): void {}
+}"#;
+    let (parsed, analyzed, _) = analyze_source("/returns.php", source, true, builtins());
+    let issues: Vec<String> = analyzed
+        .issues
+        .iter()
+        .map(|issue| {
+            let text = parsed.root.text().to_string();
+            format!(
+                "{}: {}",
+                issue.code,
+                &text[usize::from(issue.range.start())..usize::from(issue.range.end())]
+            )
+        })
+        .collect();
+    // A callback that lets null through, and a loop left by `break`, keep
+    // their finding.
+    assert_eq!(
+        issues,
+        [
+            "php.returnType: return array_filter(['name' => $name, 'phone' => $phone], static fn(?string $value): bool => $value !== '');",
+            "php.returnType: return $entity;",
+        ]
+    );
+}

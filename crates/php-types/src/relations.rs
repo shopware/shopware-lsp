@@ -244,6 +244,16 @@ impl<'h> Relations<'h> {
         {
             return self.arguments_subtype(candidate_args, target.arguments());
         }
+        // An array whose only key is 0 is a list (what filtering a
+        // one-element list leaves).
+        if (target.kind() == Kind::List
+            || candidate.kind() == Kind::NonEmptyArray && target.kind() == Kind::NonEmptyList)
+            && candidate_args.len() == 2
+            && candidate_args[0].kind() == Kind::LiteralInt
+            && candidate_args[0].name() == "0"
+        {
+            return self.arguments_subtype(&candidate_args[1..], target.arguments());
+        }
         if target.kind() != Kind::Iterable {
             return false;
         }
@@ -380,6 +390,16 @@ impl<'h> Relations<'h> {
                 .iter()
                 .all(|alternative| self.is_assignable_to(alternative, target))
                 && value.argument_count() > 0;
+        }
+        if value.kind() == Kind::Intersection
+            && value
+                .arguments()
+                .iter()
+                .any(|member| self.is_assignable_to(member, target))
+        {
+            // A value of every member is assignable wherever one of them is
+            // (a raw `Stub&Repository` to `Repository<T>`).
+            return true;
         }
         if value.kind() == Kind::Conditional {
             let arguments = value.arguments();

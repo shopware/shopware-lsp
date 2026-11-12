@@ -13,6 +13,29 @@ use crate::env::Env;
 use crate::extensions::CallArgument;
 use crate::syntax::{last_node, start};
 
+/// What `preg_match` and `preg_match_all` write to `$matches` when no flags
+/// change its layout: the groups as strings, or per group the list of its
+/// matches. With flags the declared `array<array-key, mixed>` stays.
+fn match_groups_type(
+    symbol: &Symbol,
+    parameter_index: usize,
+    arguments: &[CallArgument],
+) -> Option<Type> {
+    if parameter_index != 2
+        || symbol.kind != SymbolKind::Function
+        || arguments.len() != 3
+        || arguments.iter().any(|argument| !argument.name.is_empty())
+    {
+        return None;
+    }
+    let group = match symbol.name.trim_start_matches('\\') {
+        "preg_match" => Type::STRING,
+        "preg_match_all" => Type::list(Type::STRING),
+        _ => return None,
+    };
+    Some(Type::array(Type::ARRAY_KEY, group))
+}
+
 impl Fs<'_, '_, '_> {
     pub(crate) fn apply_by_reference_arguments(
         &mut self,
@@ -77,7 +100,9 @@ impl Fs<'_, '_, '_> {
             if value.kind() != PHP_VARIABLE {
                 continue;
             }
-            self.declare_by_reference_output(&value, &parameter.ty, env);
+            let output = match_groups_type(symbol, parameter_index, arguments)
+                .unwrap_or_else(|| parameter.ty.clone());
+            self.declare_by_reference_output(&value, &output, env);
         }
     }
 

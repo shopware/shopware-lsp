@@ -284,6 +284,8 @@ fn builtin_type(context: &CallContext<'_>) -> Option<Type> {
                             let constraint = array_filter_arrow_constraint(context, Some(callback));
                             if !constraint.is_unknown() {
                                 element = relations.narrow(&element, &constraint);
+                            } else if arrow_callback_rejects_null(callback) {
+                                element = relations.without(&element, &Type::NULL);
                             }
                         }
                     }
@@ -798,6 +800,41 @@ pub(crate) fn array_filter_arrow_constraint(
         &query::parameter_name(&first_parameter),
         &name_context,
     )
+}
+
+/// Whether an arrow callback only accepts values that are not null: its
+/// body is `$value !== null`, alone or as one side of an `&&`.
+fn arrow_callback_rejects_null(callback: &SyntaxNode) -> bool {
+    fn rejects_null(predicate: &SyntaxNode, parameter: &str) -> bool {
+        if predicate.kind() == PHP_PARENTHESIZED {
+            return first_node(predicate).is_some_and(|inner| rejects_null(&inner, parameter));
+        }
+        if predicate.kind() != PHP_BINARY_EXPRESSION {
+            return false;
+        }
+        let operands = direct_nodes(predicate);
+        let (Some(first), Some(last)) = (operands.first(), operands.last()) else {
+            return false;
+        };
+        match lowercase(&direct_operator(predicate)).as_str() {
+            "&&" | "and" => rejects_null(first, parameter) || rejects_null(last, parameter),
+            "!==" | "!=" => {
+                let is_parameter = |node: &SyntaxNode| {
+                    node.kind() == PHP_VARIABLE && query::variable_key(node) == parameter
+                };
+                let is_null = |node: &SyntaxNode| node.kind() == PHP_NULL;
+                is_parameter(first) && is_null(last) || is_null(first) && is_parameter(last)
+            }
+            _ => false,
+        }
+    }
+    if callback.kind() != PHP_ARROW_FUNCTION {
+        return false;
+    }
+    let Some(parameter) = query::parameters(callback).next() else {
+        return false;
+    };
+    last_node(callback).is_some_and(|body| rejects_null(&body, &query::parameter_name(&parameter)))
 }
 
 fn arrow_predicate_constraint(

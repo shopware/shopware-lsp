@@ -1001,6 +1001,20 @@ impl<'a, 'e, 's> Fs<'a, 'e, 's> {
             {
                 result.set(&name, after);
             }
+            // `$array[$key] = …` for the key of every element replaces every
+            // value: what the elements were before does not survive.
+            if let Some(key_variable) = &key_variable
+                && let Some(value) =
+                    foreach_element_overwrite(body, &name, &variable_key(key_variable))
+                && let Some(before) = env.get(&name)
+                && is_array_container_type(&before)
+            {
+                let (key, _) = iterable_types(&before, self.relations);
+                let value = self.infer(&value, &body_flow.env);
+                if !value.is_unknown() {
+                    result.set(&name, Type::array(key, value));
+                }
+            }
         }
         Flow::of(result)
     }
@@ -1016,6 +1030,14 @@ impl<'a, 'e, 's> Fs<'a, 'e, 's> {
             let mut result = self.join(&false_env, &body.env);
             for continued in &body.continues {
                 result = self.join(&result, continued);
+            }
+            if query::nodes(&nodes[nodes.len() - 1], &[PHP_BREAK_STATEMENT]).is_empty() {
+                // The loop is only left where the condition fails, also
+                // after the body ran: `while (!($x = f()) instanceof T)`
+                // leaves `$x` a `T`.
+                let again = self.join(&env, &result);
+                let (_, left) = self.condition_environments(Some(&nodes[0]), &again);
+                return Flow::of(left);
             }
             return Flow::of(result);
         }
@@ -1270,4 +1292,54 @@ fn statement_annotation_target(node: &SyntaxNode) -> String {
         _ => {}
     }
     String::new()
+}
+
+/// The value a `foreach` body assigns to `$array[$key]` as a statement of
+/// its own, when that is the only write to the array or the key.
+fn foreach_element_overwrite(body: &SyntaxNode, array: &str, key: &str) -> Option<SyntaxNode> {
+    let mut value = None;
+    for statement in direct_nodes(body) {
+        if statement.kind() != PHP_EXPRESSION_STATEMENT {
+            continue;
+        }
+        let assignment = first_node(&statement)?;
+        if assignment.kind() != PHP_ASSIGNMENT_EXPRESSION
+            || !assignment
+                .children_with_tokens()
+                .any(|element| element.kind() == TK_EQUALS)
+        {
+            continue;
+        }
+        let sides = direct_nodes(&assignment);
+        let [target, assigned] = sides.as_slice() else {
+            continue;
+        };
+        if target.kind() != PHP_ARRAY_ACCESS {
+            continue;
+        }
+        let parts = direct_nodes(target);
+        let [container, offset] = parts.as_slice() else {
+            continue;
+        };
+        if container.kind() == PHP_VARIABLE
+            && variable_key(container) == array
+            && offset.kind() == PHP_VARIABLE
+            && variable_key(offset) == key
+        {
+            value = Some(assigned.clone());
+        }
+    }
+    // Any other write to the array or the key in the body, and the
+    // overwrite says nothing about every element.
+    let writes = query::nodes(body, &[PHP_ASSIGNMENT_EXPRESSION])
+        .into_iter()
+        .filter(|assignment| {
+            first_node(assignment).is_some_and(|target| {
+                let text = target.text().to_string();
+                let text = text.trim();
+                text == key || text.starts_with(&format!("{array}["))
+            })
+        })
+        .count();
+    value.filter(|_| writes == 1)
 }
