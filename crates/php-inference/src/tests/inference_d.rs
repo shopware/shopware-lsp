@@ -1277,3 +1277,55 @@ class Listing {
     assert_text_type(&analyzed, &parsed.root, "clone $this", "Listing");
     assert_no_issue(&analyzed, "php.returnType");
 }
+
+#[test]
+fn strict_in_array_with_a_literal_list_rules_its_values_out() {
+    let source = r#"<?php
+class D {
+    private function getDate(?string $date): ?string
+    {
+        if (\in_array($date, ['0000-00-00', '0/0/0', null], true)) {
+            return null;
+        }
+        return new \DateTimeImmutable($date)->format('Y');
+    }
+    private function simple(?string $date): string
+    {
+        if (\in_array($date, [null], true)) {
+            return '';
+        }
+        return $date;
+    }
+    /** @param 'a'|'b'|'c' $letter */
+    private function letters(string $letter): string
+    {
+        if (\in_array($letter, ['a', 'b'], true)) {
+            return $letter;
+        }
+        return $letter;
+    }
+    /** @param list<string|null> $known */
+    private function variable(?string $date, array $known): string
+    {
+        if (\in_array($date, $known, true)) {
+            return '';
+        }
+        return $date;
+    }
+}"#;
+    let (parsed, analyzed, _) = analyze_source("/in_array.php", source, true, builtins());
+    let issues: Vec<String> = analyzed
+        .issues
+        .iter()
+        .map(|issue| {
+            let text = parsed.root.text().to_string();
+            format!(
+                "{}: {}",
+                issue.code,
+                &text[usize::from(issue.range.start())..usize::from(issue.range.end())]
+            )
+        })
+        .collect();
+    // Only the variable haystack leaves null in: nothing says what it holds.
+    assert_eq!(issues, ["php.returnType: return $date;"]);
+}

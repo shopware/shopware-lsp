@@ -268,7 +268,36 @@ impl Fs<'_, '_, '_> {
         if element.is_unknown() || element.kind() == Kind::Mixed {
             return None;
         }
-        self.narrow_true_branch(&value, &element, env, "in_array")
+        let (true_env, false_env) = self.narrow_true_branch(&value, &element, env, "in_array")?;
+        // A literal list names every value it holds: in the false branch
+        // `$value` is none of its constant members (`[…, null]` rules out
+        // null).
+        if haystack.kind() == PHP_ARRAY {
+            let key = flow_expression_key(self.src(), Some(&value));
+            let original = self.flow_value(&key, &value, env);
+            let members: Vec<Type> = match element.kind() {
+                Kind::Union => element.arguments().to_vec(),
+                _ => vec![element.clone()],
+            };
+            let mut false_value = original;
+            for member in members {
+                if matches!(
+                    member.kind(),
+                    Kind::Null
+                        | Kind::True
+                        | Kind::False
+                        | Kind::LiteralInt
+                        | Kind::LiteralFloat
+                        | Kind::LiteralString
+                ) {
+                    false_value = self.relations.without(&false_value, &member);
+                }
+            }
+            if !false_value.is_unknown() {
+                false_env.set(&key, false_value);
+            }
+        }
+        Some((true_env, false_env))
     }
 
     /// Narrows `expression` to `narrowed` in the true branch only.
