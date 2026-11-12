@@ -8,4 +8,6 @@ mod services_xml_migration;
 mod tests;
 
 pub use app_script::{ADD_APP_READ_PERMISSION_FIX_ID, new_app_script};
-pub use services_xml_migration::{CONVERT_SERVICES_XML_FIX_ID, new_services_xml_migration};
+pub use services_xml_migration::{
+    CONVERT_IMPORTED_SERVICES_XML_FIX_ID, CONVERT_SERVICES_XML_FIX_ID, new_services_xml_migration,
+};

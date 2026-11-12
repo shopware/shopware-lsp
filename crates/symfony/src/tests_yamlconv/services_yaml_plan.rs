@@ -150,3 +150,58 @@ fn services_xml_conversion_on_trunk() {
         "trunk should contain plugin services.xml fixtures"
     );
 }
+
+/// shopware-cli's file fixture: a routes.xml importing another route file.
+#[test]
+fn plan_routes_xml_conversion_follows_imports_like_shopware_cli() {
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("testdata/routes-files/routes-imports");
+    let input = fixture.join("input");
+    let root = input.to_string_lossy().into_owned();
+    let mut read = |path: &str| std::fs::read_to_string(path);
+    let plan = plan_routes_xml_conversion(
+        &CancelToken::new(),
+        &format!("{root}/routes.xml"),
+        &mut read,
+        &mut |_| Ok(false),
+    )
+    .unwrap();
+    let converted: Vec<(String, &str)> = plan
+        .iter()
+        .map(|file| {
+            (
+                file.target_path.strip_prefix(&root).unwrap().to_owned(),
+                file.content.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(converted.len(), 2);
+    for (relative, content) in converted {
+        let expected = std::fs::read_to_string(
+            fixture
+                .join("expected")
+                .join(relative.trim_start_matches('/')),
+        )
+        .unwrap();
+        assert_eq!(content, expected, "{relative}");
+    }
+}
+
+#[test]
+fn plan_refuses_a_file_of_the_other_format() {
+    let mut read = reader(HashMap::from([(
+        "/project/config/routes.xml",
+        "<container><services/></container>",
+    )]));
+    let error = plan_routes_xml_conversion(
+        &CancelToken::new(),
+        "/project/config/routes.xml",
+        &mut read,
+        &mut |_| Ok(false),
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("expected element type <routes>"),
+        "{error}"
+    );
+}

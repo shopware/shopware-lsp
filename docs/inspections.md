@@ -1622,18 +1622,24 @@ Languages: xml, yaml. Domain: `symfony.services`.
 
 ## `symfony.services_xml_migration`
 
-XML service configuration, deprecated in favor of YAML or PHP, with an automated conversion.
+XML service and route configuration, deprecated in favor of YAML or PHP, with an automated conversion: the services.xml and routes.xml loaded by convention, and XML files a services.php or routes.php imports.
 
-Languages: xml. Domain: `symfony.services`.
+Languages: xml, php. Domain: `symfony.services`.
 
 | Code | Default severity | Enabled by default |
 |---|---|---|
+| `symfony.routes_xml.deprecated` | warning | yes |
 | `symfony.services_xml.deprecated` | warning | yes |
+
+**`symfony.routes_xml.deprecated`**
+
+- Fix: Convert the XML route configuration to YAML. A quick fix converts Resources/config/routes.xml and the route files it imports; for an XML file imported from Resources/config/routes.php a quick fix converts it and points the import() call at the YAML file.
+- Exceptions: Reported for Resources/config/routes.xml and for import('file.xml') calls in Resources/config/routes.php. Imports with a glob, a bundle path or a path built at runtime, and XML loaded from elsewhere, are not reported. A file with an element or attribute the conversion does not know is reported without a quick fix.
 
 **`symfony.services_xml.deprecated`**
 
-- Fix: Convert Resources/config/services.xml to services.yaml; a quick fix converts the file and its local imports when the content converts losslessly.
-- Exceptions: Only the conventional Resources/config/services.xml of a bundle or plugin is reported; XML loaded explicitly elsewhere is not.
+- Fix: Convert the XML service configuration to YAML. A quick fix converts Resources/config/services.xml and the XML files it imports; for an XML file imported from Resources/config/services.php a quick fix converts it and points the import() call at the YAML file. A file with a construct YAML cannot express (on-invalid="null" in a method call, a property or a collection) has to be changed first.
+- Exceptions: Reported for Resources/config/services.xml and for import('file.xml') calls in Resources/config/services.php. Imports with a glob, a bundle path or a path built at runtime, and XML loaded from elsewhere, are not reported.
 
 ## `symfony.translation`
 

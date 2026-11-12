@@ -43,8 +43,10 @@ pub use php_semantic::{
     SHOPWARE_PHP_SYSTEM_CONFIG_SALES_CHANNEL_CODE, SHOPWARE_PHP_USER_STORE_TOKEN_CODE,
     ShopwarePhpSemanticAnalyzer,
 };
+pub(crate) use services_xml::is_local_xml_resource;
 pub use services_xml::{
-    SERVICES_XML_DEPRECATED_CODE, ServicesXmlDeprecationAnalyzer, ServicesXmlDeprecationPayload,
+    ROUTES_XML_DEPRECATED_CODE, SERVICES_XML_DEPRECATED_CODE, ServicesXmlDeprecationAnalyzer,
+    ServicesXmlDeprecationPayload, ServicesXmlImportAnalyzer, ServicesXmlImportPayload,
 };
 pub use store_composer::{ShopwareStoreComposerAnalyzer, StoreComplianceResolver};
 pub use theme::{IconProvider, ThemeAnalyzer};

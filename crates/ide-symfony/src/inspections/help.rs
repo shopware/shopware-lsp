@@ -296,10 +296,27 @@ pub(crate) const SYMFONY: &[RuleHelp] = &[
     ),
     help(
         "symfony.services_xml.deprecated",
-        "Convert Resources/config/services.xml to services.yaml; a quick fix converts the \
-         file and its local imports when the content converts losslessly.",
-        "Only the conventional Resources/config/services.xml of a bundle or plugin is \
-         reported; XML loaded explicitly elsewhere is not.",
+        "Convert the XML service configuration to YAML. A quick fix converts \
+         Resources/config/services.xml and the XML files it imports; for an XML file \
+         imported from Resources/config/services.php a quick fix converts it and points the \
+         import() call at the YAML file. A file with a construct YAML cannot express \
+         (on-invalid=\"null\" in a method call, a property or a collection) has to be \
+         changed first.",
+        "Reported for Resources/config/services.xml and for import('file.xml') calls in \
+         Resources/config/services.php. Imports with a glob, a bundle path or a path built \
+         at runtime, and XML loaded from elsewhere, are not reported.",
+        "",
+    ),
+    help(
+        "symfony.routes_xml.deprecated",
+        "Convert the XML route configuration to YAML. A quick fix converts \
+         Resources/config/routes.xml and the route files it imports; for an XML file \
+         imported from Resources/config/routes.php a quick fix converts it and points the \
+         import() call at the YAML file.",
+        "Reported for Resources/config/routes.xml and for import('file.xml') calls in \
+         Resources/config/routes.php. Imports with a glob, a bundle path or a path built at \
+         runtime, and XML loaded from elsewhere, are not reported. A file with an element \
+         or attribute the conversion does not know is reported without a quick fix.",
         "",
     ),
     help(

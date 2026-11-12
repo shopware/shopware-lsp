@@ -206,12 +206,47 @@ pub(crate) struct XmlDeprecated {
 
 /// A decoded XML element: local name, attributes, direct character data,
 /// and child elements.
-#[derive(Debug, Default)]
-struct Element {
-    local: String,
-    attrs: Vec<XmlAttr>,
-    chardata: String,
-    children: Vec<Element>,
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct Element {
+    pub(crate) local: String,
+    pub(crate) attrs: Vec<XmlAttr>,
+    pub(crate) chardata: String,
+    pub(crate) children: Vec<Element>,
+}
+
+impl Element {
+    /// The value of the attribute `name` without a namespace; empty when
+    /// it is absent.
+    pub(crate) fn attr(&self, name: &str) -> &str {
+        self.attrs
+            .iter()
+            .find(|attr| attr.space.is_empty() && attr.local == name)
+            .map_or("", |attr| attr.value.as_str())
+    }
+
+    /// Whether the element carries `xsi:nil="true"`.
+    pub(crate) fn is_nil(&self) -> bool {
+        self.attrs.iter().any(|attr| {
+            attr.space == XSI_NAMESPACE
+                && attr.local == "nil"
+                && matches!(attr.value.as_str(), "true" | "1")
+        })
+    }
+}
+
+/// Decodes the root element of an XML configuration file; `file` names it
+/// in errors.
+pub(crate) fn decode_root(content: &str, file: &str) -> Result<Element, ConvertError> {
+    let error = |message: String| ConvertError(format!("failed to parse {file}: {message}"));
+    let parse = swlsp_parser_xml::parse(content);
+    if let Some(problem) = parse.errors.first() {
+        return Err(error(format!("XML syntax error: {}", problem.message())));
+    }
+    let root = parse.root();
+    let Some(element) = root.children().find(|child| child.kind() == XML_ELEMENT) else {
+        return Err(error("EOF".to_owned()));
+    };
+    decode_element(&element, &HashMap::new())
 }
 
 fn error(message: impl Into<String>) -> ConvertError {

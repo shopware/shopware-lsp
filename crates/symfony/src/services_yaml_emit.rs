@@ -492,7 +492,14 @@ fn node_events(node: &Node, events: &mut Vec<Event>) {
             events.push(Event::MappingEnd);
         }
         NodeKind::Scalar => {
-            let style = if node.literal || node.value.contains('\n') {
+            let multiline = node.literal || node.value.contains('\n');
+            // A block scalar cannot start with a line break or with
+            // indentation: the first content line sets the indentation of
+            // the block, so the leading whitespace would be lost or the
+            // block could not be parsed. Escapes keep such a value exact.
+            let style = if multiline && node.value.starts_with(['\n', '\r', ' ', '\t']) {
+                ScalarStyle::DoubleQuoted
+            } else if multiline {
                 ScalarStyle::Literal
             } else if force_quoting {
                 ScalarStyle::DoubleQuoted

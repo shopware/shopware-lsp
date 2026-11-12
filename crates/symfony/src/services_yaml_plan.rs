@@ -1,10 +1,11 @@
-//! Planning of a services.xml → services.yaml conversion including local XML
-//! imports.
+//! Planning of a services.xml or routes.xml conversion to YAML, including
+//! the local XML files it imports.
 
 use std::collections::BTreeMap;
 
 use swlsp_indexer::CancelToken;
 
+use crate::routes_yaml_convert::{Routes, convert_routes_to_yaml, parse_routes_xml};
 use crate::services_yaml_convert::{ConvertError, convert_container_to_yaml};
 use crate::services_yaml_model::{Container, XmlImports, parse_services_xml};
 use crate::util::{clean_path, dir_path, extension, join_path};
@@ -55,7 +56,75 @@ pub fn plan_services_xml_conversion(
     read: &mut dyn FnMut(&str) -> std::io::Result<String>,
     target_exists: &mut dyn FnMut(&str) -> std::io::Result<bool>,
 ) -> Result<Vec<ServicesXmlConversion>, PlanError> {
+    plan_conversion(XmlConfigKind::Services, cancel, path, read, target_exists)
+}
+
+/// [`plan_services_xml_conversion`] for a routes.xml file and the route
+/// files it imports.
+pub fn plan_routes_xml_conversion(
+    cancel: &CancelToken,
+    path: &str,
+    read: &mut dyn FnMut(&str) -> std::io::Result<String>,
+    target_exists: &mut dyn FnMut(&str) -> std::io::Result<bool>,
+) -> Result<Vec<ServicesXmlConversion>, PlanError> {
+    plan_conversion(XmlConfigKind::Routes, cancel, path, read, target_exists)
+}
+
+/// Which Symfony XML configuration format a file and its imports have.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum XmlConfigKind {
+    Services,
+    Routes,
+}
+
+/// A parsed configuration file of either format.
+enum XmlConfig {
+    Services(Container),
+    Routes(Routes),
+}
+
+impl XmlConfig {
+    fn parse(kind: XmlConfigKind, content: &str) -> Result<Self, ConvertError> {
+        Ok(match kind {
+            XmlConfigKind::Services => XmlConfig::Services(parse_services_xml(content)?),
+            XmlConfigKind::Routes => XmlConfig::Routes(parse_routes_xml(content)?),
+        })
+    }
+
+    /// The resource and loader type of every import, to point them at
+    /// converted files.
+    fn imports(&mut self) -> Vec<(&mut String, Option<&mut String>)> {
+        match self {
+            XmlConfig::Services(container) => import_lists(container)
+                .into_iter()
+                .flat_map(|imports| imports.imports.iter_mut())
+                .map(|import| (&mut import.resource, Some(&mut import.kind)))
+                .collect(),
+            XmlConfig::Routes(routes) => routes
+                .import_references()
+                .into_iter()
+                .map(|import| (import.resource, import.kind))
+                .collect(),
+        }
+    }
+
+    fn to_yaml(&self) -> Result<String, ConvertError> {
+        match self {
+            XmlConfig::Services(container) => convert_container_to_yaml(container),
+            XmlConfig::Routes(routes) => convert_routes_to_yaml(routes),
+        }
+    }
+}
+
+fn plan_conversion(
+    kind: XmlConfigKind,
+    cancel: &CancelToken,
+    path: &str,
+    read: &mut dyn FnMut(&str) -> std::io::Result<String>,
+    target_exists: &mut dyn FnMut(&str) -> std::io::Result<bool>,
+) -> Result<Vec<ServicesXmlConversion>, PlanError> {
     let mut planner = Planner {
+        kind,
         cancel,
         read,
         target_exists,
@@ -79,6 +148,7 @@ pub fn plan_services_xml_conversion(
 }
 
 struct Planner<'a> {
+    kind: XmlConfigKind,
     cancel: &'a CancelToken,
     read: &'a mut dyn FnMut(&str) -> std::io::Result<String>,
     target_exists: &'a mut dyn FnMut(&str) -> std::io::Result<bool>,
@@ -119,10 +189,11 @@ impl Planner<'_> {
                 source,
             })?,
         };
-        let mut container = parse_services_xml(&content).map_err(|source| PlanError::Convert {
-            path: path.to_owned(),
-            source,
-        })?;
+        let mut config =
+            XmlConfig::parse(self.kind, &content).map_err(|source| PlanError::Convert {
+                path: path.to_owned(),
+                source,
+            })?;
         let without_extension = &path[..path.len() - extension(path).len()];
         let target = format!("{without_extension}.yaml");
         for candidate in [target.clone(), format!("{without_extension}.yml")] {
@@ -141,34 +212,33 @@ impl Planner<'_> {
         // Mark the file before descending so circular local imports end.
         self.planned.insert(path.to_owned(), target);
         let directory = dir_path(path);
-        for imports in import_lists(&mut container) {
-            for import in &mut imports.imports {
-                self.check_cancelled()?;
-                let resource = import.resource.clone();
-                if !resource.to_lowercase().ends_with(".xml")
-                    || resource.contains(['*', '?', '[', '{'])
-                    || resource.starts_with('/')
-                {
-                    continue;
-                }
-                let import_path = join_path(&[&directory, &resource]);
-                // Like Symfony's loader, unresolved optional/local imports
-                // remain XML references.
-                let Ok(import_content) = (self.read)(&import_path) else {
-                    continue;
-                };
-                self.plan(&import_path, Some(import_content))?;
-                import.resource = format!("{}.yaml", &resource[..resource.len() - ".xml".len()]);
-                if import.kind == "xml" {
-                    import.kind = "yaml".to_owned();
-                }
+        for (resource_slot, kind_slot) in config.imports() {
+            self.check_cancelled()?;
+            let resource = resource_slot.clone();
+            if !resource.to_lowercase().ends_with(".xml")
+                || resource.contains(['*', '?', '[', '{'])
+                || resource.starts_with('/')
+            {
+                continue;
+            }
+            let import_path = join_path(&[&directory, &resource]);
+            // Like Symfony's loader, unresolved optional/local imports
+            // remain XML references.
+            let Ok(import_content) = (self.read)(&import_path) else {
+                continue;
+            };
+            self.plan(&import_path, Some(import_content))?;
+            *resource_slot = format!("{}.yaml", &resource[..resource.len() - ".xml".len()]);
+            if let Some(kind) = kind_slot
+                && kind == "xml"
+            {
+                *kind = "yaml".to_owned();
             }
         }
-        let converted =
-            convert_container_to_yaml(&container).map_err(|source| PlanError::Convert {
-                path: path.to_owned(),
-                source,
-            })?;
+        let converted = config.to_yaml().map_err(|source| PlanError::Convert {
+            path: path.to_owned(),
+            source,
+        })?;
         self.contents.insert(path.to_owned(), converted);
         Ok(())
     }

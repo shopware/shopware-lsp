@@ -49,6 +49,7 @@ mod php_service_method_reference;
 mod php_services;
 mod php_services_evaluator;
 
+mod routes_yaml_convert;
 mod services_yaml_convert;
 mod services_yaml_model;
 mod services_yaml_phpize;
@@ -112,6 +113,7 @@ pub use crate::route_resource_resolver::{
 pub use crate::route_usage_indexer::{
     ControllerUsage, ControllerUsageGroup, RouteUsage, RouteUsageIndexer,
 };
+pub use crate::routes_yaml_convert::{Routes, convert_routes_to_yaml, parse_routes_xml};
 pub use crate::service_argument_reference::{
     xml_service_argument_references, xml_service_method_reference_at,
     xml_service_method_references, yaml_service_argument_references,
@@ -125,7 +127,8 @@ pub use crate::service_tag_contract::{
 pub use crate::services_yaml_convert::{ConvertError, convert_container_to_yaml};
 pub use crate::services_yaml_model::{Container, XmlAttr, parse_services_xml};
 pub use crate::services_yaml_plan::{
-    PlanError, ServicesXmlConversion, plan_services_xml_conversion,
+    PlanError, ServicesXmlConversion, XmlConfigKind, plan_routes_xml_conversion,
+    plan_services_xml_conversion,
 };
 pub use crate::twig_controller::{
     TwigControllerReference, TwigControllerValue, controller_reference_key,

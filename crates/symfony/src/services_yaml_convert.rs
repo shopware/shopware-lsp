@@ -11,7 +11,7 @@ use crate::services_yaml_model::{
 use crate::services_yaml_phpize::{PhpValue, phpize};
 
 #[path = "services_yaml_emit.rs"]
-mod emit;
+pub(crate) mod emit;
 
 use emit::{Node, NodeKind};
 
@@ -28,13 +28,13 @@ const SERVICES_SCHEMA_COMMENT: &str = "# yaml-language-server: $schema=https://r
 #[error("{0}")]
 pub struct ConvertError(pub String);
 
-type Result<T> = std::result::Result<T, ConvertError>;
+pub(crate) type Result<T> = std::result::Result<T, ConvertError>;
 
-fn err<T>(message: impl Into<String>) -> Result<T> {
+pub(crate) fn err<T>(message: impl Into<String>) -> Result<T> {
     Err(ConvertError(message.into()))
 }
 
-fn context<T>(result: Result<T>, prefix: impl FnOnce() -> String) -> Result<T> {
+pub(crate) fn context<T>(result: Result<T>, prefix: impl FnOnce() -> String) -> Result<T> {
     result.map_err(|error| ConvertError(format!("{}: {}", prefix(), error.0)))
 }
 
@@ -500,7 +500,11 @@ fn append_service_children(mapping: &mut Node, service: &XmlService) -> Result<(
         map_put(
             mapping,
             "arguments",
-            arguments_to_node(&service.arguments, !service.parent.is_empty())?,
+            arguments_to_node(
+                &service.arguments,
+                !service.parent.is_empty(),
+                Position::Constructor,
+            )?,
         );
     }
     if !service.properties.is_empty() {
@@ -570,14 +574,30 @@ fn callable_to_node(callable: &XmlCallable, element: &str) -> Result<Node> {
     Ok(pair)
 }
 
-fn arguments_to_node(arguments: &[XmlArgument], is_child_definition: bool) -> Result<Node> {
+/// Where a list of arguments sits, which decides what a missing optional
+/// service leaves behind.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Position {
+    /// Directly in the constructor (or factory) arguments of a service.
+    Constructor,
+    /// In a method call, a property or a collection.
+    Nested,
+}
+
+fn arguments_to_node(
+    arguments: &[XmlArgument],
+    is_child_definition: bool,
+    position: Position,
+) -> Result<Node> {
     let keyed = arguments
         .iter()
         .any(|argument| !argument.key.is_empty() || !argument.index.is_empty());
     if !keyed {
         let mut sequence = Node::sequence();
         for argument in arguments {
-            sequence.content.push(argument_value_to_node(argument)?);
+            sequence
+                .content
+                .push(argument_value_to_node(argument, position)?);
         }
         return Ok(sequence);
     }
@@ -603,14 +623,14 @@ fn arguments_to_node(arguments: &[XmlArgument], is_child_definition: bool) -> Re
             next_index += 1;
             key
         };
-        let value = argument_value_to_node(argument)?;
+        let value = argument_value_to_node(argument, position)?;
         mapping.content.push(key);
         mapping.content.push(value);
     }
     Ok(mapping)
 }
 
-fn argument_value_to_node(argument: &XmlArgument) -> Result<Node> {
+fn argument_value_to_node(argument: &XmlArgument, position: Position) -> Result<Node> {
     unknown_element_error("argument", &argument.unknown)?;
     unknown_attribute_error("argument", &argument.unknown_attrs)?;
     if !argument.inline_services.is_empty() && argument.kind != "service" {
@@ -627,11 +647,11 @@ fn argument_value_to_node(argument: &XmlArgument) -> Result<Node> {
     match argument.kind.as_str() {
         "" => {
             if !argument.children.is_empty() {
-                return arguments_to_node(&argument.children, false);
+                return arguments_to_node(&argument.children, false, Position::Nested);
             }
             Ok(phpized_service_value(&argument.value))
         }
-        "collection" => arguments_to_node(&argument.children, false),
+        "collection" => arguments_to_node(&argument.children, false, Position::Nested),
         "service" => {
             if argument.inline_services.len() > 1 {
                 return err("only one inline <service> is supported per argument");
@@ -642,7 +662,7 @@ fn argument_value_to_node(argument: &XmlArgument) -> Result<Node> {
             if argument.id.is_empty() {
                 return err("argument type=\"service\" requires an id attribute");
             }
-            reference_node(&argument.id, &argument.on_invalid)
+            reference_node(&argument.id, &argument.on_invalid, position)
         }
         "expression" => Ok(Node::string(&format!("@={}", argument.value))),
         "string" => Ok(service_string(&argument.value)),
@@ -650,12 +670,12 @@ fn argument_value_to_node(argument: &XmlArgument) -> Result<Node> {
         "binary" => Ok(Node::tagged("!!binary", argument.value.trim())),
         "abstract" => Ok(Node::tagged("!abstract", &argument.value)),
         "iterator" => {
-            let mut node = arguments_to_node(&argument.children, false)?;
+            let mut node = arguments_to_node(&argument.children, false, Position::Nested)?;
             node.tag = "!iterator".to_owned();
             Ok(node)
         }
         "service_locator" => {
-            let mut node = arguments_to_node(&argument.children, false)?;
+            let mut node = arguments_to_node(&argument.children, false, Position::Nested)?;
             node.tag = "!service_locator".to_owned();
             Ok(node)
         }
@@ -666,7 +686,8 @@ fn argument_value_to_node(argument: &XmlArgument) -> Result<Node> {
                     argument.kind
                 ));
             }
-            let mut node = reference_node(&argument.id, &argument.on_invalid)?;
+            // A closure is resolved like a collection entry.
+            let mut node = reference_node(&argument.id, &argument.on_invalid, Position::Nested)?;
             node.tag = format!("!{}", argument.kind);
             Ok(node)
         }
@@ -742,16 +763,19 @@ fn inline_service_to_node(service: &XmlService) -> Result<Node> {
     Ok(node)
 }
 
-fn reference_node(id: &str, on_invalid: &str) -> Result<Node> {
+fn reference_node(id: &str, on_invalid: &str, position: Position) -> Result<Node> {
     let prefix = match on_invalid {
         "" | "exception" => "@",
         "ignore" => "@?",
-        // "@?" means ignore, which removes method calls and collection
-        // entries instead of passing null, so the null strategy cannot be
-        // expressed in YAML.
+        // YAML only knows "@?" (ignore). For a constructor argument Symfony
+        // resolves a missing ignored service to null, exactly like the null
+        // strategy (`ResolveInvalidReferencesPass`). Elsewhere ignore drops
+        // the method call, the property or the collection entry instead of
+        // passing null, so null cannot be expressed there.
+        "null" if position == Position::Constructor => "@?",
         "null" => {
             return err(
-                "on-invalid=\"null\" is not supported by the YAML format, change it to on-invalid=\"ignore\" first if dropping the dependency is acceptable",
+                "on-invalid=\"null\" in a method call, a property or a collection cannot be expressed in YAML: \"@?\" would drop the call, property or entry instead of passing null",
             );
         }
         "ignore_uninitialized" => "@!",
@@ -766,9 +790,10 @@ fn properties_to_node(properties: &[XmlProperty]) -> Result<Node> {
         if property.name.is_empty() {
             return err("<property> requires a name attribute");
         }
-        let node = context(argument_value_to_node(&property.argument), || {
-            format!("property {:?}", property.name)
-        })?;
+        let node = context(
+            argument_value_to_node(&property.argument, Position::Nested),
+            || format!("property {:?}", property.name),
+        )?;
         map_put(&mut mapping, &property.name, node);
     }
     Ok(mapping)
@@ -784,7 +809,7 @@ fn binds_to_node(binds: &[XmlArgument]) -> Result<Node> {
             key: String::new(),
             ..bind.clone()
         };
-        let node = context(argument_value_to_node(&unkeyed), || {
+        let node = context(argument_value_to_node(&unkeyed, Position::Nested), || {
             format!("bind {:?}", bind.key)
         })?;
         map_put(&mut mapping, &bind.key, node);
@@ -805,9 +830,10 @@ fn calls_to_node(calls: &[XmlCall]) -> Result<Node> {
         entry.content.push(Node::string(&call.method));
         let returns_clone = phpize(&call.returns_clone) == PhpValue::Bool(true);
         if !call.arguments.is_empty() || returns_clone {
-            let arguments = context(arguments_to_node(&call.arguments, false), || {
-                format!("call {:?}", call.method)
-            })?;
+            let arguments = context(
+                arguments_to_node(&call.arguments, false, Position::Nested),
+                || format!("call {:?}", call.method),
+            )?;
             entry.content.push(arguments);
         }
         if returns_clone {
@@ -903,7 +929,7 @@ fn service_string(value: &str) -> Node {
     Node::string(value)
 }
 
-fn scalar_value(value: PhpValue) -> Node {
+pub(crate) fn scalar_value(value: PhpValue) -> Node {
     match value {
         PhpValue::Null => Node::null("null"),
         PhpValue::Str(text) => Node::string(&text),
@@ -913,14 +939,14 @@ fn scalar_value(value: PhpValue) -> Node {
     }
 }
 
-fn map_put(mapping: &mut Node, key: &str, value: Node) {
+pub(crate) fn map_put(mapping: &mut Node, key: &str, value: Node) {
     mapping.content.push(Node::string(key));
     mapping.content.push(value);
 }
 
 /// Adds an empty line between top-level sections and between service
 /// definitions to keep the generated YAML readable.
-fn insert_blank_lines(content: &str) -> String {
+pub(crate) fn insert_blank_lines(content: &str) -> String {
     let mut out: Vec<&str> = Vec::new();
     let mut in_services = false;
     let mut first_service = true;

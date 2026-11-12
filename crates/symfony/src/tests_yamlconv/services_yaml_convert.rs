@@ -83,9 +83,19 @@ fn convert_errors() {
             r#"unsupported on-invalid value "explode""#,
         ),
         (
-            "null on-invalid cannot be expressed in YAML",
-            r#"<container><services><service id="foo" class="Foo"><argument type="service" id="bar" on-invalid="null"/></service></services></container>"#,
-            r#"on-invalid="null" is not supported by the YAML format"#,
+            "null on-invalid in a method call",
+            r#"<container><services><service id="foo" class="Foo"><call method="set"><argument type="service" id="bar" on-invalid="null"/></call></service></services></container>"#,
+            r#"on-invalid="null" in a method call, a property or a collection cannot be expressed in YAML"#,
+        ),
+        (
+            "null on-invalid in a property",
+            r#"<container><services><service id="foo" class="Foo"><property name="bar" type="service" id="bar" on-invalid="null"/></service></services></container>"#,
+            r#"on-invalid="null" in a method call, a property or a collection cannot be expressed in YAML"#,
+        ),
+        (
+            "null on-invalid in a collection",
+            r#"<container><services><service id="foo" class="Foo"><argument type="collection"><argument type="service" id="bar" on-invalid="null"/></argument></service></services></container>"#,
+            r#"on-invalid="null" in a method call, a property or a collection cannot be expressed in YAML"#,
         ),
         (
             "unsupported decoration-on-invalid",
@@ -161,4 +171,41 @@ fn format_float_uses_shortest_digits_with_exponent_outside_small_range() {
     ] {
         assert_eq!(emit::format_float(value), expected);
     }
+}
+
+/// For a constructor argument Symfony resolves a missing `@?` service to
+/// null, which is what `on-invalid="null"` asks for.
+#[test]
+fn null_on_invalid_constructor_arguments_become_optional_references() {
+    let yaml = convert(
+        r#"<container><services>
+<service id="foo" class="Foo">
+    <argument type="service" id="bar" on-invalid="null"/>
+    <argument key="$baz" type="service" id="baz" on-invalid="null"/>
+    <argument type="service"><service class="Inline"><argument type="service" id="qux" on-invalid="null"/></service></argument>
+</service>
+</services></container>"#,
+    );
+    assert!(yaml.contains("0: '@?bar'"), "{yaml}");
+    assert!(yaml.contains("$baz: '@?baz'"), "{yaml}");
+    assert!(yaml.contains("- '@?qux'"), "{yaml}");
+}
+
+/// A block scalar cannot keep a leading line break or leading indentation.
+#[test]
+fn strings_starting_with_whitespace_stay_exact() {
+    let yaml = convert(
+        "<container><services><service id=\"a\" class=\"Foo\">\n    <argument type=\"string\">\n                some value</argument>\n    <argument type=\"string\">\na</argument>\n    <argument type=\"string\">  two\nlines</argument>\n    <argument type=\"string\">first\n  second</argument>\n</service></services></container>",
+    );
+    assert!(
+        yaml.contains(r#"- "\n                some value""#),
+        "{yaml}"
+    );
+    assert!(yaml.contains(r#"- "\na""#), "{yaml}");
+    assert!(yaml.contains(r#"- "  two\nlines""#), "{yaml}");
+    // Indentation after the first line is no problem for a block scalar.
+    assert!(
+        yaml.contains("- |-\n              first\n                second"),
+        "{yaml}"
+    );
 }
