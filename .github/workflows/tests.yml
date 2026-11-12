@@ -37,6 +37,17 @@ on:
       - '.github/workflows/tests.yml'
       - '.github/actions/setup-rust/**'
 
+permissions:
+  contents: read
+
+# A newer push to a pull request replaces the run in progress. Runs on main
+# and runs called by the release finish, so every commit there has a result.
+concurrency:
+  # Not the name of a calling workflow's own group: group names ignore case,
+  # and a called workflow waiting for its caller's group never starts.
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     name: Test
@@ -55,6 +66,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Set up Rust
       uses: $/.github/actions/setup-rust
@@ -73,6 +86,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Set up Rust
       uses: $/.github/actions/setup-rust
@@ -98,6 +113,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Set up Rust
       uses: $/.github/actions/setup-rust
@@ -121,6 +138,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Set up Node.js
       uses: actions/setup-node@v7.1.0
@@ -144,6 +163,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Install pinned Rust toolchains and WASM target
       # editors/zed pins its own toolchain with the wasm32-wasip2 target; the
@@ -152,8 +173,12 @@ jobs:
         rustup show
         (cd ../.. && rustup toolchain install)
 
+    # Two workspaces: the extension, and the server the contract check builds
+    # in debug mode.
     - uses: Swatinem/rust-cache@v2.9.3
       with:
+        shared-key: zed
+        cache-on-failure: true
         workspaces: |
           editors/zed
           .

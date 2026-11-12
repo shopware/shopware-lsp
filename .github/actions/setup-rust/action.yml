@@ -6,9 +6,18 @@ inputs:
     required: false
     default: ''
   cache-key:
-    description: Extra key that separates caches of jobs building different things
+    description: >-
+      Names the cache. Jobs that compile the same thing share a key, in any
+      workflow; the runner's OS and architecture, the toolchain and Cargo.lock
+      are part of the cache key already.
+    required: true
+  save-cache:
+    description: >-
+      Whether to save the cache after the job. A cache saved by a tag run can
+      only be restored by that tag, so release builds restore the cache of
+      the default branch and save nothing.
     required: false
-    default: ''
+    default: 'true'
 runs:
   using: composite
   steps:
@@ -26,6 +35,11 @@ runs:
         rustc --version
         cargo --version
 
+    # Caches ~/.cargo (registry index, crate sources, git checkouts) and the
+    # dependency artifacts in target/; workspace crates are rebuilt.
     - uses: Swatinem/rust-cache@v2.9.3
       with:
-        key: ${{ inputs.cache-key }}
+        shared-key: ${{ inputs.cache-key }}
+        save-if: ${{ inputs.save-cache == 'true' }}
+        # A failed test run still compiled the dependencies.
+        cache-on-failure: true

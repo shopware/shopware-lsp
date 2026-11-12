@@ -1,45 +1,80 @@
 name: Release
 
-on:
+# One pipeline for both channels. The minor version decides the channel: an
+# even minor is a stable release, an odd minor a pre-release (the marketplaces
+# reject semver pre-release identifiers, so the channel cannot be in the tag).
+#
+#   channel ─ tests ─ binaries (matrix) ─ GoReleaser (draft release)
+#                                              └ VSIX ─ publish release ┬ Homebrew (stable)
+#                                                                       └ marketplaces
+#
+# GoReleaser compiles nothing: build-binaries.yml builds every target natively
+# and GoReleaser's prebuilt builder imports the results (.goreleaser.yaml).
+
+# The binaries and the VSIX tooling restore caches. A tag run can only read
+# caches saved on the default branch (pull requests cannot write there), and
+# the builds are --locked; that trade is accepted for release builds that
+# take minutes instead of the better part of an hour.
+on: # zizmor: ignore[cache-poisoning]
   push:
     tags:
-      # Semver tags; only even minors (stable channel) run this pipeline
       - '[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
-  id-token: write
-  contents: write
+  contents: read
+
+# Never cancel a release half-way: it may already have created the release.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  route:
-    name: Check stable tag
+  channel:
+    name: Select channel
     runs-on: ubuntu-latest
     outputs:
-      pre-release: ${{ steps.parity.outputs.pre-release }}
+      # `stable` or `pre-release`
+      name: ${{ steps.channel.outputs.name }}
     steps:
-      - name: Compute minor parity
-        id: parity
+      - name: Read the minor version
+        id: channel
         env:
           TAG: ${{ github.ref_name }}
         run: |
           minor="$(echo "$TAG" | cut -d. -f2)"
-          echo "pre-release=$((minor % 2))" >> "$GITHUB_OUTPUT"
+          if [ $((minor % 2)) -eq 0 ]; then
+            echo "name=stable" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=pre-release" >> "$GITHUB_OUTPUT"
+          fi
+
+  validate:
+    name: Tests
+    uses: ./.github/workflows/tests.yml
 
   binaries:
     name: Build release binaries
-    needs: route
-    if: needs.route.outputs.pre-release == '0'
+    needs: validate
     uses: ./.github/workflows/build-binaries.yml
     with:
       version: ${{ github.ref_name }}
 
-  release-lsp:
-    name: Release LSP
-    needs: binaries
+  goreleaser:
+    name: Publish binaries with GoReleaser
+    needs: [channel, binaries]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          # GoReleaser reads the tag and the previous one.
+          fetch-depth: 0
 
       - name: Download release binaries
         uses: actions/download-artifact@v8.0.2
@@ -50,35 +85,42 @@ jobs:
       - name: Stage release binaries
         run: scripts/release/stage-binaries.sh "$RUNNER_TEMP/binaries"
 
-      - name: Package archives
+      # Archives, deb/rpm/apk packages and checksums.txt, as a draft release
+      # until the VSIX packages are attached.
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7.3.0
+        with:
+          distribution: goreleaser-pro
+          version: '~> v2'
+          args: release --clean
         env:
-          TAG: ${{ github.ref_name }}
-        run: scripts/release/package-release.sh "$TAG" dist
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
 
-      # A draft until the VSIX packages are attached (github-release below).
-      - name: Create draft release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
-        run: >-
-          gh release create "$TAG" dist/*.zip dist/checksums.txt
-          --draft --verify-tag --generate-notes --title "$TAG"
+      - name: Attest release artifacts
+        uses: actions/attest@v4.2.2
+        with:
+          subject-checksums: ./dist/checksums.txt
 
-  build:
+  vsix:
     name: Build VSIX packages
-    needs: release-lsp
+    needs: [channel, goreleaser]
     uses: ./.github/workflows/build-vsix.yml
     with:
       version: ${{ github.ref_name }}
-      pre-release: false
+      pre-release: ${{ needs.channel.outputs.name == 'pre-release' }}
 
   github-release:
     name: Attach VSIX packages and publish release
-    needs: build
+    needs: [channel, vsix]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write
     env:
       GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.ref_name }}
     steps:
       - name: Download VSIX packages
         uses: actions/download-artifact@v8.0.2
@@ -91,27 +133,35 @@ jobs:
         run: sha256sum --check SHA256SUMS
 
       - name: Upload to GitHub release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
         run: gh release upload "$TAG" out/*.vsix out/SHA256SUMS --clobber
 
       - name: Publish GitHub release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
-        run: gh release edit "$TAG" --draft=false --latest
+          CHANNEL: ${{ needs.channel.outputs.name }}
+        run: |
+          if [ "$CHANNEL" = stable ]; then
+            gh release edit "$TAG" --draft=false --latest
+          else
+            gh release edit "$TAG" --draft=false --prerelease --latest=false
+          fi
 
   homebrew:
     name: Update Homebrew cask
-    needs: github-release
+    needs: [channel, github-release]
+    # Pre-releases never update the tap.
+    if: needs.channel.outputs.name == 'stable'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
     env:
       GH_REPO: ${{ github.repository }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Gather Homebrew Token
         uses: octo-sts/action@v1.1.1
@@ -148,12 +198,14 @@ jobs:
 
   publish:
     name: Publish to marketplaces
-    needs: github-release
+    needs: [channel, github-release]
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: release
+    # `release` gates stable publications, `preview` pre-releases.
+    environment: ${{ needs.channel.outputs.name == 'stable' && 'release' || 'preview' }}
     env:
       GH_REPO: ${{ github.repository }}
+      CHANNEL: ${{ needs.channel.outputs.name }}
     steps:
       - name: Set up Node.js
         uses: actions/setup-node@v7.1.0
@@ -177,11 +229,32 @@ jobs:
         run: sha256sum --check SHA256SUMS
 
       - name: Publish to Visual Studio Marketplace
-        run: vsce publish --skip-duplicate --packagePath out/*.vsix
         env:
           VSCE_PAT: ${{ secrets.VSCODE_PUBLISH_TOKEN }}
+        run: |
+          args=(--skip-duplicate)
+          if [ "$CHANNEL" = pre-release ]; then
+            args+=(--pre-release)
+          fi
+          vsce publish "${args[@]}" --packagePath out/*.vsix
 
       - name: Publish to Open VSX
-        run: ovsx publish --skip-duplicate --packagePath out/*.vsix
         env:
           OVSX_PAT: ${{ secrets.OVSX_PUBLISH_TOKEN }}
+        run: |
+          args=(--skip-duplicate)
+          if [ "$CHANNEL" = pre-release ]; then
+            args+=(--pre-release)
+          fi
+          ovsx publish "${args[@]}" --packagePath out/*.vsix
+
+      - name: Add publishing summary
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          {
+            echo "### Published ${CHANNEL} release ${TAG}"
+            echo ""
+            echo "- [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=shopware.shopware-lsp)"
+            echo "- [Open VSX](https://open-vsx.org/extension/shopware/shopware-lsp)"
+          } >> "$GITHUB_STEP_SUMMARY"

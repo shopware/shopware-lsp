@@ -82,7 +82,7 @@ make zed-contracts               # builds the server, checks LSP/MCP contracts
 
 # Releases
 make release                     # local VSIX build
-make release-dry-run             # package staged binaries into dist/
+make release-dry-run             # GoReleaser snapshot of staged binaries into dist/
 
 # Full local validation
 make check
@@ -90,8 +90,8 @@ make check
 
 Set `SHOPWARE_LSP_VERSION=<version>` when building to embed a version (the
 binary reports `dev` otherwise). Release binaries are built natively per
-target by `.github/workflows/build-binaries.yml` and packaged by
-`scripts/release/` (archives, packages, checksums) and
+target by `.github/workflows/build-binaries.yml` and packaged by GoReleaser's
+prebuilt builder (`.goreleaser.yaml`: archives, packages, checksums) and
 `scripts/build-vsix-release.mjs` (VSIX); see `RELEASING.md`.
 
 Benchmarks live in `crates/bench` (criterion-compatible benches under

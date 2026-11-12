@@ -1556,8 +1556,9 @@ make check        # Rust, VS Code and Zed validation
 
 Release binaries are compiled natively per target in CI
 (`.github/workflows/build-binaries.yml`) for macOS, Linux (a glibc build and
-a static musl build for Alpine), and Windows, then packaged by
-`scripts/release/package-release.sh` and `scripts/build-vsix-release.mjs`. `make release` builds the host binary and
+a static musl build for Alpine), and Windows, then packaged by GoReleaser
+(`.goreleaser.yaml`: archives and `deb`/`rpm`/`apk` packages) and
+`scripts/build-vsix-release.mjs`. `make release` builds the host binary and
 packages only the host VSIX plus `SHA256SUMS` into `out/`; pass
 `--pre-release` to the script to mark it as a VSCode pre-release:
 

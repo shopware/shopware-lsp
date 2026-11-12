@@ -63,8 +63,8 @@ to selecting it in your editor's extension marketplace, install a preview VSIX
 manually:
 
 Odd-minor tags (for example `0.3.0`) run the
-[Pre-release workflow](https://github.com/shopware/shopware-lsp/actions/workflows/pre-release.yml),
-which builds platform-specific pre-release VSIX packages for macOS, Linux,
+[Release workflow](https://github.com/shopware/shopware-lsp/actions/workflows/release.yml)
+on its pre-release channel, which builds platform-specific pre-release VSIX packages for macOS, Linux,
 Alpine, and Windows and attaches them to a GitHub pre-release. The marketplaces
 only accept numeric `major.minor.patch` versions, so the extension follows the
 VS Code convention: odd minors are pre-releases, even minors are stable.

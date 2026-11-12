@@ -4,7 +4,7 @@
 #
 #   scripts/release/update-homebrew-cask.sh <version> <checksums.txt> <tap-dir>
 #
-# The cask installs the zip archives packaged by package-release.sh (glibc
+# The cask installs the zip archives GoReleaser publishes (glibc
 # builds on Linux). It only writes Casks/shopware-lsp.rb; committing and
 # pushing is the caller's job.
 set -euo pipefail

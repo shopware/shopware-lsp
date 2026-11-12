@@ -111,17 +111,20 @@ check: rust-check vscode-check vscode-test zed-check zed-test zed-build zed-cont
 
 ## Release packaging ---------------------------------------------------------
 #
-# CI builds every target (.github/workflows/build-binaries.yml), packages the
-# zip archives and checksums.txt with scripts/release/package-release.sh, and
-# the VSIX files with scripts/build-vsix-release.mjs. Locally, `make release`
+# CI builds every target (.github/workflows/build-binaries.yml), GoReleaser
+# packages the archives, deb/rpm/apk packages and checksums.txt from them
+# (.goreleaser.yaml), and scripts/build-vsix-release.mjs the VSIX files. Locally, `make release`
 # builds the host binary and packages only the host VSIX into out/.
 
 .PHONY: release
 release: vscode-install
 	node scripts/build-vsix-release.mjs --local
 
-# Package prebuilt binaries laid out as target/<rust-triple>/release/
-# shopware-lsp[.exe] (scripts/release/stage-binaries.sh) into dist/.
+# Package the binaries staged by scripts/release/stage-binaries.sh into dist/
+# as a release would, without publishing. Needs GoReleaser Pro; a snapshot
+# runs without a license key.
+GORELEASER ?= goreleaser
+
 .PHONY: release-dry-run
 release-dry-run:
-	scripts/release/package-release.sh snapshot dist
+	$(GORELEASER) release --snapshot --clean --skip=publish

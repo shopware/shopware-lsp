@@ -9,14 +9,14 @@ version tag; GitHub Actions does everything else.
 
 ## Release channels
 
-The minor version number selects the channel. Both workflows trigger on the
-same `X.Y.Z` tag pattern and then route on minor parity, so only one pipeline
-runs per tag.
+The minor version number selects the channel. One workflow, `release.yml`,
+triggers on every `X.Y.Z` tag; its `channel` job reads the minor parity and
+the later jobs act on it.
 
 | Tag example | Minor | Channel | Workflow | GitHub release | Marketplaces |
 |---|---|---|---|---|---|
-| `0.2.1` | even | **stable** | `release.yml` | regular release | `vsce publish` / `ovsx publish` |
-| `0.3.59` | odd | **pre-release** | `pre-release.yml` | flagged `--prerelease` | `vsce publish --pre-release` / `ovsx publish --pre-release` |
+| `0.2.1` | even | **stable** | `release.yml` (`channel` = `stable`) | regular release | `vsce publish` / `ovsx publish` |
+| `0.3.59` | odd | **pre-release** | `release.yml` (`channel` = `pre-release`) | flagged `--prerelease` | `vsce publish --pre-release` / `ovsx publish --pre-release` |
 
 Rules that follow from this:
 
@@ -64,11 +64,17 @@ an artifact named `server-<triple>`:
   (`option_env!`, `dev` for local builds)
 - release binaries keep symbol names but drop DWARF line tables
   (`CARGO_PROFILE_RELEASE_STRIP=debuginfo`)
-- `scripts/release/stage-binaries.sh` lays the artifacts out as
-  `target/<triple>/release/shopware-lsp[.exe]`, and
-  `scripts/release/package-release.sh` zips each one (binary, `LICENSE`,
-  `README.md`, `THIRD_PARTY_NOTICES.md`) as
-  `shopware-lsp_<version>_<os>_<arch>[_musl].zip` and writes `checksums.txt`
+- `scripts/release/stage-binaries.sh` lays the artifacts out twice: as
+  `target/<triple>/release/shopware-lsp[.exe]` for the VSIX packager, and as
+  `target/prebuilt/<default|musl>/<os>_<arch>/shopware-lsp[.exe]` for
+  GoReleaser
+- GoReleaser (`.goreleaser.yaml`) compiles nothing. Its prebuilt builder
+  imports the staged binaries and fails when one is missing. It writes one
+  zip per binary (binary, `LICENSE`, `README.md`, `THIRD_PARTY_NOTICES.md`)
+  as `shopware-lsp_<version>_<os>_<arch>[_musl].zip`, `deb` and `rpm`
+  packages from the glibc builds, `apk` packages from the musl builds, and
+  `checksums.txt` over all of them. The prebuilt builder is a GoReleaser Pro
+  feature, so the job needs the `GORELEASER_KEY` secret
 
 **VSIX packages** (built by `scripts/build-vsix-release.mjs`, 8 targets):
 
@@ -92,17 +98,17 @@ Plus a `SHA256SUMS` file covering all eight `.vsix` files.
 **Distribution:**
 
 - GitHub release on `shopware/shopware-lsp` with the zips, `checksums.txt`,
-  all VSIX files, and `SHA256SUMS` attached. The `release-lsp` job creates it
-  as a draft with `gh release create --draft` (`--prerelease` on the
-  pre-release channel); the workflow publishes it (stable, or
+  the `deb`/`rpm`/`apk` packages, all VSIX files, and `SHA256SUMS` attached.
+  GoReleaser creates it as a draft; the workflow publishes it (stable, or
   `--prerelease --latest=false`) only after the VSIX files are attached.
+  `checksums.txt` gets a build provenance attestation.
   Both channels use plain `X.Y.Z` tags; minor parity decides the channel.
-- Release notes are GitHub's generated notes (`--generate-notes`).
+- Release notes are GitHub's generated notes (`changelog.use: github-native`).
 - Stable releases only: after the release is public, the `homebrew` job
   writes `Casks/shopware-lsp.rb` in `shopware/homebrew-tap`
   (`scripts/release/update-homebrew-cask.sh`, glibc archives on Linux) and
-  pushes it with the octo-sts tap token. No `deb`/`rpm`/`apk` packages are
-  published.
+  pushes it with the octo-sts tap token. GoReleaser does not write the cask:
+  it would point at a release that is still a draft.
 - Marketplace publication to the
   [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=shopware.shopware-lsp)
   and [Open VSX](https://open-vsx.org/extension/shopware/shopware-lsp).
@@ -115,17 +121,19 @@ Plus a `SHA256SUMS` file covering all eight `.vsix` files.
   jobs do not run until the environment gate passes.
 - For local reproduction only: rustup (the toolchain comes from
   `rust-toolchain.toml`), a C compiler, Node.js 24, `@vscode/vsce@3.9.1`,
-  and `zip` for `make release-dry-run`.
+  and GoReleaser Pro for `make release-dry-run` (a snapshot needs no license
+  key).
 
 CI secrets and identities (maintainers normally never touch these, but this is
 where publishing credentials live):
 
 | Secret / identity | Used by | Purpose |
 |---|---|---|
-| `GITHUB_TOKEN` (automatic) | both pipelines | create/upload GitHub releases, download artifacts |
+| `GITHUB_TOKEN` (automatic) | release pipeline | create/upload GitHub releases, download artifacts |
+| `GORELEASER_KEY` | `goreleaser` job | GoReleaser Pro license (prebuilt builder) |
 | `VSCODE_PUBLISH_TOKEN` | publish jobs | publish to the VS Code Marketplace |
 | `OVSX_PUBLISH_TOKEN` | publish jobs | publish to Open VSX |
-| `octo-sts` identity `lsp` → `shopware/homebrew-tap` | `release.yml` only | short-lived `HOMEBREW_TAP_GITHUB_TOKEN` for the Homebrew cask update |
+| `octo-sts` identity `lsp` → `shopware/homebrew-tap` | `homebrew` job (stable only) | short-lived token for the Homebrew cask update |
 
 ## How to cut a release
 
@@ -133,11 +141,10 @@ where publishing credentials live):
    (`git tag --sort=-v:refname | head`) and pick the next patch on the
    current channel minor, or bump the minor when starting a new line. Remember:
    even minor = stable, odd minor = pre-release.
-2. **Make sure `main` is green.** The pre-release pipeline runs the full
-   `tests.yml` suite (Rust fmt/clippy/tests on Linux, macOS and Windows, the
-   third-party notices check, VS Code and Zed checks) before
-   packaging. The stable pipeline assumes the tag was validated the same way,
-   so run the equivalent locally:
+2. **Make sure `main` is green.** The pipeline runs the full `tests.yml`
+   suite (Rust fmt/clippy/tests on Linux, macOS and Windows, the third-party
+   notices check, VS Code and Zed checks) before it builds anything, on both
+   channels. To find a failure before tagging, run the equivalent locally:
    ```sh
    make check
    ``` See `AGENTS.md` for the full validation policy.
@@ -146,31 +153,33 @@ where publishing credentials live):
    --no-git-tag-version`) before packaging, so a manual bump
    is not strictly required. Keeping the manifest version in sync with the
    channel avoids confusion for local `vsce package` runs.
-4. **Create and push the tag.** `gh release create --verify-tag` requires the
-   tag to exist on GitHub before the draft is created.
+4. **Create and push the tag.** The pipeline starts from the tag.
    ```sh
    git tag 0.2.1
    git push origin 0.2.1
    ```
-5. **Watch the workflow.** Pushing the tag triggers `Release` (even minor) or
-   `Pre-release` (odd minor) under *Actions*. The stage order is:
-   - Stable: `route` → `build-binaries.yml` (9 builds) → `release-lsp`
-     (zip archives, `checksums.txt`, draft release) → `build-vsix.yml`
-     (`version: <tag>`, `pre-release: false`) →
-     attach VSIX + `SHA256SUMS` to the draft release and publish it →
-     Homebrew cask update and publication to both marketplaces
-     (`environment: release`).
-   - Pre-release: `route` → `tests.yml` → `build-binaries.yml` →
-     `release-lsp` (draft pre-release, no Homebrew) in parallel with
-     `build-vsix.yml` (`version: <tag>`, `pre-release: true`) → attach VSIX
-     + `SHA256SUMS` and publish as pre-release → publish with
-     `--pre-release` flags (`environment: preview`) + summary links.
-   - Both pipelines verify `SHA256SUMS` (`sha256sum --check`) before every
-     upload/publish step; a checksum failure fails the job before anything
-     is published.
+5. **Watch the workflow.** Pushing the tag triggers `Release` under
+   *Actions*. The stage order is the same on both channels:
+   - `channel` (stable or pre-release) and `tests.yml`;
+   - `build-binaries.yml`: nine native builds in a matrix, restoring the
+     dependency caches saved on `main`;
+   - `goreleaser`: downloads and stages the binaries, then GoReleaser
+     publishes archives, packages and `checksums.txt` as a draft release;
+   - `build-vsix.yml` (`version: <tag>`, `pre-release` on the pre-release
+     channel);
+   - `github-release`: attaches the VSIX files and `SHA256SUMS` and publishes
+     the release, flagged as pre-release on that channel;
+   - `homebrew` (stable only) and `publish` to both marketplaces
+     (`environment: release` for stable, `preview` for pre-releases, with
+     `--pre-release` flags there).
+
+   `SHA256SUMS` is verified (`sha256sum --check`) before every upload and
+   publish step; a checksum failure fails the job before anything is
+   published.
 6. **Verify the GitHub release.** Confirm the tag page lists the nine
-   binary zips (six platforms plus three `_musl` archives), `checksums.txt`,
-   all eight `.vsix` files, and `SHA256SUMS`,
+   binary zips (six platforms plus three `_musl` archives), the three `deb`,
+   three `rpm` and three `apk` packages, `checksums.txt`, all eight `.vsix`
+   files, and `SHA256SUMS`,
    and that the pre-release flag is set only for odd minors.
 7. **Verify the marketplaces.** Check the Marketplace and Open VSX pages for
    the new version (stable channel) or the pre-release version
@@ -197,7 +206,8 @@ scripts/release/stage-binaries.sh /path/to/artifacts
 node scripts/build-vsix-release.mjs --version=0.3.59 --pre-release
 node scripts/build-vsix-release.mjs --dry-run   # check binaries, print the plan
 
-# Zip the staged binaries into dist/ with checksums.txt (no publishing)
+# Archives, packages and checksums.txt from the staged binaries into dist/,
+# exactly as the release builds them, without publishing (GoReleaser Pro)
 make release-dry-run
 ```
 
@@ -212,20 +222,24 @@ Notes:
 - Staged `shopware-lsp` / `shopware-lsp.exe` files inside
   `editors/vscode/` are build scratch space and are always removed in a
   `finally` block; do not commit them.
-- Only CI publishes: `gh release create` with `GITHUB_TOKEN`, and the cask
-  push with the octo-sts token for `shopware/homebrew-tap`.
+- Only CI publishes: GoReleaser with `GITHUB_TOKEN`, and the cask push with
+  the octo-sts token for `shopware/homebrew-tap`.
 
 ## Troubleshooting
 
-- **Neither workflow ran after pushing a tag.** The tag must match
+- **The workflow did not run after pushing a tag.** The tag must match
   `[0-9]+.[0-9]+.[0-9]+` exactly. A `v` prefix (`v0.2.1`) or a suffix
-  (`0.2.1-rc.1`) matches neither pipeline and is silently ignored.
-- **`package-release.sh` reports `missing target/<triple>/...`.** A
-  `server-<triple>` artifact was not downloaded or staged; re-run the failed
-  `build-binaries` job.
-- **`gh release create` fails because the release exists.** A previous run
-  already created the draft. Delete the draft (not the tag) and re-run the
-  `release-lsp` job.
+  (`0.2.1-rc.1`) does not match and is silently ignored.
+- **`stage-binaries.sh` reports a missing binary, or GoReleaser cannot find a
+  prebuilt one.** A `server-<triple>` artifact was not built or downloaded;
+  re-run the failed `build-binaries` job.
+- **GoReleaser fails with a license error.** The `GORELEASER_KEY` secret is
+  missing or expired; the prebuilt builder needs GoReleaser Pro.
+- **The release build is slow.** It restores the caches `build-binaries.yml`
+  saves on `main`. If that workflow has not run for a week (GitHub evicts
+  unused caches), start it from *Actions* before tagging.
+- **The `goreleaser` job is re-run after it created the draft.** That is
+  safe: `replace_existing_artifacts` overwrites the draft's files.
 - **"Invalid VSCode extension version".** The version passed to
   `build-vsix-release.mjs` (or read from `editors/vscode/package.json`
   when no override is given) was not numeric `X.Y.Z`.
@@ -246,14 +260,13 @@ Notes:
 
 | File | Role in a release |
 |---|---|
-| `.github/workflows/release.yml` | stable pipeline (even minors) |
-| `.github/workflows/pre-release.yml` | pre-release pipeline (odd minors, runs `tests.yml` first) |
-| `.github/workflows/build-binaries.yml` | reusable native Rust builds, one `server-<triple>` artifact per target |
+| `.github/workflows/release.yml` | the release pipeline for both channels |
+| `.github/workflows/build-binaries.yml` | native Rust builds, one `server-<triple>` artifact per target; also runs on `main` to keep the caches warm |
+| `.goreleaser.yaml` | archives, `deb`/`rpm`/`apk` packages, `checksums.txt` and the draft release from the prebuilt binaries |
 | `.github/workflows/build-vsix.yml` | reusable VSIX build (`version` + `pre-release` inputs) from those artifacts |
 | `.github/workflows/tests.yml` | Rust (Linux/macOS/Windows), lint, notices, VS Code, Zed gates |
 | `.github/actions/setup-rust` | installs the `rust-toolchain.toml` toolchain, extra targets, Cargo cache |
-| `scripts/release/stage-binaries.sh` | artifacts → `target/<triple>/release/` |
-| `scripts/release/package-release.sh` | zip archives (glibc and `_musl` Linux builds) and `checksums.txt` |
+| `scripts/release/stage-binaries.sh` | artifacts → `target/<triple>/release/` and `target/prebuilt/` |
 | `scripts/release/update-homebrew-cask.sh` | writes `Casks/shopware-lsp.rb` for the tap (stable only) |
 | `scripts/build-vsix-release.mjs` | stage binary → `vsce package` × 8 → `SHA256SUMS` |
 | `Makefile` (`release`, `release-dry-run`) | local host-only VSIX and archive packaging |

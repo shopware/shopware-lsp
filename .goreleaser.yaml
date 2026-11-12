@@ -1,0 +1,109 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema-pro.json
+version: 2
+# GoReleaser only publishes here. The server is Rust; every target is compiled
+# natively by .github/workflows/build-binaries.yml, and
+# scripts/release/stage-binaries.sh lays the results out below target/prebuilt
+# before GoReleaser runs. The prebuilt builder (GoReleaser Pro) imports them
+# and fails when one is missing, so nothing is compiled in the release job.
+#
+# Linux ships two builds per architecture: `shopware-lsp` is the glibc build
+# (default archives, deb, rpm, Homebrew, linux-* VSIX), `shopware-lsp-musl`
+# the static musl build (*_musl archives, apk, alpine-* VSIX).
+project_name: shopware-lsp
+
+builds:
+  - id: shopware-lsp
+    builder: prebuilt
+    binary: shopware-lsp
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64, arm]
+    goarm: ['7']
+    goamd64: [v1]
+    ignore:
+      - goos: darwin
+        goarch: arm
+      - goos: windows
+        goarch: arm
+      - goos: windows
+        goarch: arm64
+    prebuilt:
+      path: 'target/prebuilt/default/{{ .Os }}_{{ .Arch }}/shopware-lsp{{ if eq .Os "windows" }}.exe{{ end }}'
+  - id: shopware-lsp-musl
+    builder: prebuilt
+    binary: shopware-lsp
+    goos: [linux]
+    goarch: [amd64, arm64, arm]
+    goarm: ['7']
+    goamd64: [v1]
+    prebuilt:
+      path: 'target/prebuilt/musl/{{ .Os }}_{{ .Arch }}/shopware-lsp'
+
+archives:
+  - id: default
+    ids: [shopware-lsp]
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - THIRD_PARTY_NOTICES.md
+  - id: musl
+    ids: [shopware-lsp-musl]
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}_musl'
+    formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - THIRD_PARTY_NOTICES.md
+
+nfpms:
+  - id: glibc
+    ids: [shopware-lsp]
+    package_name: shopware-lsp
+    file_name_template: '{{ .ConventionalFileName }}'
+    vendor: shopware AG
+    homepage: https://github.com/shopware/shopware-lsp
+    maintainer: Shopware AG <info@shopware.com>
+    description: Shopware Language Server
+    license: MIT
+    formats: [deb, rpm]
+    bindir: /usr/bin
+    contents:
+      - src: LICENSE
+        dst: /usr/share/licenses/shopware-lsp/LICENSE
+      - src: THIRD_PARTY_NOTICES.md
+        dst: /usr/share/licenses/shopware-lsp/THIRD_PARTY_NOTICES.md
+  # Alpine links against musl, so its package carries the static build.
+  - id: musl
+    ids: [shopware-lsp-musl]
+    package_name: shopware-lsp
+    file_name_template: '{{ .ConventionalFileName }}'
+    vendor: shopware AG
+    homepage: https://github.com/shopware/shopware-lsp
+    maintainer: Shopware AG <info@shopware.com>
+    description: Shopware Language Server
+    license: MIT
+    formats: [apk]
+    bindir: /usr/bin
+    contents:
+      - src: LICENSE
+        dst: /usr/share/licenses/shopware-lsp/LICENSE
+      - src: THIRD_PARTY_NOTICES.md
+        dst: /usr/share/licenses/shopware-lsp/THIRD_PARTY_NOTICES.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  # GitHub's generated release notes, as before.
+  use: github-native
+
+release:
+  github:
+    owner: shopware
+    name: shopware-lsp
+  # A draft until the workflow has attached the VSIX packages; it then
+  # publishes the release as stable or pre-release. Both channels use plain
+  # X.Y.Z tags (minor parity decides), so GoReleaser cannot tell them apart.
+  draft: true
+  replace_existing_artifacts: true

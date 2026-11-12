@@ -22,13 +22,25 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Rust
         uses: $/.github/actions/setup-rust
         with:
           cache-key: codspeed
 
+      # Compiling cargo-codspeed takes longer than the benchmarks; keep the
+      # binary until its version changes.
+      - name: Restore cargo-codspeed
+        id: cargo-codspeed
+        uses: actions/cache@v5.0.4
+        with:
+          path: ~/.cargo/bin/cargo-codspeed
+          key: cargo-codspeed-6.0.0-${{ runner.os }}-${{ runner.arch }}
+
       - name: Install cargo-codspeed
+        if: steps.cargo-codspeed.outputs.cache-hit != 'true'
         run: cargo install --locked cargo-codspeed --version 6.0.0
 
       - name: Build the benchmarks
