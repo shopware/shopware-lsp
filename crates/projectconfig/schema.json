@@ -20,7 +20,16 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "targetVersion": { "type": "string", "pattern": "^$|^v?[0-9]+\\.[0-9]+(?:\\.[0-9]+)?(?:\\.[0-9]+)?(?:[-+][0-9A-Za-z.-]+)?$" }
+        "targetVersion": { "type": "string", "pattern": "^$|^v?[0-9]+\\.[0-9]+(?:\\.[0-9]+)?(?:\\.[0-9]+)?(?:[-+][0-9A-Za-z.-]+)?$" },
+        "smallEntities": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Entities a repository search may load in full without a finding.",
+          "properties": {
+            "add": { "type": "array", "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }, "description": "Entities of this project whose table stays small." },
+            "remove": { "type": "array", "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }, "description": "Built-in small entities that are large in this project." }
+          }
+        }
       }
     },
     "features": { "$ref": "#/$defs/featureMap" },

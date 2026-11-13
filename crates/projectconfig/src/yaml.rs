@@ -15,7 +15,7 @@ use swlsp_textutil::{parse_int_literal, parse_uint_literal};
 
 use crate::config::{
     CheckConfig, DiagnosticOverride, DiagnosticsConfig, IndexingConfig, McpConfig, Partial,
-    PhpConfig, Severity, ShopwareConfig,
+    PhpConfig, Severity, ShopwareConfig, SmallEntitiesConfig,
 };
 
 /// A YAML syntax error.
@@ -491,6 +491,30 @@ impl Decoder {
                 "targetVersion" => {
                     if let Some(version) = decoder.optional_string(value) {
                         result.target_version = version;
+                    }
+                }
+                "smallEntities" => {
+                    result.small_entities = decoder.small_entities(value);
+                }
+                _ => return false,
+            }
+            true
+        })
+        .then_some(result)
+    }
+
+    fn small_entities(&mut self, node: &MarkedYaml<'_>) -> Option<SmallEntitiesConfig> {
+        let mut result = SmallEntitiesConfig::default();
+        self.decode_struct(node, "shopware.smallEntities", |decoder, name, value| {
+            match name {
+                "add" => {
+                    if let Some(values) = decoder.optional_string_list(value) {
+                        result.add = values;
+                    }
+                }
+                "remove" => {
+                    if let Some(values) = decoder.optional_string_list(value) {
+                        result.remove = values;
                     }
                 }
                 _ => return false,

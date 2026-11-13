@@ -1731,6 +1731,10 @@ php:
   disabledExtensions: []
 shopware:
   targetVersion: "6.7"
+  # Tables a repository search may load in full without a finding.
+  smallEntities:
+    add: [swag_shop_finder]
+    remove: [country]
 features:
   codeLens: false
 indexing:
@@ -1762,6 +1766,22 @@ check:
   severity: warning
   failOn: error
 ```
+
+`shopware.smallEntities` adjusts which tables
+`shopware.php.repository.unbounded_search` lets a search load in full. Built
+in are configuration tables that stay small in every shop: `app`,
+`app_action_button`, `app_payment_method`, `country`, `currency`,
+`custom_field_set`, `customer_group`, `delivery_time`, `document_type`,
+`integration`, `language`, `locale`, `mail_template_type`, `number_range`,
+`number_range_type`, `payment_method`, `plugin`, `sales_channel`,
+`sales_channel_type`, `salutation`, `scheduled_task`, `shipping_method`,
+`snippet_set`, `state_machine`, `state_machine_state`, `tax`, `tax_provider`,
+`theme` and `unit`. `add` names further entities, typically small tables of the
+project; `remove` takes a built-in one out where it is large. The entity of a
+search is read from the collection its repository is typed with
+(`EntityRepository<AppCollection>`) or else from the name of the variable
+(`$this->appRepository`); a search whose entity cannot be told is reported.
+Changing the lists takes effect after a restart.
 
 Unspecified values inherit the built-in defaults, which keep all current
 features, MCP tools, domains, indexing, and diagnostics enabled. Diagnostic rule values

@@ -93,6 +93,14 @@ impl Run<'_> {
         {
             return;
         }
+        // A table of configuration (apps, languages, sales channels) has a
+        // handful of rows; loading all of them is what the code means.
+        if self
+            .repository_entity(&receiver)
+            .is_some_and(|entity| self.small_entities.contains(&entity))
+        {
+            return;
+        }
         self.add(
             SHOPWARE_PHP_UNBOUNDED_SEARCH_CODE,
             name_range(call),
@@ -100,6 +108,32 @@ impl Run<'_> {
              filter or a limit, or page through the result"
                 .to_owned(),
         );
+    }
+
+    /// The entity a repository expression holds: the collection its type
+    /// names (`EntityRepository<AppCollection>`), or else what the variable
+    /// or property is called (`$this->appRepository`), following the
+    /// `<entity>.repository` service convention. `None` when neither says.
+    fn repository_entity(&self, receiver: &SyntaxNode) -> Option<String> {
+        let ty = &self.semantic.type_of(receiver).ty;
+        let from_type = repository_collection(ty)
+            .map(|collection| {
+                swlsp_shopware::entity_name_from_identifier(&collection, "Collection")
+            })
+            .filter(|entity| !entity.is_empty());
+        from_type.or_else(|| {
+            let name = phpquery::nodes(receiver, &[PHP_VARIABLE, PHP_NAME])
+                .last()
+                .map(|node| node.text().to_string())
+                .unwrap_or_else(|| receiver.text().to_string());
+            let name = name.trim().trim_start_matches('$');
+            let name = name.rsplit("->").next().unwrap_or(name);
+            Some(swlsp_shopware::entity_name_from_identifier(
+                name,
+                "Repository",
+            ))
+            .filter(|entity| !entity.is_empty())
+        })
     }
 
     /// `new Criteria()` without IDs.
@@ -481,4 +515,18 @@ fn name_range(call: &SyntaxNode) -> swlsp_syntax::TextRange {
         || call.range_trimmed_trivia(),
         |name| name.range_trimmed_trivia(),
     )
+}
+
+/// The collection class a repository type is parameterized with.
+fn repository_collection(ty: &swlsp_php_types::Type) -> Option<String> {
+    use swlsp_php_types::Kind;
+    if ty.kind() == Kind::Object {
+        return ty
+            .arguments()
+            .first()
+            .filter(|argument| argument.kind() == Kind::Object && !argument.name().is_empty())
+            .map(|argument| argument.name().to_owned());
+    }
+    // A nullable or intersected repository still names its collection.
+    ty.arguments().iter().find_map(repository_collection)
 }

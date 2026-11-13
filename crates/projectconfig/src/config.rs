@@ -55,6 +55,8 @@ pub enum ConfigError {
     UnsupportedVersion(i64),
     #[error("invalid Shopware target version {0:?}")]
     InvalidTargetVersion(String),
+    #[error("{setting} has {name:?}, which is no entity name (lowercase letters, digits and _)")]
+    InvalidEntityName { setting: &'static str, name: String },
     #[error("{setting} must not contain an empty extension")]
     EmptyExtension { setting: &'static str },
     #[error("indexing.maxFileSizeMiB must be between 0 and {MAXIMUM_CONFIGURED_FILE_MIB}")]
@@ -212,6 +214,19 @@ pub struct PhpConfig {
 pub struct ShopwareConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub small_entities: Option<SmallEntitiesConfig>,
+}
+
+/// Changes to the entities a search may load in full: tables the project
+/// knows to be small, and built-in ones that are not small here.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SmallEntitiesConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub add: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remove: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -366,6 +381,24 @@ pub struct EffectivePhp {
 #[serde(rename_all = "camelCase")]
 pub struct EffectiveShopware {
     pub target_version: String,
+    // Left out while empty, so a configuration without the setting keeps
+    // its structural fingerprint.
+    #[serde(skip_serializing_if = "EffectiveSmallEntities::is_empty")]
+    pub small_entities: EffectiveSmallEntities,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
+pub struct EffectiveSmallEntities {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub add: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub remove: Vec<String>,
+}
+
+impl EffectiveSmallEntities {
+    pub fn is_empty(&self) -> bool {
+        self.add.is_empty() && self.remove.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
@@ -730,6 +763,31 @@ pub fn validate(value: &Partial) -> Result<(), ConfigError> {
     {
         return Err(ConfigError::InvalidTargetVersion(version.clone()));
     }
+    if let Some(entities) = value
+        .shopware
+        .as_ref()
+        .and_then(|shopware| shopware.small_entities.as_ref())
+    {
+        for (setting, names) in [
+            ("shopware.smallEntities.add", &entities.add),
+            ("shopware.smallEntities.remove", &entities.remove),
+        ] {
+            for name in names.iter().flatten() {
+                let valid = name.starts_with(|first: char| first.is_ascii_lowercase())
+                    && name.chars().all(|character| {
+                        character.is_ascii_lowercase()
+                            || character.is_ascii_digit()
+                            || character == '_'
+                    });
+                if !valid {
+                    return Err(ConfigError::InvalidEntityName {
+                        setting,
+                        name: name.clone(),
+                    });
+                }
+            }
+        }
+    }
     if let Some(php) = &value.php {
         for (label, values) in [
             ("php.extensions", &php.extensions),
@@ -908,6 +966,20 @@ fn apply(target: &mut Effective, value: &Partial, source: &str) {
     {
         target.shopware.target_version = version.trim().to_owned();
         origin(target, "shopware.targetVersion".to_owned());
+    }
+    if let Some(entities) = value
+        .shopware
+        .as_ref()
+        .and_then(|shopware| shopware.small_entities.as_ref())
+    {
+        if let Some(add) = &entities.add {
+            target.shopware.small_entities.add = normalize_strings(add);
+            origin(target, "shopware.smallEntities.add".to_owned());
+        }
+        if let Some(remove) = &entities.remove {
+            target.shopware.small_entities.remove = normalize_strings(remove);
+            origin(target, "shopware.smallEntities.remove".to_owned());
+        }
     }
     for (id, enabled) in &value.features {
         target.features.insert(id.clone(), *enabled);

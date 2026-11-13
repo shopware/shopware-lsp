@@ -693,6 +693,20 @@ pub struct InitializationOptions {
         skip_serializing_if = "String::is_empty"
     )]
     pub shopware_target_version: String,
+    /// Entities added to the built-in small tables (`shopware.smallEntities.add`).
+    #[serde(
+        default,
+        deserialize_with = "nullable",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub shopware_small_entities: Vec<String>,
+    /// Built-in small tables that are not small here (`shopware.smallEntities.remove`).
+    #[serde(
+        default,
+        deserialize_with = "nullable",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub shopware_large_entities: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configuration: Option<swlsp_projectconfig::Partial>,
     #[serde(

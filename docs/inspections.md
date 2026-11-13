@@ -1156,7 +1156,8 @@ Languages: php. Domain: `shopware`.
 **`shopware.php.repository.unbounded_search`**
 
 - Fix: Restrict the Criteria: pass IDs, add a filter or setLimit(), or iterate with RepositoryIterator. When only IDs or a count are needed use searchIds() or an aggregation.
-- Exceptions: searchIds(), a Criteria created with IDs, one that had any method called on it or was passed to another function, and one received as a parameter are not reported. Loading a small fixed table in full (languages, currencies) is a legitimate reason to suppress the finding.
+- Exceptions: searchIds(), a Criteria created with IDs, one that had any method called on it or was passed to another function, and one received as a parameter are not reported. Neither is a search of a configuration table that stays small, such as app, language, currency or sales_channel: the entity is read from the collection the repository is typed with (EntityRepository<AppCollection>) or from the name of the variable (appRepository).
+- Opt out: List a small table of the project under shopware.smallEntities.add in .config/shopware-lsp.yaml, and a built-in one that is large in the project under shopware.smallEntities.remove.
 
 **`shopware.php.response.empty`**
 

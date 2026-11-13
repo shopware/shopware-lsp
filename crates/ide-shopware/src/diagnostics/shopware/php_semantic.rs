@@ -1,7 +1,7 @@
 //! Type-aware Shopware checks over one shared linked semantic document and one
 //! CST traversal.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 use swlsp_language::LanguageId;
@@ -68,11 +68,22 @@ const ROUTE_ATTRIBUTE_CLASS: &str = "Symfony\\Component\\Routing\\Attribute\\Rou
 #[derive(Clone)]
 pub struct ShopwarePhpSemanticAnalyzer {
     php_index: Option<PhpIndex>,
+    /// The entities a search may load in full.
+    small_entities: Arc<BTreeSet<String>>,
 }
 
 impl ShopwarePhpSemanticAnalyzer {
     pub fn new(php_index: Option<PhpIndex>) -> Self {
-        Self { php_index }
+        Self {
+            php_index,
+            small_entities: Arc::new(swlsp_shopware::small_entities(&[], &[])),
+        }
+    }
+
+    /// Replaces the built-in small entities with the project's list.
+    pub fn with_small_entities(mut self, entities: Arc<BTreeSet<String>>) -> Self {
+        self.small_entities = entities;
+        self
     }
 }
 
@@ -144,6 +155,7 @@ impl ProblemAnalyzer for ShopwarePhpSemanticAnalyzer {
             references,
             problems: Vec::new(),
             store_api_classes: HashMap::new(),
+            small_entities: &self.small_entities,
         };
         phpquery::visit(
             &root,
@@ -212,6 +224,7 @@ pub(super) struct Run<'a> {
     references: Vec<&'a Reference>,
     problems: Vec<Problem>,
     store_api_classes: HashMap<SymbolId, bool>,
+    pub(super) small_entities: &'a BTreeSet<String>,
 }
 
 impl Run<'_> {

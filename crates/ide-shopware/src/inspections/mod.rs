@@ -29,9 +29,10 @@ pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
     server.rule_help("shopware.migration", help::MIGRATION);
     server.rule_help("shopware.project", help::PROJECT);
     add(analyzer(diagnostics::ShopwarePhpLocalAnalyzer::new()));
-    add(analyzer(diagnostics::ShopwarePhpSemanticAnalyzer::new(
-        php(),
-    )));
+    add(analyzer(
+        diagnostics::ShopwarePhpSemanticAnalyzer::new(php())
+            .with_small_entities(s.small_entities.clone()),
+    ));
     for inspection in new_shopware_migration_inspections(php(), s.shopware_version) {
         add(inspection);
     }

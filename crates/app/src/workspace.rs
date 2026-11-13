@@ -473,6 +473,10 @@ fn build(
         entity_schema_sources,
         app_scripts,
         shopware_version,
+        small_entities: Arc::new(swlsp_shopware::small_entities(
+            &options.shopware_small_entities,
+            &options.shopware_large_entities,
+        )),
     };
     // Registration panics only on invalid inspection definitions, which are
     // programming errors rather than workspace conditions.

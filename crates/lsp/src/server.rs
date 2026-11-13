@@ -273,6 +273,8 @@ impl Server {
                 .clone()
                 .unwrap_or_default(),
             shopware_target_version: configuration.shopware.target_version.clone(),
+            shopware_small_entities: configuration.shopware.small_entities.add.clone(),
+            shopware_large_entities: configuration.shopware.small_entities.remove.clone(),
             allow_unsupported_project: session.options.allow_unsupported_project
                 || session.allow_unsupported_project,
             cli_mode: session.options.cli_mode,

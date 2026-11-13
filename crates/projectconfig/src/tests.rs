@@ -607,3 +607,64 @@ fn catalog_entries_serialize_compactly() {
         r#"{"id":"completion","label":"Completion"}"#
     );
 }
+
+#[test]
+fn small_entities_are_decoded_validated_and_resolved() {
+    let project = decode_str(
+        "version: 1\nshopware:\n  smallEntities:\n    add: [swag_shop_finder, ' app ']\n    remove:\n      - country\n",
+    );
+    // A name is an entity name as written: no surrounding blanks.
+    assert_eq!(
+        project.unwrap_err().to_string(),
+        "shopware.smallEntities.add has \" app \", which is no entity name (lowercase letters, digits and _)"
+    );
+    let project = decode_str(
+        "version: 1\nshopware:\n  smallEntities:\n    add: [swag_shop_finder, app]\n    remove:\n      - country\n",
+    )
+    .unwrap();
+    let effective = resolve(&project, &Partial::default());
+    assert_eq!(
+        effective.shopware.small_entities.add,
+        ["app", "swag_shop_finder"]
+    );
+    assert_eq!(effective.shopware.small_entities.remove, ["country"]);
+    assert_eq!(
+        effective.origins["shopware.smallEntities.add"],
+        effective.origins["shopware.smallEntities.remove"]
+    );
+    // The editor layer replaces a list it sets and keeps the other.
+    let editor = decode_str("version: 1\nshopware:\n  smallEntities:\n    add: []\n").unwrap();
+    let layered = resolve(&project, &editor);
+    assert!(layered.shopware.small_entities.add.is_empty());
+    assert_eq!(layered.shopware.small_entities.remove, ["country"]);
+
+    for (source, message) in [
+        (
+            "version: 1\nshopware:\n  smallEntities:\n    remove: [SalesChannel]\n",
+            "shopware.smallEntities.remove has \"SalesChannel\", which is no entity name (lowercase letters, digits and _)",
+        ),
+        (
+            "version: 1\nshopware:\n  smallEntities:\n    more: []\n",
+            "unknown",
+        ),
+        (
+            "version: 1\nshopware:\n  smallEntities: [app]\n",
+            "expected a mapping",
+        ),
+    ] {
+        let error = decode_str(source).unwrap_err().to_string();
+        assert!(error.contains(message), "{error}");
+    }
+
+    // The analyzers are built with the list: changing it is structural,
+    // and a configuration without it keeps its fingerprint.
+    assert_ne!(
+        effective.structural_fingerprint(),
+        Effective::default().structural_fingerprint()
+    );
+    assert!(
+        serde_json::to_string(&effective)
+            .unwrap()
+            .contains(r#""shopware":{"targetVersion":"","smallEntities":{"add":["app","swag_shop_finder"],"remove":["country"]}}"#)
+    );
+}

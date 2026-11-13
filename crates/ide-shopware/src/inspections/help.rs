@@ -111,9 +111,13 @@ pub(crate) const STORE_REVIEW: &[RuleHelp] = &[
          RepositoryIterator. When only IDs or a count are needed use searchIds() or an aggregation.",
         "searchIds(), a Criteria created with IDs, one that had any method called on it or \
          was passed to another function, and one received as a parameter are not reported. \
-         Loading a small fixed table in full (languages, currencies) is a legitimate reason to \
-         suppress the finding.",
-        "",
+         Neither is a search of a configuration table that stays small, such as app, \
+         language, currency or sales_channel: the entity is read from the collection the \
+         repository is typed with (EntityRepository<AppCollection>) or from the name of \
+         the variable (appRepository).",
+        "List a small table of the project under shopware.smallEntities.add in \
+         .config/shopware-lsp.yaml, and a built-in one that is large in the project under \
+         shopware.smallEntities.remove.",
     ),
     help(
         "shopware.php.internal.class_extension",

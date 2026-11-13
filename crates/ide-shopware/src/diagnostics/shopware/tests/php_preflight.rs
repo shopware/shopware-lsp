@@ -147,6 +147,95 @@ function searches(EntityRepository $repository, Criteria $given, array $ids, mix
     );
 }
 
+const SMALL_TABLES: &str = r"<?php
+namespace Acme;
+
+use Shopware\Core\Checkout\Order\OrderCollection;
+use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
+
+class AppCollection {}
+class AcmeShopFinderCollection {}
+
+class Lists
+{
+    /**
+     * @param EntityRepository<AppCollection> $typed
+     * @param EntityRepository<AcmeShopFinderCollection> $finders
+     */
+    public function __construct(
+        private EntityRepository $appRepository,
+        private EntityRepository $salesChannelRepository,
+        private EntityRepository $productRepository,
+        private EntityRepository $countryRepository,
+        private EntityRepository $acmeShopFinderRepository,
+        private EntityRepository $repository,
+        private EntityRepository $typed,
+        private EntityRepository $finders,
+    ) {}
+
+    public function all(mixed $context, EntityRepository $languageRepository): void
+    {
+        // Configuration tables, by the name of the repository.
+        $this->appRepository->search(new Criteria(), $context);
+        $this->salesChannelRepository->search(new Criteria(), $context);
+        $languageRepository->search(new Criteria(), $context);
+        // By the collection the repository is typed with.
+        $this->typed->search(new Criteria(), $context);
+
+        // Shop data, tables of the project and unknown tables.
+        $this->productRepository->{|shopware.php.repository.unbounded_search:search|}(new Criteria(), $context);
+        $this->repository->{|shopware.php.repository.unbounded_search:search|}(new Criteria(), $context);
+        COUNTRY
+        FINDER_NAME
+        FINDER_TYPE
+    }
+
+    /** @param EntityRepository<OrderCollection> $appRepository */
+    public function typeWins(EntityRepository $appRepository, mixed $context): void
+    {
+        $appRepository->{|shopware.php.repository.unbounded_search:search|}(new Criteria(), $context);
+    }
+}
+";
+
+#[test]
+fn small_configuration_tables_may_be_loaded_in_full() {
+    let reported = |call: &str| {
+        call.replace(
+            "->search(",
+            "->{|shopware.php.repository.unbounded_search:search|}(",
+        )
+    };
+    let country = "$this->countryRepository->search(new Criteria(), $context);";
+    let finder_name = "$this->acmeShopFinderRepository->search(new Criteria(), $context);";
+    let finder_type = "$this->finders->search(new Criteria(), $context);";
+    let fixture = |country: &str, name: &str, typed: &str| {
+        SMALL_TABLES
+            .replace("COUNTRY", country)
+            .replace("FINDER_NAME", name)
+            .replace("FINDER_TYPE", typed)
+    };
+    let uri = "file:///project/src/Lists.php";
+    // Built in: countries are small, the project's own table is unknown.
+    check(
+        uri,
+        &fixture(country, &reported(finder_name), &reported(finder_type)),
+    );
+
+    // The project adds its table and takes countries out.
+    let (_dir, index) = preflight_index();
+    let entities =
+        swlsp_shopware::small_entities(&["acme_shop_finder".to_owned()], &["country".to_owned()]);
+    let analyzer = ShopwarePhpSemanticAnalyzer::new(Some(index))
+        .with_small_entities(std::sync::Arc::new(entities));
+    check_problems(
+        &analyzer,
+        uri,
+        &fixture(&reported(country), finder_name, finder_type),
+    );
+}
+
 #[test]
 fn system_config_is_not_read_while_a_service_is_built() {
     check(
