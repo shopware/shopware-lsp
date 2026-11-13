@@ -1,0 +1,22 @@
+name: Branch binaries
+
+# Builds the server for every release target on each push to the Rust port
+# branch, so the binaries can be downloaded as artifacts of the run
+# (server-<target triple>, kept for seven days) before a release exists.
+# Remove this workflow once the branch is merged: main builds through
+# build-binaries.yml itself.
+
+on:
+  push:
+    branches: [ feat/rust-port ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  binaries:
+    name: Build binaries
+    uses: ./.github/workflows/build-binaries.yml
+    with:
+      version: dev-${{ github.sha }}
