@@ -570,7 +570,8 @@ Languages: php. Domain: `shopware.dal`.
 
 **`shopware.criteria.id-filter`**
 
-- Fix: Pass the IDs to the constructor: new Criteria($ids). A quick fix does this when the Criteria is created in the same function.
+- Fix: Pass the IDs to the constructor: new Criteria($ids). A quick fix does this when the Criteria is created in the same block and the statement adds no other filter.
+- Exceptions: Only an id filter passed directly to addFilter() is reported: inside NotFilter, OrFilter or MultiFilter, or as a post filter, it does not restrict the search to the IDs.
 
 ## `shopware.dal.definition`
 

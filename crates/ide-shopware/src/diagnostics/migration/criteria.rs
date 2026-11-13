@@ -7,7 +7,9 @@ use serde_json::{Map, Value, json};
 use swlsp_lsp::{BoxError, Context, DiagnosticId, Problem, TextDocument};
 use swlsp_lsp_protocol::DiagnosticSeverity;
 use swlsp_parser_php::query as phpquery;
-use swlsp_parser_php::syntax::PHP_EXPRESSION_STATEMENT;
+use swlsp_parser_php::syntax::{
+    PHP_ARGUMENT, PHP_ARGUMENT_LIST, PHP_EXPRESSION_STATEMENT, PHP_MEMBER_CALL,
+};
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
 
 use crate::diagnostics::ProblemAnalyzer;
@@ -68,7 +70,13 @@ impl ProblemAnalyzer for ShopwareCriteriaAnalyzer {
             if phpquery::string_value(&id) != "id" {
                 continue;
             }
-            let payload = criteria_fix_payload(document, &creation);
+            // Only a filter added on its own restricts the search to the
+            // IDs: inside NotFilter, OrFilter or MultiFilter, or as a post
+            // filter, it means something the constructor cannot say.
+            let Some(call) = add_filter_call(&creation) else {
+                continue;
+            };
+            let payload = criteria_fix_payload(document, &creation, &call, class == "EqualsFilter");
             result.push(Problem {
                 id: DiagnosticId::from("shopware.criteria.id-filter"),
                 range: phpquery::string_content_range(&id),
@@ -85,7 +93,26 @@ impl ProblemAnalyzer for ShopwareCriteriaAnalyzer {
     }
 }
 
-fn criteria_fix_payload(document: &TextDocument, filter: &SyntaxNode) -> Map<String, Value> {
+/// The `->addFilter(...)` call `filter` is a direct argument of.
+fn add_filter_call(filter: &SyntaxNode) -> Option<SyntaxNode> {
+    let argument = filter.parent().filter(|node| node.kind() == PHP_ARGUMENT)?;
+    let list = argument
+        .parent()
+        .filter(|node| node.kind() == PHP_ARGUMENT_LIST)?;
+    let call = list
+        .parent()
+        .filter(|node| node.kind() == PHP_MEMBER_CALL)?;
+    phpquery::call_method_name(&call)
+        .eq_ignore_ascii_case("addFilter")
+        .then_some(call)
+}
+
+fn criteria_fix_payload(
+    document: &TextDocument,
+    filter: &SyntaxNode,
+    call: &SyntaxNode,
+    single_id: bool,
+) -> Map<String, Value> {
     let unsafe_payload = || {
         let mut map = Map::new();
         map.insert("safe".to_owned(), Value::Bool(false));
@@ -104,11 +131,21 @@ fn criteria_fix_payload(document: &TextDocument, filter: &SyntaxNode) -> Map<Str
     else {
         return unsafe_payload();
     };
+    // The statement is removed: it must add nothing but this filter.
+    if phpquery::arguments(call).count() != 1 {
+        return unsafe_payload();
+    }
     let value = phpquery::argument_value_text(filter, 1);
     let value = value.trim();
     if value.is_empty() {
         return unsafe_payload();
     }
+    // The constructor takes a list of IDs.
+    let value = if single_id {
+        format!("[{value}]")
+    } else {
+        value.to_owned()
+    };
     let mut matching_criteria: Option<SyntaxNode> = None;
     for candidate in phpquery::object_creations(&function, &[]) {
         if short_php_name(&phpquery::object_class_name(&candidate)) != "Criteria"
@@ -129,7 +166,12 @@ fn criteria_fix_payload(document: &TextDocument, filter: &SyntaxNode) -> Map<Str
         if variable.as_str() != receiver.as_str() {
             continue;
         }
-        if matching_criteria.is_some() {
+        // A filter added under a condition, or in a loop, does not always
+        // apply: the constructor would.
+        if matching_criteria.is_some()
+            || assignment.parent().map(|node| node.text_range())
+                != statement.parent().map(|node| node.text_range())
+        {
             return unsafe_payload();
         }
         matching_criteria = Some(candidate);

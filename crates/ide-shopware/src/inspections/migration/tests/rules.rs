@@ -317,7 +317,7 @@ fn shopware_criteria_inspection_moves_id_filter_to_constructor() {
         uri,
         before,
         problems[0].fixes[0].id.as_str(),
-        "<?php\nfunction load(string $id): void {\n    $criteria = new Criteria($id);\n}\n",
+        "<?php\nfunction load(string $id): void {\n    $criteria = new Criteria([$id]);\n}\n",
     );
     assert_eq!(
         presentation.title,
