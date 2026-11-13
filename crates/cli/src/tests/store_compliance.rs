@@ -61,7 +61,7 @@ fn check_store_compliance_opt_in() {
         let directory = path(root.path(), "custom/plugins/Local");
         let plugin = format!("{directory}/composer.json");
         write(
-            &path(root.path(), ".config/shopware/lsp.yaml"),
+            &path(root.path(), ".config/shopware-lsp.yaml"),
             configuration,
         );
         write(

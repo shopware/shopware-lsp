@@ -13,7 +13,7 @@ fn workspace() -> (tempfile::TempDir, String) {
     write(&path(root.path(), "src/Broken.php"), "<?php function (\n");
     write(&path(root.path(), "src/Clean.php"), "<?php\n");
     write(
-        &path(root.path(), ".config/shopware/lsp.yaml"),
+        &path(root.path(), ".config/shopware-lsp.yaml"),
         r#"{"version": 1, "check": {"severity": "hint", "failOn": "error"}}"#,
     );
     let root_path = root.path().to_str().unwrap().to_owned();
@@ -432,7 +432,7 @@ fn check_only_rejects_a_rule_that_does_not_exist() {
 #[test]
 fn check_only_turns_an_opt_in_rule_on_unless_the_project_configures_it() {
     let root = temp_dir();
-    let configuration = path(root.path(), ".config/shopware/lsp.yaml");
+    let configuration = path(root.path(), ".config/shopware-lsp.yaml");
     write(
         &configuration,
         r#"{"version": 1, "check": {"severity": "error"}}"#,

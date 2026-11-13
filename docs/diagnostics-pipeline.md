@@ -635,7 +635,7 @@ let policy = self.diagnostic_policy(&document.uri);
 ```
 
 `swlsp-projectconfig` resolves project configuration, editor settings, and
-path-scoped overrides into that policy, so `.config/shopware/lsp.yaml` can turn
+path-scoped overrides into that policy, so `.config/shopware-lsp.yaml` can turn
 a rule to `off`, `hint`, `information`, `warning`, or `error` for a glob such as
 `custom/plugins/*/src/Generated/**`. Nested configuration files may only
 contain a `diagnostics` section. See

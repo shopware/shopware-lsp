@@ -346,12 +346,12 @@ mod tests {
             ("unknown PHP", &[("src/Test.php", "<?php")], Kind::Unknown),
             (
                 "legacy JSON ignored",
-                &[(".config/shopware/lsp.json", r#"{"version":1}"#)],
+                &[(".config/shopware-lsp.json", r#"{"version":1}"#)],
                 Kind::Unknown,
             ),
             (
                 "configured",
-                &[(".config/shopware/lsp.yaml", "version: 1\n")],
+                &[(".config/shopware-lsp.yaml", "version: 1\n")],
                 Kind::Configured,
             ),
             (
@@ -468,7 +468,7 @@ mod tests {
     #[test]
     fn explicit_configuration_still_opts_into_malformed_project_metadata() {
         let result = detect_files(&[
-            (".config/shopware/lsp.yaml", "version: 1\n"),
+            (".config/shopware-lsp.yaml", "version: 1\n"),
             ("composer.json", "{"),
         ])
         .unwrap();
@@ -501,10 +501,10 @@ mod tests {
             serde_json::to_string(&result).unwrap(),
             r#"{"supported":false,"kind":"unknown","evidence":[]}"#
         );
-        let result = detect_files(&[(".config/shopware/lsp.yaml", "version: 1\n")]).unwrap();
+        let result = detect_files(&[(".config/shopware-lsp.yaml", "version: 1\n")]).unwrap();
         assert_eq!(
             serde_json::to_string(&result).unwrap(),
-            r#"{"supported":true,"kind":"configured","evidence":[{"path":".config/shopware/lsp.yaml","reason":"explicit Shopware LSP configuration"}]}"#
+            r#"{"supported":true,"kind":"configured","evidence":[{"path":".config/shopware-lsp.yaml","reason":"explicit Shopware LSP configuration"}]}"#
         );
     }
 }

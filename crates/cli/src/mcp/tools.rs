@@ -113,7 +113,7 @@ struct ExplainConfiguration {
 }
 
 const EXPLAIN_CONFIGURATION: ExplainConfiguration = ExplainConfiguration {
-    file: ".config/shopware/lsp.yaml",
+    file: ".config/shopware-lsp.yaml",
     rule: "diagnostics.rules.<code>: off, hint, info, warning or error",
     inspection: "diagnostics.inspections.<inspection>: false",
     suppress: "PHP: a `@phpstan-ignore <code>` or `@noinspection <code>` comment. Twig, YAML, \

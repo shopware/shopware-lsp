@@ -1,6 +1,6 @@
 //! shopware-cli extension configuration (`.shopware-extension.yml`). These
 //! types follow shopware-cli's extension configuration; they describe
-//! extension metadata, not the LSP's `.config/shopware/lsp.yaml`.
+//! extension metadata, not the LSP's `.config/shopware-lsp.yaml`.
 
 use std::collections::BTreeMap;
 

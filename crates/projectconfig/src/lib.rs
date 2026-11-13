@@ -2,7 +2,7 @@
 //! and CLI.
 //!
 //! Configuration is layered: built-in defaults, the workspace
-//! `.config/shopware/lsp.yaml`, nested diagnostics-only extension files and
+//! `.config/shopware-lsp.yaml`, nested diagnostics-only extension files and
 //! editor-local overrides. Unknown settings and IDs fail validation.
 
 mod config;

@@ -199,7 +199,7 @@ fn mcp_server_advertises_analysis_and_write_tools() {
 fn mcp_configuration_disables_exact_tools() {
     let root = temp_dir();
     write(
-        &path(root.path(), ".config/shopware/lsp.yaml"),
+        &path(root.path(), ".config/shopware-lsp.yaml"),
         r#"{"version": 1, "mcp": {"tools": {"shopware_hover": false, "shopware_scaffold": false}}}"#,
     );
     let names = McpClient::connect(root.path()).tool_names();
@@ -910,7 +910,7 @@ fn mcp_explains_diagnostic_codes_and_inspections() {
     );
     assert_eq!(
         explained["configuration"]["file"],
-        ".config/shopware/lsp.yaml"
+        ".config/shopware-lsp.yaml"
     );
 
     // An inspection ID explains all of its codes.
@@ -981,7 +981,7 @@ fn mcp_starts_inactive_outside_a_supported_project() {
 fn mcp_is_active_in_a_supported_project_without_the_override() {
     let root = temp_dir();
     write(
-        &path(root.path(), ".config/shopware/lsp.yaml"),
+        &path(root.path(), ".config/shopware-lsp.yaml"),
         "version: 1\n",
     );
     let mut client = McpClient::connect_guarded(root.path());
@@ -1004,7 +1004,7 @@ fn mcp_is_active_in_a_supported_project_without_the_override() {
 fn mcp_starts_inactive_with_an_invalid_configuration() {
     let root = temp_dir();
     write(
-        &path(root.path(), ".config/shopware/lsp.yaml"),
+        &path(root.path(), ".config/shopware-lsp.yaml"),
         "version: 1\nmcp:\n  tools:\n    shopware_no_such_tool: true\n",
     );
     let mut client = McpClient::connect_guarded(root.path());
@@ -1020,7 +1020,7 @@ fn mcp_starts_inactive_with_an_invalid_configuration() {
 
     let root = temp_dir();
     write(
-        &path(root.path(), ".config/shopware/lsp.yaml"),
+        &path(root.path(), ".config/shopware-lsp.yaml"),
         "version: 1\n",
     );
     let mut client = {

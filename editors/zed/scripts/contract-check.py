@@ -99,7 +99,7 @@ def read_lsp_message(stream):
 def fixture_project(workdir):
     """Smallest tree the server accepts, using its documented opt-in marker."""
     root = os.path.join(workdir, "project")
-    os.makedirs(os.path.join(root, ".config", "shopware"), exist_ok=True)
+    os.makedirs(os.path.join(root, ".config"), exist_ok=True)
     os.makedirs(os.path.join(root, "src"), exist_ok=True)
     # Something for a tool call to actually find, so the MCP checks prove the
     # server answers rather than merely starting.
@@ -111,7 +111,7 @@ def fixture_project(workdir):
             "    public function probeMethod(): void {}\n"
             "}\n"
         )
-    with open(os.path.join(root, ".config", "shopware", "lsp.yaml"), "w") as handle:
+    with open(os.path.join(root, ".config", "shopware-lsp.yaml"), "w") as handle:
         # `version` is required; the server rejects the file without it.
         handle.write("version: 1\nfeatures:\n  semanticTokens: true\n")
     return root
@@ -126,7 +126,7 @@ def check_project_detection(binary, root):
         timeout=120,
     )
     check(
-        ".config/shopware/lsp.yaml is accepted as a project marker",
+        ".config/shopware-lsp.yaml is accepted as a project marker",
         "Supported:      yes" in result.stdout,
         (result.stdout or result.stderr).strip().replace("\n", " | ")[:90],
     )

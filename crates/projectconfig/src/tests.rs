@@ -110,9 +110,9 @@ fn schema_top_level_properties_match_partial_fields() {
 fn load_uses_shopware_lsp_configuration_path() {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().to_str().unwrap();
-    assert_eq!(path(root), format!("{root}/.config/shopware/lsp.yaml"));
+    assert_eq!(path(root), format!("{root}/.config/shopware-lsp.yaml"));
     write(
-        &format!("{root}/.config/shopware/lsp.json"),
+        &format!("{root}/.config/shopware-lsp.json"),
         r#"{"version":1}"#,
     );
     assert_eq!(load(root).unwrap(), None);

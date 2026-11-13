@@ -165,7 +165,7 @@ The version comes from `composer.json`: `config.platform.php` wins, then the
 floor of the `require.php` constraint, then 8.2. shopware/shopware declares
 `~8.2.0 || ~8.3.0 || ~8.4.0 || ~8.5.0`, so the floor is 8.2 regardless of the
 PHP your container runs. That is correct for core, which must support 8.2.
-Silence it per project in `.config/shopware/lsp.yaml`:
+Silence it per project in `.config/shopware-lsp.yaml`:
 
 ```yaml
 version: 1

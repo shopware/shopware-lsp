@@ -9,14 +9,14 @@
         }
       }
     },
-    // Validate .config/shopware/lsp.yaml against the server's own schema.
+    // Validate .config/shopware-lsp.yaml against the server's own schema.
     // This is what the VS Code extension contributes as yamlValidation.
     "yaml-language-server": {
       "settings": {
         "yaml": {
           "schemas": {
             "https://raw.githubusercontent.com/shopware/shopware-lsp/main/crates/projectconfig/schema.json": [
-              ".config/shopware/lsp.yaml"
+              ".config/shopware-lsp.yaml"
             ]
           }
         }

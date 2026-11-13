@@ -5,7 +5,7 @@
 //! * Ant/LSP globs ([`ant`], [`Matcher`]):
 //!   `**/` crosses directories, `*` and `?` do not, `[abc]`/`[!abc]` are
 //!   character classes and `{a,b}` are alternatives. This is the syntax users
-//!   write in `.config/shopware/lsp.yaml`, so it is validated strictly.
+//!   write in `.config/shopware-lsp.yaml`, so it is validated strictly.
 //! * Path-component globs ([`path_glob`]): `*`, `?`, `[...]`/`[^...]`
 //!   classes and `\` escapes; braces are literal. `**` is either a plain `*` or, for
 //!   Symfony resource patterns, any run of characters including `/`.

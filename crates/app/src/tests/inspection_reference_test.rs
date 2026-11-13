@@ -15,7 +15,7 @@ fn render(catalog: &Value) -> String {
     let mut out = String::from(
         "# Inspection Reference\n\n\
          Every inspection the server registers, with the diagnostic codes it reports.\n\
-         Configure them in `.config/shopware/lsp.yaml` (see the\n\
+         Configure them in `.config/shopware-lsp.yaml` (see the\n\
          [reference](reference.md)): `diagnostics.inspections.<id>` switches an\n\
          inspection, `diagnostics.rules.<code>` sets a code's severity. Suppress a code\n\
          on one line with an `@noinspection <code>` comment. Agents get the same\n\

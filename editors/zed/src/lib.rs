@@ -139,7 +139,7 @@ fn merge_json(base: &mut zed::serde_json::Value, overlay: zed::serde_json::Value
 /// The server has no `shopwareLSP` configuration namespace; that name only
 /// appears in the capabilities it sends back. Editor settings arrive either as
 /// three named `initializationOptions` fields or inside `configuration`, which
-/// is the same `.config/shopware/lsp.yaml` shape. Forwarding the wrapper
+/// is the same `.config/shopware-lsp.yaml` shape. Forwarding the wrapper
 /// unchanged means every setting is silently discarded.
 ///
 /// Returns the `configuration` object, empty when nothing maps.

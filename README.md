@@ -176,7 +176,7 @@ whole workspace.
 
 No configuration file is required for normal projects. Use **Shopware:
 Configure Language Server...** for a searchable settings UI, or commit
-`.config/shopware/lsp.yaml` when the team should share the same policy.
+`.config/shopware-lsp.yaml` when the team should share the same policy.
 
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/shopware/shopware-lsp/main/crates/projectconfig/schema.json
@@ -196,7 +196,7 @@ diagnostics:
 
 Root configuration controls features, domains, indexing, PHP extensions, the
 Shopware target version, diagnostics, MCP tools, and CLI defaults. A plugin or
-extension may contain its own `.config/shopware/lsp.yaml` for diagnostics below
+extension may contain its own `.config/shopware-lsp.yaml` for diagnostics below
 that directory. VS Code user and workspace settings remain local overrides.
 
 See the [project configuration reference](docs/reference.md#project-configuration)

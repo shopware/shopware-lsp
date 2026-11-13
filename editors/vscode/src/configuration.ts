@@ -5,8 +5,8 @@ import type {ClientState} from './clientState';
 import {setNested} from './configurationModel';
 import {pathWithinRoot} from './workspaceRoots';
 
-export const projectConfigurationDirectory = '.config/shopware';
-export const projectConfigurationPath = `${projectConfigurationDirectory}/lsp.yaml`;
+export const projectConfigurationDirectory = '.config';
+export const projectConfigurationPath = `${projectConfigurationDirectory}/shopware-lsp.yaml`;
 
 export type Severity = 'off' | 'hint' | 'information' | 'warning' | 'error';
 

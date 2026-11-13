@@ -15,12 +15,12 @@ use crate::yaml::{self, DecodeErrors, SyntaxError};
 /// The only supported configuration `version`.
 pub const CURRENT_VERSION: i64 = 1;
 /// Workspace-relative location of the committed configuration file.
-pub const PROJECT_RELATIVE_PATH: &str = ".config/shopware/lsp.yaml";
+pub const PROJECT_RELATIVE_PATH: &str = ".config/shopware-lsp.yaml";
 /// Default `indexing.maxFileSizeMiB`.
 pub const DEFAULT_MAX_FILE_SIZE_MIB: i64 = 8;
 const MAXIMUM_CONFIGURED_FILE_MIB: i64 = 4095;
 
-/// The embedded JSON schema for `.config/shopware/lsp.yaml`.
+/// The embedded JSON schema for `.config/shopware-lsp.yaml`.
 pub const SCHEMA: &str = include_str!("../schema.json");
 
 /// A configuration error.

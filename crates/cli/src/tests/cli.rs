@@ -487,7 +487,7 @@ fn check_rejects_invalid_worker_count() {
 fn config_command_prints_effective_project_configuration() {
     let root = temp_dir();
     write(
-        &path(root.path(), ".config/shopware/lsp.yaml"),
+        &path(root.path(), ".config/shopware-lsp.yaml"),
         r#"{
         "version": 1,
         "features": {"hover": false},
@@ -516,7 +516,7 @@ fn check_uses_project_failure_policy_and_explicit_flag_wins() {
     let php = path(root.path(), "Broken.php");
     write(&php, "<?php function (\n");
     write(
-        &path(root.path(), ".config/shopware/lsp.yaml"),
+        &path(root.path(), ".config/shopware-lsp.yaml"),
         r#"{
         "version": 1,
         "check": {"severity": "hint", "failOn": "error"}
@@ -534,7 +534,7 @@ fn check_uses_project_failure_policy_and_explicit_flag_wins() {
 fn cli_rejects_invalid_project_configuration_before_checking() {
     let root = temp_dir();
     write(
-        &path(root.path(), ".config/shopware/lsp.yaml"),
+        &path(root.path(), ".config/shopware-lsp.yaml"),
         r#"{"version":1,"diagnostics":{"rules":{"does.not.exist":"off"}}}"#,
     );
     let root_path = root.path().to_str().unwrap();
@@ -549,7 +549,7 @@ fn cli_rejects_invalid_nested_extension_configuration() {
     let root = temp_dir();
     let config = path(
         root.path(),
-        "custom/plugins/Example/.config/shopware/lsp.yaml",
+        "custom/plugins/Example/.config/shopware-lsp.yaml",
     );
     write(&config, r#"{"version":1,"domains":{"php":false}}"#);
     let root_path = root.path().to_str().unwrap();
@@ -828,7 +828,7 @@ fn configured_project() -> (tempfile::TempDir, String) {
         "<?php\nnamespace App;\nfinal class Service {}\n",
     );
     write(
-        &path(root.path(), ".config/shopware/lsp.yaml"),
+        &path(root.path(), ".config/shopware-lsp.yaml"),
         r#"{"version": 1, "check": {"failOn": "error"}, "features": {"hover": false}}"#,
     );
     let root_path = root.path().to_str().unwrap().to_owned();
@@ -842,7 +842,7 @@ fn info_describes_the_project_and_its_configuration() {
     assert!(text.starts_with("Project\n  Root:"), "{text}");
     assert!(text.contains("  Type:           configured\n"), "{text}");
     assert!(text.contains("  Supported:      yes\n"), "{text}");
-    assert!(text.contains("lsp.yaml\n"), "{text}");
+    assert!(text.contains("shopware-lsp.yaml\n"), "{text}");
     assert!(
         text.contains("  Check:          reports warning and above, fails on error and above\n"),
         "{text}"

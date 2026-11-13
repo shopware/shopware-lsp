@@ -43,7 +43,7 @@ nullable.
 - **Opt-in strictness.** `twig.member.null` and `twig.variable.undefined` are
   disabled by default. Twig yields null for an attribute of null and for an
   undefined variable unless `strict_variables` is on, and Shopware never
-  enables it. Enable them in `.config/shopware/lsp.yaml` for a project that
+  enables it. Enable them in `.config/shopware-lsp.yaml` for a project that
   runs strict.
 - **`is defined` is a null guard.** Templates use
   `{% if product.manufacturer is defined %}` to guard an access; strictly it

@@ -62,7 +62,7 @@ pub(crate) const PHP: &[RuleHelp] = &[
     help(
         "php.extension",
         "If the runtime has the extension, add it to php.extensions (or remove it from \
-         php.disabledExtensions) in .config/shopware/lsp.yaml; otherwise stop using the symbol.",
+         php.disabledExtensions) in .config/shopware-lsp.yaml; otherwise stop using the symbol.",
         "Reported only for an extension the project explicitly lacks; an extension whose \
          availability is unknown is not reported.",
         "",

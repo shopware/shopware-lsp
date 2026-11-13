@@ -8,8 +8,8 @@ CHECK_DIR="$(mktemp -d)"
 trap 'rm -rf "$CHECK_DIR"' EXIT
 export SHOPWARE_LSP_CACHE_DIR="$CHECK_DIR/cache"
 
-mkdir -p "$CHECK_DIR/fixture/.config/shopware"
-printf 'version: 1\n' > "$CHECK_DIR/fixture/.config/shopware/lsp.yaml"
+mkdir -p "$CHECK_DIR/fixture/.config"
+printf 'version: 1\n' > "$CHECK_DIR/fixture/.config/shopware-lsp.yaml"
 # Build the shipped Rust server. CARGO_TARGET_DIR is honoured when set.
 TARGET_DIR="${CARGO_TARGET_DIR:-$REPOSITORY_ROOT/target}"
 (cd "$REPOSITORY_ROOT" && cargo build --locked -p swlsp-cli --bin shopware-lsp)

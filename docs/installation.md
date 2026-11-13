@@ -53,7 +53,7 @@ below.
 
 The default activation mode is conservative. The extension starts only when it
 recognizes Shopware Composer metadata, a Shopware app manifest, Symfony's
-`config/bundles.php`, or an explicit `.config/shopware/lsp.yaml` file. It does
+`config/bundles.php`, or an explicit `.config/shopware-lsp.yaml` file. It does
 not index unrelated PHP projects.
 
 ### Preview builds

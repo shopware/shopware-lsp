@@ -43,7 +43,7 @@ shopware-lsp --root /path/to/project mcp
 Workspace commands run only for detected Shopware or Symfony roots. Detection
 is intentionally bounded to root metadata: Shopware Composer metadata or app
 manifest files, `symfony/framework-bundle` or `config/bundles.php`, and the
-committed `.config/shopware/lsp.yaml` opt-in. Use `info` to see
+committed `.config/shopware-lsp.yaml` opt-in. Use `info` to see
 the detected kind, its evidence and the configuration in effect; `info --stats`
 adds index, cache and memory statistics, and `info --json` prints the complete
 effective configuration. For an
@@ -1718,7 +1718,7 @@ to be unavailable.
 ### Project configuration
 
 Shopware LSP reads the committed project configuration from
-`.config/shopware/lsp.yaml`. The same configuration is used by editor
+`.config/shopware-lsp.yaml`. The same configuration is used by editor
 sessions and CLI commands, so diagnostic policy does not need to be duplicated
 in CI. VS Code user and workspace settings are local overrides; explicit CLI
 flags such as `check --severity` and `check --fail-on` take final precedence.
@@ -1786,8 +1786,8 @@ range are always rejected. The corresponding local VS Code override is
 restart.
 
 Shopware extensions may commit their own
-`.config/shopware/lsp.yaml`, for example
-`custom/plugins/FroshTools/.config/shopware/lsp.yaml`. Nested files are
+`.config/shopware-lsp.yaml`, for example
+`custom/plugins/FroshTools/.config/shopware-lsp.yaml`. Nested files are
 diagnostics-only and apply to their containing directory. Their `files`
 patterns are relative to the extension root, so the same file works when the
 extension is installed in a project or opened as its own repository. Scoped

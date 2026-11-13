@@ -63,7 +63,7 @@ Problems appear as you edit, from the server's own inspection set.
 ![Unused import diagnostic with its rule name](images/diagnostic-unused-import.png)
 
 The hover names the rule (`shopware-php php.unusedImport`), which is what you
-need to silence it in `.config/shopware/lsp.yaml`.
+need to silence it in `.config/shopware-lsp.yaml`.
 
 **Unused imports do not get a squiggle.** They are sent at severity `Hint`
 tagged `Unnecessary`, so Zed fades the text instead of underlining it. That is

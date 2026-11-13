@@ -1,7 +1,7 @@
 # Inspection Reference
 
 Every inspection the server registers, with the diagnostic codes it reports.
-Configure them in `.config/shopware/lsp.yaml` (see the
+Configure them in `.config/shopware-lsp.yaml` (see the
 [reference](reference.md)): `diagnostics.inspections.<id>` switches an
 inspection, `diagnostics.rules.<code>` sets a code's severity. Suppress a code
 on one line with an `@noinspection <code>` comment. Agents get the same
@@ -68,7 +68,7 @@ Languages: php. Domain: `php`.
 
 **`php.extension`**
 
-- Fix: If the runtime has the extension, add it to php.extensions (or remove it from php.disabledExtensions) in .config/shopware/lsp.yaml; otherwise stop using the symbol.
+- Fix: If the runtime has the extension, add it to php.extensions (or remove it from php.disabledExtensions) in .config/shopware-lsp.yaml; otherwise stop using the symbol.
 - Exceptions: Reported only for an extension the project explicitly lacks; an extension whose availability is unknown is not reported.
 
 **`php.inheritance`**

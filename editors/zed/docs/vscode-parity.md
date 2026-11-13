@@ -14,7 +14,7 @@ once, and said so for months.
 | 18 `shopwareLSP.*` settings | translated; `activationMode` and `phpExecutable` cannot work in Zed |
 | MCP server | yes, as a context server |
 | Snippets (1 PHP, 6 config XML) | yes, ported and confirmed working |
-| `yamlValidation` for `lsp.yaml` | via `examples/settings.json`, pointing at the server's own schema |
+| `yamlValidation` for `shopware-lsp.yaml` | via `examples/settings.json`, pointing at the server's own schema |
 | 21 palette commands | no palette; 10 full equivalents as tasks. See [Command parity](#command-parity) |
 | 21 client commands behind code actions | 10 full equivalents as tasks; the menu entries are filtered out |
 | Explorer and editor context menus | no, Zed has no extension menu API |

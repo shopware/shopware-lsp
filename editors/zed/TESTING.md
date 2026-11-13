@@ -151,7 +151,7 @@ Checks:
   fixture ships a PHP class and the call has to find it
 - all 5 published targets resolve and expose `version` + `files.download`
 - the artifact is a zip containing `extension/shopware-lsp`
-- `.config/shopware/lsp.yaml` works as a project marker (it needs `version: 1`)
+- `.config/shopware-lsp.yaml` works as a project marker (it needs `version: 1`)
 - a bare invocation speaks stdio LSP
 - `legend.tokenModifiers` is an array, not `null` — the
   [#59](https://github.com/shopware/shopware-lsp/pull/59) regression that stops
@@ -214,7 +214,7 @@ rather than hand-kept, so the two cannot drift apart. It also checks the
 client protocol version, since a bump there makes `initialize` fail outright.
 
 The surface is project-independent, so CI runs this against a fixture holding
-nothing but `.config/shopware/lsp.yaml`.
+nothing but `.config/shopware-lsp.yaml`.
 
 ## 4. Manual checks in Zed
 

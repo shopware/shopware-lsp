@@ -1145,7 +1145,7 @@ def run_config_open(args, binary):
     except ValueError:
         pass
     if not path:
-        path = os.path.join(args.root, ".config", "shopware", "lsp.yaml")
+        path = os.path.join(args.root, ".config", "shopware-lsp.yaml")
 
     if os.path.isfile(path):
         print(f"exists  {relative(path, args.root)}")

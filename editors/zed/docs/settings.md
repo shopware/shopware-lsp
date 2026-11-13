@@ -24,9 +24,9 @@ existing is a common way to end up with no language server at all.
 
 `settings` is translated into the server's shape, not forwarded as written, and
 `initialization_options` on `initialize`. Project-level configuration lives in
-`.config/shopware/lsp.yaml` in the workspace root.
+`.config/shopware-lsp.yaml` in the workspace root.
 
-Validate `.config/shopware/lsp.yaml` against the server's own schema, the
+Validate `.config/shopware-lsp.yaml` against the server's own schema, the
 equivalent of the VS Code extension's `yamlValidation`:
 
 ```json
@@ -37,7 +37,7 @@ equivalent of the VS Code extension's `yamlValidation`:
         "yaml": {
           "schemas": {
             "https://raw.githubusercontent.com/shopware/shopware-lsp/main/crates/projectconfig/schema.json": [
-              ".config/shopware/lsp.yaml"
+              ".config/shopware-lsp.yaml"
             ]
           }
         }
@@ -79,7 +79,7 @@ None are required. `examples/settings.json` has these ready to merge.
 | `context_servers.shopware-lsp.settings.root` | Project root for the MCP server, for multi-root workspaces |
 | `languages.PHP.language_servers` | Pick one PHP server. See below |
 | `languages.PHP.formatter` | `{"code_action": "source.organizeImports"}` to organize imports on save |
-| `lsp.yaml-language-server.settings.yaml.schemas` | Validate `.config/shopware/lsp.yaml` against the server's schema |
+| `lsp.yaml-language-server.settings.yaml.schemas` | Validate `.config/shopware-lsp.yaml` against the server's schema |
 
 `shopwareLSP.*` uses the VS Code setting names, but the server has no such
 configuration namespace, so they are translated rather than forwarded:
@@ -87,7 +87,7 @@ configuration namespace, so they are translated rather than forwarded:
 | Setting | Where it goes |
 |---|---|
 | `phpExtensions`, `disabledPhpExtensions`, `shopwareTargetVersion` | named `initializationOptions` fields |
-| `features`, `domains`, `indexing.*`, `diagnostics.*`, `mcp.tools` | `initializationOptions.configuration`, the `lsp.yaml` shape |
+| `features`, `domains`, `indexing.*`, `diagnostics.*`, `mcp.tools` | `initializationOptions.configuration`, the `shopware-lsp.yaml` shape |
 | `activationMode` | **not supported.** VS Code decides whether to start the server at all; Zed's extension API cannot. The server refuses to start outside a Shopware or Symfony project anyway |
 | `serverPath` | use `lsp.shopware-lsp.binary.path` |
 | `phpExecutable` | **not supported.** Only used by VS Code's Symfony console code lenses, which Zed cannot run |
@@ -105,7 +105,7 @@ The two binary settings are independent on purpose. `lsp.…binary.path` covers
 the editor, `context_servers.…command.path` covers the Agent Panel, and
 setting only one leaves the two answering from different builds.
 
-Project-level server configuration lives in `.config/shopware/lsp.yaml` in the
+Project-level server configuration lives in `.config/shopware-lsp.yaml` in the
 workspace root, not in Zed settings, and needs `version: 1`.
 
 ## Environment variables
