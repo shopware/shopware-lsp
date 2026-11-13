@@ -99,6 +99,7 @@ impl AdminComponentIndexer {
                     },
                 );
                 append_unique(&mut definition.emits, &name);
+                append_unique(&mut definition.declared_emits, &name);
             }
             let call_events =
                 self.resolve_vue_events(type_expression, &definition.file_path, live_files)?;

@@ -32,6 +32,9 @@ pub struct VueComponent {
     pub model_prop: String,
     pub model_event: String,
     pub emits: Vec<String>,
+    /// The events the `emits` option declares, without the ones only found
+    /// at an `$emit` call.
+    pub declared_emits: Vec<String>,
     /// Source-aware emitted event declarations.
     pub events: Vec<VueComponentEvent>,
     pub methods: Vec<String>,

@@ -616,9 +616,101 @@ fn parse_class_like(p: &mut P<'_>) -> CompletedMarker {
         p.bump();
     }
     if p.at(TK_OPEN_BRACE) {
-        parse_block(p);
+        parse_class_body(p);
     }
     p.complete(class, JS_FUNCTION)
+}
+
+/// The `{ … }` of a class: methods and fields, which are no statements.
+fn parse_class_body(p: &mut P<'_>) -> CompletedMarker {
+    let body = p.start();
+    p.bump();
+    while !p.at_end() && !p.at(TK_CLOSE_BRACE) {
+        if p.at(TK_SEMICOLON) {
+            p.bump();
+            continue;
+        }
+        let position = p.get_pos();
+        parse_class_member(p);
+        if p.get_pos() == position {
+            p.bump();
+        }
+    }
+    p.expect(TK_CLOSE_BRACE, &[]);
+    p.complete(body, JS_BLOCK)
+}
+
+const CLASS_MEMBER_MODIFIERS: &[&str] = &[
+    "static",
+    "async",
+    "get",
+    "set",
+    "public",
+    "private",
+    "protected",
+    "readonly",
+    "declare",
+    "abstract",
+    "override",
+    "accessor",
+];
+
+/// `name(…) { … }` as a method and `name = value` as a property, after any
+/// modifiers; `static { … }` is a block.
+fn parse_class_member(p: &mut P<'_>) {
+    let member = p.start();
+    while matches!(p.peek(), Some(TK_IDENTIFIER | TK_KEYWORD))
+        && CLASS_MEMBER_MODIFIERS.contains(&peek_text(p))
+        && object_modifier_has_name(p)
+    {
+        // Modifiers stay plain tokens so the member name is the real name.
+        p.bump();
+    }
+    if p.at(TK_OPERATOR) && peek_text(p) == "*" {
+        p.bump();
+    }
+    match p.peek() {
+        Some(TK_IDENTIFIER | TK_KEYWORD) => {
+            if peek_text(p) == "static" && p.peek_next_non_trivia_kind() == Some(TK_OPEN_BRACE) {
+                p.bump();
+                parse_block(p);
+                p.complete(member, JS_METHOD);
+                return;
+            }
+            parse_leaf(p, JS_IDENTIFIER);
+        }
+        Some(TK_STRING | TK_TEMPLATE) => {
+            parse_string(p);
+        }
+        Some(TK_OPEN_BRACKET) => parse_computed(p),
+        _ => {
+            p.add_error(ErrorBuilder::new("class member"));
+            p.bump();
+            p.complete(member, ERROR);
+            return;
+        }
+    }
+    if p.at(TK_QUESTION) || (p.at(TK_OPERATOR) && peek_text(p) == "!") {
+        p.bump();
+    }
+    if p.at(TK_OPEN_PAREN) {
+        parse_arguments(p);
+        parse_return_type(p);
+        if p.at(TK_OPEN_BRACE) {
+            parse_block(p);
+        }
+        p.complete(member, JS_METHOD);
+        return;
+    }
+    if p.at(TK_COLON) {
+        p.bump();
+        parse_type_annotation(p);
+    }
+    if p.at(TK_OPERATOR) && peek_text(p) == "=" {
+        p.bump();
+        parse_expression(p, &[TK_SEMICOLON, TK_CLOSE_BRACE]);
+    }
+    p.complete(member, JS_PROPERTY);
 }
 
 fn parse_block(p: &mut P<'_>) -> CompletedMarker {

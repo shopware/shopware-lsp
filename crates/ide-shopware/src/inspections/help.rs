@@ -587,6 +587,36 @@ pub(crate) const MIGRATION: &[RuleHelp] = &[
 
 pub(crate) const PROJECT: &[RuleHelp] = &[
     help(
+        "storefront.plugin-system.import",
+        "Use window.PluginManager and window.PluginBaseClass; a quick fix replaces the import.",
+        "Reported from Shopware 6.6 on. An import that does not bind a default name is \
+         reported without a quick fix.",
+        "",
+    ),
+    help(
+        "storefront.dom-access.deprecated",
+        "Call the DOM API on the element: querySelector(), getAttribute(), dataset. A quick \
+         fix rewrites the common calls; DomAccess throws for a missing element or \
+         attribute where the DOM API returns null, so check each call. The import can be \
+         removed by a quick fix once nothing uses it.",
+        "Reported from Shopware 6.7 on, for the default import of the helper.",
+        "",
+    ),
+    help(
+        "storefront.http-client.deprecated",
+        "Use fetch(): await the response and read it with text() or json().",
+        "Reported from Shopware 6.7 on, at the import.",
+        "",
+    ),
+    help(
+        "storefront.query-string.deprecated",
+        "Use URLSearchParams. A quick fix rewrites parse() and stringify() with one \
+         argument; repeated keys become the last value and values stay strings, so check \
+         each call.",
+        "Reported from Shopware 6.7 on, for the default import of the package.",
+        "",
+    ),
+    help(
         "app_script.service-unavailable",
         "Use a service the hook provides, or move the script to a hook that provides it; \
          the hook is the directory of the script below Resources/scripts.",

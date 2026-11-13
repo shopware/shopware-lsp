@@ -29,6 +29,7 @@ mod store_icon;
 mod store_license;
 mod store_metadata;
 mod store_theme;
+mod storefront_js;
 mod theme;
 mod util;
 
@@ -63,4 +64,5 @@ pub use services_xml::{
 pub use snippet_files::SnippetFileAnalyzer;
 pub use store_composer::{ShopwareStoreComposerAnalyzer, StoreComplianceResolver};
 pub use store_theme::StoreThemeAnalyzer;
+pub use storefront_js::{STOREFRONT_JAVASCRIPT_CODES, StorefrontJavaScriptAnalyzer};
 pub use theme::{IconProvider, ThemeAnalyzer};

@@ -500,6 +500,7 @@ impl AdminComponentIndexer {
             component.model_prop = definition.model_prop.clone();
             component.model_event = definition.model_event.clone();
             component.emits = definition.emits.clone();
+            component.declared_emits = definition.declared_emits.clone();
             component.events = definition.events.clone();
             component.methods = definition.methods.clone();
             component.computed = definition.computed.clone();
@@ -997,6 +998,7 @@ pub(crate) fn merge_component_definitions(
     append_unique_values(&mut base.injected, &overlay.injected);
     append_unique_values(&mut base.mixins, &overlay.mixins);
     append_unique_values(&mut base.emits, &overlay.emits);
+    append_unique_values(&mut base.declared_emits, &overlay.declared_emits);
     for event in &overlay.events {
         append_component_event(&mut base.events, event.clone());
     }

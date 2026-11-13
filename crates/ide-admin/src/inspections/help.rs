@@ -331,6 +331,44 @@ pub(crate) const ADMIN: &[RuleHelp] = &[
         "",
     ),
     help(
+        "admin.import.core-source",
+        "Take the class or service from the global Shopware object instead of importing \
+         the core file.",
+        "",
+        "",
+    ),
+    help(
+        "admin.module.snippets-import",
+        "Remove the snippets option and its imports, and keep the snippet files in a \
+         directory named snippet: they are loaded automatically.",
+        "",
+        "",
+    ),
+    help(
+        "admin.component.extension-manager-override",
+        "Remove the override. The Store rejects extensions that change the Extension Manager.",
+        "",
+        "",
+    ),
+    help(
+        "admin.state.deprecated",
+        "Read and change the Pinia store through Shopware.Store.get(). A quick fix rewrites \
+         State.commit('store/action', ...) and mapState()/mapGetters() with literal names; \
+         check that the store has the action or property before applying it.",
+        "Reported from Shopware 6.7 on. A mapState() mapping through a function is reported \
+         without a quick fix.",
+        "",
+    ),
+    help(
+        "admin.component.undeclared-emit",
+        "List the event in the emits option of the component; a quick fix adds it for an \
+         event emitted in the script.",
+        "Reported from Shopware 6.7 on, and only for a literal event name. Events declared \
+         by a parent component or a mixin count. A component whose parent or mixins are not \
+         indexed is not checked.",
+        "",
+    ),
+    help(
         "admin.vue-i18n.tc-deprecated",
         "Call $t() with the same arguments; it handles pluralization. A quick fix renames \
          the call.",

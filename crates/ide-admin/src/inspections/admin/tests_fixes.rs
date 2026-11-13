@@ -281,3 +281,83 @@ fn admin_slot_migration_fix_replaces_the_template_tag() {
         r#"<template #actions="{ item }"><button/></template>"#,
     );
 }
+
+#[test]
+fn admin_emit_fix_declares_the_event_where_the_component_lists_them() {
+    let fixture = Fixture::new();
+    let inspection: Arc<dyn Inspection> = Arc::new(crate::inspections::test_support::Combined(
+        new_admin_inspections(None, known_version(6, 7, 0)),
+    ));
+    let uri = uri(&fixture.path("Resources/app/administration/src/component.js"));
+    let emit = "this.$emit({|admin.component.undeclared-emit:'done'|});";
+    for (before, after) in [
+        // An existing list gets the event appended.
+        (
+            "Shopware.Component.register('a', {\n    emits: ['saved'],\n    methods: { run() { EMIT } },\n});\n",
+            "Shopware.Component.register('a', {\n    emits: ['saved', 'done'],\n    methods: { run() { this.$emit('done'); } },\n});\n",
+        ),
+        (
+            "Shopware.Component.register('a', {\n    emits: [],\n    methods: { run() { EMIT } },\n});\n",
+            "Shopware.Component.register('a', {\n    emits: ['done'],\n    methods: { run() { this.$emit('done'); } },\n});\n",
+        ),
+        // A new option goes after the options that precede it by convention.
+        (
+            "export default {\n    template,\n\n    inject: ['repositoryFactory'],\n\n    methods: { run() { EMIT } },\n};\n",
+            "export default {\n    template,\n\n    inject: ['repositoryFactory'],\n\n    emits: ['done'],\n\n    methods: { run() { this.$emit('done'); } },\n};\n",
+        ),
+        (
+            "export default {\n    template\n};\nexport const other = { run() { this.$emit('x'); } };\nShopware.Component.register('b', {\n    name: 'b',\n    methods: { run() { EMIT } }\n});\n",
+            "export default {\n    template\n};\nexport const other = { run() { this.$emit('x'); } };\nShopware.Component.register('b', {\n    name: 'b',\n\n    emits: ['done'],\n    methods: { run() { this.$emit('done'); } }\n});\n",
+        ),
+        // Without such an option it becomes the first one.
+        (
+            "export default {\n    methods: { run() { EMIT } },\n};\n",
+            "export default {\n    emits: ['done'],\n\n    methods: { run() { this.$emit('done'); } },\n};\n",
+        ),
+    ] {
+        let before = before.replace("EMIT", emit);
+        let (document, problems) = check_diagnostics(inspection.as_ref(), &uri, &before);
+        assert_eq!(problems[0].fixes.len(), 1, "{before}");
+        let presentation = check_fix(
+            inspection.as_ref(),
+            &uri,
+            &before,
+            super::fixes::DECLARE_ADMIN_EMIT_FIX_ID,
+            after,
+        );
+        assert!(presentation.preferred);
+        assert_eq!(presentation.title, "Declare 'done' in the emits option");
+        assert_eq!(reparse_errors(&document, after), 0);
+    }
+}
+
+#[test]
+fn admin_state_fix_rewrites_but_is_not_applied_on_its_own() {
+    let fixture = Fixture::new();
+    let inspection: Arc<dyn Inspection> = Arc::new(crate::inspections::test_support::Combined(
+        new_admin_inspections(None, known_version(6, 7, 0)),
+    ));
+    let uri = uri(&fixture.path("Resources/app/administration/src/component.js"));
+    for (before, after) in [
+        (
+            "{|admin.state.deprecated:Shopware.State.commit('context/setApiLanguageId', id)|};\n",
+            "Shopware.Store.get('context').setApiLanguageId(id);\n",
+        ),
+        (
+            "export default {\n    computed: {\n        {|admin.state.deprecated:...mapState('swProduct', ['product', 'loading'])|},\n    },\n};\n",
+            "export default {\n    computed: {\n        product() {\n            return Shopware.Store.get('swProduct').product;\n        },\n        loading() {\n            return Shopware.Store.get('swProduct').loading;\n        },\n    },\n};\n",
+        ),
+    ] {
+        let (document, _) = check_diagnostics(inspection.as_ref(), &uri, before);
+        let presentation = check_fix(
+            inspection.as_ref(),
+            &uri,
+            before,
+            crate::inspections::REWRITE_NODE_FIX_ID,
+            after,
+        );
+        // The store may not have the action or property: a person decides.
+        assert!(!presentation.preferred);
+        assert_eq!(reparse_errors(&document, after), 0);
+    }
+}

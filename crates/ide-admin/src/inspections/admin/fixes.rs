@@ -26,6 +26,13 @@ pub(super) const REPLACE_ADMIN_COMPONENT_TAG_FIX_ID: &str = "replace-admin-compo
 pub(super) const MIGRATE_ADMIN_I18N_TC_FIX_ID: &str = "migrate-admin-vue-i18n-tc";
 pub(super) const MIGRATE_ADMIN_TWIG_COMPONENT_FIX_ID: &str = "migrate-admin-twig-component";
 pub(super) const MIGRATE_ADMIN_SLOT_FIX_ID: &str = "migrate-admin-vue-slot";
+pub(super) const DECLARE_ADMIN_EMIT_FIX_ID: &str = "declare-admin-component-emit";
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub(super) struct AdminEmitPayload {
+    #[serde(default)]
+    pub event: String,
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(super) struct AdminPropPayload {
@@ -463,6 +470,111 @@ impl RewriteQuickFix for AdminTwigComponentMigrationFix {
             return Err("administration Twig component tag is unavailable".into());
         };
         let edits = twigmigration::compile(fix.document.source(), &tag, rule)?;
+        Ok(single_document_plan(fix, edits))
+    }
+}
+
+/// Adds an emitted event to the `emits` option of its component, creating
+/// the option when the component has none.
+pub(super) struct AdminDeclareEmitFix;
+
+/// The options Vue's style guide puts before `emits`.
+const OPTIONS_BEFORE_EMITS: &[&str] = &[
+    "el",
+    "name",
+    "parent",
+    "functional",
+    "template",
+    "render",
+    "inheritAttrs",
+    "compatConfig",
+    "inject",
+    "provide",
+];
+
+impl QuickFix for AdminDeclareEmitFix {
+    fn id(&self) -> FixId {
+        FixId::from(DECLARE_ADMIN_EMIT_FIX_ID)
+    }
+
+    fn present(
+        &self,
+        _ctx: &Context,
+        fix: &FixContext,
+    ) -> Result<Option<FixPresentation>, BoxError> {
+        let payload: AdminEmitPayload = fix.fix_payload()?;
+        if payload.event.is_empty() || payload.event.contains(['\'', '\\', '\n']) {
+            return Ok(None);
+        }
+        Ok(Some(quick_fix(format!(
+            "Declare '{}' in the emits option",
+            payload.event
+        ))))
+    }
+
+    fn as_rewrite(&self) -> Option<&dyn RewriteQuickFix> {
+        Some(self)
+    }
+}
+
+impl RewriteQuickFix for AdminDeclareEmitFix {
+    fn build(&self, _ctx: &Context, fix: &FixContext) -> Result<WorkspacePlan, BoxError> {
+        use swlsp_parser_js::query as jsquery;
+        use swlsp_parser_js::syntax::{JS_ARRAY, TK_COMMA};
+
+        let payload: AdminEmitPayload = fix.fix_payload()?;
+        let stale = || -> BoxError { Box::new(HandleError::Stale) };
+        let anchor = anchor_node(fix)?.ok_or_else(stale)?;
+        let (object, _) = crate::diagnostics::component_object(&anchor).ok_or_else(stale)?;
+        let literal = format!("'{}'", payload.event);
+        let mut builder = Builder::new(fix.document.source());
+        if let Some(emits) = jsquery::property(&object, "emits") {
+            let array = jsquery::property_value(&emits)
+                .filter(|value| value.kind() == JS_ARRAY)
+                .ok_or_else(stale)?;
+            match array.children().last() {
+                Some(last) => builder.insert(
+                    last.range_trimmed_trivia().end().into(),
+                    format!(", {literal}"),
+                )?,
+                // `[]`: before the closing bracket.
+                None => {
+                    builder.insert(u32::from(array.range_trimmed_trivia().end()) - 1, literal)?
+                }
+            }
+        } else {
+            let properties = jsquery::properties(&object);
+            let first = properties.first().ok_or_else(stale)?;
+            let indent = crate::diagnostics::line_indent(first);
+            let after = properties.iter().rev().find(|property| {
+                jsquery::property_name(property)
+                    .is_some_and(|name| OPTIONS_BEFORE_EMITS.contains(&name.as_str()))
+            });
+            match after {
+                Some(property) => {
+                    let comma = property
+                        .siblings_with_tokens(swlsp_syntax::rowan::Direction::Next)
+                        .skip(1)
+                        .find(|element| !element.kind().is_trivia())
+                        .filter(|element| element.kind() == TK_COMMA);
+                    match comma {
+                        Some(comma) => builder.insert(
+                            comma.text_range().end().into(),
+                            format!("\n\n{indent}emits: [{literal}],"),
+                        )?,
+                        None => builder.insert(
+                            property.range_trimmed_trivia().end().into(),
+                            format!(",\n\n{indent}emits: [{literal}]"),
+                        )?,
+                    }
+                }
+                None => builder.insert(
+                    first.range_trimmed_trivia().start().into(),
+                    format!("emits: [{literal}],\n\n{indent}"),
+                )?,
+            }
+        }
+        let edits = builder.finish()?;
         Ok(single_document_plan(fix, edits))
     }
 }

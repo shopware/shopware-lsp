@@ -12,6 +12,9 @@ pub struct ComponentDefinition {
     pub model_prop: String,
     pub model_event: String,
     pub emits: Vec<String>,
+    /// The events the `emits` option (or `defineEmits`) declares, without
+    /// the ones only found at an `$emit` call.
+    pub declared_emits: Vec<String>,
     pub events: Vec<VueComponentEvent>,
     pub methods: Vec<String>,
     pub computed: Vec<String>,
@@ -174,6 +177,7 @@ pub(crate) fn parse_definition_object(
                         let event_name = event.name.clone();
                         append_component_event(&mut definition.events, event);
                         append_unique(&mut definition.emits, &event_name);
+                        append_unique(&mut definition.declared_emits, &event_name);
                     }
                 }
             }

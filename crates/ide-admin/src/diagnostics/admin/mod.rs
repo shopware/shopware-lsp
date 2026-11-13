@@ -2,6 +2,7 @@
 
 mod analyzer;
 mod block_override;
+mod code_quality;
 mod components;
 mod i18n_deprecation;
 mod privilege;
@@ -19,6 +20,8 @@ mod tests_analyzer_b;
 #[cfg(test)]
 mod tests_analyzer_c;
 #[cfg(test)]
+mod tests_code_quality;
+#[cfg(test)]
 mod tests_misc;
 
 pub use analyzer::AdminAnalyzer;
@@ -27,6 +30,11 @@ pub use block_override::{
     ADMIN_BLOCK_OVERRIDE_REPEATED_CODE, ADMIN_BLOCK_PARENT_CONDITIONAL_CODE,
     ADMIN_BLOCK_PARENT_REPEATED_CODE, AdminBlockOverrideAnalyzer,
 };
+pub use code_quality::{
+    ADMIN_CODE_QUALITY_CODES, ADMIN_STATE_DEPRECATED_CODE, ADMIN_UNDECLARED_EMIT_CODE,
+    AdminCodeQualityAnalyzer,
+};
+pub(crate) use code_quality::{component_object, line_indent};
 pub use i18n_deprecation::AdminI18nDeprecationAnalyzer;
 pub use slot_migration::AdminSlotMigrationAnalyzer;
 pub use twig_migration::{AdminTwigMigrationAnalyzer, AdminTwigMigrationPayload};

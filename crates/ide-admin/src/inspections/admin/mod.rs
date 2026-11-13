@@ -13,9 +13,11 @@ use std::sync::Arc;
 use crate::diagnostics::{
     ADMIN_BLOCK_OVERRIDE_CONDITIONAL_CODE, ADMIN_BLOCK_OVERRIDE_NESTED_CODE,
     ADMIN_BLOCK_OVERRIDE_REPEATED_CODE, ADMIN_BLOCK_PARENT_CONDITIONAL_CODE,
-    ADMIN_BLOCK_PARENT_REPEATED_CODE, AdminAnalyzer, AdminBlockOverrideAnalyzer,
-    AdminI18nDeprecationAnalyzer, AdminSlotMigrationAnalyzer, AdminTwigMigrationAnalyzer,
-    AdminTwigMigrationPayload, CodeGroup, ProblemAnalyzer, SharedAnalysis,
+    ADMIN_BLOCK_PARENT_REPEATED_CODE, ADMIN_CODE_QUALITY_CODES, ADMIN_STATE_DEPRECATED_CODE,
+    ADMIN_UNDECLARED_EMIT_CODE, AdminAnalyzer, AdminBlockOverrideAnalyzer,
+    AdminCodeQualityAnalyzer, AdminI18nDeprecationAnalyzer, AdminSlotMigrationAnalyzer,
+    AdminTwigMigrationAnalyzer, AdminTwigMigrationPayload, CodeGroup, ProblemAnalyzer,
+    SharedAnalysis,
 };
 use serde_json::{Map, Value};
 use swlsp_admin::AdminComponentIndexer;
@@ -28,14 +30,17 @@ use swlsp_lsp::{
 use swlsp_lsp_protocol::DiagnosticSeverity;
 use swlsp_shopware::ResolvedVersion;
 
-use crate::inspections::{BindProblems, BoundInspection, SuggestionFix, suggestion_bound_fixes};
+use crate::inspections::{
+    BindProblems, BoundInspection, RewriteNodeFix, SuggestionFix, rewrite_node_bound_fixes,
+    suggestion_bound_fixes,
+};
 
 use fixes::{
-    ADD_ADMIN_PROP_FIX_ID, AdminComponentTagFix, AdminComponentTagPayload, AdminI18nTcFix,
-    AdminI18nTcReplacement, AdminPropFix, AdminPropPayload, AdminSlotMigrationFix,
-    AdminSlotReplacement, AdminStaticPropFix, AdminStaticPropPayload,
-    AdminTwigComponentMigrationFix, BIND_ADMIN_PROP_FIX_ID, MIGRATE_ADMIN_I18N_TC_FIX_ID,
-    MIGRATE_ADMIN_SLOT_FIX_ID, MIGRATE_ADMIN_TWIG_COMPONENT_FIX_ID,
+    ADD_ADMIN_PROP_FIX_ID, AdminComponentTagFix, AdminComponentTagPayload, AdminDeclareEmitFix,
+    AdminEmitPayload, AdminI18nTcFix, AdminI18nTcReplacement, AdminPropFix, AdminPropPayload,
+    AdminSlotMigrationFix, AdminSlotReplacement, AdminStaticPropFix, AdminStaticPropPayload,
+    AdminTwigComponentMigrationFix, BIND_ADMIN_PROP_FIX_ID, DECLARE_ADMIN_EMIT_FIX_ID,
+    MIGRATE_ADMIN_I18N_TC_FIX_ID, MIGRATE_ADMIN_SLOT_FIX_ID, MIGRATE_ADMIN_TWIG_COMPONENT_FIX_ID,
     REPLACE_ADMIN_COMPONENT_TAG_FIX_ID,
 };
 
@@ -166,6 +171,8 @@ pub fn new_admin_inspections(
             Arc::new(AdminComponentTagFix),
             Arc::new(AdminTwigComponentMigrationFix),
             Arc::new(SuggestionFix),
+            Arc::new(AdminDeclareEmitFix),
+            Arc::new(RewriteNodeFix),
         ]
     };
     let inspection = |id: &str,
@@ -255,6 +262,18 @@ pub fn new_admin_inspections(
             Arc::new(AdminI18nDeprecationAnalyzer::new()),
         ],
     );
+    let code_quality = inspection(
+        "shopware.admin.code_quality",
+        "Administration code an extension should not contain: imports of core sources, snippets passed to a module, overrides of the Extension Manager, and from Shopware 6.7 the deprecated Vuex State and events missing from the emits option.",
+        ADMIN_CODE_QUALITY_CODES
+            .iter()
+            .map(|code| (*code).to_owned())
+            .collect(),
+        vec![Arc::new(AdminCodeQualityAnalyzer::new(
+            index.clone(),
+            version,
+        ))],
+    );
     vec![
         component,
         component_api,
@@ -262,6 +281,7 @@ pub fn new_admin_inspections(
         module,
         block_override,
         migration,
+        code_quality,
     ]
 }
 
@@ -288,6 +308,19 @@ fn bind_admin_problem(code: &DiagnosticId, payload: &Map<String, Value>) -> Vec<
     }
     if SUGGESTION_CODES.contains(&code) {
         return suggestion_bound_fixes(payload);
+    }
+    if code == ADMIN_STATE_DEPRECATED_CODE {
+        return rewrite_node_bound_fixes(payload);
+    }
+    if code == ADMIN_UNDECLARED_EMIT_CODE {
+        let event = map_string(payload, "event");
+        if event.is_empty() {
+            return Vec::new();
+        }
+        return vec![bind_fix(
+            DECLARE_ADMIN_EMIT_FIX_ID,
+            AdminEmitPayload { event },
+        )];
     }
     match code {
         "admin.slot-syntax-deprecated" => {

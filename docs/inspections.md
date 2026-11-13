@@ -104,6 +104,21 @@ Languages: php. Domain: `php`.
 - Fix: Use a public method or accessor of the class, or widen the member's visibility if the class is yours.
 - Exceptions: Not reported for classes with a matching magic method, and for Closure::bind scopes.
 
+## `scss.import`
+
+Administration SCSS importing a shared `~scss` resource with its file extension.
+
+Languages: scss. Domain: `scss`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `scss.import.extension` | warning | yes |
+
+**`scss.import.extension`**
+
+- Fix: Import the resource without .scss: @import "~scss/variables". A quick fix removes the extension.
+- Exceptions: Only @import of a path starting with ~scss in Administration files is checked.
+
 ## `scss.variable`
 
 Reports SCSS variables that are neither defined in the workspace nor provided by Shopware themes.
@@ -154,6 +169,42 @@ Languages: javascript, twig, vue. Domain: `administration`.
 **`admin.block-parent.repeated`**
 
 - Fix: Render <sw-block-parent> once, outside the loop.
+
+## `shopware.admin.code_quality`
+
+Administration code an extension should not contain: imports of core sources, snippets passed to a module, overrides of the Extension Manager, and from Shopware 6.7 the deprecated Vuex State and events missing from the emits option.
+
+Languages: javascript, twig, vue. Domain: `administration`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `admin.component.extension-manager-override` | warning | yes |
+| `admin.component.undeclared-emit` | warning | yes |
+| `admin.import.core-source` | warning | yes |
+| `admin.module.snippets-import` | warning | yes |
+| `admin.state.deprecated` | warning | yes |
+
+**`admin.component.extension-manager-override`**
+
+- Fix: Remove the override. The Store rejects extensions that change the Extension Manager.
+
+**`admin.component.undeclared-emit`**
+
+- Fix: List the event in the emits option of the component; a quick fix adds it for an event emitted in the script.
+- Exceptions: Reported from Shopware 6.7 on, and only for a literal event name. Events declared by a parent component or a mixin count. A component whose parent or mixins are not indexed is not checked.
+
+**`admin.import.core-source`**
+
+- Fix: Take the class or service from the global Shopware object instead of importing the core file.
+
+**`admin.module.snippets-import`**
+
+- Fix: Remove the snippets option and its imports, and keep the snippet files in a directory named snippet: they are loaded automatically.
+
+**`admin.state.deprecated`**
+
+- Fix: Read and change the Pinia store through Shopware.Store.get(). A quick fix rewrites State.commit('store/action', ...) and mapState()/mapGetters() with literal names; check that the store has the action or property before applying it.
+- Exceptions: Reported from Shopware 6.7 on. A mapState() mapping through a function is reported without a quick fix.
 
 ## `shopware.admin.component`
 
@@ -1364,6 +1415,39 @@ Languages: json. Domain: `shopware.store`.
 
 - Fix: Set previewMedia in theme.json to an image path relative to the Resources directory, and make sure the file exists.
 - Exceptions: Checked only for an extension that sets validation.store_compliance: true in .shopware-extension.yml.
+
+## `shopware.storefront_javascript`
+
+Storefront JavaScript importing the plugin system instead of using its globals, and from Shopware 6.7 the deprecated DomAccess and HttpClient helpers and the query-string package.
+
+Languages: javascript. Domain: `shopware`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `storefront.dom-access.deprecated` | warning | yes |
+| `storefront.http-client.deprecated` | warning | yes |
+| `storefront.plugin-system.import` | warning | yes |
+| `storefront.query-string.deprecated` | warning | yes |
+
+**`storefront.dom-access.deprecated`**
+
+- Fix: Call the DOM API on the element: querySelector(), getAttribute(), dataset. A quick fix rewrites the common calls; DomAccess throws for a missing element or attribute where the DOM API returns null, so check each call. The import can be removed by a quick fix once nothing uses it.
+- Exceptions: Reported from Shopware 6.7 on, for the default import of the helper.
+
+**`storefront.http-client.deprecated`**
+
+- Fix: Use fetch(): await the response and read it with text() or json().
+- Exceptions: Reported from Shopware 6.7 on, at the import.
+
+**`storefront.plugin-system.import`**
+
+- Fix: Use window.PluginManager and window.PluginBaseClass; a quick fix replaces the import.
+- Exceptions: Reported from Shopware 6.6 on. An import that does not bind a default name is reported without a quick fix.
+
+**`storefront.query-string.deprecated`**
+
+- Fix: Use URLSearchParams. A quick fix rewrites parse() and stringify() with one argument; repeated keys become the last value and values stay strings, so check each call.
+- Exceptions: Reported from Shopware 6.7 on, for the default import of the package.
 
 ## `shopware.theme`
 

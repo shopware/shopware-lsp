@@ -6,6 +6,7 @@
 
 pub mod inspection;
 pub mod range;
+pub mod rewrite_node;
 pub mod suggestion;
 
 pub use crate::diagnostics::{DeclaredAnalyzer, ProblemAnalyzer};
@@ -14,6 +15,7 @@ pub use inspection::{
     diagnostic_payload, new_analyzer_inspection, resolve_anchor,
 };
 pub use range::{InvertedRangeError, protocol_text_range};
+pub use rewrite_node::{REWRITE_NODE_FIX_ID, RewriteNodeFix, rewrite_node_bound_fixes};
 pub use suggestion::{SUGGESTION_FIX_ID, SuggestionFix, suggestion_bound_fixes};
 
 #[cfg(any(test, feature = "testing"))]

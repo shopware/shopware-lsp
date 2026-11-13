@@ -415,6 +415,7 @@ pub(crate) fn apply_definition(component: &mut VueComponent, definition: &Compon
     component.model_prop = definition.model_prop.clone();
     component.model_event = definition.model_event.clone();
     component.emits = definition.emits.clone();
+    component.declared_emits = definition.declared_emits.clone();
     component.events = definition.events.clone();
     component.methods = definition.methods.clone();
     component.computed = definition.computed.clone();
@@ -476,6 +477,7 @@ pub(crate) fn merge_components(fallback: &VueComponent, preferred: &VueComponent
     fill(&mut result.model_prop, &fallback.model_prop);
     fill(&mut result.model_event, &fallback.model_event);
     fill_vec(&mut result.emits, &fallback.emits);
+    fill_vec(&mut result.declared_emits, &fallback.declared_emits);
     fill_vec(&mut result.events, &fallback.events);
     fill_vec(&mut result.methods, &fallback.methods);
     fill_vec(&mut result.computed, &fallback.computed);
@@ -526,6 +528,7 @@ pub(crate) fn overlay_components(base: &VueComponent, overlay: &VueComponent) ->
     }
     overlay_field!(props, overlay_props);
     overlay_field!(emits, overlay_names);
+    overlay_field!(declared_emits, overlay_names);
     overlay_field!(events, overlay_events);
     overlay_field!(methods, overlay_names);
     overlay_field!(computed, overlay_names);

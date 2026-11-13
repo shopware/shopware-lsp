@@ -239,6 +239,10 @@ fn recovery_is_lossless() {
         "/* unterminated",
         "'unterminated\n",
         "class A extends B { method() { return 1 } ",
+        "class A { static options = { a: 1",
+        "class A { static ",
+        "class A { get value(",
+        "class A { = ; * } const after = 1;",
         "#!@ ä ü ö",
         "do { x++ } while (y",
         "try { a } catch (e) { b } finally { c",
@@ -259,4 +263,41 @@ fn recovery_is_lossless() {
             .count();
         assert!(tokens > 0 || source.is_empty());
     }
+}
+
+#[test]
+fn class_bodies_hold_methods_and_fields() {
+    let root = parse_clean(
+        "export default class ExamplePlugin extends Plugin {\n    static options = { selector: '.btn' };\n    count = 0;\n    label;\n\n    init() {\n        this.button = DomAccess.querySelector(this.el, this.options.selector);\n    }\n\n    static async load(url) { return fetch(url); }\n    get value() { return this.count; }\n    onClick = (event) => { this.run(event); };\n    static { register(); }\n}\nconst after = new ExamplePlugin();\n",
+    );
+    let names = |kind: Kind| -> Vec<String> {
+        nodes(&root, kind)
+            .iter()
+            .filter(|node| {
+                node.parent()
+                    .and_then(|body| body.parent())
+                    .is_some_and(|class| class.kind() == JS_FUNCTION)
+            })
+            .map(|node| query::property_name(node).unwrap_or_default())
+            .collect()
+    };
+    assert_eq!(names(JS_METHOD), ["init", "load", "value", ""]);
+    assert_eq!(names(JS_PROPERTY), ["options", "count", "label", "onClick"]);
+    // A method body holds statements: the assignment's call is a call of
+    // `DomAccess.querySelector` with both arguments.
+    let calls: Vec<String> = nodes(&root, JS_CALL_EXPRESSION)
+        .iter()
+        .filter_map(query::call_name)
+        .collect();
+    assert_eq!(
+        calls,
+        [
+            "DomAccess.querySelector",
+            "fetch",
+            "this.run",
+            "register",
+            "ExamplePlugin"
+        ]
+    );
+    assert_eq!(nodes(&root, JS_VARIABLE_DECLARATION).len(), 1);
 }
