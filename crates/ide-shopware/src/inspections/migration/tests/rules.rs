@@ -133,6 +133,52 @@ fn entity_extension_migration_quick_fix() {
 }
 
 #[test]
+fn an_extension_supporting_an_older_version_keeps_what_that_version_needs() {
+    let index = migration_inspection_php_index();
+    index.add(
+        "/project/vendor/EntityExtension.php",
+        "<?php\nnamespace Shopware\\Core\\Framework\\DataAbstractionLayer;\nabstract class EntityExtension {}",
+    );
+    let project = tempfile::tempdir().unwrap();
+    let plugin = project.path().join("custom/plugins/Both");
+    std::fs::create_dir_all(&plugin).unwrap();
+    std::fs::write(
+        plugin.join("composer.json"),
+        r#"{"type":"shopware-platform-plugin","require":{"shopware/core":"~6.6.0 || ~6.7.0"}}"#,
+    )
+    .unwrap();
+    // Shopware 6.7 is installed, by the lock file.
+    let mut installed = migration_inspection_version(6, 7);
+    installed.source = swlsp_shopware::VersionSource::ComposerLock;
+    let versions = swlsp_shopware::SupportedVersions::discover(project.path(), installed);
+    let inspection: Arc<dyn Inspection> = Arc::new(crate::inspections::test_support::Combined(
+        super::super::new_shopware_migration_inspections(Some(index.index.clone()), versions),
+    ));
+    let both = "    public function getDefinitionClass(): string { return ProductDefinition::class; }\n    public function getEntityName(): string { return ProductDefinition::ENTITY_NAME; }";
+    let uri = |path: &std::path::Path| swlsp_uriutil::file_uri(path.to_str().unwrap());
+    // 6.6 still calls getDefinitionClass(): in the plugin it stays.
+    check_diagnostics(
+        inspection.as_ref(),
+        &uri(&plugin.join("src/Extension.php")),
+        &entity_extension_source("ProductExtension", both),
+    );
+    // The project's own code only runs on what is installed.
+    check_only_migration_fix(
+        &inspection,
+        &uri(&project.path().join("src/Extension.php")),
+        &entity_extension_source(
+            "{|shopware.migration.entity_extension.entity_name:ProductExtension|}",
+            both,
+        ),
+        ENTITY_EXTENSION_ENTITY_NAME_FIX_ID,
+        &entity_extension_source(
+            "ProductExtension",
+            "    public function getEntityName(): string { return ProductDefinition::ENTITY_NAME; }",
+        ),
+    );
+}
+
+#[test]
 fn reverse_proxy_ban_all_migration_quick_fix() {
     let index = migration_inspection_php_index();
     index.add(

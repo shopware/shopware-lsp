@@ -35,7 +35,7 @@ use swlsp_parser_php::syntax::{
 use swlsp_php::PhpIndex;
 use swlsp_php_rewrite::Editor;
 use swlsp_rewrite::{Builder, DocumentPlan, Edit, WorkspacePlan};
-use swlsp_shopware::ResolvedVersion;
+use swlsp_shopware::SupportedVersions;
 use swlsp_syntax::{Kind, SyntaxElement, SyntaxNode, SyntaxNodeExt};
 use swlsp_textutil::{eq_ignore_case, lowercase};
 
@@ -103,9 +103,9 @@ const ANNOUNCED_CODES: &[&str] = &[
 /// run of [`ShopwareMigrationAnalyzer`] per document.
 pub fn new_shopware_migration_inspections(
     php_index: Option<PhpIndex>,
-    version: ResolvedVersion,
+    versions: impl Into<SupportedVersions>,
 ) -> Vec<Arc<dyn Inspection>> {
-    let shared = SharedAnalysis::new(ShopwareMigrationAnalyzer::new(php_index, version));
+    let shared = SharedAnalysis::new(ShopwareMigrationAnalyzer::new(php_index, versions));
     let inspection = |id: &str,
                       description: &'static str,
                       codes: &'static [&'static str]|

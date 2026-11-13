@@ -45,6 +45,8 @@ pub struct Services {
     pub entity_schema_sources: Arc<swlsp_shopware_entityschema::SourceIndex>,
     pub app_scripts: Arc<swlsp_appscript::Index>,
     pub shopware_version: ResolvedVersion,
+    /// The installed version and the oldest one each extension supports.
+    pub supported_versions: swlsp_shopware::SupportedVersions,
     /// The entities a repository search may load in full.
     pub small_entities: Arc<std::collections::BTreeSet<String>>,
 }

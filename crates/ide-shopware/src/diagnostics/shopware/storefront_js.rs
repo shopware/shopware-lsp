@@ -13,7 +13,7 @@ use swlsp_parser_js::syntax::{
     JS_CALL_EXPRESSION, JS_IDENTIFIER, JS_IMPORT_STATEMENT, JS_MEMBER_EXPRESSION, JS_STRING,
     TK_IDENTIFIER, TK_OPEN_BRACE,
 };
-use swlsp_shopware::ResolvedVersion;
+use swlsp_shopware::SupportedVersions;
 use swlsp_syntax::{SyntaxElement, SyntaxNode, SyntaxNodeExt};
 use swlsp_textutil::lowercase;
 use swlsp_uriutil::filepath;
@@ -41,19 +41,15 @@ const DOM_ACCESS_MODULE: &str = "src/helper/dom-access.helper";
 const HTTP_CLIENT_MODULE: &str = "src/service/http-client.service";
 const QUERY_STRING_MODULE: &str = "query-string";
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct StorefrontJavaScriptAnalyzer {
-    /// `window.PluginManager` is the one instance from Shopware 6.6 on.
-    plugin_globals: bool,
-    /// Shopware 6.7 deprecates the helpers.
-    deprecations: bool,
+    versions: SupportedVersions,
 }
 
 impl StorefrontJavaScriptAnalyzer {
-    pub fn new(version: ResolvedVersion) -> Self {
+    pub fn new(versions: impl Into<SupportedVersions>) -> Self {
         Self {
-            plugin_globals: version.at_least(6, 6, 0),
-            deprecations: version.at_least(6, 7, 0),
+            versions: versions.into(),
         }
     }
 }
@@ -78,8 +74,18 @@ impl ProblemAnalyzer for StorefrontJavaScriptAnalyzer {
                 lowercase(filepath::ext(&document.uri)).as_str(),
                 ".js" | ".ts"
             )
-            || !(self.plugin_globals || self.deprecations)
         {
+            return Ok(Vec::new());
+        }
+        // `window.PluginManager` is the one instance from Shopware 6.6 on,
+        // so the code has to run there. Shopware 6.7 deprecates the helpers,
+        // and what replaces them is the browser's own.
+        let plugin_globals = self
+            .versions
+            .minimum_for_uri(&document.uri)
+            .at_least(6, 6, 0);
+        let deprecations = self.versions.installed().at_least(6, 7, 0);
+        if !(plugin_globals || deprecations) {
             return Ok(Vec::new());
         }
         let mut result = Vec::new();
@@ -90,7 +96,7 @@ impl ProblemAnalyzer for StorefrontJavaScriptAnalyzer {
             };
             let module = jsquery::string_value(&source);
             let binding = default_binding(&import);
-            if self.plugin_globals
+            if plugin_globals
                 && let Some((_, global)) = PLUGIN_SYSTEM_GLOBALS
                     .iter()
                     .find(|(path, _)| *path == module)
@@ -113,7 +119,7 @@ impl ProblemAnalyzer for StorefrontJavaScriptAnalyzer {
                 }
                 result.push(found);
             }
-            if !self.deprecations {
+            if !deprecations {
                 continue;
             }
             match module.as_str() {

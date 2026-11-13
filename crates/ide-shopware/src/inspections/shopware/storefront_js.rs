@@ -8,13 +8,13 @@ use swlsp_lsp::{
     BoundFix, DiagnosticId, Inspection, InspectionDefinition, InspectionScope, ProblemDefinition,
 };
 use swlsp_lsp_protocol as protocol;
-use swlsp_shopware::ResolvedVersion;
+use swlsp_shopware::SupportedVersions;
 
 use crate::diagnostics::{STOREFRONT_JAVASCRIPT_CODES, StorefrontJavaScriptAnalyzer};
 use crate::inspections::inspection::{BindProblems, BoundInspection};
 use crate::inspections::{RewriteNodeFix, rewrite_node_bound_fixes};
 
-pub fn new_storefront_javascript(version: ResolvedVersion) -> Arc<dyn Inspection> {
+pub fn new_storefront_javascript(versions: impl Into<SupportedVersions>) -> Arc<dyn Inspection> {
     let bind: BindProblems = Arc::new(
         |_: &DiagnosticId, payload: &Map<String, Value>| -> Vec<BoundFix> {
             rewrite_node_bound_fixes(payload)
@@ -37,7 +37,7 @@ pub fn new_storefront_javascript(version: ResolvedVersion) -> Arc<dyn Inspection
                 })
                 .collect(),
         },
-        analyzers: vec![Arc::new(StorefrontJavaScriptAnalyzer::new(version))],
+        analyzers: vec![Arc::new(StorefrontJavaScriptAnalyzer::new(versions))],
         fixes: vec![Arc::new(RewriteNodeFix)],
         bind: Some(bind),
     })

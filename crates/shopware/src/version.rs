@@ -17,6 +17,8 @@ pub enum VersionSource {
     None,
     Explicit,
     ComposerLock,
+    /// The oldest version the `composer.json` of an extension supports.
+    ExtensionConstraint,
     PlatformComposer,
     PlatformKernel,
     PlatformBranchAlias,
@@ -29,6 +31,7 @@ impl VersionSource {
             VersionSource::None => "",
             VersionSource::Explicit => "explicit",
             VersionSource::ComposerLock => "composer-lock",
+            VersionSource::ExtensionConstraint => "extension-constraint",
             VersionSource::PlatformComposer => "platform-composer",
             VersionSource::PlatformKernel => "platform-kernel",
             VersionSource::PlatformBranchAlias => "platform-branch-alias",

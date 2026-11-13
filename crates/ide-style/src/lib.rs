@@ -63,7 +63,7 @@ fn register(server: &Registrar<'_>, s: &Services) {
     server.inspection(inspections::new_scss_import());
     server.inspection(inspections::new_scss_css_variable(
         s.styles.clone(),
-        s.shopware_version,
+        s.supported_versions.clone(),
     ));
     server.inspection(inspections::new_scss_variable(
         s.styles.clone(),

@@ -12,7 +12,7 @@ pub(crate) use swlsp_ide::inspections::*;
 
 pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
     server.rule_help("admin", help::ADMIN);
-    for inspection in new_admin_inspections(s.admin.clone(), s.shopware_version) {
+    for inspection in new_admin_inspections(s.admin.clone(), s.supported_versions.clone()) {
         server.inspection(inspection);
     }
 }

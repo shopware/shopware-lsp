@@ -1767,6 +1767,19 @@ check:
   failOn: error
 ```
 
+Version-gated rules use the installed Shopware version (or
+`shopware.targetVersion`). For an extension that states its supported range in
+`composer.json`, such as `"shopware/core": "~6.6.0 || ~6.7.0"`, a rule whose
+fix only works from a certain version on uses the oldest supported version
+instead. The upgrade migrations, the `sw-*` to `mt-*` component migrations,
+`admin.state.deprecated`, `storefront.plugin-system.import` and
+`scss.variable.prefer-css-variable` are therefore not reported in a plugin
+that still supports a version before them, and `admin.vue-i18n.tc-deprecated`
+leaves a `$tc()` call with a count alone there. This applies to the workspace
+root when it is an extension, and to `custom/plugins/*` and
+`custom/static-plugins/*`. An explicit `shopware.targetVersion` overrides it
+for every file.
+
 `shopware.smallEntities` adjusts which tables
 `shopware.php.repository.unbounded_search` lets a search load in full. Built
 in are configuration tables that stay small in every shop: `app`,

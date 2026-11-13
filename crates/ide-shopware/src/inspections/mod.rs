@@ -33,7 +33,7 @@ pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
         diagnostics::ShopwarePhpSemanticAnalyzer::new(php())
             .with_small_entities(s.small_entities.clone()),
     ));
-    for inspection in new_shopware_migration_inspections(php(), s.shopware_version) {
+    for inspection in new_shopware_migration_inspections(php(), s.supported_versions.clone()) {
         add(inspection);
     }
     add(analyzer(diagnostics::ThemeAnalyzer::new(
@@ -48,7 +48,7 @@ pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
         Some(s.dal.clone()),
     )));
     add(new_shopware_criteria());
-    add(new_storefront_javascript(s.shopware_version));
+    add(new_storefront_javascript(s.supported_versions.clone()));
     add(analyzer(
         diagnostics::ShopwareDecorationAnalyzer::new(php()),
     ));

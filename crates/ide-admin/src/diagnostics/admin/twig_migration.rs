@@ -18,7 +18,7 @@ use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
 use swlsp_lsp_protocol::{DiagnosticSeverity, DiagnosticTag};
 use swlsp_parser_twig::ast::{AstNode, HtmlTag};
 use swlsp_parser_twig::{query as twigquery, syntax as twigsyntax};
-use swlsp_shopware::ResolvedVersion;
+use swlsp_shopware::SupportedVersions;
 use swlsp_syntax::SyntaxElement;
 use swlsp_textutil::lowercase;
 use swlsp_uriutil::filepath;
@@ -42,7 +42,7 @@ pub struct AdminTwigMigrationPayload {
 #[derive(Clone, Default)]
 pub struct AdminTwigMigrationAnalyzer {
     index: Option<Arc<AdminComponentIndexer>>,
-    version: ResolvedVersion,
+    versions: SupportedVersions,
 }
 
 /// What the project's Administration says about a replaced component.
@@ -56,8 +56,14 @@ enum Legacy {
 }
 
 impl AdminTwigMigrationAnalyzer {
-    pub fn new(index: Option<Arc<AdminComponentIndexer>>, version: ResolvedVersion) -> Self {
-        Self { index, version }
+    pub fn new(
+        index: Option<Arc<AdminComponentIndexer>>,
+        versions: impl Into<SupportedVersions>,
+    ) -> Self {
+        Self {
+            index,
+            versions: versions.into(),
+        }
     }
 
     fn legacy(&self, index: &AdminComponentIndexer, tag: &str) -> Result<Legacy, BoxError> {
@@ -97,7 +103,14 @@ impl ProblemAnalyzer for AdminTwigMigrationAnalyzer {
         ctx: &Context,
         document: &Arc<TextDocument>,
     ) -> Result<Vec<Problem>, BoxError> {
-        if !self.version.at_least(6, 7, 0) || document.language != Some(LanguageId::Twig) {
+        // The Meteor components replace the old ones from 6.7 on: an
+        // extension that still supports 6.6 keeps them.
+        if !self
+            .versions
+            .minimum_for_uri(&document.uri)
+            .at_least(6, 7, 0)
+            || document.language != Some(LanguageId::Twig)
+        {
             return Ok(Vec::new());
         }
         let Some(index) = self.index.as_deref() else {

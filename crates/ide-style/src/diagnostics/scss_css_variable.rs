@@ -13,7 +13,7 @@ use swlsp_lsp::{BoxError, Context, Problem, TextDocument};
 use swlsp_lsp_protocol::DiagnosticSeverity;
 use swlsp_parser_scss::query as scssquery;
 use swlsp_parser_scss::syntax::{SCSS_DECLARATION, SCSS_VARIABLE, TK_IDENTIFIER, TK_OPERATOR};
-use swlsp_shopware::ResolvedVersion;
+use swlsp_shopware::SupportedVersions;
 use swlsp_style::{analyze_variables, normalize_variable_name};
 use swlsp_syntax::{SyntaxElement, SyntaxNode, SyntaxNodeExt};
 use swlsp_textutil::{eq_ignore_case, lowercase};
@@ -53,22 +53,33 @@ impl ScssVariableSource for swlsp_style::Index {
 
 pub struct ScssCssVariableAnalyzer {
     variables: Option<Arc<dyn ScssVariableSource>>,
-    /// Whether the project's Administration generates the properties.
-    generated: bool,
+    /// The Administration generates the properties from Shopware 6.5 on.
+    versions: SupportedVersions,
 }
 
 impl ScssCssVariableAnalyzer {
-    pub fn new(variables: Option<Arc<dyn ScssVariableSource>>, version: ResolvedVersion) -> Self {
+    pub fn new(
+        variables: Option<Arc<dyn ScssVariableSource>>,
+        versions: impl Into<SupportedVersions>,
+    ) -> Self {
         Self {
             variables,
-            generated: version.at_least(6, 5, 0),
+            versions: versions.into(),
         }
+    }
+
+    /// Whether every Administration the file has to run on has the
+    /// properties.
+    fn generated(&self, document: &TextDocument) -> bool {
+        self.versions
+            .minimum_for_uri(&document.uri)
+            .at_least(6, 5, 0)
     }
 }
 
 impl ProblemAnalyzer for ScssCssVariableAnalyzer {
     fn input_revision(&self, document: &TextDocument) -> Option<u64> {
-        if !self.generated || !document.uri.contains("Resources/app/administration") {
+        if !self.generated(document) || !document.uri.contains("Resources/app/administration") {
             return Some(0);
         }
         match &self.variables {
@@ -85,7 +96,7 @@ impl ProblemAnalyzer for ScssCssVariableAnalyzer {
         let (Some(variables), Some(root)) = (&self.variables, document.root()) else {
             return Ok(Vec::new());
         };
-        if !self.generated
+        if !self.generated(document)
             || !document.uri.contains("Resources/app/administration")
             || !eq_ignore_case(filepath::ext(&document.uri), ".scss")
         {

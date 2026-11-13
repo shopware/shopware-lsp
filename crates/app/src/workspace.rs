@@ -473,6 +473,7 @@ fn build(
         entity_schema_sources,
         app_scripts,
         shopware_version,
+        supported_versions: swlsp_shopware::SupportedVersions::discover(root, shopware_version),
         small_entities: Arc::new(swlsp_shopware::small_entities(
             &options.shopware_small_entities,
             &options.shopware_large_entities,

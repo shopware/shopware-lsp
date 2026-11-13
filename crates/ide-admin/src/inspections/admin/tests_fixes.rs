@@ -34,7 +34,22 @@ fn reparse_errors(document: &TextDocument, updated: &str) -> usize {
 fn admin_i18n_tc_inspection_builds_lossless_callee_rewrite() {
     let fixture = Fixture::new();
     let admin_root = fixture.path("Resources/app/administration/src");
-    let inspection = fixture.inspection();
+    // `$t(key, count)` pluralizes from 6.7 on. Where the code may still run
+    // on an older Administration, only a call with just the key is touched.
+    let older = fixture.inspection();
+    check_diagnostics(
+        older.as_ref(),
+        &uri(&format!("{admin_root}/component.js")),
+        "this.$tc('translation.key', count); this.{|admin.vue-i18n.tc-deprecated:$tc|}('translation.key');",
+    );
+    check_diagnostics(
+        older.as_ref(),
+        &uri(&format!("{admin_root}/component.html.twig")),
+        "{{ $tc('translation.key', count) }}{{ {|admin.vue-i18n.tc-deprecated:$tc|}('translation.key') }}",
+    );
+    let inspection: Arc<dyn Inspection> = Arc::new(crate::inspections::test_support::Combined(
+        new_admin_inspections(None, known_version(6, 7, 0)),
+    ));
     for (file, before, expected) in [
         (
             "component.js",

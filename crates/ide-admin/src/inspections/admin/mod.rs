@@ -28,7 +28,7 @@ use swlsp_lsp::{
     QuickFix, bind_fix,
 };
 use swlsp_lsp_protocol::DiagnosticSeverity;
-use swlsp_shopware::ResolvedVersion;
+use swlsp_shopware::SupportedVersions;
 
 use crate::inspections::{
     BindProblems, BoundInspection, RewriteNodeFix, SuggestionFix, rewrite_node_bound_fixes,
@@ -147,8 +147,10 @@ fn severity(code: &str) -> DiagnosticSeverity {
 /// and not-found problems stay off those tags.
 pub fn new_admin_inspections(
     index: Option<Arc<AdminComponentIndexer>>,
-    version: ResolvedVersion,
+    versions: impl Into<SupportedVersions>,
 ) -> Vec<Arc<dyn Inspection>> {
+    let versions: SupportedVersions = versions.into();
+    let version = versions.installed();
     let mut admin_analyzer = AdminAnalyzer::new(index.clone());
     if version.at_least(6, 7, 0) {
         let names: Vec<&str> = twigmigration::rules()
@@ -257,9 +259,12 @@ pub fn new_admin_inspections(
         "Administration syntax to migrate: Twig components the Meteor component library replaces, once the project's Administration marks them deprecated or no longer registers them; deprecated slot syntax; and vue-i18n's `$tc`.",
         migration_codes,
         vec![
-            Arc::new(AdminTwigMigrationAnalyzer::new(index.clone(), version)),
+            Arc::new(AdminTwigMigrationAnalyzer::new(
+                index.clone(),
+                versions.clone(),
+            )),
             Arc::new(AdminSlotMigrationAnalyzer::new()),
-            Arc::new(AdminI18nDeprecationAnalyzer::new()),
+            Arc::new(AdminI18nDeprecationAnalyzer::new().with_versions(versions.clone())),
         ],
     );
     let code_quality = inspection(

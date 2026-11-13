@@ -8,7 +8,7 @@ use swlsp_lsp::{
     BoundFix, DiagnosticId, Inspection, InspectionDefinition, InspectionScope, ProblemDefinition,
 };
 use swlsp_lsp_protocol::DiagnosticSeverity;
-use swlsp_shopware::ResolvedVersion;
+use swlsp_shopware::SupportedVersions;
 
 use crate::diagnostics::{
     SCSS_PREFER_CSS_VARIABLE_CODE, ScssCssVariableAnalyzer, ScssVariableSource,
@@ -17,17 +17,17 @@ use crate::inspections::{BindProblems, BoundInspection, RewriteNodeFix, rewrite_
 
 pub fn new_scss_css_variable(
     index: Option<Arc<swlsp_style::Index>>,
-    version: ResolvedVersion,
+    versions: impl Into<SupportedVersions>,
 ) -> Arc<dyn Inspection> {
     new_scss_css_variable_from(
         index.map(|index| index as Arc<dyn ScssVariableSource>),
-        version,
+        versions,
     )
 }
 
 pub(crate) fn new_scss_css_variable_from(
     variables: Option<Arc<dyn ScssVariableSource>>,
-    version: ResolvedVersion,
+    versions: impl Into<SupportedVersions>,
 ) -> Arc<dyn Inspection> {
     let bind: BindProblems = Arc::new(
         |_: &DiagnosticId, payload: &Map<String, Value>| -> Vec<BoundFix> {
@@ -48,7 +48,7 @@ pub(crate) fn new_scss_css_variable_from(
                 disabled_by_default: false,
             }],
         },
-        analyzers: vec![Arc::new(ScssCssVariableAnalyzer::new(variables, version))],
+        analyzers: vec![Arc::new(ScssCssVariableAnalyzer::new(variables, versions))],
         fixes: vec![Arc::new(RewriteNodeFix)],
         bind: Some(bind),
     })

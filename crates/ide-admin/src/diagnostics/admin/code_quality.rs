@@ -15,7 +15,7 @@ use swlsp_parser_js::syntax::{
     JS_VARIABLE_DECLARATION, TK_OPERATOR,
 };
 use swlsp_parser_twig::syntax as twigsyntax;
-use swlsp_shopware::ResolvedVersion;
+use swlsp_shopware::SupportedVersions;
 use swlsp_syntax::{SyntaxElement, SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
 use swlsp_textutil::lowercase;
 use swlsp_uriutil::filepath;
@@ -56,14 +56,17 @@ const COMPONENT_REGISTRATIONS: &[&str] = &[
 pub struct AdminCodeQualityAnalyzer {
     index: Option<Arc<AdminComponentIndexer>>,
     /// Vuex is deprecated and `emits` is required from Shopware 6.7 on.
-    vue3_only: bool,
+    versions: SupportedVersions,
 }
 
 impl AdminCodeQualityAnalyzer {
-    pub fn new(index: Option<Arc<AdminComponentIndexer>>, version: ResolvedVersion) -> Self {
+    pub fn new(
+        index: Option<Arc<AdminComponentIndexer>>,
+        versions: impl Into<SupportedVersions>,
+    ) -> Self {
         Self {
             index,
-            vue3_only: version.at_least(6, 7, 0),
+            versions: versions.into(),
         }
     }
 }
@@ -92,6 +95,7 @@ impl ProblemAnalyzer for AdminCodeQualityAnalyzer {
         // the Extension Manager; those rules are about extensions.
         let core =
             lowercase(&document.uri).contains("/administration/resources/app/administration/");
+        let vue3_only = self.versions.installed().at_least(6, 7, 0);
         let mut result = Vec::new();
         match lowercase(filepath::ext(&document.uri)).as_str() {
             ".js" | ".ts" => {
@@ -103,12 +107,21 @@ impl ProblemAnalyzer for AdminCodeQualityAnalyzer {
                         extension_manager_override(&call, &mut result);
                     }
                 }
-                if self.vue3_only {
+                // The Pinia stores replace Vuex from 6.7 on: an extension
+                // that still supports 6.6 keeps State. Declaring emits is
+                // valid on every Vue 3 Administration.
+                if self
+                    .versions
+                    .minimum_for_uri(&document.uri)
+                    .at_least(6, 7, 0)
+                {
                     deprecated_state(&root, &mut result);
+                }
+                if vue3_only {
                     self.script_emits(document, &root, &mut result);
                 }
             }
-            ".twig" if self.vue3_only => self.template_emits(document, &root, &mut result),
+            ".twig" if vue3_only => self.template_emits(document, &root, &mut result),
             _ => {}
         }
         Ok(result)

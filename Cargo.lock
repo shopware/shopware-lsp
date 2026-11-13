@@ -3556,6 +3556,7 @@ dependencies = [
  "swlsp-php-types",
  "swlsp-syntax",
  "swlsp-textutil",
+ "swlsp-uriutil",
  "tempfile",
 ]
 

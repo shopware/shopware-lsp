@@ -19,12 +19,23 @@ const DEPRECATED_ADMIN_I18N_TC_CODE: &str = "admin.vue-i18n.tc-deprecated";
 /// Mirrors Shopware Administration's `no-tc-translation` ESLint rule for the
 /// native JavaScript, Twig and mixed Vue CSTs. It targets calls only, so
 /// declarations and references to a property named `$tc` are left untouched.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct AdminI18nDeprecationAnalyzer;
+#[derive(Clone, Debug, Default)]
+pub struct AdminI18nDeprecationAnalyzer {
+    /// `None` checks every call, whatever the version.
+    versions: Option<swlsp_shopware::SupportedVersions>,
+}
 
 impl AdminI18nDeprecationAnalyzer {
     pub fn new() -> Self {
-        Self
+        Self::default()
+    }
+
+    /// `$t(key, count)` only pluralizes from Shopware 6.7 on (vue-i18n 10).
+    /// With versions, a call passing more than the key is left alone where
+    /// the code still has to run on an older Administration.
+    pub fn with_versions(mut self, versions: impl Into<swlsp_shopware::SupportedVersions>) -> Self {
+        self.versions = Some(versions.into());
+        self
     }
 }
 
@@ -48,9 +59,16 @@ impl ProblemAnalyzer for AdminI18nDeprecationAnalyzer {
         if !matches!(ext.as_str(), ".js" | ".ts" | ".twig" | ".vue") {
             return Ok(Vec::new());
         }
+        let plural = self
+            .versions
+            .as_ref()
+            .is_none_or(|versions| versions.minimum_for_uri(&document.uri).at_least(6, 7, 0));
         let mut result = Vec::new();
         if matches!(ext.as_str(), ".js" | ".ts" | ".vue") {
             for call in jsquery::iter_calls(&root, &[]) {
+                if !plural && jsquery::iter_arguments(&call).count() != 1 {
+                    continue;
+                }
                 let Some(name) = jsquery::call_callee(&call)
                     .and_then(|callee| jsquery::member_name_node(&callee))
                 else {
@@ -64,7 +82,11 @@ impl ProblemAnalyzer for AdminI18nDeprecationAnalyzer {
         }
         if matches!(ext.as_str(), ".twig" | ".vue") {
             for call in twigquery::iterate_nodes(&root, &[twigsyntax::TWIG_FUNCTION_CALL]) {
-                if twigquery::function_name(&call).as_deref() != Some("$tc") {
+                if twigquery::function_name(&call).as_deref() != Some("$tc")
+                    || (!plural
+                        && (twigquery::function_argument(&call, 0).is_none()
+                            || twigquery::function_argument(&call, 1).is_some()))
+                {
                     continue;
                 }
                 let Some(name_operand) =

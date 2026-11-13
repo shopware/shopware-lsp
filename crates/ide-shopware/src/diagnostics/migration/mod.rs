@@ -29,7 +29,7 @@ use swlsp_parser_php::syntax::{
 };
 use swlsp_php::PhpIndex;
 use swlsp_php_semantic::Snapshot;
-use swlsp_shopware::ResolvedVersion;
+use swlsp_shopware::{ResolvedVersion, SupportedVersions};
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt, TextRange};
 use swlsp_textutil::{eq_ignore_case, lowercase};
 use swlsp_uriutil::filepath;
@@ -163,12 +163,30 @@ pub struct ShopwareMigrationEdit {
 /// which migration set applies.
 pub struct ShopwareMigrationAnalyzer {
     php_index: Option<PhpIndex>,
+    versions: SupportedVersions,
+    /// The version the document being analyzed has to run on.
     version: ResolvedVersion,
 }
 
 impl ShopwareMigrationAnalyzer {
-    pub fn new(php_index: Option<PhpIndex>, version: ResolvedVersion) -> Self {
-        Self { php_index, version }
+    pub fn new(php_index: Option<PhpIndex>, versions: impl Into<SupportedVersions>) -> Self {
+        let versions = versions.into();
+        Self {
+            php_index,
+            version: versions.installed(),
+            versions,
+        }
+    }
+
+    /// The analyzer for one document. A migration rewrites to what the
+    /// target version offers, so an extension that still supports an older
+    /// version is checked against that one.
+    fn for_document(&self, document: &TextDocument) -> Self {
+        Self {
+            php_index: self.php_index.clone(),
+            versions: self.versions.clone(),
+            version: self.versions.minimum_for_uri(&document.uri),
+        }
     }
 
     pub(crate) fn at_least(&self, minor: i64, patch: i64) -> bool {
@@ -221,6 +239,16 @@ impl ProblemAnalyzer for ShopwareMigrationAnalyzer {
     }
 
     fn analyze(
+        &self,
+        ctx: &Context,
+        document: &Arc<TextDocument>,
+    ) -> Result<Vec<Problem>, BoxError> {
+        self.for_document(document).analyze_document(ctx, document)
+    }
+}
+
+impl ShopwareMigrationAnalyzer {
+    fn analyze_document(
         &self,
         ctx: &Context,
         document: &Arc<TextDocument>,
