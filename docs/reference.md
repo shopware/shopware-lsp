@@ -103,6 +103,20 @@ and editors link to a position. Either way:
 - the exit code is 1 when a finding reaches `--fail-on`, and the summary is
   the only message.
 
+In a GitHub Actions job (`GITHUB_ACTIONS=true`) `check` prints
+`--format github` unless a format is named: one workflow command per finding,
+which GitHub shows as an annotation on the file and line in the pull request.
+
+```yaml
+- run: shopware-lsp check src
+```
+
+Errors and warnings keep their level, info and hint findings become notices,
+the rule ID is the annotation title, and paths are relative to
+`GITHUB_WORKSPACE`. The summary still goes to standard error and the exit code
+is unchanged. GitHub shows a limited number of annotations per step (10 per
+level) and per job (50); the job log lists every finding.
+
 A finding that `check` can fix on its own ends in `[fixable]` (`"fixable": true`
 in `--json`), and the summary counts them. `check --fix` applies those fixes to
 the files and reports what is left; the exit code then reflects the remaining

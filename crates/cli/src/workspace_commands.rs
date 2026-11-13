@@ -365,12 +365,18 @@ pub(crate) fn run_check(runner: &Runner, flags: &Check) -> Result<(), CliError> 
     if !effective_fail_on.is_empty() && !effective_fail_on.eq_ignore_ascii_case("off") {
         fail_on = diagnostic_severity(&effective_fail_on)?;
     }
-    let format = Format::parse(flags.format.as_deref(), runner.out.is_terminal())?;
-    let mut report = Report::new(
-        format,
-        runner.color.style(&runner.out),
-        DisplayPaths::new(&session.root),
-    );
+    let github_workspace = runner.options.github_workspace.as_deref();
+    let format = Format::parse(
+        flags.format.as_deref(),
+        runner.out.is_terminal(),
+        github_workspace.is_some(),
+    )?;
+    let display_paths = match format {
+        // GitHub resolves annotation paths against the checkout.
+        Format::Github => DisplayPaths::below(github_workspace, &session.root),
+        Format::Pretty | Format::Concise => DisplayPaths::new(&session.root),
+    };
+    let mut report = Report::new(format, runner.color.style(&runner.out), display_paths);
     let err_style = runner.color.style(&runner.err_out);
     let mut status = runner.status("Checking…");
     if status.is_live() {

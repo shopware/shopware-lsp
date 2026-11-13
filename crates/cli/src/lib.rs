@@ -46,6 +46,9 @@ pub struct Options {
     pub version: String,
     pub license: String,
     pub third_party_notices: String,
+    /// The checkout of the GitHub Actions job the command runs in
+    /// (`GITHUB_WORKSPACE`, possibly empty); `None` outside of one.
+    pub github_workspace: Option<String>,
 }
 
 /// Cancellation shared by a command and its session. Children

@@ -41,6 +41,7 @@ fn core_commands_do_not_start_a_workspace() {
         version: "1.2.3".into(),
         license: "project license".into(),
         third_party_notices: "dependency notice".into(),
+        github_workspace: None,
     };
     for (args, contains) in [
         (vec!["help"], "check"),

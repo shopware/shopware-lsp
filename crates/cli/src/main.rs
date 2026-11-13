@@ -20,6 +20,9 @@ fn main() {
         version: version.to_owned(),
         license: LICENSE.to_owned(),
         third_party_notices: THIRD_PARTY_NOTICES.to_owned(),
+        github_workspace: std::env::var("GITHUB_ACTIONS")
+            .is_ok_and(|value| value == "true")
+            .then(|| std::env::var("GITHUB_WORKSPACE").unwrap_or_default()),
     });
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = runner.run(

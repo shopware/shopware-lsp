@@ -1,4 +1,4 @@
-//! The text report of `check`: findings in one of two layouts and a
+//! The text report of `check`: findings in one of its layouts and a
 //! summary.
 
 use std::fmt::Write as _;
@@ -20,19 +20,28 @@ pub(crate) enum Format {
     /// One `path:line:column: severity: message [code]` line per finding,
     /// which editors and terminals link to the position.
     Concise,
+    /// One GitHub Actions workflow command per finding, which GitHub shows
+    /// as an annotation on the file.
+    Github,
 }
 
 impl Format {
-    /// The named format; without a name, pretty on a terminal and concise
-    /// elsewhere.
-    pub(crate) fn parse(value: Option<&str>, terminal: bool) -> Result<Self, CliError> {
+    /// The named format; without a name, pretty on a terminal, annotations
+    /// in a GitHub Actions job and concise elsewhere.
+    pub(crate) fn parse(
+        value: Option<&str>,
+        terminal: bool,
+        github_actions: bool,
+    ) -> Result<Self, CliError> {
         match value.map(str::trim) {
             None | Some("") if terminal => Ok(Self::Pretty),
+            None | Some("") if github_actions => Ok(Self::Github),
             None | Some("") => Ok(Self::Concise),
             Some("pretty") => Ok(Self::Pretty),
             Some("concise") => Ok(Self::Concise),
+            Some("github") => Ok(Self::Github),
             Some(other) => Err(CliError::usage(format!(
-                "unknown check format {other:?}: expected pretty or concise"
+                "unknown check format {other:?}: expected pretty, concise or github"
             ))),
         }
     }
@@ -127,7 +136,66 @@ impl Report {
         match self.format {
             Format::Pretty => self.pretty(&path, &findings),
             Format::Concise => self.concise(&path, &findings),
+            Format::Github => self.github(&path, &findings),
         }
+    }
+
+    /// `::error file=…,line=…,title=…::message` per finding. GitHub knows
+    /// errors, warnings and notices; columns are only valid within one line.
+    fn github(&self, path: &str, findings: &[&DiagnosticOutput]) -> String {
+        let mut text = String::new();
+        for finding in findings {
+            let diagnostic = &finding.diagnostic;
+            let level = match severity_index(finding) {
+                0 => "error",
+                1 => "warning",
+                _ => "notice",
+            };
+            let (start, end) = (diagnostic.range.start, diagnostic.range.end);
+            // A range ending at the start of a line ends with the line
+            // before it.
+            let end_line = if end.line > start.line && end.character == 0 {
+                end.line - 1
+            } else {
+                end.line
+            };
+            let _ = write!(
+                text,
+                "::{level} file={},line={},endLine={}",
+                github_property(path),
+                start.line + 1,
+                end_line + 1
+            );
+            if start.line == end_line {
+                let _ = write!(text, ",col={}", start.character + 1);
+                if end.line == start.line {
+                    let _ = write!(
+                        text,
+                        ",endColumn={}",
+                        end.character.max(start.character) + 1
+                    );
+                }
+            }
+            if let Some(code) = code(finding) {
+                let _ = write!(text, ",title={}", github_property(&code));
+            }
+            let mut message = diagnostic.message.trim_end().to_owned();
+            if fixable(finding) {
+                message.push_str(" [fixable]");
+            }
+            for related in finding.related.iter().flatten() {
+                let _ = write!(
+                    message,
+                    "\n{}:{}:{}: {}",
+                    self.paths.display(&related.location.uri),
+                    related.location.range.start.line + 1,
+                    related.location.range.start.character + 1,
+                    related.message
+                );
+            }
+            let _ = writeln!(text, "::{}", github_data(&message));
+        }
+        text
     }
 
     fn concise(&self, path: &str, findings: &[&DiagnosticOutput]) -> String {
@@ -321,6 +389,19 @@ impl Report {
 }
 
 /// The index into [`SEVERITIES`]; a missing severity reads as a warning.
+/// Escapes the message of a workflow command.
+fn github_data(value: &str) -> String {
+    value
+        .replace('%', "%25")
+        .replace('\r', "%0D")
+        .replace('\n', "%0A")
+}
+
+/// Escapes a property value of a workflow command.
+fn github_property(value: &str) -> String {
+    github_data(value).replace(':', "%3A").replace(',', "%2C")
+}
+
 fn severity_index(finding: &DiagnosticOutput) -> usize {
     (diagnostic_severity_value(&finding.diagnostic).clamp(1, 4) - 1) as usize
 }

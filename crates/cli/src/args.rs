@@ -317,7 +317,7 @@ pub(crate) struct Check {
     /// Maximum concurrent diagnostic requests (default: CPU count, at most 4)
     #[usage(long, value_name = "COUNT")]
     pub workers: Option<i64>,
-    /// Output layout: pretty (grouped by file, the default on a terminal) or concise (one line per finding)
+    /// Output layout: pretty (grouped by file, the default on a terminal), concise (one line per finding) or github (annotations, the default in GitHub Actions)
     #[usage(long, value_name = "FORMAT")]
     pub format: Option<String>,
     /// Apply the quick fixes that need no decision and report what is left

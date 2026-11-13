@@ -491,3 +491,81 @@ fn check_only_turns_an_opt_in_rule_on_unless_the_project_configures_it() {
         finding.replace("warning", "error")
     );
 }
+
+#[test]
+fn check_annotates_findings_for_github_actions() {
+    let (_root, root, _imports) = fixable_workspace();
+    let annotations = "::error file=src/Broken.php,line=1,endLine=1,col=17,title=php.parse::expected ) but reached end of file\n\
+                       ::notice file=src/Imports.php,line=5,endLine=5,col=5,endColumn=14,title=php.unusedImport::Import First is never used [fixable]\n\
+                       ::notice file=src/Imports.php,line=6,endLine=6,col=5,endColumn=15,title=php.unusedImport::Import Second is never used [fixable]\n";
+    let named = run(&["--root", &root, "check", "--format", "github", &root]);
+    assert_eq!(named.out, annotations);
+    // The summary stays on stderr and the exit code is the same.
+    assert!(
+        named
+            .err
+            .starts_with("Found 1 error, 2 hints in 2 of 5 files ("),
+        "{}",
+        named.err
+    );
+    assert_eq!(named.result.unwrap_err().code, 1);
+
+    // In a GitHub Actions job it is the default, with paths relative to the
+    // checkout; a named format still wins.
+    let checkout = std::path::Path::new(&root)
+        .parent()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let project = std::path::Path::new(&root)
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let in_actions = |arguments: &[&str]| {
+        run_with(
+            crate::Options {
+                github_workspace: Some(checkout.clone()),
+                ..test_options()
+            },
+            &crate::Cancel::new(),
+            arguments,
+        )
+    };
+    let detected = in_actions(&["--root", &root, "check", &root]);
+    assert_eq!(
+        detected.out,
+        annotations.replace("file=src/", &format!("file={project}/src/"))
+    );
+    let concise = in_actions(&["--root", &root, "check", "--format", "concise", &root]);
+    assert!(
+        concise.out.starts_with("src/Broken.php:1:17: error: "),
+        "{}",
+        concise.out
+    );
+}
+
+#[test]
+fn github_annotations_escape_what_the_command_syntax_reserves() {
+    let mut finding = finding(
+        "file:///project/src/a,b:c.php",
+        0,
+        2,
+        2,
+        "100% wrong\nsecond line",
+    );
+    finding.diagnostic.range.end.line = 2;
+    finding.diagnostic.code = Some(json!("rule:one,two"));
+    let mut report = Report::new(
+        Format::Github,
+        Style::default(),
+        DisplayPaths::below(None, "/project"),
+    );
+    // A range over several lines has no columns.
+    assert_eq!(
+        report.file(&[finding]),
+        "::warning file=src/a%2Cb%3Ac.php,line=1,endLine=3,title=rule%3Aone%2Ctwo::100%25 wrong%0Asecond line\n"
+    );
+}
