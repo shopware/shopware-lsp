@@ -39,6 +39,18 @@ fn register(server: &Registrar<'_>, s: &Services) {
                 opt_out: "",
             },
             swlsp_lsp::RuleHelp {
+                code: "scss.variable.prefer-css-variable",
+                fix: "Read the custom property: var(--name). The Administration emits one for \
+                      every variable of its variables.scss, and it follows runtime changes \
+                      such as themes. A quick fix replaces the variable.",
+                exceptions: "Only a variable of the Administration's variables.scss standing on \
+                             its own in a declaration value is reported, from Shopware 6.5 on. \
+                             A variable that is computed with, interpolated, passed to a \
+                             function or mixin, used in a query or bound in the file itself is \
+                             left alone: Sass needs its value at build time.",
+                opt_out: "",
+            },
+            swlsp_lsp::RuleHelp {
                 code: "scss.import.extension",
                 fix: "Import the resource without .scss: @import \"~scss/variables\". A quick fix \
                   removes the extension.",
@@ -49,6 +61,10 @@ fn register(server: &Registrar<'_>, s: &Services) {
         ],
     );
     server.inspection(inspections::new_scss_import());
+    server.inspection(inspections::new_scss_css_variable(
+        s.styles.clone(),
+        s.shopware_version,
+    ));
     server.inspection(inspections::new_scss_variable(
         s.styles.clone(),
         Some(s.symbols.clone()),

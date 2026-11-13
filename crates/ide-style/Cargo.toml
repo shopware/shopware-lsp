@@ -13,6 +13,7 @@ swlsp-parser-scss = { path = "../parser-scss" }
 swlsp-lsp-protocol = { path = "../lsp-protocol" }
 swlsp-syntax.workspace = true
 swlsp-style = { path = "../style" }
+swlsp-shopware = { path = "../shopware" }
 swlsp-textutil = { path = "../textutil" }
 swlsp-uriutil = { path = "../uriutil" }
 swlsp-indexer = { path = "../indexer" }

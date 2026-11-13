@@ -104,6 +104,21 @@ Languages: php. Domain: `php`.
 - Fix: Use a public method or accessor of the class, or widen the member's visibility if the class is yours.
 - Exceptions: Not reported for classes with a matching magic method, and for Closure::bind scopes.
 
+## `scss.css_variable`
+
+Administration SCSS reading a variable of the Administration's variables.scss where its CSS custom property can be used.
+
+Languages: scss. Domain: `scss`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `scss.variable.prefer-css-variable` | hint | yes |
+
+**`scss.variable.prefer-css-variable`**
+
+- Fix: Read the custom property: var(--name). The Administration emits one for every variable of its variables.scss, and it follows runtime changes such as themes. A quick fix replaces the variable.
+- Exceptions: Only a variable of the Administration's variables.scss standing on its own in a declaration value is reported, from Shopware 6.5 on. A variable that is computed with, interpolated, passed to a function or mixin, used in a query or bound in the file itself is left alone: Sass needs its value at build time.
+
 ## `scss.import`
 
 Administration SCSS importing a shared `~scss` resource with its file extension.
