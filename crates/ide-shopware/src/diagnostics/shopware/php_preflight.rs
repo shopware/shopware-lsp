@@ -350,7 +350,11 @@ impl Run<'_> {
     /// The value of the route default `key`; `Some(None)` for a key
     /// without one.
     #[allow(clippy::option_option)]
-    fn route_default_value(&self, route: &SyntaxNode, key: &str) -> Option<Option<SyntaxNode>> {
+    pub(super) fn route_default_value(
+        &self,
+        route: &SyntaxNode,
+        key: &str,
+    ) -> Option<Option<SyntaxNode>> {
         let defaults = unwrap_php_parentheses(&local_call_argument(route, "defaults", 4)?);
         if defaults.kind() != PHP_ARRAY {
             return None;
@@ -410,7 +414,7 @@ impl Run<'_> {
         }
     }
 
-    fn is_route(&self, attribute: &SyntaxNode) -> bool {
+    pub(super) fn is_route(&self, attribute: &SyntaxNode) -> bool {
         let name = phpquery::direct_child(attribute, PHP_NAME);
         let resolved = self.resolved_symbols(name.as_ref(), SymbolKind::Class);
         if resolved.is_empty() {

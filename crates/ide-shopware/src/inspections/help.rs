@@ -106,6 +106,45 @@ pub(crate) const STORE_REVIEW: &[RuleHelp] = &[
         "",
     ),
     help(
+        "shopware.php.route.scope_missing",
+        "Set the scope on the route or once on the controller class: \
+         #[Route(defaults: [PlatformRequest::ATTRIBUTE_ROUTE_SCOPE => [StorefrontRouteScope::ID]])].",
+        "Reported only where Shopware is installed. A scope given on the class counts for \
+         every action.",
+        "",
+    ),
+    help(
+        "shopware.php.route.scope_path",
+        "Start the path with /api/ for the api scope and with /store-api/ for the store-api \
+         scope; the scope refuses a request to any other path.",
+        "A path that is not a known string, a route with several scopes and the other \
+         scopes are not checked.",
+        "",
+    ),
+    help(
+        "shopware.php.route.name_prefix",
+        "Name the route frontend.*, widgets.* or payment.*. The storefront router adds the \
+         sales channel URL only to those names when it generates a link.",
+        "Only a route whose one scope is storefront is checked.",
+        "",
+    ),
+    help(
+        "shopware.php.route.methods_missing",
+        "Name the HTTP methods the action handles: methods: ['GET'] or [Request::METHOD_POST].",
+        "Methods given on the controller class count for every action.",
+        "",
+    ),
+    help(
+        "shopware.php.route.attribute_literal",
+        "Write the route default with the constant Shopware declares for it, such as \
+         PlatformRequest::ATTRIBUTE_ROUTE_SCOPE and StorefrontRouteScope::ID; a quick fix \
+         replaces the string.",
+        "Only keys starting with an underscore that PlatformRequest has an ATTRIBUTE_ \
+         constant for, and the values of the route scope. The quick fix writes the short \
+         class name where the file imports the class, and the qualified name otherwise.",
+        "",
+    ),
+    help(
         "shopware.php.repository.unbounded_search",
         "Restrict the Criteria: pass IDs, add a filter or setLimit(), or iterate with \
          RepositoryIterator. When only IDs or a count are needed use searchIds() or an aggregation.",

@@ -1056,6 +1056,45 @@ Languages: php. Domain: `shopware`.
 - Fix: Keep certificate and host verification on. For a private CA configure its certificate (CURLOPT_CAINFO, the `cafile` stream option) instead of disabling the check.
 - Exceptions: Only literal option values are judged; a value from a variable is not reported.
 
+## `shopware.php.route`
+
+Route attributes that break Shopware's conventions: no route scope, an API route outside of the path of its scope, a storefront route the storefront router does not prefix, no HTTP methods, and route defaults written as strings where Shopware declares constants.
+
+Languages: php. Domain: `shopware`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `shopware.php.route.attribute_literal` | hint | yes |
+| `shopware.php.route.methods_missing` | warning | yes |
+| `shopware.php.route.name_prefix` | warning | yes |
+| `shopware.php.route.scope_missing` | warning | yes |
+| `shopware.php.route.scope_path` | warning | yes |
+
+**`shopware.php.route.attribute_literal`**
+
+- Fix: Write the route default with the constant Shopware declares for it, such as PlatformRequest::ATTRIBUTE_ROUTE_SCOPE and StorefrontRouteScope::ID; a quick fix replaces the string.
+- Exceptions: Only keys starting with an underscore that PlatformRequest has an ATTRIBUTE_ constant for, and the values of the route scope. The quick fix writes the short class name where the file imports the class, and the qualified name otherwise.
+
+**`shopware.php.route.methods_missing`**
+
+- Fix: Name the HTTP methods the action handles: methods: ['GET'] or [Request::METHOD_POST].
+- Exceptions: Methods given on the controller class count for every action.
+
+**`shopware.php.route.name_prefix`**
+
+- Fix: Name the route frontend.*, widgets.* or payment.*. The storefront router adds the sales channel URL only to those names when it generates a link.
+- Exceptions: Only a route whose one scope is storefront is checked.
+
+**`shopware.php.route.scope_missing`**
+
+- Fix: Set the scope on the route or once on the controller class: #[Route(defaults: [PlatformRequest::ATTRIBUTE_ROUTE_SCOPE => [StorefrontRouteScope::ID]])].
+- Exceptions: Reported only where Shopware is installed. A scope given on the class counts for every action.
+
+**`shopware.php.route.scope_path`**
+
+- Fix: Start the path with /api/ for the api scope and with /store-api/ for the store-api scope; the scope refuses a request to any other path.
+- Exceptions: A path that is not a known string, a route with several scopes and the other scopes are not checked.
+
 ## `shopware.php.semantic`
 
 Store review rules needing type information: internal API use, repositories queried in loops, session access in Store API routes and payment handlers, scheduled task intervals, default contexts, system config reads ignoring the sales channel, kernel listeners checking the route, insecure Symfony cookies, empty responses, writes to the local disk, unrestricted searches, config reads in constructors, translated state names, entities in queue messages, GET routes that change data, Admin API write routes without privileges, getcwd(), debug output and empty catch blocks.

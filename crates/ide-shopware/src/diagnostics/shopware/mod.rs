@@ -21,6 +21,7 @@ mod php_filesystem;
 mod php_http;
 mod php_local;
 mod php_preflight;
+mod php_routes;
 mod php_semantic;
 mod services_xml;
 mod snippet_files;
@@ -44,6 +45,7 @@ pub use dal_entity::DalEntityAnalyzer;
 pub use decoration::ShopwareDecorationAnalyzer;
 pub use entity_snapshot::EntitySnapshotAnalyzer;
 pub use php_local::*;
+pub use php_routes::{ROUTE_CODES, ShopwareRouteAnalyzer};
 pub(crate) use php_semantic::same_php_namespace_package;
 pub use php_semantic::{
     SHOPWARE_PHP_CONCRETE_DECORATOR_EXTENSION_CODE, SHOPWARE_PHP_DEFAULT_CONTEXT_CODE,

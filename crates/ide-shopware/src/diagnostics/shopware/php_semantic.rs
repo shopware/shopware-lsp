@@ -147,16 +147,7 @@ impl ProblemAnalyzer for ShopwarePhpSemanticAnalyzer {
         let Some(state) = swlsp_lsp_phpanalysis::for_document(php_index, document)? else {
             return Ok(Vec::new());
         };
-        let mut references: Vec<&Reference> = state.document.references.iter().collect();
-        references.sort_by_key(|reference| reference.range.start());
-        let mut run = Run {
-            semantic: &state.document,
-            snapshot: &state.snapshot,
-            references,
-            problems: Vec::new(),
-            store_api_classes: HashMap::new(),
-            small_entities: &self.small_entities,
-        };
+        let mut run = Run::new(&state.document, &state.snapshot, &self.small_entities);
         phpquery::visit(
             &root,
             &[
@@ -206,14 +197,7 @@ impl ProblemAnalyzer for ShopwarePhpSemanticAnalyzer {
             },
         );
         ctx.check()?;
-        let mut problems = run.problems;
-        problems.sort_by(|left, right| {
-            left.range
-                .start()
-                .cmp(&right.range.start())
-                .then_with(|| left.id.cmp(&right.id))
-        });
-        Ok(problems)
+        Ok(run.into_problems())
     }
 }
 
@@ -225,6 +209,40 @@ pub(super) struct Run<'a> {
     problems: Vec<Problem>,
     store_api_classes: HashMap<SymbolId, bool>,
     pub(super) small_entities: &'a BTreeSet<String>,
+}
+
+impl<'a> Run<'a> {
+    pub(super) fn new(
+        semantic: &'a Document,
+        snapshot: &'a Snapshot,
+        small_entities: &'a BTreeSet<String>,
+    ) -> Self {
+        let mut references: Vec<&Reference> = semantic.references.iter().collect();
+        references.sort_by_key(|reference| reference.range.start());
+        Run {
+            semantic,
+            snapshot,
+            references,
+            problems: Vec::new(),
+            store_api_classes: HashMap::new(),
+            small_entities,
+        }
+    }
+
+    pub(super) fn push(&mut self, problem: Problem) {
+        self.problems.push(problem);
+    }
+
+    /// What the run reported, in source order.
+    pub(super) fn into_problems(mut self) -> Vec<Problem> {
+        self.problems.sort_by(|left, right| {
+            left.range
+                .start()
+                .cmp(&right.range.start())
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        self.problems
+    }
 }
 
 impl Run<'_> {
