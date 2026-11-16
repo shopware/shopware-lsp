@@ -443,6 +443,15 @@ fn has_duplicate_class(snapshot: &Snapshot, name: &str) -> bool {
 pub(crate) fn format_deprecation_hover(symbol: &Symbol) -> String {
     let mut result = String::from("\n\n**Deprecated**");
     let Some(details) = deprecation_of(symbol.attributes()) else {
+        // A `@deprecated` tag says since when and what to use in one text.
+        let note = symbol.deprecation().trim();
+        if !note.is_empty() {
+            let since = note
+                .get(..6)
+                .is_some_and(|start| start.eq_ignore_ascii_case("since "));
+            result.push_str(if since { " " } else { ": " });
+            result.push_str(note);
+        }
         return result;
     };
     if !details.since.is_empty() {

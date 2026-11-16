@@ -642,6 +642,33 @@ function run(Legacy $legacy, Request $request): void {
 }";
     let document = document(&root.path().join("Usage.php"), usage, 1);
     let provider = Provider::new(Some(index.clone()));
+    // Hover shows the note as well.
+    for (needle, text) in [
+        ("old()", "**Deprecated** since 2.0, use modern() instead."),
+        ("LIMIT", "**Deprecated**: tag:v6.8.0 - Will be removed"),
+        ("bare()", "**Deprecated**"),
+    ] {
+        let offset = byte_offset(usage, needle);
+        let hover = provider
+            .get_hover(
+                &ctx(),
+                &HoverRequest {
+                    params: protocol::HoverParams {
+                        text_document: identifier(&document),
+                        position: position(&document, offset),
+                        ..Default::default()
+                    },
+                    syntax: syntax(&document, offset),
+                },
+            )
+            .unwrap()
+            .unwrap();
+        assert!(
+            hover.contents.value.contains(text),
+            "{}",
+            hover.contents.value
+        );
+    }
     let mut reported = messages(&analyze(&provider, &document), Some("php.deprecated"));
     reported.sort();
     assert_eq!(
