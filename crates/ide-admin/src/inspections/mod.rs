@@ -15,4 +15,5 @@ pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
     for inspection in new_admin_inspections(s.admin.clone(), s.supported_versions.clone()) {
         server.inspection(inspection);
     }
+    server.inspection(new_admin_api_routes(Some(s.routes.clone())));
 }

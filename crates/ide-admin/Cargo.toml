@@ -12,6 +12,7 @@ swlsp-ide = { path = "../ide" }
 swlsp-lsp = { path = "../lsp" }
 swlsp-language = { path = "../language" }
 swlsp-admin = { path = "../admin" }
+swlsp-symfony = { path = "../symfony" }
 swlsp-indexer = { path = "../indexer" }
 swlsp-uriutil = { path = "../uriutil" }
 swlsp-parser-js = { path = "../parser-js" }

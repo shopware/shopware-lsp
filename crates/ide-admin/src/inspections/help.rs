@@ -331,6 +331,23 @@ pub(crate) const ADMIN: &[RuleHelp] = &[
         "",
     ),
     help(
+        "admin.api.route-not-found",
+        "Correct the path, or declare the route in a controller with the api route scope. \
+         The request goes to /api plus the path given to the HTTP client.",
+        "Only paths below a segment starting with an underscore, such as /_action/, are \
+         checked: the entity endpoints are generated. A path that is built at runtime, \
+         apart from interpolations in a template string and getApiBasePath() of an \
+         ApiService, is not checked, and neither are test files.",
+        "",
+    ),
+    help(
+        "admin.api.route-method",
+        "Call the HTTP client method the route declares in methods, or add the method to \
+         the route.",
+        "A route without methods answers every one.",
+        "",
+    ),
+    help(
         "admin.import.core-source",
         "Take the class or service from the global Shopware object instead of importing \
          the core file.",

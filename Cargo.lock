@@ -2789,6 +2789,7 @@ dependencies = [
  "swlsp-rewrite",
  "swlsp-shopware",
  "swlsp-suggestion",
+ "swlsp-symfony",
  "swlsp-syntax",
  "swlsp-textutil",
  "swlsp-twig",

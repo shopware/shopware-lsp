@@ -149,6 +149,27 @@ Languages: scss. Domain: `scss`.
 - Fix: Define the variable, or correct its name to one the workspace or a Shopware theme provides. A variable of a theme field must be declared in the theme's theme.json.
 - Exceptions: Module variables (math.$pi) and named arguments are not checked. A variable bound anywhere in the file (a parameter, a loop variable) counts as defined. Nothing is reported until indexing has finished.
 
+## `shopware.admin.api_route`
+
+Administration requests to an Admin API action route that no controller declares, or with an HTTP method the route does not answer.
+
+Languages: javascript. Domain: `administration`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `admin.api.route-method` | warning | yes |
+| `admin.api.route-not-found` | warning | yes |
+
+**`admin.api.route-method`**
+
+- Fix: Call the HTTP client method the route declares in methods, or add the method to the route.
+- Exceptions: A route without methods answers every one.
+
+**`admin.api.route-not-found`**
+
+- Fix: Correct the path, or declare the route in a controller with the api route scope. The request goes to /api plus the path given to the HTTP client.
+- Exceptions: Only paths below a segment starting with an underscore, such as /_action/, are checked: the entity endpoints are generated. A path that is built at runtime, apart from interpolations in a template string and getApiBasePath() of an ApiService, is not checked, and neither are test files.
+
 ## `shopware.admin.block_override`
 
 Administration template block overrides that are nested, conditional or repeated, and conditional or repeated parent calls.

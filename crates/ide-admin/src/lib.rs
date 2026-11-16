@@ -68,6 +68,9 @@ fn register(server: &Registrar<'_>, s: &Services) {
     server.definition(Arc::new(crate::definition::AdminDefinitionProvider::new(
         index(),
     )));
+    server.definition(Arc::new(
+        crate::definition::AdminApiRouteDefinitionProvider::new(s.routes.clone()),
+    ));
     server.references(Arc::new(crate::reference::AdminReferenceProvider::new(
         Some(index()),
     )));

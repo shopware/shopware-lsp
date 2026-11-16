@@ -290,6 +290,36 @@ pub fn new_admin_inspections(
     ]
 }
 
+/// Administration requests to Admin API action routes, checked against the
+/// routes the PHP side declares.
+pub fn new_admin_api_routes(
+    routes: Option<Arc<swlsp_symfony::RouteIndexer>>,
+) -> Arc<dyn Inspection> {
+    Arc::new(BoundInspection {
+        definition: InspectionDefinition {
+            id: "shopware.admin.api_route".to_owned(),
+            description: "Administration requests to an Admin API action route that no controller declares, or with an HTTP method the route does not answer.",
+            domain: "administration",
+            scope: InspectionScope::Framework,
+            languages: vec![LanguageId::JavaScript],
+            problems: crate::diagnostics::ADMIN_API_ROUTE_CODES
+                .iter()
+                .map(|code| ProblemDefinition {
+                    id: DiagnosticId::from(*code),
+                    source: "shopware-lsp".to_owned(),
+                    default_severity: DiagnosticSeverity::WARNING,
+                    disabled_by_default: false,
+                })
+                .collect(),
+        },
+        analyzers: vec![Arc::new(crate::diagnostics::AdminApiRouteAnalyzer::new(
+            routes,
+        ))],
+        fixes: Vec::new(),
+        bind: None,
+    })
+}
+
 fn bind_admin_problem(code: &DiagnosticId, payload: &Map<String, Value>) -> Vec<BoundFix> {
     let code = code.as_str();
     if code.starts_with("admin.twig.migration.") {

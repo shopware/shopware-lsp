@@ -1,6 +1,7 @@
 //! Shopware Administration diagnostics.
 
 mod analyzer;
+mod api_route;
 mod block_override;
 mod code_quality;
 mod components;
@@ -20,11 +21,15 @@ mod tests_analyzer_b;
 #[cfg(test)]
 mod tests_analyzer_c;
 #[cfg(test)]
+mod tests_api_route;
+#[cfg(test)]
 mod tests_code_quality;
 #[cfg(test)]
 mod tests_misc;
 
 pub use analyzer::AdminAnalyzer;
+pub use api_route::{ADMIN_API_ROUTE_CODES, AdminApiRouteAnalyzer};
+pub(crate) use api_route::{action_routes, answering_routes, api_request};
 pub use block_override::{
     ADMIN_BLOCK_OVERRIDE_CONDITIONAL_CODE, ADMIN_BLOCK_OVERRIDE_NESTED_CODE,
     ADMIN_BLOCK_OVERRIDE_REPEATED_CODE, ADMIN_BLOCK_PARENT_CONDITIONAL_CODE,
