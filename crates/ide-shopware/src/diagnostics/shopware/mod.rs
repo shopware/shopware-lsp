@@ -20,6 +20,7 @@ mod php_conventions;
 mod php_filesystem;
 mod php_http;
 mod php_local;
+mod php_migration_step;
 mod php_preflight;
 mod php_routes;
 mod php_semantic;
@@ -45,6 +46,7 @@ pub use dal_entity::DalEntityAnalyzer;
 pub use decoration::ShopwareDecorationAnalyzer;
 pub use entity_snapshot::EntitySnapshotAnalyzer;
 pub use php_local::*;
+pub use php_migration_step::{MIGRATION_STEP_CODES, ShopwareMigrationStepAnalyzer};
 pub use php_routes::{ROUTE_CODES, ShopwareRouteAnalyzer};
 pub(crate) use php_semantic::same_php_namespace_package;
 pub use php_semantic::{

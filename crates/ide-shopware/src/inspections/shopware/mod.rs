@@ -2,6 +2,7 @@
 //! services.xml migration and app scripts.
 
 mod app_script;
+mod migration_step;
 pub(crate) mod routes;
 mod services_xml_migration;
 mod storefront_js;
@@ -10,6 +11,7 @@ mod storefront_js;
 mod tests;
 
 pub use app_script::{ADD_APP_READ_PERMISSION_FIX_ID, new_app_script};
+pub use migration_step::new_shopware_migration_step;
 pub use routes::new_shopware_routes;
 pub use services_xml_migration::{
     CONVERT_IMPORTED_SERVICES_XML_FIX_ID, CONVERT_SERVICES_XML_FIX_ID, new_services_xml_migration,

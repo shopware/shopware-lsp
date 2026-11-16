@@ -2876,6 +2876,7 @@ dependencies = [
  "swlsp-shopware-dal",
  "swlsp-shopware-entityschema",
  "swlsp-snippet",
+ "swlsp-sql",
  "swlsp-symfony",
  "swlsp-syntax",
  "swlsp-systemconfig",
@@ -3620,6 +3621,10 @@ dependencies = [
  "swlsp-syntax",
  "tempfile",
 ]
+
+[[package]]
+name = "swlsp-sql"
+version = "0.1.0"
 
 [[package]]
 name = "swlsp-style"

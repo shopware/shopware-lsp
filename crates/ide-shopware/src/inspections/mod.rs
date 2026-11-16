@@ -49,6 +49,7 @@ pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
     )));
     add(new_shopware_criteria());
     add(new_shopware_routes(php()));
+    add(new_shopware_migration_step(php()));
     add(new_storefront_javascript(s.supported_versions.clone()));
     add(analyzer(
         diagnostics::ShopwareDecorationAnalyzer::new(php()),

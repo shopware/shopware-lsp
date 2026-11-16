@@ -106,6 +106,45 @@ pub(crate) const STORE_REVIEW: &[RuleHelp] = &[
         "",
     ),
     help(
+        "shopware.migration_step.create_unguarded",
+        "Write CREATE TABLE IF NOT EXISTS; a quick fix adds it. A migration runs again \
+         after a failed update, on a restored database, or when a plugin is reinstalled \
+         with its data kept.",
+        "A temporary table, and a statement in a method that checks what exists first or \
+         sits in a try block, are not reported. SQL assembled at runtime is not looked at.",
+        "A migration that already ran everywhere can keep its finding suppressed: \
+         // @phpstan-ignore shopware.migration_step.create_unguarded.",
+    ),
+    help(
+        "shopware.migration_step.add_unguarded",
+        "Check first: if (!$this->columnExists($connection, 'table', 'column')) for a \
+         column, indexExists() or a query on information_schema for a key. MySQL has no \
+         ADD COLUMN IF NOT EXISTS.",
+        "Not reported when the method, or every caller of the helper method, calls \
+         something named …exist…, reads the schema (SHOW …, information_schema, the \
+         schema manager) before the statement, or runs it in a try block; and not for a \
+         table the migration creates itself.",
+        "Suppress a migration that already ran everywhere with a comment on the line.",
+    ),
+    help(
+        "shopware.migration_step.destructive_update",
+        "Move the statement to updateDestructive(), which runs once every server has the \
+         new code. For a NOT NULL column, add a default or allow NULL.",
+        "Reported for dropping and renaming tables and columns, and for adding a NOT NULL \
+         column without a default, in update() and its helpers. Dropping an index or a \
+         foreign key is not reported, and neither is anything done to a table the \
+         migration creates itself.",
+        "Suppress it where no rolling deployment has to be supported.",
+    ),
+    help(
+        "shopware.migration_step.insert_unguarded",
+        "Use INSERT IGNORE or ON DUPLICATE KEY UPDATE, or read the row first and insert \
+         only when it is missing.",
+        "Off unless configured. Not reported after a read of rows or a check in the same \
+         method, in a try block, or for a table the migration creates itself.",
+        "",
+    ),
+    help(
         "shopware.php.route.scope_missing",
         "Set the scope on the route or once on the controller class: \
          #[Route(defaults: [PlatformRequest::ATTRIBUTE_ROUTE_SCOPE => [StorefrontRouteScope::ID]])].",

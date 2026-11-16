@@ -41,6 +41,7 @@ swlsp-parser-scss = { path = "../parser-scss" }
 swlsp-php-project = { path = "../php-project" }
 swlsp-php-rewrite = { path = "../php-rewrite" }
 swlsp-shopware = { path = "../shopware" }
+swlsp-sql = { path = "../sql" }
 swlsp-shopware-dal = { path = "../shopware-dal" }
 swlsp-shopware-entityschema = { path = "../shopware-entityschema" }
 swlsp-theme = { path = "../theme" }

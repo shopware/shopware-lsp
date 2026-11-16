@@ -1016,6 +1016,42 @@ Languages: php. Domain: `shopware.migrations`.
 - Fix: Call generate() with a MediaCollection; a quick fix wraps the single media entity.
 - Exceptions: Reported only when the Shopware target version is known (shopware.targetVersion, or shopware/core in composer.lock) and has reached the version in the message.
 
+## `shopware.migration_step`
+
+Database migrations that fail when they run again (CREATE TABLE without IF NOT EXISTS, a column or key added without a check) or that break the previous version of the code during a deployment (drops and renames outside of updateDestructive()). Opt-in: inserts that add a row again.
+
+Languages: php. Domain: `shopware`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `shopware.migration_step.add_unguarded` | warning | yes |
+| `shopware.migration_step.create_unguarded` | warning | yes |
+| `shopware.migration_step.destructive_update` | warning | yes |
+| `shopware.migration_step.insert_unguarded` | warning | no |
+
+**`shopware.migration_step.add_unguarded`**
+
+- Fix: Check first: if (!$this->columnExists($connection, 'table', 'column')) for a column, indexExists() or a query on information_schema for a key. MySQL has no ADD COLUMN IF NOT EXISTS.
+- Exceptions: Not reported when the method, or every caller of the helper method, calls something named …exist…, reads the schema (SHOW …, information_schema, the schema manager) before the statement, or runs it in a try block; and not for a table the migration creates itself.
+- Opt out: Suppress a migration that already ran everywhere with a comment on the line.
+
+**`shopware.migration_step.create_unguarded`**
+
+- Fix: Write CREATE TABLE IF NOT EXISTS; a quick fix adds it. A migration runs again after a failed update, on a restored database, or when a plugin is reinstalled with its data kept.
+- Exceptions: A temporary table, and a statement in a method that checks what exists first or sits in a try block, are not reported. SQL assembled at runtime is not looked at.
+- Opt out: A migration that already ran everywhere can keep its finding suppressed: // @phpstan-ignore shopware.migration_step.create_unguarded.
+
+**`shopware.migration_step.destructive_update`**
+
+- Fix: Move the statement to updateDestructive(), which runs once every server has the new code. For a NOT NULL column, add a default or allow NULL.
+- Exceptions: Reported for dropping and renaming tables and columns, and for adding a NOT NULL column without a default, in update() and its helpers. Dropping an index or a foreign key is not reported, and neither is anything done to a table the migration creates itself.
+- Opt out: Suppress it where no rolling deployment has to be supported.
+
+**`shopware.migration_step.insert_unguarded`**
+
+- Fix: Use INSERT IGNORE or ON DUPLICATE KEY UPDATE, or read the row first and insert only when it is missing.
+- Exceptions: Off unless configured. Not reported after a read of rows or a check in the same method, in a try block, or for a table the migration creates itself.
+
 ## `shopware.php.local`
 
 Store review rules checkable in one file: disallowed functions, superglobals, session functions, insecure cookies, disabled TLS verification, weak crypto and disabled foreign key checks.
