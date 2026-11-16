@@ -320,3 +320,18 @@ fn visit_reference_names_collects_inline_see_and_link_targets() {
         ]
     );
 }
+
+#[test]
+fn the_deprecation_note_is_kept() {
+    let document = parse(
+        "/**\n * Reads a value.\n *\n * @deprecated since Symfony 7.4,   use properties `->attributes`,\n * @return mixed\n */",
+    );
+    assert!(document.deprecated);
+    assert_eq!(
+        document.deprecation,
+        "since Symfony 7.4, use properties `->attributes`,"
+    );
+    let bare = parse("/** @deprecated */");
+    assert!(bare.deprecated);
+    assert_eq!(bare.deprecation, "");
+}

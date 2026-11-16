@@ -194,6 +194,140 @@ class Command
     );
 }
 
+const REQUEST_GET_SOURCE: &str = r"<?php
+namespace App;
+
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Routing\Attribute\Route;
+
+#[Route('/shop/{shopId}')]
+class Controller
+{
+    #[Route('/item/{id<\d+>}/{slug?}', name: 'item')]
+    public function show(Request $request, Bag $bag, ?Request $maybe): void
+    {
+        $request->{|symfony.request.get:get|}('id');
+        $request->{|symfony.request.get:get|}('slug');
+        $request->{|symfony.request.get:get|}('shopId');
+        $request->{|symfony.request.get:get|}('page', 1);
+        $request->{|symfony.request.get:get|}($name);
+        $maybe?->{|symfony.request.get:get|}('page');
+        $this->request()->{|symfony.request.get:GET|}('id');
+
+        $request->query->get('id');
+        $request->attributes->get('id');
+        $request->getSession();
+        $bag->get('id');
+        $unknown->get('id');
+    }
+
+    private function request(): Request {}
+}
+";
+
+#[test]
+fn request_get_is_reported_with_the_places_a_value_can_come_from() {
+    let cache = tempfile::tempdir().unwrap();
+    let php = PhpIndex::open(cache.path().join("php-index"), None).unwrap();
+    // A Symfony that does not mark the method as deprecated yet.
+    php.index(&ParsedFile::new(
+        "/project/vendor/Request.php",
+        b"<?php\nnamespace Symfony\\Component\\HttpFoundation;\nclass ParameterBag { public function get(string $key, mixed $default = null): mixed {} }\nclass InputBag extends ParameterBag {}\nclass Request {\n    public ParameterBag $attributes;\n    public InputBag $query;\n    public InputBag $request;\n    public function get(string $key, mixed $default = null): mixed {}\n    public function getSession(): object {}\n}\n".to_vec(),
+    ))
+    .unwrap();
+    php.index(&ParsedFile::new(
+        "/project/src/Bag.php",
+        b"<?php\nnamespace App;\nclass Bag { public function get(string $key): mixed {} }\n"
+            .to_vec(),
+    ))
+    .unwrap();
+    let inspection = new_request_get(Some(php));
+    let uri = "file:///project/src/Controller.php";
+    let (document, problems) = check_diagnostics(inspection.as_ref(), uri, REQUEST_GET_SOURCE);
+
+    // Every finding offers the three places; only for a key of the route
+    // path is the attribute the one that changes nothing.
+    let fix = crate::inspections::test_support::quick_fix_with_id(
+        inspection.as_ref(),
+        crate::inspections::REWRITE_NODE_FIX_ID,
+    );
+    let offered: Vec<Vec<(String, bool)>> = problems
+        .iter()
+        .map(|problem| {
+            problem
+                .fixes
+                .iter()
+                .map(|bound| {
+                    let presentation = fix
+                        .present(
+                            &Context::background(),
+                            &fix_context(&document, problem, bound, None),
+                        )
+                        .unwrap()
+                        .unwrap();
+                    (presentation.title, presentation.preferred)
+                })
+                .collect()
+        })
+        .collect();
+    let titles = |route: bool| {
+        vec![
+            (
+                "Read the route attribute: ->attributes->get()".to_owned(),
+                route,
+            ),
+            ("Read the query string: ->query->get()".to_owned(), false),
+            ("Read the request body: ->request->get()".to_owned(), false),
+        ]
+    };
+    assert_eq!(
+        offered,
+        [
+            titles(true),
+            titles(true),
+            titles(true),
+            titles(false),
+            titles(false),
+            titles(false),
+            titles(true),
+        ]
+    );
+
+    // Each rewrite keeps the call as it is and names the bag.
+    let page = &problems[3];
+    let rewritten: Vec<String> = page
+        .fixes
+        .iter()
+        .map(|bound| {
+            let updated = apply_single(&fix, &fix_context(&document, page, bound, None));
+            updated
+                .lines()
+                .find(|line| line.contains("'page', 1"))
+                .unwrap()
+                .trim()
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(
+        rewritten,
+        [
+            "$request->attributes->get('page', 1);",
+            "$request->query->get('page', 1);",
+            "$request->request->get('page', 1);",
+        ]
+    );
+    // The method name is kept as written.
+    let shouted = &problems[6];
+    let updated = apply_single(
+        &fix,
+        &fix_context(&document, shouted, &shouted.fixes[0], None),
+    );
+    assert!(
+        updated.contains("$this->request()->attributes->GET('id');"),
+        "{updated}"
+    );
+}
+
 /// Indexes `php` into a PHP index and `services` into a service index that
 /// resolves classes through it.
 fn symfony_indexes(

@@ -1737,6 +1737,21 @@ Languages: php, xml, yaml. Domain: `symfony.messenger`.
 
 - Fix: Name an existing message class in `handles`; a quick fix offers close names.
 
+## `symfony.request`
+
+Calls of Request::get(), which Symfony 7.4 deprecates: the value is read from the route attributes, the query string or the body, whichever has it first.
+
+Languages: php. Domain: `symfony`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `symfony.request.get` | warning | yes |
+
+**`symfony.request.get`**
+
+- Fix: Read the value from where it comes from: $request->attributes->get() for a route parameter, $request->query->get() for the query string, $request->request->get() for the body. Quick fixes offer the three; for a key the route has in its path the attributes one keeps the behaviour and is applied by check --fix.
+- Exceptions: Reported on every Symfony version, since the three bags exist on all of them. Calls on the bags themselves and on other classes with a get() method are not reported.
+
 ## `symfony.route.redefined`
 
 Route names defined in more than one project file; Symfony keeps only the definition loaded last.

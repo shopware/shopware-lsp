@@ -36,6 +36,8 @@ pub struct Document {
     pub aliases: BTreeMap<String, Type>,
     pub imports: BTreeMap<String, TypeImport>,
     pub deprecated: bool,
+    /// What `@deprecated` says: since when, and what to use instead.
+    pub deprecation: String,
     pub internal: bool,
     pub is_final: bool,
     /// `@abstract` on a declaration that is not abstract yet.
@@ -216,7 +218,10 @@ fn apply_tag(document: &mut Document, tag: &str, value: &str) {
                 document.imports.insert(local_name, imported);
             }
         }
-        "@deprecated" => document.deprecated = true,
+        "@deprecated" => {
+            document.deprecated = true;
+            document.deprecation = value.split_whitespace().collect::<Vec<_>>().join(" ");
+        }
         "@internal" => document.internal = true,
         "@final" => document.is_final = true,
         "@abstract" => document.is_abstract = true,

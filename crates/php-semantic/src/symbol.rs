@@ -490,11 +490,16 @@ pub struct SymbolMetadata {
     pub attributes: Vec<Attribute>,
     pub constant_array: Vec<ConstantArrayItem>,
     pub doc_summary: Str,
+    /// The text of the `@deprecated` tag: since when, what to use instead.
+    pub deprecation: Str,
 }
 
 impl SymbolMetadata {
     fn is_empty(&self) -> bool {
-        self.attributes.is_empty() && self.constant_array.is_empty() && self.doc_summary.is_empty()
+        self.attributes.is_empty()
+            && self.constant_array.is_empty()
+            && self.doc_summary.is_empty()
+            && self.deprecation.is_empty()
     }
 }
 
@@ -683,6 +688,18 @@ impl Symbol {
             .map_or("", |metadata| &metadata.doc_summary)
     }
 
+    /// What the declaration's `@deprecated` tag says; empty without a note.
+    pub fn deprecation(&self) -> &str {
+        self.metadata
+            .get()
+            .map_or("", |metadata| &metadata.deprecation)
+    }
+
+    pub fn set_deprecation(&mut self, note: impl Into<Str>) {
+        let note = note.into();
+        self.metadata.update(|metadata| metadata.deprecation = note);
+    }
+
     pub fn set_doc_summary(&mut self, summary: impl Into<Str>) {
         let summary = summary.into();
         self.metadata
@@ -741,6 +758,7 @@ impl Symbol {
             attributes,
             constant_array,
             doc_summary: doc_summary.into(),
+            deprecation: Str::default(),
         });
     }
 

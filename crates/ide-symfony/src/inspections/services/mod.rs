@@ -4,6 +4,7 @@ mod controller;
 mod event;
 mod invokable_command;
 mod php_method;
+mod request_get;
 mod service_argument;
 mod service_argument_rewrite;
 
@@ -14,6 +15,7 @@ pub use controller::{CONTROLLER_METHOD_FIX_ID, new_controller};
 pub use event::{EVENT_METHOD_FIX_ID, new_event};
 pub use invokable_command::{INVOKABLE_RETURN_TYPE_FIX_ID, new_invokable_command};
 pub use php_method::{PhpMethodFix, PhpMethodParameter, PhpMethodPayload};
+pub use request_get::new_request_get;
 pub use service_argument::{SERVICE_ARGUMENTS_FIX_ID, SERVICE_METHOD_FIX_ID, new_service_argument};
 
 use serde_json::{Map, Value};

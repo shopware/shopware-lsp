@@ -6,6 +6,7 @@ mod controller;
 mod duplicate;
 mod event;
 mod invokable_command;
+mod request_get;
 mod route;
 mod route_redefined;
 mod service;
@@ -23,6 +24,7 @@ pub use invokable_command::{
     INVOKABLE_COMMAND_RETURN_TYPE_MESSAGE, INVOKABLE_COMMAND_RETURN_VALUE_MESSAGE,
     InvokableCommandAnalyzer,
 };
+pub use request_get::{REQUEST_GET_CODE, RequestGetAnalyzer};
 pub use route::RouteAnalyzer;
 pub use route_redefined::{
     ROUTE_REDEFINED_CODE, RouteDefinitions, RouteLocation, RouteRedefinedAnalysis,

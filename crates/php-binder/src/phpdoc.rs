@@ -164,6 +164,9 @@ pub(crate) fn template_names(values: &[Template]) -> Vec<String> {
 pub(crate) fn apply_document_flags(symbol: &mut Symbol, documentation: &PhpDoc) {
     if documentation.deprecated {
         symbol.flags |= Flags::DEPRECATED;
+        if !documentation.deprecation.is_empty() {
+            symbol.set_deprecation(documentation.deprecation.as_str());
+        }
     }
     if documentation.internal {
         symbol.flags |= Flags::INTERNAL;

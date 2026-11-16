@@ -360,6 +360,7 @@ fn summary_fixture() -> (Document, Vec<u8>) {
     symbol.fully_qualified = "App\\Service::run".into();
     symbol.set_extends(names(&["App\\Base"]));
     symbol.set_doc_summary("Runs the service.");
+    symbol.set_deprecation("since 2.0, use start() instead");
     let document = Document {
         references: vec![Reference {
             name: "Service".into(),
@@ -403,6 +404,7 @@ fn summary_loads_symbol_details_on_demand() {
                 assert_eq!(materialized.parameters.len(), 1);
                 assert_eq!(&*materialized.parameters[0].name, "$value");
                 assert_eq!(materialized.doc_summary(), "Runs the service.");
+                assert_eq!(materialized.deprecation(), "since 2.0, use start() instead");
                 assert_eq!(materialized.extends(), &names(&["App\\Base"])[..]);
             });
         }

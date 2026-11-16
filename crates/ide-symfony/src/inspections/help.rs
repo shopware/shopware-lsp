@@ -76,6 +76,17 @@ pub(crate) const SYMFONY: &[RuleHelp] = &[
         "",
     ),
     help(
+        "symfony.request.get",
+        "Read the value from where it comes from: $request->attributes->get() for a route \
+         parameter, $request->query->get() for the query string, $request->request->get() \
+         for the body. Quick fixes offer the three; for a key the route has in its path \
+         the attributes one keeps the behaviour and is applied by check --fix.",
+        "Reported on every Symfony version, since the three bags exist on all of them. \
+         Calls on the bags themselves and on other classes with a get() method are not \
+         reported.",
+        "",
+    ),
+    help(
         "symfony.console.invoke.return_type",
         "Declare `: int` on __invoke(); a quick fix adds it.",
         "Only classes with #[AsCommand] are checked.",

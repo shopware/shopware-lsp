@@ -568,7 +568,7 @@ function legacy(): int { return 1; }
     let deprecated = messages(&analyze(&provider, &document), Some("php.deprecated"));
     assert_eq!(
         deprecated.first().map(String::as_str),
-        Some("legacy is deprecated since 2.0: It loses precision; use modern()")
+        Some("legacy() is deprecated since 2.0: It loses precision; use modern()")
     );
 
     let offset = byte_offset(usage, "legacy()");
@@ -589,6 +589,71 @@ function legacy(): int { return 1; }
     assert!(hover.contents.value.contains("**Deprecated** since 2.0"));
     assert!(hover.contents.value.contains("It loses precision"));
     assert!(hover.contents.value.contains("Replacement: `modern()`"));
+    index.close().unwrap();
+}
+
+#[test]
+fn provider_reports_what_a_deprecated_tag_says() {
+    let root = tempdir();
+    let (_cache, index) = open_index();
+    index_file(
+        &index,
+        &root.path().join("Legacy.php"),
+        "<?php
+namespace App;
+class Legacy
+{
+    /** @deprecated since 2.0, use modern() instead. */
+    public function old(): void {}
+    /** @deprecated tag:v6.8.0 - Will be removed */
+    public const LIMIT = 1;
+    /** @deprecated */
+    public function bare(): void {}
+}
+/** @deprecated use Modern */
+class Outdated {}
+",
+    );
+    // Request::get() has a rule of its own, which says what to use instead
+    // and also reports where Symfony does not mark the method yet.
+    index_file(
+        &index,
+        &root.path().join("Request.php"),
+        "<?php
+namespace Symfony\\Component\\HttpFoundation;
+class Request
+{
+    /** @deprecated since Symfony 7.4, use properties instead */
+    public function get(string $key): mixed {}
+    /** @deprecated since Symfony 7.4 */
+    public function other(): void {}
+}
+",
+    );
+    let usage = "<?php namespace App;
+use Symfony\\Component\\HttpFoundation\\Request;
+function run(Legacy $legacy, Request $request): void {
+    $legacy->old();
+    $legacy->bare();
+    echo Legacy::LIMIT;
+    new Outdated();
+    $request->get('id');
+    $request->other();
+}";
+    let document = document(&root.path().join("Usage.php"), usage, 1);
+    let provider = Provider::new(Some(index.clone()));
+    let mut reported = messages(&analyze(&provider, &document), Some("php.deprecated"));
+    reported.sort();
+    assert_eq!(
+        reported,
+        [
+            "Legacy::LIMIT is deprecated: tag:v6.8.0 - Will be removed",
+            "Legacy::bare() is deprecated",
+            "Legacy::old() is deprecated since 2.0, use modern() instead",
+            "Outdated is deprecated: use Modern",
+            "Request::other() is deprecated since Symfony 7.4",
+        ]
+    );
     index.close().unwrap();
 }
 

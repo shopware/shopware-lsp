@@ -117,6 +117,27 @@ fn whole_line(source: &str, start: usize, end: usize) -> TextRange {
     range(line_start, (line_end + 1).min(source.len()))
 }
 
+/// A rewrite of the reported range, for a problem that offers several.
+/// `expected` is the source the range holds; `equivalent` marks the one
+/// rewrite that keeps the meaning of the code, if there is one.
+pub fn rewrite_node_fix(
+    title: impl Into<String>,
+    expected: impl Into<String>,
+    replacement: impl Into<String>,
+    equivalent: bool,
+) -> BoundFix {
+    bind_fix(
+        REWRITE_NODE_FIX_ID,
+        RewriteNodePayload {
+            title: title.into(),
+            expected: expected.into(),
+            replacement: replacement.into(),
+            equivalent,
+            remove_line: false,
+        },
+    )
+}
+
 /// The rewrite of a problem whose payload carries one.
 pub fn rewrite_node_bound_fixes(payload: &Map<String, Value>) -> Vec<BoundFix> {
     let field = |name: &str| match payload.get(name) {

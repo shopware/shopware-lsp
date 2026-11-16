@@ -33,7 +33,7 @@ use crate::symbol::{
 };
 use crate::workspace::{WorkspaceGraphDecoder, WorkspaceGraphLoader};
 
-const FORMAT_VERSION: u8 = 1;
+const FORMAT_VERSION: u8 = 2;
 const MAX_COLLECTION: u64 = 1 << 24;
 const MAX_STRING: u64 = 128 << 20;
 const MAX_ATTRIBUTE_DEPTH: usize = 64;
@@ -266,6 +266,7 @@ impl Encoder<'_> {
                     self.ty(&item.ty);
                 }
                 self.w.text(&metadata.doc_summary);
+                self.w.text(&metadata.deprecation);
             }
         }
     }
@@ -831,10 +832,12 @@ impl<'a> Decoder<'a, '_> {
                 });
             }
             let doc_summary = self.text()?;
+            let deprecation = self.text()?;
             Shared::<SymbolMetadata>::new(SymbolMetadata {
                 attributes,
                 constant_array,
                 doc_summary,
+                deprecation,
             })
         } else {
             Shared::default()

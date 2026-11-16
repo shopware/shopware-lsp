@@ -24,6 +24,7 @@ pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
         php(),
     )));
     add(new_invokable_command(php()));
+    add(new_request_get(php()));
     add(analyzer(diagnostics::DoctrineAnalyzer::new(
         Some(s.doctrine.clone()),
         php(),

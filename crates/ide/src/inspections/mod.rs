@@ -15,7 +15,9 @@ pub use inspection::{
     diagnostic_payload, new_analyzer_inspection, resolve_anchor,
 };
 pub use range::{InvertedRangeError, protocol_text_range};
-pub use rewrite_node::{REWRITE_NODE_FIX_ID, RewriteNodeFix, rewrite_node_bound_fixes};
+pub use rewrite_node::{
+    REWRITE_NODE_FIX_ID, RewriteNodeFix, rewrite_node_bound_fixes, rewrite_node_fix,
+};
 pub use suggestion::{SUGGESTION_FIX_ID, SuggestionFix, suggestion_bound_fixes};
 
 #[cfg(any(test, feature = "testing"))]

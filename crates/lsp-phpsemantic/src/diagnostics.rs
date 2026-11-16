@@ -315,6 +315,7 @@ impl DiagnosticRun<'_> {
         }
         for symbol in candidates {
             if !symbol.flags.has(Flags::DEPRECATED)
+                || has_dedicated_rule(symbol)
                 || is_deprecation_suppressed_at_reference(
                     self.semantic,
                     self.snapshot,
@@ -330,7 +331,7 @@ impl DiagnosticRun<'_> {
                     "php.deprecated",
                     reference.range,
                     DiagnosticSeverity::HINT,
-                    format_deprecation_diagnostic(symbol),
+                    format_deprecation_diagnostic(symbol, self.snapshot),
                 )
             });
             return;
@@ -460,9 +461,62 @@ pub(crate) fn format_deprecation_hover(symbol: &Symbol) -> String {
     result
 }
 
-fn format_deprecation_diagnostic(symbol: &Symbol) -> String {
-    let mut message = format!("{} is deprecated", symbol.name);
+/// Deprecated members a rule of their own reports, with what to do instead
+/// and on versions that do not mark them yet: `symfony.request.get`.
+const DEDICATED_RULES: &[(&str, &str)] = &[("Symfony\\Component\\HttpFoundation\\Request", "get")];
+
+fn has_dedicated_rule(symbol: &Symbol) -> bool {
+    symbol.kind == SymbolKind::Method
+        && DEDICATED_RULES.iter().any(|(class, method)| {
+            symbol.name.eq_ignore_ascii_case(method)
+                && symbol
+                    .fully_qualified
+                    .trim_start_matches('\\')
+                    .strip_suffix(&*symbol.name)
+                    .is_some_and(|owner| owner.trim_end_matches(':').eq_ignore_ascii_case(class))
+        })
+}
+
+/// The symbol as a reader names it: `Request::get()`, `Defaults::LANGUAGE`,
+/// `strftime()`, `Request`.
+fn deprecation_subject(symbol: &Symbol, snapshot: &Snapshot) -> String {
+    let qualified = symbol.fully_qualified.as_str();
+    let short = qualified.rsplit('\\').next().unwrap_or(qualified);
+    let member = matches!(
+        symbol.kind,
+        SymbolKind::Method
+            | SymbolKind::Property
+            | SymbolKind::ClassConstant
+            | SymbolKind::EnumCase
+    );
+    // A member is named with its class as that is declared.
+    let owner = member
+        .then(|| snapshot.symbol(symbol.container.as_str()))
+        .flatten()
+        .map(|class| class.name.to_string());
+    let subject = match owner {
+        Some(owner) if !owner.is_empty() => format!("{owner}::{}", symbol.name),
+        _ if short.is_empty() => symbol.name.to_string(),
+        _ => short.to_owned(),
+    };
+    match symbol.kind {
+        SymbolKind::Method | SymbolKind::Function => format!("{subject}()"),
+        _ => subject,
+    }
+}
+
+fn format_deprecation_diagnostic(symbol: &Symbol, snapshot: &Snapshot) -> String {
+    let mut message = format!("{} is deprecated", deprecation_subject(symbol, snapshot));
     let Some(details) = deprecation_of(symbol.attributes()) else {
+        // A `@deprecated` tag says since when and what to use in one text.
+        let note = symbol.deprecation().trim().trim_end_matches('.');
+        if !note.is_empty() {
+            let since = note
+                .get(..6)
+                .is_some_and(|start| start.eq_ignore_ascii_case("since "));
+            message.push_str(if since { " " } else { ": " });
+            message.push_str(note);
+        }
         return message;
     };
     if !details.since.is_empty() {
