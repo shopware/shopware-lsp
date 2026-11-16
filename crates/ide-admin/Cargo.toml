@@ -16,6 +16,7 @@ swlsp-symfony = { path = "../symfony" }
 swlsp-indexer = { path = "../indexer" }
 swlsp-uriutil = { path = "../uriutil" }
 swlsp-parser-js = { path = "../parser-js" }
+swlsp-parser-php = { path = "../parser-php" }
 swlsp-lsp-protocol = { path = "../lsp-protocol" }
 swlsp-textutil = { path = "../textutil" }
 swlsp-twig = { path = "../twig" }

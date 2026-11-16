@@ -85,6 +85,7 @@ macro_rules! string_enum {
     };
 }
 
+mod api_request;
 mod application_container;
 mod component;
 mod component_type_inference;
@@ -142,6 +143,7 @@ mod vue_scope_types;
 mod workspace_symbols;
 
 #[allow(unused_imports)]
+pub use api_request::*;
 pub use application_container::*;
 #[allow(unused_imports)]
 pub use component::*;

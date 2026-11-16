@@ -29,7 +29,7 @@ mod tests_misc;
 
 pub use analyzer::AdminAnalyzer;
 pub use api_route::{ADMIN_API_ROUTE_CODES, AdminApiRouteAnalyzer};
-pub(crate) use api_route::{action_routes, answering_routes, api_request};
+pub(crate) use api_route::{action_routes, answering_routes};
 pub use block_override::{
     ADMIN_BLOCK_OVERRIDE_CONDITIONAL_CODE, ADMIN_BLOCK_OVERRIDE_NESTED_CODE,
     ADMIN_BLOCK_OVERRIDE_REPEATED_CODE, ADMIN_BLOCK_PARENT_CONDITIONAL_CODE,

@@ -74,6 +74,14 @@ fn register(server: &Registrar<'_>, s: &Services) {
     server.references(Arc::new(crate::reference::AdminReferenceProvider::new(
         Some(index()),
     )));
+    if let Some(requests) = &s.admin_api_requests {
+        server.references(Arc::new(
+            crate::reference::AdminApiRouteReferenceProvider::new(
+                s.routes.clone(),
+                requests.clone(),
+            ),
+        ));
+    }
     server.hover(Arc::new(crate::hover::AdminHoverProvider::new(
         s.root.clone(),
         index(),

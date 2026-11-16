@@ -2784,6 +2784,7 @@ dependencies = [
  "swlsp-lsp",
  "swlsp-lsp-protocol",
  "swlsp-parser-js",
+ "swlsp-parser-php",
  "swlsp-parser-twig",
  "swlsp-php",
  "swlsp-rewrite",

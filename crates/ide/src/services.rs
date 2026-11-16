@@ -41,6 +41,8 @@ pub struct Services {
     pub extensions: Arc<swlsp_extension::ExtensionIndexer>,
     pub extension_config: Arc<swlsp_extension::ConfigIndex>,
     pub admin: Option<Arc<swlsp_admin::AdminComponentIndexer>>,
+    /// The Admin API requests of the Administration code.
+    pub admin_api_requests: Option<Arc<swlsp_admin::ApiRequestIndex>>,
     pub dal: Arc<swlsp_shopware_dal::Index>,
     pub entity_schema_sources: Arc<swlsp_shopware_entityschema::SourceIndex>,
     pub app_scripts: Arc<swlsp_appscript::Index>,

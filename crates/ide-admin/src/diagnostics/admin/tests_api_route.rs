@@ -85,6 +85,7 @@ const SERVICE: &str = r"class SwagApiService extends ApiService {
         this.httpClient.get('/api/_info/swag');
         this.httpClient.get(`/_action/proxy/${name}/more/parts`);
         this.httpClient.get(`/_action/${name}/run`);
+        this.httpClient.post(`/${this.apiEndpoint}/run`);
         // Entity endpoints are generated.
         this.httpClient.get('/product');
         this.httpClient.post(`/search/${name}`, {});
@@ -101,6 +102,7 @@ const SERVICE: &str = r"class SwagApiService extends ApiService {
         this.httpClient.get({|admin.api.route-not-found:'/_action/swag/unknown'|});
         this.httpClient.get({|admin.api.route-not-found:'/_info/unknown'|});
         client.httpClient.get({|admin.api.route-not-found:`/_action/swag/${id}/unknown`|});
+        this.httpClient.get({|admin.api.route-not-found:`/${this.apiEndpoint}/gone`|});
     }
 }
 ";
@@ -122,6 +124,7 @@ fn admin_requests_are_matched_against_the_declared_routes() {
             "No Admin API route answers GET /api/_action/swag/unknown",
             "No Admin API route answers GET /api/_info/unknown",
             "No Admin API route answers GET /api/_action/swag/{…}/unknown",
+            "No Admin API route answers GET /api/_action/swag/gone",
         ]
     );
 }

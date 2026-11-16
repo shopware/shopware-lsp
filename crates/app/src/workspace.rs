@@ -340,6 +340,16 @@ fn build(
     } else {
         None
     };
+    let admin_api_requests = if configuration.domain_enabled("administration") {
+        Some(
+            partial.push(
+                swlsp_admin::ApiRequestIndex::new(cache_dir, store_ref)
+                    .map_err(context("create administration request index"))?,
+            ),
+        )
+    } else {
+        None
+    };
     let twig = partial.push(
         swlsp_twig::TwigIndexer::new(cache_dir, store_ref).map_err(context("create Twig index"))?,
     );
@@ -469,6 +479,7 @@ fn build(
         extensions,
         extension_config,
         admin,
+        admin_api_requests,
         dal,
         entity_schema_sources,
         app_scripts,
@@ -523,7 +534,7 @@ pub fn domain_for_indexer(id: &str) -> &'static str {
         "systemconfig.indexer" => "shopware.systemConfig",
         "theme.indexer" => "shopware.theme",
         "extension.indexer" => "shopware.extensions",
-        "admin.component.indexer" => "administration",
+        "admin.component.indexer" | "admin.api_requests" => "administration",
         "shopware.dal" | "shopware.entity_schema.sources" => "shopware.dal",
         "shopware.app_script" => "shopware.appScripts",
         _ => "shopware",

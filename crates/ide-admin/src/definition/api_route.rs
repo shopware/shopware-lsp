@@ -19,7 +19,9 @@ use swlsp_symfony::RouteIndexer;
 use swlsp_syntax::SyntaxNode;
 use swlsp_uriutil::filepath;
 
-use crate::diagnostics::{action_routes, answering_routes, api_request};
+use swlsp_admin::api_request;
+
+use crate::diagnostics::{action_routes, answering_routes};
 use swlsp_ide::definition::php_common::unclamped_line_location;
 
 pub struct AdminApiRouteDefinitionProvider {
