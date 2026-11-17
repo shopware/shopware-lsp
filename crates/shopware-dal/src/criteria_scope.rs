@@ -30,14 +30,21 @@ pub struct JsCriteriaRoot {
     pub associations: Vec<String>,
 }
 
+/// Answers which entity the member `member` of the component `component`
+/// is searched on, from outside the file at hand.
+pub type BaseCriteria<'a> = &'a dyn Fn(&str, &str) -> Option<String>;
+
 /// The definition whose fields the path segment at `offset` names: the
 /// searched entity, followed through the associations before the cursor.
+/// `base` resolves a Criteria inherited from the component a file overrides
+/// or extends.
 pub fn js_criteria_definition<'a>(
     definitions: &'a [Definition],
     node: &SyntaxNode,
     offset: u32,
+    base: BaseCriteria<'_>,
 ) -> Option<&'a Definition> {
-    let root = js_criteria_root(node)?;
+    let root = js_criteria_root_with(node, base)?;
     let mut typed = js_field_reference_prefix(node, offset);
     // A path may start with the name of the entity it is resolved on.
     if root.associations.is_empty() && typed.first() == Some(&root.entity) {
@@ -59,9 +66,81 @@ enum Holder {
     Unnamed,
 }
 
+/// The repositories a file creates and the searches it runs on them.
+struct FileSearches {
+    repositories: BTreeMap<String, BTreeSet<String>>,
+    searches: Vec<Search>,
+}
+
+impl FileSearches {
+    fn new(root: &SyntaxNode) -> Self {
+        let calls = jsquery::nodes(root, &[JS_CALL_EXPRESSION]);
+        let repositories = repositories(&calls);
+        let searches = calls
+            .iter()
+            .filter_map(|call| search(call, &repositories))
+            .collect();
+        Self {
+            repositories,
+            searches,
+        }
+    }
+
+    /// The entity of the searches that take the component member `name`.
+    fn searched_member(&self, name: &str) -> Option<String> {
+        single(
+            self.searches
+                .iter()
+                .filter(|search| search.members.iter().any(|member| member == name))
+                .map(|search| search.entity.as_str()),
+        )
+    }
+
+    /// `productCriteria` beside `productRepository`: the Criteria is handed
+    /// over in a template, the names pair them.
+    fn paired(&self, name: &str) -> Option<String> {
+        let repository = format!("{}Repository", name.strip_suffix("Criteria")?);
+        single(
+            self.repositories
+                .get(&repository)?
+                .iter()
+                .map(String::as_str),
+        )
+    }
+}
+
+/// The entity each named member of a file is searched on, for the members
+/// that hold or return a Criteria. This is what a file that overrides the
+/// component looks up.
+pub fn js_criteria_members(root: &SyntaxNode) -> BTreeMap<String, String> {
+    let file = FileSearches::new(root);
+    let mut members = BTreeMap::new();
+    if file.repositories.is_empty() {
+        return members;
+    }
+    for member in jsquery::nodes(root, &[JS_METHOD, JS_PROPERTY]) {
+        let Some(name) = jsquery::property_name(&member) else {
+            continue;
+        };
+        if members.contains_key(&name) {
+            continue;
+        }
+        if let Some(entity) = file.searched_member(&name).or_else(|| file.paired(&name)) {
+            members.insert(name, entity);
+        }
+    }
+    members
+}
+
 /// The entity the Criteria field path at `node` is resolved against. `None`
 /// when the file does not show which repository receives the Criteria.
 pub fn js_criteria_root(node: &SyntaxNode) -> Option<JsCriteriaRoot> {
+    js_criteria_root_with(node, &|_, _| None)
+}
+
+/// [`js_criteria_root`], asking `base` when the file overrides or extends a
+/// component and the Criteria is one of that component's.
+pub fn js_criteria_root_with(node: &SyntaxNode, base: BaseCriteria<'_>) -> Option<JsCriteriaRoot> {
     let string = jsquery::string_at(node)?;
     let root = string.ancestors().last()?;
     let scope = string
@@ -69,12 +148,7 @@ pub fn js_criteria_root(node: &SyntaxNode) -> Option<JsCriteriaRoot> {
         .find(|ancestor| matches!(ancestor.kind(), JS_METHOD | JS_FUNCTION));
     let (holder, associations) = criteria_holder(&string, scope.as_ref().unwrap_or(&root));
 
-    let calls = jsquery::nodes(&root, &[JS_CALL_EXPRESSION]);
-    let repositories = repositories(&calls);
-    let searches: Vec<Search> = calls
-        .iter()
-        .filter_map(|call| search(call, &repositories))
-        .collect();
+    let file = FileSearches::new(&root);
     let scope_range = scope.as_ref().map(SyntaxNode::text_range);
     let in_scope = |search: &&Search| {
         scope_range.is_none_or(|range| range.contains_range(search.call.text_range()))
@@ -82,49 +156,84 @@ pub fn js_criteria_root(node: &SyntaxNode) -> Option<JsCriteriaRoot> {
     let method = scope.as_ref().and_then(jsquery::property_name);
 
     // The Criteria is built inside the search call itself.
-    let inline = searches
+    let inline = file
+        .searches
         .iter()
         .filter(|search| search.call.text_range().contains_range(string.text_range()))
         .min_by_key(|search| search.call.text_range().len())
         .map(|search| search.entity.clone());
     let held = || match &holder {
         Holder::Local(name) => single(
-            searches
+            file.searches
                 .iter()
                 .filter(in_scope)
                 .filter(|search| search.locals.contains(name))
                 .map(|search| search.entity.as_str()),
         ),
-        Holder::Member(name) => searched_member(&searches, name),
+        Holder::Member(name) => file.searched_member(name),
         Holder::Unnamed => None,
     };
     // The enclosing method returns the Criteria, and a search takes it.
-    let returned = || searched_member(&searches, method.as_deref()?);
-    // `productCriteria` beside `productRepository`: the Criteria is handed
-    // over in a template, the names pair them.
-    let paired = || {
-        let name = match &holder {
-            Holder::Member(name) => name.as_str(),
-            _ => method.as_deref()?,
-        };
-        let repository = format!("{}Repository", name.strip_suffix("Criteria")?);
-        single(repositories.get(&repository)?.iter().map(String::as_str))
+    let returned = || file.searched_member(method.as_deref()?);
+    let paired = || match &holder {
+        Holder::Member(name) => file.paired(name),
+        _ => file.paired(method.as_deref()?),
     };
-    let entity = inline.or_else(held).or_else(returned).or_else(paired)?;
+    // The Criteria belongs to the component this file overrides or extends.
+    let inherited = || {
+        let component = base_component(&string)?;
+        let member = match &holder {
+            Holder::Local(name) => scope
+                .as_ref()
+                .and_then(|scope| super_member(scope, name))
+                .or_else(|| method.clone()),
+            Holder::Member(name) => Some(name.clone()),
+            Holder::Unnamed => method.clone(),
+        }?;
+        base(&component, &member)
+    };
+    let entity = inline
+        .or_else(held)
+        .or_else(returned)
+        .or_else(paired)
+        .or_else(inherited)?;
     Some(JsCriteriaRoot {
         entity,
         associations,
     })
 }
 
-/// The entity of the searches that take the component member `name`.
-fn searched_member(searches: &[Search], name: &str) -> Option<String> {
-    single(
-        searches
-            .iter()
-            .filter(|search| search.members.iter().any(|member| member == name))
-            .map(|search| search.entity.as_str()),
-    )
+/// The component the registration around `node` builds on: the target of
+/// `Component.override('target', …)` or the parent of
+/// `Component.extend('name', 'parent', …)`.
+fn base_component(node: &SyntaxNode) -> Option<String> {
+    node.ancestors()
+        .filter(|ancestor| ancestor.kind() == JS_CALL_EXPRESSION)
+        .find_map(|call| {
+            let callee = call.first_child()?;
+            let name = jsquery::call_name(&callee)?;
+            let index = if name.ends_with("Component.override") {
+                0
+            } else if name.ends_with("Component.extend") {
+                1
+            } else {
+                return None;
+            };
+            let target = jsquery::string_value(&jsquery::string_argument(&call, index)?);
+            (!target.is_empty()).then_some(target)
+        })
+}
+
+/// The member a local was taken from: `const <name> = this.$super('<member>')`.
+fn super_member(scope: &SyntaxNode, name: &str) -> Option<String> {
+    jsquery::nodes(scope, &[JS_VARIABLE_DECLARATION])
+        .iter()
+        .filter_map(|declaration| declared_value(declaration, name))
+        .filter(|value| value.kind() == JS_CALL_EXPRESSION)
+        .find(|value| jsquery::call_name(value).as_deref() == Some("this.$super"))
+        .and_then(|call| jsquery::string_argument(&call, 0))
+        .map(|string| jsquery::string_value(&string))
+        .filter(|member| !member.is_empty())
 }
 
 /// What holds the Criteria the string belongs to, and the associations

@@ -10,7 +10,10 @@ mod extension;
 mod index;
 
 pub use context::*;
-pub use criteria_scope::{JsCriteriaRoot, js_criteria_definition, js_criteria_root};
+pub use criteria_scope::{
+    BaseCriteria, JsCriteriaRoot, js_criteria_definition, js_criteria_members, js_criteria_root,
+    js_criteria_root_with,
+};
 pub use extension::DEFINITION_KIND_EXTENSION;
 pub use index::*;
 

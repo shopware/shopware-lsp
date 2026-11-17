@@ -827,3 +827,136 @@ class Bulk extends BulkEntityExtension {
         3
     );
 }
+
+const CUSTOMER_DETAIL: &str = r"Component.register('sw-customer-detail', {
+    computed: {
+        customerRepository() { return this.repositoryFactory.create('customer'); },
+        orderRepository() { return this.repositoryFactory.create('order'); },
+        defaultCriteria() { return new Criteria(); },
+        orderCriteria() { return new Criteria(); },
+        unusedCriteria() { return new Criteria(); },
+    },
+    methods: {
+        load() { return this.customerRepository.get(this.id, Shopware.Context.api, this.defaultCriteria); },
+    },
+});";
+
+#[test]
+fn criteria_members_map_a_component_member_to_its_entity() {
+    let root = swlsp_parser_js::parse(CUSTOMER_DETAIL).tree.root();
+    let members: Vec<(String, String)> = js_criteria_members(&root).into_iter().collect();
+    // Searched with a repository, or paired with one by name; a member no
+    // repository receives is left out.
+    assert_eq!(
+        members,
+        [
+            ("defaultCriteria".to_owned(), "customer".to_owned()),
+            ("orderCriteria".to_owned(), "order".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn criteria_root_asks_the_overridden_component() {
+    let base = |component: &str, member: &str| -> Option<String> {
+        (component == "sw-customer-detail").then(|| format!("entity-of-{member}"))
+    };
+    let resolve = |source: &str, literal: &str| {
+        let root = swlsp_parser_js::parse(source).tree.root();
+        let string = find(&root, js::JS_STRING, |node| {
+            jsquery::string_value(node) == literal
+        });
+        js_criteria_root_with(&string, &base)
+    };
+    let overriding = r"Shopware.Component.override('sw-customer-detail', {
+    computed: {
+        defaultCriteria() {
+            const criteria = this.$super('defaultCriteria');
+            criteria.addAssociation('details');
+            criteria.getAssociation('addresses').addSorting(Criteria.sort('city'));
+            return criteria;
+        },
+        replaced() {
+            const criteria = new Criteria();
+            criteria.addAssociation('group');
+            return criteria;
+        },
+        ownRepository() { return this.repositoryFactory.create('tax'); },
+        own() {
+            const criteria = new Criteria();
+            criteria.addAssociation('rules');
+            return this.ownRepository.search(criteria);
+        },
+    },
+});";
+    // Taken from `$super`, the member named there decides.
+    assert_eq!(
+        resolve(overriding, "details"),
+        root("entity-of-defaultCriteria", &[])
+    );
+    assert_eq!(
+        resolve(overriding, "city"),
+        root("entity-of-defaultCriteria", &["addresses"])
+    );
+    // A member the override replaces is still searched by the base component.
+    assert_eq!(
+        resolve(overriding, "group"),
+        root("entity-of-replaced", &[])
+    );
+    // What the file itself shows wins.
+    assert_eq!(resolve(overriding, "rules"), root("tax", &[]));
+
+    // `extend` builds on its second argument.
+    assert_eq!(
+        resolve(
+            "Component.extend('swag-detail', 'sw-customer-detail', { computed: { \
+             defaultCriteria() { const criteria = this.$super('defaultCriteria'); \
+             criteria.addAssociation('extra'); return criteria; } } });",
+            "extra"
+        ),
+        root("entity-of-defaultCriteria", &[])
+    );
+    // Outside an override nothing is asked.
+    assert_eq!(
+        resolve(
+            "Component.register('swag-own', { computed: { defaultCriteria() { \
+             const criteria = new Criteria(); criteria.addAssociation('lonely'); return criteria; } } });",
+            "lonely"
+        ),
+        None
+    );
+}
+
+#[test]
+fn index_criteria_members_of_administration_scripts() {
+    let directory = tempfile::tempdir().unwrap();
+    let idx = Index::new(directory.path(), None).unwrap();
+    let path = "/project/src/Administration/Resources/app/administration/src/page/index.js";
+    index(CUSTOMER_DETAIL, path, &idx);
+    assert_eq!(
+        idx.criteria_member_entity(path, "defaultCriteria").unwrap(),
+        Some("customer".to_owned())
+    );
+    assert_eq!(
+        idx.criteria_member_entity(path, "unusedCriteria").unwrap(),
+        None
+    );
+    assert_eq!(
+        idx.criteria_member_entity("/other.js", "defaultCriteria")
+            .unwrap(),
+        None
+    );
+
+    // A file that stops creating repositories loses its record.
+    index("export default {};", path, &idx);
+    assert_eq!(
+        idx.criteria_member_entity(path, "defaultCriteria").unwrap(),
+        None
+    );
+    index(CUSTOMER_DETAIL, path, &idx);
+    idx.removed_files(&[path.to_owned()]).unwrap();
+    assert_eq!(
+        idx.criteria_member_entity(path, "defaultCriteria").unwrap(),
+        None
+    );
+}

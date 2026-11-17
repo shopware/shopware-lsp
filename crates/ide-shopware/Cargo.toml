@@ -43,6 +43,7 @@ swlsp-php-rewrite = { path = "../php-rewrite" }
 swlsp-shopware = { path = "../shopware" }
 swlsp-sql = { path = "../sql" }
 swlsp-shopware-dal = { path = "../shopware-dal" }
+swlsp-admin = { path = "../admin" }
 swlsp-shopware-entityschema = { path = "../shopware-entityschema" }
 swlsp-theme = { path = "../theme" }
 sha2 = "0.10"
@@ -59,4 +60,3 @@ swlsp-indexer = { path = "../indexer" }
 tempfile = "3"
 swlsp-ide-admin = { path = "../ide-admin" }
 swlsp-ide-twig = { path = "../ide-twig" }
-swlsp-admin = { path = "../admin" }

@@ -4,6 +4,7 @@
 pub mod codeaction;
 pub mod commands;
 pub mod completion;
+mod dal_criteria;
 pub mod definition;
 pub mod diagnostics;
 mod extension_config;
@@ -68,7 +69,9 @@ fn completion(server: &Registrar<'_>, s: &Services) {
         s.snippets.clone(),
     ))));
     server.completion(Arc::new(FeatureCompletionProvider::new(s.features.clone())));
-    server.completion(Arc::new(DalCompletionProvider::new(s.dal.clone())));
+    server.completion(Arc::new(
+        DalCompletionProvider::new(s.dal.clone()).with_admin(s.admin.clone()),
+    ));
     server.completion(Arc::new(SystemConfigCompletionProvider::new(
         s.system_config.clone(),
         s.php(),
@@ -86,7 +89,9 @@ fn navigation(server: &Registrar<'_>, s: &Services) {
     server.definition(Arc::new(FeatureDefinitionProvider::new(Some(
         s.features.clone(),
     ))));
-    server.definition(Arc::new(DalDefinitionProvider::new(Some(s.dal.clone()))));
+    server.definition(Arc::new(
+        DalDefinitionProvider::new(Some(s.dal.clone())).with_admin(s.admin.clone()),
+    ));
     server.definition(Arc::new(SystemConfigDefinitionProvider::new(
         Some(s.system_config.clone()),
         s.php(),
@@ -98,5 +103,7 @@ fn navigation(server: &Registrar<'_>, s: &Services) {
         s.root.clone(),
         s.snippets.clone(),
     )));
-    server.hover(Arc::new(DalHoverProvider::new(Some(s.dal.clone()))));
+    server.hover(Arc::new(
+        DalHoverProvider::new(Some(s.dal.clone())).with_admin(s.admin.clone()),
+    ));
 }

@@ -106,6 +106,17 @@ pub struct FieldDefinition {
 /// without knowing about PHP internals.
 pub struct Index {
     definitions: DataIndexer<Definition>,
+    /// Per Administration script, the entity each Criteria member is
+    /// searched on; keyed by file path.
+    criteria_members: DataIndexer<CriteriaMembers>,
+}
+
+/// The members of one Administration script that hold or return a Criteria,
+/// with the entity each is searched on.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CriteriaMembers {
+    pub members: BTreeMap<String, String>,
 }
 
 impl Index {
@@ -121,7 +132,25 @@ impl Index {
             "shopware.dal.definitions",
             store,
         )?;
-        Ok(Self { definitions })
+        let criteria_members = DataIndexer::repository(
+            config_dir.as_ref().join("shopware_dal_criteria.db"),
+            "shopware.dal.criteria_members",
+            store,
+        )?;
+        Ok(Self {
+            definitions,
+            criteria_members,
+        })
+    }
+
+    /// The entity the member `member` declared in the Administration script
+    /// `file` is searched on.
+    pub fn criteria_member_entity(&self, file: &str, member: &str) -> Result<Option<String>> {
+        Ok(self
+            .criteria_members
+            .get_values_view(file)?
+            .iter()
+            .find_map(|record| record.members.get(member).cloned()))
     }
 
     /// Resolved entity, mapping and translation definitions.
@@ -258,6 +287,13 @@ pub fn resolve_association_path<'a>(
 impl Index {
     /// Stores extracted definitions and their workspace symbols.
     fn persist(&self, file: &ParsedFile, prepared: &PreparedDefinitions) -> Result<()> {
+        if let Some(members) = &prepared.1 {
+            // Saving nothing clears the record of a file that lost its
+            // Criteria members.
+            let record = (!members.members.is_empty()).then_some((file.path(), members));
+            self.criteria_members
+                .batch_save_items_in(file.mutation(), [(file.path(), record)])?;
+        }
         let Some(extracted) = &prepared.0 else {
             return Ok(());
         };
@@ -281,7 +317,7 @@ impl Index {
 }
 
 /// Definitions extracted from one file; `None` leaves the file alone.
-struct PreparedDefinitions(Option<ExtractedDefinitions>);
+struct PreparedDefinitions(Option<ExtractedDefinitions>, Option<CriteriaMembers>);
 
 struct ExtractedDefinitions {
     definitions: Vec<Definition>,
@@ -290,8 +326,11 @@ struct ExtractedDefinitions {
 
 /// Parses one PHP file's entity definitions without writing anything.
 fn extract_definitions(file: &ParsedFile) -> PreparedDefinitions {
+    if matches!(file.extension(), ".js" | ".ts") {
+        return PreparedDefinitions(None, extract_criteria_members(file));
+    }
     if file.extension() != ".php" {
-        return PreparedDefinitions(None);
+        return PreparedDefinitions(None, None);
     }
     let path = file.path();
     let source = file.source();
@@ -333,10 +372,28 @@ fn extract_definitions(file: &ParsedFile) -> PreparedDefinitions {
         }
     }
     let symbols = definition_workspace_symbols(file, &definitions);
-    PreparedDefinitions(Some(ExtractedDefinitions {
-        definitions,
-        symbols,
-    }))
+    PreparedDefinitions(
+        Some(ExtractedDefinitions {
+            definitions,
+            symbols,
+        }),
+        None,
+    )
+}
+
+/// The Criteria members of an Administration script. `None` leaves the file
+/// alone: it never had a record.
+fn extract_criteria_members(file: &ParsedFile) -> Option<CriteriaMembers> {
+    let source = file.source();
+    if !source.contains("repositoryFactory") || !source.contains("riteria") {
+        // A file that stopped creating repositories still has to lose its
+        // record; an empty one does that.
+        return Some(CriteriaMembers::default());
+    }
+    let tree = file.syntax_tree()?;
+    Some(CriteriaMembers {
+        members: crate::criteria_scope::js_criteria_members(&tree.root()),
+    })
 }
 
 impl Indexer for Index {
@@ -350,14 +407,17 @@ impl Indexer for Index {
     }
 
     fn removed_files(&self, paths: &[String]) -> Result<()> {
+        self.criteria_members.batch_delete_by_file_paths(paths)?;
         self.definitions.batch_delete_by_file_paths(paths)
     }
 
     fn close(&self) -> Result<()> {
+        self.criteria_members.close()?;
         self.definitions.close()
     }
 
     fn clear(&self) -> Result<()> {
+        self.criteria_members.clear()?;
         self.definitions.clear()
     }
 
@@ -389,6 +449,8 @@ impl PreparingIndexer for Index {
 
 impl TransactionalRemover for Index {
     fn removed_files_in(&self, paths: &[String], mutation: &Mutation) -> Result<()> {
+        self.criteria_members
+            .batch_delete_by_file_paths_in(Some(mutation), paths)?;
         self.definitions
             .batch_delete_by_file_paths_in(Some(mutation), paths)
     }
@@ -396,6 +458,7 @@ impl TransactionalRemover for Index {
 
 impl TransactionalClearer for Index {
     fn clear_in(&self, mutation: &Mutation) -> Result<()> {
+        self.criteria_members.clear_in(Some(mutation))?;
         self.definitions.clear_in(Some(mutation))
     }
 }

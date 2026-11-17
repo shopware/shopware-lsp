@@ -9,16 +9,28 @@ use swlsp_lsp_protocol::{self as protocol, CompletionItemKind};
 use swlsp_shopware_dal::{Index, JsFieldReferenceKind};
 
 use super::{item, lower_ext, request_offset};
+use crate::dal_criteria::CriteriaEntities;
 use swlsp_syntax::SyntaxNode;
 use swlsp_textutil::lowercase;
 
 pub struct DalCompletionProvider {
     index: Arc<Index>,
+    criteria: CriteriaEntities,
 }
 
 impl DalCompletionProvider {
     pub fn new(index: Arc<Index>) -> Self {
-        Self { index }
+        Self {
+            criteria: CriteriaEntities::new(index.clone(), None),
+            index,
+        }
+    }
+
+    /// Resolves a Criteria inherited from an overridden component through
+    /// the Administration component index.
+    pub fn with_admin(mut self, admin: Option<Arc<swlsp_admin::AdminComponentIndexer>>) -> Self {
+        self.criteria = CriteriaEntities::new(self.index.clone(), admin);
+        self
     }
 
     fn definition_items(&self) -> Vec<protocol::CompletionItem> {
@@ -40,7 +52,7 @@ impl DalCompletionProvider {
         associations_only: bool,
     ) -> Option<Vec<protocol::CompletionItem>> {
         let definitions = self.index.extended_definitions().ok()?;
-        let definition = swlsp_shopware_dal::js_criteria_definition(&definitions, node, offset)?;
+        let definition = self.criteria.definition(&definitions, node, offset)?;
         let mut seen = BTreeSet::new();
         Some(
             definition

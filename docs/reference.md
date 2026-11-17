@@ -1339,7 +1339,9 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
   shows which repository a Criteria is searched on, they resolve against that
   entity and follow the path association by association, including
   `getAssociation('…')` sub-criteria, attribute entities and the associations
-  entity extensions add; elsewhere they
+  entity extensions add. A Criteria taken over from the component a file
+  overrides or extends (`this.$super('…')`) resolves through that component;
+  elsewhere they
   fall back to the fields of every entity
 - Indexed Administration modules with completion, hover, navigation, cached
   references, and conservative missing-module diagnostics for

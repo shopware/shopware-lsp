@@ -8,15 +8,24 @@ use swlsp_parser_php::query as phpquery;
 use swlsp_parser_twig::query as twigquery;
 use swlsp_shopware_dal::{Definition, Index, JsFieldReferenceKind};
 
+use crate::dal_criteria::CriteriaEntities;
 use crate::definition::common::{ext_lower, line_location, request_offset, request_uri};
 
 pub struct DalDefinitionProvider {
     index: Option<Arc<Index>>,
+    admin: Option<Arc<swlsp_admin::AdminComponentIndexer>>,
 }
 
 impl DalDefinitionProvider {
     pub fn new(index: Option<Arc<Index>>) -> Self {
-        Self { index }
+        Self { index, admin: None }
+    }
+
+    /// Resolves a Criteria inherited from an overridden component through
+    /// the Administration component index.
+    pub fn with_admin(mut self, admin: Option<Arc<swlsp_admin::AdminComponentIndexer>>) -> Self {
+        self.admin = admin;
+        self
     }
 }
 
@@ -30,13 +39,18 @@ fn definition_locations(definitions: &[Definition]) -> Vec<protocol::Location> {
 /// The field `name` on the entity the path under the cursor has reached,
 /// when the file shows which repository the Criteria is searched on.
 fn entity_field_location(
-    index: &Index,
+    index: &Arc<Index>,
+    admin: &Option<Arc<swlsp_admin::AdminComponentIndexer>>,
     node: &swlsp_syntax::SyntaxNode,
     offset: u32,
     name: &str,
 ) -> Option<protocol::Location> {
     let definitions = index.extended_definitions().ok()?;
-    let definition = swlsp_shopware_dal::js_criteria_definition(&definitions, node, offset)?;
+    let definition = CriteriaEntities::new(index.clone(), admin.clone()).definition(
+        &definitions,
+        node,
+        offset,
+    )?;
     if let Some(field) = definition.fields.iter().find(|field| field.name == name) {
         return Some(line_location(
             definition.field_file(field),
@@ -80,7 +94,9 @@ impl GotoDefinitionProvider for DalDefinitionProvider {
                 let offset = request_offset(request).unwrap_or(0);
                 let (name, association_segment) =
                     swlsp_shopware_dal::js_field_reference_segment(node, offset);
-                if let Some(location) = entity_field_location(index, node, offset, &name) {
+                if let Some(location) =
+                    entity_field_location(index, &self.admin, node, offset, &name)
+                {
                     return vec![location];
                 }
                 let Ok(fields) = index.field_definitions(

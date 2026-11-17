@@ -205,6 +205,69 @@ class ProductExtension extends EntityExtension
 }
 
 #[test]
+fn dal_definition_resolves_a_criteria_inherited_through_super() {
+    let root = tempfile::tempdir().unwrap();
+    let dal = dal_index(root.path());
+    let category = "/project/src/Core/Content/Category/CategoryDefinition.php";
+    index_file(
+        &*dal,
+        category,
+        "<?php
+class CategoryDefinition extends EntityDefinition
+{
+    public function getEntityName(): string { return 'category'; }
+    protected function defineFields(): FieldCollection
+    {
+        return new FieldCollection([
+            new StringField('name', 'name'),
+        ]);
+    }
+}",
+    );
+    // The base component shows which repository takes the Criteria.
+    let admin = Arc::new(
+        swlsp_admin::AdminComponentIndexer::new(&p(&root.path().join("admin-cache")), None)
+            .unwrap(),
+    );
+    let base_path = "/project/src/Administration/Resources/app/administration/src/module/sw-category/page/sw-category-detail/index.js";
+    let base = "Component.register('sw-category-detail', {
+    computed: {
+        categoryRepository() { return this.repositoryFactory.create('category'); },
+        categoryCriteria() { return new Criteria(); },
+    },
+    methods: {
+        load() { return this.categoryRepository.get(this.id, Shopware.Context.api, this.categoryCriteria); },
+    },
+});";
+    index_file(&*admin, base_path, base);
+    index_file(&*dal, base_path, base);
+
+    let source = "Component.override('sw-category-detail', {
+    computed: {
+        categoryCriteria() {
+            const criteria = this.$super('categoryCriteria');
+            criteria.addSorting(Criteria.sort('name'));
+            return criteria;
+        },
+    },
+});";
+    let document = document(
+        "file:///project/custom/plugins/Swag/src/Resources/app/administration/src/override.js",
+        source,
+    );
+    let request = request_at(&document, index_of(source, "name'") + 1);
+
+    // Without the component index every entity with a `name` is offered.
+    let alone = DalDefinitionProvider::new(Some(dal.clone()));
+    assert_eq!(definitions(&alone, &request).len(), 2);
+
+    let provider = DalDefinitionProvider::new(Some(dal)).with_admin(Some(admin));
+    let locations = definitions(&provider, &request);
+    assert_eq!(locations.len(), 1);
+    assert_eq!(locations[0].uri, file_uri(category));
+}
+
+#[test]
 fn dal_definition_restricts_association_references() {
     let root = tempfile::tempdir().unwrap();
     let provider = DalDefinitionProvider::new(Some(dal_index(root.path())));

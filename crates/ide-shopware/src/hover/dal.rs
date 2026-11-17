@@ -8,15 +8,24 @@ use swlsp_lsp::{Context, HoverProvider, HoverRequest, ProviderResult, effective_
 use swlsp_lsp_protocol as protocol;
 use swlsp_shopware_dal::{Index, JsFieldReferenceKind};
 
+use crate::dal_criteria::CriteriaEntities;
 use crate::hover::{lower_ext, markdown_hover, request_offset, request_uri};
 
 pub struct DalHoverProvider {
     index: Option<Arc<Index>>,
+    admin: Option<Arc<swlsp_admin::AdminComponentIndexer>>,
 }
 
 impl DalHoverProvider {
     pub fn new(index: Option<Arc<Index>>) -> Self {
-        Self { index }
+        Self { index, admin: None }
+    }
+
+    /// Resolves a Criteria inherited from an overridden component through
+    /// the Administration component index.
+    pub fn with_admin(mut self, admin: Option<Arc<swlsp_admin::AdminComponentIndexer>>) -> Self {
+        self.admin = admin;
+        self
     }
 
     fn entity_hover(&self, index: &Index, name: &str) -> ProviderResult<Option<protocol::Hover>> {
@@ -61,9 +70,10 @@ impl HoverProvider for DalHoverProvider {
         _ctx: &Context,
         request: &HoverRequest,
     ) -> ProviderResult<Option<protocol::Hover>> {
-        let Some(index) = self.index.as_deref() else {
+        let Some(shared) = self.index.as_ref() else {
             return Ok(None);
         };
+        let index = shared.as_ref();
         let Some(node) = request.node.as_ref() else {
             return Ok(None);
         };
@@ -94,8 +104,8 @@ impl HoverProvider for DalHoverProvider {
         let mut fields = index.field_definitions(&name, association)?;
         // With the searched entity known, only its field is the answer.
         let definitions = index.extended_definitions()?;
-        if let Some(definition) =
-            swlsp_shopware_dal::js_criteria_definition(&definitions, node, offset)
+        if let Some(definition) = CriteriaEntities::new(shared.clone(), self.admin.clone())
+            .definition(&definitions, node, offset)
             && fields.iter().any(|field| field.entity == definition.name)
         {
             fields.retain(|field| field.entity == definition.name);
