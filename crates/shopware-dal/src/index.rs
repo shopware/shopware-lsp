@@ -395,6 +395,8 @@ fn parse_definition(
     let mut explicit_version_aware = None;
     let mut inheritance_aware = false;
     let mut defines_fields = false;
+    // The fields of an overridden `defaultFields()`.
+    let mut default_fields = None;
     let mut entity_class_declared = false;
     for method in phpquery::methods(class) {
         match phpquery::method_name(&method).as_str() {
@@ -404,6 +406,7 @@ fn parse_definition(
                     name_range = phpquery::string_content_range(string);
                 }
             }
+            "defaultFields" => default_fields = Some(parse_fields(&method, lines, &resolver)),
             "defineFields" => {
                 defines_fields = true;
                 fields = parse_fields(&method, lines, &resolver);
@@ -460,6 +463,17 @@ fn parse_definition(
     }
     let class_range = class.range_trimmed_trivia();
     let (line, _) = lines.position(class_range.start().into());
+    let defaults = match default_fields {
+        Some(defaults) => defaults,
+        None if matches!(definition_kind, "entity" | "translation") => {
+            let (name_line, _) = lines.position(name_range.start().into());
+            timestamp_fields(name_range, name_line + 1)
+        }
+        // A mapping definition has no default fields; an unresolved one may
+        // turn out to be a mapping.
+        None => Vec::new(),
+    };
+    append_missing(&mut fields, defaults);
     Some(Definition {
         name,
         kind: definition_kind.to_owned(),
@@ -592,6 +606,10 @@ fn parse_attribute_entity(
         }
         fields.push(field);
     }
+    let name_range = phpquery::string_content_range(&name_node);
+    let (name_line, _) = lines.position(name_range.start().into());
+    append_missing(&mut fields, timestamp_fields(name_range, name_line + 1));
+    append_missing(&mut translated, timestamp_fields(name_range, name_line + 1));
     let resolver = ClassResolver::new(root);
     let fully_qualified_class = resolver.resolve(&class_name);
     let class_range = class.range_trimmed_trivia();
@@ -604,7 +622,7 @@ fn parse_attribute_entity(
         fully_qualified_class,
         file: file.to_owned(),
         line: line + 1,
-        name_range: phpquery::string_content_range(&name_node),
+        name_range,
         class_range,
         fields,
         entity_class_declared: true,
@@ -624,6 +642,36 @@ fn parse_attribute_entity(
     }
     definitions.insert(0, entity);
     definitions
+}
+
+/// `createdAt` and `updatedAt`, which `EntityDefinition::defaultFields()`
+/// adds to every entity. They have no declaration of their own, so they
+/// point at `range`, the entity name.
+fn timestamp_fields(range: TextRange, line: u32) -> Vec<Field> {
+    [
+        ("createdAt", "created_at", "CreatedAtField"),
+        ("updatedAt", "updated_at", "UpdatedAtField"),
+    ]
+    .into_iter()
+    .map(|(name, storage_name, type_)| Field {
+        name: name.to_owned(),
+        storage_name: storage_name.to_owned(),
+        type_: type_.to_owned(),
+        stored: true,
+        line,
+        range,
+        ..Field::default()
+    })
+    .collect()
+}
+
+/// Appends the fields of `defaults` whose name `fields` does not declare.
+fn append_missing(fields: &mut Vec<Field>, defaults: Vec<Field>) {
+    for field in defaults {
+        if !fields.iter().any(|existing| existing.name == field.name) {
+            fields.push(field);
+        }
+    }
 }
 
 /// The entity named by an association attribute: its `entity` argument, or
@@ -722,6 +770,26 @@ fn parse_fields(method: &SyntaxNode, lines: &LineIndex, resolver: &ClassResolver
                 name = "versionId".to_owned();
                 storage_name = "version_id".to_owned();
             }
+            "TranslationsAssociationField" => {
+                // The property name is the optional third argument.
+                name = string_argument_value(2);
+                if name.is_empty() {
+                    name = "translations".to_owned();
+                }
+                storage_name = String::new();
+            }
+            "ChildCountField" => {
+                name = "childCount".to_owned();
+                storage_name = "child_count".to_owned();
+            }
+            "CreatedAtField" => {
+                name = "createdAt".to_owned();
+                storage_name = "created_at".to_owned();
+            }
+            "UpdatedAtField" => {
+                name = "updatedAt".to_owned();
+                storage_name = "updated_at".to_owned();
+            }
             "AutoIncrementField" => {
                 name = "autoIncrement".to_owned();
                 storage_name = "auto_increment".to_owned();
@@ -739,7 +807,8 @@ fn parse_fields(method: &SyntaxNode, lines: &LineIndex, resolver: &ClassResolver
         let mut primary = short_type == "IdField" || short_type == "VersionField";
         let mut stored = !association && short_type != "TranslatedField";
         let mut runtime = false;
-        let mut computed = false;
+        // Counted by an indexer, never written through the entity.
+        let mut computed = short_type == "ChildCountField";
         if let Some(item) = phpquery::array_item_at(&creation) {
             for flag in phpquery::object_creations(&item, &[]) {
                 match short_name(phpquery::object_class_name(&flag).trim_matches('\\')) {

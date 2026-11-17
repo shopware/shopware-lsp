@@ -70,7 +70,7 @@ class ProductDefinition extends EntityDefinition
     let value = &result.contents.value;
     assert!(value.contains("Shopware DAL entity"));
     assert!(value.contains("ProductDefinition"));
-    assert!(value.contains("Indexed fields: 1"));
+    assert!(value.contains("Indexed fields: 3"));
 }
 
 #[test]

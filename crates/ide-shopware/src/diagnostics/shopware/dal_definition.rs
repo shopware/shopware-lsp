@@ -139,6 +139,11 @@ impl ProblemAnalyzer for DalDefinitionAnalyzer {
                     if field.type_ == "ReferenceVersionField" || field.name.contains('_') {
                         continue;
                     }
+                    // The timestamps every entity has are not declared by the
+                    // definition; the `Entity` base class holds them.
+                    if field.range == definition.name_range {
+                        continue;
+                    }
                     problems.extend(check.field(field, &definition.class));
                 }
             }

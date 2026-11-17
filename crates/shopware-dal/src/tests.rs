@@ -192,7 +192,13 @@ class ProductDefinition extends EntityDefinition
     assert_eq!(product.kind, "entity");
     assert!(product.version_aware);
     assert!(product.inheritance_aware);
-    assert_eq!(product.fields.len(), 6);
+    // The declared fields, then the timestamps every entity has.
+    assert_eq!(product.fields.len(), 8);
+    assert_eq!(product.fields[6].name, "createdAt");
+    assert_eq!(product.fields[6].storage_name, "created_at");
+    assert_eq!(product.fields[7].name, "updatedAt");
+    // They have no declaration, so they point at the entity name.
+    assert_eq!(product.fields[6].range, product.name_range);
     assert!(product.fields[0].primary);
     assert!(product.fields[0].stored);
     assert_eq!(product.fields[1].name, "versionId");
@@ -310,7 +316,7 @@ class NodeDefinition extends EntityDefinition {
     let definitions = idx.definition("acme_node").unwrap();
     assert_eq!(definitions.len(), 1);
     let fields = &definitions[0].fields;
-    assert_eq!(fields.len(), 4);
+    assert_eq!(fields.len(), 6);
     assert_eq!(fields[1].name, "parentId");
     assert_eq!(fields[1].storage_name, "parent_id");
     assert_eq!(
@@ -467,6 +473,8 @@ class Nameless {}
             ("name", "name", false, false),
             ("units", "units", true, false),
             ("translations", "translations", true, false),
+            ("createdAt", "created_at", false, false),
+            ("updatedAt", "updated_at", false, false),
         ]
     );
     // Associations name their target entity, so a path can be followed.
@@ -502,7 +510,7 @@ class Nameless {}
             .iter()
             .map(|field| field.name.as_str())
             .collect::<Vec<_>>(),
-        ["name"]
+        ["name", "createdAt", "updatedAt"]
     );
     assert_eq!(
         idx.definition("swag_unit").unwrap()[0].fields[0].name,
@@ -615,4 +623,63 @@ fn field_reference_prefix_lists_the_segments_before_the_cursor() {
         js_field_reference_prefix(&string, at("thumbnails")),
         ["manufacturer", "media"]
     );
+}
+
+fn field_names(idx: &Index, entity: &str) -> Vec<String> {
+    idx.definition(entity)
+        .unwrap()
+        .remove(0)
+        .fields
+        .into_iter()
+        .map(|field| field.name)
+        .collect()
+}
+
+#[test]
+fn index_fields_named_by_their_type() {
+    let directory = tempfile::tempdir().unwrap();
+    let idx = Index::new(directory.path(), None).unwrap();
+    index(
+        "<?php
+class CategoryDefinition extends EntityDefinition {
+    public const ENTITY_NAME = 'category';
+    protected function defineFields(): FieldCollection { return new FieldCollection([
+        new IdField('id', 'id'),
+        new ChildCountField(),
+        (new TranslationsAssociationField(CategoryTranslationDefinition::class, 'category_id'))->addFlags(new Required()),
+        new UpdatedAtField(),
+    ]); }
+}
+class NamedDefinition extends EntityDefinition {
+    public const ENTITY_NAME = 'named';
+    protected function defineFields(): FieldCollection { return new FieldCollection([
+        new TranslationsAssociationField(NamedTranslationDefinition::class, 'named_id', 'texts'),
+    ]); }
+    protected function defaultFields(): array { return []; }
+}
+class LinkDefinition extends MappingEntityDefinition {
+    public const ENTITY_NAME = 'link';
+    protected function defineFields(): FieldCollection { return new FieldCollection([
+        new FkField('category_id', 'categoryId', CategoryDefinition::class),
+    ]); }
+}",
+        "/project/src/CategoryDefinition.php",
+        &idx,
+    );
+    // A declared timestamp keeps its place and is not added twice.
+    assert_eq!(
+        field_names(&idx, "category"),
+        ["id", "childCount", "translations", "updatedAt", "createdAt"]
+    );
+    let category = idx.definition("category").unwrap().remove(0);
+    let child_count = &category.fields[1];
+    assert_eq!(child_count.storage_name, "child_count");
+    assert!(child_count.computed && child_count.stored);
+    let translations = &category.fields[2];
+    assert!(translations.association && !translations.stored);
+    assert_eq!(translations.target_class, "CategoryTranslationDefinition");
+    // An overridden `defaultFields()` replaces the timestamps, and a mapping
+    // definition has none.
+    assert_eq!(field_names(&idx, "named"), ["texts"]);
+    assert_eq!(field_names(&idx, "link"), ["categoryId"]);
 }
