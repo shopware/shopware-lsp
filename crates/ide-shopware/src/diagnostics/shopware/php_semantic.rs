@@ -233,6 +233,13 @@ impl<'a> Run<'a> {
         self.problems.push(problem);
     }
 
+    /// Whether `code` was already reported at `range`.
+    pub(super) fn reported(&self, code: &str, range: TextRange) -> bool {
+        self.problems
+            .iter()
+            .any(|problem| problem.range == range && problem.id.as_str() == code)
+    }
+
     /// What the run reported, in source order.
     pub(super) fn into_problems(mut self) -> Vec<Problem> {
         self.problems.sort_by(|left, right| {

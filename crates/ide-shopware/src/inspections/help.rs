@@ -174,6 +174,24 @@ pub(crate) const STORE_REVIEW: &[RuleHelp] = &[
         "",
     ),
     help(
+        "shopware.php.route.default_ineffective",
+        "Remove the default, or move the route to a scope that acts on it. Privileges \
+         (_acl) are only checked in the api scope; the customer login, the context token \
+         and the HTTP cache only exist in the storefront and store-api scopes; \
+         XmlHttpRequest is only read in the storefront scope.",
+        "Only these defaults are checked, and only where every scope of the route is known.",
+        "",
+    ),
+    help(
+        "shopware.php.route.xml_http_request",
+        "Add 'XmlHttpRequest' => true to the route defaults when the action is requested \
+         with XMLHttpRequest, which Shopware's HttpClient does.",
+        "Reported for a storefront action whose return type is JsonResponse. A request \
+         made with fetch() does not send the header Shopware looks at and is not refused, \
+         so the finding does not apply to an action only called that way.",
+        "",
+    ),
+    help(
         "shopware.php.route.attribute_literal",
         "Write the route default with the constant Shopware declares for it, such as \
          PlatformRequest::ATTRIBUTE_ROUTE_SCOPE and StorefrontRouteScope::ID; a quick fix \

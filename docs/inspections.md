@@ -1122,15 +1122,22 @@ Languages: php. Domain: `shopware`.
 | Code | Default severity | Enabled by default |
 |---|---|---|
 | `shopware.php.route.attribute_literal` | hint | yes |
+| `shopware.php.route.default_ineffective` | warning | yes |
 | `shopware.php.route.methods_missing` | warning | yes |
 | `shopware.php.route.name_prefix` | warning | yes |
 | `shopware.php.route.scope_missing` | warning | yes |
 | `shopware.php.route.scope_path` | warning | yes |
+| `shopware.php.route.xml_http_request` | hint | yes |
 
 **`shopware.php.route.attribute_literal`**
 
 - Fix: Write the route default with the constant Shopware declares for it, such as PlatformRequest::ATTRIBUTE_ROUTE_SCOPE and StorefrontRouteScope::ID; a quick fix replaces the string.
 - Exceptions: Only keys starting with an underscore that PlatformRequest has an ATTRIBUTE_ constant for, and the values of the route scope. The quick fix writes the short class name where the file imports the class, and the qualified name otherwise.
+
+**`shopware.php.route.default_ineffective`**
+
+- Fix: Remove the default, or move the route to a scope that acts on it. Privileges (_acl) are only checked in the api scope; the customer login, the context token and the HTTP cache only exist in the storefront and store-api scopes; XmlHttpRequest is only read in the storefront scope.
+- Exceptions: Only these defaults are checked, and only where every scope of the route is known.
 
 **`shopware.php.route.methods_missing`**
 
@@ -1151,6 +1158,11 @@ Languages: php. Domain: `shopware`.
 
 - Fix: Start the path with /api/ for the api scope and with /store-api/ for the store-api scope; the scope refuses a request to any other path.
 - Exceptions: A path that is not a known string, a route with several scopes and the other scopes are not checked.
+
+**`shopware.php.route.xml_http_request`**
+
+- Fix: Add 'XmlHttpRequest' => true to the route defaults when the action is requested with XMLHttpRequest, which Shopware's HttpClient does.
+- Exceptions: Reported for a storefront action whose return type is JsonResponse. A request made with fetch() does not send the header Shopware looks at and is not refused, so the finding does not apply to an action only called that way.
 
 ## `shopware.php.semantic`
 

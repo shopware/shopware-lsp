@@ -34,6 +34,8 @@ pub const ROUTE_SCOPE_PATH_CODE: &str = "shopware.php.route.scope_path";
 pub const ROUTE_NAME_PREFIX_CODE: &str = "shopware.php.route.name_prefix";
 pub const ROUTE_METHODS_MISSING_CODE: &str = "shopware.php.route.methods_missing";
 pub const ROUTE_ATTRIBUTE_LITERAL_CODE: &str = "shopware.php.route.attribute_literal";
+pub const ROUTE_DEFAULT_INEFFECTIVE_CODE: &str = "shopware.php.route.default_ineffective";
+pub const ROUTE_XML_HTTP_REQUEST_CODE: &str = "shopware.php.route.xml_http_request";
 
 /// The codes of [`ShopwareRouteAnalyzer`] with their default severity.
 pub const ROUTE_CODES: &[(&str, DiagnosticSeverity)] = &[
@@ -42,6 +44,8 @@ pub const ROUTE_CODES: &[(&str, DiagnosticSeverity)] = &[
     (ROUTE_NAME_PREFIX_CODE, DiagnosticSeverity::WARNING),
     (ROUTE_METHODS_MISSING_CODE, DiagnosticSeverity::WARNING),
     (ROUTE_ATTRIBUTE_LITERAL_CODE, DiagnosticSeverity::HINT),
+    (ROUTE_DEFAULT_INEFFECTIVE_CODE, DiagnosticSeverity::WARNING),
+    (ROUTE_XML_HTTP_REQUEST_CODE, DiagnosticSeverity::HINT),
 ];
 
 const PLATFORM_REQUEST_CLASS: &str = "Shopware\\Core\\PlatformRequest";
@@ -75,6 +79,47 @@ const SHOPWARE_NAMESPACES: &[&str] = &[
     "Shopware\\Administration\\",
     "Shopware\\Elasticsearch\\",
 ];
+/// Route defaults Shopware only acts on in some scopes, with what they do
+/// there. In another scope nothing reads them.
+const SCOPED_DEFAULTS: &[(&str, &[&str], &str)] = &[
+    (
+        "_acl",
+        &["api", "administration"],
+        "privileges are only checked for users of the Admin API; this route is open to everyone",
+    ),
+    (
+        "_loginRequired",
+        &["storefront", "store-api"],
+        "the customer login is only checked for sales channel requests",
+    ),
+    (
+        "_loginRequiredAllowGuest",
+        &["storefront", "store-api"],
+        "the customer login is only checked for sales channel requests",
+    ),
+    (
+        "_contextTokenRequired",
+        &["storefront", "store-api"],
+        "the context token only exists for sales channel requests",
+    ),
+    (
+        "_httpCache",
+        &["storefront", "store-api"],
+        "the HTTP cache only stores sales channel responses",
+    ),
+    (
+        "_noStore",
+        &["storefront", "store-api"],
+        "cache headers are only set for sales channel responses",
+    ),
+    (
+        "XmlHttpRequest",
+        &["storefront"],
+        "only the storefront refuses XMLHttpRequest calls to routes without it",
+    ),
+];
+const XML_HTTP_REQUEST_KEY: &str = "XmlHttpRequest";
+
 /// The names `Storefront\Framework\Routing\Router` treats as storefront routes.
 const STOREFRONT_NAME_PREFIXES: &[&str] = &["frontend.", "widgets.", "payment."];
 
@@ -247,7 +292,87 @@ impl Run<'_> {
                 self.check_route_name(route, &scopes);
                 self.check_route_path(route, class_path.as_ref(), &scopes);
             }
+            for route in &all {
+                self.check_scoped_defaults(route, &scopes);
+            }
+            self.check_xml_http_request(&method, &all, &scopes);
         }
+    }
+
+    /// A route default nothing reads in the scope of the route.
+    fn check_scoped_defaults(&mut self, route: &SyntaxNode, scopes: &BTreeSet<String>) {
+        if scopes.is_empty() {
+            return;
+        }
+        let Some(defaults) = local_call_argument(route, "defaults", 4)
+            .map(|value| unwrap_php_parentheses(&value))
+            .filter(|value| value.kind() == PHP_ARRAY)
+        else {
+            return;
+        };
+        let listed: Vec<&str> = scopes.iter().map(String::as_str).collect();
+        for item in phpquery::array_items(&defaults) {
+            let Some(key) = phpquery::array_item_key(&item) else {
+                continue;
+            };
+            let Some(name) = single(self.expression_strings(Some(&key))) else {
+                continue;
+            };
+            let Some((_, effective, reason)) = SCOPED_DEFAULTS
+                .iter()
+                .find(|(default, _, _)| *default == name)
+            else {
+                continue;
+            };
+            if listed.iter().any(|scope| effective.contains(scope)) {
+                continue;
+            }
+            let range = key.range_trimmed_trivia();
+            // A default of the class is looked at once per action.
+            if self.reported(ROUTE_DEFAULT_INEFFECTIVE_CODE, range) {
+                continue;
+            }
+            self.push(problem(
+                ROUTE_DEFAULT_INEFFECTIVE_CODE,
+                range,
+                format!(
+                    "{name} has no effect in the {} scope: {reason}",
+                    listed.join(", ")
+                ),
+            ));
+        }
+    }
+
+    /// A storefront action answering with JSON is called from JavaScript;
+    /// an `XMLHttpRequest` to it is refused unless the route allows it.
+    fn check_xml_http_request(
+        &mut self,
+        method: &SyntaxNode,
+        routes: &[&SyntaxNode],
+        scopes: &BTreeSet<String>,
+    ) {
+        if scopes.len() != 1 || !scopes.contains("storefront") {
+            return;
+        }
+        let returns = phpquery::method_return_type(method);
+        if returns.rsplit('\\').next() != Some("JsonResponse") {
+            return;
+        }
+        if routes.iter().any(|route| {
+            self.route_default_value(route, XML_HTTP_REQUEST_KEY)
+                .is_some()
+        }) {
+            return;
+        }
+        let name = phpquery::direct_child(method, PHP_NAME).unwrap_or(method.clone());
+        self.push(problem(
+            ROUTE_XML_HTTP_REQUEST_CODE,
+            name.range_trimmed_trivia(),
+            "This storefront action answers with JSON, so it is called from JavaScript; \
+             without the route default 'XmlHttpRequest' => true an XMLHttpRequest to it is \
+             refused"
+                .to_owned(),
+        ));
     }
 
     /// The argument `name` of a route when it is one known string, with

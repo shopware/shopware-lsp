@@ -135,7 +135,7 @@ class OtherStoreApiController
 #[Route(defaults: [{|shopware.php.route.attribute_literal:'_routeScope'|} => [{|shopware.php.route.attribute_literal:'storefront'|}], {|shopware.php.route.attribute_literal:'_loginRequired'|} => true, 'auth_required' => false, 'sw-context' => 1, '_other' => 1])]
 class Literals
 {
-    #[Route(path: '/literal', name: 'frontend.literal', defaults: [{|shopware.php.route.attribute_literal:'_acl'|} => ['storefront']], methods: ['GET'])]
+    #[Route(path: '/literal', name: 'frontend.literal', defaults: [{|shopware.php.route.attribute_literal:'_loginRequired'|} => false], methods: ['GET'])]
     public function show(): void {}
 }
 ";
@@ -251,4 +251,126 @@ fn the_constant_fix_imports_the_class_it_names() {
         );
         assert!(presentation.preferred);
     }
+}
+
+#[test]
+fn defaults_only_count_in_the_scope_that_reads_them() {
+    let body = r"
+#[Route(defaults: [PlatformRequest::ATTRIBUTE_ROUTE_SCOPE => [StorefrontRouteScope::ID], {|shopware.php.route.default_ineffective:PlatformRequest::ATTRIBUTE_ACL|} => ['order:update']])]
+class StorefrontController
+{
+    #[Route(path: '/a', name: 'frontend.a', defaults: [PlatformRequest::ATTRIBUTE_LOGIN_REQUIRED => true, 'XmlHttpRequest' => true, '_httpCache' => true, '_noStore' => true], methods: ['GET'])]
+    public function fine(): void {}
+
+    #[Route(path: '/b', name: 'frontend.b', methods: ['GET'])]
+    public function other(): void {}
+}
+
+#[Route(defaults: [PlatformRequest::ATTRIBUTE_ROUTE_SCOPE => [ApiRouteScope::ID]])]
+class ApiController
+{
+    #[Route(path: '/api/_action/a', name: 'api.a', defaults: [PlatformRequest::ATTRIBUTE_ACL => ['order:update'], {|shopware.php.route.default_ineffective:'_loginRequired'|} => true, {|shopware.php.route.default_ineffective:'XmlHttpRequest'|} => true, {|shopware.php.route.default_ineffective:'_httpCache'|} => true, 'auth_required' => false, '_other' => 1], methods: ['POST'])]
+    public function run(): void {}
+}
+
+#[Route(defaults: [PlatformRequest::ATTRIBUTE_ROUTE_SCOPE => [StoreApiRouteScope::ID]])]
+class StoreApiController
+{
+    #[Route(path: '/store-api/a', name: 'store-api.a', defaults: ['_loginRequired' => true, '_contextTokenRequired' => true, '_httpCache' => true, {|shopware.php.route.default_ineffective:'_acl'|} => ['x'], {|shopware.php.route.default_ineffective:'XmlHttpRequest'|} => true], methods: ['POST'])]
+    public function run(): void {}
+}
+
+// Read by one of the scopes, or the scope is not known.
+class Mixed
+{
+    #[Route(path: '/api/_action/b', name: 'api.b', defaults: [PlatformRequest::ATTRIBUTE_ROUTE_SCOPE => [ApiRouteScope::ID, StorefrontRouteScope::ID], '_acl' => ['x'], '_loginRequired' => true], methods: ['POST'])]
+    public function both(): void {}
+
+    #[Route(path: '/c', name: 'frontend.c', defaults: [PlatformRequest::ATTRIBUTE_ROUTE_SCOPE => $scopes, '_acl' => ['x']], methods: ['POST'])]
+    public function unknown(): void {}
+}
+";
+    let fixture = format!("{HEADER}{body}")
+        .replace("'_loginRequired'", "{|shopware.php.route.attribute_literal:'_loginRequired'|}")
+        .replace(
+            "{|shopware.php.route.default_ineffective:{|shopware.php.route.attribute_literal:'_loginRequired'|}|}",
+            "{|shopware.php.route.default_ineffective:'_loginRequired'|}",
+        );
+    let (_cache, inspection) = inspection(true);
+    let (_, problems) = check_ineffective(inspection.as_ref(), &fixture);
+    assert_eq!(
+        problems,
+        [
+            "_acl has no effect in the storefront scope: privileges are only checked for users of the Admin API; this route is open to everyone",
+            "_loginRequired has no effect in the api scope: the customer login is only checked for sales channel requests",
+            "XmlHttpRequest has no effect in the api scope: only the storefront refuses XMLHttpRequest calls to routes without it",
+            "_httpCache has no effect in the api scope: the HTTP cache only stores sales channel responses",
+            "_acl has no effect in the store-api scope: privileges are only checked for users of the Admin API; this route is open to everyone",
+            "XmlHttpRequest has no effect in the store-api scope: only the storefront refuses XMLHttpRequest calls to routes without it",
+        ]
+    );
+}
+
+/// The messages of the ineffective-default findings of `fixture`, whose
+/// other markup is ignored.
+fn check_ineffective(inspection: &dyn Inspection, fixture: &str) -> ((), Vec<String>) {
+    let source = strip(fixture);
+    let document = crate::inspections::test_support::document(URI, &source);
+    let problems = crate::inspections::test_support::inspect(inspection, &document);
+    let expected: Vec<&str> = fixture
+        .match_indices("{|shopware.php.route.default_ineffective:")
+        .map(|(index, marker)| {
+            let rest = &fixture[index + marker.len()..];
+            &rest[..rest.find("|}").unwrap()]
+        })
+        .collect();
+    let found: Vec<(String, String)> = problems
+        .iter()
+        .filter(|problem| problem.id.as_str() == "shopware.php.route.default_ineffective")
+        .map(|problem| {
+            let range = problem.range;
+            (
+                source[usize::from(range.start())..usize::from(range.end())].to_owned(),
+                problem.message.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        found
+            .iter()
+            .map(|(text, _)| text.as_str())
+            .collect::<Vec<_>>(),
+        expected
+    );
+    ((), found.into_iter().map(|(_, message)| message).collect())
+}
+
+#[test]
+fn a_storefront_action_answering_json_allows_xml_http_requests() {
+    let body = r"
+#[Route(defaults: [PlatformRequest::ATTRIBUTE_ROUTE_SCOPE => [StorefrontRouteScope::ID]])]
+class StorefrontController
+{
+    #[Route(path: '/a', name: 'frontend.a', methods: ['GET'])]
+    public function {|shopware.php.route.xml_http_request:json|}(): JsonResponse {}
+
+    #[Route(path: '/b', name: 'frontend.b', defaults: ['XmlHttpRequest' => true], methods: ['GET'])]
+    public function allowed(): \Symfony\Component\HttpFoundation\JsonResponse {}
+
+    #[Route(path: '/c', name: 'frontend.c', methods: ['GET'])]
+    public function page(): Response {}
+
+    #[Route(path: '/d', name: 'frontend.d', methods: ['GET'])]
+    public function untyped() {}
+}
+
+#[Route(defaults: [PlatformRequest::ATTRIBUTE_ROUTE_SCOPE => [ApiRouteScope::ID]])]
+class ApiController
+{
+    #[Route(path: '/api/_action/a', name: 'api.a', methods: ['GET'])]
+    public function json(): JsonResponse {}
+}
+";
+    let (_cache, inspection) = inspection(true);
+    check_diagnostics(inspection.as_ref(), URI, &format!("{HEADER}{body}"));
 }
