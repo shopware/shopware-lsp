@@ -122,6 +122,50 @@ fn dal_definition_navigates_javascript_criteria_path_segments() {
 }
 
 #[test]
+fn dal_definition_picks_the_field_of_the_searched_entity() {
+    let root = tempfile::tempdir().unwrap();
+    let index = dal_index(root.path());
+    // Both entities declare `name`; only the searched one is the answer.
+    let category = "/project/src/Core/Content/Category/CategoryDefinition.php";
+    index_file(
+        &*index,
+        category,
+        "<?php
+class CategoryDefinition extends EntityDefinition
+{
+    public function getEntityName(): string { return 'category'; }
+    protected function defineFields(): FieldCollection
+    {
+        return new FieldCollection([
+            new StringField('name', 'name'),
+        ]);
+    }
+}",
+    );
+    let provider = DalDefinitionProvider::new(Some(index));
+    for (entity, literal, path) in [
+        ("category", "name", category),
+        ("product", "manufacturer.name", MANUFACTURER_PATH),
+    ] {
+        let source = format!(
+            "function load() {{ const criteria = new Criteria(); \
+             criteria.addFilter(Criteria.equals('{literal}', 1)); \
+             return this.repositoryFactory.create('{entity}').search(criteria); }}"
+        );
+        let document = document(
+            "file:///project/src/Resources/app/administration/index.js",
+            &source,
+        );
+        let locations = definitions(
+            &provider,
+            &request_at(&document, index_of(&source, "name', 1") + 1),
+        );
+        assert_eq!(locations.len(), 1, "{entity}");
+        assert_eq!(locations[0].uri, file_uri(path));
+    }
+}
+
+#[test]
 fn dal_definition_restricts_association_references() {
     let root = tempfile::tempdir().unwrap();
     let provider = DalDefinitionProvider::new(Some(dal_index(root.path())));

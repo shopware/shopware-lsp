@@ -140,3 +140,97 @@ const definition = Shopware.EntityDefinition.get('pro');
         .get_completions(&ctx(), &positioned(&document, offset));
     assert!(labels(&items).contains(&"product".to_string()));
 }
+
+#[test]
+fn dal_completion_follows_the_entity_a_criteria_is_searched_on() {
+    let cache = tempdir();
+    let index = dal_index(&cache);
+    index_file(
+        index.as_ref(),
+        "/project/src/Core/Content/Product/ManufacturerDefinition.php",
+        r"<?php
+class ManufacturerDefinition extends EntityDefinition
+{
+    public function getEntityName(): string { return 'product_manufacturer'; }
+    protected function defineFields(): FieldCollection
+    {
+        return new FieldCollection([
+            new StringField('link', 'link'),
+            new OneToManyAssociationField('units', UnitEntity::class, 'manufacturer_id'),
+        ]);
+    }
+}",
+    );
+    index_file(
+        index.as_ref(),
+        "/project/src/Entity/MeasurementEntity.php",
+        r"<?php
+#[Entity('swag_measurement')]
+class MeasurementEntity extends EntityStruct
+{
+    #[Field(type: FieldType::STRING)]
+    public string $technicalName;
+
+    #[OneToMany(entity: 'swag_unit', ref: 'measurement_id')]
+    public ?array $units = null;
+}
+
+#[Entity('swag_unit')]
+class UnitEntity extends EntityStruct
+{
+    #[Field(type: FieldType::FLOAT)]
+    public float $factor;
+}",
+    );
+    let provider = DalCompletionProvider::new(index);
+    let cases: [(&str, &str, &[&str], &[&str]); 4] = [
+        (
+            "product",
+            "'')",
+            &["active", "id", "manufacturer"],
+            &["link", "technicalName", "factor"],
+        ),
+        (
+            "product",
+            "'manufacturer.')",
+            &["link", "units"],
+            &["active", "technicalName"],
+        ),
+        // The association of an attribute entity leads to its target.
+        (
+            "swag_measurement",
+            "'units.')",
+            &["factor"],
+            &["technicalName", "active"],
+        ),
+        // A path that leaves the known entities offers every field again.
+        (
+            "swag_measurement",
+            "'missing.')",
+            &["factor", "active", "link"],
+            &[],
+        ),
+    ];
+    for (entity, path, present, absent) in cases {
+        let source = format!(
+            "function load() {{ const criteria = new Criteria(); \
+             criteria.addFilter(Criteria.equals({path}; \
+             return this.repositoryFactory.create('{entity}').search(criteria); }}"
+        );
+        let offset = source.find(path).unwrap() + path.len() - 2;
+        let document = document(
+            "file:///project/src/Resources/app/administration/index.js",
+            &source,
+        );
+        let labels = labels(&provider.get_completions(&ctx(), &positioned(&document, offset)));
+        for expected in present {
+            assert!(labels.contains(&expected.to_string()), "{path}: {expected}");
+        }
+        for unexpected in absent {
+            assert!(
+                !labels.contains(&unexpected.to_string()),
+                "{path}: {unexpected}"
+            );
+        }
+    }
+}

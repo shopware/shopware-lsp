@@ -122,6 +122,31 @@ pub fn js_field_reference_at(node: &SyntaxNode) -> JsFieldReferenceKind {
     JsFieldReferenceKind::None
 }
 
+/// The complete path segments before the one under the cursor: for
+/// `a.b.c` with the cursor in `c`, `a` and `b`.
+pub fn js_field_reference_prefix(node: &SyntaxNode, offset: u32) -> Vec<String> {
+    let Some(string_node) = jsquery::string_at(node) else {
+        return Vec::new();
+    };
+    let value = jsquery::string_value(&string_node);
+    let raw = string_node.text().to_string();
+    let trimmed = raw.trim();
+    let leading = raw.find(trimmed).unwrap_or(0);
+    let mut content_start = u32::from(string_node.text_range().start()) + leading as u32;
+    if matches!(trimmed.as_bytes().first(), Some(b'\'' | b'"' | b'`')) {
+        content_start += 1;
+    }
+    let relative = (offset.saturating_sub(content_start) as usize).min(value.len());
+    // The cut sits next to an ASCII dot, so it is a character boundary.
+    let Some(end) = value.as_bytes()[..relative]
+        .iter()
+        .rposition(|&byte| byte == b'.')
+    else {
+        return Vec::new();
+    };
+    value[..end].split('.').map(str::to_owned).collect()
+}
+
 /// Returns the path segment under the cursor and whether it is followed by a
 /// dot (in which case it must itself be an association).
 pub fn js_field_reference_segment(node: &SyntaxNode, offset: u32) -> (String, bool) {

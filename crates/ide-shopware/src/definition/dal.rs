@@ -27,6 +27,25 @@ fn definition_locations(definitions: &[Definition]) -> Vec<protocol::Location> {
         .collect()
 }
 
+/// The field `name` on the entity the path under the cursor has reached,
+/// when the file shows which repository the Criteria is searched on.
+fn entity_field_location(
+    index: &Index,
+    node: &swlsp_syntax::SyntaxNode,
+    offset: u32,
+    name: &str,
+) -> Option<protocol::Location> {
+    let definitions = index.definitions().ok()?;
+    let definition = swlsp_shopware_dal::js_criteria_definition(&definitions, node, offset)?;
+    if let Some(field) = definition.fields.iter().find(|field| field.name == name) {
+        return Some(line_location(&definition.file, i64::from(field.line)));
+    }
+    // `product.name` on a product search: the first segment is the entity.
+    (definition.name == name
+        && swlsp_shopware_dal::js_field_reference_prefix(node, offset).is_empty())
+    .then(|| line_location(&definition.file, i64::from(definition.line)))
+}
+
 impl GotoDefinitionProvider for DalDefinitionProvider {
     fn get_definition(
         &self,
@@ -58,6 +77,9 @@ impl GotoDefinitionProvider for DalDefinitionProvider {
                 let offset = request_offset(request).unwrap_or(0);
                 let (name, association_segment) =
                     swlsp_shopware_dal::js_field_reference_segment(node, offset);
+                if let Some(location) = entity_field_location(index, node, offset, &name) {
+                    return vec![location];
+                }
                 let Ok(fields) = index.field_definitions(
                     &name,
                     kind == JsFieldReferenceKind::Association || association_segment,

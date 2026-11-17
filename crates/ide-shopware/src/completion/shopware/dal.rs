@@ -8,7 +8,8 @@ use swlsp_lsp::{CompletionProvider, CompletionRequest, Context, effective_syntax
 use swlsp_lsp_protocol::{self as protocol, CompletionItemKind};
 use swlsp_shopware_dal::{Index, JsFieldReferenceKind};
 
-use super::{item, lower_ext};
+use super::{item, lower_ext, request_offset};
+use swlsp_syntax::SyntaxNode;
 use swlsp_textutil::lowercase;
 
 pub struct DalCompletionProvider {
@@ -28,6 +29,39 @@ impl DalCompletionProvider {
             .into_iter()
             .map(|definition| item(definition.name, CompletionItemKind::CLASS, definition.class))
             .collect()
+    }
+
+    /// The fields of the entity the path under the cursor has reached, when
+    /// the file shows which repository the Criteria is searched on.
+    fn js_entity_field_completions(
+        &self,
+        node: &SyntaxNode,
+        offset: u32,
+        associations_only: bool,
+    ) -> Option<Vec<protocol::CompletionItem>> {
+        let definitions = self.index.definitions().ok()?;
+        let definition = swlsp_shopware_dal::js_criteria_definition(&definitions, node, offset)?;
+        let mut seen = BTreeSet::new();
+        Some(
+            definition
+                .fields
+                .iter()
+                .filter(|field| !associations_only || field.association)
+                .filter(|field| seen.insert(field.name.as_str()))
+                .map(|field| {
+                    let kind = if field.association {
+                        CompletionItemKind::PROPERTY
+                    } else {
+                        CompletionItemKind::FIELD
+                    };
+                    item(
+                        field.name.clone(),
+                        kind,
+                        format!("{} · {}", field.type_, definition.name),
+                    )
+                })
+                .collect(),
+        )
     }
 
     fn js_field_completions(&self, associations_only: bool) -> Vec<protocol::CompletionItem> {
@@ -98,7 +132,14 @@ impl CompletionProvider for DalCompletionProvider {
                 }
                 match swlsp_shopware_dal::js_field_reference_at(node) {
                     JsFieldReferenceKind::None => Vec::new(),
-                    kind => self.js_field_completions(kind == JsFieldReferenceKind::Association),
+                    kind => {
+                        let associations_only = kind == JsFieldReferenceKind::Association;
+                        request_offset(request)
+                            .and_then(|offset| {
+                                self.js_entity_field_completions(node, offset, associations_only)
+                            })
+                            .unwrap_or_else(|| self.js_field_completions(associations_only))
+                    }
                 }
             }
             ".twig" => {

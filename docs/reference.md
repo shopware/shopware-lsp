@@ -1335,7 +1335,11 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
   replacement actions while runtime custom entities and existence guards stay
   unvalidated. Criteria fields and associations retain completion,
   segment-aware navigation, and owning-entity/type hover across filters,
-  sorting, aggregations, field lists, and association paths
+  sorting, aggregations, field lists, and association paths. Where the file
+  shows which repository a Criteria is searched on, they resolve against that
+  entity and follow the path association by association, including
+  `getAssociation('…')` sub-criteria and attribute entities; elsewhere they
+  fall back to the fields of every entity
 - Indexed Administration modules with completion, hover, navigation, cached
   references, and conservative missing-module diagnostics for
   `getModuleRegistry().get(...)`/`.has(...)`; module configuration objects may

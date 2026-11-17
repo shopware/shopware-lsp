@@ -469,6 +469,27 @@ class Nameless {}
             ("translations", "translations", true, false),
         ]
     );
+    // Associations name their target entity, so a path can be followed.
+    let targets: Vec<(&str, &str)> = entity
+        .fields
+        .iter()
+        .filter(|field| field.association)
+        .map(|field| (field.name.as_str(), field.target_entity.as_str()))
+        .collect();
+    assert_eq!(
+        targets,
+        [
+            ("units", "swag_unit"),
+            ("translations", "swag_measurement_translation"),
+        ]
+    );
+    let definitions = idx.definitions().unwrap();
+    let reached =
+        resolve_association_path(&definitions, "swag_measurement", &["units".to_owned()]).unwrap();
+    assert_eq!(reached.name, "swag_unit");
+    assert!(
+        resolve_association_path(&definitions, "swag_measurement", &["name".to_owned()]).is_none()
+    );
     // The generated translation entity holds the translated fields.
     let translation = idx
         .definition("swag_measurement_translation")
@@ -486,5 +507,112 @@ class Nameless {}
     assert_eq!(
         idx.definition("swag_unit").unwrap()[0].fields[0].name,
         "measurementId"
+    );
+}
+
+fn criteria_root(source: &str, literal: &str) -> Option<JsCriteriaRoot> {
+    let root = swlsp_parser_js::parse(source).tree.root();
+    let string = find(&root, js::JS_STRING, |node| {
+        jsquery::string_value(node) == literal
+    });
+    js_criteria_root(&string)
+}
+
+fn root(entity: &str, associations: &[&str]) -> Option<JsCriteriaRoot> {
+    Some(JsCriteriaRoot {
+        entity: entity.to_owned(),
+        associations: associations.iter().map(|name| (*name).to_owned()).collect(),
+    })
+}
+
+#[test]
+fn criteria_root_follows_the_repository_that_receives_the_criteria() {
+    let component = r"export default {
+    computed: {
+        productRepository() { return this.repositoryFactory.create('product'); },
+        orderRepository() { return this.repositoryFactory.create('order'); },
+        productCriteria() {
+            const criteria = new Criteria(1, 25);
+            criteria.addAssociation('manufacturer.media');
+            criteria.getAssociation('prices').addSorting(Criteria.sort('quantityStart'));
+            const options = criteria.getAssociation('options');
+            options.addFilter(Criteria.multi('OR', [Criteria.equals('group.name', 1)]));
+            return criteria;
+        },
+    },
+    methods: {
+        async load() {
+            const criteria = new Criteria();
+            criteria.addFilter(Criteria.equals('orderNumber', 1));
+            const other = new Criteria();
+            other.addFilter(Criteria.equals('productNumber', 1));
+            await this.orderRepository.search(criteria, Shopware.Context.api);
+            await this.productRepository.search(other);
+            return this.productRepository.search(this.productCriteria);
+        },
+        unrelated() {
+            const criteria = new Criteria();
+            criteria.addFilter(Criteria.equals('neverSearched', 1));
+        },
+    },
+};";
+    // A computed criteria is resolved through the search that takes it.
+    assert_eq!(
+        criteria_root(component, "manufacturer.media"),
+        root("product", &[])
+    );
+    assert_eq!(
+        criteria_root(component, "quantityStart"),
+        root("product", &["prices"])
+    );
+    assert_eq!(
+        criteria_root(component, "group.name"),
+        root("product", &["options"])
+    );
+    // Two searches in one method are told apart by the variable they take.
+    assert_eq!(criteria_root(component, "orderNumber"), root("order", &[]));
+    assert_eq!(
+        criteria_root(component, "productNumber"),
+        root("product", &[])
+    );
+    // Never handed to a repository: the entity stays unknown.
+    assert_eq!(criteria_root(component, "neverSearched"), None);
+}
+
+#[test]
+fn criteria_root_reads_inline_and_assigned_repositories() {
+    assert_eq!(
+        criteria_root(
+            "function load() { const criteria = new Criteria(); criteria.addAssociation('media'); \
+             return this.repositoryFactory.create('product').search(criteria); }",
+            "media"
+        ),
+        root("product", &[])
+    );
+    assert_eq!(
+        criteria_root(
+            "export default { created() { this.taxRepository = Shopware.Service('repositoryFactory').create('tax'); }, \
+             methods: { taxCriteria() { return new Criteria().addSorting(Criteria.sort('taxRate')); } } };",
+            "taxRate"
+        ),
+        root("tax", &[])
+    );
+    assert_eq!(criteria_root("Criteria.equals('name', 1)", "name"), None);
+}
+
+#[test]
+fn field_reference_prefix_lists_the_segments_before_the_cursor() {
+    let source = "criteria.addAssociation('manufacturer.media.thumbnails')";
+    let root = swlsp_parser_js::parse(source).tree.root();
+    let string = find(&root, js::JS_STRING, |_| true);
+    let at = |needle: &str| source.find(needle).unwrap() as u32 + 1;
+    assert!(js_field_reference_prefix(&string, at("manufacturer")).is_empty());
+    assert_eq!(
+        js_field_reference_prefix(&string, at("media")),
+        ["manufacturer"]
+    );
+    assert_eq!(
+        js_field_reference_prefix(&string, at("thumbnails")),
+        ["manufacturer", "media"]
     );
 }

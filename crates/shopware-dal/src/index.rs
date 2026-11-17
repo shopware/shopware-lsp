@@ -58,6 +58,9 @@ pub struct Field {
     pub stored: bool,
     pub association: bool,
     pub target_class: String,
+    /// The entity an association declared by attribute points at. Classic
+    /// definitions name the target by `target_class` instead.
+    pub target_entity: String,
     pub primary: bool,
     pub line: u32,
     pub range: TextRange,
@@ -159,6 +162,56 @@ impl Index {
         }
         Ok(result)
     }
+}
+
+/// The definition an association field points at.
+pub fn association_target<'a>(
+    definitions: &'a [Definition],
+    field: &Field,
+) -> Option<&'a Definition> {
+    if !field.association {
+        return None;
+    }
+    if !field.target_entity.is_empty() {
+        return entity_definition(definitions, &field.target_entity);
+    }
+    let class = field.target_class.trim_start_matches('\\');
+    if class.is_empty() {
+        return None;
+    }
+    definitions
+        .iter()
+        .find(|definition| definition.fully_qualified_class.trim_start_matches('\\') == class)
+}
+
+/// The definition of `entity`; the entity itself wins over a same-named
+/// record of another kind.
+pub fn entity_definition<'a>(
+    definitions: &'a [Definition],
+    entity: &str,
+) -> Option<&'a Definition> {
+    definitions
+        .iter()
+        .filter(|definition| definition.name == entity)
+        .min_by_key(|definition| definition.kind != "entity")
+}
+
+/// Follows `associations` from `entity`, one association field per segment.
+/// `None` when a segment is no association of the entity reached so far.
+pub fn resolve_association_path<'a>(
+    definitions: &'a [Definition],
+    entity: &str,
+    associations: &[String],
+) -> Option<&'a Definition> {
+    let mut current = entity_definition(definitions, entity)?;
+    for segment in associations {
+        let field = current
+            .fields
+            .iter()
+            .find(|field| field.association && field.name == *segment)?;
+        current = association_target(definitions, field)?;
+    }
+    Some(current)
 }
 
 impl Index {
@@ -521,6 +574,9 @@ fn parse_attribute_entity(
             stored: association.is_none(),
             association: association.is_some(),
             primary: kinds.iter().any(|kind| kind == "PrimaryKey"),
+            target_entity: association
+                .map(|kind| association_entity(&attributes, kind, &name))
+                .unwrap_or_default(),
             line: line + 1,
             range,
             ..Field::default()
@@ -568,6 +624,30 @@ fn parse_attribute_entity(
     }
     definitions.insert(0, entity);
     definitions
+}
+
+/// The entity named by an association attribute: its `entity` argument, or
+/// the translation entity of `owner` for `#[Translations]`.
+fn association_entity(attributes: &[SyntaxNode], kind: &str, owner: &str) -> String {
+    if kind == "Translations" {
+        return format!("{owner}_translation");
+    }
+    attributes
+        .iter()
+        .find(|attribute| short_name(&phpquery::attribute_name(attribute)) == kind)
+        .and_then(|attribute| {
+            phpquery::arguments(attribute).find(|argument| {
+                let name = phpquery::argument_name(argument);
+                name.is_empty() || name == "entity"
+            })
+        })
+        .and_then(|argument| {
+            phpquery::nodes(&argument, &[php::PHP_STRING])
+                .into_iter()
+                .next()
+        })
+        .map(|string| phpquery::string_value(&string))
+        .unwrap_or_default()
 }
 
 fn snake_case(name: &str) -> String {
@@ -680,6 +760,7 @@ fn parse_fields(method: &SyntaxNode, lines: &LineIndex, resolver: &ClassResolver
             stored,
             association,
             target_class: resolver.resolve(&phpquery::class_constant_name(&creation)),
+            target_entity: String::new(),
             primary,
             line: line + 1,
             range,
