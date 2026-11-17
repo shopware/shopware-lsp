@@ -70,6 +70,7 @@ const SUGGESTION_CODES: &[&str] = &[
     "admin.component.unknown-slot-prop",
     "admin.component.unknown-vue-member",
     "admin.component.unknown-instance-member",
+    "admin.component.unknown-super-member",
     "admin.component.unknown-template-member",
     "admin.privilege.not-found",
     "admin.module.not-found",
@@ -105,6 +106,7 @@ const COMPONENT_API_CODES: &[&str] = &[
 ];
 const MEMBER_CODES: &[&str] = &[
     "admin.component.unknown-instance-member",
+    "admin.component.unknown-super-member",
     "admin.component.unknown-template-member",
     "admin.component.unknown-vue-member",
     "admin.component.deprecated-member",
@@ -228,7 +230,7 @@ pub fn new_admin_inspections(
     let (codes, analyzers) = group(MEMBER_CODES);
     let member = inspection(
         "shopware.admin.member",
-        "Administration code accessing members a component, the application container, the Shopware context or Shopware utils do not have, deprecated members, and event-bus events with missing or mistyped payloads and handlers.",
+        "Administration code accessing members a component, the application container, the Shopware context or Shopware utils do not have, `$super` calls the overridden component does not answer, deprecated members, and event-bus events with missing or mistyped payloads and handlers.",
         codes,
         analyzers,
     );

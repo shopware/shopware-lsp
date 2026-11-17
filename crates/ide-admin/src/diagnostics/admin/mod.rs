@@ -9,6 +9,7 @@ mod i18n_deprecation;
 mod privilege;
 mod registry;
 mod slot_migration;
+mod super_call;
 mod twig;
 mod twig_migration;
 
@@ -26,6 +27,8 @@ mod tests_api_route;
 mod tests_code_quality;
 #[cfg(test)]
 mod tests_misc;
+#[cfg(test)]
+mod tests_super_call;
 
 pub use analyzer::AdminAnalyzer;
 pub use api_route::{ADMIN_API_ROUTE_CODES, AdminApiRouteAnalyzer};

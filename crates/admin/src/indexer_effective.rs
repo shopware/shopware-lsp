@@ -370,6 +370,7 @@ impl AdminComponentIndexer {
         let mut mixins = self.get_mixin(name)?;
         if mixins.is_empty() {
             result.open_runtime_members = true;
+            result.open_callables = true;
         }
         mixins.sort_by(|left, right| left.file_path.cmp(&right.file_path));
         for mixin in &mixins {
@@ -426,6 +427,7 @@ pub(crate) fn apply_definition(component: &mut VueComponent, definition: &Compon
     component.local_directives = definition.local_directives.clone();
     component.members = definition.members.clone();
     component.open_runtime_members = definition.open_runtime_members;
+    component.open_callables = definition.open_callables;
     component.assignments = definition.assignments.clone();
     component.slots = definition.slots.clone();
     component.blocks = definition.blocks.clone();
@@ -469,6 +471,7 @@ pub(crate) fn merge_components(fallback: &VueComponent, preferred: &VueComponent
     }
     let mut result = preferred.clone();
     result.open_runtime_members = preferred.open_runtime_members || fallback.open_runtime_members;
+    result.open_callables = preferred.open_callables || fallback.open_callables;
     fill(&mut result.deprecated, &fallback.deprecated);
     fill(&mut result.extends_component, &fallback.extends_component);
     fill(&mut result.import_path, &fallback.import_path);
@@ -502,6 +505,7 @@ pub(crate) fn overlay_components(base: &VueComponent, overlay: &VueComponent) ->
     }
     let mut result = base.clone();
     result.open_runtime_members = result.open_runtime_members || overlay.open_runtime_members;
+    result.open_callables = result.open_callables || overlay.open_callables;
     set(&mut result.name, &overlay.name);
     set(&mut result.deprecated, &overlay.deprecated);
     if !overlay.kind.is_unset() {

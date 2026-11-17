@@ -25,6 +25,11 @@ pub struct ComponentDefinition {
     pub local_directives: Vec<VueLocalDirective>,
     pub members: Vec<VueComponentMember>,
     pub open_runtime_members: bool,
+    /// Methods or computed properties may exist that are not listed: a
+    /// spread or a non-literal `methods`/`computed` option, a spread
+    /// configuration or a mixin that cannot be resolved. Narrower than
+    /// `open_runtime_members`, which any `...` inside an option sets.
+    pub open_callables: bool,
     pub assignments: Vec<VueComponentAssignment>,
     pub slots: Vec<VueComponentSlot>,
     pub blocks: Vec<TwigBlock>,
@@ -139,6 +144,24 @@ fn node_text_contains(node: Option<&SyntaxNode>, needle: &str) -> bool {
     node.is_some_and(|node| node.text_string().contains(needle))
 }
 
+/// Whether `value` is an object literal whose properties are all written
+/// out: no spread, and nothing the parser could not read as a property.
+fn lists_every_property(value: Option<&SyntaxNode>) -> bool {
+    let Some(object) = value.filter(|value| value.kind() == jssyntax::JS_OBJECT) else {
+        return false;
+    };
+    if object
+        .children()
+        .any(|child| child.kind() == jssyntax::ERROR)
+    {
+        return false;
+    }
+    jsquery::properties(object).iter().all(|property| {
+        jsquery::property_name(property).is_some_and(|name| !name.is_empty())
+            || !property.text_string().trim().starts_with("...")
+    })
+}
+
 pub(crate) fn parse_definition_object(
     object: &SyntaxNode,
     definition: &mut ComponentDefinition,
@@ -150,6 +173,7 @@ pub(crate) fn parse_definition_object(
         let property_text = property.text_string();
         if name.is_empty() && property_text.trim().starts_with("...") {
             definition.open_runtime_members = true;
+            definition.open_callables = true;
         }
         match name.as_str() {
             "props" => {
@@ -184,6 +208,8 @@ pub(crate) fn parse_definition_object(
             "methods" | "computed" => {
                 definition.open_runtime_members =
                     definition.open_runtime_members || node_text_contains(value.as_ref(), "...");
+                definition.open_callables =
+                    definition.open_callables || !lists_every_property(value.as_ref());
                 let names = parse_method_names(value.as_ref());
                 let kind = if name == "methods" {
                     definition.methods = names.clone();
@@ -232,6 +258,7 @@ pub(crate) fn parse_definition_object(
                 definition.mixins = parse_mixin_names(value.as_ref());
                 if definition.mixins.is_empty() {
                     definition.open_runtime_members = true;
+                    definition.open_callables = true;
                 }
             }
             "components" => {

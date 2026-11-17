@@ -391,7 +391,7 @@ Languages: javascript, twig, vue. Domain: `administration`.
 
 ## `shopware.admin.member`
 
-Administration code accessing members a component, the application container, the Shopware context or Shopware utils do not have, deprecated members, and event-bus events with missing or mistyped payloads and handlers.
+Administration code accessing members a component, the application container, the Shopware context or Shopware utils do not have, `$super` calls the overridden component does not answer, deprecated members, and event-bus events with missing or mistyped payloads and handlers.
 
 Languages: javascript, twig, vue. Domain: `administration`.
 
@@ -400,6 +400,7 @@ Languages: javascript, twig, vue. Domain: `administration`.
 | `admin.application-container.unknown-member` | warning | yes |
 | `admin.component.deprecated-member` | hint | yes |
 | `admin.component.unknown-instance-member` | warning | yes |
+| `admin.component.unknown-super-member` | warning | yes |
 | `admin.component.unknown-template-member` | warning | yes |
 | `admin.component.unknown-vue-member` | warning | yes |
 | `admin.event-bus.handler-type` | warning | yes |
@@ -422,6 +423,11 @@ Languages: javascript, twig, vue. Domain: `administration`.
 
 - Fix: Declare the member on the component (data, props, computed, methods, inject), or correct its name; a quick fix offers close names.
 - Exceptions: Names starting with $ are not checked, nor are components whose members cannot be listed completely (object spreads, mixins that cannot be resolved).
+
+**`admin.component.unknown-super-member`**
+
+- Fix: Name a method or computed property the overridden or extended component declares, or drop the call when the component no longer has it; a quick fix offers close names.
+- Exceptions: Not reported when the base component is not indexed or its members cannot be listed completely (object spreads, unresolved mixins or parents), nor for names that are not string literals.
 
 **`admin.component.unknown-template-member`**
 

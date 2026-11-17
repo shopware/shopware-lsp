@@ -248,6 +248,15 @@ pub(crate) const ADMIN: &[RuleHelp] = &[
         "",
     ),
     help(
+        "admin.component.unknown-super-member",
+        "Name a method or computed property the overridden or extended component declares, or \
+         drop the call when the component no longer has it; a quick fix offers close names.",
+        "Not reported when the base component is not indexed or its members cannot be listed \
+         completely (object spreads, unresolved mixins or parents), nor for names that are not \
+         string literals.",
+        "",
+    ),
+    help(
         "admin.component.unknown-template-member",
         "Correct the name to a member of the component; a quick fix offers the close name.",
         SPELLING,

@@ -1028,6 +1028,7 @@ pub(crate) fn merge_component_definitions(
         overlay_local_directives(&base.local_directives, &overlay.local_directives);
     base.assignments.extend(overlay.assignments.iter().cloned());
     base.open_runtime_members = base.open_runtime_members || overlay.open_runtime_members;
+    base.open_callables = base.open_callables || overlay.open_callables;
     if !overlay.model_prop.is_empty() || !overlay.model_event.is_empty() {
         base.model_prop = overlay.model_prop.clone();
         base.model_event = overlay.model_event.clone();

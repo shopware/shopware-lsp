@@ -47,6 +47,11 @@ pub struct VueComponent {
     pub members: Vec<VueComponentMember>,
     /// Spreads or unresolved mixins can add further members at runtime.
     pub open_runtime_members: bool,
+    /// Methods or computed properties may exist that are not listed: a
+    /// spread or a non-literal `methods`/`computed` option, a spread
+    /// configuration or a mixin that cannot be resolved. Narrower than
+    /// `open_runtime_members`, which any `...` inside an option sets.
+    pub open_callables: bool,
     pub assignments: Vec<VueComponentAssignment>,
     pub slots: Vec<VueComponentSlot>,
     pub blocks: Vec<TwigBlock>,

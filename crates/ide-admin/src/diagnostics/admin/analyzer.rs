@@ -96,6 +96,7 @@ impl AdminAnalyzer {
         }
         diagnostics.extend(self.unknown_instance_member_diagnostics(document, &root, &analysis));
         diagnostics.extend(self.deprecated_instance_member_diagnostics(document, &analysis));
+        diagnostics.extend(self.super_call_diagnostics(document, &analysis));
         diagnostics.extend(self.application_container_diagnostics(document, &analysis)?);
         diagnostics.extend(self.shopware_context_diagnostics(document, &analysis)?);
         diagnostics.extend(self.shopware_utils_diagnostics(document, &analysis)?);

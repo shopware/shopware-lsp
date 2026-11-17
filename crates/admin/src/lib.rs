@@ -103,6 +103,7 @@ mod indexer_catalog;
 mod indexer_components;
 mod indexer_effective;
 mod indexer_javascript;
+mod indexer_super;
 mod indexer_twig_vue;
 mod indexer_usage;
 mod indexer_usage_symbol;
@@ -175,6 +176,7 @@ pub use indexer_components::*;
 pub use indexer_effective::*;
 #[allow(unused_imports)]
 pub use indexer_javascript::*;
+pub use indexer_super::*;
 #[allow(unused_imports)]
 pub use indexer_twig_vue::*;
 #[allow(unused_imports)]
