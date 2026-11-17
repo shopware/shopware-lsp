@@ -5,7 +5,7 @@ use swlsp_lsp::Inspection;
 use swlsp_php::PhpIndex;
 
 use super::super::new_shopware_routes;
-use super::super::routes::ROUTE_CONSTANT_FIX_ID;
+use crate::inspections::CLASS_CONSTANT_FIX_ID as ROUTE_CONSTANT_FIX_ID;
 use crate::inspections::test_support::{check_diagnostics, check_fix};
 
 const SYMFONY: &str = r"<?php

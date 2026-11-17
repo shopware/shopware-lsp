@@ -5,6 +5,7 @@ mod container_constant;
 mod controller;
 mod duplicate;
 mod event;
+mod event_constant;
 mod invokable_command;
 mod request_get;
 mod route;
@@ -20,6 +21,7 @@ pub use container_constant::ContainerConstantAnalyzer;
 pub use controller::ControllerAnalyzer;
 pub use duplicate::DuplicateAnalyzer;
 pub use event::EventAnalyzer;
+pub use event_constant::{EVENT_NAME_LITERAL_CODE, EventConstantAnalyzer};
 pub use invokable_command::{
     INVOKABLE_COMMAND_RETURN_TYPE_MESSAGE, INVOKABLE_COMMAND_RETURN_VALUE_MESSAGE,
     InvokableCommandAnalyzer,

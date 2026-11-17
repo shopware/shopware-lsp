@@ -194,6 +194,107 @@ class Command
     );
 }
 
+const EVENT_VENDOR: &str = r"<?php
+namespace Symfony\Component\EventDispatcher { interface EventSubscriberInterface {} }
+namespace Symfony\Component\HttpKernel { final class KernelEvents { public const REQUEST = 'kernel.request'; public const RESPONSE = 'kernel.response'; } }
+namespace Shopware\Core\Content\Product {
+    class ProductEvents { public const PRODUCT_WRITTEN_EVENT = 'product.written'; public const PRODUCT_LOADED_EVENT = 'product.loaded'; }
+}
+namespace Swag\Event {
+    class OrderPlacedEvent { public const EVENT_NAME = 'swag.order.placed'; public const TYPE = 'kernel.response'; }
+    class FirstEvent { public const NAME = 'swag.shared'; }
+    class SecondEvent { public const NAME = 'swag.shared'; }
+    class Settings { public const NAME = 'swag.settings'; }
+    class PlainEvent {}
+}
+";
+
+fn event_subscriber(imports: &str, events: &str) -> String {
+    format!(
+        "<?php\nnamespace Swag\\Subscriber;\n\n{imports}use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;\n\nclass ExampleSubscriber implements EventSubscriberInterface\n{{\n    public static function getSubscribedEvents(): array\n    {{\n        return [\n{events}        ];\n    }}\n\n    public function onEvent(): void {{}}\n}}\n"
+    )
+}
+
+#[test]
+fn events_named_by_a_string_are_named_by_their_constant() {
+    let cache = tempfile::tempdir().unwrap();
+    let php = PhpIndex::open(cache.path().join("php-index"), None).unwrap();
+    php.index(&ParsedFile::new(
+        "/project/vendor/events.php",
+        EVENT_VENDOR.as_bytes().to_vec(),
+    ))
+    .unwrap();
+    let inspection = new_event_constant(Some(php));
+    let uri = "file:///project/src/Subscriber/ExampleSubscriber.php";
+    let mark = |name: &str| format!("{{|symfony.event.name_literal:'{name}'|}}");
+    let source = event_subscriber(
+        "use Symfony\\Component\\HttpKernel\\KernelEvents;\n",
+        &format!(
+            "            {} => 'onEvent',\n            {} => ['onEvent', 10],\n            {} => 'onEvent',\n            {} => 'onEvent',\n            {} => 'onEvent',\n            KernelEvents::REQUEST => 'onEvent',\n            'swag.shared' => 'onEvent',\n            'swag.settings' => 'onEvent',\n            'swag.unknown' => 'onEvent',\n            'Swag\\Missing\\GoneEvent' => 'onEvent',\n",
+            mark("kernel.request"),
+            mark("product.written"),
+            mark("swag.order.placed"),
+            // A collection of events wins over an event class with the value.
+            mark("kernel.response"),
+            mark("Swag\\Event\\PlainEvent"),
+        ),
+    );
+    let (_, problems) = check_diagnostics(inspection.as_ref(), uri, &source);
+    let messages: Vec<&str> = problems
+        .iter()
+        .map(|problem| problem.message.as_str())
+        .collect();
+    assert_eq!(
+        messages,
+        [
+            "Use KernelEvents::REQUEST for the event 'kernel.request'",
+            "Use ProductEvents::PRODUCT_WRITTEN_EVENT for the event 'product.written'",
+            "Use OrderPlacedEvent::EVENT_NAME for the event 'swag.order.placed'",
+            "Use KernelEvents::RESPONSE for the event 'kernel.response'",
+            "Use PlainEvent::class for the event 'Swag\\Event\\PlainEvent'",
+        ]
+    );
+
+    // The fix names the constant and imports its class where needed.
+    for (imports, before, after_imports, after) in [
+        (
+            "use Symfony\\Component\\HttpKernel\\KernelEvents;\n",
+            mark("kernel.request"),
+            "use Symfony\\Component\\HttpKernel\\KernelEvents;\n",
+            "KernelEvents::REQUEST",
+        ),
+        (
+            "",
+            mark("product.written"),
+            "use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;\nuse Shopware\\Core\\Content\\Product\\ProductEvents;\n",
+            "ProductEvents::PRODUCT_WRITTEN_EVENT",
+        ),
+        (
+            "",
+            mark("Swag\\Event\\PlainEvent"),
+            "use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;\nuse Swag\\Event\\PlainEvent;\n",
+            "PlainEvent::class",
+        ),
+    ] {
+        let before = event_subscriber(imports, &format!("            {before} => 'onEvent',\n"));
+        let mut after = event_subscriber(imports, &format!("            {after} => 'onEvent',\n"));
+        if imports.is_empty() {
+            after = after.replace(
+                "use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;\n",
+                after_imports,
+            );
+        }
+        let presentation = check_fix(
+            inspection.as_ref(),
+            uri,
+            &before,
+            crate::inspections::CLASS_CONSTANT_FIX_ID,
+            &after,
+        );
+        assert!(presentation.preferred);
+    }
+}
+
 const REQUEST_GET_SOURCE: &str = r"<?php
 namespace App;
 

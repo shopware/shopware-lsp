@@ -194,7 +194,7 @@ fn range_contains(range: TextRange, offset: u32) -> bool {
     !range.is_empty() && offset >= u32::from(range.start()) && offset <= u32::from(range.end())
 }
 
-fn event_document_references(
+pub(super) fn event_document_references(
     context: Option<&PhpContext>,
     document: &TextDocument,
 ) -> Vec<Reference> {

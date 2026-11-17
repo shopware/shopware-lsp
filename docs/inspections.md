@@ -1832,6 +1832,21 @@ Languages: php, xml, yaml. Domain: `symfony.events`.
 - Fix: Check the event name: nothing listens to it. A quick fix offers names that have listeners. An event dispatched for other extensions to use needs no listener.
 - Exceptions: Only dispatch sites are checked, and only once the project has listeners indexed.
 
+## `symfony.event.constant`
+
+Event subscribers and listeners naming an event by a string where a class constant, or the event class, holds the name.
+
+Languages: php. Domain: `symfony.events`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `symfony.event.name_literal` | hint | yes |
+
+**`symfony.event.name_literal`**
+
+- Fix: Name the event by its constant, such as KernelEvents::REQUEST, or by its class with ::class; a quick fix replaces the string and imports the class.
+- Exceptions: Reported in getSubscribedEvents() and #[AsEventListener] for a name that is the value of a string constant of a class named …Events or …Event, or the name of an existing class. A name several such classes hold is left alone, unless exactly one of them is an …Events class.
+
 ## `symfony.messenger`
 
 Messenger handlers for unknown messages and handler methods that do not exist.

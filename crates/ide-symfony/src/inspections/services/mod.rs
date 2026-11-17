@@ -2,6 +2,7 @@
 
 mod controller;
 mod event;
+mod event_constant;
 mod invokable_command;
 mod php_method;
 mod request_get;
@@ -13,6 +14,7 @@ mod tests;
 
 pub use controller::{CONTROLLER_METHOD_FIX_ID, new_controller};
 pub use event::{EVENT_METHOD_FIX_ID, new_event};
+pub use event_constant::new_event_constant;
 pub use invokable_command::{INVOKABLE_RETURN_TYPE_FIX_ID, new_invokable_command};
 pub use php_method::{PhpMethodFix, PhpMethodParameter, PhpMethodPayload};
 pub use request_get::new_request_get;

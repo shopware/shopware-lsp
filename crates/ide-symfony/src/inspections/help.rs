@@ -76,6 +76,16 @@ pub(crate) const SYMFONY: &[RuleHelp] = &[
         "",
     ),
     help(
+        "symfony.event.name_literal",
+        "Name the event by its constant, such as KernelEvents::REQUEST, or by its class \
+         with ::class; a quick fix replaces the string and imports the class.",
+        "Reported in getSubscribedEvents() and #[AsEventListener] for a name that is the \
+         value of a string constant of a class named …Events or …Event, or the name of an \
+         existing class. A name several such classes hold is left alone, unless exactly \
+         one of them is an …Events class.",
+        "",
+    ),
+    help(
         "symfony.request.get",
         "Read the value from where it comes from: $request->attributes->get() for a route \
          parameter, $request->query->get() for the query string, $request->request->get() \

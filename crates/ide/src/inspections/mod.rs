@@ -4,12 +4,14 @@
 //! runs one or more [`ProblemAnalyzer`]s from [`crate::diagnostics`] and binds
 //! quick fixes to each problem while it is reported.
 
+pub mod class_constant;
 pub mod inspection;
 pub mod range;
 pub mod rewrite_node;
 pub mod suggestion;
 
 pub use crate::diagnostics::{DeclaredAnalyzer, ProblemAnalyzer};
+pub use class_constant::{CLASS_CONSTANT_FIX_ID, ClassConstantFix, class_constant_bound_fixes};
 pub use inspection::{
     AnalyzerInspection, BindProblems, BoundInspection, UndeclaredProblemError, analyzer_inspection,
     diagnostic_payload, new_analyzer_inspection, resolve_anchor,
