@@ -204,19 +204,34 @@ fn extract_definitions(file: &ParsedFile) -> PreparedDefinitions {
     let mut definitions: Vec<Definition> = Vec::new();
     let candidate = source.contains("defineFields")
         && (source.contains("ENTITY_NAME") || source.contains("getEntityName"));
-    if candidate && let Some(tree) = file.syntax_tree() {
+    // An entity can also be a class with the `#[Entity('name')]` attribute.
+    let attributed = source.contains("#[Entity(");
+    if (candidate || attributed)
+        && let Some(tree) = file.syntax_tree()
+    {
         let root = tree.root();
         for class in phpquery::classes(&root) {
-            let Some(definition) = parse_definition(&class, &root, path, file.line_index()) else {
-                continue;
+            let parsed = if candidate {
+                parse_definition(&class, &root, path, file.line_index())
+                    .into_iter()
+                    .collect()
+            } else {
+                Vec::new()
             };
-            // A repeated entity name keeps the last definition.
-            match definitions
-                .iter_mut()
-                .find(|existing| existing.name == definition.name)
-            {
-                Some(existing) => *existing = definition,
-                None => definitions.push(definition),
+            let parsed = if parsed.is_empty() && attributed {
+                parse_attribute_entity(&class, &root, path, file.line_index())
+            } else {
+                parsed
+            };
+            for definition in parsed {
+                // A repeated entity name keeps the last definition.
+                match definitions
+                    .iter_mut()
+                    .find(|existing| existing.name == definition.name)
+                {
+                    Some(existing) => *existing = definition,
+                    None => definitions.push(definition),
+                }
             }
         }
     }
@@ -408,6 +423,166 @@ fn parse_definition(
         inheritance_aware,
         entity_class_declared,
     })
+}
+
+/// The associations among the field attributes of an attribute entity.
+const ASSOCIATION_ATTRIBUTES: &[&str] = &[
+    "OneToMany",
+    "ManyToOne",
+    "ManyToMany",
+    "OneToOne",
+    "Translations",
+];
+/// The attributes that make a property a field.
+const FIELD_ATTRIBUTES: &[&str] = &[
+    "Field",
+    "ForeignKey",
+    "PrimaryKey",
+    "AutoIncrement",
+    "Serialized",
+    "Version",
+    "ReferenceVersion",
+    "State",
+    "CustomFields",
+];
+
+/// The entity a class with `#[Entity('name')]` declares: its properties
+/// carrying a field attribute are the fields. With a `#[Translations]`
+/// property the DAL generates `<name>_translation` as well, holding the
+/// translated fields.
+fn parse_attribute_entity(
+    class: &SyntaxNode,
+    root: &SyntaxNode,
+    file: &str,
+    lines: &LineIndex,
+) -> Vec<Definition> {
+    let Some(attribute) = phpquery::attributes(class)
+        .into_iter()
+        .find(|attribute| short_name(&phpquery::attribute_name(attribute)) == "Entity")
+    else {
+        return Vec::new();
+    };
+    let Some(name_node) = phpquery::arguments(&attribute)
+        .find(|argument| {
+            let name = phpquery::argument_name(argument);
+            name.is_empty() || name == "name"
+        })
+        .and_then(|argument| {
+            phpquery::nodes(&argument, &[php::PHP_STRING])
+                .into_iter()
+                .next()
+        })
+    else {
+        return Vec::new();
+    };
+    let name = phpquery::string_value(&name_node);
+    let class_name = phpquery::class_name(class);
+    if name.is_empty() || class_name.is_empty() {
+        return Vec::new();
+    }
+    let mut fields = Vec::new();
+    let mut translated = Vec::new();
+    let mut has_translations = false;
+    for property in phpquery::properties(class) {
+        let attributes = phpquery::attributes(&property);
+        let kinds: Vec<String> = attributes
+            .iter()
+            .map(|attribute| short_name(&phpquery::attribute_name(attribute)).to_owned())
+            .collect();
+        let association = kinds
+            .iter()
+            .find(|kind| ASSOCIATION_ATTRIBUTES.contains(&kind.as_str()));
+        if association.is_none()
+            && !kinds
+                .iter()
+                .any(|kind| FIELD_ATTRIBUTES.contains(&kind.as_str()))
+        {
+            continue;
+        }
+        let Some(variable) = phpquery::nodes(&property, &[php::PHP_VARIABLE])
+            .into_iter()
+            .next()
+        else {
+            continue;
+        };
+        let field_name = phpquery::variable_name(&variable)
+            .trim_start_matches('$')
+            .to_owned();
+        if field_name.is_empty() {
+            continue;
+        }
+        has_translations |= kinds.iter().any(|kind| kind == "Translations");
+        let range = variable.range_trimmed_trivia();
+        let (line, _) = lines.position(range.start().into());
+        let field = Field {
+            storage_name: snake_case(&field_name),
+            name: field_name,
+            type_: association.or(kinds.first()).cloned().unwrap_or_default(),
+            stored: association.is_none(),
+            association: association.is_some(),
+            primary: kinds.iter().any(|kind| kind == "PrimaryKey"),
+            line: line + 1,
+            range,
+            ..Field::default()
+        };
+        let is_translated = attributes.iter().any(|attribute| {
+            phpquery::arguments(attribute).any(|argument| {
+                phpquery::argument_name(&argument) == "translated"
+                    && argument.text().to_string().to_lowercase().contains("true")
+            })
+        });
+        if is_translated {
+            translated.push(field.clone());
+        }
+        fields.push(field);
+    }
+    let resolver = ClassResolver::new(root);
+    let fully_qualified_class = resolver.resolve(&class_name);
+    let class_range = class.range_trimmed_trivia();
+    let (line, _) = lines.position(class_range.start().into());
+    let entity = Definition {
+        name: name.clone(),
+        kind: "entity".to_owned(),
+        class: class_name,
+        entity_class: fully_qualified_class.clone(),
+        fully_qualified_class,
+        file: file.to_owned(),
+        line: line + 1,
+        name_range: phpquery::string_content_range(&name_node),
+        class_range,
+        fields,
+        entity_class_declared: true,
+        ..Definition::default()
+    };
+    let mut definitions = Vec::new();
+    if has_translations {
+        definitions.push(Definition {
+            name: format!("{name}_translation"),
+            kind: "translation".to_owned(),
+            fields: translated,
+            collection_class: String::new(),
+            entity_class: String::new(),
+            entity_class_declared: false,
+            ..entity.clone()
+        });
+    }
+    definitions.insert(0, entity);
+    definitions
+}
+
+fn snake_case(name: &str) -> String {
+    let mut result = String::with_capacity(name.len() + 4);
+    for character in name.chars() {
+        if character.is_uppercase() {
+            if !result.is_empty() {
+                result.push('_');
+            }
+            result.extend(character.to_lowercase());
+        } else {
+            result.push(character);
+        }
+    }
+    result
 }
 
 /// The literal boolean of a method with exactly one return statement holding

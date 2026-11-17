@@ -14,9 +14,20 @@ use super::util::warning;
 use crate::diagnostics::common::{admin_nearby_suggestions, javascript_string_content_range};
 use crate::diagnostics::{DeclaredAnalyzer, ProblemAnalyzer};
 
-/// Only close misspellings of statically named DAL entities are reported.
-/// Runtime custom entities are valid, so an unknown name without a strong
-/// indexed suggestion stays untouched.
+/// An entity every Shopware has: where it is indexed, the entities of the
+/// project are known, and an unknown name is unknown.
+const CORE_ENTITY: &str = "product";
+
+/// Custom entities are created at runtime, from an app's `entities.xml` or
+/// in the Administration, and named with one of these prefixes.
+fn is_runtime_entity(name: &str) -> bool {
+    name.starts_with("custom_entity_") || name.starts_with("ce_")
+}
+
+/// Statically named DAL entities no definition declares: a close
+/// misspelling with the name it resembles, and, where Shopware's own
+/// entities are indexed, any other unknown name that is no runtime custom
+/// entity.
 #[derive(Clone)]
 pub struct DalEntityAnalyzer {
     index: Option<Arc<dal::Index>>,
@@ -91,13 +102,25 @@ impl ProblemAnalyzer for DalEntityAnalyzer {
                 continue;
             }
             let suggestions = admin_nearby_suggestions(&reference.name, names);
-            if suggestions.is_empty() {
+            // Without a close name the entity may be one nothing in the
+            // workspace declares: a custom entity created at runtime, or
+            // any entity at all where Shopware itself is not indexed.
+            if suggestions.is_empty()
+                && (is_runtime_entity(&reference.name) || !known.contains(CORE_ENTITY))
+            {
                 continue;
             }
             let mut problem = warning(
                 "shopware.dal.entity-not-found",
                 javascript_string_content_range(&literal, document.source()),
-                format!("Shopware DAL entity '{}' is not indexed", reference.name),
+                if suggestions.is_empty() {
+                    format!(
+                        "No entity definition declares '{}'; the repository cannot be created",
+                        reference.name
+                    )
+                } else {
+                    format!("Shopware DAL entity '{}' is not indexed", reference.name)
+                },
             );
             problem.element = Some(literal.clone().into());
             problem.payload = Some(json!({

@@ -380,3 +380,111 @@ final class AcmeDefinition extends EntityDefinition {
     direct.close().unwrap();
     prepared.close().unwrap();
 }
+
+#[test]
+fn index_entity_declared_by_attribute() {
+    let dir = tempfile::tempdir().unwrap();
+    let idx = Index::new(dir.path(), None).unwrap();
+    index(
+        r"<?php
+namespace Swag\Entity;
+
+use Shopware\Core\Framework\DataAbstractionLayer\Attribute\Entity;
+
+#[Package('inventory')]
+#[Entity('swag_measurement', since: '6.7.1.0')]
+class MeasurementEntity extends EntityStruct
+{
+    #[PrimaryKey]
+    #[Field(type: FieldType::UUID, api: true)]
+    public string $id;
+
+    #[Field(type: FieldType::STRING, api: true)]
+    public string $technicalName;
+
+    #[Field(type: FieldType::STRING, translated: true, api: true)]
+    public ?string $name = null;
+
+    #[OneToMany(entity: 'swag_unit', ref: 'measurement_id')]
+    public ?array $units = null;
+
+    #[Translations]
+    public ?array $translations = null;
+
+    public string $notAField = '';
+}
+
+#[Entity(name: 'swag_unit')]
+class UnitEntity extends EntityStruct
+{
+    #[ForeignKey(entity: 'swag_measurement')]
+    public string $measurementId;
+}
+
+#[Entity]
+class Nameless {}
+",
+        "/project/src/Entity/MeasurementEntity.php",
+        &idx,
+    );
+    let names: Vec<String> = idx
+        .definitions()
+        .unwrap()
+        .into_iter()
+        .map(|definition| definition.name)
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "swag_measurement",
+            "swag_measurement_translation",
+            "swag_unit"
+        ]
+    );
+    let entity = idx.definition("swag_measurement").unwrap().remove(0);
+    assert_eq!(entity.kind, "entity");
+    assert_eq!(
+        entity.fully_qualified_class,
+        "Swag\\Entity\\MeasurementEntity"
+    );
+    let fields: Vec<(&str, &str, bool, bool)> = entity
+        .fields
+        .iter()
+        .map(|field| {
+            (
+                field.name.as_str(),
+                field.storage_name.as_str(),
+                field.association,
+                field.primary,
+            )
+        })
+        .collect();
+    assert_eq!(
+        fields,
+        [
+            ("id", "id", false, true),
+            ("technicalName", "technical_name", false, false),
+            ("name", "name", false, false),
+            ("units", "units", true, false),
+            ("translations", "translations", true, false),
+        ]
+    );
+    // The generated translation entity holds the translated fields.
+    let translation = idx
+        .definition("swag_measurement_translation")
+        .unwrap()
+        .remove(0);
+    assert_eq!(translation.kind, "translation");
+    assert_eq!(
+        translation
+            .fields
+            .iter()
+            .map(|field| field.name.as_str())
+            .collect::<Vec<_>>(),
+        ["name"]
+    );
+    assert_eq!(
+        idx.definition("swag_unit").unwrap()[0].fields[0].name,
+        "measurementId"
+    );
+}

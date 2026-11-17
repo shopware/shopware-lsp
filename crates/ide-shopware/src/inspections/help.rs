@@ -742,9 +742,12 @@ pub(crate) const PROJECT: &[RuleHelp] = &[
     ),
     help(
         "shopware.dal.entity-not-found",
-        "Correct the entity name; a quick fix offers the close name.",
-        "Reported only for a name close to an indexed entity: an unknown name without a \
-         close match may be a custom entity created at runtime.",
+        "Correct the entity name; for a close name a quick fix offers it. Otherwise \
+         declare the entity, or remove the code that asks for it.",
+        "A name without a close match is only reported where Shopware's own entities are \
+         indexed, and never when it starts with custom_entity_ or ce_, the prefixes of \
+         custom entities created at runtime. A name that is not a string literal is not \
+         checked.",
         "Guard an optional entity with EntityDefinition.has('name'); has() is not checked.",
     ),
     help(
