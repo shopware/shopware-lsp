@@ -683,3 +683,147 @@ class LinkDefinition extends MappingEntityDefinition {
     assert_eq!(field_names(&idx, "named"), ["texts"]);
     assert_eq!(field_names(&idx, "link"), ["categoryId"]);
 }
+
+#[test]
+fn index_entity_extension_associations() {
+    let directory = tempfile::tempdir().unwrap();
+    let idx = Index::new(directory.path(), None).unwrap();
+    index(
+        "<?php
+namespace Core;
+class ProductDefinition extends EntityDefinition {
+    public const ENTITY_NAME = 'product';
+    protected function defineFields(): FieldCollection { return new FieldCollection([
+        new IdField('id', 'id'),
+    ]); }
+}
+class OrderDefinition extends EntityDefinition {
+    public function getEntityName(): string { return 'order'; }
+    protected function defineFields(): FieldCollection { return new FieldCollection([
+        new IdField('id', 'id'),
+    ]); }
+}",
+        "/project/src/Core/Definitions.php",
+        &idx,
+    );
+    index(
+        "<?php
+namespace Swag;
+use Core\\ProductDefinition;
+use Core\\OrderDefinition;
+class GalleryDefinition extends EntityDefinition {
+    public const ENTITY_NAME = 'swag_gallery';
+    public const EXTENSION_NAME = 'galleries';
+    protected function defineFields(): FieldCollection { return new FieldCollection([
+        new StringField('title', 'title'),
+    ]); }
+}
+class ProductGalleryExtension extends EntityExtension {
+    private const OWN = 'cover';
+    public function extendFields(FieldCollection $collection): void {
+        $collection->add(
+            (new OneToManyAssociationField(GalleryDefinition::EXTENSION_NAME, GalleryDefinition::class, 'product_id'))
+                ->addFlags(new CascadeDelete()),
+        );
+        $collection->add(new OneToOneAssociationField(self::OWN, 'id', 'product_id', GalleryDefinition::class));
+        $collection->add(new OneToOneAssociationField('id', 'id', 'product_id', GalleryDefinition::class));
+        $collection->add((new StringField('swag_label', 'swagLabel'))->addFlags(new Runtime()));
+    }
+    public function getEntityName(): string { return ProductDefinition::ENTITY_NAME; }
+}
+class LegacyExtension extends EntityExtension {
+    public function extendFields(FieldCollection $collection): void {
+        $collection->add(new OneToManyAssociationField('galleries', GalleryDefinition::class, 'order_id'));
+    }
+    public function getDefinitionClass(): string { return OrderDefinition::class; }
+}
+class Bulk extends BulkEntityExtension {
+    public function collect(): \\Generator {
+        yield OrderDefinition::ENTITY_NAME => [
+            new OneToManyAssociationField('notes', GalleryDefinition::class, 'order_id'),
+        ];
+        yield 'swag_gallery' => [
+            new ManyToOneAssociationField('product', 'product_id', ProductDefinition::class),
+        ];
+        yield 'unknown_entity' => [
+            new OneToManyAssociationField('lost', GalleryDefinition::class, 'x_id'),
+        ];
+    }
+}",
+        "/project/src/Swag/Extensions.php",
+        &idx,
+    );
+
+    // The definitions themselves stay as their own file declares them.
+    assert_eq!(
+        field_names(&idx, "product"),
+        ["id", "createdAt", "updatedAt"]
+    );
+    let names: Vec<String> = idx
+        .definitions()
+        .unwrap()
+        .into_iter()
+        .map(|definition| definition.name)
+        .collect();
+    assert_eq!(names, ["product", "order", "swag_gallery"]);
+    assert!(idx.definition("unknown_entity").unwrap().is_empty());
+
+    let extended = idx.extended_definitions().unwrap();
+    let fields = |entity: &str| -> Vec<&str> {
+        entity_definition(&extended, entity)
+            .unwrap()
+            .fields
+            .iter()
+            .map(|field| field.name.as_str())
+            .collect()
+    };
+    // Named by a constant of another class, by an own constant; a name the
+    // entity already has and a field that is no association are left out.
+    assert_eq!(
+        fields("product"),
+        ["id", "createdAt", "updatedAt", "galleries", "cover"]
+    );
+    // `getDefinitionClass()` and a bulk extension keyed by a constant.
+    assert_eq!(
+        fields("order"),
+        ["id", "createdAt", "updatedAt", "galleries", "notes"]
+    );
+    assert_eq!(
+        fields("swag_gallery"),
+        ["title", "createdAt", "updatedAt", "product"]
+    );
+
+    // An added association leads on, and knows the file that declares it.
+    let product = entity_definition(&extended, "product").unwrap();
+    let galleries = &product.fields[3];
+    assert_eq!(
+        product.field_file(galleries),
+        "/project/src/Swag/Extensions.php"
+    );
+    assert_eq!(
+        product.field_file(&product.fields[0]),
+        "/project/src/Core/Definitions.php"
+    );
+    let reached =
+        resolve_association_path(&extended, "product", &["galleries".to_owned()]).unwrap();
+    assert_eq!(reached.name, "swag_gallery");
+    let found = idx.field_definitions("galleries", true).unwrap();
+    assert_eq!(found.len(), 2);
+    assert!(
+        found
+            .iter()
+            .all(|field| field.file == "/project/src/Swag/Extensions.php")
+    );
+
+    // Removing the extension file removes its associations.
+    idx.removed_files(&["/project/src/Swag/Extensions.php".to_owned()])
+        .unwrap();
+    let extended = idx.extended_definitions().unwrap();
+    assert_eq!(
+        entity_definition(&extended, "product")
+            .unwrap()
+            .fields
+            .len(),
+        3
+    );
+}

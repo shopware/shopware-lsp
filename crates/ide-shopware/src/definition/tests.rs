@@ -166,6 +166,45 @@ class CategoryDefinition extends EntityDefinition
 }
 
 #[test]
+fn dal_definition_navigates_to_an_entity_extension() {
+    let root = tempfile::tempdir().unwrap();
+    let index = dal_index(root.path());
+    let extension = "/project/custom/plugins/Swag/src/ProductExtension.php";
+    index_file(
+        &*index,
+        extension,
+        "<?php
+class ProductExtension extends EntityExtension
+{
+    public function extendFields(FieldCollection $collection): void
+    {
+        $collection->add(new OneToOneAssociationField('swagMaker', 'id', 'product_id', ManufacturerDefinition::class));
+    }
+    public function getEntityName(): string { return 'product'; }
+}",
+    );
+    let provider = DalDefinitionProvider::new(Some(index));
+    let source = "function load() { const criteria = new Criteria(); \
+        criteria.addAssociation('swagMaker'); \
+        criteria.addFilter(Criteria.equals('swagMaker.name', 1)); \
+        return this.repositoryFactory.create('product').search(criteria); }";
+    let document = document(
+        "file:///project/src/Resources/app/administration/index.js",
+        source,
+    );
+    // The association is declared by the extension, its target field by
+    // the definition the association points at.
+    for (needle, path) in [("swagMaker')", extension), ("name', 1", MANUFACTURER_PATH)] {
+        let locations = definitions(
+            &provider,
+            &request_at(&document, index_of(source, needle) + 1),
+        );
+        assert_eq!(locations.len(), 1, "{needle}");
+        assert_eq!(locations[0].uri, file_uri(path));
+    }
+}
+
+#[test]
 fn dal_definition_restricts_association_references() {
     let root = tempfile::tempdir().unwrap();
     let provider = DalDefinitionProvider::new(Some(dal_index(root.path())));

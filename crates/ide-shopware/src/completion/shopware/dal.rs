@@ -39,7 +39,7 @@ impl DalCompletionProvider {
         offset: u32,
         associations_only: bool,
     ) -> Option<Vec<protocol::CompletionItem>> {
-        let definitions = self.index.definitions().ok()?;
+        let definitions = self.index.extended_definitions().ok()?;
         let definition = swlsp_shopware_dal::js_criteria_definition(&definitions, node, offset)?;
         let mut seen = BTreeSet::new();
         Some(
@@ -71,7 +71,7 @@ impl DalCompletionProvider {
             types: BTreeSet<String>,
             entities: BTreeSet<String>,
         }
-        let Ok(definitions) = self.index.definitions() else {
+        let Ok(definitions) = self.index.extended_definitions() else {
             return Vec::new();
         };
         let mut candidates: BTreeMap<String, Candidate> = BTreeMap::new();

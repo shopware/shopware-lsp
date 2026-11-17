@@ -1,6 +1,6 @@
 //! Entity definition indexing.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -17,6 +17,10 @@ use swlsp_parser_php::syntax as php;
 use swlsp_php_resolver::{ImportKind, parse_use_declaration};
 use swlsp_syntax::{LineIndex, SyntaxNode, SyntaxNodeExt, TextRange, TextSize};
 use swlsp_textutil::{eq_ignore_case, lowercase};
+
+use crate::extension::{
+    ConstantNames, DEFINITION_KIND_EXTENSION, apply_extensions, parse_extensions, string_constants,
+};
 
 // Word boundaries and whitespace are ASCII-only.
 static ENTITY_NAME_CONSTANT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
@@ -46,6 +50,21 @@ pub struct Definition {
     /// one, `entity_class` is the conventional name and the DAL hydrates
     /// the generic `ArrayEntity`.
     pub entity_class_declared: bool,
+    /// The string constants of a classic definition class. Extensions name
+    /// entities and associations through them.
+    pub constants: BTreeMap<String, String>,
+}
+
+impl Definition {
+    /// The file that declares `field`: this definition's, or the entity
+    /// extension that added it.
+    pub fn field_file<'a>(&'a self, field: &'a Field) -> &'a str {
+        if field.source_file.is_empty() {
+            &self.file
+        } else {
+            &field.source_file
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,6 +87,10 @@ pub struct Field {
     pub runtime: bool,
     /// Flagged `Computed`: written by the database or an indexer.
     pub computed: bool,
+    /// The file of the entity extension that added the field; empty for a
+    /// field of the definition itself. Set when extensions are applied.
+    #[serde(skip)]
+    pub source_file: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -104,8 +127,24 @@ impl Index {
     /// Resolved entity, mapping and translation definitions.
     pub fn definitions(&self) -> Result<Vec<Definition>> {
         let mut all = self.definitions.get_all_values()?;
-        all.retain(|definition| definition.kind != DEFINITION_KIND_UNRESOLVED);
+        all.retain(|definition| {
+            definition.kind != DEFINITION_KIND_UNRESOLVED
+                && definition.kind != DEFINITION_KIND_EXTENSION
+        });
         Ok(all)
+    }
+
+    /// [`Self::definitions`] with the associations entity extensions add:
+    /// the fields an entity has at runtime.
+    pub fn extended_definitions(&self) -> Result<Vec<Definition>> {
+        let (extensions, mut definitions): (Vec<_>, Vec<_>) = self
+            .definitions
+            .get_all_values()?
+            .into_iter()
+            .filter(|definition| definition.kind != DEFINITION_KIND_UNRESOLVED)
+            .partition(|definition| definition.kind == DEFINITION_KIND_EXTENSION);
+        apply_extensions(&mut definitions, extensions);
+        Ok(definitions)
     }
 
     /// Entity-shaped classes whose effective DAL parent must be resolved
@@ -121,7 +160,9 @@ impl Index {
         if name.is_empty() {
             return Ok(Vec::new());
         }
-        self.definitions.get_values(name)
+        let mut definitions = self.definitions.get_values(name)?;
+        definitions.retain(|definition| definition.kind != DEFINITION_KIND_EXTENSION);
+        Ok(definitions)
     }
 
     /// The first field of each distinct name across resolved definitions.
@@ -147,7 +188,7 @@ impl Index {
             return Ok(Vec::new());
         }
         let mut result = Vec::new();
-        for definition in self.definitions()? {
+        for definition in self.extended_definitions()? {
             for field in &definition.fields {
                 if field.name != name || associations_only && !field.association {
                     continue;
@@ -155,7 +196,7 @@ impl Index {
                 result.push(FieldDefinition {
                     entity: definition.name.clone(),
                     class: definition.class.clone(),
-                    file: definition.file.clone(),
+                    file: definition.field_file(field).to_owned(),
                     field: field.clone(),
                 });
             }
@@ -259,7 +300,8 @@ fn extract_definitions(file: &ParsedFile) -> PreparedDefinitions {
         && (source.contains("ENTITY_NAME") || source.contains("getEntityName"));
     // An entity can also be a class with the `#[Entity('name')]` attribute.
     let attributed = source.contains("#[Entity(");
-    if (candidate || attributed)
+    let extending = source.contains("EntityExtension");
+    if (candidate || attributed || extending)
         && let Some(tree) = file.syntax_tree()
     {
         let root = tree.root();
@@ -278,13 +320,15 @@ fn extract_definitions(file: &ParsedFile) -> PreparedDefinitions {
             };
             for definition in parsed {
                 // A repeated entity name keeps the last definition.
-                match definitions
-                    .iter_mut()
-                    .find(|existing| existing.name == definition.name)
-                {
+                match definitions.iter_mut().find(|existing| {
+                    existing.name == definition.name && existing.kind != DEFINITION_KIND_EXTENSION
+                }) {
                     Some(existing) => *existing = definition,
                     None => definitions.push(definition),
                 }
+            }
+            if extending {
+                definitions.extend(parse_extensions(&class, &root, path, file.line_index()));
             }
         }
     }
@@ -356,7 +400,7 @@ impl TransactionalClearer for Index {
     }
 }
 
-fn short_name(name: &str) -> &str {
+pub(crate) fn short_name(name: &str) -> &str {
     name.rsplit('\\').next().unwrap_or(name)
 }
 
@@ -406,10 +450,10 @@ fn parse_definition(
                     name_range = phpquery::string_content_range(string);
                 }
             }
-            "defaultFields" => default_fields = Some(parse_fields(&method, lines, &resolver)),
+            "defaultFields" => default_fields = Some(parse_fields(&method, lines, &resolver, None)),
             "defineFields" => {
                 defines_fields = true;
-                fields = parse_fields(&method, lines, &resolver);
+                fields = parse_fields(&method, lines, &resolver, None);
                 if fields.iter().any(|field| field.type_ == "VersionField") {
                     version_aware = true;
                 }
@@ -486,6 +530,7 @@ fn parse_definition(
         name_range,
         class_range,
         fields,
+        constants: string_constants(class),
         version_aware,
         inheritance_aware,
         entity_class_declared,
@@ -728,7 +773,14 @@ fn literal_boolean_return_value(method: &SyntaxNode) -> Option<bool> {
     Some(eq_ignore_case(text.trim(), "true"))
 }
 
-fn parse_fields(method: &SyntaxNode, lines: &LineIndex, resolver: &ClassResolver) -> Vec<Field> {
+/// The fields created inside `method`. With `constants`, an association
+/// may take its name from a class constant.
+pub(crate) fn parse_fields(
+    method: &SyntaxNode,
+    lines: &LineIndex,
+    resolver: &ClassResolver,
+    constants: Option<&ConstantNames<'_>>,
+) -> Vec<Field> {
     let mut fields = Vec::new();
     let mut seen = HashSet::new();
     for creation in phpquery::object_creations(method, &[]) {
@@ -749,6 +801,14 @@ fn parse_fields(method: &SyntaxNode, lines: &LineIndex, resolver: &ClassResolver
         let mut name = name_node
             .as_ref()
             .map_or_else(String::new, phpquery::string_value);
+        if name.is_empty()
+            && association
+            && let Some(constants) = constants
+            && let Some(constant) =
+                phpquery::argument_expression(&creation, 0).and_then(|value| constants.name(&value))
+        {
+            name = constant;
+        }
         let mut storage_name = string_argument_value(0);
         match short_type {
             "ParentFkField" => {
@@ -830,6 +890,7 @@ fn parse_fields(method: &SyntaxNode, lines: &LineIndex, resolver: &ClassResolver
             association,
             target_class: resolver.resolve(&phpquery::class_constant_name(&creation)),
             target_entity: String::new(),
+            source_file: String::new(),
             primary,
             line: line + 1,
             range,
@@ -851,14 +912,14 @@ fn returned_class_name(method: &SyntaxNode, resolver: &ClassResolver) -> String 
 }
 
 /// Resolves class names against the file's namespace and class imports.
-struct ClassResolver {
+pub(crate) struct ClassResolver {
     namespace: String,
     current_class: String,
     aliases: HashMap<String, String>,
 }
 
 impl ClassResolver {
-    fn new(root: &SyntaxNode) -> Self {
+    pub(crate) fn new(root: &SyntaxNode) -> Self {
         let namespace = phpquery::namespace(root).trim_matches('\\').to_owned();
         let mut current_class = phpquery::classes(root)
             .first()
@@ -885,7 +946,7 @@ impl ClassResolver {
         }
     }
 
-    fn resolve(&self, name: &str) -> String {
+    pub(crate) fn resolve(&self, name: &str) -> String {
         let name = name.trim().trim_matches('\\');
         if name.is_empty() {
             return String::new();
@@ -916,6 +977,10 @@ fn definition_workspace_symbols(
 ) -> Vec<WorkspaceSymbol> {
     let mut result = Vec::new();
     for definition in definitions {
+        // An extension is no entity of its own.
+        if definition.kind == DEFINITION_KIND_EXTENSION {
+            continue;
+        }
         result.push(WorkspaceSymbol {
             name: definition.name.clone(),
             container_name: format!("Shopware DAL entity · {}", definition.class),

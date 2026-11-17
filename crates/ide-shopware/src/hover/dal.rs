@@ -93,7 +93,7 @@ impl HoverProvider for DalHoverProvider {
             reference_kind == JsFieldReferenceKind::Association || association_segment;
         let mut fields = index.field_definitions(&name, association)?;
         // With the searched entity known, only its field is the answer.
-        let definitions = index.definitions()?;
+        let definitions = index.extended_definitions()?;
         if let Some(definition) =
             swlsp_shopware_dal::js_criteria_definition(&definitions, node, offset)
             && fields.iter().any(|field| field.entity == definition.name)

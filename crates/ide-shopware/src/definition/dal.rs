@@ -35,10 +35,13 @@ fn entity_field_location(
     offset: u32,
     name: &str,
 ) -> Option<protocol::Location> {
-    let definitions = index.definitions().ok()?;
+    let definitions = index.extended_definitions().ok()?;
     let definition = swlsp_shopware_dal::js_criteria_definition(&definitions, node, offset)?;
     if let Some(field) = definition.fields.iter().find(|field| field.name == name) {
-        return Some(line_location(&definition.file, i64::from(field.line)));
+        return Some(line_location(
+            definition.field_file(field),
+            i64::from(field.line),
+        ));
     }
     // `product.name` on a product search: the first segment is the entity.
     (definition.name == name
