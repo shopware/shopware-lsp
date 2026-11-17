@@ -1123,6 +1123,7 @@ Languages: php. Domain: `shopware`.
 |---|---|---|
 | `shopware.php.route.attribute_literal` | hint | yes |
 | `shopware.php.route.default_ineffective` | warning | yes |
+| `shopware.php.route.entity_response` | warning | yes |
 | `shopware.php.route.methods_missing` | warning | yes |
 | `shopware.php.route.name_prefix` | warning | yes |
 | `shopware.php.route.scope_missing` | warning | yes |
@@ -1138,6 +1139,11 @@ Languages: php. Domain: `shopware`.
 
 - Fix: Remove the default, or move the route to a scope that acts on it. Privileges (_acl) are only checked in the api scope; the customer login, the context token and the HTTP cache only exist in the storefront and store-api scopes; XmlHttpRequest is only read in the storefront scope.
 - Exceptions: Only these defaults are checked, and only where every scope of the route is known.
+
+**`shopware.php.route.entity_response`**
+
+- Fix: In a Store API route, return a StoreApiResponse with the entity, collection or a struct: it is encoded with the fields flagged ApiAware only. In a storefront action, build the array from the values the page needs.
+- Exceptions: Reported for JsonResponse and $this->json() in the store-api and storefront scopes, when the data is an entity, an entity collection or a search result, an array literal holding one, or the result of jsonSerialize() or getVars() on one. Data built in a variable first is checked by its type only.
 
 **`shopware.php.route.methods_missing`**
 

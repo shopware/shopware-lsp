@@ -192,6 +192,17 @@ pub(crate) const STORE_REVIEW: &[RuleHelp] = &[
         "",
     ),
     help(
+        "shopware.php.route.entity_response",
+        "In a Store API route, return a StoreApiResponse with the entity, collection or a \
+         struct: it is encoded with the fields flagged ApiAware only. In a storefront \
+         action, build the array from the values the page needs.",
+        "Reported for JsonResponse and $this->json() in the store-api and storefront \
+         scopes, when the data is an entity, an entity collection or a search result, an \
+         array literal holding one, or the result of jsonSerialize() or getVars() on one. \
+         Data built in a variable first is checked by its type only.",
+        "",
+    ),
+    help(
         "shopware.php.route.attribute_literal",
         "Write the route default with the constant Shopware declares for it, such as \
          PlatformRequest::ATTRIBUTE_ROUTE_SCOPE and StorefrontRouteScope::ID; a quick fix \

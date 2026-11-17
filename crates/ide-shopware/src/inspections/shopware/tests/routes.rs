@@ -35,6 +35,20 @@ namespace Shopware\Core\Framework\Routing {
 namespace Shopware\Storefront\Framework\Routing {
     class StorefrontRouteScope { public const ID = 'storefront'; }
 }
+namespace Shopware\Core\Framework\DataAbstractionLayer {
+    class Entity { public function jsonSerialize(): array {} public function getVars(): array {} public function getId(): string {} }
+    /** @template T of Entity */
+    class EntityCollection { /** @return T|null */ public function first() {} /** @return array<string, T> */ public function getElements(): array {} }
+}
+namespace Shopware\Core\Framework\DataAbstractionLayer\Search {
+    class EntitySearchResult {}
+}
+namespace Shopware\Core\System\SalesChannel {
+    class StoreApiResponse { public function __construct(object $object) {} }
+}
+namespace Symfony\Component\HttpFoundation {
+    class JsonResponse { public function __construct(mixed $data = null, int $status = 200) {} }
+}
 ";
 
 fn inspection(shopware: bool) -> (tempfile::TempDir, Arc<dyn Inspection>) {
@@ -373,4 +387,85 @@ class ApiController
 ";
     let (_cache, inspection) = inspection(true);
     check_diagnostics(inspection.as_ref(), URI, &format!("{HEADER}{body}"));
+}
+
+#[test]
+fn an_entity_is_not_serialized_into_a_response_customers_get() {
+    let body = r"
+use Shopware\Core\Framework\DataAbstractionLayer\Entity;
+use Shopware\Core\Framework\DataAbstractionLayer\EntityCollection;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\EntitySearchResult;
+use Shopware\Core\System\SalesChannel\StoreApiResponse;
+use Symfony\Component\HttpFoundation\JsonResponse;
+
+class SwagEntity extends Entity {}
+/** @extends EntityCollection<SwagEntity> */
+class SwagCollection extends EntityCollection {}
+
+#[Route(defaults: [PlatformRequest::ATTRIBUTE_ROUTE_SCOPE => [StoreApiRouteScope::ID]], methods: ['GET'])]
+class StoreApiController
+{
+    #[Route(path: '/store-api/swag/a', name: 'store-api.swag.a')]
+    public function leaks(SwagEntity $entity, SwagCollection $collection, EntitySearchResult $result): JsonResponse
+    {
+        new JsonResponse({|shopware.php.route.entity_response:$entity|});
+        new JsonResponse({|shopware.php.route.entity_response:$collection|}, 200);
+        new JsonResponse(['total' => 1, 'data' => ['items' => {|shopware.php.route.entity_response:$result|}]]);
+        new JsonResponse({|shopware.php.route.entity_response:$entity->jsonSerialize()|});
+        new JsonResponse({|shopware.php.route.entity_response:$collection->first()|});
+        new JsonResponse(['items' => {|shopware.php.route.entity_response:$collection->getElements()|}]);
+        return $this->json(data: {|shopware.php.route.entity_response:$entity|});
+    }
+
+    #[Route(path: '/store-api/swag/b', name: 'store-api.swag.b')]
+    public function fine(SwagEntity $entity): StoreApiResponse
+    {
+        new JsonResponse(['id' => $entity->getId(), 'count' => 3]);
+        new JsonResponse(null, 204);
+        new JsonResponse($unknown);
+        return new StoreApiResponse($entity);
+    }
+}
+
+#[Route(defaults: [PlatformRequest::ATTRIBUTE_ROUTE_SCOPE => [StorefrontRouteScope::ID]], methods: ['GET'])]
+class StorefrontController
+{
+    #[Route(path: '/swag/a', name: 'frontend.swag.a', defaults: ['XmlHttpRequest' => true])]
+    public function leaks(SwagCollection $collection): JsonResponse
+    {
+        return new JsonResponse(['states' => {|shopware.php.route.entity_response:$collection|}]);
+    }
+}
+
+// Users of the Admin API may see every field.
+#[Route(defaults: [PlatformRequest::ATTRIBUTE_ROUTE_SCOPE => [ApiRouteScope::ID]], methods: ['GET'])]
+class ApiController
+{
+    #[Route(path: '/api/_action/swag', name: 'api.swag')]
+    public function all(SwagEntity $entity): JsonResponse
+    {
+        return new JsonResponse($entity);
+    }
+}
+
+class Service
+{
+    public function noRoute(SwagEntity $entity): JsonResponse
+    {
+        return new JsonResponse($entity);
+    }
+}
+";
+    let (_cache, inspection) = inspection(true);
+    let (_, problems) = check_diagnostics(inspection.as_ref(), URI, &format!("{HEADER}{body}"));
+    assert!(problems[0].message.ends_with(
+        "return a StoreApiResponse, which is encoded with the fields flagged ApiAware only"
+    ));
+    assert!(
+        problems
+            .last()
+            .unwrap()
+            .message
+            .ends_with("pass the values the page needs, not the entity")
+    );
 }

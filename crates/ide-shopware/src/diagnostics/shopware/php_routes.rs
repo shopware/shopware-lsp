@@ -36,6 +36,7 @@ pub const ROUTE_METHODS_MISSING_CODE: &str = "shopware.php.route.methods_missing
 pub const ROUTE_ATTRIBUTE_LITERAL_CODE: &str = "shopware.php.route.attribute_literal";
 pub const ROUTE_DEFAULT_INEFFECTIVE_CODE: &str = "shopware.php.route.default_ineffective";
 pub const ROUTE_XML_HTTP_REQUEST_CODE: &str = "shopware.php.route.xml_http_request";
+pub const ROUTE_ENTITY_RESPONSE_CODE: &str = "shopware.php.route.entity_response";
 
 /// The codes of [`ShopwareRouteAnalyzer`] with their default severity.
 pub const ROUTE_CODES: &[(&str, DiagnosticSeverity)] = &[
@@ -46,6 +47,7 @@ pub const ROUTE_CODES: &[(&str, DiagnosticSeverity)] = &[
     (ROUTE_ATTRIBUTE_LITERAL_CODE, DiagnosticSeverity::HINT),
     (ROUTE_DEFAULT_INEFFECTIVE_CODE, DiagnosticSeverity::WARNING),
     (ROUTE_XML_HTTP_REQUEST_CODE, DiagnosticSeverity::HINT),
+    (ROUTE_ENTITY_RESPONSE_CODE, DiagnosticSeverity::WARNING),
 ];
 
 const PLATFORM_REQUEST_CLASS: &str = "Shopware\\Core\\PlatformRequest";
@@ -119,6 +121,15 @@ const SCOPED_DEFAULTS: &[(&str, &[&str], &str)] = &[
     ),
 ];
 const XML_HTTP_REQUEST_KEY: &str = "XmlHttpRequest";
+/// What holds every field of an entity, also the ones the Store API hides.
+const ENTITY_CLASSES: &[&str] = &[
+    "Shopware\\Core\\Framework\\DataAbstractionLayer\\Entity",
+    "Shopware\\Core\\Framework\\DataAbstractionLayer\\EntityCollection",
+    "Shopware\\Core\\Framework\\DataAbstractionLayer\\Search\\EntitySearchResult",
+];
+const JSON_RESPONSE_CLASS: &str = "Symfony\\Component\\HttpFoundation\\JsonResponse";
+/// Calls that turn an entity into an array of all its fields.
+const SERIALIZING_METHODS: &[&str] = &["jsonserialize", "getvars"];
 
 /// The names `Storefront\Framework\Routing\Router` treats as storefront routes.
 const STOREFRONT_NAME_PREFIXES: &[&str] = &["frontend.", "widgets.", "payment."];
@@ -296,6 +307,91 @@ impl Run<'_> {
                 self.check_scoped_defaults(route, &scopes);
             }
             self.check_xml_http_request(&method, &all, &scopes);
+            self.check_entity_responses(&method, &scopes);
+        }
+    }
+
+    /// `new JsonResponse($entity)` in a route customers reach: the entity
+    /// is serialized with every field. Only a `StoreApiResponse` is encoded
+    /// with the fields flagged `ApiAware`.
+    fn check_entity_responses(&mut self, method: &SyntaxNode, scopes: &BTreeSet<String>) {
+        let store_api = scopes.contains("store-api");
+        if !store_api && !scopes.contains("storefront") {
+            return;
+        }
+        let mut payloads: Vec<SyntaxNode> = Vec::new();
+        for creation in phpquery::nodes(method, &[PHP_OBJECT_CREATION]) {
+            let name = phpquery::direct_child(&creation, PHP_NAME);
+            let resolved = self.resolved_symbols(name.as_ref(), SymbolKind::Class);
+            let json = if resolved.is_empty() {
+                // Symfony may not be indexed.
+                name.as_ref().is_some_and(|name| {
+                    phpquery::name_value(name).rsplit('\\').next() == Some("JsonResponse")
+                })
+            } else {
+                self.names_subtype(name.as_ref(), JSON_RESPONSE_CLASS)
+            };
+            if json {
+                payloads.extend(local_call_argument(&creation, "data", 0));
+            }
+        }
+        // `$this->json($data)` of Symfony's AbstractController.
+        for call in phpquery::nodes(method, &[PHP_MEMBER_CALL]) {
+            if phpquery::call_method_name(&call) == "json"
+                && phpquery::call_receiver(&call)
+                    .is_some_and(|receiver| receiver.text().to_string().trim() == "$this")
+            {
+                payloads.extend(local_call_argument(&call, "data", 0));
+            }
+        }
+        for payload in payloads {
+            let Some(leaking) = self.entity_in(&payload, 0) else {
+                continue;
+            };
+            let advice = if store_api {
+                "return a StoreApiResponse, which is encoded with the fields flagged ApiAware only"
+            } else {
+                "pass the values the page needs, not the entity"
+            };
+            self.push(problem(
+                ROUTE_ENTITY_RESPONSE_CODE,
+                leaking.range_trimmed_trivia(),
+                format!(
+                    "This response serializes the entity with every field, also the ones not \
+                     meant for customers; {advice}"
+                ),
+            ));
+        }
+    }
+
+    /// The part of a response payload that holds an entity: the expression
+    /// itself, an item of an array literal, or the entity a serializing
+    /// call is made on.
+    fn entity_in(&self, expression: &SyntaxNode, depth: usize) -> Option<SyntaxNode> {
+        let expression = unwrap_php_parentheses(expression);
+        let is_entity = |node: &SyntaxNode| {
+            ENTITY_CLASSES
+                .iter()
+                .any(|class| self.is_instance(node, class))
+        };
+        if is_entity(&expression) {
+            return Some(expression);
+        }
+        match expression.kind() {
+            PHP_ARRAY if depth < 3 => phpquery::array_items(&expression)
+                .iter()
+                .filter_map(phpquery::array_item_value)
+                .find_map(|value| self.entity_in(&value, depth + 1)),
+            PHP_MEMBER_CALL
+                if SERIALIZING_METHODS.contains(
+                    &swlsp_textutil::lowercase(&phpquery::call_method_name(&expression)).as_str(),
+                ) =>
+            {
+                phpquery::call_receiver(&expression)
+                    .filter(|receiver| is_entity(receiver))
+                    .map(|_| expression.clone())
+            }
+            _ => None,
         }
     }
 
