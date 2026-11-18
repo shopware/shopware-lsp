@@ -258,6 +258,49 @@ fn admin_indexer_request_local_twig_retains_inherited_block_scope() {
 }
 
 #[test]
+fn own_member_shadows_a_mixin_member_of_another_kind() {
+    let root = temp_dir();
+    let index = new_indexer(&root.path().join("cache"));
+    let admin_root = admin_root(root.path());
+    index_source(
+        &index,
+        &s(&admin_root.join("app/mixin/salutation.mixin.ts")),
+        r"Shopware.Mixin.register('salutation', {
+    methods: {
+        salutation(entity: Entity, fallback = ''): string { return ''; },
+        other(): Record<string, Record<string, unknown>> { return {}; },
+    },
+});",
+    );
+    index
+        .save_component(&VueComponent {
+            name: "sw-salutation-detail".to_owned(),
+            file_path: s(&admin_root.join("detail.js")),
+            mixins: vec!["salutation".to_owned()],
+            members: vec![VueComponentMember {
+                name: "salutation".to_owned(),
+                kind: VueComponentMemberKind::Data,
+                ..Default::default()
+            }],
+            ..Default::default()
+        })
+        .unwrap();
+    let component = effective(&index, "sw-salutation-detail").expect("component");
+    let kinds: Vec<_> = component
+        .members
+        .iter()
+        .map(|member| (member.name.as_str(), member.kind))
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            ("other", VueComponentMemberKind::Method),
+            ("salutation", VueComponentMemberKind::Data),
+        ]
+    );
+}
+
+#[test]
 fn admin_indexer_live_runtime_registries_replace_persisted_source_file() {
     let root = temp_dir();
     let index = new_indexer(&root.path().join("cache"));

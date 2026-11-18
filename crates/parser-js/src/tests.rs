@@ -340,3 +340,115 @@ fn incomplete_type_parameters_are_lossless() {
         assert_eq!(parse.root().text().to_string(), source);
     }
 }
+
+#[test]
+fn type_declarations_are_one_node_without_errors() {
+    let source = r"export type Payload = {
+    id: string;
+    limit?: number | null;
+    tags: Array<{ name: string }>;
+};
+
+type Short = string | null
+const after = 1;
+
+interface Options<T> extends Base {
+    value?: T;
+}
+
+export type { Other } from './other';
+
+declare global {
+    interface ServiceContainer {
+        exampleService: ExampleService;
+    }
+}
+
+const type = 'x';
+type.length;
+";
+    let parse = parse(source);
+    assert_eq!(parse.root().text().to_string(), source);
+    assert!(parse.errors.is_empty(), "{:?}", parse.errors);
+    let root = parse.root();
+    let declarations: Vec<String> = root
+        .children()
+        .filter(|node| node.kind() == JS_TYPE_DECLARATION)
+        .map(|node| {
+            node.text()
+                .to_string()
+                .trim()
+                .lines()
+                .next()
+                .unwrap_or("")
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(
+        declarations,
+        [
+            "export type Payload = {",
+            "type Short = string | null",
+            "interface Options<T> extends Base {",
+            "export type { Other } from './other';",
+            "declare global {",
+        ]
+    );
+    // The members of an object type are found like those of a value.
+    let members: Vec<String> = nodes(&root, JS_PROPERTY)
+        .iter()
+        .filter_map(|property| property.children().next())
+        .map(|name| name.text().to_string().trim().to_owned())
+        .collect();
+    assert_eq!(
+        members,
+        ["id", "limit", "tags", "name", "value", "exampleService"]
+    );
+    // What follows a declaration is still a statement of its own.
+    assert_eq!(
+        root.children()
+            .filter(|node| node.kind() == JS_VARIABLE_DECLARATION)
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn incomplete_type_declarations_are_lossless() {
+    for source in [
+        "type A =",
+        "export type",
+        "interface A {",
+        "declare global {",
+        "type A = {",
+    ] {
+        let parse = parse(source);
+        assert_eq!(parse.root().text().to_string(), source);
+    }
+}
+
+#[test]
+fn method_return_types_hold_nested_type_arguments() {
+    let source = r"class Service {
+    async load(id: string): Promise<string[] | Record<string, Record<string, unknown>>> {
+        return this.client.get(id);
+    }
+
+    pair(): [string, number] {
+        return ['a', 1];
+    }
+
+    after(): void {}
+}
+";
+    let parse = parse(source);
+    assert_eq!(parse.root().text().to_string(), source);
+    assert!(parse.errors.is_empty(), "{:?}", parse.errors);
+    let methods = nodes(&parse.root(), JS_METHOD);
+    assert_eq!(methods.len(), 3);
+    assert!(
+        methods
+            .iter()
+            .all(|method| method.children().any(|child| child.kind() == JS_BLOCK))
+    );
+}

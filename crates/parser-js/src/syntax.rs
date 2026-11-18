@@ -57,5 +57,6 @@ swlsp_syntax::language! {
         JS_RETURN_STATEMENT = "JS_RETURN_STATEMENT",
         JS_UNARY_EXPRESSION = "JS_UNARY_EXPRESSION",
         ERROR = "JS_ERROR",
+        JS_TYPE_DECLARATION = "JS_TYPE_DECLARATION",
     },
 }

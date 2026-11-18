@@ -52,6 +52,8 @@ fn parse_statement(p: &mut P<'_>) {
         parse_import(p);
     } else if at_keyword(p, &["export"]) && next_non_trivia_text(p) == "default" {
         parse_export_default(p);
+    } else if at_type_declaration(p) {
+        parse_type_declaration(p);
     } else if at_keyword(p, &["const", "let", "var"]) {
         parse_variable_declaration(p);
     } else if at_keyword(p, &["if"]) {
@@ -182,6 +184,175 @@ fn parse_export_default(p: &mut P<'_>) {
     parse_expression(p, &[TK_SEMICOLON]);
     bump_if(p, TK_SEMICOLON);
     p.complete(statement, JS_EXPORT_DEFAULT);
+}
+
+/// The words that only start a statement, so they end a type alias that
+/// has no semicolon.
+const STATEMENT_WORDS: &[&str] = &[
+    "export",
+    "const",
+    "let",
+    "var",
+    "function",
+    "class",
+    "type",
+    "interface",
+    "declare",
+    "enum",
+    "if",
+    "for",
+    "while",
+    "return",
+    "switch",
+    "try",
+];
+
+fn is_name(text: &str) -> bool {
+    text.bytes()
+        .next()
+        .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_' || byte == b'$')
+}
+
+/// The text of the `nth` token after the current one, skipping trivia.
+fn nth_non_trivia_text<'a>(p: &P<'a>, nth: usize) -> &'a str {
+    let mut seen = 0;
+    let mut offset = 0;
+    while let Some(token) = p.peek_nth_token(offset) {
+        offset += 1;
+        if token.kind.is_trivia() {
+            continue;
+        }
+        if seen == nth {
+            return token.text;
+        }
+        seen += 1;
+    }
+    ""
+}
+
+/// A TypeScript declaration that holds types only: `type A = …`,
+/// `interface A { … }` and `declare global { … }`, also exported.
+fn at_type_declaration(p: &P<'_>) -> bool {
+    let first = peek_text(p);
+    let (word, offset) = if first == "export" {
+        (nth_non_trivia_text(p, 1), 2)
+    } else {
+        (first, 1)
+    };
+    let next = nth_non_trivia_text(p, offset);
+    match word {
+        // `export type { A } from './a'` re-exports types.
+        "type" => is_name(next) || (first == "export" && next == "{"),
+        "interface" => is_name(next),
+        "declare" => matches!(next, "global" | "module" | "namespace"),
+        _ => false,
+    }
+}
+
+fn parse_type_declaration(p: &mut P<'_>) {
+    let declaration = p.start();
+    if peek_text(p) == "export" {
+        p.bump();
+    }
+    let word = peek_text(p);
+    p.bump();
+    match word {
+        "declare" => {
+            // The name of what is declared, then its statements.
+            while !p.at_end() && !p.at(TK_OPEN_BRACE) && !p.at(TK_SEMICOLON) {
+                p.bump();
+            }
+            if p.at(TK_OPEN_BRACE) {
+                parse_block(p);
+            }
+            bump_if(p, TK_SEMICOLON);
+        }
+        "interface" => {
+            // The name, its parameters and what it extends, then the members.
+            while !p.at_end() && !p.at(TK_OPEN_BRACE) && !p.at(TK_SEMICOLON) {
+                p.bump();
+            }
+            if p.at(TK_OPEN_BRACE) {
+                parse_type_object(p);
+            }
+        }
+        _ => {
+            parse_type(p, true);
+            bump_if(p, TK_SEMICOLON);
+        }
+    }
+    p.complete(declaration, JS_TYPE_DECLARATION);
+}
+
+/// Consumes a type up to the `,`, `;` or closing bracket that ends it.
+/// Object types become [`JS_OBJECT`] nodes, so their members can be found
+/// like the properties of a value; everything else stays plain tokens.
+/// `alias` reads the right-hand side of `type A = …`, which also ends
+/// before the next statement when it has no semicolon.
+fn parse_type(p: &mut P<'_>, alias: bool) {
+    let mut depth = Depth::default();
+    let mut assigned = !alias;
+    while let Some(token) = p.peek_token() {
+        let (kind, text) = (token.kind, token.text);
+        if depth.at_top() {
+            if kind == TK_SEMICOLON || (!alias && kind == TK_COMMA) {
+                return;
+            }
+            // `import('./a').A` is a type, any other import is a statement.
+            let statement = STATEMENT_WORDS.contains(&text)
+                || (text == "import" && next_non_trivia_text(p) != "(");
+            if alias && assigned && statement {
+                return;
+            }
+        }
+        if kind == TK_OPEN_BRACE && assigned {
+            parse_type_object(p);
+            continue;
+        }
+        if !depth.track(kind, text) {
+            return;
+        }
+        assigned |= kind == TK_OPERATOR && text == "=";
+        p.bump();
+    }
+}
+
+/// `{ name?: Type; 'other-name': Type }`: the members of an interface or
+/// of an object type.
+fn parse_type_object(p: &mut P<'_>) -> CompletedMarker {
+    let object = p.start();
+    p.bump();
+    while !p.at_end() && !p.at(TK_CLOSE_BRACE) {
+        if p.at(TK_COMMA) || p.at(TK_SEMICOLON) {
+            p.bump();
+            continue;
+        }
+        let position = p.get_pos();
+        let member = p.start();
+        if peek_text(p) == "readonly" && is_name(next_non_trivia_text(p)) {
+            p.bump();
+        }
+        match p.peek() {
+            Some(TK_IDENTIFIER | TK_KEYWORD) => {
+                parse_leaf(p, JS_IDENTIFIER);
+            }
+            Some(TK_STRING | TK_TEMPLATE) => {
+                parse_string(p);
+            }
+            // An index signature, a call signature or a mapped type: the
+            // member has no name of its own.
+            _ => {}
+        }
+        bump_if(p, TK_QUESTION);
+        bump_if(p, TK_COLON);
+        parse_type(p, false);
+        p.complete(member, JS_PROPERTY);
+        if p.get_pos() == position {
+            p.bump();
+        }
+    }
+    p.expect(TK_CLOSE_BRACE, &[TK_SEMICOLON]);
+    p.complete(object, JS_OBJECT)
 }
 
 fn parse_variable_declaration(p: &mut P<'_>) {
@@ -545,10 +716,17 @@ fn parse_return_type(p: &mut P<'_>) {
     // to the type.
     let mut saw_type_token = false;
     let mut angle_depth = 0u32;
+    // Parentheses and brackets of the type: a function type or a tuple.
+    let mut group_depth = 0u32;
     let mut previous_operator = false;
-    while !p.at_end() && !p.at(TK_COMMA) && !p.at(TK_CLOSE_BRACE) {
-        if p.at(TK_OPEN_BRACE) {
-            if !saw_type_token || angle_depth > 0 || previous_operator {
+    while let Some(kind) = p.peek() {
+        let nested = angle_depth > 0 || group_depth > 0;
+        // A comma between type arguments belongs to the type.
+        if !nested && matches!(kind, TK_COMMA | TK_CLOSE_BRACE) {
+            return;
+        }
+        if kind == TK_OPEN_BRACE {
+            if !saw_type_token || nested || previous_operator {
                 consume_type_object(p);
                 saw_type_token = true;
                 previous_operator = false;
@@ -556,16 +734,29 @@ fn parse_return_type(p: &mut P<'_>) {
             }
             return;
         }
+        if matches!(kind, TK_CLOSE_PAREN | TK_CLOSE_BRACKET) && group_depth == 0 {
+            return;
+        }
         let token = p.bump();
         saw_type_token = true;
         previous_operator = false;
-        if token.kind == TK_OPERATOR {
-            match token.text {
-                "<" => angle_depth += 1,
-                ">" => angle_depth = angle_depth.saturating_sub(1),
+        match token.kind {
+            TK_OPEN_PAREN | TK_OPEN_BRACKET => group_depth += 1,
+            TK_CLOSE_PAREN | TK_CLOSE_BRACKET => group_depth -= 1,
+            TK_OPERATOR => match token.text {
                 "|" | "&" => previous_operator = true,
-                _ => {}
-            }
+                // `>>` closes two type argument lists.
+                text => {
+                    for byte in text.bytes() {
+                        match byte {
+                            b'<' => angle_depth += 1,
+                            b'>' => angle_depth = angle_depth.saturating_sub(1),
+                            _ => {}
+                        }
+                    }
+                }
+            },
+            _ => {}
         }
     }
 }

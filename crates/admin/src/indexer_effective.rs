@@ -354,6 +354,12 @@ impl AdminComponentIndexer {
         for mixin in &component.mixins {
             self.apply_mixin(&component.name, mixin, &mut seen, &mut result)?;
         }
+        // What the component declares itself is what its template sees: a
+        // mixin member of the same name is shadowed, whatever its kind
+        // (`data.salutation` next to the `salutation()` of a mixin).
+        result
+            .members
+            .retain(|member| !component.members.iter().any(|own| own.name == member.name));
         Ok(overlay_components(&result, component))
     }
 
