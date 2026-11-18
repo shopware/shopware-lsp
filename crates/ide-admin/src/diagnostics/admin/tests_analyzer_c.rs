@@ -536,6 +536,11 @@ Module.register('sw-profile-extension', options);",
     ] {
         fixture.check_path(&format!("{admin_root}/known-route.html.twig"), source);
     }
+    // A name without a dot is no module route.
+    fixture.check_path(
+        &format!("{admin_root}/core-route.js"),
+        "this.$router.push({ name: 'error' });",
+    );
     fixture.check_path(
         &format!("{admin_root}/module/sw-other/index.js"),
         "Module.register('sw-other', {\n    name: 'Not a route',\n    routes: { detail: { path: 'detail/:id' } },\n});",

@@ -321,7 +321,9 @@ pub(crate) const ADMIN: &[RuleHelp] = &[
         "admin.module-route.not-found",
         "Use the name of a route a module registers (module name, a dot, the route key, for \
          example sw.product.detail); a quick fix offers close names.",
-        "Nothing is reported while the route index is empty.",
+        "Nothing is reported while the route index is empty, nor for a name without a dot: \
+         module routes always have one, and such a name is a route registered with the router \
+         directly.",
         "",
     ),
     help(

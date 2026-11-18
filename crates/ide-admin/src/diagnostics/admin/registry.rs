@@ -52,7 +52,7 @@ impl AdminAnalyzer {
                 continue;
             }
             let name = jsquery::string_value(&literal);
-            if name.is_empty() || known.contains(&name) {
+            if !is_module_route_name(&name) || known.contains(&name) {
                 continue;
             }
             diagnostics.push(module_route_problem(
@@ -242,7 +242,7 @@ impl AdminAnalyzer {
         }
         let mut diagnostics = Vec::new();
         for reference in references {
-            if known.contains(&reference.name) {
+            if !is_module_route_name(&reference.name) || known.contains(&reference.name) {
                 continue;
             }
             diagnostics.push(module_route_problem(
@@ -269,6 +269,12 @@ impl AdminAnalyzer {
         }
         Ok((known, names))
     }
+}
+
+/// A module route is named `<module>.<route>`; a name without a dot (such
+/// as the core `error` route) is registered with the router directly.
+fn is_module_route_name(name: &str) -> bool {
+    name.contains('.')
 }
 
 fn module_route_problem(name: &str, range: TextRange, names: &[String]) -> Problem {

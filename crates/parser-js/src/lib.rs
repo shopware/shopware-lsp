@@ -483,6 +483,7 @@ fn parse_object_member(p: &mut P<'_>) {
             return;
         }
     }
+    parse_type_parameters(p);
 
     match p.peek() {
         Some(TK_COLON) => {
@@ -504,7 +505,30 @@ fn parse_object_member(p: &mut P<'_>) {
     }
 }
 
+/// Consumes the TypeScript type parameters `<T extends U, …>` after a
+/// method or function name. The tokens stay plain, so the name before them
+/// is the member's name and the `(` after them opens its parameters.
+fn parse_type_parameters(p: &mut P<'_>) {
+    if !(p.at(TK_OPERATOR) && peek_text(p) == "<") {
+        return;
+    }
+    let mut depth = Depth::default();
+    while let Some(token) = p.peek_token() {
+        if !depth.track(token.kind, token.text) {
+            return;
+        }
+        p.bump();
+        if depth.at_top() {
+            return;
+        }
+    }
+}
+
 fn object_modifier_has_name(p: &P<'_>) -> bool {
+    // `get<T>() {}` is a generic method called `get`, not a getter.
+    if next_non_trivia_text(p) == "<" {
+        return false;
+    }
     matches!(
         p.peek_next_non_trivia_kind(),
         Some(TK_IDENTIFIER | TK_KEYWORD | TK_STRING | TK_TEMPLATE | TK_OPEN_BRACKET | TK_OPERATOR)
@@ -599,6 +623,7 @@ fn parse_function(p: &mut P<'_>) -> CompletedMarker {
     if p.at(TK_IDENTIFIER) {
         parse_leaf(p, JS_IDENTIFIER);
     }
+    parse_type_parameters(p);
     if p.at(TK_OPEN_PAREN) {
         parse_arguments(p);
     }
@@ -693,6 +718,7 @@ fn parse_class_member(p: &mut P<'_>) {
     if p.at(TK_QUESTION) || (p.at(TK_OPERATOR) && peek_text(p) == "!") {
         p.bump();
     }
+    parse_type_parameters(p);
     if p.at(TK_OPEN_PAREN) {
         parse_arguments(p);
         parse_return_type(p);

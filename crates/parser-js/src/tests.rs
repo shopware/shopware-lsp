@@ -301,3 +301,42 @@ fn class_bodies_hold_methods_and_fields() {
     );
     assert_eq!(nodes(&root, JS_VARIABLE_DECLARATION).len(), 1);
 }
+
+#[test]
+fn generic_methods_and_functions_keep_their_name_and_body() {
+    let root = parse_clean(
+        "export default {
+    methods: {
+        pick<T extends keyof Row, U = Map<string, T>>(row: Row, key: T): Row[T] { return row[key]; },
+        async each<T extends (item: Item) => void>(callback: T) {},
+        load() {},
+    },
+};
+class Store { get<K extends { id: string }>(key: K): K { return key; } }
+function wrap<T>(value: T): T[] { return [value]; }
+",
+    );
+    let methods: Vec<String> = nodes(&root, JS_METHOD)
+        .iter()
+        .filter_map(crate::query::method_name)
+        .collect();
+    assert_eq!(methods, ["pick", "each", "load", "get"]);
+    assert!(
+        nodes(&root, JS_METHOD)
+            .iter()
+            .all(|method| method.children().any(|child| child.kind() == JS_BLOCK))
+    );
+    assert_eq!(nodes(&root, JS_FUNCTION).len(), 2);
+}
+
+#[test]
+fn incomplete_type_parameters_are_lossless() {
+    for source in [
+        "export default { methods: { pick< } };",
+        "export default { methods: { pick<T extends }, data() {} };",
+        "function wrap<T",
+    ] {
+        let parse = parse(source);
+        assert_eq!(parse.root().text().to_string(), source);
+    }
+}
