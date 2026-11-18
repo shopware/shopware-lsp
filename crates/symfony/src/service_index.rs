@@ -747,7 +747,10 @@ impl ServiceIndex {
         Ok(None)
     }
 
-    /// Definition locations of services configured with `class_name`.
+    /// Definition locations of services configured with `class_name`. The
+    /// compiled container is the fallback: its locations are returned only
+    /// when no configuration file defines such a service, since they
+    /// otherwise repeat a definition that has a source location.
     pub fn get_services_usage_by_class_name(&self, class_name: &str) -> Result<Vec<Location>> {
         let class_name = class_name.strip_prefix('\\').unwrap_or(class_name);
         let mut locations: Vec<Location> = Vec::new();
@@ -757,7 +760,7 @@ impl ServiceIndex {
                 service.class.strip_prefix('\\').unwrap_or(&service.class),
                 class_name,
             ) {
-                return;
+                return false;
             }
             let location = Location {
                 path: service.path.clone(),
@@ -766,14 +769,16 @@ impl ServiceIndex {
             if seen.insert(location.clone()) {
                 locations.push(location);
             }
+            true
         };
+        let mut configured = false;
         for service in self.services.get_all_values_view()?.iter() {
-            append(service);
+            configured |= append(service);
         }
         for service in self.expanded_prototype_services()?.iter() {
-            append(service);
+            configured |= append(service);
         }
-        if self.container_exists() {
+        if !configured && self.container_exists() {
             for service in self.container.get_all_service_definitions() {
                 append(&service);
             }
@@ -784,7 +789,8 @@ impl ServiceIndex {
 
     /// Source definitions for services whose effective autowire setting is
     /// enabled. Parent definitions are followed because child definitions
-    /// inherit unset options.
+    /// inherit unset options. The compiled container is used only when no
+    /// configuration file yields a location.
     pub fn get_autowired_services_usage_by_class_name(
         &self,
         class_name: &str,
@@ -804,19 +810,30 @@ impl ServiceIndex {
         };
         let mut seen_ids: HashSet<&str> =
             HashSet::with_capacity(explicit.len() + prototypes.len() + container.len());
-        let definitions: Vec<&Service> = explicit
+        let mut definitions: Vec<&Service> = explicit
             .iter()
             .chain(prototypes.iter())
-            .chain(container.iter())
             .filter(|service| !service.id.is_empty() && seen_ids.insert(&service.id))
             .collect();
+        // Definitions from here on come from the compiled container.
+        let configured = definitions.len();
+        definitions.extend(
+            container
+                .iter()
+                .filter(|service| !service.id.is_empty() && seen_ids.insert(&service.id)),
+        );
         let class_name = class_name.strip_prefix('\\').unwrap_or(class_name);
         // Parent lookups are only needed when a matching definition leaves
         // autowiring unset.
         let mut by_id: Option<HashMap<String, Vec<&Service>>> = None;
         let mut locations: Vec<Location> = Vec::new();
         let mut seen: HashSet<Location> = HashSet::new();
-        for service in &definitions {
+        for (index, service) in definitions.iter().enumerate() {
+            // The compiled container is the fallback: it repeats what a
+            // configuration file already located.
+            if index >= configured && !locations.is_empty() {
+                break;
+            }
             if !swlsp_textutil::eq_ignore_case(
                 service.class.strip_prefix('\\').unwrap_or(&service.class),
                 class_name,

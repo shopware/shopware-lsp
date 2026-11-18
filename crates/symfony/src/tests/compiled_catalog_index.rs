@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
-use swlsp_indexer::{CancelToken, FileScanner, Indexer, Store, SupplementalPathIndexer};
+use swlsp_indexer::{
+    CancelToken, FileScanner, Indexer, ParsedFile, Store, SupplementalPathIndexer,
+};
 
-use crate::{CompiledCatalogIndex, ServiceIndex};
+use crate::{CompiledCatalogIndex, Location, ServiceIndex};
 
 #[test]
 fn compiled_container_scanner_persistence_and_removal() {
@@ -150,6 +152,71 @@ fn service_index_includes_compiled_container_parameters() {
     assert_eq!(globals[0].name, "app");
     assert_eq!(globals[0].service_id, r"App\Twig\AppVariable");
     assert_eq!(globals[0].path, container_path);
+    index.close().unwrap();
+}
+
+#[test]
+fn class_usages_fall_back_to_the_compiled_container() {
+    let root_dir = tempfile::tempdir().unwrap();
+    let root = root_dir.path().to_str().unwrap();
+    let cache = format!("{root}/var/cache/dev-test");
+    std::fs::create_dir_all(&cache).unwrap();
+    let container_path = format!("{cache}/Shopware_Core_KernelDevDebugContainer.xml");
+    std::fs::write(
+        &container_path,
+        r#"<container>
+<services>
+  <service id="App\Configured" class="App\Configured" autowire="true"/>
+  <service id="App\Configured.inner" class="App\Configured" autowire="true"/>
+  <service id="App\Compiled" class="App\Compiled" autowire="true"/>
+</services>
+</container>"#,
+    )
+    .unwrap();
+    let config = tempfile::tempdir().unwrap();
+    let index = ServiceIndex::new(root, config.path(), None).unwrap();
+    index.reload_compiled_container().unwrap();
+    let services_path = format!("{root}/config/services.xml");
+    index
+        .index(&ParsedFile::new(
+            services_path.clone(),
+            br#"<container>
+<services>
+  <service id="App\Configured" class="App\Configured" autowire="true"/>
+</services>
+</container>"#
+                .to_vec(),
+        ))
+        .unwrap();
+    // A configuration file locates the service: the container adds nothing.
+    let configured = vec![Location {
+        path: services_path,
+        line: 3,
+    }];
+    assert_eq!(
+        index
+            .get_services_usage_by_class_name(r"App\Configured")
+            .unwrap(),
+        configured
+    );
+    assert_eq!(
+        index
+            .get_autowired_services_usage_by_class_name(r"App\Configured")
+            .unwrap(),
+        configured
+    );
+    // Only the container knows this one.
+    for locations in [
+        index
+            .get_services_usage_by_class_name(r"App\Compiled")
+            .unwrap(),
+        index
+            .get_autowired_services_usage_by_class_name(r"App\Compiled")
+            .unwrap(),
+    ] {
+        assert_eq!(locations.len(), 1);
+        assert_eq!(locations[0].path, container_path);
+    }
     index.close().unwrap();
 }
 
