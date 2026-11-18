@@ -199,6 +199,9 @@ Shopware target version, diagnostics, MCP tools, and CLI defaults. A plugin or
 extension may contain its own `.config/shopware-lsp.yaml` for diagnostics below
 that directory. VS Code user and workspace settings remain local overrides.
 
+Files below `vendor`, `vendor-bin` and `node_modules` report no diagnostics
+unless an override with `enabled: true` matches them.
+
 See the [project configuration reference](docs/reference.md#project-configuration)
 and the bundled [JSON schema](crates/projectconfig/schema.json) for every
 option.

@@ -668,3 +668,24 @@ fn small_entities_are_decoded_validated_and_resolved() {
             .contains(r#""shopware":{"targetVersion":"","smallEntities":{"add":["app","swag_shop_finder"],"remove":["country"]}}"#)
     );
 }
+
+#[test]
+fn third_party_paths_are_directories_named_vendor_or_node_modules() {
+    for path in [
+        "vendor/acme/lib/src/A.php",
+        "custom/plugins/Example/vendor/acme/lib/src/A.php",
+        "vendor-bin/tool/vendor/a.php",
+        "src/Resources/app/node_modules/pkg/index.js",
+    ] {
+        assert!(is_third_party_path(path), "{path}");
+    }
+    // A file or a longer directory name is the project's own.
+    for path in [
+        "src/vendor",
+        "src/Vendor/A.php",
+        "src/vendors/a.php",
+        "vendor.php",
+    ] {
+        assert!(!is_third_party_path(path), "{path}");
+    }
+}

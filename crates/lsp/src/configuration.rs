@@ -346,7 +346,9 @@ impl Server {
     }
 
     /// The diagnostic policy for one document: project layer, matching
-    /// nested extension scopes, then editor overrides.
+    /// nested extension scopes, then editor overrides. Third-party code
+    /// (`vendor`, `node_modules`) is off unless an override matching the file
+    /// sets `enabled: true`.
     pub(crate) fn diagnostic_policy(&self, uri: &str) -> DiagnosticPolicy {
         let mut policy = DiagnosticPolicy::default();
         let document_path = swlsp_uriutil::path(uri)
@@ -361,6 +363,14 @@ impl Server {
         {
             workspace_relative = filepath::to_slash(&relative);
         }
+        let third_party = projectconfig::is_third_party_path(&workspace_relative);
+        let mut requested = projectconfig::diagnostics_enabled_by_override(
+            state.project.diagnostics.as_ref(),
+            &workspace_relative,
+        ) || projectconfig::diagnostics_enabled_by_override(
+            state.editor.diagnostics.as_ref(),
+            &workspace_relative,
+        );
         projectconfig::apply_diagnostics(
             &mut policy,
             state.project.diagnostics.as_ref(),
@@ -377,11 +387,10 @@ impl Server {
                 let Ok(relative) = filepath::rel(&scope.root, path) else {
                     continue;
                 };
-                projectconfig::apply_diagnostics(
-                    &mut policy,
-                    Some(diagnostics),
-                    &filepath::to_slash(&relative),
-                );
+                let relative = filepath::to_slash(&relative);
+                requested = requested
+                    || projectconfig::diagnostics_enabled_by_override(Some(diagnostics), &relative);
+                projectconfig::apply_diagnostics(&mut policy, Some(diagnostics), &relative);
             }
         }
         projectconfig::apply_diagnostics(
@@ -389,6 +398,9 @@ impl Server {
             state.editor.diagnostics.as_ref(),
             &workspace_relative,
         );
+        if third_party && !requested {
+            policy.enabled = false;
+        }
         policy
     }
 

@@ -251,6 +251,40 @@ fn nested_configuration_applies_only_inside_its_extension_scope() {
 }
 
 #[test]
+fn third_party_code_is_checked_only_when_an_override_asks_for_it() {
+    let dir = temp_dir();
+    // A general `enabled: true` does not reach third-party code.
+    write_project_configuration(
+        dir.path(),
+        r#"{"version":1,"diagnostics":{"enabled":true}}"#,
+    );
+    let server = Server::new(None, "", "test");
+    server.register_inspection(Arc::new(TestInspection));
+    initialize_with(&server, dir.path(), |_| {}).unwrap();
+    let vendor = dir.path().join("vendor/acme/lib/config.yaml");
+    let nested = dir
+        .path()
+        .join("custom/plugins/Example/vendor/acme/lib/config.yaml");
+    let modules = dir.path().join("node_modules/acme/config.yaml");
+    assert!(diagnostics_for_path(&server, &vendor).is_empty());
+    assert!(diagnostics_for_path(&server, &nested).is_empty());
+    assert!(diagnostics_for_path(&server, &modules).is_empty());
+    assert_eq!(
+        diagnostics_for_path(&server, &dir.path().join("src/Vendor.yaml")).len(),
+        1
+    );
+
+    write_project_configuration(
+        dir.path(),
+        r#"{"version":1,"diagnostics":{"overrides":[{"files":["vendor/acme/**"],"enabled":true}]}}"#,
+    );
+    assert!(server.reload_project_configuration().applied);
+    assert_eq!(diagnostics_for_path(&server, &vendor).len(), 1);
+    assert!(diagnostics_for_path(&server, &nested).is_empty());
+    server.close_all().unwrap();
+}
+
+#[test]
 fn editor_path_override_wins_nested_extension_configuration() {
     let dir = temp_dir();
     let plugin = dir.path().join("custom/plugins/Example");

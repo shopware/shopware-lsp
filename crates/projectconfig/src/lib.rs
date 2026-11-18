@@ -15,8 +15,9 @@ pub use config::{
     EffectiveCheck, EffectiveDiagnostics, EffectiveIndexing, EffectiveMcp, EffectivePhp,
     EffectiveShopware, EffectiveSmallEntities, FEATURE_CATALOG, IndexingConfig, MCP_TOOL_CATALOG,
     McpConfig, PROJECT_RELATIVE_PATH, Partial, PatternError, PhpConfig, SCHEMA, Severity,
-    ShopwareConfig, SmallEntitiesConfig, apply_diagnostics, decode, default_effective, load, path,
-    resolve, valid_severity, validate,
+    ShopwareConfig, SmallEntitiesConfig, apply_diagnostics, decode, default_effective,
+    diagnostics_enabled_by_override, is_third_party_path, load, path, resolve, valid_severity,
+    validate,
 };
 pub use scoped::{Scope, contains, load_scopes, scope_errors, validate_nested};
 pub use yaml::{DecodeErrors, DecodeProblem, SyntaxError};

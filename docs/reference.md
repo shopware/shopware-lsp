@@ -1774,6 +1774,19 @@ check:
   failOn: error
 ```
 
+Third-party code is not checked: a file below a `vendor`, `vendor-bin` or
+`node_modules` directory, at any depth, reports no diagnostics, because its
+findings are not the project's to fix. The files are still indexed. An
+override that matches the file and sets `enabled: true` checks it again, for
+example a package developed in place:
+
+```yaml
+diagnostics:
+  overrides:
+    - files: [vendor/acme/**]
+      enabled: true
+```
+
 Version-gated rules use the installed Shopware version (or
 `shopware.targetVersion`). For an extension that states its supported range in
 `composer.json`, such as `"shopware/core": "~6.6.0 || ~6.7.0"`, a rule whose

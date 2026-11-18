@@ -1174,6 +1174,46 @@ pub fn apply_diagnostics(
     }
 }
 
+/// Directories of third-party code: findings there are not the project's
+/// to fix, so diagnostics are off below them unless an override turns them
+/// on.
+const THIRD_PARTY_DIRECTORIES: &[&str] = &["vendor", "vendor-bin", "node_modules"];
+
+/// Whether `relative_path` (slash-normalized) lies in a third-party
+/// directory at any depth, such as `vendor/acme/lib/src/A.php` or
+/// `custom/plugins/Example/vendor/acme/lib/src/A.php`.
+pub fn is_third_party_path(relative_path: &str) -> bool {
+    let mut segments = relative_path.split('/').peekable();
+    while let Some(segment) = segments.next() {
+        // The last segment is the file itself.
+        if segments.peek().is_some() && THIRD_PARTY_DIRECTORIES.contains(&segment) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Whether an override of this layer that matches `relative_path` sets
+/// `enabled: true`: the explicit request to check a file diagnostics skip by
+/// default.
+pub fn diagnostics_enabled_by_override(
+    value: Option<&DiagnosticsConfig>,
+    relative_path: &str,
+) -> bool {
+    let Some(value) = value else {
+        return false;
+    };
+    let relative_path =
+        filepath::to_slash(relative_path.strip_prefix("./").unwrap_or(relative_path));
+    value.overrides.iter().any(|entry| {
+        entry.enabled == Some(true)
+            && entry
+                .files
+                .iter()
+                .any(|pattern| swlsp_pathmatch::ant(pattern, &relative_path))
+    })
+}
+
 fn apply_diagnostic_values(
     policy: &mut DiagnosticPolicy,
     enabled: Option<bool>,
