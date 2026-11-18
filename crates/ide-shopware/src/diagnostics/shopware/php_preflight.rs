@@ -429,7 +429,7 @@ impl Run<'_> {
     }
 
     /// The HTTP methods a route attribute names, in upper case.
-    fn route_methods(&self, route: &SyntaxNode) -> Vec<String> {
+    pub(super) fn route_methods(&self, route: &SyntaxNode) -> Vec<String> {
         let Some(methods) =
             local_call_argument(route, "methods", 6).map(|value| unwrap_php_parentheses(&value))
         else {

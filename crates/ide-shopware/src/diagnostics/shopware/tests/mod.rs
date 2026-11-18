@@ -5,6 +5,7 @@ mod dal_definition;
 mod dal_entity;
 mod decoration;
 mod entity_snapshot;
+mod php_api_contract;
 mod php_local;
 mod php_preflight;
 mod php_review;

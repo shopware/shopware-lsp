@@ -647,6 +647,41 @@ export function registerScaffoldCommands(
   ));
 
   context.subscriptions.push(vscode.commands.registerCommand(
+    'shopware.generateAdminApiService',
+    async (controllerUri: string, className?: string) => {
+      try {
+        const languageClient = clientState.clientForUri(
+          vscode.Uri.parse(controllerUri),
+        );
+        if (!languageClient) {
+          throw new Error('Shopware LSP is not running');
+        }
+        const result = await languageClient.sendRequest<ShopwareScaffoldCreation>(
+          'shopware/admin/api-service/create',
+          {uri: controllerUri, className: className ?? ''},
+        );
+        const edit = await languageClient.protocol2CodeConverter.asWorkspaceEdit(
+          result.edit,
+        );
+        if (!await vscode.workspace.applyEdit(edit)) {
+          throw new Error('Could not create the API service');
+        }
+        const document = await vscode.workspace.openTextDocument(
+          vscode.Uri.parse(result.primaryFileUri),
+        );
+        await vscode.window.showTextDocument(document, {
+          preview: false,
+          preserveFocus: false,
+        });
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `Failed to generate the Administration API service: ${error}`,
+        );
+      }
+    },
+  ));
+
+  context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.copySnippetUsage',
     async (key: string) => {
       const target = await vscode.window.showQuickPick([

@@ -76,6 +76,7 @@
     "shopware.createSnippet",
     "shopware.createSnippetFromSelection",
     "shopware.editor.insertSnippetAtPosition",
+    "shopware.generateAdminApiService",
     "shopware.insertSnippet",
     "shopware.openReferences",
     "shopware.symfony.createCompilerPass",
@@ -189,6 +190,7 @@
     "symfony/web-test"
   ],
   "serverCommands": [
+    "shopware/admin/api-service/create",
     "shopware/admin/twig/override",
     "shopware/cache/clear",
     "shopware/cache/list",

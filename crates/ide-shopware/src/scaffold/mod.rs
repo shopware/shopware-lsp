@@ -17,7 +17,7 @@ use swlsp_shopware_dal::Index as DalIndex;
 use swlsp_shopware_entityschema::IndexedCatalog;
 
 mod entity_schema;
-mod paths;
+pub(crate) mod paths;
 mod shopware;
 mod symfony;
 

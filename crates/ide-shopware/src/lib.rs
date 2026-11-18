@@ -1,6 +1,7 @@
 //! The Shopware domain: the data abstraction layer, snippets, feature
 //! flags, system configuration, themes, extensions and app scripts.
 
+pub mod api_service;
 pub mod codeaction;
 pub mod commands;
 pub mod completion;
@@ -37,6 +38,7 @@ fn register(server: &Registrar<'_>, s: &Services) {
         s.snippets.clone(),
     ))));
     server.action(Arc::new(codeaction::SnippetCopyCodeActionProvider::new()));
+
     let edit_host: Arc<dyn commands::EditHost> = Arc::new(server.server.downgrade());
     server.command(Arc::new(commands::SnippetCommandProvider::new(
         Some(s.snippets.clone()),
@@ -45,6 +47,13 @@ fn register(server: &Registrar<'_>, s: &Services) {
     server.command(Arc::new(commands::ExtensionCommandProvider::new(
         s.extensions.clone(),
     )));
+    let api_services = Arc::new(api_service::ApiServiceProvider::new(
+        s.php(),
+        s.extensions.clone(),
+        Some(Arc::new(server.server.downgrade())),
+    ));
+    server.action(api_services.clone());
+    server.command(api_services);
     let mut scaffolds = crate::scaffold::Provider::new(
         &s.root,
         s.php(),

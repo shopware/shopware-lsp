@@ -1432,6 +1432,40 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
   block names in registry lookups and block-slot declarations
 - Code action to add missing required props with type-appropriate defaults
 
+### Administration API Services
+
+The refactor action "Generate Administration API service" on the class of a
+PHP controller writes a typed TypeScript service for its Admin API actions:
+the routes of the `api` scope below `/api/`. The service is created in the
+Administration of the bundle that owns the controller (in the directory the
+bundle already keeps services in, else `src/service`), registers itself with
+`Shopware.Application.addServiceProvider`, declares itself on the
+`ServiceContainer` type and is imported from `main.ts` or `main.js`. For a
+controller of Shopware itself the service goes to
+`src/core/service/api` of the Administration. An existing service file is
+never replaced. The action needs a client that runs
+`shopware.generateAdminApiService`; other clients call
+`shopware/admin/api-service/create` (see
+[custom commands](custom-commands.md)).
+
+Each action becomes one method. Its types come from the controller alone:
+
+| Source in PHP | Generated type |
+|---|---|
+| Path placeholders | One `string` parameter each |
+| `#[MapRequestPayload]`, `#[MapQueryString]` class | Its constructor parameters and public properties, named after the class |
+| `$request->request->get('key')`, `$data->getInt('key')` and other reads of a `Request`, `RequestDataBag` or `QueryDataBag` | One key each, typed by the getter or a cast. Required unless read with a default, tested with `has()` or read as a boolean |
+| A request or bag passed on to another call, a key that is not a literal, a `Criteria` parameter | An open object: `Record<string, unknown>` or an index signature |
+| `new JsonResponse($data)`, `$this->json($data)` | The inferred type of `$data`: array shapes, lists, structs, backed enums |
+| An empty `Response`, `JsonResponse(null)` | `void` |
+| `BinaryFileResponse`, `StreamedResponse` | `Blob`, requested with `responseType: 'blob'` |
+| A response with a status of 400 or above | Left out: the request is rejected |
+| Anything else | `unknown` |
+
+Reads made in a service the request is handed to are not followed. A method
+whose name `ApiService` uses already gets the HTTP method appended
+(`deletePost`).
+
 ### Diagnostics
 
 | Diagnostic | Severity | File Types |

@@ -206,6 +206,15 @@ pub fn client_commands() -> Vec<ClientCommand> {
             ),
         ),
         command(
+            "shopware.generateAdminApiService",
+            "Generate a typed Administration API service for the controller",
+            "codeAction",
+            fields!(
+                field("fileUri", "Controller file", "uri", true),
+                field("className", "Controller class", "string", true),
+            ),
+        ),
+        command(
             "shopware.symfony.generateService",
             "Generate a Symfony service definition",
             "codeAction",

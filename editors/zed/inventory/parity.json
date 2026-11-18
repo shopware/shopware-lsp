@@ -95,6 +95,9 @@
     "shopware.createSnippetFromSelection": {
       "gap": "worth adding; needs the selection plus a snippet-file picker"
     },
+    "shopware.generateAdminApiService": {
+      "gap": "worth adding; the server command shopware/admin/api-service/create answers with the edit"
+    },
     "shopware.editor.insertSnippetAtPosition": {
       "gap": "worth adding; needs a picker over existing snippets"
     },

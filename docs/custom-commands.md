@@ -109,6 +109,15 @@ document snapshot; no custom request is required.
 * **Action:** Builds the edit that creates or updates a Twig template in the selected extension so that it extends the given block, creating the file if necessary. The server writes nothing itself; the client must apply the returned edit.
 * **Returns:** on success `{ "uri": string, "line": number, "edit": WorkspaceEdit }`, where `uri` and `line` locate the block once the edit has been applied; otherwise an error object with `code` and `message`.
 
+### `shopware/admin/api-service/create`
+* **Parameters:**
+  ```json
+  { "uri": string, "className": string }
+  ```
+  `uri` is the PHP controller; `className` selects one class of the file and may be empty.
+* **Action:** Builds the edit that creates a typed TypeScript API service for the Admin API actions of the controller, in the Administration of the bundle that owns it, and imports the service from the bundle's `main.ts` or `main.js` (creating `main.ts` when there is neither). The edit uses the unsaved content of open documents. An existing service file is never replaced: the command fails. The server writes nothing itself; the client must apply the returned edit.
+* **Returns:** `{ "edit": WorkspaceEdit, "primaryFileUri": string }`
+
 ## Notifications
 
 ### `$/progress` (indexing)

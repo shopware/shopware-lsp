@@ -473,7 +473,7 @@ impl Run<'_> {
 
     /// The argument `name` of a route when it is one known string, with
     /// its expression.
-    fn route_argument(
+    pub(super) fn route_argument(
         &self,
         route: &SyntaxNode,
         name: &str,
@@ -485,7 +485,7 @@ impl Run<'_> {
     }
 
     /// The scopes a route lists in its `_routeScope` default.
-    fn route_scopes(&self, route: &SyntaxNode) -> Vec<String> {
+    pub(super) fn route_scopes(&self, route: &SyntaxNode) -> Vec<String> {
         self.route_scope_values(route)
             .iter()
             .flat_map(|value| self.expression_strings(Some(value)))
