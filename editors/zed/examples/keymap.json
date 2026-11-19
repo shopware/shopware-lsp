@@ -30,6 +30,10 @@
       "alt-shift-g": [
         "task::Spawn",
         { "task_name": "Shopware: show service definition" }
+      ],
+      "alt-shift-a": [
+        "task::Spawn",
+        { "task_name": "Shopware: create admin API service" }
       ]
     }
   },
