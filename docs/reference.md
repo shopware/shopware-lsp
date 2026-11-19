@@ -1452,9 +1452,10 @@ actions to Administration API service", and the head of each action that the
 service does not request offers "Add … to Administration API service". Both
 add methods to the end of the service class and the types they need above
 it; what the file holds is never replaced. The service is the file the
-generator would write, or else the TypeScript file of that Administration
-that requests the most routes of the controller. A JavaScript service is not
-extended.
+generator would write (or the `.js` file of that name), or else the
+TypeScript or JavaScript `*.service.*` file of that Administration that
+requests the most routes of the controller, TypeScript first. A JavaScript service gets the
+same methods without types.
 
 The actions need a client that runs `shopware.generateAdminApiService`;
 other clients call `shopware/admin/api-service/generate` (see

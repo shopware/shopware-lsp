@@ -146,7 +146,14 @@ impl ServiceNames {
 pub(crate) fn service_source(controller: &ApiController, flavour: Flavour) -> String {
     let names = ServiceNames::of(controller);
     let mut types = Types::default();
-    let methods = methods_source(&controller.actions, flavour, &mut types, &mut Vec::new()).source;
+    let methods = methods_source(
+        &controller.actions,
+        flavour,
+        Style::TYPESCRIPT,
+        &mut types,
+        &mut Vec::new(),
+    )
+    .source;
     let mut source = String::new();
     match flavour {
         Flavour::Core => source.push_str(
@@ -187,6 +194,23 @@ pub(crate) fn service_source(controller: &ApiController, flavour: Flavour) -> St
 }
 
 /// Generated methods and the names they got.
+/// How the methods of a service are written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Style {
+    /// TypeScript: typed parameters and a typed answer. JavaScript
+    /// otherwise.
+    pub typed: bool,
+    /// Whether `ApiService` is in scope, for `ApiService.handleResponse`.
+    pub handle_response: bool,
+}
+
+impl Style {
+    pub(crate) const TYPESCRIPT: Style = Style {
+        typed: true,
+        handle_response: true,
+    };
+}
+
 pub(crate) struct Methods {
     pub source: String,
     pub names: Vec<String>,
@@ -197,6 +221,7 @@ pub(crate) struct Methods {
 pub(crate) fn methods_source<'a>(
     actions: impl IntoIterator<Item = &'a ApiAction>,
     flavour: Flavour,
+    style: Style,
     types: &mut Types,
     used: &mut Vec<String>,
 ) -> Methods {
@@ -227,52 +252,76 @@ pub(crate) fn methods_source<'a>(
         }
         methods
             .source
-            .push_str(&method_source(action, &name, types));
+            .push_str(&method_source(action, &name, style, types));
         methods.names.push(name);
     }
     methods
 }
 
-fn method_source(action: &ApiAction, name: &str, types: &mut Types) -> String {
+fn method_source(action: &ApiAction, name: &str, style: Style, types: &mut Types) -> String {
     let type_prefix = uppercase_first(name);
+    // ` : Type` in TypeScript, nothing in JavaScript.
+    let mut annotation = |ty: &mut dyn FnMut(&mut Types) -> String| {
+        if style.typed {
+            format!(": {}", ty(types))
+        } else {
+            String::new()
+        }
+    };
     let mut parameters: Vec<String> = action
         .path_parameters
         .iter()
-        .map(|parameter| format!("{parameter}: string"))
+        .map(|parameter| format!("{parameter}{}", annotation(&mut |_| "string".to_owned())))
         .collect();
     let has_body = matches!(action.verb.as_str(), "post" | "put" | "patch");
     let body = action.body.as_ref().filter(|_| has_body);
     if let Some(body) = body {
-        let ty = types.name(
-            body,
-            action.body_class.as_deref(),
-            &format!("{type_prefix}Payload"),
-        );
-        parameters.push(format!("payload: {ty}"));
+        let ty = annotation(&mut |types| {
+            types.name(
+                body,
+                action.body_class.as_deref(),
+                &format!("{type_prefix}Payload"),
+            )
+        });
+        parameters.push(format!("payload{ty}"));
     }
     if let Some(query) = &action.query {
-        let ty = types.name(
-            query,
-            action.query_class.as_deref(),
-            &format!("{type_prefix}Query"),
-        );
+        let ty = annotation(&mut |types| {
+            types.name(
+                query,
+                action.query_class.as_deref(),
+                &format!("{type_prefix}Query"),
+            )
+        });
         // Every key may be left out: then so may the whole object.
         let optional = match query {
             Shape::Object { fields, .. } => fields.iter().all(|field| field.optional),
             _ => true,
         };
         parameters.push(if optional {
-            format!("params: {ty} = {{}}")
+            format!("params{ty} = {{}}")
         } else {
-            format!("params: {ty}")
+            format!("params{ty}")
         });
     }
-    parameters.push("additionalHeaders: Record<string, string> = {}".to_owned());
+    parameters.push(format!(
+        "additionalHeaders{} = {{}}",
+        annotation(&mut |_| "Record<string, string>".to_owned())
+    ));
     let file = action.response == Shape::Blob;
     let response = if action.response == Shape::Void {
         "void".to_owned()
     } else {
-        types.name(&action.response, None, &format!("{type_prefix}Response"))
+        annotation(&mut |types| {
+            types.name(&action.response, None, &format!("{type_prefix}Response"))
+        })
+        .trim_start_matches(": ")
+        .to_owned()
+    };
+    let (visibility, returns) = if style.typed {
+        ("public ", format!(": Promise<{response}>"))
+    } else {
+        ("", String::new())
     };
 
     let mut config = Vec::new();
@@ -325,30 +374,39 @@ fn method_source(action: &ApiAction, name: &str, types: &mut Types) -> String {
         action.path
     );
     let signature = format!(
-        "    public async {name}({}): Promise<{response}> {{\n",
+        "    {visibility}async {name}({}){returns} {{\n",
         parameters.join(", ")
     );
     if signature.len() > MAX_LINE {
-        source.push_str(&format!("    public async {name}(\n"));
+        source.push_str(&format!("    {visibility}async {name}(\n"));
         for parameter in &parameters {
             source.push_str(&format!("        {parameter},\n"));
         }
-        source.push_str(&format!("    ): Promise<{response}> {{\n"));
+        source.push_str(&format!("    ){returns} {{\n"));
     } else {
         source.push_str(&signature);
     }
-    match &action.response {
-        Shape::Void => source.push_str(&format!("        await {call};\n")),
-        Shape::Blob => source.push_str(&format!(
-            "        const response = await {call};\n\n        return response.data as Blob;\n"
+    let cast = |ty: &str| {
+        if style.typed {
+            format!(" as {ty}")
+        } else {
+            String::new()
+        }
+    };
+    let answer = match &action.response {
+        Shape::Void => None,
+        Shape::Blob => Some(format!("response.data{}", cast("Blob"))),
+        _ if !style.handle_response => Some("response.data".to_owned()),
+        Shape::Unknown => Some("ApiService.handleResponse(response)".to_owned()),
+        _ => Some(format!(
+            "ApiService.handleResponse(response){}",
+            cast(&response)
         )),
-        Shape::Unknown => source.push_str(&format!(
-            "        const response = await {call};\n\n        \
-             return ApiService.handleResponse(response);\n"
-        )),
-        _ => source.push_str(&format!(
-            "        const response = await {call};\n\n        \
-             return ApiService.handleResponse(response) as {response};\n"
+    };
+    match answer {
+        None => source.push_str(&format!("        await {call};\n")),
+        Some(answer) => source.push_str(&format!(
+            "        const response = await {call};\n\n        return {answer};\n"
         )),
     }
     source.push_str("    }\n");

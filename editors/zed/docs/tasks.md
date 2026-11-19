@@ -105,7 +105,7 @@ output belongs in a services config file, not the PHP file it was generated
 from. `--format` takes `yaml`, `xml`, `fluent` or `php-array`.
 
 `admin-api-service` runs on a PHP controller. Without a service it creates
-one; otherwise it adds the actions the TypeScript service does not request
+one; otherwise it adds the actions the existing service does not request
 yet. With the cursor on the line of an action method's name it adds only that
 action, as the VS Code code action there does; `--method` names one
 explicitly, and `--method ''` forces every missing action. Use `--print` to

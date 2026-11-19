@@ -34,7 +34,7 @@ use swlsp_rewrite::{Builder, CreateFilePlan, DocumentPlan, WorkspacePlan};
 use swlsp_syntax::{SyntaxNode, SyntaxNodeExt};
 use swlsp_uriutil::file_uri;
 
-use super::generate::{Flavour, ServiceNames, Types, methods_source, service_source};
+use super::generate::{Flavour, ServiceNames, Style, Types, methods_source, service_source};
 use crate::diagnostics::{ApiAction, ApiController, api_controller};
 use crate::scaffold::paths::{self, Stat};
 
@@ -225,10 +225,16 @@ impl ApiServiceProvider {
                 .unwrap_or_else(|| paths::join(&[&source_directory, "service"])),
         };
         let path = paths::join(&[&directory, &names.file_name()]);
-        let existing = if matches!(paths::stat(&path), Stat::Missing) {
-            self.requesting_service(controller, &source_directory)?
-        } else {
-            Some(path.clone())
+        // The file the generator writes, the JavaScript file of that name,
+        // or the service that sends the requests.
+        let javascript = format!("{}.js", path.strip_suffix(".ts").unwrap_or(&path));
+        let existing = [&path, &javascript]
+            .into_iter()
+            .find(|candidate| !matches!(paths::stat(candidate), Stat::Missing))
+            .cloned();
+        let existing = match existing {
+            Some(existing) => Some(existing),
+            None => self.requesting_service(controller, &source_directory)?,
         };
         let existing = match existing {
             Some(existing) => {
@@ -244,7 +250,7 @@ impl ApiServiceProvider {
         }))
     }
 
-    /// The TypeScript file of the Administration in `source_directory` that
+    /// The service file of the Administration in `source_directory` that
     /// requests most of the actions of `controller`.
     fn requesting_service(
         &self,
@@ -261,7 +267,12 @@ impl ApiServiceProvider {
                 .into_iter()
                 .map(|request| request.file)
                 .filter(|file| {
-                    file.ends_with(".ts") && paths::rel_within(source_directory, file).is_some()
+                    // A component or a helper that sends a request is no
+                    // place for the methods of a service.
+                    let name = file.rsplit('/').next().unwrap_or(file);
+                    name.contains(".service.")
+                        && (name.ends_with(".ts") || name.ends_with(".js"))
+                        && paths::rel_within(source_directory, file).is_some()
                 })
                 .collect();
             requesting.dedup();
@@ -269,11 +280,17 @@ impl ApiServiceProvider {
                 *files.entry(file).or_default() += 1;
             }
         }
-        // The first of the files that request the most actions.
-        let most = files.values().copied().max();
+        // The first of the files that request the most actions, TypeScript
+        // before JavaScript.
         Ok(files
             .into_iter()
-            .find(|(_, count)| Some(*count) == most)
+            .max_by_key(|(file, count)| {
+                (
+                    *count,
+                    file.ends_with(".ts"),
+                    std::cmp::Reverse(file.clone()),
+                )
+            })
             .map(|(file, _)| file))
     }
 
@@ -319,6 +336,7 @@ impl ApiServiceProvider {
             let methods = methods_source(
                 &controller.actions,
                 target.flavour,
+                Style::TYPESCRIPT,
                 &mut types,
                 &mut Vec::new(),
             );
@@ -517,6 +535,26 @@ fn is_class(node: &SyntaxNode) -> bool {
             .any(|token| token.kind() == TK_KEYWORD && token.text() == "class")
 }
 
+/// Whether the file names `ApiService` on its own, as an import or a
+/// constant does, and not only as `Shopware.Classes.ApiService`.
+fn api_service_in_scope(root: &SyntaxNode) -> bool {
+    let mut previous: Option<String> = None;
+    for token in root
+        .descendants_with_tokens()
+        .filter_map(|element| element.into_token())
+        .filter(|token| !token.kind().is_trivia())
+    {
+        if token.kind() == TK_IDENTIFIER
+            && token.text() == "ApiService"
+            && previous.as_deref() != Some(".")
+        {
+            return true;
+        }
+        previous = Some(token.text().to_owned());
+    }
+    false
+}
+
 /// Adds one method per action to the class of `service` that sends the
 /// requests, and the types they need before it. Answers with the names of
 /// the methods.
@@ -562,8 +600,19 @@ fn add_methods(
         .filter(|token| token.kind() == TK_IDENTIFIER)
         .map(|token| token.text().to_owned())
         .collect();
+    let style = Style {
+        typed: !document.uri.ends_with(".js"),
+        // A JavaScript service need not have the class at hand.
+        handle_response: api_service_in_scope(&root),
+    };
     let mut types = Types::with_taken(taken);
-    let methods = methods_source(actions.iter().copied(), flavour, &mut types, &mut used);
+    let methods = methods_source(
+        actions.iter().copied(),
+        flavour,
+        style,
+        &mut types,
+        &mut used,
+    );
     if methods.names.is_empty() {
         return Err("no action can be named as a method".into());
     }

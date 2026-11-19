@@ -386,6 +386,102 @@ fn missing_actions_are_added_to_the_service_that_requests_the_others() {
     );
 }
 
+/// The edits of the one changed document, by line.
+fn extended(project: &Project) -> (String, Vec<(u32, String)>) {
+    let uri = swlsp_uriutil::file_uri(&project.controller);
+    let response = project
+        .provider
+        .generate(&Context::background(), Some(&json!({ "uri": uri })))
+        .unwrap();
+    assert!(!response.created);
+    let mut edits = response.edit.unwrap().document_changes[0].edits.clone();
+    edits.sort_by_key(|edit| edit.range.start.line);
+    (
+        response.primary_file_uri,
+        edits
+            .into_iter()
+            .map(|edit| (edit.range.start.line, edit.new_text))
+            .collect(),
+    )
+}
+
+#[test]
+fn a_javascript_service_gets_untyped_methods() {
+    let service = SERVICE.replace("type StatusResponse = string;\n\n", "");
+    let project = project_of(TWO_ACTIONS, &[("api/swag.service.js", &service)]);
+    let (file, edits) = extended(&project);
+    assert!(file.ends_with("/api/swag.service.js"));
+    assert_eq!(
+        edits,
+        [(
+            15,
+            "
+    /**
+     * GET /api/_action/swag-example/status/{id}
+     */
+    async status(id, additionalHeaders = {}) {
+        const response = await this.httpClient.get(`/_action/swag-example/status/${id}`, {
+            headers: this.getBasicHeaders(additionalHeaders),
+        });
+
+        return ApiService.handleResponse(response);
+    }
+"
+            .to_owned()
+        )]
+    );
+    assert_eq!(
+        titles_at(&project, TWO_ACTIONS, "SyncController"),
+        ["Shopware: Add 1 missing action to Administration API service swag.service.js"]
+    );
+}
+
+#[test]
+fn a_javascript_service_without_the_class_at_hand_answers_the_data() {
+    let service = SERVICE
+        .replace("type StatusResponse = string;\n\n", "")
+        .replace("const { ApiService } = Shopware.Classes;\n\n", "")
+        .replace("extends ApiService", "extends Shopware.Classes.ApiService");
+    // The JavaScript file of the name the generator would write.
+    let project = project_of(TWO_ACTIONS, &[("service/sync.api.service.js", &service)]);
+    let (file, edits) = extended(&project);
+    assert!(file.ends_with("/service/sync.api.service.js"));
+    assert_eq!(edits.len(), 1);
+    assert!(
+        edits[0]
+            .1
+            .ends_with("        return response.data;\n    }\n"),
+        "{}",
+        edits[0].1
+    );
+}
+
+#[test]
+fn the_typescript_service_wins_over_a_javascript_one() {
+    let javascript = SERVICE.replace("type StatusResponse = string;\n\n", "");
+    let project = project_of(
+        TWO_ACTIONS,
+        &[
+            ("api/swag.service.js", javascript.as_str()),
+            ("api/typed.service.ts", SERVICE),
+        ],
+    );
+    assert!(extended(&project).0.ends_with("/api/typed.service.ts"));
+}
+
+#[test]
+fn a_file_that_is_no_service_is_not_extended() {
+    let javascript = SERVICE.replace("type StatusResponse = string;\n\n", "");
+    let project = project_of(TWO_ACTIONS, &[("module/swag-generator.js", &javascript)]);
+    let uri = swlsp_uriutil::file_uri(&project.controller);
+    let response = project
+        .provider
+        .generate(&Context::background(), Some(&json!({ "uri": uri })))
+        .unwrap();
+    assert!(response.created);
+    assert!(response.primary_file_uri.ends_with("/sync.api.service.ts"));
+}
+
 #[test]
 fn a_service_without_a_class_is_not_extended() {
     let project = project(&[("service/sync.api.service.ts", "")]);
