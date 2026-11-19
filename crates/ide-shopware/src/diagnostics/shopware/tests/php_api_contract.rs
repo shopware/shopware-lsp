@@ -6,7 +6,7 @@ use super::php_semantic::php_index_with;
 use crate::api_service::generate::{Flavour, service_source};
 use crate::diagnostics::shopware::{ApiController, api_controller};
 
-const FRAMEWORK: &[(&str, &str)] = &[
+pub(super) const FRAMEWORK: &[(&str, &str)] = &[
     (
         "/project/vendor/Routing.php",
         r"<?php
@@ -82,7 +82,7 @@ fn controller(source: &str) -> ApiController {
     api_controller(&semantic, &snapshot, &class).expect("an API controller")
 }
 
-const HEADER: &str = r"<?php
+pub(super) const HEADER: &str = r"<?php
 namespace Swag\Example\Controller;
 
 use Shopware\Core\Framework\Routing\ApiRouteScope;

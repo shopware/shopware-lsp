@@ -7,6 +7,7 @@
 //! (`php_semantic`); `php_conventions`, `php_http` and `php_filesystem` hold
 //! its rules by subject.
 
+mod admin_api_contract;
 mod app_layout;
 mod app_manifest;
 mod app_script;
@@ -39,6 +40,7 @@ mod util;
 #[cfg(test)]
 mod tests;
 
+pub use admin_api_contract::{ADMIN_API_CONTRACT_CODES, AdminApiContractAnalyzer};
 pub use app_layout::{AppLayoutAnalyzer, AppLocator};
 pub use app_manifest::AppManifestAnalyzer;
 pub use app_script::AppScriptAnalyzer;

@@ -1475,6 +1475,27 @@ Each action becomes one method. Its types come from the controller alone:
 | A response with a status of 400 or above | Left out: the request is rejected |
 | Anything else | `unknown` |
 
+A payload or query mapped with a resolver of its own
+(`#[MapRequestPayload(resolver: …)]`) is an open object: the request need not
+look like the class.
+
+The same reading of the controller checks the requests the Administration
+sends (inspection `shopware.admin.api_contract`). For
+`this.httpClient.post('/_action/…', payload, { params })` whose route one
+controller method answers:
+
+| Code | Reported |
+|---|---|
+| `admin.api.request-unknown-key` | A key of the payload or of `params` the controller does not read |
+| `admin.api.request-missing-key` | A key the controller reads without a default that a request with known keys leaves out |
+| `admin.api.response-type` | A member of the declared `Promise<Name>` type the controller does not answer, or answers as another of `string`, `number`, `boolean` |
+
+The keys of a request are known for an object literal, a constant that holds
+one and a parameter typed with a `type` or `interface` of the same file. A
+controller that takes any key (see the open object above) is not checked.
+Quick fixes remove a member from a declared type and correct a primitive
+type. The controller is read as saved on disk.
+
 Reads made in a service the request is handed to are not followed. A method
 whose name `ApiService` uses already gets the HTTP method appended
 (`deletePost`).

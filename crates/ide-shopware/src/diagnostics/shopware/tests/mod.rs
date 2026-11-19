@@ -1,5 +1,6 @@
 //! Tests of the Shopware analyzer group.
 
+mod admin_api_contract;
 mod app_script;
 mod dal_definition;
 mod dal_entity;

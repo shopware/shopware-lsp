@@ -51,6 +51,7 @@ pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
     add(new_shopware_routes(php()));
     add(new_shopware_migration_step(php()));
     add(new_storefront_javascript(s.supported_versions.clone()));
+    add(new_admin_api_contract(Some(s.routes.clone()), php()));
     add(analyzer(
         diagnostics::ShopwareDecorationAnalyzer::new(php()),
     ));

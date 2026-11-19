@@ -698,6 +698,35 @@ pub(crate) const MIGRATION: &[RuleHelp] = &[
 
 pub(crate) const PROJECT: &[RuleHelp] = &[
     help(
+        "admin.api.request-unknown-key",
+        "Remove the key from the request, or read it in the controller. In a declared \
+         payload type a quick fix removes the member.",
+        "Checked for an object literal, a constant that holds one and a parameter typed \
+         with a type or interface of the same file. A controller that passes its request \
+         or data bag on, reads a key that is not a literal, takes a Criteria or maps the \
+         payload with a resolver of its own takes any key and is not checked. The \
+         controller is read as saved on disk.",
+        "",
+    ),
+    help(
+        "admin.api.request-missing-key",
+        "Send the key, or read it in the controller with a default value or after has().",
+        "Only reported when every key of the request is known: an object literal without \
+         a spread or a computed key, or a declared type. A key the controller reads with \
+         a default, tests with has() or reads as a boolean may be left out.",
+        "",
+    ),
+    help(
+        "admin.api.response-type",
+        "Change the declared type to what the controller answers; a quick fix removes a \
+         member the controller does not answer or corrects string, number and boolean.",
+        "Checked for a method that sends one request and returns Promise<Name>, where \
+         Name is a type or interface of the same file with members. Only the members the \
+         type declares are compared: a key the controller answers and the type leaves \
+         out is not reported. A controller with several different answers is not checked.",
+        "",
+    ),
+    help(
         "storefront.plugin-system.import",
         "Use window.PluginManager and window.PluginBaseClass; a quick fix replaces the import.",
         "Reported from Shopware 6.6 on. An import that does not bind a default name is \

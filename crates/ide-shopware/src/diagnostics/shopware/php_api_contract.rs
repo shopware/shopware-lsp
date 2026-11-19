@@ -61,7 +61,8 @@ pub(crate) struct ApiController {
     pub actions: Vec<ApiAction>,
 }
 
-/// One action: a route of the `api` scope below `/api/`.
+/// One action: a route of the `api` or `administration` scope below
+/// `/api/`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ApiAction {
     /// The PHP method.
@@ -180,7 +181,9 @@ impl Run<'_> {
                 .iter()
                 .chain(std::iter::once(&route))
                 .flat_map(|route| self.route_scopes(route))
-                .any(|scope| scope == "api");
+                // The Administration's own scope is answered below `/api/`
+                // as well.
+                .any(|scope| scope == "api" || scope == "administration");
             let Some((_, path)) = self.route_argument(&route, "path", 0) else {
                 continue;
             };
@@ -290,14 +293,33 @@ impl Run<'_> {
                 }
                 _ => written == short_php_name(class),
             };
+            // A resolver of its own builds the object from a request
+            // that need not look like it.
+            let resolved = |attribute: &str, position: usize| {
+                phpquery::attributes(&node)
+                    .iter()
+                    .filter(|node| short_php_name(&phpquery::attribute_name(node)) == attribute)
+                    .any(|node| local_call_argument(node, "resolver", position).is_some())
+            };
+            let mapped = |custom: bool, ty: &Type| {
+                if custom {
+                    (
+                        Shape::Object {
+                            fields: Vec::new(),
+                            open: true,
+                        },
+                        None,
+                    )
+                } else {
+                    (self.payload_shape(ty), class_name(ty))
+                }
+            };
             if has("MapRequestPayload") {
-                mapped_body = ty
-                    .as_ref()
-                    .map(|ty| (self.payload_shape(ty), class_name(ty)));
+                let custom = resolved("MapRequestPayload", 3);
+                mapped_body = ty.as_ref().map(|ty| mapped(custom, ty));
             } else if has("MapQueryString") {
-                mapped_query = ty
-                    .as_ref()
-                    .map(|ty| (self.payload_shape(ty), class_name(ty)));
+                let custom = resolved("MapQueryString", 2);
+                mapped_query = ty.as_ref().map(|ty| mapped(custom, ty));
             } else if has("MapQueryParameter") {
                 let shape = ty.as_ref().map_or(Shape::Unknown, |ty| {
                     self.type_shape(ty, false, &mut Vec::new())

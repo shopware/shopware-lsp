@@ -149,6 +149,33 @@ Languages: scss. Domain: `scss`.
 - Fix: Define the variable, or correct its name to one the workspace or a Shopware theme provides. A variable of a theme field must be declared in the theme's theme.json.
 - Exceptions: Module variables (math.$pi) and named arguments are not checked. A variable bound anywhere in the file (a parameter, a loop variable) counts as defined. Nothing is reported until indexing has finished.
 
+## `shopware.admin.api_contract`
+
+Administration requests to an Admin API action that send a key the controller does not read or leave out one it reads, and service methods whose declared response type differs from what the controller answers.
+
+Languages: javascript. Domain: `administration`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `admin.api.request-missing-key` | warning | yes |
+| `admin.api.request-unknown-key` | warning | yes |
+| `admin.api.response-type` | warning | yes |
+
+**`admin.api.request-missing-key`**
+
+- Fix: Send the key, or read it in the controller with a default value or after has().
+- Exceptions: Only reported when every key of the request is known: an object literal without a spread or a computed key, or a declared type. A key the controller reads with a default, tests with has() or reads as a boolean may be left out.
+
+**`admin.api.request-unknown-key`**
+
+- Fix: Remove the key from the request, or read it in the controller. In a declared payload type a quick fix removes the member.
+- Exceptions: Checked for an object literal, a constant that holds one and a parameter typed with a type or interface of the same file. A controller that passes its request or data bag on, reads a key that is not a literal, takes a Criteria or maps the payload with a resolver of its own takes any key and is not checked. The controller is read as saved on disk.
+
+**`admin.api.response-type`**
+
+- Fix: Change the declared type to what the controller answers; a quick fix removes a member the controller does not answer or corrects string, number and boolean.
+- Exceptions: Checked for a method that sends one request and returns Promise<Name>, where Name is a type or interface of the same file with members. Only the members the type declares are compared: a key the controller answers and the type leaves out is not reported. A controller with several different answers is not checked.
+
 ## `shopware.admin.api_route`
 
 Administration requests to an Admin API action route that no controller declares, or with an HTTP method the route does not answer.
