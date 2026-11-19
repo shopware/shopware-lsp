@@ -707,6 +707,17 @@ pub struct InitializationOptions {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub shopware_large_entities: Vec<String>,
+    /// The PHP formatter keeps `<?php declare(strict_types=1);` on one line
+    /// (`php.declareOnOpeningTag`).
+    #[serde(
+        default,
+        deserialize_with = "nullable",
+        skip_serializing_if = "is_false"
+    )]
+    pub php_declare_on_opening_tag: bool,
+    /// The length the PHP formatter splits lines at (`php.lineWidth`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub php_line_width: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configuration: Option<swlsp_projectconfig::Partial>,
     #[serde(

@@ -36,3 +36,30 @@ fn suppression_operator_after_not() {
     assert_eq!(parse.root().text().to_string(), source);
     assert!(parse.errors.is_empty(), "{:?}", parse.errors);
 }
+
+#[test]
+fn references_variable_variables_and_attributed_constants_parse() {
+    use crate::syntax::{ERROR, PHP_CONST_DECLARATION, PHP_UNARY_EXPRESSION, PHP_VARIABLE};
+    let source = "<?php\n$$a = ${'b'} + $c->$$d + self::${$e}[1];\n$f = &$g;\nif (null !== $h = &self::$i[$j]) {}\n#[A]\nconst X = 1;\nfoo(&$k, [&$l]);\n$m = 'n'.++$o + .5 - 1e-3;\n";
+    let parse = crate::parse(source);
+    assert_eq!(parse.root().text().to_string(), source);
+    assert!(parse.errors.is_empty(), "{:?}", parse.errors);
+    let kinds = |kind| {
+        parse
+            .root()
+            .descendants()
+            .filter(|node| node.kind() == kind)
+            .map(|node| node.text().to_string().trim().to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert!(kinds(ERROR).is_empty(), "{:?}", kinds(ERROR));
+    let variables = kinds(PHP_VARIABLE);
+    for name in ["$$a", "${'b'}", "$$d", "${$e}"] {
+        assert!(
+            variables.iter().any(|text| text == name),
+            "{name}: {variables:?}"
+        );
+    }
+    assert!(kinds(PHP_UNARY_EXPRESSION).contains(&"&$g".to_owned()));
+    assert_eq!(kinds(PHP_CONST_DECLARATION), ["#[A]\nconst X = 1;"]);
+}

@@ -16,6 +16,7 @@ swlsp-textutil = { path = "../textutil" }
 swlsp-lsp-protocol = { path = "../lsp-protocol" }
 swlsp-parser-json = { path = "../parser-json" }
 swlsp-parser-php = { path = "../parser-php" }
+swlsp-php-format = { path = "../php-format" }
 swlsp-php-imports = { path = "../php-imports" }
 swlsp-php-refactoring = { path = "../php-refactoring" }
 swlsp-php-resolver = { path = "../php-resolver" }

@@ -5,6 +5,7 @@ pub mod codeaction;
 mod context;
 mod diagnostics;
 pub mod folding;
+pub mod formatting;
 pub mod inlay;
 pub mod inspections;
 pub mod selection;
@@ -37,6 +38,19 @@ fn register(server: &Registrar<'_>, s: &Services) {
         s.php(),
     )));
     diagnostics::register(server, s);
+
+    // The formatter is offered in every presentation: an editor asks the
+    // formatter its user chose.
+    server.formatting(Arc::new(crate::formatting::PhpProvider::new(
+        swlsp_php_format::Options {
+            declare_on_opening_tag: s.php_declare_on_opening_tag,
+            line_width: s
+                .php_line_width
+                .map_or(swlsp_php_format::RECOMMENDED_LINE_WIDTH, |width| {
+                    width as usize
+                }),
+        },
+    )));
 
     // A framework presentation shows the framework's features only: the
     // editor's own PHP support serves the language.

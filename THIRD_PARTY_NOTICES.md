@@ -31,7 +31,7 @@ domain). The list covers every release target.
 
 | License | Crates |
 |---|---:|
-| MIT License | 335 |
+| MIT License | 336 |
 | Unicode License v3 | 20 |
 | Apache License 2.0 | 7 |
 | ISC License | 5 |
@@ -4676,6 +4676,7 @@ Used by:
 - [swlsp-phar 0.1.0](https://crates.io/crates/swlsp-phar)
 - [swlsp-php 0.1.0](https://crates.io/crates/swlsp-php)
 - [swlsp-php-binder 0.1.0](https://crates.io/crates/swlsp-php-binder)
+- [swlsp-php-format 0.1.0](https://crates.io/crates/swlsp-php-format)
 - [swlsp-php-imports 0.1.0](https://crates.io/crates/swlsp-php-imports)
 - [swlsp-php-inference 0.1.0](https://crates.io/crates/swlsp-php-inference)
 - [swlsp-php-languagelevel 0.1.0](https://crates.io/crates/swlsp-php-languagelevel)

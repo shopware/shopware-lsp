@@ -132,7 +132,7 @@ fixes that affect each other (two renamed references sharing an import) come
 out right. Review the result with `git diff`.
 
 `format PATH…` runs the document formatters of the language server over files
-and directories; Twig, JSON, JavaScript, TypeScript and SCSS files have one,
+and directories; PHP, Twig, JSON, JavaScript, TypeScript and SCSS files have one,
 and other files below a directory are skipped. A file with syntax errors is
 left as it is. It prints a unified diff of what would change and exits
 with 1 when a file is not formatted, so it can gate CI. `--write` (`-w`)
@@ -681,6 +681,64 @@ include these hints.
   typed DomCrawler `filterXPath()` / `evaluate()` expressions, including
   axes, functions, element/attribute names, variables, strings, numbers, and
   operators with exact PHP host ranges
+
+### PHP formatting
+- Whole-document formatting to
+  [PER Coding Style 2.0](https://www.php-fig.org/per/coding-style/) through
+  `textDocument/formatting` and `shopware-lsp format`. The style fixes the
+  indentation at four spaces, so the editor's `tabSize` / `insertSpaces` and
+  the `--indent-width` / `--use-tabs` flags do not apply to PHP.
+- Layout: the header blocks of a file set apart by one empty line; braces of
+  classes and functions on their own lines and of control structures on the
+  line; `{}` for an empty class or function body; one statement per line;
+  spaces around binary and ternary operators and after casts, none after
+  unary ones; `fn(` and `function (`; attributes above what they describe.
+- Lists (arguments, parameters, arrays, `use (…)`, grouped imports) stay on
+  one line or, when the source splits them, hold one item per line with a
+  trailing comma. One argument over several lines, such as a closure or an
+  array, does not split its list. The arms of a `match` always stand one per
+  line. A condition over several lines stands between `(` and `) {` on lines
+  of their own, its boolean operators all at the beginning or all at the end
+  of the lines. A method chain over several lines starts its first method
+  on a new line too; chains, operators and ternaries on further lines are
+  indented once. Heredocs start on the line of their statement, their lines
+  indented once past it.
+- Changes beyond white space, all without changing what the code does:
+  keywords, native types, `true`, `false` and `null` in lower case; short
+  casts (`(int)`); braces around every body; `elseif`; `new Foo()`;
+  `new class` and `#[Attr]` without empty `()`, `new class ($a)` with a
+  space, as a closure has after `function`; `[…]` for `array(…)`; a
+  visibility on every method, property and constant (`var` and none are
+  `public`); modifiers in order; one trait, one property and one import per
+  statement; imports ordered classes, functions, constants, without a
+  leading backslash; attributes that span lines in a block each; no closing
+  `?>`.
+- Lines over 80 characters, the length PER Coding Style recommends, are
+  split at the outermost place that allows it: a list goes one item per
+  line, a chain of calls one call per line, an expression one operand per
+  line (the loosest operators first), a ternary on three lines, the
+  interfaces of a class and the conditions of a `match` arm one per line,
+  the expression of a short closure and the value after an `=` or `=>` to
+  the next line. A line that offers none of these (one long string, a
+  comment, the body of a heredoc, a long import or declaration) stays as
+  it is: the style sets no hard limit. Shorter lines keep the line breaks
+  the source has. `php.lineWidth: 120` in `.config/shopware-lsp.yaml`
+  splits at the soft limit of the style only.
+- `php.declareOnOpeningTag: true` in `.config/shopware-lsp.yaml` keeps
+  `<?php declare(strict_types=1);` on one line where a file has it so, as
+  Shopware writes it. PER Coding Style, the default, puts the opening tag on
+  a line of its own.
+- A template (markup outside PHP tags, `<?=`) keeps its lines and their
+  indentation, which belong to the markup as much as to the PHP; the spaces
+  inside each line are set, and keywords are lower-cased. The interpreter
+  line of a script (`#!/usr/bin/env php`) is kept, and `$$name` and
+  `${'name'}` keep their spelling.
+- A document with syntax errors is left as it is. Every result is checked
+  to hold the tokens and comments of the source before it is returned.
+- Not changed, because a formatter cannot decide them: names
+  (`StudlyCaps`, `camelCase`), one class per file, the nesting of compound
+  namespaces, `// no break` comments, the order of parameters with default
+  values, and nowdoc in place of heredoc.
 
 ### JSON, JavaScript, TypeScript, CSS and SCSS formatting
 - Whole-document formatting through `textDocument/formatting` and
@@ -1835,6 +1893,10 @@ version: 1
 php:
   extensions: [redis]
   disabledExtensions: []
+  # Format `<?php declare(strict_types=1);` as one line, as Shopware does.
+  declareOnOpeningTag: true
+  # Split PHP lines at 120 characters, not at the recommended 80.
+  lineWidth: 120
 shopware:
   targetVersion: "6.7"
   # Tables a repository search may load in full without a finding.

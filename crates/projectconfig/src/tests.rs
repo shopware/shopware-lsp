@@ -564,6 +564,26 @@ fn structural_fingerprint_is_stable() {
 }
 
 #[test]
+fn php_declare_on_opening_tag_is_read_and_changes_the_fingerprint() {
+    let value = decode_str("version: 1\nphp:\n  declareOnOpeningTag: true\n").unwrap();
+    let effective = resolve(&value, &Partial::default());
+    assert!(effective.php.declare_on_opening_tag);
+    assert!(effective.origins.contains_key("php.declareOnOpeningTag"));
+    assert!(decode_str("version: 1\nphp:\n  declareOnOpeningTag: 1\n").is_err());
+    let value = decode_str("version: 1\nphp:\n  lineWidth: 120\n").unwrap();
+    assert_eq!(
+        resolve(&value, &Partial::default()).php.line_width,
+        Some(120)
+    );
+    assert_eq!(Effective::default().php.line_width, None);
+    assert!(decode_str("version: 1\nphp:\n  lineWidth: wide\n").is_err());
+    assert_ne!(
+        effective.structural_fingerprint(),
+        Effective::default().structural_fingerprint()
+    );
+}
+
+#[test]
 fn effective_json_wire_shape() {
     let encoded = serde_json::to_string(&Effective::default()).unwrap();
     assert!(encoded.starts_with(

@@ -72,6 +72,15 @@ pub fn extract_variable(
         if node.kind() == ERROR {
             return Ok(None);
         }
+        // A reference aliases a variable: moving an expression past it
+        // could change what the alias sees.
+        if node.kind() == PHP_UNARY_EXPRESSION
+            && std::iter::successors(node.first_token(), |token| token.next_token())
+                .find(|token| !token.kind().is_trivia())
+                .is_some_and(|token| token.kind() == TK_AMPERSAND)
+        {
+            return Ok(None);
+        }
         if !query::extractable_expression(&node) {
             continue;
         }

@@ -1,7 +1,9 @@
 //! Allocation-free PHP lexer.
 //!
-//! The lexer runs in PHP mode from the first byte; inline HTML is lexed as
-//! ordinary PHP tokens.
+//! The lexer runs in PHP mode from the first byte, so a fragment without an
+//! opening tag is PHP. Markup outside PHP tags is one trivia token: what
+//! follows a closing tag up to the next opening tag, and what a file that
+//! starts with markup (or an interpreter line) has before its first tag.
 
 use swlsp_syntax::{Kind, Token};
 
@@ -20,12 +22,58 @@ pub fn lex_into<'a>(source: &'a str, tokens: &mut Vec<Token<'a>>) {
     // Production PHP averages about one token per five source bytes.
     tokens.reserve(source.len() / 4 + 1);
     let bytes = source.as_bytes();
-    let mut position = 0;
+    let mut position = leading_markup(bytes);
+    if position > 0 {
+        tokens.push(Token::new(TK_INLINE_HTML, source, 0, position as u32));
+    }
     while position < bytes.len() {
         let (kind, length) = next(bytes, position);
         let end = position + length.max(1);
         tokens.push(Token::new(kind, source, position as u32, end as u32));
         position = end;
+        if kind == TK_CLOSE_TAG {
+            let markup = next_open_tag(bytes, position);
+            if markup > position {
+                tokens.push(Token::new(
+                    TK_INLINE_HTML,
+                    source,
+                    position as u32,
+                    markup as u32,
+                ));
+                position = markup;
+            }
+        }
+    }
+}
+
+/// The position of the next opening tag at or after `position`, or the end
+/// of the source.
+fn next_open_tag(source: &[u8], position: usize) -> usize {
+    source[position..]
+        .windows(2)
+        .position(|pair| pair == b"<?")
+        .map_or(source.len(), |found| position + found)
+}
+
+/// The length of the markup a file starts with: it begins like markup
+/// (`<html`, `<!--`) or with an interpreter line, and an opening tag
+/// follows. Anything else is PHP from its first byte.
+fn leading_markup(source: &[u8]) -> usize {
+    let start = source
+        .iter()
+        .position(|byte| !byte.is_ascii_whitespace())
+        .unwrap_or(source.len());
+    let rest = &source[start..];
+    let markup = rest.starts_with(b"#!")
+        || rest.first() == Some(&b'<')
+            && rest
+                .get(1)
+                .is_some_and(|byte| byte.is_ascii_alphabetic() || matches!(byte, b'!' | b'/'));
+    let open = next_open_tag(source, start);
+    if markup && open < source.len() {
+        open
+    } else {
+        0
     }
 }
 
@@ -60,6 +108,10 @@ pub(crate) fn next(source: &[u8], position: usize) -> (Kind, usize) {
         b':' if rest.starts_with(b"::") => return (TK_SCOPE_RESOLUTION, 2),
         b'#' if rest.starts_with(b"#[") => return (TK_ATTRIBUTE_OPEN, 2),
         b'.' if rest.starts_with(b"...") => return (TK_ELLIPSIS, 3),
+        // A number may start with its decimal point: `.5`.
+        b'.' if rest.get(1).is_some_and(u8::is_ascii_digit) => {
+            return (TK_NUMBER, scan_number(source, position) - position);
+        }
         b'=' if rest.starts_with(b"=>") => return (TK_ARROW, 2),
         _ => {}
     }
@@ -84,7 +136,10 @@ pub(crate) fn next(source: &[u8], position: usize) -> (Kind, usize) {
         b'/' => match rest.get(1) {
             Some(b'/') => (TK_LINE_COMMENT, scan_line_comment(source, position, 2)),
             Some(b'*') => (TK_BLOCK_COMMENT, scan_block_comment(source, position)),
-            _ => (TK_OPERATOR, scan_operator(source, position)),
+            // An operator that is not a compound one is one character:
+            // `!!$a` is two operators, `'a'.++$i` a concatenation and an
+            // increment.
+            _ => (TK_OPERATOR, 1),
         },
         b'#' => (TK_LINE_COMMENT, scan_line_comment(source, position, 1)),
         b'\'' | b'"' | b'`' => (TK_STRING, scan_quoted(source, position, first)),
@@ -116,7 +171,7 @@ pub(crate) fn next(source: &[u8], position: usize) -> (Kind, usize) {
             (kind, end - position)
         }
         _ if first.is_ascii_digit() => (TK_NUMBER, scan_number(source, position) - position),
-        _ if is_operator_byte(first) => (TK_OPERATOR, scan_operator(source, position)),
+        _ if is_operator_byte(first) => (TK_OPERATOR, 1),
         _ => (TK_UNKNOWN, 1),
     }
 }
@@ -203,8 +258,7 @@ fn scan_heredoc(source: &[u8], position: usize) -> usize {
             .count();
         let trimmed = &line[indent..];
         if let Some(after) = trimmed.strip_prefix(header)
-            && (after.is_empty()
-                || (after[0] != b' ' && after[0] != b'\t' && !is_identifier_continue(after[0])))
+            && (after.is_empty() || !is_identifier_continue(after[0]))
         {
             return line_start + indent + header.len() - position;
         }
@@ -222,13 +276,26 @@ fn scan_identifier_tail(source: &[u8], mut position: usize) -> usize {
 }
 
 fn scan_number(source: &[u8], mut position: usize) -> usize {
+    let start = position;
     position += 1;
-    while position < source.len()
-        && (is_identifier_continue(source[position]) || source[position] == b'.')
-    {
+    loop {
+        while position < source.len()
+            && (is_identifier_continue(source[position]) || source[position] == b'.')
+        {
+            position += 1;
+        }
+        // The sign of an exponent belongs to the number: `1e-10`. A
+        // hexadecimal number has no exponent, its `e` is a digit.
+        let exponent = matches!(source[position - 1], b'e' | b'E')
+            && !source[start..position].starts_with(b"0x")
+            && !source[start..position].starts_with(b"0X")
+            && matches!(source.get(position), Some(b'+' | b'-'))
+            && source.get(position + 1).is_some_and(u8::is_ascii_digit);
+        if !exponent {
+            return position;
+        }
         position += 1;
     }
-    position
 }
 
 pub(crate) fn compound_operator_length(source: &[u8]) -> usize {
@@ -244,6 +311,7 @@ pub(crate) fn compound_operator_length(source: &[u8]) -> usize {
         && matches!(
             &source[..2],
             b"??"
+                | b"<>"
                 | b"=="
                 | b"!="
                 | b"<="
@@ -269,22 +337,6 @@ pub(crate) fn compound_operator_length(source: &[u8]) -> usize {
         return 2;
     }
     0
-}
-
-fn scan_operator(source: &[u8], position: usize) -> usize {
-    // `@` is an operator of its own: `!@f()` is two.
-    if source[position] == b'@' {
-        return 1;
-    }
-    let mut end = position + 1;
-    while end < source.len()
-        && end - position < 3
-        && is_operator_byte(source[end])
-        && source[end] != b'@'
-    {
-        end += 1;
-    }
-    end - position
 }
 
 #[inline]
@@ -480,6 +532,92 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn markup_outside_php_tags_is_one_token() {
+        let kinds = |source: &str| -> Vec<(Kind, String)> {
+            lex(source)
+                .iter()
+                .filter(|token| token.kind != TK_WHITESPACE && token.kind != TK_LINE_BREAK)
+                .map(|token| (token.kind, token.text.to_string()))
+                .collect()
+        };
+        assert_eq!(
+            kinds("<b><?= $a ?></b>\n<?php if ($b): ?>\n  <i>x</i>\n<?php endif;"),
+            [
+                (TK_INLINE_HTML, "<b>".to_owned()),
+                (TK_OPEN_TAG, "<?=".to_owned()),
+                (TK_VARIABLE, "$a".to_owned()),
+                (TK_CLOSE_TAG, "?>".to_owned()),
+                (TK_INLINE_HTML, "</b>\n".to_owned()),
+                (TK_OPEN_TAG, "<?php".to_owned()),
+                (TK_KEYWORD, "if".to_owned()),
+                (TK_OPEN_PAREN, "(".to_owned()),
+                (TK_VARIABLE, "$b".to_owned()),
+                (TK_CLOSE_PAREN, ")".to_owned()),
+                (TK_COLON, ":".to_owned()),
+                (TK_CLOSE_TAG, "?>".to_owned()),
+                (TK_INLINE_HTML, "\n  <i>x</i>\n".to_owned()),
+                (TK_OPEN_TAG, "<?php".to_owned()),
+                (TK_KEYWORD, "endif".to_owned()),
+                (TK_SEMICOLON, ";".to_owned()),
+            ]
+        );
+        // A fragment without tags is PHP, and so is a comparison.
+        assert_eq!(kinds("$a < $b")[1].0, TK_OPERATOR);
+        assert_eq!(
+            kinds("#!/usr/bin/env php\n<?php echo 1;")[0].0,
+            TK_INLINE_HTML
+        );
+    }
+
+    #[test]
+    fn operators_next_to_each_other_stay_apart() {
+        let texts = |source: &str| -> Vec<String> {
+            lex(source)
+                .iter()
+                .map(|token| token.text.to_string())
+                .filter(|text| !text.trim().is_empty())
+                .collect()
+        };
+        assert_eq!(
+            texts("<?php !!$a; 'b'.++$c; 1+-2; $d<>$e;"),
+            [
+                "<?php", "!", "!", "$a", ";", "'b'", ".", "++", "$c", ";", "1", "+", "-", "2", ";",
+                "$d", "<>", "$e", ";"
+            ]
+        );
+    }
+
+    #[test]
+    fn exponent_sign_belongs_to_the_number() {
+        let texts = |source: &str| -> Vec<String> {
+            lex(source)
+                .iter()
+                .map(|token| token.text.to_string())
+                .filter(|text| !text.trim().is_empty())
+                .collect()
+        };
+        assert_eq!(
+            texts("<?php 1e-10 + 2.5E+3 - 0x1e-1 * .5 . 'a';"),
+            [
+                "<?php", "1e-10", "+", "2.5E+3", "-", "0x1e", "-", "1", "*", ".5", ".", "'a'", ";"
+            ]
+        );
+    }
+
+    #[test]
+    fn heredoc_ends_at_its_marker_before_a_space() {
+        // Since PHP 7.3 the closing marker ends the heredoc wherever a line
+        // starts with it, whatever follows.
+        let source = "<?php\n$a = <<<EOT\n  text\n  EOT . 'tail';\n";
+        let tokens = lex(source);
+        let heredoc = tokens
+            .iter()
+            .find(|token| token.text.starts_with("<<<"))
+            .expect("heredoc token");
+        assert_eq!(heredoc.text, "<<<EOT\n  text\n  EOT");
     }
 
     #[test]

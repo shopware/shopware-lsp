@@ -17,6 +17,7 @@ use crate::{CliError, Runner};
 /// The languages a formatter is registered for. Other files below a
 /// directory target are not opened at all.
 const FORMATTED_LANGUAGES: &[LanguageId] = &[
+    LanguageId::Php,
     LanguageId::Twig,
     LanguageId::Json,
     LanguageId::JavaScript,
@@ -45,7 +46,7 @@ pub(crate) fn run_format(runner: &Runner, flags: &Format) -> Result<(), CliError
     if paths.is_empty() {
         let _ = session.close();
         return Err(CliError::fail(
-            "no file to format: only Twig, JSON, JavaScript, TypeScript and SCSS files have a formatter",
+            "no file to format: only PHP, Twig, JSON, JavaScript, TypeScript and SCSS files have a formatter",
         ));
     }
 

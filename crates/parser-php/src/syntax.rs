@@ -3,7 +3,7 @@
 
 swlsp_syntax::language! {
     name: "php", base: 24576,
-    trivia: [TK_WHITESPACE, TK_LINE_BREAK, TK_LINE_COMMENT, TK_BLOCK_COMMENT],
+    trivia: [TK_WHITESPACE, TK_LINE_BREAK, TK_LINE_COMMENT, TK_BLOCK_COMMENT, TK_INLINE_HTML],
     tokens: {
         TK_WHITESPACE = ("PHP_WHITESPACE", "whitespace"),
         TK_LINE_BREAK = ("PHP_LINE_BREAK", "line break"),
@@ -38,6 +38,7 @@ swlsp_syntax::language! {
         TK_ARROW = ("PHP_ARROW", "=>"),
         TK_OPERATOR = ("PHP_OPERATOR", "operator"),
         TK_UNKNOWN = ("PHP_UNKNOWN", "unknown token"),
+        TK_INLINE_HTML = ("PHP_INLINE_HTML", "markup outside PHP tags"),
     },
     nodes: {
         PHP_PROGRAM = "PHP_PROGRAM",

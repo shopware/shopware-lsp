@@ -51,6 +51,10 @@ pub struct Services {
     pub supported_versions: swlsp_shopware::SupportedVersions,
     /// The entities a repository search may load in full.
     pub small_entities: Arc<std::collections::BTreeSet<String>>,
+    /// The PHP formatter keeps `<?php declare(strict_types=1);` on one line.
+    pub php_declare_on_opening_tag: bool,
+    /// The length the PHP formatter splits lines at, when configured.
+    pub php_line_width: Option<u32>,
 }
 
 impl Services {

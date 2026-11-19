@@ -207,6 +207,13 @@ pub struct PhpConfig {
     pub extensions: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disabled_extensions: Option<Vec<String>>,
+    /// Whether the formatter keeps `<?php declare(strict_types=1);` on one
+    /// line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declare_on_opening_tag: Option<bool>,
+    /// The length the formatter splits lines at.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_width: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -375,6 +382,21 @@ pub struct Effective {
 pub struct EffectivePhp {
     pub extensions: Option<Vec<String>>,
     pub disabled_extensions: Option<Vec<String>>,
+    /// The formatter keeps `<?php declare(strict_types=1);` on one line,
+    /// where PER Coding Style puts the opening tag on a line of its own.
+    /// Left out of the encoding while unset, which keeps the structural
+    /// fingerprint of existing caches.
+    #[serde(skip_serializing_if = "is_false")]
+    pub declare_on_opening_tag: bool,
+    /// The length the formatter splits lines at, when it is not the 80
+    /// characters PER Coding Style recommends. Left out of the encoding
+    /// while unset, like the setting above.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line_width: Option<u32>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
@@ -961,6 +983,14 @@ fn apply(target: &mut Effective, value: &Partial, source: &str) {
         if let Some(extensions) = &php.disabled_extensions {
             target.php.disabled_extensions = Some(normalize_strings(extensions));
             origin(target, "php.disabledExtensions".to_owned());
+        }
+        if let Some(keep) = php.declare_on_opening_tag {
+            target.php.declare_on_opening_tag = keep;
+            origin(target, "php.declareOnOpeningTag".to_owned());
+        }
+        if let Some(width) = php.line_width {
+            target.php.line_width = u32::try_from(width).ok();
+            origin(target, "php.lineWidth".to_owned());
         }
     }
     if let Some(version) = value

@@ -489,6 +489,8 @@ fn build(
             &options.shopware_small_entities,
             &options.shopware_large_entities,
         )),
+        php_declare_on_opening_tag: options.php_declare_on_opening_tag,
+        php_line_width: options.php_line_width,
     };
     // Registration panics only on invalid inspection definitions, which are
     // programming errors rather than workspace conditions.

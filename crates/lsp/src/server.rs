@@ -275,6 +275,8 @@ impl Server {
             shopware_target_version: configuration.shopware.target_version.clone(),
             shopware_small_entities: configuration.shopware.small_entities.add.clone(),
             shopware_large_entities: configuration.shopware.small_entities.remove.clone(),
+            php_declare_on_opening_tag: configuration.php.declare_on_opening_tag,
+            php_line_width: configuration.php.line_width,
             allow_unsupported_project: session.options.allow_unsupported_project
                 || session.allow_unsupported_project,
             cli_mode: session.options.cli_mode,

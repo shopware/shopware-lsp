@@ -330,7 +330,16 @@ fn reject_unknown_configuration_fields(value: &Value) -> Result<(), EditorConfig
             "check",
         ],
         &|key, item| match key {
-            "php" => check(item, &["extensions", "disabledExtensions"], &none),
+            "php" => check(
+                item,
+                &[
+                    "extensions",
+                    "disabledExtensions",
+                    "declareOnOpeningTag",
+                    "lineWidth",
+                ],
+                &none,
+            ),
             "shopware" => check(item, &["targetVersion"], &none),
             "indexing" => check(item, &["enabled", "exclude", "maxFileSizeMiB"], &none),
             "mcp" => check(item, &["tools"], &none),

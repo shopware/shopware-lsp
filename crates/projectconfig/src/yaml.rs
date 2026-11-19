@@ -477,6 +477,16 @@ impl Decoder {
                         result.disabled_extensions = values;
                     }
                 }
+                "declareOnOpeningTag" => {
+                    if let Some(keep) = decoder.optional_bool(value) {
+                        result.declare_on_opening_tag = keep;
+                    }
+                }
+                "lineWidth" => {
+                    if let Some(width) = decoder.optional_int(value) {
+                        result.line_width = width;
+                    }
+                }
                 _ => return false,
             }
             true

@@ -13,7 +13,17 @@
       "additionalProperties": false,
       "properties": {
         "extensions": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
-        "disabledExtensions": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+        "disabledExtensions": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "declareOnOpeningTag": {
+          "type": "boolean",
+          "description": "Keep `<?php declare(strict_types=1);` on one line when formatting PHP, as Shopware writes it. PER Coding Style, the default, puts the opening tag on a line of its own."
+        },
+        "lineWidth": {
+          "type": "integer",
+          "minimum": 40,
+          "maximum": 400,
+          "description": "The length the PHP formatter splits lines at where it can. The default is 80, the length PER Coding Style recommends; 120 is its soft limit."
+        }
       }
     },
     "shopware": {

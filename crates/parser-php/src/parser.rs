@@ -235,7 +235,9 @@ fn parse_statement(p: &mut P<'_>, in_class: bool) {
         parse_trait_use(p);
     } else if in_class && keyword == "case" {
         parse_enum_case(p);
-    } else if keyword == "const" || in_class && starts_class_const_declaration(p) {
+    } else if keyword == "const"
+        || (in_class || p.at(TK_ATTRIBUTE_OPEN)) && starts_class_const_declaration(p)
+    {
         parse_const(p, in_class);
     } else if in_class && starts_property_declaration(p) {
         parse_property(p);
@@ -993,6 +995,8 @@ fn prefix_operator_precedence(p: &P<'_>) -> Option<i32> {
     match token.text {
         "!" => Some(LOGICAL_NOT),
         "~" | "+" | "-" | "@" | "++" | "--" => Some(TIGHT_PREFIX),
+        // A reference: `$a = &$b`, `[&$a]`.
+        "&" if token.kind == TK_AMPERSAND => Some(TIGHT_PREFIX),
         text if token.kind == TK_KEYWORD => {
             if text.eq_ignore_ascii_case("print") {
                 Some(PRINT)
@@ -1014,6 +1018,7 @@ fn parse_primary(p: &mut P<'_>, stop: Stop) -> Option<CompletedMarker> {
     let marker = match kind {
         TK_STRING => parse_string(p),
         TK_NUMBER => parse_leaf(p, PHP_NUMBER),
+        TK_VARIABLE if at_variable_sigil(p) => parse_variable_variable(p),
         TK_VARIABLE => parse_leaf(p, PHP_VARIABLE),
         TK_KEYWORD => {
             let mut buffer = [0u8; 12];
@@ -1172,7 +1177,34 @@ fn parse_suffixes(p: &mut P<'_>, mut expression: CompletedMarker) -> CompletedMa
     }
 }
 
+/// Whether the parser is at a `$` without a name: the start of `$$name`
+/// or `${expression}`.
+fn at_variable_sigil(p: &P<'_>) -> bool {
+    p.peek_token()
+        .is_some_and(|token| token.kind == TK_VARIABLE && token.text == "$")
+}
+
+/// `$$name` and `${expression}`: a variable whose name is computed.
+fn parse_variable_variable(p: &mut P<'_>) -> CompletedMarker {
+    let node = p.start();
+    p.bump();
+    if at_variable_sigil(p) {
+        parse_variable_variable(p);
+    } else if p.at(TK_VARIABLE) {
+        parse_leaf(p, PHP_VARIABLE);
+    } else if p.at(TK_OPEN_BRACE) {
+        p.bump();
+        parse_expression(p, Stop::of(&[TK_CLOSE_BRACE]));
+        p.expect(TK_CLOSE_BRACE, &[]);
+    }
+    p.complete(node, PHP_VARIABLE)
+}
+
 fn parse_member_name(p: &mut P<'_>) {
+    if at_variable_sigil(p) {
+        parse_variable_variable(p);
+        return;
+    }
     if matches!(p.peek(), Some(TK_IDENTIFIER | TK_KEYWORD | TK_VARIABLE)) {
         parse_name(p);
         return;

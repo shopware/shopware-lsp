@@ -140,6 +140,7 @@ the lockfile.
 | `crates/indexer` | File scanning, watcher, coordinated mutations, SQLite store and repositories, cache versions, and workspace-symbol FTS |
 | `crates/rewrite` | Validated immutable source edits and workspace edit plans |
 | `crates/format` | Document formatting with Biome's formatters (JSON, JavaScript/TypeScript, CSS/SCSS): text in, text out |
+| `crates/php-format` | PHP formatter for PER Coding Style 2.0 over the token stream of the native tree |
 | `crates/php`, `crates/php-<stage>` | PHP project model, binder, semantic graph, types, resolver, inference, PHPDoc, stubs, and rewrites |
 | `crates/symfony`, `crates/doctrine`, `crates/twig`, etc. | Domain indexes and framework intelligence |
 | `crates/shopware`, `crates/shopware-*`, `crates/admin` | Shopware versioning and Shopware-specific domains such as DAL, entity schemas, and the Administration |
