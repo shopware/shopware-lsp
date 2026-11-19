@@ -109,14 +109,14 @@ document snapshot; no custom request is required.
 * **Action:** Builds the edit that creates or updates a Twig template in the selected extension so that it extends the given block, creating the file if necessary. The server writes nothing itself; the client must apply the returned edit.
 * **Returns:** on success `{ "uri": string, "line": number, "edit": WorkspaceEdit }`, where `uri` and `line` locate the block once the edit has been applied; otherwise an error object with `code` and `message`.
 
-### `shopware/admin/api-service/create`
+### `shopware/admin/api-service/generate`
 * **Parameters:**
   ```json
-  { "uri": string, "className": string }
+  { "uri": string, "className": string, "method": string }
   ```
-  `uri` is the PHP controller; `className` selects one class of the file and may be empty.
-* **Action:** Builds the edit that creates a typed TypeScript API service for the Admin API actions of the controller, in the Administration of the bundle that owns it, and imports the service from the bundle's `main.ts` or `main.js` (creating `main.ts` when there is neither). The edit uses the unsaved content of open documents. An existing service file is never replaced: the command fails. The server writes nothing itself; the client must apply the returned edit.
-* **Returns:** `{ "edit": WorkspaceEdit, "primaryFileUri": string }`
+  `uri` is the PHP controller; `className` selects one class of the file and may be empty. `method` is the PHP method of one action and may be empty; it only matters when a service exists.
+* **Action:** Builds the edit that gives the Admin API actions of the controller a typed TypeScript API service. Without a service it creates one in the Administration of the bundle that owns the controller and imports it from the bundle's `main.ts` or `main.js` (creating `main.ts` when there is neither). A service exists when the file the generator would write is there, or when a TypeScript file of that Administration requests routes of the controller (the one that requests the most). The command then adds one method for each action the service does not request yet, or for `method` alone, to the end of its class, and the types they need above the class; nothing the file holds is replaced. It fails when the service requests every selected action or declares no class. The edit uses the unsaved content of open documents. The server writes nothing itself; the client must apply the returned edit.
+* **Returns:** `{ "edit": WorkspaceEdit, "primaryFileUri": string, "created": boolean, "methods": string[] }`: whether the service file is new, and the names of the service methods the edit adds.
 
 ## Notifications
 

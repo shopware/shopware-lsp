@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use serde_json::json;
+use swlsp_admin::ApiRequestIndex;
 use swlsp_extension::ExtensionIndexer;
 use swlsp_ide::codeaction::testing::{GenerationTestHost, path_string, request_at};
 use swlsp_indexer::{Indexer, ParsedFile};
@@ -56,6 +57,10 @@ struct Project {
 }
 
 fn project(files: &[(&str, &str)]) -> Project {
+    project_of(CONTROLLER, files)
+}
+
+fn project_of(controller_source: &str, files: &[(&str, &str)]) -> Project {
     let root = tempfile::tempdir().unwrap();
     let cache = tempfile::tempdir().unwrap();
     let base = path_string(&root.path().canonicalize().unwrap());
@@ -72,7 +77,7 @@ fn project(files: &[(&str, &str)]) -> Project {
     for (path, source) in [
         (format!("{base}/vendor/framework.php"), FRAMEWORK),
         (format!("{plugin}/SwagExample.php"), PLUGIN),
-        (controller.clone(), CONTROLLER),
+        (controller.clone(), controller_source),
     ] {
         write(&path, source);
         let file = ParsedFile::new(path, source.as_bytes().to_vec());
@@ -80,12 +85,17 @@ fn project(files: &[(&str, &str)]) -> Project {
         extensions.index(&file).unwrap();
     }
     let administration = format!("{plugin}/Resources/app/administration/src");
+    let requests = Arc::new(ApiRequestIndex::new(cache.path().join("requests"), None).unwrap());
     for (path, source) in files {
-        write(&format!("{administration}/{path}"), source);
+        let path = format!("{administration}/{path}");
+        write(&path, source);
+        requests
+            .index(&ParsedFile::new(path, source.as_bytes().to_vec()))
+            .unwrap();
     }
     let host = Arc::new(GenerationTestHost::default());
     Project {
-        provider: ApiServiceProvider::new(Some(php), extensions, Some(host)),
+        provider: ApiServiceProvider::new(Some(php), extensions, Some(requests), Some(host)),
         controller,
         administration,
         _root: root,
@@ -98,7 +108,7 @@ fn generate(project: &Project) -> Vec<(String, String)> {
     let uri = swlsp_uriutil::file_uri(&project.controller);
     let response = project
         .provider
-        .create(&Context::background(), Some(&json!({ "uri": uri })))
+        .generate(&Context::background(), Some(&json!({ "uri": uri })))
         .unwrap();
     let edit = response.edit.unwrap();
     edit.document_changes
@@ -140,7 +150,10 @@ fn action_is_offered_on_the_class_of_an_api_controller() {
             .map(|action| {
                 let command = action.command.expect("a command");
                 assert_eq!(command.command, GENERATE_API_SERVICE_ACTION);
-                assert_eq!(command.arguments, [json!(uri), json!("SyncController")]);
+                assert_eq!(
+                    command.arguments,
+                    [json!(uri), json!("SyncController"), json!("")]
+                );
                 action.title
             })
             .collect::<Vec<_>>()
@@ -197,7 +210,7 @@ fn service_goes_where_the_extension_keeps_its_services() {
 }
 
 #[test]
-fn entry_file_is_created_and_an_existing_service_is_kept() {
+fn entry_file_is_created_without_one() {
     let project = project(&[]);
     let changes = generate(&project);
     assert_eq!(
@@ -207,16 +220,157 @@ fn entry_file_is_created_and_an_existing_service_is_kept() {
             "import './service/sync.api.service';\n".to_owned()
         )
     );
-    std::fs::create_dir_all(format!("{}/service", project.administration)).unwrap();
-    std::fs::write(
-        format!("{}/service/sync.api.service.ts", project.administration),
-        "",
-    )
-    .unwrap();
+}
+
+const TWO_ACTIONS: &str = r"<?php
+namespace Swag\Example\Controller;
+
+use Shopware\Core\Framework\Routing\ApiRouteScope;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\Routing\Attribute\Route;
+
+#[Route(defaults: ['_routeScope' => [ApiRouteScope::ID]])]
+class SyncController
+{
+    #[Route(path: '/api/_action/swag-example/sync', name: 'api.action.swag-example.sync', methods: ['POST'])]
+    public function sync(): JsonResponse
+    {
+        return new JsonResponse(['synced' => 3]);
+    }
+
+    #[Route(path: '/api/_action/swag-example/status/{id}', name: 'api.action.swag-example.status', methods: ['GET'])]
+    public function status(string $id): JsonResponse
+    {
+        return new JsonResponse(['running' => true]);
+    }
+}
+";
+const SERVICE: &str = "const { ApiService } = Shopware.Classes;
+
+type StatusResponse = string;
+
+/**
+ * Hand-written.
+ */
+export default class SyncService extends ApiService {
+    constructor(httpClient, loginService, apiEndpoint = 'swag-example') {
+        super(httpClient, loginService, apiEndpoint);
+    }
+
+    sync() {
+        return this.httpClient.post('/_action/swag-example/sync', null, {
+            headers: this.getBasicHeaders(),
+        });
+    }
+}
+";
+
+fn titles_at(project: &Project, source: &str, needle: &str) -> Vec<String> {
+    let uri = swlsp_uriutil::file_uri(&project.controller);
+    let offset = source.find(needle).unwrap() as u32;
+    project
+        .provider
+        .get_code_actions(
+            &Context::background(),
+            &request_at(&uri, source, offset, offset),
+        )
+        .into_iter()
+        .map(|action| action.title)
+        .collect()
+}
+
+#[test]
+fn missing_actions_are_added_to_the_service_that_requests_the_others() {
+    // Found by its requests: the file is not named after the controller.
+    let project = project_of(TWO_ACTIONS, &[("api/swag.service.ts", SERVICE)]);
+    let uri = swlsp_uriutil::file_uri(&project.controller);
+    let response = project
+        .provider
+        .generate(&Context::background(), Some(&json!({ "uri": uri })))
+        .unwrap();
+    assert!(!response.created);
+    assert_eq!(response.methods, ["status"]);
+    assert!(response.primary_file_uri.ends_with("/api/swag.service.ts"));
+    let mut edits = response.edit.unwrap().document_changes[0].edits.clone();
+    edits.sort_by_key(|edit| edit.range.start.line);
+    let edits: Vec<(u32, &str)> = edits
+        .iter()
+        .map(|edit| (edit.range.start.line, edit.new_text.as_str()))
+        .collect();
+    assert_eq!(
+        edits,
+        [
+            // Above the comment of the class; `StatusResponse` is taken.
+            (
+                4,
+                "export type StatusResponse2 = {\n    running: boolean;\n};\n\n"
+            ),
+            (
+                17,
+                "
+    /**
+     * GET /api/_action/swag-example/status/{id}
+     */
+    public async status(id: string, additionalHeaders: Record<string, string> = {}): Promise<StatusResponse2> {
+        const response = await this.httpClient.get(`/_action/swag-example/status/${id}`, {
+            headers: this.getBasicHeaders(additionalHeaders),
+        });
+
+        return ApiService.handleResponse(response) as StatusResponse2;
+    }
+"
+            ),
+        ]
+    );
+
+    assert_eq!(
+        titles_at(&project, TWO_ACTIONS, "SyncController"),
+        ["Shopware: Add 1 missing action to Administration API service swag.service.ts"]
+    );
+    assert_eq!(
+        titles_at(&project, TWO_ACTIONS, "status(string"),
+        ["Shopware: Add status to Administration API service swag.service.ts"]
+    );
+    // Requested already, and not inside a body.
+    assert_eq!(
+        titles_at(&project, TWO_ACTIONS, "sync()"),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        titles_at(&project, TWO_ACTIONS, "'running'"),
+        Vec::<String>::new()
+    );
+
+    let error = |method: &str| {
+        project
+            .provider
+            .generate(
+                &Context::background(),
+                Some(&json!({ "uri": uri, "method": method })),
+            )
+            .unwrap_err()
+            .to_string()
+    };
+    assert_eq!(
+        error("sync"),
+        "swag.service.ts already requests every selected action"
+    );
+    assert_eq!(
+        error("other"),
+        "SyncController has no Admin API action other"
+    );
+}
+
+#[test]
+fn a_service_without_a_class_is_not_extended() {
+    let project = project(&[("service/sync.api.service.ts", "")]);
     let uri = swlsp_uriutil::file_uri(&project.controller);
     let error = project
         .provider
-        .create(&Context::background(), Some(&json!({ "uri": uri })))
+        .generate(&Context::background(), Some(&json!({ "uri": uri })))
         .unwrap_err();
-    assert!(error.to_string().contains("already exists"), "{error}");
+    assert_eq!(
+        error.to_string(),
+        "sync.api.service.ts: the service declares no class"
+    );
 }

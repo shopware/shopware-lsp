@@ -4,6 +4,9 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use swlsp_ide_shopware::api_service::{
+    ApiServiceRequest, ApiServiceResponse, GENERATE_API_SERVICE_COMMAND,
+};
 use swlsp_ide_shopware::scaffold::{
     self as scaffold, EntitySchemaApplyRequest, EntitySchemaApplyResponse,
     EntitySchemaBootstrapRequest, EntitySchemaBootstrapResponse, EntitySchemaEditableTarget,
@@ -38,6 +41,7 @@ pub(crate) fn dispatch(
             entity_schema: true,
         }),
         "shopware_scaffold" => output(&scaffold_tool(runtime, decode(arguments)?)?),
+        "shopware_admin_api_service" => output(&api_service(runtime, decode(arguments)?)?),
         "shopware_entity_schema_bootstrap" => {
             let input: BootstrapInput = decode(arguments)?;
             let response = bootstrap_response(runtime, &input.directory)?;
@@ -83,6 +87,26 @@ struct ScaffoldOutput {
     diff: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     shopware_version: String,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+struct ApiServiceInput {
+    path: String,
+    class_name: String,
+    method: String,
+    write: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ApiServiceOutput {
+    applied: bool,
+    created: bool,
+    primary_file: String,
+    methods: Vec<String>,
+    files: Vec<String>,
+    diff: String,
 }
 
 #[derive(Deserialize, Default)]
@@ -349,6 +373,35 @@ fn scaffold_tool(runtime: &ToolCall<'_>, input: ScaffoldInput) -> Result<Scaffol
             files,
             diff,
             shopware_version: version,
+        })
+    })
+}
+
+/// Generates the Administration API service of a controller, or adds the
+/// actions an existing service lacks.
+fn api_service(
+    runtime: &ToolCall<'_>,
+    input: ApiServiceInput,
+) -> Result<ApiServiceOutput, CliError> {
+    let uri = runtime.input_uri(&input.path, true)?;
+    runtime.with_session(|session| {
+        let response: ApiServiceResponse = call_command(
+            session,
+            GENERATE_API_SERVICE_COMMAND,
+            &ApiServiceRequest {
+                uri: uri.clone(),
+                class_name: input.class_name.clone(),
+                method: input.method.clone(),
+            },
+        )?;
+        let (files, diff) = apply_mcp_workspace_edit(runtime, response.edit.as_ref(), input.write)?;
+        Ok(ApiServiceOutput {
+            applied: input.write,
+            created: response.created,
+            primary_file: runtime.output_uri(&response.primary_file_uri),
+            methods: response.methods,
+            files,
+            diff,
         })
     })
 }

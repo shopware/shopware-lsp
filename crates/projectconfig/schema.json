@@ -145,6 +145,7 @@
         "shopware_explain_diagnostic": { "type": "boolean" },
         "shopware_scaffold_catalog": { "type": "boolean" },
         "shopware_scaffold": { "type": "boolean" },
+        "shopware_admin_api_service": { "type": "boolean" },
         "shopware_entity_schema_bootstrap": { "type": "boolean" },
         "shopware_entity_schema_field_types": { "type": "boolean" },
         "shopware_entity_schema_search": { "type": "boolean" },

@@ -648,7 +648,7 @@ export function registerScaffoldCommands(
 
   context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.generateAdminApiService',
-    async (controllerUri: string, className?: string) => {
+    async (controllerUri: string, className?: string, method?: string) => {
       try {
         const languageClient = clientState.clientForUri(
           vscode.Uri.parse(controllerUri),
@@ -657,14 +657,14 @@ export function registerScaffoldCommands(
           throw new Error('Shopware LSP is not running');
         }
         const result = await languageClient.sendRequest<ShopwareScaffoldCreation>(
-          'shopware/admin/api-service/create',
-          {uri: controllerUri, className: className ?? ''},
+          'shopware/admin/api-service/generate',
+          {uri: controllerUri, className: className ?? '', method: method ?? ''},
         );
         const edit = await languageClient.protocol2CodeConverter.asWorkspaceEdit(
           result.edit,
         );
         if (!await vscode.workspace.applyEdit(edit)) {
-          throw new Error('Could not create the API service');
+          throw new Error('Could not write the API service');
         }
         const document = await vscode.workspace.openTextDocument(
           vscode.Uri.parse(result.primaryFileUri),

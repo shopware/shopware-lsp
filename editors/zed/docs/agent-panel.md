@@ -6,10 +6,11 @@ same index the editor uses.
 ![An agent using the Shopware workspace symbols and diagnostics tools](images/agent-panel-tool-call.png)
 
 The extension also registers the server's MCP endpoint as a context server, so
-Zed's Agent Panel gets the same 17 Shopware tools the VS Code extension
+Zed's Agent Panel gets the same 18 Shopware tools the VS Code extension
 contributes: `shopware_diagnostics`, `shopware_explain_diagnostic`, `shopware_hover`, `shopware_definition`,
 `shopware_references`, `shopware_workspace_symbols`, `shopware_code_actions`,
 `shopware_apply_code_action`, `shopware_scaffold`, `shopware_scaffold_catalog`,
+`shopware_admin_api_service`,
 and the seven `shopware_entity_schema_*` tools.
 
 Nothing to install: it reuses the same binary as the language server.

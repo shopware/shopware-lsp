@@ -60,7 +60,7 @@ Not covered at all, and why:
 | `restart` | Zed's own `language server: restart` covers it |
 | `copySnippetUsage` | clipboard convenience not implemented; would need platform-specific integration |
 | `createEventListener` | worth adding; the server command exists |
-| `generateAdminApiService` | worth adding; the server command shopware/admin/api-service/create answers with the edit |
+| `generateAdminApiService` | worth adding; the server command shopware/admin/api-service/generate answers with the edit |
 | `openReferences` | declared in supportedCommands so the lenses render; Zed cannot execute it |
 
 The counts come from `inventory/parity.json`, which records a decision for

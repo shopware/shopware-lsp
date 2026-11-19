@@ -530,6 +530,10 @@ pub static MCP_TOOL_CATALOG: &[CatalogEntry] = &[
     entry("shopware_scaffold_catalog", "Scaffold Catalog"),
     entry("shopware_scaffold", "Create Scaffold"),
     entry(
+        "shopware_admin_api_service",
+        "Generate Administration API Service",
+    ),
+    entry(
         "shopware_entity_schema_bootstrap",
         "Entity Schema Bootstrap",
     ),

@@ -50,6 +50,7 @@ fn register(server: &Registrar<'_>, s: &Services) {
     let api_services = Arc::new(api_service::ApiServiceProvider::new(
         s.php(),
         s.extensions.clone(),
+        s.admin_api_requests.clone(),
         Some(Arc::new(server.server.downgrade())),
     ));
     server.action(api_services.clone());

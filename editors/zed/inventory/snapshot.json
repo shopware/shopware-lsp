@@ -122,6 +122,7 @@
     "workspaceSymbols"
   ],
   "mcpTools": [
+    "shopware_admin_api_service",
     "shopware_apply_code_action",
     "shopware_code_actions",
     "shopware_definition",
@@ -190,7 +191,7 @@
     "symfony/web-test"
   ],
   "serverCommands": [
-    "shopware/admin/api-service/create",
+    "shopware/admin/api-service/generate",
     "shopware/admin/twig/override",
     "shopware/cache/clear",
     "shopware/cache/list",

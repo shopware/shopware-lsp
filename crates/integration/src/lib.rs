@@ -207,11 +207,17 @@ pub fn client_commands() -> Vec<ClientCommand> {
         ),
         command(
             "shopware.generateAdminApiService",
-            "Generate a typed Administration API service for the controller",
+            "Generate a typed Administration API service for the controller, or add actions to it",
             "codeAction",
             fields!(
                 field("fileUri", "Controller file", "uri", true),
                 field("className", "Controller class", "string", true),
+                field(
+                    "method",
+                    "Action to add to an existing service",
+                    "string",
+                    false,
+                ),
             ),
         ),
         command(

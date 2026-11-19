@@ -202,7 +202,10 @@ code, and how to configure or suppress it: the explanations of the
 from a one-line message. It also exposes the production
 Shopware/Symfony scaffold generators through `shopware_scaffold_catalog` and
 `shopware_scaffold`. A scaffold call previews a unified diff by default; pass
-`write: true` to create its validated files. The typed DAL entity workflow is
+`write: true` to create its validated files. `shopware_admin_api_service`
+takes the path of a PHP controller and generates its typed Administration API
+service, or adds the actions an existing service lacks (`method` selects
+one); it previews and writes the same way. The typed DAL entity workflow is
 available through `shopware_entity_schema_bootstrap`, `_field_types`,
 `_search`, `_load`, `_preview`, `_apply`, and `_reconcile`. Bootstrap keeps its
 result inline by returning compact field summaries and omitting relation rows.
@@ -1442,11 +1445,21 @@ bundle already keeps services in, else `src/service`), registers itself with
 `Shopware.Application.addServiceProvider`, declares itself on the
 `ServiceContainer` type and is imported from `main.ts` or `main.js`. For a
 controller of Shopware itself the service goes to
-`src/core/service/api` of the Administration. An existing service file is
-never replaced. The action needs a client that runs
-`shopware.generateAdminApiService`; other clients call
-`shopware/admin/api-service/create` (see
-[custom commands](custom-commands.md)).
+`src/core/service/api` of the Administration.
+
+When the controller has a service already, the action reads "Add N missing
+actions to Administration API service", and the head of each action that the
+service does not request offers "Add … to Administration API service". Both
+add methods to the end of the service class and the types they need above
+it; what the file holds is never replaced. The service is the file the
+generator would write, or else the TypeScript file of that Administration
+that requests the most routes of the controller. A JavaScript service is not
+extended.
+
+The actions need a client that runs `shopware.generateAdminApiService`;
+other clients call `shopware/admin/api-service/generate` (see
+[custom commands](custom-commands.md)), and agents the MCP tool
+`shopware_admin_api_service`.
 
 Each action becomes one method. Its types come from the controller alone:
 

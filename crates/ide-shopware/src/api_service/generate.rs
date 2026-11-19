@@ -43,39 +43,51 @@ const MAX_LINE: usize = 120;
 
 /// The type aliases of a service, in the order they are first used.
 #[derive(Default)]
-struct Types {
+pub(crate) struct Types {
     aliases: Vec<(String, String)>,
+    /// Names the file already uses for something else.
+    taken: Vec<String>,
 }
 
 impl Types {
+    pub(crate) fn with_taken(taken: Vec<String>) -> Types {
+        Types {
+            aliases: Vec::new(),
+            taken,
+        }
+    }
+
     /// The type of `shape`: inline when it fits on a line, otherwise an
     /// alias. The alias is called `preferred` (the PHP class a payload is
     /// mapped onto) when that name is free or already stands for the same
-    /// type, else `fallback`.
+    /// type, else `fallback`, numbered when that is taken as well.
     fn name(&mut self, shape: &Shape, preferred: Option<&str>, fallback: &str) -> String {
         let text = shape.typescript(0);
         if !text.contains('\n') {
             return text;
         }
+        let numbered = (2..).map(|number| format!("{fallback}{number}"));
         let candidates = preferred
             .filter(|name| !RESERVED_TYPES.contains(name))
+            .map(str::to_owned)
             .into_iter()
-            .chain([fallback]);
+            .chain([fallback.to_owned()])
+            .chain(numbered);
         for candidate in candidates {
-            match self.aliases.iter().find(|(name, _)| name == candidate) {
-                Some((_, known)) if *known == text => return candidate.to_owned(),
+            match self.aliases.iter().find(|(name, _)| *name == candidate) {
+                Some((_, known)) if *known == text => return candidate,
                 Some(_) => {}
+                None if self.taken.contains(&candidate) => {}
                 None => {
-                    self.aliases.push((candidate.to_owned(), text));
-                    return candidate.to_owned();
+                    self.aliases.push((candidate.clone(), text));
+                    return candidate;
                 }
             }
         }
-        // Two methods of one name cannot exist; an inline type is still right.
         text
     }
 
-    fn source(&self) -> String {
+    pub(crate) fn source(&self) -> String {
         self.aliases
             .iter()
             .map(|(name, text)| format!("export type {name} = {text};\n\n"))
@@ -134,27 +146,7 @@ impl ServiceNames {
 pub(crate) fn service_source(controller: &ApiController, flavour: Flavour) -> String {
     let names = ServiceNames::of(controller);
     let mut types = Types::default();
-    let mut methods = String::new();
-    let mut used: Vec<String> = Vec::new();
-    for action in &controller.actions {
-        let mut name = action.method.clone();
-        if !is_identifier(&name) {
-            continue;
-        }
-        let reserved = RESERVED_METHODS.contains(&name.as_str())
-            || (flavour == Flavour::Extension && LEGACY_METHODS.contains(&name.as_str()));
-        if reserved || used.contains(&name) {
-            name = format!("{name}{}", uppercase_first(&action.verb));
-        }
-        if used.contains(&name) {
-            continue;
-        }
-        used.push(name.clone());
-        if !methods.is_empty() {
-            methods.push('\n');
-        }
-        methods.push_str(&method_source(action, &name, &mut types));
-    }
+    let methods = methods_source(&controller.actions, flavour, &mut types, &mut Vec::new()).source;
     let mut source = String::new();
     match flavour {
         Flavour::Core => source.push_str(
@@ -192,6 +184,53 @@ pub(crate) fn service_source(controller: &ApiController, flavour: Flavour) -> St
         ));
     }
     source
+}
+
+/// Generated methods and the names they got.
+pub(crate) struct Methods {
+    pub source: String,
+    pub names: Vec<String>,
+}
+
+/// One method per action, separated by an empty line. `used` holds the
+/// member names that are taken and gains the new ones.
+pub(crate) fn methods_source<'a>(
+    actions: impl IntoIterator<Item = &'a ApiAction>,
+    flavour: Flavour,
+    types: &mut Types,
+    used: &mut Vec<String>,
+) -> Methods {
+    let mut methods = Methods {
+        source: String::new(),
+        names: Vec::new(),
+    };
+    for action in actions {
+        if !is_identifier(&action.method) {
+            continue;
+        }
+        let reserved = RESERVED_METHODS.contains(&action.method.as_str())
+            || (flavour == Flavour::Extension && LEGACY_METHODS.contains(&action.method.as_str()));
+        let with_verb = format!("{}{}", action.method, uppercase_first(&action.verb));
+        let numbered = (2..).map(|number| format!("{with_verb}{number}"));
+        let Some(name) = (!reserved)
+            .then(|| action.method.clone())
+            .into_iter()
+            .chain([with_verb.clone()])
+            .chain(numbered)
+            .find(|name| !used.contains(name))
+        else {
+            continue;
+        };
+        used.push(name.clone());
+        if !methods.source.is_empty() {
+            methods.source.push('\n');
+        }
+        methods
+            .source
+            .push_str(&method_source(action, &name, types));
+        methods.names.push(name);
+    }
+    methods
 }
 
 fn method_source(action: &ApiAction, name: &str, types: &mut Types) -> String {

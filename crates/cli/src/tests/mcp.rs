@@ -39,6 +39,7 @@ fn mcp_server_advertises_analysis_and_write_tools() {
         "reverseInheritedProperty",
         "shopware_entity_schema_preview and shopware_entity_schema_apply",
         "always use shopware_scaffold",
+        "always use shopware_admin_api_service",
     ] {
         assert!(
             instructions.contains(needle),
@@ -79,6 +80,7 @@ fn mcp_server_advertises_analysis_and_write_tools() {
         "shopware_explain_diagnostic",
         "shopware_scaffold_catalog",
         "shopware_scaffold",
+        "shopware_admin_api_service",
         "shopware_entity_schema_bootstrap",
         "shopware_entity_schema_field_types",
         "shopware_entity_schema_search",
@@ -103,6 +105,7 @@ fn mcp_server_advertises_analysis_and_write_tools() {
         ("shopware_explain_diagnostic", "rules"),
         ("shopware_scaffold_catalog", "scaffolds"),
         ("shopware_scaffold", "diff"),
+        ("shopware_admin_api_service", "methods"),
         ("shopware_entity_schema_bootstrap", "spec"),
         ("shopware_entity_schema_field_types", "fieldTypes"),
         ("shopware_entity_schema_preview", "revision"),
@@ -304,6 +307,111 @@ fn mcp_scaffold_catalog_and_shopware_preview_write() {
     assert_eq!(applied["applied"], true);
     assert_eq!(applied["primaryFile"], "Resources/cms.xml");
     assert!(root.path().join("Resources/cms.xml").exists());
+}
+
+#[test]
+fn mcp_admin_api_service_is_created_and_then_extended() {
+    let root = temp_dir();
+    let plugin = "custom/plugins/SwagExample/src";
+    write(
+        &path(root.path(), "vendor/framework.php"),
+        r"<?php
+namespace Shopware\Core\Framework;
+abstract class Bundle {}
+abstract class Plugin extends Bundle {}
+namespace Shopware\Core\Framework\Routing;
+class ApiRouteScope { public const ID = 'api'; }
+namespace Symfony\Component\Routing\Attribute;
+class Route {}
+namespace Symfony\Component\HttpFoundation;
+class Response {}
+class JsonResponse extends Response { public function __construct(mixed $data = null) {} }
+",
+    );
+    write(
+        &path(root.path(), &format!("{plugin}/SwagExample.php")),
+        r"<?php
+namespace Swag\Example;
+use Shopware\Core\Framework\Plugin;
+class SwagExample extends Plugin {}
+",
+    );
+    let controller = |actions: &str| {
+        format!(
+            r"<?php
+namespace Swag\Example\Controller;
+
+use Shopware\Core\Framework\Routing\ApiRouteScope;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\Routing\Attribute\Route;
+
+#[Route(defaults: ['_routeScope' => [ApiRouteScope::ID]])]
+class SyncController
+{{
+    #[Route(path: '/api/_action/swag-example/sync', name: 'api.action.swag-example.sync', methods: ['POST'])]
+    public function sync(): JsonResponse
+    {{
+        return new JsonResponse(['synced' => 3]);
+    }}
+{actions}}}
+"
+        )
+    };
+    let controller_path = format!("{plugin}/Controller/SyncController.php");
+    write(&path(root.path(), &controller_path), &controller(""));
+    let service = format!("{plugin}/Resources/app/administration/src/service/sync.api.service.ts");
+    let mut client = McpClient::connect(root.path());
+
+    let preview = client.call_ok(
+        "shopware_admin_api_service",
+        json!({"path": controller_path}),
+    );
+    assert_eq!(preview["applied"], false);
+    assert_eq!(preview["created"], true);
+    assert_eq!(preview["methods"], json!(["sync"]));
+    assert!(!root.path().join(&service).exists());
+
+    let applied = client.call_ok(
+        "shopware_admin_api_service",
+        json!({"path": controller_path, "write": true}),
+    );
+    assert_eq!(applied["primaryFile"], service);
+    assert_eq!(
+        applied["files"],
+        json!([
+            format!("{plugin}/Resources/app/administration/src/main.ts"),
+            service
+        ])
+    );
+    let read = || std::fs::read_to_string(root.path().join(&service)).unwrap();
+    assert!(read().contains("public async sync("));
+    drop(client);
+
+    // A new action reaches the service the first call wrote.
+    write(
+        &path(root.path(), &controller_path),
+        &controller(
+            r"
+    #[Route(path: '/api/_action/swag-example/reset', name: 'api.action.swag-example.reset', methods: ['POST'])]
+    public function reset(): JsonResponse
+    {
+        return new JsonResponse(['reset' => true]);
+    }
+",
+        ),
+    );
+    let mut client = McpClient::connect(root.path());
+    let added = client.call_ok(
+        "shopware_admin_api_service",
+        json!({"path": controller_path, "method": "reset", "write": true}),
+    );
+    assert_eq!(added["created"], false);
+    assert_eq!(added["methods"], json!(["reset"]));
+    assert_eq!(added["files"], json!([service]));
+    let source = read();
+    assert!(source.contains("public async sync("));
+    assert!(source.contains("public async reset("));
+    assert!(source.contains("export type ResetResponse = {"));
 }
 
 #[test]
