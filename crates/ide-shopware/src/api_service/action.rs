@@ -295,11 +295,11 @@ impl ApiServiceProvider {
         let snapshot = host.resolve_document(ctx, &request.uri)?;
         let document = &snapshot.document;
         let root = document.root().ok_or("the controller has no syntax tree")?;
+        // The class may be named with its namespace.
+        let wanted = request.class_name.rsplit('\\').next().unwrap_or_default();
         let (controller, state) = phpquery::classes(&root)
             .into_iter()
-            .filter(|class| {
-                request.class_name.is_empty() || phpquery::class_name(class) == request.class_name
-            })
+            .filter(|class| wanted.is_empty() || phpquery::class_name(class) == wanted)
             .find_map(|class| self.controller(document, &class))
             .ok_or("no controller with Admin API actions was found")?;
         let target = self

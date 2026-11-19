@@ -114,7 +114,7 @@ document snapshot; no custom request is required.
   ```json
   { "uri": string, "className": string, "method": string }
   ```
-  `uri` is the PHP controller; `className` selects one class of the file and may be empty. `method` is the PHP method of one action and may be empty; it only matters when a service exists.
+  `uri` is the PHP controller; `className` selects one class of the file, by its short or fully qualified name, and may be empty. `method` is the PHP method of one action and may be empty; it only matters when a service exists.
 * **Action:** Builds the edit that gives the Admin API actions of the controller a typed TypeScript API service. Without a service it creates one in the Administration of the bundle that owns the controller and imports it from the bundle's `main.ts` or `main.js` (creating `main.ts` when there is neither). A service exists when the file the generator would write is there, or when a TypeScript file of that Administration requests routes of the controller (the one that requests the most). The command then adds one method for each action the service does not request yet, or for `method` alone, to the end of its class, and the types they need above the class; nothing the file holds is replaced. It fails when the service requests every selected action or declares no class. The edit uses the unsaved content of open documents. The server writes nothing itself; the client must apply the returned edit.
 * **Returns:** `{ "edit": WorkspaceEdit, "primaryFileUri": string, "created": boolean, "methods": string[] }`: whether the service file is new, and the names of the service methods the edit adds.
 

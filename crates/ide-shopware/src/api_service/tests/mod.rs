@@ -167,6 +167,31 @@ fn action_is_offered_on_the_class_of_an_api_controller() {
 }
 
 #[test]
+fn the_class_is_selected_by_its_short_or_qualified_name() {
+    let project = project(&[]);
+    let uri = swlsp_uriutil::file_uri(&project.controller);
+    let created = |class: &str| {
+        project
+            .provider
+            .generate(
+                &Context::background(),
+                Some(&json!({ "uri": uri, "className": class })),
+            )
+            .map(|response| response.created)
+            .map_err(|error| error.to_string())
+    };
+    assert_eq!(created("SyncController"), Ok(true));
+    assert_eq!(
+        created("Swag\\Example\\Controller\\SyncController"),
+        Ok(true)
+    );
+    assert_eq!(
+        created("OtherController"),
+        Err("no controller with Admin API actions was found".to_owned())
+    );
+}
+
+#[test]
 fn service_is_created_and_imported_from_the_entry_file() {
     let project = project(&[("main.js", "import './module/swag-example';\n")]);
     let changes = generate(&project);
