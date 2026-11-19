@@ -710,7 +710,8 @@ pub(crate) const PROJECT: &[RuleHelp] = &[
     ),
     help(
         "admin.api.request-missing-key",
-        "Send the key, or read it in the controller with a default value or after has().",
+        "Send the key, or read it in the controller with a default value or after has(). \
+         For a request of a declared type a quick fix adds the member to the type.",
         "Only reported when every key of the request is known: an object literal without \
          a spread or a computed key, or a declared type. A key the controller reads with \
          a default, tests with has() or reads as a boolean may be left out.",

@@ -13,7 +13,7 @@ pub use action::{
     ApiServiceProvider, ApiServiceRequest, ApiServiceResponse, GENERATE_API_SERVICE_ACTION,
     GENERATE_API_SERVICE_COMMAND,
 };
-pub(crate) use shape::{Field, Shape};
+pub(crate) use shape::{Field, Shape, property_key};
 
 #[cfg(test)]
 mod tests;

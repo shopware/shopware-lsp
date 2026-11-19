@@ -27,7 +27,8 @@ use swlsp_parser_js::query as jsquery;
 use swlsp_parser_js::syntax::{
     JS_ARGUMENT, JS_ARGUMENT_LIST, JS_ARROW_FUNCTION, JS_BLOCK, JS_FUNCTION, JS_IDENTIFIER,
     JS_METHOD, JS_OBJECT, JS_PROPERTY, JS_STRING, JS_TYPE_DECLARATION, JS_VARIABLE_DECLARATION,
-    TK_COLON, TK_COMMA, TK_IDENTIFIER, TK_KEYWORD, TK_OPERATOR, TK_SEMICOLON,
+    TK_CLOSE_BRACE, TK_COLON, TK_COMMA, TK_IDENTIFIER, TK_KEYWORD, TK_OPEN_BRACE, TK_OPERATOR,
+    TK_SEMICOLON,
 };
 use swlsp_parser_php::query as phpquery;
 use swlsp_php::PhpIndex;
@@ -35,7 +36,7 @@ use swlsp_symfony::{Route, RouteIndexer};
 use swlsp_syntax::{SyntaxElement, SyntaxNode, SyntaxNodeExt, SyntaxToken, TextRange};
 
 use super::php_api_contract::{ApiAction, ApiController, api_controller};
-use crate::api_service::{Field, Shape};
+use crate::api_service::{Field, Shape, property_key};
 use crate::diagnostics::ProblemAnalyzer;
 
 pub const ADMIN_API_REQUEST_UNKNOWN_KEY_CODE: &str = "admin.api.request-unknown-key";
@@ -240,6 +241,8 @@ struct Keys {
     keys: Vec<Key>,
     /// Whether no other key can be there.
     closed: bool,
+    /// The declared type the keys are the members of, with its name.
+    declared: Option<(String, SyntaxNode)>,
 }
 
 fn trimmed(node: &SyntaxNode) -> String {
@@ -283,6 +286,7 @@ fn literal_keys(object: &SyntaxNode) -> Keys {
     let mut keys = Keys {
         keys: Vec::new(),
         closed: true,
+        declared: None,
     };
     for property in object.children() {
         let name = property
@@ -405,7 +409,10 @@ fn request_keys(expression: &SyntaxNode, aliases: &HashMap<String, SyntaxNode>) 
             let name = trimmed(expression);
             let function = enclosing_function(expression)?;
             if let Some(alias) = parameter_type(&function, &name) {
-                return aliases.get(&alias).map(type_keys);
+                let object = aliases.get(&alias)?;
+                let mut keys = type_keys(object);
+                keys.declared = Some((alias, object.clone()));
+                return Some(keys);
             }
             local_object(&function, &name).map(|object| literal_keys(&object))
         }
@@ -430,6 +437,89 @@ fn problem(
             "removeLine": replacement.is_empty(),
         })
     });
+    problem_with(document_range, code, message, payload)
+}
+
+/// Where a member is added to an object type: after the byte `offset`, which
+/// follows `expected`.
+struct Insertion {
+    offset: u32,
+    expected: String,
+    text: String,
+}
+
+/// The whitespace the line of `offset` starts with.
+fn indentation(source: &str, offset: usize) -> &str {
+    let line = &source[source[..offset].rfind('\n').map_or(0, |index| index + 1)..];
+    &line[..line.len() - line.trim_start_matches([' ', '\t']).len()]
+}
+
+/// `member` as the last member of the object type `object`, in the layout
+/// the type has.
+fn member_insertion(object: &SyntaxNode, member: &str) -> Option<Insertion> {
+    let elements: Vec<SyntaxElement> = object
+        .children_with_tokens()
+        .filter(|element| !element.kind().is_trivia())
+        .collect();
+    let [.., last, close] = elements.as_slice() else {
+        return None;
+    };
+    if close.kind() != TK_CLOSE_BRACE {
+        return None;
+    }
+    let root = object.ancestors().last().unwrap_or_else(|| object.clone());
+    let source = root.text().to_string();
+    let (last_range, opens, separated) = match last {
+        SyntaxElement::Node(node) => (node.range_trimmed_trivia(), false, false),
+        SyntaxElement::Token(token) => (
+            token.text_range(),
+            token.kind() == TK_OPEN_BRACE,
+            matches!(token.kind(), TK_SEMICOLON | TK_COMMA),
+        ),
+    };
+    if !opens && !separated && !matches!(last, SyntaxElement::Node(_)) {
+        return None;
+    }
+    let (end, close_start) = (
+        usize::from(last_range.end()),
+        usize::from(close.text_range().start()),
+    );
+    let gap = source.get(end..close_start)?;
+    let separator = if tokens(object).any(|token| token.kind() == TK_COMMA) {
+        ","
+    } else {
+        ";"
+    };
+    let mut text = String::new();
+    if !opens && !separated {
+        text.push_str(separator);
+    }
+    if gap.contains('\n') {
+        let indent = if opens {
+            format!("{}    ", indentation(&source, close_start))
+        } else {
+            indentation(&source, usize::from(last_range.start())).to_owned()
+        };
+        text.push_str(&format!("\n{indent}{member}{separator}"));
+    } else {
+        text.push_str(&format!(" {member}"));
+        if gap.is_empty() {
+            text.push(' ');
+        }
+    }
+    Some(Insertion {
+        offset: u32::from(last_range.end()),
+        expected: source.get(usize::from(last_range.start())..end)?.to_owned(),
+        text,
+    })
+}
+
+fn problem_with(
+    document_range: TextRange,
+    code: &str,
+    message: String,
+    payload: Option<serde_json::Value>,
+) -> Problem {
     Problem {
         id: code.into(),
         range: document_range,
@@ -497,15 +587,29 @@ fn check_request(
         if sent.keys.iter().any(|key| key.name == field.name) {
             continue;
         }
-        problems.push(problem(
+        // A declared type gets the member; a literal has no value for it.
+        let payload = sent.declared.as_ref().and_then(|(alias, object)| {
+            let member = format!(
+                "{}: {}",
+                property_key(&field.name),
+                field.shape.typescript(1)
+            );
+            let insertion = member_insertion(object, &member)?;
+            Some(json!({
+                "title": format!("Add '{}' to the type {alias}", field.name),
+                "insertAt": insertion.offset,
+                "expected": insertion.expected,
+                "insert": insertion.text,
+            }))
+        });
+        problems.push(problem_with(
             range,
-            "",
             ADMIN_API_REQUEST_MISSING_KEY_CODE,
             format!(
                 "{controller} reads the {part} key '{}', which is not sent",
                 field.name
             ),
-            None,
+            payload,
         ));
     }
 }

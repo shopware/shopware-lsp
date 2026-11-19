@@ -11,7 +11,7 @@ use swlsp_symfony::RouteIndexer;
 use tempfile::TempDir;
 
 use super::php_api_contract::{FRAMEWORK, HEADER};
-use crate::inspections::new_admin_api_contract;
+use crate::inspections::{ADD_API_TYPE_MEMBER_FIX_ID, new_admin_api_contract};
 
 struct Project {
     _root: TempDir,
@@ -216,5 +216,81 @@ fn declared_response_type_is_checked_and_fixed() {
             &plain.replace("    total: number;\n", ""),
         ),
         "Remove 'total' from the type"
+    );
+}
+
+#[test]
+fn a_missing_key_is_added_to_the_declared_type() {
+    let project = project();
+    let service = |declaration: &str, marked: bool| {
+        let argument = if marked {
+            "{|admin.api.request-missing-key:payload|}"
+        } else {
+            "payload"
+        };
+        format!(
+            "{declaration}
+
+class SwagApiService extends ApiService {{
+    import(payload: ImportPayload) {{
+        return this.httpClient.post('/_action/swag/import', {argument});
+    }}
+}}
+"
+        )
+    };
+    let cases = [
+        (
+            "type ImportPayload = {\n    limit?: number;\n};",
+            "type ImportPayload = {\n    limit?: number;\n    profileId: string;\n};",
+        ),
+        // The separator and a missing one follow the type.
+        (
+            "interface ImportPayload {\n  limit?: number,\n  page?: number\n}",
+            "interface ImportPayload {\n  limit?: number,\n  page?: number,\n  profileId: string,\n}",
+        ),
+        (
+            "type ImportPayload = { limit?: number };",
+            "type ImportPayload = { limit?: number; profileId: string };",
+        ),
+        (
+            "type ImportPayload = {};",
+            "type ImportPayload = { profileId: string };",
+        ),
+        (
+            "type ImportPayload = {\n};",
+            "type ImportPayload = {\n    profileId: string;\n};",
+        ),
+    ];
+    for (before, after) in cases {
+        let fix = check_fix(
+            &*project.inspection,
+            &project.uri,
+            &service(before, true),
+            ADD_API_TYPE_MEMBER_FIX_ID,
+            &service(after, false),
+        );
+        assert_eq!(fix.title, "Add 'profileId' to the type ImportPayload");
+    }
+}
+
+#[test]
+fn a_literal_request_has_no_fix_for_a_missing_key() {
+    let project = project();
+    let (_, problems) = check_diagnostics(
+        &*project.inspection,
+        &project.uri,
+        "class SwagApiService extends ApiService {
+    import() {
+        return this.httpClient.post('/_action/swag/import', {|admin.api.request-missing-key:{ limit: 1 }|});
+    }
+}
+",
+    );
+    assert_eq!(problems.len(), 1);
+    assert!(
+        !format!("{:?}", problems[0].payload).contains("insertAt"),
+        "{:?}",
+        problems[0].payload
     );
 }

@@ -1493,8 +1493,8 @@ controller method answers:
 The keys of a request are known for an object literal, a constant that holds
 one and a parameter typed with a `type` or `interface` of the same file. A
 controller that takes any key (see the open object above) is not checked.
-Quick fixes remove a member from a declared type and correct a primitive
-type. The controller is read as saved on disk.
+Quick fixes remove a member from a declared type, add a key the controller
+reads to the declared type of the request and correct a primitive type. The controller is read as saved on disk.
 
 Reads made in a service the request is handed to are not followed. A method
 whose name `ApiService` uses already gets the HTTP method appended

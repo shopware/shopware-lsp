@@ -163,7 +163,7 @@ Languages: javascript. Domain: `administration`.
 
 **`admin.api.request-missing-key`**
 
-- Fix: Send the key, or read it in the controller with a default value or after has().
+- Fix: Send the key, or read it in the controller with a default value or after has(). For a request of a declared type a quick fix adds the member to the type.
 - Exceptions: Only reported when every key of the request is known: an object literal without a spread or a computed key, or a declared type. A key the controller reads with a default, tests with has() or reads as a boolean may be left out.
 
 **`admin.api.request-unknown-key`**
