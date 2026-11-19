@@ -19,6 +19,7 @@ Usage:
     sw-action.py twig-extend-block   <file> [row]
     sw-action.py admin-twig-override <file> [row]
     sw-action.py twig-block-diff     <file> [row]  read-only
+    sw-action.py admin-api-service   <file> [row]  PHP controller
     sw-action.py scaffold            [directory]
 
 `row` is 1-based and defaults to the top of the file; Zed passes $ZED_ROW. It
@@ -107,6 +108,7 @@ OTHER_ACTIONS = {
     "snippet-admin": "Create an Administration snippet",
     "twig-extend-block": "Override a storefront block in an extension",
     "admin-twig-override": "Override an Administration Twig block",
+    "admin-api-service": "Generate or extend the Administration API service of a controller",
     "twig-block-diff": "Show an override against its upstream block",
     "service-definition": "Render a Symfony service definition for a class",
     "compiler-pass": "Create a compiler pass and register it in a bundle",
@@ -560,6 +562,74 @@ def run_admin_twig_override(args, binary):
     component = result.get("component")
     if component:
         print(f"  component: {component}")
+
+
+def method_at_row(binary, root, path, row):
+    """Name of the method whose name sits on the one-based `row`, if any.
+
+    The VS Code code action on the head of an action method adds that one
+    method; anywhere else in the class it acts on every missing action. The
+    outline's `selectionRange` is the name, so the same rule applies here.
+    """
+    result = subprocess.run(
+        [binary, "--root", root, "--json", "lsp", "symbols", path],
+        capture_output=True,
+        text=True,
+    )
+    try:
+        outline = json.loads(result.stdout or "[]")
+    except ValueError:
+        return None
+
+    def walk(nodes):
+        for node in nodes or []:
+            selection = node.get("selectionRange") or {}
+            line = (selection.get("start") or {}).get("line")
+            if node.get("kind") == 6 and line == row - 1:  # method
+                return node.get("name")
+            found = walk(node.get("children"))
+            if found:
+                return found
+        return None
+
+    return walk(outline if isinstance(outline, list) else [])
+
+
+def run_admin_api_service(args, binary):
+    """Generate the typed Administration API service of a PHP controller.
+
+    One server command covers both cases: it creates the service when the
+    controller has none, and otherwise adds the actions the service does not
+    request yet. `--method`, or a cursor on the head of an action method,
+    narrows that to one action.
+    """
+    path = os.path.abspath(args.target)
+    if not os.path.isfile(path):
+        sys.exit(f"not a file: {path}")
+
+    class_name = args.class_name or resolve_class(binary, args.root, path)
+    if not class_name:
+        sys.exit(f"could not find a class in {relative(path, args.root)}")
+
+    method = args.method
+    if method is None:
+        method = method_at_row(binary, args.root, path, args.row)
+
+    payload = {"uri": path_to_uri(path), "className": class_name}
+    if method:
+        payload["method"] = method
+    result = execute(binary, args.root, "shopware/admin/api-service/generate", payload)
+    edit = (result or {}).get("edit")
+    if not edit:
+        sys.exit(f"the server returned no edit: {json.dumps(result)[:200]}")
+
+    primary = uri_to_path(result.get("primaryFileUri", ""))
+    verb = "new service" if result.get("created") else "added to the service"
+    names = ", ".join(result.get("methods") or [])
+    print(f"{class_name}: {verb}{': ' + names if names else ''}")
+    apply_workspace_edit(edit, args.print_only, args.root)
+    if primary:
+        print(f"  service: {relative(primary, args.root)}")
 
 
 def run_twig_block_diff(args, binary):
@@ -1280,6 +1350,13 @@ def main():
     )
     parser.add_argument("--extension", help="extension name, skips the picker")
     parser.add_argument(
+        "--method",
+        help=(
+            "PHP action method for admin-api-service, instead of the one under "
+            "the cursor; pass an empty value for every missing action"
+        ),
+    )
+    parser.add_argument(
         "--class",
         dest="class_name",
         help="fully qualified class to act on, instead of resolving it from the file",
@@ -1351,6 +1428,7 @@ def main():
     handlers = {
         "twig-extend-block": run_twig_extend_block,
         "admin-twig-override": run_admin_twig_override,
+        "admin-api-service": run_admin_api_service,
         "twig-block-diff": run_twig_block_diff,
         "template-usages": run_template_usages,
         "uuid": run_uuid,

@@ -425,6 +425,106 @@ class Picker(unittest.TestCase):
             self.assertEqual(sw.choose(self.DUPLICATES, "thing", False), ["Other"])
 
 
+class AdminApiService(unittest.TestCase):
+    """run_admin_api_service against a faked server: what it asks for, and
+    that the answered edit is what reaches the disk."""
+
+    OUTLINE = [
+        {
+            "name": "Swag\\Example",
+            "kind": 3,
+            "children": [
+                {
+                    "name": "StatusController",
+                    "kind": 5,
+                    "selectionRange": {"start": {"line": 4, "character": 6}},
+                    "children": [
+                        {
+                            "name": "status",
+                            "kind": 6,
+                            "selectionRange": {"start": {"line": 6, "character": 20}},
+                        }
+                    ],
+                }
+            ],
+        }
+    ]
+
+    def run_action(self, row=1, method=None, print_only=False, created=True):
+        directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, directory)
+        controller = pathlib.Path(directory) / "StatusController.php"
+        controller.write_text("<?php\n", encoding="utf-8")
+        service = pathlib.Path(directory) / "admin" / "status.api.service.ts"
+        requests = []
+
+        def fake_run(command, **kwargs):
+            if "symbols" in command:
+                return argparse.Namespace(stdout=json.dumps(self.OUTLINE))
+            requests.append((command[-2], json.loads(command[-1])))
+            answer = {
+                "edit": {
+                    "documentChanges": [
+                        {"kind": "create", "uri": sw.path_to_uri(str(service))},
+                        {
+                            "textDocument": {"uri": sw.path_to_uri(str(service))},
+                            "edits": [
+                                {
+                                    "range": {
+                                        "start": {"line": 0, "character": 0},
+                                        "end": {"line": 0, "character": 0},
+                                    },
+                                    "newText": "export default class {}\n",
+                                }
+                            ],
+                        },
+                    ]
+                },
+                "primaryFileUri": sw.path_to_uri(str(service)),
+                "created": created,
+                "methods": ["status"],
+            }
+            return argparse.Namespace(stdout=json.dumps(answer), stderr="", returncode=0)
+
+        args = argparse.Namespace(
+            target=str(controller), row=row, root=directory, class_name=None,
+            method=method, print_only=print_only,
+        )
+        stdout = io.StringIO()
+        with (
+            mock.patch.object(sw.subprocess, "run", fake_run),
+            contextlib.redirect_stdout(stdout),
+        ):
+            sw.run_admin_api_service(args, "shopware-lsp")
+        return requests, service, stdout.getvalue()
+
+    def test_the_class_gets_every_missing_action(self):
+        requests, service, output = self.run_action(row=5)
+        command, payload = requests[0]
+        self.assertEqual(command, "shopware/admin/api-service/generate")
+        self.assertEqual(payload["className"], "Swag\\Example\\StatusController")
+        self.assertNotIn("method", payload)
+        self.assertEqual(service.read_text(encoding="utf-8"), "export default class {}\n")
+        self.assertIn("new service: status", output)
+
+    def test_the_head_of_a_method_selects_that_action(self):
+        requests, _, _ = self.run_action(row=7)
+        self.assertEqual(requests[0][1]["method"], "status")
+
+    def test_an_empty_method_overrides_the_cursor(self):
+        requests, _, _ = self.run_action(row=7, method="")
+        self.assertNotIn("method", requests[0][1])
+
+    def test_a_named_method_wins_over_the_cursor(self):
+        requests, _, _ = self.run_action(row=1, method="other")
+        self.assertEqual(requests[0][1]["method"], "other")
+
+    def test_print_only_writes_nothing(self):
+        _, service, output = self.run_action(print_only=True, created=False)
+        self.assertFalse(service.exists())
+        self.assertIn("added to the service", output)
+
+
 class PickLocation(unittest.TestCase):
     """Note what these do not cover: since the label now ends in `path:line`,
     it is unique whenever the entry is, so resolving by text would pass here

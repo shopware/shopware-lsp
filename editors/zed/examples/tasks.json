@@ -146,6 +146,18 @@
     "reveal": "always"
   },
   {
+    "label": "Shopware: create admin API service",
+    "command": "python3",
+    "args": [
+      "$ZED_WORKTREE_ROOT/.zed/sw-action.py",
+      "admin-api-service",
+      "$ZED_FILE",
+      "$ZED_ROW"
+    ],
+    "save": "current",
+    "reveal": "always"
+  },
+  {
     "label": "Shopware: create compiler pass",
     "command": "python3",
     "args": [

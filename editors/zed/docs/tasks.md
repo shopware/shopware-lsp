@@ -35,7 +35,7 @@ anything project-specific: Zed sets `$ZED_WORKTREE_ROOT` per window and
 project you open. They point at `scripts/sw-action.py` inside this checkout,
 so `git pull` here updates every project at once.
 
-That means **moving or deleting this checkout breaks all 21 tasks**, with the
+That means **moving or deleting this checkout breaks all 22 tasks**, with the
 same symptom as any other task misconfiguration: `task: spawn` runs and
 nothing happens. The clone already has to stay put for the dev extension, so
 this is not a new constraint, just a second thing depending on it.
@@ -43,7 +43,7 @@ this is not a new constraint, just a second thing depending on it.
 Re-running updates in place. Entries labelled `Shopware: ...` are replaced;
 anything else in your `tasks.json` is kept, and the previous file is backed up.
 
-The trade-off is that all 20 appear in `task: spawn` for every project, Rust
+The trade-off is that all 22 appear in `task: spawn` for every project, Rust
 and Node included. They filter out by typing *sho*, and outside a Shopware or
 Symfony project they fail cleanly because the server refuses to start. To scope
 them to one project instead, use the old layout -- copy `scripts/sw-action.py`
@@ -64,6 +64,7 @@ ones.
 | `snippet-admin` | Same for Administration snippets | verified |
 | `twig-extend-block` | Override a storefront block in an extension | verified |
 | `admin-twig-override` | Override an admin block, and register it in `main.js` | verified |
+| `admin-api-service` | Generate the typed Administration API service of a PHP controller, or add the actions an existing one lacks | run from a terminal only, not yet from Zed |
 | `twig-block-diff` | Show an override against its upstream block | read-only |
 | `service-definition` | Render a service definition, arguments resolved from the index | verified |
 | `compiler-pass` | Create a compiler pass and register it in the bundle | verified |
@@ -102,6 +103,13 @@ handler). Use `--print` to preview.
 `service-definition` prints to the terminal rather than editing, because its
 output belongs in a services config file, not the PHP file it was generated
 from. `--format` takes `yaml`, `xml`, `fluent` or `php-array`.
+
+`admin-api-service` runs on a PHP controller. Without a service it creates
+one; otherwise it adds the actions the TypeScript service does not request
+yet. With the cursor on the line of an action method's name it adds only that
+action, as the VS Code code action there does; `--method` names one
+explicitly, and `--method ''` forces every missing action. Use `--print` to
+preview.
 
 `translation-extract` needs the text, which the example task passes as
 `$ZED_SELECTED_TEXT`; Zed only offers the task when something is selected. It
