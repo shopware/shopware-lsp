@@ -33,7 +33,7 @@ impl DocumentFormattingProvider for TwigProvider {
         ctx.check()?;
         let path = swlsp_uriutil::path(&document.uri)?;
         let options = &request.params.options;
-        let formatted = formatter::format_tree(
+        let mut formatted = formatter::format_tree(
             tree,
             Options {
                 insert_spaces: options.insert_spaces,
@@ -41,6 +41,12 @@ impl DocumentFormattingProvider for TwigProvider {
                 twig_block_indent_children: !is_administration_template(&path),
             },
         );
+        // The formatter ends with the last token. The line break that ends
+        // the file stays, and the client may ask for one.
+        let final_newline = options.insert_final_newline || document.source().ends_with('\n');
+        if final_newline && !formatted.is_empty() && !formatted.ends_with('\n') {
+            formatted.push('\n');
+        }
         Ok(Some(formatted))
     }
 }

@@ -1,0 +1,18 @@
+[package]
+name = "swlsp-format"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Biome's formatters with the parsers they format the trees of. They are
+# used to format a document and for nothing else (see AGENTS.md).
+biome_css_formatter = "0.7.3"
+biome_css_parser = "0.7.3"
+biome_formatter = "0.7.3"
+biome_js_formatter = "0.7.3"
+biome_js_parser = "0.7.3"
+biome_json_formatter = "0.7.3"
+biome_json_parser = "0.7.3"
+biome_languages = { version = "0.7.3", features = ["lang_css", "lang_js", "lang_json"] }

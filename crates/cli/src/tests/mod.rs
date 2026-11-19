@@ -5,6 +5,7 @@ mod check;
 mod cli;
 mod common;
 mod extraction;
+mod format;
 mod mcp;
 mod php;
 mod serve;

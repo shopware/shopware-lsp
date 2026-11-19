@@ -29,6 +29,9 @@ Keep these invariants intact:
 - Language parsing uses the native, lossless CST infrastructure in
   `crates/syntax` and the `crates/parser-<language>` crates. Do not introduce
   Tree-sitter or a second parser stack.
+  The one exception is `crates/format`: Biome's formatters format Biome's own
+  trees, so that crate parses a document a second time to format it. Those
+  trees must not leave the crate or feed any index, diagnostic, or provider.
 - CST ranges are byte offsets into the exact source snapshot. Convert to or
   from UTF-16 positions only at the LSP boundary.
 - Parsers must tolerate incomplete editor input and return a usable, lossless
@@ -136,6 +139,7 @@ the lockfile.
 | `crates/language` | Built-in language registry and extension-to-parser mapping |
 | `crates/indexer` | File scanning, watcher, coordinated mutations, SQLite store and repositories, cache versions, and workspace-symbol FTS |
 | `crates/rewrite` | Validated immutable source edits and workspace edit plans |
+| `crates/format` | Document formatting with Biome's formatters (JSON, JavaScript/TypeScript, CSS/SCSS): text in, text out |
 | `crates/php`, `crates/php-<stage>` | PHP project model, binder, semantic graph, types, resolver, inference, PHPDoc, stubs, and rewrites |
 | `crates/symfony`, `crates/doctrine`, `crates/twig`, etc. | Domain indexes and framework intelligence |
 | `crates/shopware`, `crates/shopware-*`, `crates/admin` | Shopware versioning and Shopware-specific domains such as DAL, entity schemas, and the Administration |

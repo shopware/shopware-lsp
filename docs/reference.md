@@ -30,6 +30,8 @@ shopware-lsp --root /path/to/project cache clear
 shopware-lsp cache clear --stale
 shopware-lsp --root /path/to/project check src tests
 shopware-lsp --root /path/to/project check --fail-on error src/Controller.php
+shopware-lsp --root /path/to/project format src/Resources/views
+shopware-lsp --root /path/to/project format --write src/Resources/views
 shopware-lsp --root /path/to/project lsp definition src/Controller.php:24:18
 shopware-lsp --root /path/to/project lsp references src/Controller.php:24:18
 shopware-lsp --root /path/to/project lsp workspace-symbol customer.detail
@@ -128,6 +130,17 @@ to another file (creating a template, adding a service argument to
 file are applied one after another, checking the file again after each, so
 fixes that affect each other (two renamed references sharing an import) come
 out right. Review the result with `git diff`.
+
+`format PATH…` runs the document formatters of the language server over files
+and directories; Twig, JSON, JavaScript, TypeScript and SCSS files have one,
+and other files below a directory are skipped. A file with syntax errors is
+left as it is. It prints a unified diff of what would change and exits
+with 1 when a file is not formatted, so it can gate CI. `--write` (`-w`)
+formats the files, `--check` lists the unformatted files without the diff, and
+`--json` reports `{ "written", "files", "changed" }`. `--indent-width COUNT`
+(default 4) and `--use-tabs` set the indentation, as an editor's `tabSize` and
+`insertSpaces` do. A formatted file ends with one line break. Excluded paths of
+the project configuration are skipped as in `check`.
 
 `check --only RULE` narrows a run to particular rules, so one kind of problem
 can be reviewed or fixed at a time:
@@ -669,6 +682,21 @@ include these hints.
   axes, functions, element/attribute names, variables, strings, numbers, and
   operators with exact PHP host ranges
 
+### JSON, JavaScript, TypeScript, CSS and SCSS formatting
+- Whole-document formatting through `textDocument/formatting` and
+  `shopware-lsp format` with [Biome](https://biomejs.dev)'s formatters
+  (`.json`, `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.mts`, `.cts`, `.tsx`,
+  `.css`, `.scss`). The indentation follows the editor's `tabSize` /
+  `insertSpaces` options. The rest follows Shopware's Prettier configuration:
+  a line width of 125, single quotes in scripts and styles, and trailing
+  commas.
+  JSON objects and arrays have one member per line, the way Composer and
+  npm write them, and comments and trailing commas are read in every JSON
+  file. A document with
+  syntax errors is not formatted.
+- `crates/format` parses the document with Biome's parser for this purpose
+  only; every other feature keeps reading the server's own syntax tree.
+
 ### Twig Template Support
 - Native whole-document Twig/HTML formatting through
   `textDocument/formatting`, using the current unsaved CST and the editor's
@@ -676,7 +704,9 @@ include these hints.
   `Resources/app/administration` keep Shopware's flat Twig-block children;
   Storefront and ordinary Twig templates indent block children. Twig whitespace
   controls (`-` and `~`), comments, and whitespace-sensitive `pre` / `textarea`
-  bodies are preserved.
+  bodies are preserved. The line break that ends the file is kept, and added
+  when the client sets `insertFinalNewline`. `shopware-lsp format` runs the
+  same formatter from the terminal.
 - Template path completion in Twig files (`extends`, `include`, `sw_extends`, `sw_include` tags)
 - Template path completion in PHP files (`renderStorefront` method calls)
 - Go-to-definition for template paths in Twig and PHP files

@@ -68,6 +68,16 @@ pub(crate) enum Command {
         example = "shopware-lsp check --only php.unusedImport --fix src"
     )]
     Check(Check),
+    /// Format files: a diff by default, written with --write
+    #[usage(
+        name = "format",
+        help_heading = "Analyze",
+        display_order = 2,
+        example = "shopware-lsp format src/Resources/views",
+        example = "shopware-lsp format --write src/Resources/views",
+        example = "shopware-lsp format --check ."
+    )]
+    Format(Format),
     /// Build or refresh the workspace index
     #[usage(name = "index", help_heading = "Analyze", display_order = 2)]
     Index(Index),
@@ -331,6 +341,25 @@ pub(crate) struct Check {
     pub paths: Vec<String>,
 }
 
+#[derive(Debug, Args)]
+pub(crate) struct Format {
+    /// Write the formatted files instead of printing a diff
+    #[usage(short = 'w', long)]
+    pub write: bool,
+    /// List the files that are not formatted instead of printing a diff
+    #[usage(long, conflicts = "write")]
+    pub check: bool,
+    /// Columns of one indentation level (default: 4)
+    #[usage(long, value_name = "COUNT")]
+    pub indent_width: Option<i64>,
+    /// Indent with tabs instead of spaces
+    #[usage(long)]
+    pub use_tabs: bool,
+    /// Files or directories to format
+    #[usage(arg, required, value_name = "PATH")]
+    pub paths: Vec<String>,
+}
+
 /// A file position.
 #[derive(Debug, Args)]
 pub(crate) struct At {
@@ -427,6 +456,7 @@ impl Command {
     pub(crate) fn name(&self) -> &'static str {
         match self {
             Command::Check(_) => "check",
+            Command::Format(_) => "format",
             Command::Index(_) => "index",
             Command::Info(_) => "info",
             Command::Cache(_) => "cache",

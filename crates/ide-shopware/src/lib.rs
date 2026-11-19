@@ -9,6 +9,7 @@ mod dal_criteria;
 pub mod definition;
 pub mod diagnostics;
 mod extension_config;
+pub mod formatting;
 pub mod hover;
 pub mod inlay;
 pub mod inspections;
@@ -63,6 +64,8 @@ fn register(server: &Registrar<'_>, s: &Services) {
     );
     scaffolds.set_entity_catalog(Arc::new(s.entity_catalog()));
     server.command(Arc::new(scaffolds));
+
+    server.formatting(Arc::new(crate::formatting::BiomeProvider));
 
     server.inlay_hint(Arc::new(crate::inlay::SnippetPreviewProvider::new(
         s.snippets.clone(),

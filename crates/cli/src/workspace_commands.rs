@@ -305,7 +305,7 @@ fn format_file_size_limit(bytes: i64) -> String {
     format_bytes(bytes)
 }
 
-fn display_workspace_path(root: &str, path: &str) -> String {
+pub(crate) fn display_workspace_path(root: &str, path: &str) -> String {
     match filepath::rel(root, path) {
         Ok(relative) if relative != ".." && !relative.starts_with("../") => {
             filepath::to_slash(&relative)

@@ -13,6 +13,7 @@ mod cache;
 mod edit;
 mod features_read;
 mod features_write;
+mod format;
 mod info;
 mod logger;
 mod mcp;
@@ -380,6 +381,7 @@ impl Runner {
         });
         let result = match command {
             Command::Check(check) => workspace_commands::run_check(self, &check),
+            Command::Format(format) => format::run_format(self, &format),
             Command::Index(index) => workspace_commands::run_index(self, index.force),
             Command::Info(info) => info::run_info(self, &info),
             Command::Cache(cache) => cache::run_cache(self, &cache),

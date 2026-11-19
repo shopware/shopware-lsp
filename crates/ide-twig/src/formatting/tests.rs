@@ -21,6 +21,23 @@ fn format(uri: &str, source: &str, options: protocol::FormattingOptions) -> Opti
 }
 
 #[test]
+fn twig_provider_keeps_or_inserts_the_final_newline() {
+    let uri = "file:///workspace/templates/page.html.twig";
+    let options = |insert_final_newline| protocol::FormattingOptions {
+        tab_size: 4,
+        insert_spaces: true,
+        insert_final_newline,
+        ..protocol::FormattingOptions::default()
+    };
+    let formatted = |source: &str, insert| format(uri, source, options(insert)).unwrap();
+    assert_eq!(formatted("<p>a</p>\n", false), "<p>a</p>\n");
+    assert_eq!(formatted("<p>a</p>\n\n\n", false), "<p>a</p>\n");
+    assert_eq!(formatted("<p>a</p>", false), "<p>a</p>");
+    assert_eq!(formatted("<p>a</p>", true), "<p>a</p>\n");
+    assert_eq!(formatted("", true), "");
+}
+
+#[test]
 fn twig_provider_selects_administration_and_storefront_indentation() {
     let source = "{% block content %}<div>content</div>{% endblock %}";
     let cases = [

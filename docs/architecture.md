@@ -73,6 +73,8 @@ change, not a bug fix.
 3. **One parser stack.** All languages use the native lossless CST under
    `swlsp-syntax` and the `crates/parser-<language>` crates. No tree-sitter, no second parser, no regex-based
    "parsing" in consumers.
+   Document formatting with Biome (`crates/format`) is the one exception: it
+   parses a document a second time, and that tree stays inside the crate.
 4. **Byte offsets internally, UTF-16 only at the protocol boundary.** CST
    ranges are byte offsets into an exact source snapshot. Conversion happens in
    `swlsp-lsp` (and `swlsp-lsp-protocol`), nowhere else.

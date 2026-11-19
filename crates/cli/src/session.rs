@@ -654,7 +654,7 @@ impl Drop for CliSession {
     }
 }
 
-fn language_for(path: &str) -> Option<swlsp_language::LanguageId> {
+pub(crate) fn language_for(path: &str) -> Option<swlsp_language::LanguageId> {
     let extension = swlsp_uriutil::filepath::ext(path);
     let extension = extension.strip_prefix('.')?;
     swlsp_language::LanguageId::from_path(&format!("x.{extension}"))
