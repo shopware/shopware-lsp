@@ -1,0 +1,33 @@
+{
+  "comments": {
+    "blockComment": ["{#", "#}"]
+  },
+  "brackets": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"]
+  ],
+  "autoClosingPairs": [
+    {"open": "{", "close": "}"},
+    {"open": "[", "close": "]"},
+    {"open": "(", "close": ")"},
+    {"open": "{# ", "close": " #", "notIn": ["comment"]},
+    {"open": "{% ", "close": " %", "notIn": ["string", "comment"]},
+    {"open": "'", "close": "'", "notIn": ["string", "comment"]},
+    {"open": "\"", "close": "\"", "notIn": ["string", "comment"]}
+  ],
+  "surroundingPairs": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"],
+    ["'", "'"],
+    ["\"", "\""],
+    ["<", ">"]
+  ],
+  "folding": {
+    "markers": {
+      "start": "\\{%[-~]?\\s*(block|if|for|macro|embed|set|apply|autoescape|verbatim|with|sandbox|sw_silent_feature_call)\\b[^%]*%\\}\\s*$",
+      "end": "\\{%[-~]?\\s*end\\w+\\s*[-~]?%\\}"
+    }
+  }
+}

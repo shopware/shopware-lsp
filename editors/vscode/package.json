@@ -358,6 +358,30 @@
         "url": "./dist/shopware-lsp.schema.json"
       }
     ],
+    "languages": [
+      {
+        "id": "twig",
+        "aliases": ["Twig", "twig"],
+        "extensions": [".twig"],
+        "configuration": "./languages/twig.language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "twig",
+        "scopeName": "text.html.twig",
+        "path": "./syntaxes/twig.tmLanguage.json",
+        "embeddedLanguages": {
+          "source.css": "css",
+          "source.js": "javascript"
+        }
+      }
+    ],
+    "configurationDefaults": {
+      "emmet.includeLanguages": {
+        "twig": "html"
+      }
+    },
     "snippets": [
       {
         "language": "php",

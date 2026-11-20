@@ -47,6 +47,8 @@ Autocomplete service IDs, tags, parameters, and class names in XML and YAML serv
 
 ### Twig Templates
 
+The extension registers `.twig` files and highlights them itself: no separate Twig extension is needed.
+
 Complete template paths in `extends`, `include`, `sw_extends`, and `sw_include` tags. Autocomplete Twig filters and functions. Navigate to any template file from Twig or PHP (`renderStorefront`). See block usage at a glance with code lens indicators.
 
 ### Twig Block Versioning
