@@ -162,7 +162,7 @@ a problem in a file that is not open, which `check` covers.
 
 **Change.**
 
-- `ProjectAnalysis` and its `Project` adapter in `swlsp-lsp-diagnostics`
+- `ProjectAnalysis` and its `Project` adapter in `crates/ide/src/diagnostics`
   (see [project analyses](diagnostics-pipeline.md#project-analyses)): a
   lazy summary memoized per `revision()`, then a per-document check.
 - `symfony.route.redefined` as the first project rule: a route name defined

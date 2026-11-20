@@ -2,256 +2,190 @@
   <img src="editors/vscode/icon.png" alt="Shopware Language Server" width="112" height="112">
 </p>
 
-# Shopware Language Server
+<h1 align="center">Shopware Language Server</h1>
 
-Framework-aware code intelligence for Shopware and Symfony projects.
+<p align="center">
+  <strong>Your editor finally understands Shopware and Symfony.</strong><br>
+  Completion, navigation, diagnostics and refactoring across PHP, Twig, XML, YAML, JavaScript and SCSS.
+</p>
 
-[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/shopware.shopware-lsp?label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=shopware.shopware-lsp)
-[![Open VSX](https://img.shields.io/open-vsx/v/shopware/shopware-lsp?label=Open%20VSX)](https://open-vsx.org/extension/shopware/shopware-lsp)
-[![GitHub release](https://img.shields.io/github/v/release/shopware/shopware-lsp)](https://github.com/shopware/shopware-lsp/releases)
-[![License](https://img.shields.io/github/license/shopware/shopware-lsp)](LICENSE)
-[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/shopware/shopware-lsp?utm_source=badge)
+<p align="center">
+  <a href="https://marketplace.visualstudio.com/items?itemName=shopware.shopware-lsp"><img src="https://img.shields.io/visual-studio-marketplace/v/shopware.shopware-lsp?label=VS%20Code%20Marketplace" alt="Visual Studio Marketplace"></a>
+  <a href="https://open-vsx.org/extension/shopware/shopware-lsp"><img src="https://img.shields.io/open-vsx/v/shopware/shopware-lsp?label=Open%20VSX" alt="Open VSX"></a>
+  <a href="https://github.com/shopware/shopware-lsp/releases"><img src="https://img.shields.io/github/v/release/shopware/shopware-lsp" alt="GitHub release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/shopware/shopware-lsp" alt="License"></a>
+  <a href="https://app.codspeed.io/shopware/shopware-lsp?utm_source=badge"><img src="https://img.shields.io/endpoint?url=https://codspeed.io/badge.json" alt="CodSpeed"></a>
+</p>
 
-Shopware Language Server understands how PHP classes, Twig templates, routes,
-services, configuration, translations, Administration components, and DAL
-definitions connect. It brings completion, navigation, diagnostics,
-refactoring, and project tooling to those connections instead of treating
-every file as an isolated document.
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#what-you-get">Features</a> ·
+  <a href="#command-line-and-ci">CLI and CI</a> ·
+  <a href="#mcp-and-ai-clients">AI clients</a> ·
+  <a href="docs/reference.md">Reference</a>
+</p>
 
-Use it to find framework mistakes while editing, move through a large project
-without searching for string identifiers by hand, and run the same analysis in
-VS Code, CI, the command line, or an AI client.
+---
 
-> [!NOTE]
-> This repository may be ahead of the latest tagged release. Install a preview
-> build to evaluate features that have not reached the Marketplace or Open VSX
-> stable channel yet.
+A Shopware project is held together by strings: service IDs, route names,
+template paths, snippet keys, config keys, entity names, component names.
+Ordinary PHP tooling sees a string. Shopware Language Server sees what it
+points to.
 
-## Why use it?
+It indexes the whole application, across every language, and keeps that
+picture current while you type. The same analysis then runs in your editor,
+on the command line, in CI, and inside your AI coding agent.
 
-Most PHP tooling stops at classes, methods, and types. Shopware and Symfony
-applications also depend on relationships expressed through service IDs,
-route names, Twig strings, XML/YAML configuration, translation keys, entity
-metadata, and JavaScript component registrations.
-
-Shopware Language Server indexes that application graph and keeps it available
-while you work.
-
-| When you are... | Shopware Language Server helps by... |
-|---|---|
-| Following a service, route, template, snippet, or config key | Completing the identifier and navigating directly to its declaration |
-| Editing PHP, Twig, XML, YAML, Vue, JavaScript, TypeScript, or SCSS | Connecting references across languages instead of analyzing one file at a time |
-| Upgrading Shopware or Symfony | Reporting deprecated APIs, unsafe inheritance, changed Twig blocks, and version-specific behavior before runtime |
-| Building a plugin or application | Generating validated scaffolds, service definitions, snippets, and DAL entity changes |
-| Reviewing or running CI | Reusing the editor's diagnostics through the `shopware-lsp check` command |
-| Working with an AI coding agent | Giving it the same definitions, references, diagnostics, code actions, and generators through MCP |
-
-The server is open source, runs locally, and stores its workspace index in a
-project-specific SQLite cache. Unsaved editor documents take precedence over
-the on-disk index, so navigation and diagnostics follow what you are actually
-editing.
-
-## What you get
-
-### Shopware intelligence
-
-- Storefront and Administration snippet completion, hover, navigation,
-  diagnostics, creation actions, and translation extraction.
-- Twig template, block, route, icon, theme configuration, system configuration,
-  and feature-flag intelligence.
-- Twig block versioning that follows inheritance across Shopware core, vendor
-  packages, themes, and custom extensions.
-- Administration component completion for components, props, slots, events,
-  methods, computed properties, and extension blocks.
-- Shopware DAL completion, navigation, type inference, diagnostics, migrations,
-  and a visual entity designer for definitions, mappings, and extensions.
-- App Script, migration, Store metadata, and extension-aware project support.
-  Store metadata diagnostics (composer.json, app manifest, theme.json, extension
-  icon, and the files an app may ship) require
-  `validation.store_compliance: true` in the extension's config. Like shopware-cli, it prefers
-  `.config/shopware-extension.yml`, then `.shopware-extension.yml`, then
-  `.shopware-extension.yaml`, relative to the plugin root. The first existing
-  file is selected without merging. Missing or false settings leave these
-  diagnostics disabled; unsaved edits take effect immediately.
-
-### Symfony intelligence
-
-- Service IDs, aliases, parameters, tags, autowiring, decorators, factories,
-  and service configuration across PHP, XML, and YAML.
-- Routes, controllers, route parameters, imports, URLs, and references across
-  PHP, Twig, XML, YAML, JavaScript, and TypeScript.
-- Doctrine DBAL table and column intelligence backed by Shopware DAL definitions,
-  join aliases, and custom type registrations.
-- Console commands, Messenger messages and handlers, events and listeners,
-  validation, Serializer targets,
-  assets, environment variables, and bundle configuration.
-- Symfony UX Twig and Live Component props, actions, events, listeners, blocks,
-  templates, and cross-language references.
-
-### PHP and Twig semantics
-
-- Unused PHP import hints, individual removal fixes, and Organize Imports
-  for class, function, and constant imports, including aliases and groups.
-
-- Extract Variable for PHP expressions and Extract Method/Function for selected
-  statements, with nested control flow, multiple outputs, collision-free names,
-  and versioned edits.
-- PHP document outlines, semantic occurrence highlights, folding, and expanding
-  selections that follow unsaved source edits.
-- Native, lossless PHP and Twig parsers designed for incomplete editor input.
-- Native Twig/HTML document formatting with separate Shopware Administration
-  and Storefront block-indentation behavior and editor-provided tab settings.
-- Workspace-wide PHP symbols, inheritance, traits, types, PHPDoc generics,
-  flow-sensitive inference, completion, hover, definitions, references,
-  signature help, rename, and diagnostics.
-- Typed Twig variables from controllers, components, globals, and
-  annotations, including Twig 3.29 documentation comments, member completion,
-  hover documentation, and navigation back to PHP. Types follow `{% set %}`,
-  filters such as `first` and `map`, conditions that rule out null, the
-  null-safe `?.`, and `include`, `embed`, `extends` and macro calls across
-  templates. Opt-in strict rules report access on null and undefined
-  variables; see [`docs/twigstan-parity.md`](docs/twigstan-parity.md).
-- Framework-aware diagnostics for missing symbols, incompatible arguments,
-  invalid configuration, deprecated APIs, `@final` inheritance, and more.
-
-### Project tools
-
-- Searchable route, service, command, Twig
-  extension, component, template usage, and profiler request browsers.
-- Safe scaffolds for controllers, commands, Twig extensions,
-  compiler passes, tests, service files, and Shopware DAL models.
-- One production analysis path shared by the editor, CLI, MCP server, and
-  refactoring engine.
-
-The [full feature and configuration reference](docs/reference.md) contains the
-complete catalog. The [Symfony capability map](docs/symfony-plugin-roadmap.md)
-tracks detailed framework coverage.
-
-## Install
+- **One click from name to code.** Jump from a route name to its controller,
+  from a snippet key to every translation, from a Twig block to the template
+  it overrides.
+- **Mistakes found while you type.** Missing services, unknown snippets,
+  outdated Twig blocks, deprecated APIs and wrong arguments, each with a
+  quick fix where one is safe.
+- **Upgrades without surprises.** Version-aware checks for Shopware and
+  Symfony report what will break before you run the code.
+- **Fast and local.** Written in Rust, with its own parsers for every
+  language. Nothing leaves your machine; the index lives in a local SQLite
+  cache.
+- **Open source.** MIT licensed.
 
 > [!WARNING]
 > Shopware Language Server is experimental. Features and editor integrations
-> may change, and you may encounter bugs or incomplete results.
+> may change, and you may encounter bugs or incomplete results. This
+> repository may also be ahead of the latest release: install a preview build
+> to try what has not reached the stable channel yet.
 
-See the [installation guide](docs/installation.md) for
-[PhpStorm](docs/installation.md#phpstorm),
-[VS Code](docs/installation.md#vs-code),
-[Zed](docs/installation.md#zed), and
-[other editors or standalone use](docs/installation.md#other-editors-and-standalone-use).
-The PhpStorm preview requires manually adding the Shopware EAP plugin repository;
-the guide includes the setup steps.
+## Install
+
+| Editor | How |
+|---|---|
+| **VS Code** | Install the pre-release of [Shopware Language Server](https://marketplace.visualstudio.com/items?itemName=shopware.shopware-lsp) from the Marketplace, or from [Open VSX](https://open-vsx.org/extension/shopware/shopware-lsp) for VSCodium. The server is bundled. |
+| **PhpStorm** | Add the Shopware plugin's EAP repository and update the plugin. [Setup steps](docs/installation.md#phpstorm) |
+| **Zed** | Install `editors/zed` as a dev extension. [Setup steps](docs/installation.md#zed) |
+| **Neovim and others** | Point any LSP client at the standalone binary. [Setup steps](docs/installation.md#other-editors-and-standalone-use) |
+
+Open a Shopware or Symfony project and let the first index finish. No
+configuration is needed.
 
 ## Try it in five minutes
-
-After the initial workspace index completes:
 
 1. Put the cursor on a route name in Twig `path()` or PHP `generateUrl()` and
    use **Go to Definition**.
 2. Open a service configuration file and complete a service ID, tag, class,
-   parameter, constructor argument, or configured method.
+   parameter or constructor argument.
 3. Open a Twig template and complete a template path, snippet key, component,
-   route, asset, or typed variable member.
-4. Run **Symfony: Browse Routes...** or **Symfony: Locate Service...** from the
-   command palette.
+   route, asset or the members of a typed variable.
+4. Run **Symfony: Browse Routes...** or **Symfony: Locate Service...** from
+   the command palette.
 5. Run **Shopware: New File...** to preview a framework-aware scaffold.
 
-Diagnostics include quick fixes where a deterministic edit is available. They
-can also be configured or suppressed for a file, directory, extension, or the
-whole workspace.
+## What you get
 
-## Supported files
+### Shopware
 
-| File type | Examples of framework support |
+- **Snippets**: completion, hover, navigation and missing-key diagnostics for
+  Storefront and Administration, with actions to create a key or extract a
+  text into one.
+- **Twig**: templates, blocks, routes, icons, theme configuration, system
+  configuration and feature flags.
+- **Twig block versioning** that follows inheritance across Shopware core,
+  vendor packages, themes and your extensions, and tells you when an
+  overridden block changed upstream.
+- **Administration**: components, props, slots, events, methods, computed
+  properties and extension blocks.
+- **Data Abstraction Layer**: completion, navigation, type inference,
+  diagnostics and migrations, plus a visual entity designer for definitions,
+  mappings and extensions.
+- **Extensions**: App Scripts, migrations and opt-in Store review checks for
+  the metadata an extension ships.
+
+### Symfony
+
+- **Services**: IDs, aliases, parameters, tags, autowiring, decorators and
+  factories across PHP, XML and YAML.
+- **Routes**: controllers, parameters, imports and URLs across PHP, Twig,
+  XML, YAML, JavaScript and TypeScript.
+- **Doctrine DBAL**: tables and columns backed by the DAL definitions, join
+  aliases and custom types.
+- **The rest of the framework**: console commands, Messenger, events and
+  listeners, validation, Serializer, assets, environment variables and bundle
+  configuration.
+- **Symfony UX**: Twig and Live Component props, actions, events, listeners
+  and blocks.
+
+### PHP and Twig
+
+- **A full PHP engine**: symbols, inheritance, traits, PHPDoc generics and
+  flow-sensitive type inference behind completion, hover, definitions,
+  references, signature help, rename and diagnostics.
+- **Refactoring**: Extract Variable, Extract Method, Organize Imports and
+  unused-import fixes.
+- **Typed Twig variables** from controllers, components, globals and
+  annotations, with member completion and navigation back to PHP. Opt-in
+  strict rules report access on null and undefined variables.
+- **Formatting**: PHP to
+  [PER Coding Style 2.0](https://www.php-fig.org/per/coding-style/), Twig with
+  Shopware's block conventions, and JSON, JavaScript, TypeScript and SCSS.
+  Whole files, selections, or a whole project with `shopware-lsp format`.
+
+### Project tools
+
+- **Browsers** for routes, services, commands, Twig extensions, components,
+  template usages and profiler requests.
+- **Scaffolds** for controllers, commands, Twig extensions, compiler passes,
+  tests, service files and DAL models, each previewed before it is written.
+
+### Supported files
+
+| File type | Examples of what is understood |
 |---|---|
-| PHP | Semantic types, completion, navigation, references, rename, diagnostics, code actions, code lenses |
-| Twig | Formatting, templates, blocks, routes, translations, components, assets, typed variables |
+| PHP | Types, completion, navigation, references, rename, diagnostics, code actions, formatting |
+| Twig | Templates, blocks, routes, translations, components, assets, typed variables, formatting |
 | XML and YAML | Services, routes, DBAL type registrations, configuration, translations, validation |
-| JavaScript and TypeScript | Administration components, snippets, routes, assets |
-| Vue | Shopware Administration component templates, scripts, styles, props, slots, events, and blocks |
-| SCSS | Theme variables, feature flags, classes, colors, completion, navigation, diagnostics |
-| JSON | Snippets, theme configuration, Composer and Shopware metadata, entity snapshots |
-| Dotenv, Dockerfile, and Compose | Environment declarations, definitions, references, and hover |
+| JavaScript and TypeScript | Administration components, snippets, routes, assets, formatting |
+| Vue | Administration component templates, scripts, styles, props, slots, events and blocks |
+| SCSS | Theme variables, feature flags, classes, colors, formatting |
+| JSON | Snippets, theme configuration, Composer and Shopware metadata, entity snapshots, formatting |
+| Dotenv, Dockerfile and Compose | Environment declarations, definitions, references and hover |
 
-## Configuration
-
-No configuration file is required for normal projects. Use **Shopware:
-Configure Language Server...** for a searchable settings UI, or commit
-`.config/shopware-lsp.yaml` when the team should share the same policy.
-
-```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/shopware/shopware-lsp/main/crates/projectconfig/schema.json
-version: 1
-shopware:
-  targetVersion: "6.7"
-indexing:
-  # Files above this size are skipped before reading and parsing.
-  maxFileSizeMiB: 8
-  exclude:
-    - "**/generated/**"
-diagnostics:
-  overrides:
-    - files: [src/Generated/**]
-      enabled: false
-```
-
-Root configuration controls features, domains, indexing, PHP extensions, the
-Shopware target version, diagnostics, MCP tools, and CLI defaults. A plugin or
-extension may contain its own `.config/shopware-lsp.yaml` for diagnostics below
-that directory. VS Code user and workspace settings remain local overrides.
-
-Files below `vendor`, `vendor-bin` and `node_modules` report no diagnostics
-unless an override with `enabled: true` matches them.
-
-See the [project configuration reference](docs/reference.md#project-configuration)
-and the bundled [JSON schema](crates/projectconfig/schema.json) for every
-option.
+The [feature reference](docs/reference.md) has the complete catalog, and
+[every inspection](docs/inspections.md) is listed with its codes.
 
 ## Command line and CI
 
-The standalone binary exposes the same workspace, indexes, diagnostics, and
-refactoring engine used by the editor.
+The `shopware-lsp` binary runs the editor's analysis without an editor.
 
 ```bash
-# Inspect project detection without creating a workspace cache.
-shopware-lsp --root /path/to/project --json info
-
-# Index once, then run configured diagnostics over source and tests.
-shopware-lsp --root /path/to/project index
+# Check a project the way the editor does, and fail the build on findings.
 shopware-lsp --root /path/to/project check src tests
 
-# Query framework-aware navigation from scripts or CI.
+# Format, as a diff by default.
+shopware-lsp --root /path/to/project format src
+
+# Ask where something is defined or used.
 shopware-lsp --root /path/to/project lsp definition src/Controller.php:24:18
 shopware-lsp --root /path/to/project lsp references src/Controller.php:24:18
-shopware-lsp --root /path/to/project lsp workspace-symbol customer.detail
 ```
 
-CLI positions are one-based `file:line:column` values. `check` can fail on a
-configured severity threshold, while refactoring commands preview a diff unless
-write mode is explicitly requested. Run `shopware-lsp help` for the full
-command catalog.
+In GitHub Actions, findings appear as annotations on the pull request:
 
-Run `check` on a fully set-up project: dependencies installed (`composer
-install`, the Administration and Storefront `npm ci`) and the Symfony container
-compiled once, for example with `bin/console` (or `bin/ci` in the Shopware
-repository). The compiled container under `var/cache` supplies the services
-and parameters that bundles register at compile time; without it, missing
-services and parameters are not reported and `check` prints a note saying
-so (editors show it in the server's output). Any environment's debug container
-(`var/cache/<env>/*DebugContainer.xml`) is read: the development one is
-preferred, then the newest. Configuration parameters of a bundle that is not
-part of that container, such as a plugin that is not installed, are not
-reported. In the Shopware repository, the
-Storefront's SCSS libraries must also be copied to its `vendor` directory
-(`node copy-to-vendor.js`) for Bootstrap's variables to resolve.
+```yaml
+- run: shopware-lsp check src
+```
+
+Commands that change files preview a diff and write only when asked. Run
+`shopware-lsp help` for every command, and see the
+[CLI reference](docs/reference.md#command-line-interface) for what `check`
+needs from a project (installed dependencies and a compiled container).
 
 ## MCP and AI clients
 
-VS Code automatically exposes one Shopware MCP server per supported workspace
-folder. AI clients receive the same diagnostics, code actions, hover,
-definitions, references, symbol search, scaffolds, and DAL entity workflow as
-the editor.
+Give your AI coding agent the same knowledge of the project that you have in
+the editor: diagnostics, definitions, references, symbol search, code actions
+and scaffolds, over the Model Context Protocol.
 
-Other MCP clients can start the standalone server over stdin/stdout:
+VS Code and Zed register the server for you. Any other MCP client can start
+it:
 
 ```json
 {
@@ -264,52 +198,56 @@ Other MCP clients can start the standalone server over stdin/stdout:
 }
 ```
 
-Read and preview tools do not modify files. Applying a code action requires an
-exact action title, scaffolds preview their diff by default, and all workspace
-edits are validated against the workspace root. MCP tools can be disabled in
-VS Code settings or in committed project configuration.
+Read and preview tools never modify files. Applying a code action requires its
+exact title, and every edit is validated against the workspace root.
+
+## Configuration
+
+Projects work without a configuration file. To share settings with your team,
+commit `.config/shopware-lsp.yaml`:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/shopware/shopware-lsp/main/crates/projectconfig/schema.json
+version: 1
+shopware:
+  targetVersion: "6.7"
+indexing:
+  exclude:
+    - "**/generated/**"
+diagnostics:
+  overrides:
+    - files: [src/Generated/**]
+      enabled: false
+```
+
+Diagnostics can be tuned or switched off per file, directory, extension or
+workspace. In VS Code, **Shopware: Configure Language Server...** opens a
+searchable settings UI. See the
+[configuration reference](docs/reference.md#project-configuration) and the
+[JSON schema](crates/projectconfig/schema.json) for every option.
 
 ## Documentation
 
-- [Documentation index](docs/README.md) — start here for architecture
-- [Full feature, command, configuration, and performance reference](docs/reference.md)
+- [Installation](docs/installation.md)
+- [Feature, command and configuration reference](docs/reference.md)
+- [Inspection catalog](docs/inspections.md)
 - [Symfony feature coverage](docs/symfony-plugin-roadmap.md)
-
-Architecture, for contributors:
-
-- [System architecture](docs/architecture.md)
-- [Parser, CST, and query architecture](docs/parser-architecture.md)
-- [Indexing and persistence](docs/indexing.md)
-- [LSP server, documents, and providers](docs/lsp-server.md)
-- [Diagnostics and quick-fix pipeline](docs/diagnostics-pipeline.md)
-- [Refactoring engine](docs/refactoring-engine.md)
-- [PHP semantic engine](docs/php-semantic-engine.md)
-- [PhpStorm and editor integration](docs/phpstorm-integration.md)
-- [Custom LSP commands and Neovim example](docs/custom-commands.md)
-- [Maintainability guide](docs/maintainability.md)
+- [Architecture and contributor documentation](docs/README.md)
 
 ## Contributing
 
-The language server is written in Rust (`crates/`); `rust-toolchain.toml`
-pins the toolchain and rustup installs it on first use. SQLite is bundled, so a
-C compiler is the only other build requirement.
-
-Build from source:
+The server is a Rust workspace under `crates/`; `rust-toolchain.toml` pins the
+toolchain and rustup installs it on first use. SQLite is bundled, so a C
+compiler is the only other requirement.
 
 ```bash
 cargo build --locked --release -p swlsp-cli   # target/release/shopware-lsp
-SHOPWARE_LSP_VERSION=1.2.3 cargo build --locked --release -p swlsp-cli  # embed a version
+make check                                    # server, VS Code and Zed clients
 ```
 
-Validate everything (Rust server, VS Code and Zed clients; needs Node.js 24
-and Python 3 for the editor parts):
-
-```bash
-make check
-```
-
-Read [AGENTS.md](AGENTS.md) for the architecture, contributor workflow, and
-testing expectations.
+`make check` needs Node.js 24 and Python 3 for the editor clients. Read
+[AGENTS.md](AGENTS.md) for the rules of the codebase and
+[docs/architecture.md](docs/architecture.md) for how it works.
 
 ## License
 

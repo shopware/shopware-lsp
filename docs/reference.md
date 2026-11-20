@@ -105,6 +105,20 @@ and editors link to a position. Either way:
 - the exit code is 1 when a finding reaches `--fail-on`, and the summary is
   the only message.
 
+Run `check` on a fully set-up project: dependencies installed (`composer
+install`, the Administration and Storefront `npm ci`) and the Symfony container
+compiled once, for example with `bin/console` (or `bin/ci` in the Shopware
+repository). The compiled container under `var/cache` supplies the services
+and parameters that bundles register at compile time; without it, missing
+services and parameters are not reported and `check` prints a note saying
+so (editors show it in the server's output). Any environment's debug container
+(`var/cache/<env>/*DebugContainer.xml`) is read: the development one is
+preferred, then the newest. Configuration parameters of a bundle that is not
+part of that container, such as a plugin that is not installed, are not
+reported. In the Shopware repository, the Storefront's SCSS libraries must
+also be copied to its `vendor` directory (`node copy-to-vendor.js`) for
+Bootstrap's variables to resolve.
+
 In a GitHub Actions job (`GITHUB_ACTIONS=true`) `check` prints
 `--format github` unless a format is named: one workflow command per finding,
 which GitHub shows as an annotation on the file and line in the pull request.
@@ -1677,6 +1691,15 @@ The former `shopware.admin` inspection is split into
 `shopware.migration.signature` and `shopware.migration.behavior`. Diagnostic
 codes are unchanged; `diagnostics.inspections` entries naming the old IDs fail
 validation and must use the new ones.
+
+Store metadata diagnostics (composer.json, app manifest, theme.json, extension
+icon, and the files an app may ship) require
+`validation.store_compliance: true` in the extension's config. Like
+shopware-cli, the server prefers `.config/shopware-extension.yml`, then
+`.shopware-extension.yml`, then `.shopware-extension.yaml`, relative to the
+plugin root. The first existing file is selected without merging. Missing or
+false settings leave these diagnostics disabled; unsaved edits take effect
+immediately.
 
 ### Commands
 - `shopware/forceReindex` - Trigger a full re-index of the workspace
