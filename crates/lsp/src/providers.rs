@@ -77,6 +77,14 @@ document_request!(
     DocumentFormattingRequest,
     protocol::DocumentFormattingParams
 );
+/// A request to format the part of a document that `range` selects, in
+/// bytes of the document's source.
+#[derive(Debug, Clone)]
+pub struct DocumentRangeFormattingRequest {
+    pub params: protocol::DocumentRangeFormattingParams,
+    pub document: Arc<TextDocument>,
+    pub range: std::ops::Range<usize>,
+}
 document_request!(SelectionRangeRequest, protocol::SelectionRangeParams);
 document_request!(DocumentColorRequest, protocol::DocumentColorParams);
 document_request!(ColorPresentationRequest, protocol::ColorPresentationParams);
@@ -279,6 +287,17 @@ pub trait DocumentFormattingProvider: Send + Sync {
         &self,
         ctx: &Context,
         request: &DocumentFormattingRequest,
+    ) -> ProviderResult<Option<String>>;
+    provider_name!();
+}
+
+/// Returns `Some(document)`, the whole document with the selected part
+/// formatted, when the provider handles the document.
+pub trait DocumentRangeFormattingProvider: Send + Sync {
+    fn format_range(
+        &self,
+        ctx: &Context,
+        request: &DocumentRangeFormattingRequest,
     ) -> ProviderResult<Option<String>>;
     provider_name!();
 }

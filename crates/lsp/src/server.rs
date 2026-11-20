@@ -48,6 +48,7 @@ pub(crate) struct Registry {
     pub linked_editing: Vec<Arc<dyn LinkedEditingRangeProvider>>,
     pub folding_ranges: Vec<Arc<dyn FoldingRangeProvider>>,
     pub formatting: Vec<Arc<dyn DocumentFormattingProvider>>,
+    pub range_formatting: Vec<Arc<dyn DocumentRangeFormattingProvider>>,
     pub selection_ranges: Vec<Arc<dyn SelectionRangeProvider>>,
     pub colors: Vec<Arc<dyn DocumentColorProvider>>,
     pub semantic_tokens: Vec<Arc<dyn SemanticTokensProvider>>,
@@ -317,6 +318,13 @@ impl Server {
         provider: Arc<dyn LinkedEditingRangeProvider>,
     ) {
         self.update_registry(|registry| registry.linked_editing.push(provider));
+    }
+
+    pub fn register_document_range_formatting_provider(
+        &self,
+        provider: Arc<dyn DocumentRangeFormattingProvider>,
+    ) {
+        self.update_registry(|registry| registry.range_formatting.push(provider));
     }
 
     pub fn register_folding_range_provider(&self, provider: Arc<dyn FoldingRangeProvider>) {
@@ -787,6 +795,9 @@ impl Server {
             }
             "textDocument/formatting" => {
                 result_handler(params, |p| self.formatting(ctx, p).map(null_if_empty))
+            }
+            "textDocument/rangeFormatting" => {
+                result_handler(params, |p| self.range_formatting(ctx, p).map(null_if_empty))
             }
             "textDocument/selectionRange" => {
                 result_handler(params, |p| self.selection_ranges(ctx, p).map(null_if_empty))

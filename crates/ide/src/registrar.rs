@@ -153,6 +153,7 @@ impl<'a> Registrar<'a> {
         linked_editing => register_linked_editing_range_provider, LinkedEditingRangeProvider, "linkedEditingRange";
         folding_range => register_folding_range_provider, FoldingRangeProvider, "foldingRange";
         formatting => register_document_formatting_provider, DocumentFormattingProvider, "formatting";
+        range_formatting => register_document_range_formatting_provider, DocumentRangeFormattingProvider, "rangeFormatting";
         selection_range => register_selection_range_provider, SelectionRangeProvider, "selectionRange";
         document_color => register_document_color_provider, DocumentColorProvider, "documentColor";
         references => register_references_provider, ReferencesProvider, "references";

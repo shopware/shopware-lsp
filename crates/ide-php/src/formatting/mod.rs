@@ -1,7 +1,10 @@
 //! Document formatting providers.
 
 use swlsp_language::LanguageId;
-use swlsp_lsp::{Context, DocumentFormattingProvider, DocumentFormattingRequest, ProviderResult};
+use swlsp_lsp::{
+    Context, DocumentFormattingProvider, DocumentFormattingRequest,
+    DocumentRangeFormattingProvider, DocumentRangeFormattingRequest, ProviderResult,
+};
 use swlsp_php_format::Options;
 
 /// Formats PHP documents to PER Coding Style 2.0. The style fixes the
@@ -37,6 +40,34 @@ impl DocumentFormattingProvider for PhpProvider {
             document.source(),
             &root,
             !document.parse_errors().is_empty(),
+            self.options,
+        )
+        .ok())
+    }
+}
+
+/// Formats the selected lines of a PHP document. A change that cannot stand
+/// without one outside the selection, like the braces put around a body,
+/// takes the construct around it along.
+impl DocumentRangeFormattingProvider for PhpProvider {
+    fn format_range(
+        &self,
+        ctx: &Context,
+        request: &DocumentRangeFormattingRequest,
+    ) -> ProviderResult<Option<String>> {
+        let document = &request.document;
+        if document.language != Some(LanguageId::Php) {
+            return Ok(None);
+        }
+        let Some(root) = document.root() else {
+            return Ok(None);
+        };
+        ctx.check()?;
+        Ok(swlsp_php_format::try_format_range(
+            document.source(),
+            &root,
+            !document.parse_errors().is_empty(),
+            request.range.clone(),
             self.options,
         )
         .ok())

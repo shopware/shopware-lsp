@@ -6,5 +6,6 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+similar = "3.2"
 swlsp-syntax.workspace = true
 swlsp-parser-php = { path = "../parser-php" }

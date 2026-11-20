@@ -799,7 +799,7 @@ pub(crate) fn feature_for_method(method: &str) -> Option<&'static str> {
         "textDocument/documentHighlight" => "documentHighlights",
         "textDocument/linkedEditingRange" => "linkedEditing",
         "textDocument/foldingRange" => "foldingRanges",
-        "textDocument/formatting" => "formatting",
+        "textDocument/formatting" | "textDocument/rangeFormatting" => "formatting",
         "textDocument/selectionRange" => "selectionRanges",
         "textDocument/documentColor" | "textDocument/colorPresentation" => "documentColors",
         "textDocument/semanticTokens/full" => "semanticTokens",

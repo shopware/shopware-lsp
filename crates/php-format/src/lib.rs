@@ -10,6 +10,7 @@ mod emit;
 mod heredoc;
 mod layout;
 mod normalize;
+mod range;
 mod spacing;
 mod template;
 mod tokens;
@@ -83,6 +84,19 @@ fn shebang(source: &str) -> Option<(&str, &str)> {
     }
     let end = source.find('\n')? + 1;
     Some((&source[..end], &source[end..]))
+}
+
+/// Formats the lines of a parsed document that `range`, in bytes, selects,
+/// and returns the whole document. Lines outside the selection change only
+/// where a change inside it cannot stand without them.
+pub fn try_format_range(
+    source: &str,
+    root: &SyntaxNode,
+    has_errors: bool,
+    range: std::ops::Range<usize>,
+    options: Options,
+) -> Result<String, Skipped> {
+    range::run(source, root, has_errors, range, options)
 }
 
 /// Like [`try_format`], for a document that is parsed already: `root` is

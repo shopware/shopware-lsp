@@ -10,6 +10,7 @@
     "documentFormattingProvider",
     "documentHighlightProvider",
     "documentLinkProvider",
+    "documentRangeFormattingProvider",
     "documentSymbolProvider",
     "executeCommandProvider",
     "experimental",

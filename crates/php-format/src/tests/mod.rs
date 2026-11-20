@@ -7,6 +7,7 @@ mod control;
 mod expressions;
 mod files;
 mod functions;
+mod range;
 mod safety;
 
 use crate::{Options, Skipped, format, try_format};

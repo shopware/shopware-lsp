@@ -35,7 +35,7 @@ impl Server {
                 json!({"triggerCharacters": collect_trigger_characters(&registry)}),
             );
         }
-        let flags: [(&str, usize, &str); 16] = [
+        let flags: [(&str, usize, &str); 17] = [
             (
                 "definitionProvider",
                 registry.definition.len(),
@@ -90,6 +90,11 @@ impl Server {
             (
                 "documentFormattingProvider",
                 registry.formatting.len(),
+                "formatting",
+            ),
+            (
+                "documentRangeFormattingProvider",
+                registry.range_formatting.len(),
                 "formatting",
             ),
             (

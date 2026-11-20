@@ -95,6 +95,25 @@ valid files from being formatted (`'a'.++$i` was one operator, `.5` no
 number), so a
 change to the formatter is also checked with PHP itself.
 
+## Formatting a selection
+
+`try_format_range` (`src/range.rs`) has no layout of its own. It formats the
+whole document, compares source and result line by line (lines are matched
+by what they hold apart from white space, so a line that only has its
+spaces set is a change of its own), and applies the changes that touch the
+selected lines.
+
+The result is kept when formatting it again gives the formatted document:
+it is then the same code, with the other lines as they were. A change that
+needs a second one elsewhere fails that check: an opening brace without its
+closing one, or one half of a reordered import. The selection then grows to
+the construct around it, node by node, until the check holds; after a few
+attempts the whole document is formatted. A list that is reflowed is one
+change, however many lines it has.
+
+Each attempt formats the document once more, so formatting a selection
+costs two to a few times what formatting the document costs.
+
 ## Checking a change
 
 Unit tests (`src/tests`) hold the examples of the specification, section by
@@ -113,7 +132,8 @@ LAYOUT=flat  cargo run --release -p swlsp-php-format --example corpus -- ~/shopw
 
 `LAYOUT=lines` puts every token on a line of its own before formatting and
 `LAYOUT=flat` puts all of them on one, which exercises the layout on input
-no one would write. `LONG=1` tells for every line still over the width what
+no one would write. `RANGE=1` formats three selections of every file and
+must report none `wrong`. `LONG=1` tells for every line still over the width what
 on it cannot be split. `OUT=<directory>` writes the formatted files there, for
 two checks with PHP tools:
 

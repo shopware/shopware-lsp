@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use swlsp_lsp::{Context, DocumentFormattingProvider, DocumentFormattingRequest, TextDocument};
+use swlsp_lsp::{
+    Context, DocumentFormattingProvider, DocumentFormattingRequest,
+    DocumentRangeFormattingProvider, DocumentRangeFormattingRequest, TextDocument,
+};
 use swlsp_lsp_protocol as protocol;
 use swlsp_php_format::Options;
 
@@ -67,5 +70,33 @@ fn php_provider_keeps_the_declare_on_the_opening_tag_when_configured() {
     assert!(
         formatted.starts_with("<?php declare(strict_types=1);\n\nclass A\n{\n"),
         "{formatted}"
+    );
+}
+
+#[test]
+fn php_provider_formats_the_selected_lines() {
+    let uri = "file:///workspace/src/A.php";
+    let source = "<?php\n\n$a=1;\n$b=2;\n$c=3;\n";
+    let request = DocumentRangeFormattingRequest {
+        params: protocol::DocumentRangeFormattingParams::default(),
+        document: Arc::new(TextDocument::new(uri, source, 1)),
+        range: 13..14,
+    };
+    assert_eq!(
+        PhpProvider::default()
+            .format_range(&Context::background(), &request)
+            .expect("format")
+            .as_deref(),
+        Some("<?php\n\n$a=1;\n$b = 2;\n$c=3;\n")
+    );
+    let other = DocumentRangeFormattingRequest {
+        document: Arc::new(TextDocument::new("file:///workspace/a.twig", source, 1)),
+        ..request
+    };
+    assert_eq!(
+        PhpProvider::default()
+            .format_range(&Context::background(), &other)
+            .expect("format"),
+        None
     );
 }

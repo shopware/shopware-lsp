@@ -1298,6 +1298,18 @@ pub struct DocumentFormattingParams {
     pub options: FormattingOptions,
 }
 
+/// Parameters of `textDocument/rangeFormatting`.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentRangeFormattingParams {
+    #[serde(default, deserialize_with = "nullable")]
+    pub text_document: TextDocumentIdentifier,
+    #[serde(default)]
+    pub range: Range,
+    #[serde(default, deserialize_with = "nullable")]
+    pub options: FormattingOptions,
+}
+
 /// The standard LSP document formatting options.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

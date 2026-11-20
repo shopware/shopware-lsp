@@ -683,9 +683,13 @@ include these hints.
   operators with exact PHP host ranges
 
 ### PHP formatting
-- Whole-document formatting to
-  [PER Coding Style 2.0](https://www.php-fig.org/per/coding-style/) through
-  `textDocument/formatting` and `shopware-lsp format`. The style fixes the
+- Formatting to
+  [PER Coding Style 2.0](https://www.php-fig.org/per/coding-style/): the
+  whole document through `textDocument/formatting` and `shopware-lsp format`,
+  a selection through `textDocument/rangeFormatting`. A selection is formatted
+  line by line: the selected lines change, the others stay. A change that
+  cannot stand without one outside the selection, such as the braces put
+  around a body, takes the construct around it along. The style fixes the
   indentation at four spaces, so the editor's `tabSize` / `insertSpaces` and
   the `--indent-width` / `--use-tabs` flags do not apply to PHP.
 - Layout: the header blocks of a file set apart by one empty line; braces of

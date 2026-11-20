@@ -607,6 +607,107 @@ fn formatting_capability_requires_provider() {
     server.close_all().unwrap();
 }
 
+struct TestRangeFormattingProvider(Option<String>, Mutex<Option<std::ops::Range<usize>>>);
+
+impl DocumentRangeFormattingProvider for TestRangeFormattingProvider {
+    fn format_range(
+        &self,
+        _: &Context,
+        request: &DocumentRangeFormattingRequest,
+    ) -> ProviderResult<Option<String>> {
+        *self.1.lock().unwrap() = Some(request.range.clone());
+        Ok(self.0.clone())
+    }
+}
+
+#[test]
+fn range_formatting_passes_bytes_and_returns_the_changed_lines() {
+    let server = Server::new(None, "", "test");
+    let uri = "file:///workspace/example.php";
+    server
+        .documents
+        .open_document(uri, "😀 one\ntwo\nthree\nfour\n", 3);
+    let provider = Arc::new(TestRangeFormattingProvider(
+        Some("😀 one\nTWO\nthree and\nmore\nfour\n".into()),
+        Mutex::new(None),
+    ));
+    server.register_document_range_formatting_provider(provider.clone());
+    let result = server
+        .handle(
+            &ctx(),
+            "textDocument/rangeFormatting",
+            json!({
+                "textDocument": {"uri": uri},
+                "range": {"start": {"line": 0, "character": 3}, "end": {"line": 2, "character": 2}},
+                "options": {"tabSize": 4, "insertSpaces": true},
+            }),
+            false,
+        )
+        .unwrap();
+    // The emoji is two UTF-16 units and four bytes.
+    assert_eq!(*provider.1.lock().unwrap(), Some(5..15));
+    assert_eq!(
+        result,
+        json!([{
+            "range": {"start": {"line": 1, "character": 0}, "end": {"line": 3, "character": 0}},
+            "newText": "TWO\nthree and\nmore\n",
+        }])
+    );
+    server.close_all().unwrap();
+}
+
+#[test]
+fn range_formatting_that_changes_nothing_returns_no_edit() {
+    let server = Server::new(None, "", "test");
+    let uri = "file:///workspace/example.php";
+    server.documents.open_document(uri, "one\ntwo\n", 1);
+    server.register_document_range_formatting_provider(Arc::new(TestRangeFormattingProvider(
+        Some("one\ntwo\n".into()),
+        Mutex::new(None),
+    )));
+    let edits = server
+        .range_formatting(
+            &ctx(),
+            protocol::DocumentRangeFormattingParams {
+                text_document: doc(uri),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(edits, Vec::new());
+    server.close_all().unwrap();
+}
+
+#[test]
+fn range_formatting_capability_follows_the_formatting_feature() {
+    let server = Server::new(None, "", "test");
+    assert!(
+        server
+            .server_capabilities()
+            .get("documentRangeFormattingProvider")
+            .is_none()
+    );
+    server.register_document_range_formatting_provider(Arc::new(TestRangeFormattingProvider(
+        None,
+        Mutex::new(None),
+    )));
+    assert_eq!(
+        server.server_capabilities()["documentRangeFormattingProvider"],
+        true
+    );
+    crate::server::write(&server.configuration)
+        .effective
+        .features
+        .insert("formatting".into(), false);
+    assert!(
+        server
+            .server_capabilities()
+            .get("documentRangeFormattingProvider")
+            .is_none()
+    );
+    server.close_all().unwrap();
+}
+
 struct TestLinkedEditingProvider {
     result: Option<protocol::LinkedEditingRanges>,
     observed: Mutex<Option<(i32, bool)>>,

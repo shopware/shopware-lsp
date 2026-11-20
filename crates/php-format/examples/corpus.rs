@@ -9,10 +9,11 @@
 //! - `WIDTH=120` splits lines at the soft limit, not at 80 characters.
 //! - `VERBOSE=1` names every file that changes or is skipped.
 //! - `LONG=1` tells why the lines over the width could not be split.
+//! - `RANGE=1` formats three selections of every file and checks them.
 
 use std::path::{Path, PathBuf};
 
-use swlsp_php_format::{Skipped, try_format};
+use swlsp_php_format::{Options, Skipped, try_format};
 
 fn files(directory: &Path, found: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(directory) else {
@@ -193,6 +194,64 @@ fn long_line(
     }
 }
 
+/// What formatting three lines at three places of every file did.
+#[derive(Default)]
+struct Ranges {
+    tried: usize,
+    unchanged: usize,
+    partial: usize,
+    whole: usize,
+    wrong: usize,
+    slowest: std::time::Duration,
+}
+
+/// Formats three selections of three lines each and checks every result:
+/// it parses, and formatting it gives the formatted document.
+fn selections(source: &str, formatted: &str, options: Options, path: &Path, ranges: &mut Ranges) {
+    let parse = swlsp_parser_php::parse(source);
+    let starts: Vec<usize> = std::iter::once(0)
+        .chain(source.match_indices('\n').map(|(at, _)| at + 1))
+        .collect();
+    for quarter in 1..4 {
+        let line = starts.len() * quarter / 4;
+        let start = starts[line.min(starts.len() - 1)];
+        let end = starts
+            .get(line + 3)
+            .copied()
+            .unwrap_or(source.len())
+            .max(start);
+        let begin = std::time::Instant::now();
+        let Ok(result) = swlsp_php_format::try_format_range(
+            source,
+            &parse.root(),
+            !parse.errors.is_empty(),
+            start..end,
+            options,
+        ) else {
+            continue;
+        };
+        ranges.slowest = ranges.slowest.max(begin.elapsed());
+        ranges.tried += 1;
+        if result == source {
+            ranges.unchanged += 1;
+        } else if result == formatted {
+            ranges.whole += 1;
+            if std::env::var_os("VERBOSE").is_some() {
+                println!("whole {start}..{end} {}", path.display());
+            }
+        } else {
+            ranges.partial += 1;
+        }
+        let check = swlsp_parser_php::parse(&result);
+        if !check.errors.is_empty()
+            || try_format(&result, options).ok().as_deref() != Some(formatted)
+        {
+            ranges.wrong += 1;
+            println!("wrong range {start}..{end} {}", path.display());
+        }
+    }
+}
+
 fn main() {
     let options = swlsp_php_format::Options {
         declare_on_opening_tag: std::env::var_os("SHOPWARE").is_some(),
@@ -215,6 +274,7 @@ fn main() {
     let (mut clean, mut changed, mut syntax, mut unsupported, mut broken, mut unstable) =
         (0, 0, 0, 0, 0, 0);
     let mut written = 0;
+    let mut ranges = Ranges::default();
     let mut long = std::collections::BTreeMap::new();
     let mut samples = Vec::new();
     for path in &found {
@@ -230,6 +290,9 @@ fn main() {
         };
         match try_format(&source, options) {
             Ok(formatted) => {
+                if std::env::var_os("RANGE").is_some() {
+                    selections(&source, &formatted, options, path, &mut ranges);
+                }
                 if std::env::var_os("LONG").is_some() {
                     long_line(&formatted, options.line_width, &mut long, &mut samples);
                 }
@@ -276,6 +339,17 @@ fn main() {
         for sample in samples.iter().step_by(samples.len() / 40 + 1) {
             println!("  other: {sample}");
         }
+    }
+    if ranges.tried > 0 {
+        println!(
+            "{} selections: {} unchanged, {} formatted in part, {} formatted the whole document, {} wrong, slowest {:.2?}",
+            ranges.tried,
+            ranges.unchanged,
+            ranges.partial,
+            ranges.whole,
+            ranges.wrong,
+            ranges.slowest
+        );
     }
     println!(
         "{} files: {clean} clean, {changed} changed, {syntax} syntax errors, {unsupported} unsupported, {broken} unsafe, {unstable} unstable",

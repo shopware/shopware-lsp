@@ -727,6 +727,36 @@ impl Server {
         Ok(Vec::new())
     }
 
+    pub(crate) fn range_formatting(
+        &self,
+        ctx: &Context,
+        params: protocol::DocumentRangeFormattingParams,
+    ) -> Result<Vec<protocol::TextEdit>, BoxError> {
+        let Some(document) = self.documents.get_document(&params.text_document.uri) else {
+            return Ok(Vec::new());
+        };
+        let index = document.line_index();
+        let (start, end) = (params.range.start, params.range.end);
+        let start = index.offset_utf16(start.line, start.character) as usize;
+        let end = index.offset_utf16(end.line, end.character) as usize;
+        let request = DocumentRangeFormattingRequest {
+            params,
+            document: document.clone(),
+            range: start.min(end)..end.max(start),
+        };
+        for provider in &self.registry().range_formatting {
+            ctx.check()?;
+            let formatted = provider.format_range(ctx, &request).map_err(|error| {
+                provider_error("range formatting", provider.provider_name(), error)
+            })?;
+            let Some(formatted) = formatted else {
+                continue;
+            };
+            return Ok(changed_lines(&document, &formatted).into_iter().collect());
+        }
+        Ok(Vec::new())
+    }
+
     pub(crate) fn selection_ranges(
         &self,
         ctx: &Context,
@@ -1085,4 +1115,48 @@ pub(crate) fn encode_semantic_tokens(
         last_end = token.start + token.length;
     }
     data
+}
+
+/// The one edit that turns the document into `formatted`: the lines between
+/// those the two start with and those they end with.
+fn changed_lines(document: &TextDocument, formatted: &str) -> Option<protocol::TextEdit> {
+    let source = document.source();
+    if source == formatted {
+        return None;
+    }
+    let common = source
+        .bytes()
+        .zip(formatted.bytes())
+        .take_while(|(left, right)| left == right)
+        .count();
+    let start = source.as_bytes()[..common]
+        .iter()
+        .rposition(|&byte| byte == b'\n')
+        .map_or(0, |at| at + 1);
+    let limit = source.len().min(formatted.len()) - start;
+    let common = source
+        .bytes()
+        .rev()
+        .zip(formatted.bytes().rev())
+        .take(limit)
+        .take_while(|(left, right)| left == right)
+        .count();
+    // Whole lines only: the common end starts after a line break.
+    let tail = &source.as_bytes()[source.len() - common..];
+    let common = tail
+        .iter()
+        .position(|&byte| byte == b'\n')
+        .map_or(0, |at| tail.len() - at - 1);
+    let index = document.line_index();
+    let position = |offset: usize| {
+        let (line, character) = index.position_utf16(offset as u32);
+        protocol::Position { line, character }
+    };
+    Some(protocol::TextEdit::new(
+        protocol::Range {
+            start: position(start),
+            end: position(source.len() - common),
+        },
+        formatted[start..formatted.len() - common].to_string(),
+    ))
 }

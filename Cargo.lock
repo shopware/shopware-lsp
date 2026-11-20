@@ -4032,6 +4032,7 @@ dependencies = [
 name = "swlsp-php-format"
 version = "0.1.0"
 dependencies = [
+ "similar 3.2.1",
  "swlsp-parser-php",
  "swlsp-syntax",
 ]

@@ -41,7 +41,7 @@ fn register(server: &Registrar<'_>, s: &Services) {
 
     // The formatter is offered in every presentation: an editor asks the
     // formatter its user chose.
-    server.formatting(Arc::new(crate::formatting::PhpProvider::new(
+    let formatter = Arc::new(crate::formatting::PhpProvider::new(
         swlsp_php_format::Options {
             declare_on_opening_tag: s.php_declare_on_opening_tag,
             line_width: s
@@ -50,7 +50,9 @@ fn register(server: &Registrar<'_>, s: &Services) {
                     width as usize
                 }),
         },
-    )));
+    ));
+    server.formatting(formatter.clone());
+    server.range_formatting(formatter);
 
     // A framework presentation shows the framework's features only: the
     // editor's own PHP support serves the language.
