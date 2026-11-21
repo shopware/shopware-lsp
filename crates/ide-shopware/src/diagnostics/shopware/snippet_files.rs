@@ -131,6 +131,33 @@ pub(crate) fn main_snippet_file(path: &str) -> Option<String> {
     Some(filepath::join(&[directory.as_str(), main.as_str()]))
 }
 
+/// The files beside `path` that are compared with it: those of the same
+/// stem in another locale whose main language file is `path`. Empty when
+/// `path` is not the main file of its directory.
+pub(crate) fn translated_snippet_files(path: &str) -> Vec<String> {
+    let directory = filepath::dir(path);
+    let name = filepath::base(path);
+    let Some((stem, locale)) = split_snippet_locale(&name) else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(&directory) else {
+        return Vec::new();
+    };
+    let mut files: Vec<String> = entries
+        .flatten()
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|candidate| {
+            split_snippet_locale(candidate).is_some_and(|(candidate_stem, candidate_locale)| {
+                candidate_stem == stem && candidate_locale != locale
+            })
+        })
+        .map(|candidate| filepath::join(&[directory.as_str(), candidate.as_str()]))
+        .filter(|candidate| main_snippet_file(candidate).as_deref() == Some(path))
+        .collect();
+    files.sort();
+    files
+}
+
 /// `("storefront", "de-DE")` for `storefront.de-DE.json`, `("", "de")`
 /// for `de.json`; `None` without a locale-shaped last segment.
 fn split_snippet_locale(name: &str) -> Option<(&str, &str)> {

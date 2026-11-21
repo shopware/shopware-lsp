@@ -6,7 +6,7 @@ mod app_script;
 mod migration_step;
 pub(crate) mod routes;
 mod services_xml_migration;
-mod snippet_files;
+pub(crate) mod snippet_files;
 mod storefront_js;
 
 #[cfg(test)]

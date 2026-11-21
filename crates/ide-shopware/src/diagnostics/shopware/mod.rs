@@ -73,6 +73,7 @@ pub use services_xml::{
 pub use snippet_files::SnippetFileAnalyzer;
 pub(crate) use snippet_files::{
     MISSING_CODE as SNIPPET_FILE_MISSING_CODE, is_snippet_file, main_snippet_file,
+    translated_snippet_files,
 };
 pub use store_composer::{ShopwareStoreComposerAnalyzer, StoreComplianceResolver};
 pub use store_theme::StoreThemeAnalyzer;

@@ -1016,6 +1016,9 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
   adds every missing key of the file at once, in the order and nesting of the
   main file and with its text as the value to translate; existing keys and the
   file's indentation are kept
+- On the main language file, the code action `Add missing snippets to …`
+  does the same for every other locale file beside it in one workspace edit,
+  from the main file as it is in the editor, saved or not
 
 ### Symfony Translation Support
 - Catalog-backed key/domain completion, navigation, hover, diagnostics, typo

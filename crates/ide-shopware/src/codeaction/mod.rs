@@ -5,7 +5,9 @@
 //! write files.
 
 mod snippet;
+mod snippet_sync;
 
 pub use snippet::{
     COPY_SNIPPET_USAGE_ACTION, SnippetCodeActionProvider, SnippetCopyCodeActionProvider,
 };
+pub use snippet_sync::SnippetSyncCodeActionProvider;

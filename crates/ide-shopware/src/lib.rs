@@ -39,6 +39,9 @@ fn register(server: &Registrar<'_>, s: &Services) {
         s.snippets.clone(),
     ))));
     server.action(Arc::new(codeaction::SnippetCopyCodeActionProvider::new()));
+    server.action(Arc::new(codeaction::SnippetSyncCodeActionProvider::new(
+        Arc::new(server.server.downgrade()),
+    )));
 
     let edit_host: Arc<dyn commands::EditHost> = Arc::new(server.server.downgrade());
     server.command(Arc::new(commands::SnippetCommandProvider::new(
