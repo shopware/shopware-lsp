@@ -78,4 +78,11 @@ pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
         Some(s.extensions.clone()),
     ));
     add(new_services_xml_migration());
+    add(crate::admin_module::new_admin_module(
+        crate::admin_module::Generator::new(
+            Arc::new(s.entity_catalog()),
+            s.dal.clone(),
+            s.supported_versions.clone(),
+        ),
+    ));
 }

@@ -134,6 +134,9 @@ configuration is needed.
   template usages and profiler requests.
 - **Scaffolds** for controllers, commands, Twig extensions, compiler passes,
   tests, service files and DAL models, each previewed before it is written.
+- **Administration modules from an entity**: describe a module in three
+  lines of YAML and get a list page, a detail page, roles and snippets that
+  stay in step with the entity. See [the guide](docs/admin-modules.md).
 
 ### Supported files
 

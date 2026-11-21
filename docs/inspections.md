@@ -658,6 +658,28 @@ Languages: javascript, twig, vue. Domain: `administration`.
 - Fix: Use a privilege key a privilege mapping registers (for example product.viewer); a quick fix offers close names.
 - Exceptions: Only acl.can() in templates is checked. Nothing is reported until the project registers privileges of its own.
 
+## `shopware.admin_module`
+
+Administration modules described in src/Resources/shopware-lsp/admin-modules.yaml of a plugin: a description that does not fit its entity, and module files that differ from what it describes, with a fix that generates them.
+
+Languages: yaml. Domain: `administration`.
+
+| Code | Default severity | Enabled by default |
+|---|---|---|
+| `shopware.admin_module.invalid` | error | yes |
+| `shopware.admin_module.outdated` | warning | yes |
+
+**`shopware.admin_module.invalid`**
+
+- Fix: Correct the description so that it fits the entity: name fields the entity has, give a field without a derived input a component, and keep every field in one card. The message names what is wrong.
+- Exceptions: Only src/Resources/shopware-lsp/admin-modules.yaml of a plugin is read, and only entities the plugin defines itself can be described.
+
+**`shopware.admin_module.outdated`**
+
+- Fix: Apply the quick fix "Generate Administration modules": it writes the files of every described module as one edit. When a generated file was edited by hand, move the change into a file of your own first (Shopware.Component.override and Twig blocks), or set managed: false on the page to take it over.
+- Exceptions: Files outside the generated directory of a module are never compared or written, except the import of the module in main.js.
+- Opt out: Set managed: false on listing or detail: the page is written once more outside generated/ and never again.
+
 ## `shopware.app_script`
 
 App scripts using a service the hook does not provide, or one the app lacks the permission for.

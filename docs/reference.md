@@ -552,6 +552,27 @@ exact public names shown by MCP `tools/list`; unknown names are rejected.
   reconciliation, and PHP-definition drift, so the same checks run in the
   editor and through the CLI `check` command
 
+### Generated Administration Modules
+
+- A plugin describes its Administration modules in
+  `src/Resources/shopware-lsp/admin-modules.yaml`; `modules.<name>.entity`
+  is a complete description. List page, detail and create page, routes,
+  navigation, roles and snippets are derived from the entity definition
+- `shopware.admin_module.outdated` reports a module that is not generated
+  yet or differs from its description, on the module name; the quick fix
+  `Shopware: Generate Administration modules` writes, updates and removes
+  the files as one validated workspace edit, including the import in
+  `main.js`
+- `shopware.admin_module.invalid` reports unknown keys, fields the entity
+  does not have, a field in two cards and a field without an input, on the
+  key that is wrong
+- Generated files live in `module/<name>/generated/`. Adjustments are made
+  in the description, with `Shopware.Component.override` and the Twig block
+  around every card and field, or by taking a page over with
+  `managed: false`
+- The format and every derivation rule are in
+  [`admin-modules.md`](admin-modules.md)
+
 ### PHP Semantic Intelligence
 
 **Extract Method / Function** (`refactor.extract`) moves selected consecutive

@@ -1,0 +1,16 @@
+[package]
+name = "swlsp-shopware-adminmodule"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swlsp-parser-yaml = { path = "../parser-yaml" }
+swlsp-shopware-entityschema = { path = "../shopware-entityschema" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror.workspace = true
+
+[dev-dependencies]
+swlsp-language = { path = "../language" }

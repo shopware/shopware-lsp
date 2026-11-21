@@ -29,6 +29,7 @@ After that, read the subsystem you are changing.
 | [`tokio-migration.md`](tokio-migration.md) | Record of the move to Tokio and the official MCP SDK (`rmcp`): the decisions, the outcome, and the one phase still open |
 | [`diagnostics-roadmap.md`](diagnostics-roadmap.md) | Comparison with IntelliJ, Roslyn, rust-analyzer and PHPStan, and the five completed steps that shaped the inspection architecture (a record: it names code as it was before each step) |
 | [`refactoring-engine.md`](refactoring-engine.md) | Edits and conflict rules, document and workspace plans, element handles, plan validation, the PHP editor, rename, file rename, scaffolding |
+| [`admin-modules.md`](admin-modules.md) | Administration modules generated from a description and a DAL entity: the format, what is derived, how to adjust a generated module, and its limits |
 | [`php-formatter.md`](php-formatter.md) | The PHP formatter for PER Coding Style 2.0: the token stream, gaps and indentation, comments, the safety checks, and how a change is validated |
 | [`php-semantic-engine.md`](php-semantic-engine.md) | The PHP pipeline: binder, semantic generations, resolver, inference, the type algebra, generated runtime stubs |
 

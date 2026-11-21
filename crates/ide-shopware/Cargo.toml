@@ -45,6 +45,7 @@ swlsp-shopware = { path = "../shopware" }
 swlsp-sql = { path = "../sql" }
 swlsp-shopware-dal = { path = "../shopware-dal" }
 swlsp-admin = { path = "../admin" }
+swlsp-shopware-adminmodule = { path = "../shopware-adminmodule" }
 swlsp-shopware-entityschema = { path = "../shopware-entityschema" }
 swlsp-theme = { path = "../theme" }
 sha2 = "0.10"

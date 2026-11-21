@@ -3600,6 +3600,7 @@ dependencies = [
  "swlsp-php-types",
  "swlsp-rewrite",
  "swlsp-shopware",
+ "swlsp-shopware-adminmodule",
  "swlsp-shopware-dal",
  "swlsp-shopware-entityschema",
  "swlsp-snippet",
@@ -4297,6 +4298,18 @@ dependencies = [
  "swlsp-textutil",
  "swlsp-uriutil",
  "tempfile",
+]
+
+[[package]]
+name = "swlsp-shopware-adminmodule"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "swlsp-language",
+ "swlsp-parser-yaml",
+ "swlsp-shopware-entityschema",
+ "thiserror",
 ]
 
 [[package]]

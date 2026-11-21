@@ -1000,6 +1000,18 @@ pub(crate) const PROJECT: &[RuleHelp] = &[
         "",
     ),
     help(
+        "shopware.admin_module.invalid",
+        "Correct the description so that it fits the entity: name fields the entity has, give a field without a derived input a component, and keep every field in one card. The message names what is wrong.",
+        "Only src/Resources/shopware-lsp/admin-modules.yaml of a plugin is read, and only entities the plugin defines itself can be described.",
+        "",
+    ),
+    help(
+        "shopware.admin_module.outdated",
+        "Apply the quick fix \"Generate Administration modules\": it writes the files of every described module as one edit. When a generated file was edited by hand, move the change into a file of your own first (Shopware.Component.override and Twig blocks), or set managed: false on the page to take it over.",
+        "Files outside the generated directory of a module are never compared or written, except the import of the module in main.js.",
+        "Set managed: false on listing or detail: the page is written once more outside generated/ and never again.",
+    ),
+    help(
         "shopware.snippet.file.missing-key",
         "Add the named keys with their translation; the main language file (the sibling with the same stem in en, else en-GB: storefront.en-GB.json for storefront.de-DE.json) defines them. The quick fix adds every missing key of the file at once, with the text of the main file to translate.",
         "A file without a main language file beside it, or without a locale in its name, is not compared.",

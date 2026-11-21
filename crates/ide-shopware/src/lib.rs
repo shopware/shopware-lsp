@@ -1,6 +1,7 @@
 //! The Shopware domain: the data abstraction layer, snippets, feature
 //! flags, system configuration, themes, extensions and app scripts.
 
+mod admin_module;
 pub mod api_service;
 pub mod codeaction;
 pub mod commands;
