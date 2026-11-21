@@ -98,6 +98,10 @@ impl CompletionProvider for YamlServiceAuthoringCompletionProvider {
         if extension != ".yaml" && extension != ".yml" {
             return Vec::new();
         }
+        let path = swlsp_uriutil::path(&request.params.text_document.uri).unwrap_or_default();
+        if server_description_file(&path) {
+            return Vec::new();
+        }
         let source = request.source();
         let Some(offset) = request_offset(request) else {
             return Vec::new();
@@ -108,7 +112,6 @@ impl CompletionProvider for YamlServiceAuthoringCompletionProvider {
         let Some(value) = yaml_value_completion_context(source, offset) else {
             return Vec::new();
         };
-        let path = swlsp_uriutil::path(&request.params.text_document.uri).unwrap_or_default();
         self.yaml_value_items(
             &value,
             line_index,
@@ -530,6 +533,15 @@ fn yaml_inside_service_arguments(source: &str, cursor: usize) -> bool {
     let indent = leading_yaml_indent(&source[line_start..]);
     yaml_parent_mapping_line(source, line_start, indent)
         .is_some_and(|parent| parent.key == "arguments")
+}
+
+/// A description this server reads itself (`Resources/shopware-lsp/*.yaml`):
+/// its own completion knows the format, Symfony's tags and keywords do not
+/// belong there.
+fn server_description_file(path: &str) -> bool {
+    swlsp_uriutil::filepath::to_slash(path)
+        .rsplit_once('/')
+        .is_some_and(|(directory, _)| directory.ends_with("/shopware-lsp"))
 }
 
 fn yaml_configuration_file(path: &str) -> bool {

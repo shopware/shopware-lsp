@@ -198,3 +198,18 @@ fn yaml_value_completion_rejects_strings_and_values_after_tags() {
         assert!(items.is_empty(), "{source}: {:?}", labels(&items));
     }
 }
+
+#[test]
+fn a_description_of_the_server_gets_no_symfony_values() {
+    let provider = YamlServiceAuthoringCompletionProvider::new(None);
+    let source = "modules:\n  acme-review:\n    entity: <caret>\n";
+    // The same text in any other YAML file gets the tags and keywords.
+    let (_, items) = run(&provider, "/tmp/project/src/Resources/other.yaml", source);
+    assert!(labels(&items).contains(&"!!binary".to_string()));
+    let (_, items) = run(
+        &provider,
+        "/tmp/project/src/Resources/shopware-lsp/admin-modules.yaml",
+        source,
+    );
+    assert!(items.is_empty(), "{:?}", labels(&items));
+}
