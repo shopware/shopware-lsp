@@ -303,16 +303,7 @@ fn parse_flow_mapping(p: &mut Parser<'_>) {
 
     while !p.at_end() && !p.at(TK_CLOSE_BRACE) {
         let position = p.get_pos();
-        let pair = p.start();
-        if !parse_scalar(p) {
-            p.add_error(ErrorBuilder::new("flow mapping key"));
-            p.recover(&[TK_COLON, TK_COMMA, TK_CLOSE_BRACE]);
-        }
-        p.expect(TK_COLON, &[TK_COMMA, TK_CLOSE_BRACE]);
-        if !parse_value(p) {
-            complete_null(p);
-        }
-        p.complete(pair, YAML_PAIR);
+        parse_flow_pair(p, TK_CLOSE_BRACE);
         skip_flow_separation(p);
 
         if p.at(TK_COMMA) {
@@ -334,6 +325,26 @@ fn parse_flow_mapping(p: &mut Parser<'_>) {
     p.complete(marker, YAML_FLOW_MAPPING);
 }
 
+/// A `key: value` of a flow collection that `close` ends.
+fn parse_flow_pair(p: &mut Parser<'_>, close: Kind) {
+    let pair = p.start();
+    if !parse_scalar(p) {
+        p.add_error(ErrorBuilder::new("flow mapping key"));
+        p.recover(&[TK_COLON, TK_COMMA, close]);
+    }
+    p.expect(TK_COLON, &[TK_COMMA, close]);
+    if !parse_value(p) {
+        complete_null(p);
+    }
+    p.complete(pair, YAML_PAIR);
+}
+
+/// Whether an entry of a flow sequence is a pair (`[a: 1]`): a mapping of
+/// that one pair, written without braces.
+fn at_flow_sequence_pair(p: &Parser<'_>) -> bool {
+    p.at_set(SCALAR_TOKENS) && p.peek_next_non_trivia_kind() == Some(TK_COLON)
+}
+
 fn parse_flow_sequence(p: &mut Parser<'_>) {
     let marker = p.start();
     p.bump();
@@ -342,7 +353,11 @@ fn parse_flow_sequence(p: &mut Parser<'_>) {
     while !p.at_end() && !p.at(TK_CLOSE_BRACKET) {
         let position = p.get_pos();
         let item = p.start();
-        if !parse_value(p) {
+        if at_flow_sequence_pair(p) {
+            let mapping = p.start();
+            parse_flow_pair(p, TK_CLOSE_BRACKET);
+            p.complete(mapping, YAML_FLOW_MAPPING);
+        } else if !parse_value(p) {
             p.add_error(ErrorBuilder::new("flow sequence value"));
             p.recover(&[TK_COMMA, TK_CLOSE_BRACKET]);
         }
@@ -565,6 +580,35 @@ parameters:
         ] {
             let parse = assert_lossless(source);
             assert!(parse.errors.is_empty(), "{source}: {:?}", parse.errors);
+        }
+    }
+
+    #[test]
+    fn a_pair_in_a_flow_sequence_is_a_mapping_of_its_own() {
+        use query::Value;
+
+        let source = "tags: [name: a, \"b\":[c: 1], d, e: , { f: g }, h:]\n";
+        let parse = assert_lossless(source);
+        assert!(parse.errors.is_empty(), "{:?}", parse.errors);
+        let string = |text: &str| Value::String(text.to_owned());
+        let single = |key: &str, value: Value| Value::Mapping(vec![(string(key), value)]);
+        assert_eq!(
+            query::decode_value(&parse.root()).unwrap(),
+            single(
+                "tags",
+                Value::Sequence(vec![
+                    single("name", string("a")),
+                    single("b", Value::Sequence(vec![single("c", Value::Int(1))])),
+                    string("d"),
+                    single("e", Value::Null),
+                    single("f", string("g")),
+                    single("h", Value::Null),
+                ])
+            )
+        );
+        // A pair that is still being written keeps the tree usable.
+        for source in ["[a: ", "[a: 1, b:", "[a: [", "x: [a: 1\ny: 2\n"] {
+            assert_lossless(source);
         }
     }
 
