@@ -33,6 +33,17 @@ can fail on a module that was not regenerated.
 The entity must be defined by the plugin itself, as a class-based
 `EntityDefinition`.
 
+The code action `Shopware: Add Administration module <name> for <entity>` on the class
+of an entity definition writes these lines for you. It creates the
+description when the plugin has none, and adds the module to an existing
+one with the indentation the file uses. The module is named after the
+entity (`acme_review` gives `acme-review`), so the entity needs a prefix.
+The action is not offered for an entity that has a module, for mapping and
+translation definitions, or when the description cannot be read.
+It needs a client that runs `shopware.addAdminModule` (VS Code does);
+other clients call `shopware/admin/module/describe` (see
+[custom commands](custom-commands.md)).
+
 ## What is derived
 
 | Field of the entity | Input in the form | Column in the list |

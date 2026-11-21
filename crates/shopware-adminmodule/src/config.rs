@@ -24,7 +24,17 @@ pub type Labels = BTreeMap<String, String>;
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub version: u32,
+    /// `modules:` without a value describes none.
+    #[serde(deserialize_with = "nullable")]
     pub modules: BTreeMap<String, Module>,
+}
+
+fn nullable<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]

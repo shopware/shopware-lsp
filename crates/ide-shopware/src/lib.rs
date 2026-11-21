@@ -59,6 +59,13 @@ fn register(server: &Registrar<'_>, s: &Services) {
         Some(Arc::new(server.server.downgrade())),
     ));
     server.action(api_services.clone());
+    let admin_modules = Arc::new(admin_module::AdminModuleActionProvider::new(
+        s.dal.clone(),
+        s.extensions.clone(),
+        Arc::new(server.server.downgrade()),
+    ));
+    server.action(admin_modules.clone());
+    server.command(admin_modules);
     server.command(api_services);
     let mut scaffolds = crate::scaffold::Provider::new(
         &s.root,

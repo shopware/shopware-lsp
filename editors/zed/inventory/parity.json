@@ -95,6 +95,9 @@
     "shopware.createSnippetFromSelection": {
       "gap": "worth adding; needs the selection plus a snippet-file picker"
     },
+    "shopware.addAdminModule": {
+      "gap": "worth adding; the server command exists"
+    },
     "shopware.generateAdminApiService": {
       "action": "admin-api-service"
     },

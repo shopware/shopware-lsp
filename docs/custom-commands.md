@@ -118,6 +118,15 @@ document snapshot; no custom request is required.
 * **Action:** Builds the edit that gives the Admin API actions of the controller a typed TypeScript API service. Without a service it creates one in the Administration of the bundle that owns the controller and imports it from the bundle's `main.ts` or `main.js` (creating `main.ts` when there is neither). A service exists when the file the generator would write is there (or the `.js` file of that name), or when a TypeScript or JavaScript `*.service.*` file of that Administration requests routes of the controller (the one that requests the most, TypeScript first). The command then adds one method for each action the service does not request yet, or for `method` alone, to the end of its class, and the types they need above the class; a JavaScript service gets the methods without types. Nothing the file holds is replaced. It fails when the service requests every selected action or declares no class. The edit uses the unsaved content of open documents. The server writes nothing itself; the client must apply the returned edit.
 * **Returns:** `{ "edit": WorkspaceEdit, "primaryFileUri": string, "created": boolean, "methods": string[] }`: whether the service file is new, and the names of the service methods the edit adds.
 
+### `shopware/admin/module/describe`
+* **Parameters:**
+  ```json
+  { "uri": string, "className": string }
+  ```
+  `uri` is the PHP file of an entity definition; `className` selects one class of the file, by its short or fully qualified name, and may be empty.
+* **Action:** Builds the edit that adds the entity to the Administration module description of its plugin (`src/Resources/shopware-lsp/admin-modules.yaml`, see [generated Administration modules](admin-modules.md)). It creates the description when the plugin has none, and otherwise adds the module below `modules` with the indentation the file uses. The module is named after the entity (`acme_review` gives `acme-review`). It fails when the file declares no entity of a plugin, the entity name has no prefix, the entity has a module already, or the description cannot be decoded. The edit uses the unsaved content of an open description. The server writes nothing itself; the client must apply the returned edit.
+* **Returns:** `{ "edit": WorkspaceEdit, "primaryFileUri": string, "created": boolean, "module": string }`: the description, whether it is new, and the name of the module.
+
 ## Notifications
 
 ### `$/progress` (indexing)

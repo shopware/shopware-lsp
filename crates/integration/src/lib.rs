@@ -221,6 +221,15 @@ pub fn client_commands() -> Vec<ClientCommand> {
             ),
         ),
         command(
+            "shopware.addAdminModule",
+            "Add the entity to the Administration module description of its plugin",
+            "codeAction",
+            fields!(
+                field("fileUri", "Entity definition file", "uri", true),
+                field("className", "Definition class", "string", true),
+            ),
+        ),
+        command(
             "shopware.symfony.generateService",
             "Generate a Symfony service definition",
             "codeAction",

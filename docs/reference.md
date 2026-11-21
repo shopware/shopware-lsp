@@ -558,6 +558,11 @@ exact public names shown by MCP `tools/list`; unknown names are rejected.
   `src/Resources/shopware-lsp/admin-modules.yaml`; `modules.<name>.entity`
   is a complete description. List page, detail and create page, routes,
   navigation, roles and snippets are derived from the entity definition
+- On the class of an entity definition, `Shopware: Add Administration
+  module <name> for <entity>` adds the entity to the description of its
+  plugin and creates the file when it is missing. It runs the client command
+  `shopware.addAdminModule`; other clients call
+  `shopware/admin/module/describe`
 - `shopware.admin_module.outdated` reports a module that is not generated
   yet or differs from its description, on the module name; the quick fix
   `Shopware: Generate Administration modules` writes, updates and removes

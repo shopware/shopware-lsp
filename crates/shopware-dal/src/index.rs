@@ -194,6 +194,20 @@ impl Index {
         Ok(definitions)
     }
 
+    /// The resolved definitions the file at `path` declares.
+    pub fn definitions_in_file(&self, path: &str) -> Result<Vec<Definition>> {
+        Ok(self
+            .definitions
+            .get_values_by_path_view(path)?
+            .iter()
+            .filter(|definition| {
+                definition.kind != DEFINITION_KIND_UNRESOLVED
+                    && definition.kind != DEFINITION_KIND_EXTENSION
+            })
+            .cloned()
+            .collect())
+    }
+
     /// The first field of each distinct name across resolved definitions.
     pub fn fields(&self) -> Result<Vec<Field>> {
         let mut seen = HashSet::new();

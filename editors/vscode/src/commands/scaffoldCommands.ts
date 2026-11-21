@@ -682,6 +682,42 @@ export function registerScaffoldCommands(
   ));
 
   context.subscriptions.push(vscode.commands.registerCommand(
+    'shopware.addAdminModule',
+    async (definitionUri: string, className?: string) => {
+      try {
+        const languageClient = clientState.clientForUri(
+          vscode.Uri.parse(definitionUri),
+        );
+        if (!languageClient) {
+          throw new Error('Shopware LSP is not running');
+        }
+        const result = await languageClient.sendRequest<ShopwareScaffoldCreation>(
+          'shopware/admin/module/describe',
+          {uri: definitionUri, className: className ?? ''},
+        );
+        const edit = await languageClient.protocol2CodeConverter.asWorkspaceEdit(
+          result.edit,
+        );
+        if (!await vscode.workspace.applyEdit(edit)) {
+          throw new Error('Could not write the module description');
+        }
+        // The description is where the module is generated from.
+        const document = await vscode.workspace.openTextDocument(
+          vscode.Uri.parse(result.primaryFileUri),
+        );
+        await vscode.window.showTextDocument(document, {
+          preview: false,
+          preserveFocus: false,
+        });
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `Failed to add the Administration module: ${error}`,
+        );
+      }
+    },
+  ));
+
+  context.subscriptions.push(vscode.commands.registerCommand(
     'shopware.copySnippetUsage',
     async (key: string) => {
       const target = await vscode.window.showQuickPick([

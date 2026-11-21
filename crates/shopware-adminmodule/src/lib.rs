@@ -10,7 +10,7 @@ mod resolve;
 pub use config::{CONFIG_RELATIVE_PATH, Config, ConfigError, VERSION, parse};
 pub use entity::{Entity, EntityField, Kind};
 pub use render::{GENERATED_DIRECTORY, GeneratedFile, Style, render};
-pub use resolve::{Module, Problem, resolve};
+pub use resolve::{Module, Problem, resolve, valid_module_name};
 
 #[cfg(test)]
 mod tests;

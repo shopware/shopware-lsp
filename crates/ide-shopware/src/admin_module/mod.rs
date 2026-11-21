@@ -6,6 +6,7 @@
 //! not fit its entity and files that differ from what it describes, and its
 //! fix writes them as one workspace edit.
 
+mod action;
 mod inspection;
 mod plan;
 
@@ -20,6 +21,7 @@ use swlsp_shopware_dal::Index as DalIndex;
 use swlsp_shopware_entityschema::{self as entityschema, IndexedCatalog};
 use swlsp_uriutil::filepath;
 
+pub use action::AdminModuleActionProvider;
 pub(crate) use inspection::new_admin_module;
 
 /// The sources of the Administration of a plugin, below its root.

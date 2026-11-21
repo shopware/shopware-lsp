@@ -68,6 +68,7 @@
     "version"
   ],
   "clientCommands": [
+    "shopware.addAdminModule",
     "shopware.admin.extendComponent",
     "shopware.admin.overrideMethod",
     "shopware.admin.overrideTwigBlock",
@@ -194,6 +195,7 @@
   ],
   "serverCommands": [
     "shopware/admin/api-service/generate",
+    "shopware/admin/module/describe",
     "shopware/admin/twig/override",
     "shopware/cache/clear",
     "shopware/cache/list",
