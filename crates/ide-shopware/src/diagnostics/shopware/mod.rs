@@ -48,6 +48,7 @@ pub use dal_definition::DalDefinitionAnalyzer;
 pub use dal_entity::DalEntityAnalyzer;
 pub use decoration::ShopwareDecorationAnalyzer;
 pub use entity_snapshot::EntitySnapshotAnalyzer;
+pub(crate) use json_keys::{pair_key, pair_value, pairs, root_object};
 pub(crate) use php_api_contract::{ApiAction, ApiController, api_controller};
 pub use php_local::*;
 pub use php_migration_step::{MIGRATION_STEP_CODES, ShopwareMigrationStepAnalyzer};
@@ -70,6 +71,9 @@ pub use services_xml::{
     ServicesXmlDeprecationPayload, ServicesXmlImportAnalyzer, ServicesXmlImportPayload,
 };
 pub use snippet_files::SnippetFileAnalyzer;
+pub(crate) use snippet_files::{
+    MISSING_CODE as SNIPPET_FILE_MISSING_CODE, is_snippet_file, main_snippet_file,
+};
 pub use store_composer::{ShopwareStoreComposerAnalyzer, StoreComplianceResolver};
 pub use store_theme::StoreThemeAnalyzer;
 pub use storefront_js::{STOREFRONT_JAVASCRIPT_CODES, StorefrontJavaScriptAnalyzer};

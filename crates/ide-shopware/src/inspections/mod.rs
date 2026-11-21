@@ -69,7 +69,7 @@ pub(crate) fn register(server: &Registrar<'_>, s: &Services) {
         s.extensions.clone(),
         Some(compliance),
     )));
-    add(analyzer(diagnostics::SnippetFileAnalyzer::new()));
+    add(new_snippet_files());
     add(analyzer(diagnostics::EntitySnapshotAnalyzer::new(Some(
         Arc::new(s.entity_catalog()),
     ))));

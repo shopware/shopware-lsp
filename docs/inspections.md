@@ -1380,7 +1380,7 @@ Languages: javascript, twig. Domain: `shopware.snippets`.
 
 ## `shopware.snippet_files`
 
-Snippet files that differ from the main language file (en.json, else en-GB.json) in the same directory: missing keys, keys the main file does not define, and values of another type.
+Snippet files that differ from the main language file (en.json, else en-GB.json) in the same directory: missing keys, keys the main file does not define, and values of another type. A fix adds the missing keys with the text of the main file.
 
 Languages: json. Domain: `shopware.snippets`.
 
@@ -1392,7 +1392,7 @@ Languages: json. Domain: `shopware.snippets`.
 
 **`shopware.snippet.file.missing-key`**
 
-- Fix: Add the named keys with their translation; the main language file (the sibling with the same stem in en, else en-GB: storefront.en-GB.json for storefront.de-DE.json) defines them.
+- Fix: Add the named keys with their translation; the main language file (the sibling with the same stem in en, else en-GB: storefront.en-GB.json for storefront.de-DE.json) defines them. The quick fix adds every missing key of the file at once, with the text of the main file to translate.
 - Exceptions: A file without a main language file beside it, or without a locale in its name, is not compared.
 
 **`shopware.snippet.file.type-mismatch`**

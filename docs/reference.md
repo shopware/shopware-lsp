@@ -1010,6 +1010,12 @@ versioning diagnostics, hover, actions, and commands as one feature domain.
 - Hover support showing all available translations for a snippet key
 - Diagnostics for missing snippets in Twig and JavaScript/TypeScript files
 - Code actions to create snippets from diagnostics or text selections
+- Snippet files are compared with the main language file beside them
+  (`en.json`, else `en-GB.json`): missing keys, unknown keys, and values of
+  another type are reported. The quick fix `Add all missing snippets from …`
+  adds every missing key of the file at once, in the order and nesting of the
+  main file and with its text as the value to translate; existing keys and the
+  file's indentation are kept
 
 ### Symfony Translation Support
 - Catalog-backed key/domain completion, navigation, hover, diagnostics, typo

@@ -18,7 +18,7 @@ use super::json_keys::{pair_key, pair_value, pairs, root_object};
 use super::util::warning;
 use crate::diagnostics::{DeclaredAnalyzer, ProblemAnalyzer};
 
-const MISSING_CODE: &str = "shopware.snippet.file.missing-key";
+pub(crate) const MISSING_CODE: &str = "shopware.snippet.file.missing-key";
 const UNKNOWN_CODE: &str = "shopware.snippet.file.unknown-key";
 const TYPE_CODE: &str = "shopware.snippet.file.type-mismatch";
 
@@ -37,7 +37,7 @@ impl SnippetFileAnalyzer {
 impl DeclaredAnalyzer for SnippetFileAnalyzer {
     const INSPECTION: InspectionSpec = InspectionSpec {
         id: "shopware.snippet_files",
-        description: "Snippet files that differ from the main language file (en.json, else en-GB.json) in the same directory: missing keys, keys the main file does not define, and values of another type.",
+        description: "Snippet files that differ from the main language file (en.json, else en-GB.json) in the same directory: missing keys, keys the main file does not define, and values of another type. A fix adds the missing keys with the text of the main file.",
         domain: "shopware.snippets",
         scope: InspectionScope::Framework,
         languages: &[LanguageId::Json],
@@ -98,7 +98,7 @@ impl ProblemAnalyzer for SnippetFileAnalyzer {
 /// Whether `path` is a storefront snippet file (below `Resources/snippet/`)
 /// or an Administration one (in a `snippet` directory of the Administration
 /// sources).
-fn is_snippet_file(path: &str) -> bool {
+pub(crate) fn is_snippet_file(path: &str) -> bool {
     path.ends_with(".json")
         && (path.contains("/Resources/snippet/") || swlsp_snippet::is_admin_snippet_file(path))
 }
@@ -108,7 +108,7 @@ fn is_snippet_file(path: &str) -> bool {
 /// `storefront.en-GB.json`, not with `gallery.en-GB.json`). `None` when
 /// there is none, when `path` is the main file itself, or when its name
 /// carries no locale.
-fn main_snippet_file(path: &str) -> Option<String> {
+pub(crate) fn main_snippet_file(path: &str) -> Option<String> {
     let directory = filepath::dir(path);
     let name = filepath::base(path);
     let (stem, locale) = split_snippet_locale(&name)?;
@@ -231,14 +231,17 @@ impl Comparison<'_> {
             0 => String::new(),
             more => format!(" and {more} more"),
         };
-        self.problems.push(warning(
+        let mut problem = warning(
             MISSING_CODE,
             anchor,
             format!(
                 "Missing snippets defined in {}: {named}{more}",
                 self.main_name
             ),
-        ));
+        );
+        // The fix names the file it copies from.
+        problem.payload = Some(serde_json::json!({ "main": self.main_name }));
+        self.problems.push(problem);
     }
 }
 

@@ -7,6 +7,10 @@ mod shopware;
 
 pub use migration::*;
 pub use shopware::*;
+pub(crate) use shopware::{
+    SNIPPET_FILE_MISSING_CODE, is_snippet_file, main_snippet_file, pair_key, pair_value, pairs,
+    root_object,
+};
 // The shared analyzer contract, so the analyzers find it beside themselves.
 #[allow(unused_imports)]
 pub(crate) use swlsp_ide::diagnostics::*;

@@ -6,6 +6,7 @@ mod app_script;
 mod migration_step;
 pub(crate) mod routes;
 mod services_xml_migration;
+mod snippet_files;
 mod storefront_js;
 
 #[cfg(test)]
@@ -18,4 +19,5 @@ pub use routes::new_shopware_routes;
 pub use services_xml_migration::{
     CONVERT_IMPORTED_SERVICES_XML_FIX_ID, CONVERT_SERVICES_XML_FIX_ID, new_services_xml_migration,
 };
+pub use snippet_files::{ADD_MISSING_SNIPPETS_FIX_ID, new_snippet_files};
 pub use storefront_js::new_storefront_javascript;
