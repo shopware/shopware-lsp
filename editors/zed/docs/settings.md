@@ -38,6 +38,9 @@ equivalent of the VS Code extension's `yamlValidation`:
           "schemas": {
             "https://raw.githubusercontent.com/shopware/shopware-lsp/main/crates/projectconfig/schema.json": [
               ".config/shopware-lsp.yaml"
+            ],
+            "https://raw.githubusercontent.com/shopware/shopware-lsp/main/crates/shopware-adminmodule/schema.json": [
+              "**/Resources/shopware-lsp/admin-modules.yaml"
             ]
           }
         }

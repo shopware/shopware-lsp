@@ -317,6 +317,8 @@ fn what_does_not_fit_the_entity_is_a_problem() {
 
 #[test]
 fn the_format_refuses_what_it_does_not_know() {
+    // A file that does not parse describes nothing, not "no modules".
+    assert!(parse("modules: {\"acme-review\":{\"entity\":\"acme_review\"}}\n}").is_err());
     assert_eq!(parse("").unwrap().version, 1);
     assert_eq!(
         parse("version: 2\n"),

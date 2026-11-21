@@ -249,7 +249,15 @@ pub enum ConfigError {
 
 /// Reads a description. A file without `version` is of the current one.
 pub fn parse(source: &str) -> Result<Config, ConfigError> {
-    let root = swlsp_parser_yaml::parse(source).root();
+    let tree = swlsp_parser_yaml::parse(source);
+    // What a broken file still decodes to is not what its author wrote:
+    // modules must not look removed.
+    if !tree.errors.is_empty() {
+        return Err(ConfigError::Decode(
+            "the description has a YAML syntax error".to_owned(),
+        ));
+    }
+    let root = tree.root();
     let mut config: Option<Config> =
         swlsp_parser_yaml::query::decode(&root).map_err(|error| ConfigError::Decode(error.0))?;
     let config = config.get_or_insert_default();

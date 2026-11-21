@@ -11,6 +11,10 @@ async function main() {
     path.join('..', '..', 'crates', 'projectconfig', 'schema.json'),
     path.join('dist', 'shopware-lsp.schema.json')
   );
+  fs.copyFileSync(
+    path.join('..', '..', 'crates', 'shopware-adminmodule', 'schema.json'),
+    path.join('dist', 'admin-modules.schema.json')
+  );
   const extensionContext = await esbuild.context({
     entryPoints: ['src/extension.ts'],
     bundle: true,

@@ -93,6 +93,13 @@ fn completion(server: &Registrar<'_>, s: &Services) {
         s.snippets.clone(),
     ))));
     server.completion(Arc::new(FeatureCompletionProvider::new(s.features.clone())));
+    server.completion(Arc::new(admin_module::AdminModuleCompletionProvider::new(
+        admin_module::Generator::new(
+            Arc::new(s.entity_catalog()),
+            s.dal.clone(),
+            s.supported_versions.clone(),
+        ),
+    )));
     server.completion(Arc::new(
         DalCompletionProvider::new(s.dal.clone()).with_admin(s.admin.clone()),
     ));

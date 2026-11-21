@@ -62,7 +62,8 @@ class ReviewDefinition extends EntityDefinition
 }
 
 /// A plugin on disk with its entity indexed.
-struct Plugin {
+pub(super) struct Plugin {
+    pub(super) generator: Generator,
     root: tempfile::TempDir,
     _caches: [tempfile::TempDir; 3],
     php: PhpIndex,
@@ -71,7 +72,7 @@ struct Plugin {
 }
 
 impl Plugin {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let root = tempfile::tempdir().unwrap();
         let caches = [(); 3].map(|()| tempfile::tempdir().unwrap());
         let php = PhpIndex::open(caches[0].path(), None).unwrap();
@@ -82,8 +83,10 @@ impl Plugin {
             Some(sources.clone()),
             None,
         ));
-        let inspection = new_admin_module(Generator::new(catalog, dal, Default::default()));
+        let generator = Generator::new(catalog, dal, Default::default());
+        let inspection = new_admin_module(generator.clone());
         let plugin = Plugin {
+            generator,
             root,
             _caches: caches,
             php,
@@ -98,7 +101,7 @@ impl Plugin {
         plugin
     }
 
-    fn path(&self, relative: &str) -> String {
+    pub(super) fn path(&self, relative: &str) -> String {
         self.root
             .path()
             .join(relative)
@@ -115,7 +118,7 @@ impl Plugin {
         self.sources.index(&file).unwrap();
     }
 
-    fn uri(&self) -> String {
+    pub(super) fn uri(&self) -> String {
         file_uri(&self.path(CONFIG_RELATIVE_PATH))
     }
 

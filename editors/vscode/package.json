@@ -356,6 +356,10 @@
       {
         "fileMatch": "**/.config/shopware-lsp.yaml",
         "url": "./dist/shopware-lsp.schema.json"
+      },
+      {
+        "fileMatch": "**/Resources/shopware-lsp/admin-modules.yaml",
+        "url": "./dist/admin-modules.schema.json"
       }
     ],
     "languages": [

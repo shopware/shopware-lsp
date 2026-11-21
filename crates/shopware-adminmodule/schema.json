@@ -1,0 +1,264 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/shopware/shopware-lsp/main/crates/shopware-adminmodule/schema.json",
+  "title": "Shopware LSP Administration Modules",
+  "description": "The Administration modules of a plugin that Shopware LSP generates from its entities (src/Resources/shopware-lsp/admin-modules.yaml).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "The version of the format. Version 1 always derives the same module from the same entity."
+    },
+    "modules": {
+      "type": ["object", "null"],
+      "description": "The modules by their name: lower-case words joined by dashes, with a prefix (acme-review).",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)+$" },
+      "additionalProperties": { "$ref": "#/$defs/module" }
+    }
+  },
+  "$defs": {
+    "labels": {
+      "type": "object",
+      "description": "A text per locale.",
+      "x-shopware-names": "locales",
+      "additionalProperties": { "type": "string" }
+    },
+    "props": {
+      "type": "object",
+      "description": "Attributes written onto the element as they are.",
+      "additionalProperties": true
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entity"],
+      "properties": {
+        "entity": {
+          "type": "string",
+          "description": "The technical name of the entity the module manages. It must be defined by the plugin itself.",
+          "x-shopware-names": "entities"
+        },
+        "title": { "$ref": "#/$defs/labels", "description": "The name of the module per locale; derived from the entity name when absent." },
+        "description": { "$ref": "#/$defs/labels", "description": "The description of the module per locale." },
+        "icon": { "type": "string", "description": "The icon of the module, such as regular-star." },
+        "color": { "type": "string", "description": "The color of the module, such as #ff3d58." },
+        "labelField": {
+          "type": "string",
+          "description": "The property that names a record: the link of the list and the title of the detail page.",
+          "x-shopware-names": "fields"
+        },
+        "navigation": { "$ref": "#/$defs/navigation" },
+        "acl": { "$ref": "#/$defs/acl" },
+        "locales": {
+          "type": "object",
+          "description": "The locales snippet files are written for; en-GB and de-DE when absent.",
+          "x-shopware-names": "locales",
+          "additionalProperties": { "$ref": "#/$defs/locale" }
+        },
+        "listing": { "$ref": "#/$defs/listing" },
+        "detail": { "$ref": "#/$defs/detail" }
+      }
+    },
+    "locale": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "navigation": {
+      "type": "object",
+      "description": "The entry of the module in the main menu.",
+      "additionalProperties": false,
+      "properties": {
+        "enable": { "type": "boolean", "description": "false leaves the module out of the menu." },
+        "parent": { "type": "string", "description": "The id of the menu entry the module is listed below; sw-extension when absent." },
+        "position": { "type": "integer", "description": "The place among the entries of the same parent." }
+      }
+    },
+    "acl": {
+      "type": "object",
+      "description": "The roles of the module: viewer, editor, creator and deleter.",
+      "additionalProperties": false,
+      "properties": {
+        "enable": { "type": "boolean", "description": "false generates no roles and checks none." },
+        "parent": { "type": "string", "description": "The group of the permission grid the roles are listed in." }
+      }
+    },
+    "listing": {
+      "type": "object",
+      "description": "The list page.",
+      "additionalProperties": false,
+      "properties": {
+        "managed": { "type": "boolean", "description": "false hands the page over: it is written once more outside generated/ and never again." },
+        "auto": { "type": "boolean", "description": "false shows the columns named here only; new fields of the entity no longer appear on their own." },
+        "limit": { "type": "integer", "minimum": 1, "description": "The number of records per page." },
+        "sorting": { "$ref": "#/$defs/sorting" },
+        "columns": {
+          "type": "object",
+          "description": "The columns by the property of the entity they show.",
+          "x-shopware-names": "fields",
+          "additionalProperties": { "$ref": "#/$defs/column" }
+        }
+      }
+    },
+    "sorting": {
+      "type": "object",
+      "description": "The order of the list when it is opened.",
+      "additionalProperties": false,
+      "required": ["field"],
+      "properties": {
+        "field": { "type": "string", "description": "The property the list is sorted by.", "x-shopware-names": "fields" },
+        "direction": { "enum": ["ASC", "DESC"], "description": "ASC when absent." }
+      }
+    },
+    "column": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enable": { "type": "boolean", "description": "false removes the column." },
+        "position": { "type": "integer", "description": "The place among the columns; derived columns are 10 apart." },
+        "label": { "$ref": "#/$defs/labels", "description": "The heading of the column per locale." },
+        "sortable": { "type": "boolean", "description": "Whether the list can be sorted by the column." },
+        "align": { "enum": ["left", "center", "right"], "description": "The alignment of the cells." },
+        "inlineEdit": { "type": "boolean", "description": "Whether the value can be edited in the list." }
+      }
+    },
+    "detail": {
+      "type": "object",
+      "description": "The detail and create page.",
+      "additionalProperties": false,
+      "properties": {
+        "managed": { "type": "boolean", "description": "false hands the page over: it is written once more outside generated/ and never again." },
+        "auto": { "type": "boolean", "description": "false shows the fields named in a card only; new fields of the entity no longer appear on their own." },
+        "cards": {
+          "type": "object",
+          "description": "The cards of the form by their name; derived fields go to the card general.",
+          "additionalProperties": { "$ref": "#/$defs/card" }
+        }
+      }
+    },
+    "card": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enable": { "type": "boolean", "description": "false removes the card." },
+        "position": { "type": "integer", "description": "The place among the cards." },
+        "title": { "$ref": "#/$defs/labels", "description": "The title of the card per locale." },
+        "fields": {
+          "type": "object",
+          "description": "The fields of the card by the property of the entity they edit.",
+          "x-shopware-names": "fields",
+          "additionalProperties": { "$ref": "#/$defs/field" }
+        }
+      }
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enable": { "type": "boolean", "description": "false removes the field from the form." },
+        "position": { "type": "integer", "description": "The place among the fields of the card; derived fields are 10 apart." },
+        "label": { "$ref": "#/$defs/labels", "description": "The label of the input per locale." },
+        "helpText": { "$ref": "#/$defs/labels", "description": "The help text of the input per locale." },
+        "placeholder": { "$ref": "#/$defs/labels", "description": "The placeholder of the input per locale." },
+        "required": { "type": "boolean", "description": "Whether the input is marked as required; derived from the field when absent." },
+        "component": { "$ref": "#/$defs/component" }
+      }
+    },
+    "selectOption": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "position": { "type": "integer", "description": "The place among the options." },
+        "label": { "$ref": "#/$defs/labels", "description": "The text of the option per locale." }
+      }
+    },
+    "component": {
+      "description": "The input of the field, by its type; derived from the field when absent.",
+      "type": "object",
+      "required": ["type"],
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "text", "description": "A text field." },
+            "props": { "$ref": "#/$defs/props" }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "textarea", "description": "A text field of several lines." },
+            "props": { "$ref": "#/$defs/props" }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "text-editor", "description": "An editor for formatted text." },
+            "props": { "$ref": "#/$defs/props" }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "number", "description": "A number field." },
+            "numberType": { "enum": ["int", "float"], "description": "Derived from the field when absent." },
+            "props": { "$ref": "#/$defs/props" }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "switch", "description": "A switch for yes or no." },
+            "props": { "$ref": "#/$defs/props" }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "date", "description": "A date picker." },
+            "props": { "$ref": "#/$defs/props" }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "datetime", "description": "A picker for date and time." },
+            "props": { "$ref": "#/$defs/props" }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "select", "description": "A choice from fixed values." },
+            "options": {
+              "type": "object",
+              "description": "The values to choose from; the choices of the field when absent.",
+              "additionalProperties": { "$ref": "#/$defs/selectOption" }
+            },
+            "props": { "$ref": "#/$defs/props" }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "entity-select", "description": "A choice from the records of an entity." },
+            "entity": { "type": "string", "description": "The entity to choose from; the target of the association when absent." },
+            "labelProperty": { "type": "string", "description": "The property that names a record of the entity." },
+            "props": { "$ref": "#/$defs/props" }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {
+            "type": { "const": "custom", "description": "A component of the plugin: it gets the value, the label and the error of the field." },
+            "name": { "type": "string", "description": "The name the component is registered with." },
+            "props": { "$ref": "#/$defs/props" }
+          }
+        }
+      ]
+    }
+  }
+}

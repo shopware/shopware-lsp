@@ -206,6 +206,35 @@ A generated file that was edited by hand counts as a difference: the fix
 would discard the edit. Move the change into an override or take the page
 over first.
 
+## Completion and schema
+
+The server completes the description itself, in every editor:
+
+- the keys a mapping may hold, with a line of explanation, without the ones
+  that are set already;
+- `true` and `false`, the values of `align`, `direction` and `numberType`,
+  and the types of a component; a component offers the keys of its type
+  once the type is set;
+- the entities of the plugin after `entity:`;
+- the properties of the entity of the module below `columns` and `fields`
+  and after `labelField:` and `sorting.field:`;
+- `en-GB` and `de-DE` where a text per locale or a locale is expected.
+
+A key whose value is a mapping is completed with the next line indented.
+
+The format also has a [JSON schema](../crates/shopware-adminmodule/schema.json)
+for tools that validate YAML, such as the YAML language server. The VS Code
+extension registers it for the description. Elsewhere, name it in the first
+line of the file:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/shopware/shopware-lsp/main/crates/shopware-adminmodule/schema.json
+```
+
+Completion reads the same schema, and a test holds the schema and the
+format the server reads against each other. An editor that runs both
+servers lists the keys of the schema twice.
+
 ## Removing a module
 
 Remove it from the description. The fix then deletes its `generated/`

@@ -7,6 +7,7 @@
 //! fix writes them as one workspace edit.
 
 mod action;
+mod completion;
 mod inspection;
 mod plan;
 
@@ -22,6 +23,7 @@ use swlsp_shopware_entityschema::{self as entityschema, IndexedCatalog};
 use swlsp_uriutil::filepath;
 
 pub use action::AdminModuleActionProvider;
+pub use completion::AdminModuleCompletionProvider;
 pub(crate) use inspection::new_admin_module;
 
 /// The sources of the Administration of a plugin, below its root.
@@ -71,7 +73,7 @@ impl Generation {
 }
 
 #[derive(Clone)]
-pub(crate) struct Generator {
+pub struct Generator {
     entities: Arc<IndexedCatalog>,
     dal: Arc<DalIndex>,
     versions: SupportedVersions,
@@ -86,7 +88,7 @@ pub(crate) fn plugin_root(config_path: &str) -> Option<String> {
 }
 
 impl Generator {
-    pub(crate) fn new(
+    pub fn new(
         entities: Arc<IndexedCatalog>,
         dal: Arc<DalIndex>,
         versions: SupportedVersions,
@@ -112,6 +114,20 @@ impl Generator {
             .find(|name| has(name))
             .unwrap_or("id")
             .to_owned()
+    }
+
+    /// The entities the plugin at `plugin_root` defines; none while the
+    /// workspace is being indexed or when they cannot be read.
+    pub(crate) fn entities(&self, plugin_root: &str) -> Vec<Entity> {
+        let Ok((_, definitions)) = self.entities.scan(plugin_root, None) else {
+            return Vec::new();
+        };
+        definitions
+            .iter()
+            .map(|definition| {
+                Entity::from_spec(&definition.spec, &|target| self.label_property(target))
+            })
+            .collect()
     }
 
     /// Renders every module `source`, the description of the plugin at
@@ -175,4 +191,4 @@ impl Generator {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
