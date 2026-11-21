@@ -12,6 +12,10 @@ struct Scanner<'a> {
     current_indent: usize,
     flow_depth: usize,
     line_content_start: bool,
+    /// Whether the last token of a flow collection that is not white space
+    /// ended a quoted scalar or a collection: a `:` after such a key needs
+    /// no space before its value (`{"a":1}`).
+    after_json_node: bool,
 }
 
 /// Splits `source` into lossless tokens.
@@ -24,12 +28,23 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
         current_indent: 0,
         flow_depth: 0,
         line_content_start: true,
+        after_json_node: false,
     };
     let mut tokens = Vec::with_capacity(source.len() / 4 + 1);
     while scanner.position < source.len() {
         let start = scanner.position;
         let (kind, end) = scanner.next();
         assert!(end > start, "yaml lexer did not make progress");
+        if !matches!(kind, TK_INDENT | TK_WHITESPACE | TK_LINE_BREAK | TK_COMMENT) {
+            scanner.after_json_node = scanner.flow_depth > 0
+                && matches!(
+                    kind,
+                    TK_SINGLE_QUOTED_SCALAR
+                        | TK_DOUBLE_QUOTED_SCALAR
+                        | TK_CLOSE_BRACKET
+                        | TK_CLOSE_BRACE
+                );
+        }
         tokens.push(Token::new(kind, source, start as u32, end as u32));
         scanner.position = end;
     }
@@ -85,7 +100,9 @@ impl Scanner<'_> {
                 self.line_content_start = false;
                 return (TK_DOCUMENT_END, position + 3);
             }
-            b':' if colon_is_indicator(source, position, self.flow_depth) => {
+            b':' if self.after_json_node
+                || colon_is_indicator(source, position, self.flow_depth) =>
+            {
                 self.line_content_start = false;
                 return (TK_COLON, position + 1);
             }
@@ -374,6 +391,27 @@ mod tests {
         assert_eq!(
             texts_of("path: /product/{id}\n", TK_PLAIN_SCALAR),
             ["path", "/product/{id}"]
+        );
+    }
+
+    #[test]
+    fn a_colon_after_a_quoted_key_of_a_flow_mapping_needs_no_space() {
+        let source = "{\"a\":{'b':1,\"c\" :[2]},[d]:e, f:g, \"h\": :i}";
+        let tokens = lex(source);
+        assert_eq!(
+            tokens.iter().map(|token| token.text).collect::<String>(),
+            source
+        );
+        assert_eq!(texts_of(source, TK_COLON).len(), 5);
+        // A plain key keeps its colons, as does everything outside a flow
+        // collection.
+        assert_eq!(
+            texts_of(source, TK_PLAIN_SCALAR),
+            ["1", "2", "d", "e", "f:g", ":i"]
+        );
+        assert_eq!(
+            texts_of("\"a\":b\n[c]:d\n", TK_PLAIN_SCALAR),
+            [":b", "c", ":d"]
         );
     }
 

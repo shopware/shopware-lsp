@@ -556,6 +556,19 @@ parameters:
     }
 
     #[test]
+    fn parses_compact_flow_mappings() {
+        for source in [
+            "{\"a\":{\"b\":1}}\n",
+            "{\"a\":[1,2],'c':{\"d\":\"e\"}}\n",
+            "key: {\"a\":1, \"b\" :\"c\"}\n",
+            "{\"modules\":{\"acme-review\":{\"entity\":\"acme_review\"}}}",
+        ] {
+            let parse = assert_lossless(source);
+            assert!(parse.errors.is_empty(), "{source}: {:?}", parse.errors);
+        }
+    }
+
+    #[test]
     fn reports_malformed_yaml_and_keeps_tree() {
         for source in [
             "key: value\nother scalar\n",
