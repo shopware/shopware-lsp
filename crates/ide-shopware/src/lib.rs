@@ -99,6 +99,7 @@ fn completion(server: &Registrar<'_>, s: &Services) {
             s.dal.clone(),
             s.supported_versions.clone(),
         ),
+        Arc::new(admin_module::AdminIcons::new(s.root.clone())),
     )));
     server.completion(Arc::new(
         DalCompletionProvider::new(s.dal.clone()).with_admin(s.admin.clone()),

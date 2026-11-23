@@ -182,10 +182,18 @@ fn the_schema_marks_where_names_of_the_project_stand() {
         schema.value_names(&below(&["listing", "sorting", "field"]), &nothing),
         named(Names::Fields, false)
     );
+    assert_eq!(
+        schema.value_names(&below(&["icon"]), &nothing),
+        named(Names::Icons, false)
+    );
     // The schema lists everything else itself.
     assert_eq!(schema.key_names(&below(&[]), &nothing), None);
     assert_eq!(schema.key_names(&below(&["listing"]), &nothing), None);
-    assert_eq!(schema.value_names(&below(&["icon"]), &nothing), None);
+    assert_eq!(schema.value_names(&below(&["color"]), &nothing), None);
+    assert_eq!(
+        schema.value_names(&below(&["navigation", "parent"]), &nothing),
+        None
+    );
     assert_eq!(schema.value_names(&below(&["title"]), &nothing), None);
     assert_eq!(schema.key_names(&path(&["zz", "zz"]), &nothing), None);
 }

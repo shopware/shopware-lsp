@@ -4,7 +4,10 @@ use swlsp_ide::completion::test_support::request_with_cursor;
 use swlsp_lsp::{CompletionProvider, Context};
 use swlsp_lsp_protocol::{self as protocol, CompletionItemKind};
 
+use std::sync::Arc;
+
 use super::{AdminModuleCompletionProvider, place};
+use crate::admin_module::AdminIcons;
 use crate::admin_module::tests::Plugin;
 
 /// The place of the `|` in `source`.
@@ -15,8 +18,15 @@ fn at(source: &str) -> Option<super::Place> {
     place(&source, &root, offset)
 }
 
+fn provider(plugin: &Plugin) -> AdminModuleCompletionProvider {
+    AdminModuleCompletionProvider::new(
+        plugin.generator.clone(),
+        Arc::new(AdminIcons::new(plugin.path(""))),
+    )
+}
+
 fn completions(plugin: &Plugin, source: &str) -> Vec<protocol::CompletionItem> {
-    AdminModuleCompletionProvider::new(plugin.generator.clone()).get_completions(
+    provider(plugin).get_completions(
         &Context::background(),
         &request_with_cursor(&plugin.uri(), source),
     )
@@ -79,7 +89,7 @@ fn what_the_schema_lists_is_left_to_the_editor() {
     // Another file of the plugin gets nothing either.
     let other = swlsp_uriutil::file_uri(&plugin.path("src/Resources/config/services.yaml"));
     let request = request_with_cursor(&other, "modules:\n  acme-review:\n    entity: |\n");
-    let provider = AdminModuleCompletionProvider::new(plugin.generator.clone());
+    let provider = provider(&plugin);
     assert_eq!(
         provider
             .get_completions(&Context::background(), &request)
@@ -200,4 +210,35 @@ fn a_flow_mapping_is_completed_like_a_block() {
     assert_eq!(inserted(&columns, "active"), "active: ");
     let entity = completions(&plugin, "modules: { acme-review: { entity: | } }\n");
     assert_eq!(labels(&entity), ["acme_review"]);
+}
+
+#[test]
+fn icons_come_from_the_icon_kit_of_the_project() {
+    let plugin = Plugin::new();
+    let source = format!("{MODULE}    icon: reg|\n");
+    // Nothing without the kit.
+    assert_eq!(labels(&completions(&plugin, &source)), [""; 0]);
+
+    let kit = "vendor/shopware/administration/Resources/app/administration/node_modules/@shopware-ag/meteor-icon-kit/icons";
+    for file in [
+        "regular/star.svg",
+        "regular/3d.svg",
+        "solid/star.svg",
+        "meta.json",
+        "regular/notes.txt",
+    ] {
+        let path = plugin.path(&format!("{kit}/{file}"));
+        std::fs::create_dir_all(std::path::Path::new(&path).parent().unwrap()).unwrap();
+        std::fs::write(path, "").unwrap();
+    }
+    let icons = completions(&plugin, &source);
+    assert_eq!(labels(&icons), ["regular-3d", "regular-star", "solid-star"]);
+    assert_eq!(inserted(&icons, "regular-star"), "regular-star");
+    assert_eq!(icons[0].kind, Some(CompletionItemKind::CONSTANT));
+    // The menu entries are listed by the schema, not by the server.
+    let parent = completions(
+        &plugin,
+        &format!("{MODULE}    navigation:\n      parent: |\n"),
+    );
+    assert_eq!(labels(&parent), [""; 0]);
 }

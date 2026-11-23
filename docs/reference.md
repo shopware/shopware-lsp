@@ -564,8 +564,9 @@ exact public names shown by MCP `tools/list`; unknown names are rejected.
   `shopware.addAdminModule`; other clients call
   `shopware/admin/module/describe`
 - Completion in the description: the entities of the plugin after
-  `entity:`, the properties of the entity below `columns` and `fields`, and
-  the locales, in block and flow mappings. The keys and fixed values are
+  `entity:`, the properties of the entity below `columns` and `fields`, the
+  locales, and the icons of the installed Meteor icon kit after `icon:`, in
+  block and flow mappings. The keys and fixed values are
   left to the [JSON schema](../crates/shopware-adminmodule/schema.json) and
   the YAML language server of the editor
 - `shopware.admin_module.outdated` reports a module that is not generated

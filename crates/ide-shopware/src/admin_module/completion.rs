@@ -1,9 +1,11 @@
 //! Completion in a module description: the entities, properties and
-//! locales of the plugin where the schema asks for a name. The keys and
+//! locales of the plugin and the icons of the Administration where the
+//! schema asks for a name. The keys and
 //! fixed values of the format are left to the schema itself, which the YAML
 //! language server of the editor completes and validates with.
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 use swlsp_ide::completion::common::{protocol_range, text_edit};
 use swlsp_ide::completion::component_util::request_offset;
@@ -17,18 +19,19 @@ use swlsp_syntax::{SyntaxNode, TextRange, TextSize};
 use swlsp_uriutil::filepath;
 
 use super::completion_flow::flow_place;
-use super::{Generator, plugin_root};
+use super::{AdminIcons, Generator, plugin_root};
 
 const LOCALES: &[&str] = &["en-GB", "de-DE"];
 const DEFAULT_STEP: usize = 2;
 
 pub struct AdminModuleCompletionProvider {
     generator: Generator,
+    icons: Arc<AdminIcons>,
 }
 
 impl AdminModuleCompletionProvider {
-    pub(crate) fn new(generator: Generator) -> Self {
-        Self { generator }
+    pub(crate) fn new(generator: Generator, icons: Arc<AdminIcons>) -> Self {
+        Self { generator, icons }
     }
 }
 
@@ -185,6 +188,7 @@ impl AdminModuleCompletionProvider {
     fn names(&self, names: Names, plugin: &str, root: &SyntaxNode, path: &[String]) -> Vec<String> {
         match names {
             Names::Locales => LOCALES.iter().map(|locale| (*locale).to_owned()).collect(),
+            Names::Icons => self.icons.names().to_vec(),
             Names::Entities => self
                 .generator
                 .entities(plugin)
@@ -247,7 +251,7 @@ impl CompletionProvider for AdminModuleCompletionProvider {
         let kind = match named.names {
             Names::Entities => CompletionItemKind::CLASS,
             Names::Fields => CompletionItemKind::FIELD,
-            Names::Locales => CompletionItemKind::CONSTANT,
+            Names::Locales | Names::Icons => CompletionItemKind::CONSTANT,
         };
         let range = protocol_range(place.range, line_index);
         let below = " ".repeat(place.indent + place.step);

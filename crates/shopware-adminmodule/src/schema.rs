@@ -22,6 +22,8 @@ pub enum Names {
     /// The properties of the entity of the module.
     Fields,
     Locales,
+    /// The icons of the Administration.
+    Icons,
 }
 
 /// Names of the project that may stand at a place.
@@ -138,6 +140,7 @@ fn names(node: &Value) -> Option<Names> {
         "entities" => Some(Names::Entities),
         "fields" => Some(Names::Fields),
         "locales" => Some(Names::Locales),
+        "icons" => Some(Names::Icons),
         _ => None,
     }
 }

@@ -41,7 +41,11 @@
         },
         "title": { "$ref": "#/$defs/labels", "description": "The name of the module per locale; derived from the entity name when absent." },
         "description": { "$ref": "#/$defs/labels", "description": "The description of the module per locale." },
-        "icon": { "type": "string", "description": "The icon of the module, such as regular-star." },
+        "icon": {
+          "type": "string",
+          "description": "The icon of the module from the Meteor icon kit, such as regular-star.",
+          "x-shopware-names": "icons"
+        },
         "color": { "type": "string", "description": "The color of the module, such as #ff3d58." },
         "labelField": {
           "type": "string",
@@ -71,7 +75,11 @@
       "additionalProperties": false,
       "properties": {
         "enable": { "type": "boolean", "description": "false leaves the module out of the menu." },
-        "parent": { "type": "string", "description": "The id of the menu entry the module is listed below; sw-extension when absent." },
+        "parent": {
+          "type": "string",
+          "description": "The id of the menu entry the module is listed below; sw-extension when absent.",
+          "examples": ["sw-catalogue", "sw-order", "sw-customer", "sw-content", "sw-marketing", "sw-extension", "sw-settings"]
+        },
         "position": { "type": "integer", "description": "The place among the entries of the same parent." }
       }
     },

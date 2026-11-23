@@ -9,6 +9,7 @@
 mod action;
 mod completion;
 mod completion_flow;
+mod icons;
 mod inspection;
 mod plan;
 
@@ -25,6 +26,7 @@ use swlsp_uriutil::filepath;
 
 pub use action::AdminModuleActionProvider;
 pub use completion::AdminModuleCompletionProvider;
+pub use icons::AdminIcons;
 pub(crate) use inspection::new_admin_module;
 
 /// The sources of the Administration of a plugin, below its root.

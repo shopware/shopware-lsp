@@ -213,8 +213,9 @@ Two sources complete the description, and neither repeats the other.
 The format has a [JSON schema](../crates/shopware-adminmodule/schema.json).
 The YAML language server of the editor completes and validates with it: the
 keys a mapping may hold with a line of explanation, `true` and `false`, the
-values of `align`, `direction` and `numberType`, and the types of a
-component with the keys of each type.
+values of `align`, `direction` and `numberType`, the types of a component
+with the keys of each type, and the main menu entries after
+`navigation.parent:`.
 
 - VS Code: the extension registers the schema; the
   [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)
@@ -234,7 +235,10 @@ The server completes what a schema cannot know, in every editor:
 - the entities of the plugin after `entity:`;
 - the properties of the entity of the module below `columns` and `fields`
   and after `labelField:` and `sorting.field:`;
-- `en-GB` and `de-DE` where a text per locale or a locale is expected.
+- `en-GB` and `de-DE` where a text per locale or a locale is expected;
+- the icons after `icon:`, read from the Meteor icon kit the Administration
+  of the project has installed (`node_modules/@shopware-ag/meteor-icon-kit`);
+  none when the packages of the Administration are not installed.
 
 A name whose value is a mapping is completed with the next line indented.
 The same is offered inside a flow mapping (`title: { en-GB: Reviews }`),
