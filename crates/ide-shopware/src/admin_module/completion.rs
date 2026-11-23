@@ -15,6 +15,7 @@ use swlsp_shopware_adminmodule::{Names, Schema, Suggestion};
 use swlsp_syntax::{SyntaxNode, TextRange, TextSize};
 use swlsp_uriutil::filepath;
 
+use super::completion_flow::flow_place;
 use super::{Generator, plugin_root};
 
 const LOCALES: &[&str] = &["en-GB", "de-DE"];
@@ -47,6 +48,9 @@ pub(crate) struct Place {
     pub(crate) step: usize,
     /// Whether a colon follows the key under the cursor.
     pub(crate) complete: bool,
+    /// Whether the cursor is in a flow mapping (`{ … }`), where a key is
+    /// followed by its value on the same line.
+    pub(crate) flow: bool,
 }
 
 /// The column of `offset` in its line.
@@ -54,12 +58,12 @@ fn column(source: &str, offset: usize) -> usize {
     offset - source[..offset].rfind('\n').map_or(0, |index| index + 1)
 }
 
-fn key_start(pair: &SyntaxNode) -> Option<usize> {
+pub(super) fn key_start(pair: &SyntaxNode) -> Option<usize> {
     let token = yaml::pair_key(pair).and_then(|key| yaml::scalar_token(&key))?;
     Some(usize::from(token.text_range().start()))
 }
 
-fn key_name(pair: &SyntaxNode) -> String {
+pub(super) fn key_name(pair: &SyntaxNode) -> String {
     yaml::pair_key(pair)
         .map(|key| yaml::scalar_value(&key))
         .unwrap_or_default()
@@ -68,6 +72,9 @@ fn key_name(pair: &SyntaxNode) -> String {
 pub(crate) fn place(source: &str, root: &SyntaxNode, offset: usize) -> Option<Place> {
     if offset > source.len() || !source.is_char_boundary(offset) {
         return None;
+    }
+    if let Some(place) = flow_place(source, root, offset) {
+        return place;
     }
     let line_start = source[..offset].rfind('\n').map_or(0, |index| index + 1);
     let line_end = source[offset..]
@@ -129,6 +136,7 @@ pub(crate) fn place(source: &str, root: &SyntaxNode, offset: usize) -> Option<Pl
             indent,
             step,
             complete: false,
+            flow: false,
         });
     }
     if typed.contains(' ') {
@@ -155,6 +163,7 @@ pub(crate) fn place(source: &str, root: &SyntaxNode, offset: usize) -> Option<Pl
         indent,
         step,
         complete: rest[word..].starts_with(':'),
+        flow: false,
     })
 }
 
@@ -268,8 +277,8 @@ impl CompletionProvider for AdminModuleCompletionProvider {
             .map(|(item, kind)| {
                 let text = match (place.value, place.complete, item.nested) {
                     (true, ..) | (false, true, _) => item.label.clone(),
-                    (false, false, true) => format!("{}:\n{below}", item.label),
-                    (false, false, false) => format!("{}: ", item.label),
+                    (false, false, true) if !place.flow => format!("{}:\n{below}", item.label),
+                    (false, false, _) => format!("{}: ", item.label),
                 };
                 protocol::CompletionItem {
                     label: item.label,

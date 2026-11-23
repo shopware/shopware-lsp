@@ -8,6 +8,7 @@
 
 mod action;
 mod completion;
+mod completion_flow;
 mod inspection;
 mod plan;
 

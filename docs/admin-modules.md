@@ -221,6 +221,9 @@ The server completes the description itself, in every editor:
 - `en-GB` and `de-DE` where a text per locale or a locale is expected.
 
 A key whose value is a mapping is completed with the next line indented.
+The same is offered inside a flow mapping (`title: { en-GB: Reviews }`),
+where every key is completed on the line; a flow sequence (`[ … ]`) gets
+nothing.
 
 The format also has a [JSON schema](../crates/shopware-adminmodule/schema.json)
 for tools that validate YAML, such as the YAML language server. The VS Code

@@ -146,3 +146,76 @@ fn values_and_component_keys_follow_the_schema() {
     );
     assert_eq!(labels(&keys), ["numberType", "props"]);
 }
+
+#[test]
+fn the_place_in_a_flow_mapping_follows_the_braces() {
+    let place = at(&format!(
+        "{MODULE}    title: {{ en-GB: Reviews, de|: x }}\n"
+    ))
+    .unwrap();
+    assert_eq!(place.path, ["modules", "acme-review", "title"]);
+    assert!(place.flow && !place.value && place.complete);
+    assert_eq!(place.existing.iter().collect::<Vec<_>>(), ["en-GB"]);
+    assert_eq!(u32::from(place.range.len()), 2);
+
+    // Over several lines, and not closed yet.
+    let place = at(&format!(
+        "{MODULE}    listing: {{\n      auto: false,\n      |"
+    ))
+    .unwrap();
+    assert_eq!(place.path, ["modules", "acme-review", "listing"]);
+    assert_eq!(place.existing.iter().collect::<Vec<_>>(), ["auto"]);
+
+    let place = at(&format!(
+        "{MODULE}    listing: {{ sorting: {{\"direction\":A|, field: x }} }}\n"
+    ));
+    let place = place.unwrap();
+    assert_eq!(
+        place.path,
+        ["modules", "acme-review", "listing", "sorting", "direction"]
+    );
+    assert!(place.value);
+    assert_eq!(u32::from(place.range.len()), 1);
+
+    // After the mapping the line is like any other.
+    let place = at(&format!("{MODULE}    title: {{ en-GB: Reviews }}\n    |\n")).unwrap();
+    assert!(!place.flow);
+    assert_eq!(place.path, ["modules", "acme-review"]);
+    // A sequence holds nothing the schema knows.
+    assert_eq!(at(&format!("{MODULE}    title: [ |]\n")), None);
+    assert_eq!(at(&format!("{MODULE}    title: {{ en-GB: a b| }}\n")), None);
+}
+
+#[test]
+fn a_flow_mapping_is_completed_like_a_block() {
+    let plugin = Plugin::new();
+    let locales = completions(
+        &plugin,
+        &format!("{MODULE}    title: {{ en-GB: Reviews, | }}\n"),
+    );
+    assert_eq!(labels(&locales), ["de-DE"]);
+    assert_eq!(inserted(&locales, "de-DE"), "de-DE: ");
+
+    // A key that holds a mapping stays on the line.
+    let keys = completions(&plugin, &format!("{MODULE}    listing: {{ | }}\n"));
+    assert!(labels(&keys).contains(&"columns"), "{:?}", labels(&keys));
+    assert_eq!(inserted(&keys, "columns"), "columns: ");
+
+    let columns = completions(
+        &plugin,
+        &format!("{MODULE}    listing: {{ columns: {{ title: {{ align: left }}, ac| }} }}\n"),
+    );
+    assert!(
+        labels(&columns).contains(&"active"),
+        "{:?}",
+        labels(&columns)
+    );
+    assert!(!labels(&columns).contains(&"title"));
+    let align = completions(
+        &plugin,
+        &format!("{MODULE}    listing: {{ columns: {{ title: {{ align: | }} }} }}\n"),
+    );
+    assert_eq!(labels(&align), ["left", "center", "right"]);
+    let entity = completions(&plugin, "modules: { acme-review: { entity: | } }\n");
+    assert_eq!(labels(&entity), ["acme_review"]);
+}
