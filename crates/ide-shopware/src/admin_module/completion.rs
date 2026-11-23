@@ -1,6 +1,7 @@
-//! Completion in a module description: the keys and values its schema
-//! allows at the cursor, and the entities, properties and locales of the
-//! plugin where the schema asks for a name.
+//! Completion in a module description: the entities, properties and
+//! locales of the plugin where the schema asks for a name. The keys and
+//! fixed values of the format are left to the schema itself, which the YAML
+//! language server of the editor completes and validates with.
 
 use std::collections::BTreeSet;
 
@@ -11,7 +12,7 @@ use swlsp_lsp::{CompletionProvider, CompletionRequest, Context};
 use swlsp_lsp_protocol::{self as protocol, CompletionItemKind};
 use swlsp_parser_yaml::query as yaml;
 use swlsp_parser_yaml::syntax::YAML_PAIR;
-use swlsp_shopware_adminmodule::{Names, Schema, Suggestion};
+use swlsp_shopware_adminmodule::{Names, Schema};
 use swlsp_syntax::{SyntaxNode, TextRange, TextSize};
 use swlsp_uriutil::filepath;
 
@@ -232,58 +233,36 @@ impl CompletionProvider for AdminModuleCompletionProvider {
         };
         let lookup = |path: &[String]| scalar(root, path);
         let schema = Schema::bundled();
-        let suggestions = if place.value {
-            schema.values(&place.path, &lookup)
+        let named = if place.value {
+            schema.value_names(&place.path, &lookup)
         } else {
-            schema.keys(&place.path, &lookup)
+            schema.key_names(&place.path, &lookup)
+        };
+        let Some(named) = named else {
+            return Vec::new();
         };
         if ctx.is_cancelled() {
             return Vec::new();
         }
-        let named = suggestions
-            .names
-            .map(|names| (names, self.names(names, &plugin, root, &place.path)))
-            .into_iter()
-            .flat_map(|(names, labels)| {
-                let nested = suggestions.names_nested;
-                labels.into_iter().map(move |label| {
-                    let kind = match names {
-                        Names::Entities => CompletionItemKind::CLASS,
-                        Names::Fields => CompletionItemKind::FIELD,
-                        Names::Locales => CompletionItemKind::CONSTANT,
-                    };
-                    let item = Suggestion {
-                        label,
-                        nested,
-                        ..Suggestion::default()
-                    };
-                    (item, kind)
-                })
-            });
-        let kind = if place.value {
-            CompletionItemKind::VALUE
-        } else {
-            CompletionItemKind::PROPERTY
+        let kind = match named.names {
+            Names::Entities => CompletionItemKind::CLASS,
+            Names::Fields => CompletionItemKind::FIELD,
+            Names::Locales => CompletionItemKind::CONSTANT,
         };
         let range = protocol_range(place.range, line_index);
         let below = " ".repeat(place.indent + place.step);
-        suggestions
-            .items
-            .iter()
-            .cloned()
-            .map(|item| (item, kind))
-            .chain(named)
-            .filter(|(item, _)| place.value || !place.existing.contains(&item.label))
-            .map(|(item, kind)| {
-                let text = match (place.value, place.complete, item.nested) {
-                    (true, ..) | (false, true, _) => item.label.clone(),
-                    (false, false, true) if !place.flow => format!("{}:\n{below}", item.label),
-                    (false, false, _) => format!("{}: ", item.label),
+        self.names(named.names, &plugin, root, &place.path)
+            .into_iter()
+            .filter(|label| place.value || !place.existing.contains(label))
+            .map(|label| {
+                let text = match (place.value, place.complete, named.nested) {
+                    (true, ..) | (false, true, _) => label.clone(),
+                    (false, false, true) if !place.flow => format!("{label}:\n{below}"),
+                    (false, false, _) => format!("{label}: "),
                 };
                 protocol::CompletionItem {
-                    label: item.label,
+                    label,
                     kind: Some(kind),
-                    detail: item.description,
                     text_edit: Some(text_edit(range, text)),
                     ..Default::default()
                 }

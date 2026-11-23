@@ -33,6 +33,7 @@ import {
 import type {WorkspaceClientEntry} from './clientState';
 import {IndexingStatus} from './indexingStatus';
 import {registerTwigLanguageConfiguration} from './languageConfiguration';
+import {registerYamlSupportHint} from './yamlSupport';
 import {
   WorkspaceClientManager,
   type WorkspaceClientPlan,
@@ -46,6 +47,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const indexingStatus = new IndexingStatus(statusItem);
   context.subscriptions.push(coordinatorOutput, statusItem, indexingStatus);
   registerTwigLanguageConfiguration(context);
+  registerYamlSupportHint(context);
   const projectDetector = new ProjectDetector();
 
   let manager: WorkspaceClientManager;

@@ -12,7 +12,7 @@ pub use config::{CONFIG_RELATIVE_PATH, Config, ConfigError, VERSION, parse};
 pub use entity::{Entity, EntityField, Kind};
 pub use render::{GENERATED_DIRECTORY, GeneratedFile, Style, render};
 pub use resolve::{Module, Problem, resolve, valid_module_name};
-pub use schema::{Lookup, Names, SCHEMA, Schema, Suggestion, Suggestions};
+pub use schema::{Lookup, Named, Names, SCHEMA, Schema};
 
 #[cfg(test)]
 mod tests;

@@ -563,10 +563,11 @@ exact public names shown by MCP `tools/list`; unknown names are rejected.
   plugin and creates the file when it is missing. It runs the client command
   `shopware.addAdminModule`; other clients call
   `shopware/admin/module/describe`
-- Completion in the description: the keys and values of its
-  [JSON schema](../crates/shopware-adminmodule/schema.json), the entities
-  of the plugin after `entity:`, and the properties of the entity below
-  `columns` and `fields`
+- Completion in the description: the entities of the plugin after
+  `entity:`, the properties of the entity below `columns` and `fields`, and
+  the locales, in block and flow mappings. The keys and fixed values are
+  left to the [JSON schema](../crates/shopware-adminmodule/schema.json) and
+  the YAML language server of the editor
 - `shopware.admin_module.outdated` reports a module that is not generated
   yet or differs from its description, on the module name; the quick fix
   `Shopware: Generate Administration modules` writes, updates and removes

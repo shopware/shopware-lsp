@@ -65,7 +65,8 @@ async function main() {
       cacheReport: 'src/cacheReport.ts',
       languageConfigurationModel: 'src/languageConfigurationModel.ts',
       workspaceRoots: 'src/workspaceRoots.ts',
-      workspaceClientManager: 'src/workspaceClientManager.ts'
+      workspaceClientManager: 'src/workspaceClientManager.ts',
+      yamlSupportModel: 'src/yamlSupportModel.ts'
     },
     bundle: true,
     format: 'cjs',

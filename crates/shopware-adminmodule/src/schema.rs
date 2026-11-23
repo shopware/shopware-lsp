@@ -1,6 +1,6 @@
-//! The JSON schema of the description, and what it offers at a place of a
-//! description: the schema editors validate with is the one completion
-//! reads, so the two cannot differ.
+//! The JSON schema of the description. Editors validate and complete with
+//! it through the YAML language server; what it cannot list, the names of
+//! the project, it marks, and the server completes those places.
 
 use std::sync::OnceLock;
 
@@ -24,23 +24,12 @@ pub enum Names {
     Locales,
 }
 
-/// A key or a value the schema allows at a place.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Suggestion {
-    pub label: String,
-    pub description: String,
-    /// A key whose value is a mapping.
+/// Names of the project that may stand at a place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Named {
+    pub names: Names,
+    /// Whether the name is a key whose value is a mapping.
     pub nested: bool,
-}
-
-/// What may stand at a place.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Suggestions {
-    pub items: Vec<Suggestion>,
-    /// Names of the project that may stand there as well.
-    pub names: Option<Names>,
-    /// Whether such a name is a key whose value is a mapping.
-    pub names_nested: bool,
 }
 
 /// Reads the scalar at a path of mapping keys of the description at hand.
@@ -68,14 +57,6 @@ impl Schema {
             .unwrap_or(node)
     }
 
-    fn description(&self, node: &Value) -> String {
-        node.get("description")
-            .or_else(|| self.target(node).get("description"))
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned()
-    }
-
     /// The alternative of a tagged schema the description chose at `path`;
     /// `node` itself when it has no alternatives.
     fn selected<'a>(
@@ -92,7 +73,7 @@ impl Schema {
         let chosen = lookup(&tag)?;
         alternatives
             .iter()
-            .find(|alternative| tag_of(alternative).is_some_and(|(name, _)| name == chosen))
+            .find(|alternative| tag_of(alternative) == Some(chosen.as_str()))
     }
 
     /// The schema of the value at `path`.
@@ -113,110 +94,34 @@ impl Schema {
         Some(node)
     }
 
-    /// The keys of the mapping at `path`.
-    pub fn keys(&self, path: &[String], lookup: Lookup<'_>) -> Suggestions {
-        let Some(node) = self.at(path, lookup) else {
-            return Suggestions::default();
-        };
-        let names = names(node);
-        let names_nested = node
-            .get("additionalProperties")
-            .is_some_and(|named| is_mapping(self.target(named)));
-        let Some(selected) = self.selected(node, path, lookup) else {
-            // Nothing is known about a component before its type.
-            let item = Suggestion {
-                label: TAG.to_owned(),
-                description: self.description(node),
-                nested: false,
-            };
-            return Suggestions {
-                items: vec![item],
-                names,
-                names_nested,
-            };
-        };
-        let items = selected
-            .get("properties")
-            .and_then(Value::as_object)
-            .into_iter()
-            .flatten()
-            .map(|(name, child)| {
-                let target = self.target(child);
-                Suggestion {
-                    label: name.clone(),
-                    description: self.description(child),
-                    nested: is_mapping(target),
-                }
-            })
-            .collect();
-        Suggestions {
-            items,
-            names,
-            names_nested,
-        }
+    /// The names that are keys of the mapping at `path`.
+    pub fn key_names(&self, path: &[String], lookup: Lookup<'_>) -> Option<Named> {
+        let node = self.at(path, lookup)?;
+        Some(Named {
+            names: names(node)?,
+            nested: node
+                .get("additionalProperties")
+                .is_some_and(|named| is_mapping(self.target(named))),
+        })
     }
 
-    /// The values of the scalar at `path`.
-    pub fn values(&self, path: &[String], lookup: Lookup<'_>) -> Suggestions {
-        let Some((key, parent_path)) = path.split_last() else {
-            return Suggestions::default();
-        };
-        let Some(parent) = self.at(parent_path, lookup) else {
-            return Suggestions::default();
-        };
-        if let (TAG, Some(alternatives)) =
-            (key.as_str(), parent.get("oneOf").and_then(Value::as_array))
-        {
-            let items = alternatives
-                .iter()
-                .filter_map(tag_of)
-                .map(|(label, description)| Suggestion {
-                    label: label.to_owned(),
-                    description: description.to_owned(),
-                    nested: false,
-                })
-                .collect();
-            return Suggestions {
-                items,
-                ..Suggestions::default()
-            };
-        }
-        let Some(node) = self.at(path, lookup) else {
-            return Suggestions::default();
-        };
-        let literal = |value: &Value| Suggestion {
-            label: match value {
-                Value::String(text) => text.clone(),
-                other => other.to_string(),
-            },
-            ..Suggestion::default()
-        };
-        let items = if let Some(values) = node.get("enum").and_then(Value::as_array) {
-            values.iter().map(literal).collect()
-        } else if let Some(value) = node.get("const") {
-            vec![literal(value)]
-        } else if node.get("type").and_then(Value::as_str) == Some("boolean") {
-            vec![literal(&Value::Bool(true)), literal(&Value::Bool(false))]
-        } else {
-            Vec::new()
-        };
-        Suggestions {
-            items,
-            names: names(node).filter(|_| !is_mapping(node)),
-            names_nested: false,
-        }
+    /// The names that are values of the scalar at `path`.
+    pub fn value_names(&self, path: &[String], lookup: Lookup<'_>) -> Option<Named> {
+        let node = self.at(path, lookup)?;
+        Some(Named {
+            names: names(node).filter(|_| !is_mapping(node))?,
+            nested: false,
+        })
     }
 }
 
-/// The tag of an alternative and what it says about it.
-fn tag_of(alternative: &Value) -> Option<(&str, &str)> {
-    let tag = alternative.get("properties")?.get(TAG)?;
-    Some((
-        tag.get("const")?.as_str()?,
-        tag.get("description")
-            .and_then(Value::as_str)
-            .unwrap_or_default(),
-    ))
+/// The tag of an alternative.
+fn tag_of(alternative: &Value) -> Option<&str> {
+    alternative
+        .get("properties")?
+        .get(TAG)?
+        .get("const")?
+        .as_str()
 }
 
 fn is_mapping(node: &Value) -> bool {

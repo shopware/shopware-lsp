@@ -137,6 +137,15 @@ locally in VS Code workspace/user settings. Changes apply without restarting
 the language server, and VS Code's Shopware MCP process receives the same local
 diagnostic settings.
 
+### YAML schemas
+
+The extension ships JSON schemas for `.config/shopware-lsp.yaml` and for
+`src/Resources/shopware-lsp/admin-modules.yaml`. The
+[YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)
+completes and validates their keys with them. It is optional: Shopware LSP
+suggests it once when such a file is opened without it, and completes the
+entities, properties and locales of your project either way.
+
 ### Diagnostics Overview
 
 | What's checked | Severity | Where |

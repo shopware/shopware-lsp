@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use serde_json::{Map, Value, json};
 
-use super::{Names, SCHEMA, Schema};
+use super::{Named, Names, SCHEMA, Schema};
 use crate::config::{ConfigError, parse};
 
 /// A key the format does not know.
@@ -154,53 +154,46 @@ fn path(keys: &[&str]) -> Vec<String> {
     keys.iter().map(|key| (*key).to_owned()).collect()
 }
 
-fn labels(suggestions: &super::Suggestions) -> Vec<&str> {
-    suggestions
-        .items
-        .iter()
-        .map(|item| item.label.as_str())
-        .collect()
-}
-
 #[test]
-fn keys_and_values_come_from_the_schema() {
+fn the_schema_marks_where_names_of_the_project_stand() {
     let schema = Schema::bundled();
     let nothing = |_: &[String]| None;
-    assert_eq!(labels(&schema.keys(&[], &nothing)), ["modules", "version"]);
-    let module = schema.keys(&path(&["modules", "acme-review"]), &nothing);
-    assert!(labels(&module).contains(&"labelField"));
-    let listing = module.items.iter().find(|item| item.label == "listing");
-    assert_eq!(listing.map(|item| item.nested), Some(true));
-    assert_eq!(
-        listing.map(|item| item.description.as_str()),
-        Some("The list page.")
-    );
+    let named = |names, nested| Some(Named { names, nested });
+    let module = ["modules", "acme-review"];
+    let below = |keys: &[&str]| path(&[&module[..], keys].concat());
 
-    let column = ["modules", "acme-review", "listing", "columns"];
     assert_eq!(
-        schema.keys(&path(&column), &nothing).names,
-        Some(Names::Fields)
+        schema.key_names(&below(&["listing", "columns"]), &nothing),
+        named(Names::Fields, true)
     );
-    let align = [&column[..], &["title", "align"]].concat();
     assert_eq!(
-        labels(&schema.values(&path(&align), &nothing)),
-        ["left", "center", "right"]
+        schema.key_names(&below(&["title"]), &nothing),
+        named(Names::Locales, false)
     );
-    let enable = [&column[..], &["title", "enable"]].concat();
     assert_eq!(
-        labels(&schema.values(&path(&enable), &nothing)),
-        ["true", "false"]
+        schema.key_names(&below(&["locales"]), &nothing),
+        named(Names::Locales, true)
     );
-    let entity = schema.values(&path(&["modules", "acme-review", "entity"]), &nothing);
-    assert_eq!(entity.names, Some(Names::Entities));
-    let title = schema.keys(&path(&["modules", "acme-review", "title"]), &nothing);
-    assert_eq!(title.names, Some(Names::Locales));
+    assert_eq!(
+        schema.value_names(&below(&["entity"]), &nothing),
+        named(Names::Entities, false)
+    );
+    assert_eq!(
+        schema.value_names(&below(&["listing", "sorting", "field"]), &nothing),
+        named(Names::Fields, false)
+    );
+    // The schema lists everything else itself.
+    assert_eq!(schema.key_names(&below(&[]), &nothing), None);
+    assert_eq!(schema.key_names(&below(&["listing"]), &nothing), None);
+    assert_eq!(schema.value_names(&below(&["icon"]), &nothing), None);
+    assert_eq!(schema.value_names(&below(&["title"]), &nothing), None);
+    assert_eq!(schema.key_names(&path(&["zz", "zz"]), &nothing), None);
 }
 
 #[test]
-fn a_component_offers_the_keys_of_its_type() {
+fn a_component_is_read_by_its_type() {
     let schema = Schema::bundled();
-    let component = path(&[
+    let option = path(&[
         "modules",
         "acme-review",
         "detail",
@@ -209,22 +202,15 @@ fn a_component_offers_the_keys_of_its_type() {
         "fields",
         "rating",
         "component",
+        "options",
+        "good",
+        "label",
     ]);
-    let nothing = |_: &[String]| None;
-    assert_eq!(labels(&schema.keys(&component, &nothing)), ["type"]);
+    // Only a select has options.
+    let select = |_: &[String]| Some("select".to_owned());
+    let named = schema.key_names(&option, &select).map(|named| named.names);
+    assert_eq!(named, Some(Names::Locales));
     let number = |_: &[String]| Some("number".to_owned());
-    assert_eq!(
-        labels(&schema.keys(&component, &number)),
-        ["numberType", "props", "type"]
-    );
-    let tag = [&component[..], &["type".to_owned()]].concat();
-    let types = schema.values(&tag, &nothing);
-    assert_eq!(types.items.len(), 10);
-    assert_eq!(types.items[0].label, "text");
-    assert_eq!(types.items[0].description, "A text field.");
-    let number_type = [&component[..], &["numberType".to_owned()]].concat();
-    assert_eq!(
-        labels(&schema.values(&number_type, &number)),
-        ["int", "float"]
-    );
+    assert_eq!(schema.key_names(&option, &number), None);
+    assert_eq!(schema.key_names(&option, &|_: &[String]| None), None);
 }

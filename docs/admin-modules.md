@@ -208,35 +208,44 @@ over first.
 
 ## Completion and schema
 
-The server completes the description itself, in every editor:
+Two sources complete the description, and neither repeats the other.
 
-- the keys a mapping may hold, with a line of explanation, without the ones
-  that are set already;
-- `true` and `false`, the values of `align`, `direction` and `numberType`,
-  and the types of a component; a component offers the keys of its type
-  once the type is set;
-- the entities of the plugin after `entity:`;
-- the properties of the entity of the module below `columns` and `fields`
-  and after `labelField:` and `sorting.field:`;
-- `en-GB` and `de-DE` where a text per locale or a locale is expected.
+The format has a [JSON schema](../crates/shopware-adminmodule/schema.json).
+The YAML language server of the editor completes and validates with it: the
+keys a mapping may hold with a line of explanation, `true` and `false`, the
+values of `align`, `direction` and `numberType`, and the types of a
+component with the keys of each type.
 
-A key whose value is a mapping is completed with the next line indented.
-The same is offered inside a flow mapping (`title: { en-GB: Reviews }`),
-where every key is completed on the line; a flow sequence (`[ … ]`) gets
-nothing.
-
-The format also has a [JSON schema](../crates/shopware-adminmodule/schema.json)
-for tools that validate YAML, such as the YAML language server. The VS Code
-extension registers it for the description. Elsewhere, name it in the first
-line of the file:
+- VS Code: the extension registers the schema; the
+  [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)
+  reads it. It is not required. Without it the keys are not completed or
+  checked in the editor, and the extension suggests it once when a
+  description is opened.
+- Zed: map the schema in the settings of the bundled YAML language server
+  ([settings](../editors/zed/docs/settings.md)).
+- Elsewhere, name it in the first line of the file:
 
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/shopware/shopware-lsp/main/crates/shopware-adminmodule/schema.json
 ```
 
-Completion reads the same schema, and a test holds the schema and the
-format the server reads against each other. An editor that runs both
-servers lists the keys of the schema twice.
+The server completes what a schema cannot know, in every editor:
+
+- the entities of the plugin after `entity:`;
+- the properties of the entity of the module below `columns` and `fields`
+  and after `labelField:` and `sorting.field:`;
+- `en-GB` and `de-DE` where a text per locale or a locale is expected.
+
+A name whose value is a mapping is completed with the next line indented.
+The same is offered inside a flow mapping (`title: { en-GB: Reviews }`),
+where every name is completed on the line; a flow sequence (`[ … ]`) gets
+nothing.
+
+The schema marks those places (`x-shopware-names`), so the two sources
+cannot disagree about them, and a test holds the schema and the format the
+server reads against each other. The server checks the description with or
+without the schema: `shopware.admin_module.invalid` reports what it cannot
+read.
 
 ## Removing a module
 

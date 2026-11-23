@@ -64,22 +64,21 @@ fn the_place_follows_the_indentation() {
 }
 
 #[test]
-fn keys_come_from_the_schema_without_those_that_are_set() {
+fn what_the_schema_lists_is_left_to_the_editor() {
     let plugin = Plugin::new();
-    let items = completions(&plugin, &format!("{MODULE}    |\n"));
-    let found = labels(&items);
-    assert!(found.contains(&"listing") && found.contains(&"labelField"));
-    assert!(!found.contains(&"entity"));
-    assert_eq!(inserted(&items, "listing"), "listing:\n      ");
-    assert_eq!(inserted(&items, "icon"), "icon: ");
-    let listing = items.iter().find(|item| item.label == "listing").unwrap();
-    assert_eq!(listing.detail, "The list page.");
-    assert_eq!(listing.kind, Some(CompletionItemKind::PROPERTY));
-
-    assert_eq!(labels(&completions(&plugin, "|")), ["modules", "version"]);
-    // Another file of the plugin gets nothing.
+    // Keys and fixed values come from the YAML language server.
+    for source in [
+        "|".to_owned(),
+        format!("{MODULE}    |\n"),
+        format!("{MODULE}    listing:\n      auto: |\n"),
+        format!("{MODULE}    listing: {{ | }}\n"),
+        format!("{MODULE}    listing:\n      columns:\n        title:\n          align: |\n"),
+    ] {
+        assert_eq!(labels(&completions(&plugin, &source)), [""; 0], "{source}");
+    }
+    // Another file of the plugin gets nothing either.
     let other = swlsp_uriutil::file_uri(&plugin.path("src/Resources/config/services.yaml"));
-    let request = request_with_cursor(&other, "|");
+    let request = request_with_cursor(&other, "modules:\n  acme-review:\n    entity: |\n");
     let provider = AdminModuleCompletionProvider::new(plugin.generator.clone());
     assert_eq!(
         provider
@@ -120,31 +119,22 @@ fn names_come_from_the_entities_of_the_plugin() {
 }
 
 #[test]
-fn values_and_component_keys_follow_the_schema() {
+fn names_below_a_component_follow_its_type() {
     let plugin = Plugin::new();
-    let field = format!(
-        "{MODULE}    detail:\n      cards:\n        general:\n          fields:\n            title:\n"
+    let component = format!(
+        "{MODULE}    detail:\n      cards:\n        general:\n          fields:\n            title:\n              component:\n"
     );
-    let align = completions(
+    let option = "                options:\n                  good:\n                    label:\n                      |\n";
+    let select = completions(
         &plugin,
-        &format!("{MODULE}    listing:\n      columns:\n        title:\n          align: |\n"),
+        &format!("{component}                type: select\n{option}"),
     );
-    assert_eq!(labels(&align), ["left", "center", "right"]);
-    assert_eq!(align[0].kind, Some(CompletionItemKind::VALUE));
-    let enable = completions(&plugin, &format!("{field}              enable: |\n"));
-    assert_eq!(labels(&enable), ["true", "false"]);
-
-    let component = format!("{field}              component:\n");
-    let keys = completions(&plugin, &format!("{component}                |\n"));
-    assert_eq!(labels(&keys), ["type"]);
-    let types = completions(&plugin, &format!("{component}                type: |\n"));
-    assert_eq!(types.len(), 10);
-    assert_eq!(types[0].detail, "A text field.");
-    let keys = completions(
+    assert_eq!(labels(&select), ["en-GB", "de-DE"]);
+    let number = completions(
         &plugin,
-        &format!("{component}                type: number\n                |\n"),
+        &format!("{component}                type: number\n{option}"),
     );
-    assert_eq!(labels(&keys), ["numberType", "props"]);
+    assert_eq!(labels(&number), [""; 0]);
 }
 
 #[test]
@@ -197,10 +187,6 @@ fn a_flow_mapping_is_completed_like_a_block() {
     assert_eq!(inserted(&locales, "de-DE"), "de-DE: ");
 
     // A key that holds a mapping stays on the line.
-    let keys = completions(&plugin, &format!("{MODULE}    listing: {{ | }}\n"));
-    assert!(labels(&keys).contains(&"columns"), "{:?}", labels(&keys));
-    assert_eq!(inserted(&keys, "columns"), "columns: ");
-
     let columns = completions(
         &plugin,
         &format!("{MODULE}    listing: {{ columns: {{ title: {{ align: left }}, ac| }} }}\n"),
@@ -211,11 +197,7 @@ fn a_flow_mapping_is_completed_like_a_block() {
         labels(&columns)
     );
     assert!(!labels(&columns).contains(&"title"));
-    let align = completions(
-        &plugin,
-        &format!("{MODULE}    listing: {{ columns: {{ title: {{ align: | }} }} }}\n"),
-    );
-    assert_eq!(labels(&align), ["left", "center", "right"]);
+    assert_eq!(inserted(&columns, "active"), "active: ");
     let entity = completions(&plugin, "modules: { acme-review: { entity: | } }\n");
     assert_eq!(labels(&entity), ["acme_review"]);
 }
