@@ -130,6 +130,70 @@ function run(): void {
 }
 
 #[test]
+fn a_partial_application_is_a_callable_of_the_open_parameters() {
+    let (parsed, analyzed, _) = analyze_source(
+        "/partial-application.php",
+        r#"<?php
+function stuff(int $i1, string $s2 = 'a', float $f3 = 1.0, bool ...$more): string {
+    return '';
+}
+final class Joiner {
+    public function join(string $glue, string $left, string $right = ''): int { return 1; }
+    public static function make(int $a, int $b): self { return new self(); }
+    public function run(): void {
+        $a = stuff(?, 'x');
+        $b = stuff(?, ?, f3: 3.5);
+        $c = stuff(s2: ?, i1: ?);
+        $d = stuff(1, ...);
+        $e = stuff(?, ?, ?, ?, ?);
+        $f = $this->join('-', ?, ?);
+        $g = self::make(1, ?);
+        $h = $this->join(right: ?, glue: ?, left: 'l');
+        $i = stuff(?, f3: ?, ...);
+        $j = stuff(1, 'x');
+        echo $a(1), $j;
+    }
+}
+"#,
+        false,
+        Vec::new(),
+    );
+    assert_no_issue(&analyzed, &["php.arguments"]);
+    for (text, expected) in [
+        ("stuff(?, 'x')", "callable(int $i1):string"),
+        (
+            "stuff(?, ?, f3: 3.5)",
+            "callable(int $i1,string $s2):string",
+        ),
+        ("stuff(s2: ?, i1: ?)", "callable(string $s2,int $i1):string"),
+        (
+            "stuff(1, ...)",
+            "callable(string $s2=,float $f3=,...bool $more):string",
+        ),
+        (
+            "stuff(?, ?, ?, ?, ?)",
+            "callable(int $i1,string $s2,float $f3,bool $more0,bool $more1):string",
+        ),
+        (
+            "$this->join('-', ?, ?)",
+            "callable(string $left,string $right):int",
+        ),
+        ("self::make(1, ?)", "callable(int $b):Joiner"),
+        (
+            "$this->join(right: ?, glue: ?, left: 'l')",
+            "callable(string $right,string $glue):int",
+        ),
+        (
+            "stuff(?, f3: ?, ...)",
+            "callable(int $i1,float $f3,string $s2=,...bool $more):string",
+        ),
+        ("stuff(1, 'x')", "string"),
+    ] {
+        assert_text_type(&analyzed, &parsed.root, text, expected);
+    }
+}
+
+#[test]
 fn first_class_callable_detection_does_not_allocate() {
     let parsed = parse(
         r#"<?php

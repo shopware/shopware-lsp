@@ -5,10 +5,11 @@ use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;
 use swlsp_php_resolver::resolve_signature;
 use swlsp_php_semantic::{Flags, Symbol};
-use swlsp_php_types::{CallableParameter, Kind, Type};
+use swlsp_php_types::{Kind, Type};
 use swlsp_syntax::SyntaxNode;
 use swlsp_textutil::{eq_ignore_case, lowercase};
 
+use super::partial::partial_callable;
 use crate::analyzer::Fs;
 use crate::env::Env;
 use crate::extensions::CallArgument;
@@ -32,7 +33,7 @@ impl Fs<'_, '_, '_> {
         if nodes.is_empty() {
             return Type::UNKNOWN;
         }
-        if is_first_class_callable(node) {
+        if query::is_partial_application(node) {
             return self.infer_first_class_callable(node, &nodes, env, is_static, function);
         }
         let (arguments, uncertain_unpack) = self.infer_arguments(node, env);
@@ -183,17 +184,21 @@ impl Fs<'_, '_, '_> {
             let callee = &nodes[0];
             if callee.kind() != PHP_NAME {
                 let value = self.infer(callee, env);
-                if value.kind() == Kind::Callable {
+                if value.kind() != Kind::Callable {
+                    return Type::callable(Vec::new(), Type::MIXED);
+                }
+                if is_first_class_callable(node) {
                     return value;
                 }
-                return Type::callable(Vec::new(), Type::MIXED);
+                // The parameters a callable value leaves open are not worked out.
+                return Type::callable(Vec::new(), callable_result(&value).unwrap_or_default());
             }
             let name = query::name_value(callee);
             let context = self.name_context_at(start(node));
             let snapshot = self.snapshot;
             context.visit_function_names(&name, |candidate_name| {
                 snapshot.visit_function_views(candidate_name, |candidate| {
-                    callables.push(callable_from_symbol(&candidate.materialize()));
+                    callables.push(partial_callable(&candidate.materialize(), node));
                     true
                 });
                 callables.is_empty()
@@ -209,7 +214,7 @@ impl Fs<'_, '_, '_> {
         members.visit_methods(&receiver, &name, |member| {
             let self_type = self.member_self_type(&member.symbol, &receiver);
             let symbol = resolve_member_special_types(member.symbol, &receiver, &self_type);
-            callables.push(callable_from_symbol(&symbol));
+            callables.push(partial_callable(&symbol, node));
             true
         });
         join_types(relations, &callables)
@@ -422,26 +427,6 @@ pub(crate) fn resolve_member_special_types(
         parameter.doc_type = resolve_special_type(&parameter.doc_type, receiver, self_type);
     }
     symbol
-}
-
-pub(crate) fn callable_from_symbol(symbol: &Symbol) -> Type {
-    let parameters = symbol
-        .parameters
-        .iter()
-        .map(|parameter| CallableParameter {
-            name: parameter.name.as_str().into(),
-            ty: parameter.ty.clone(),
-            optional: parameter.optional,
-            variadic: parameter.flags.has(Flags::VARIADIC),
-            by_reference: parameter.flags.has(Flags::BY_REFERENCE),
-        })
-        .collect();
-    let result = if symbol.return_type.is_unknown() {
-        Type::MIXED
-    } else {
-        symbol.return_type.clone()
-    };
-    Type::callable(parameters, result)
 }
 
 fn positional_tuple_arguments(value: &Type) -> Option<Vec<CallArgument>> {

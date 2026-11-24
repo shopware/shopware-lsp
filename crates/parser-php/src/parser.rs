@@ -233,7 +233,9 @@ fn parse_statement(p: &mut P<'_>, in_class: bool) {
         parse_function_like(p, PHP_FUNCTION_DECLARATION, false);
     } else if in_class && keyword == "use" {
         parse_trait_use(p);
-    } else if in_class && keyword == "case" {
+    } else if in_class
+        && (keyword == "case" || p.at(TK_ATTRIBUTE_OPEN) && token_after_prefix(p, &["case"]))
+    {
         parse_enum_case(p);
     } else if keyword == "const"
         || (in_class || p.at(TK_ATTRIBUTE_OPEN)) && starts_class_const_declaration(p)
@@ -863,14 +865,15 @@ const BITWISE_XOR: i32 = 14;
 const BITWISE_AND: i32 = 15;
 const EQUALITY: i32 = 16;
 const COMPARISON: i32 = 17;
-const CONCATENATION: i32 = 18;
-const SHIFT: i32 = 19;
-const ADDITIVE: i32 = 20;
-const MULTIPLICATIVE: i32 = 21;
-const LOGICAL_NOT: i32 = 22;
-const INSTANCEOF: i32 = 23;
-const TIGHT_PREFIX: i32 = 24;
-const EXPONENTIATION: i32 = 25;
+const PIPE: i32 = 18;
+const CONCATENATION: i32 = 19;
+const SHIFT: i32 = 20;
+const ADDITIVE: i32 = 21;
+const MULTIPLICATIVE: i32 = 22;
+const LOGICAL_NOT: i32 = 23;
+const INSTANCEOF: i32 = 24;
+const TIGHT_PREFIX: i32 = 25;
+const EXPONENTIATION: i32 = 26;
 
 #[inline]
 fn parse_expression(p: &mut P<'_>, stop: Stop) -> Option<CompletedMarker> {
@@ -979,7 +982,7 @@ fn parse_prefix(p: &mut P<'_>, stop: Stop) -> Option<CompletedMarker> {
             // and a member access after it applies to the clone.
             parse_arguments(p);
         } else {
-            parse_expression_precedence(p, stop, 19);
+            parse_expression_precedence(p, stop, SHIFT);
         }
         return Some(p.complete(node, PHP_CLONE_EXPRESSION));
     }
@@ -1067,6 +1070,7 @@ fn binary_operator(p: &P<'_>) -> (i32, bool, bool) {
         "&" => BITWISE_AND,
         "==" | "!=" | "===" | "!==" | "<>" | "<=>" => EQUALITY,
         "<" | ">" | "<=" | ">=" => COMPARISON,
+        "|>" => PIPE,
         "<<" | ">>" => SHIFT,
         "." => CONCATENATION,
         "+" | "-" => ADDITIVE,
@@ -1237,10 +1241,17 @@ fn parse_arguments(p: &mut P<'_>) -> CompletedMarker {
             p.expect(TK_COLON, &[]);
             kind = PHP_NAMED_ARGUMENT;
         }
-        if p.at(TK_ELLIPSIS) || p.at(TK_AMPERSAND) {
+        if p.at(TK_QUESTION) && matches!(next_kind(p), TK_COMMA | TK_CLOSE_PAREN) {
+            // A placeholder of a partial application (`f(?, 1)`).
+            let placeholder = p.start();
             p.bump();
+            p.complete(placeholder, PHP_ARGUMENT_PLACEHOLDER);
+        } else {
+            if p.at(TK_ELLIPSIS) || p.at(TK_AMPERSAND) {
+                p.bump();
+            }
+            parse_expression(p, STOP_COMMA_CLOSE_PAREN);
         }
-        parse_expression(p, STOP_COMMA_CLOSE_PAREN);
         p.complete(argument, kind);
         bump_if(p, TK_COMMA);
         if p.get_pos() == position {

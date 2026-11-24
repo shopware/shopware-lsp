@@ -1,6 +1,6 @@
 //! Sections 6, 10 and 11: operators, heredocs and arrays; and comments.
 
-use super::{fixed, stable};
+use super::{fixed, formatted, stable};
 
 #[test]
 fn unary_operators_stand_by_their_operand() {
@@ -151,5 +151,31 @@ $b = [
     fixed(
         "if ($a) {\n    b();\n// otherwise\n} else {\n    c();\n}\n",
         "if ($a) {\n    b();\n    // otherwise\n} else {\n    c();\n}\n",
+    );
+}
+
+#[test]
+fn a_partial_application_is_spaced_like_a_call() {
+    assert_eq!(
+        formatted("<?php\n\n$c = foo( ?,?  ,a:?,... );\n$d = $a?foo(?):bar( ? , 2 );\n"),
+        "<?php\n\n$c = foo(?, ?, a: ?, ...);\n$d = $a ? foo(?) : bar(?, 2);\n"
+    );
+    // The placeholder for every other argument ends the list: no comma
+    // follows it, the other placeholders take one like any argument.
+    assert_eq!(
+        formatted(
+            "<?php\n\n$e = $o->m(\n    ?,\n    name: ?,\n    ...\n);\n$f = g(\n    1,\n    ?\n);\n"
+        ),
+        "<?php\n\n$e = $o->m(\n    ?,\n    name: ?,\n    ...\n);\n$f = g(\n    1,\n    ?,\n);\n"
+    );
+    let source = "<?php\n\n$g = h(\n    1,\n    ...$rest,\n);\n$i = j(...);\n";
+    assert_eq!(formatted(source), source);
+}
+
+#[test]
+fn the_pipe_operator_is_set_apart() {
+    assert_eq!(
+        formatted("<?php\n\n$x = $v|>foo(1,?)   |> bar(?, ...)|>$o->m(a: ?);\n$y = $a|$b;\n"),
+        "<?php\n\n$x = $v |> foo(1, ?) |> bar(?, ...) |> $o->m(a: ?);\n$y = $a | $b;\n"
     );
 }

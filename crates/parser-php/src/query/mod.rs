@@ -585,6 +585,33 @@ pub fn arguments(node: &SyntaxNode) -> impl Iterator<Item = SyntaxNode> + use<> 
         .flat_map(|list| list.children().filter(is_argument).collect::<Vec<_>>())
 }
 
+/// Whether `argument` is a placeholder of a partial application: `?`, or
+/// `...` without a value.
+pub fn is_placeholder_argument(argument: &SyntaxNode) -> bool {
+    argument
+        .children()
+        .any(|child| child.kind() == PHP_ARGUMENT_PLACEHOLDER)
+        || is_variadic_placeholder(argument)
+}
+
+/// Whether `argument` is `...` without a value: every argument that is not
+/// given.
+pub fn is_variadic_placeholder(argument: &SyntaxNode) -> bool {
+    argument.kind() == PHP_ARGUMENT
+        && argument.children().next().is_none()
+        && argument
+            .children_with_tokens()
+            .filter_map(|element| element.into_token())
+            .any(|token| token.kind() == TK_ELLIPSIS)
+}
+
+/// Whether the call `node` is a partial application: it has a placeholder
+/// among its arguments, and its value is a closure of the arguments that are
+/// left (`f(?, 1)`, `f(1, ...)`, `f(...)`).
+pub fn is_partial_application(node: &SyntaxNode) -> bool {
+    arguments(node).any(|argument| is_placeholder_argument(&argument))
+}
+
 pub fn argument(node: &SyntaxNode, index: usize) -> Option<SyntaxNode> {
     arguments(node).nth(index)
 }

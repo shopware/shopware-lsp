@@ -675,10 +675,15 @@ fn arguments(doc: &mut Doc, node: &SyntaxNode) {
         return;
     };
     let close = doc.pair[open];
-    // `foo(...)` creates a closure and is no list.
+    // `foo(...)` and `foo(?, ...)` end in the placeholder for every other
+    // argument, which nothing follows.
     let reference = doc
-        .next_sig(open)
-        .is_some_and(|only| doc.kind(only) == TK_ELLIPSIS && doc.next_sig(only) == Some(close));
+        .prev_sig(close)
+        .map(|last| match doc.kind(last) {
+            TK_COMMA => doc.prev_sig(last).unwrap_or(last),
+            _ => last,
+        })
+        .is_some_and(|last| doc.kind(last) == TK_ELLIPSIS);
     // The parentheses after a keyword are a call only for the constructs
     // known to take a list (`isset`, `unset`, `list`, `new static`) and for a
     // method of that name: `include(…)` and `new (…)` take one expression.

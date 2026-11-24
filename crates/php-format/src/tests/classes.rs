@@ -1,6 +1,6 @@
 //! Sections 4.1 to 4.3, 4.6, 8, 9 and 12: classes and their members.
 
-use super::{fixed, stable};
+use super::{fixed, formatted, stable};
 
 #[test]
 fn class_braces_stand_on_their_own_lines() {
@@ -333,5 +333,13 @@ namespace B {
     exit;
 }
 ",
+    );
+}
+
+#[test]
+fn an_attribute_of_an_enum_case_stands_above_it() {
+    assert_eq!(
+        formatted("<?php\n\nenum E: int\n{\n    #[\\Override] case A=1;\n    case B = 2;\n}\n"),
+        "<?php\n\nenum E: int\n{\n    #[\\Override]\n    case A = 1;\n    case B = 2;\n}\n"
     );
 }

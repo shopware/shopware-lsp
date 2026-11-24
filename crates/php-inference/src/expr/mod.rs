@@ -7,6 +7,7 @@ mod closure;
 mod matching;
 mod object;
 mod operator;
+mod partial;
 
 use std::borrow::Cow;
 
