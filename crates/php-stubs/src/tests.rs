@@ -391,13 +391,28 @@ fn generated_phpstorm_stub_versioned_deprecations() {
 }
 
 #[test]
+fn the_runtime_classes_of_a_release_are_always_loaded() {
+    let php84 = snapshot(document(version(8, 4)));
+    let php85 = snapshot(document(version(8, 5)));
+    let php86 = snapshot(document(version(8, 6)));
+    for class in ["Uri\\Rfc3986\\Uri", "Uri\\WhatWg\\Url"] {
+        assert!(php84.classes(class).is_empty(), "{class}");
+        assert_eq!(php85.classes(class).len(), 1, "{class}");
+    }
+    for class in ["Time\\Duration", "Io\\Poll\\Handle", "Io\\IoException"] {
+        assert!(php85.classes(class).is_empty(), "{class}");
+        assert_eq!(php86.classes(class).len(), 1, "{class}");
+    }
+}
+
+#[test]
 fn generated_phpstorm_stub_provenance() {
     let (repository, commit) = generated_source();
     assert_eq!(
         repository,
         "https://github.com/JetBrains/phpstorm-stubs.git"
     );
-    assert_eq!(commit, "b872a0404e009a42cd4ff77a54505e01b2f126e3");
+    assert_eq!(commit, "5f84a9c87737addd09ad6cc4ad9bd4afb6f794a1");
 }
 
 #[test]

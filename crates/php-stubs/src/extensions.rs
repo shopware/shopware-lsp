@@ -5,16 +5,18 @@ use std::collections::{BTreeSet, HashSet};
 use swlsp_php_project::normalize_extension;
 use swlsp_php_semantic::Symbol;
 
-const ALWAYS_LOADED_EXTENSIONS: [&str; 9] = [
+const ALWAYS_LOADED_EXTENSIONS: [&str; 11] = [
     "core",
     "date",
     "filter",
     "hash",
+    "io",
     "json",
     "pcre",
     "random",
     "reflection",
     "spl",
+    "uri",
 ];
 
 fn extension_dependencies(extension: &str) -> &'static [&'static str] {
