@@ -42,8 +42,9 @@ pub(crate) const PHP: &[RuleHelp] = &[
          colon names the parameter and the type given.",
         "Arguments of unknown or mixed type match anything. Extra positional arguments to a \
          function declared in the project are accepted, as PHP does. Calls with a spread of \
-         unknown shape, first-class callables, partial applications and dynamic callees are not \
-         checked.",
+         unknown shape and dynamic callees are not checked. A partial application is checked \
+         like a call: a `?` stands for an argument of any type, `...` for all that are \
+         left, and more placeholders than parameters are an error.",
         "",
     ),
     help(

@@ -130,6 +130,59 @@ function run(): void {
 }
 
 #[test]
+fn the_arguments_of_a_partial_application_are_checked() {
+    let (_, analyzed, _) = analyze_source(
+        "/partial-arguments.php",
+        r#"<?php
+function stuff(int $i1, string $s2, float $f3 = 1.0): string {
+    return '';
+}
+function rest(int $first, bool ...$more): void {}
+final class Joiner {
+    public function __construct(private int $a = 0) {}
+    public function join(string $glue, string $left): int { return 1; }
+    public function run(array $values): void {
+        stuff(?);
+        stuff(?, ?, ?, ?);
+        stuff('no', ?);
+        stuff(?, nope: ?);
+        stuff(i1: 1, ?);
+        stuff(?, ?, i1: 1);
+        $this->join(?);
+        new Joiner(?);
+
+        stuff(?, ?);
+        stuff(1, ...);
+        stuff(s2: 'x', ...);
+        stuff(...);
+        stuff(?, s2: ?);
+        rest(?, ?, ?, ?);
+        $this->join(?, 'l');
+        $this->join(...);
+        stuff(...$values, ...);
+        strlen(?);
+    }
+}
+"#,
+        true,
+        Vec::new(),
+    );
+    assert_eq!(
+        crate::tests::messages(&analyzed, "php.arguments"),
+        [
+            "No matching signature for stuff(): missing argument for parameter #2 ($s2)",
+            "No matching signature for stuff(): partial application expects at most 3 arguments, 4 given",
+            "No matching signature for stuff(): parameter #1 ($i1) expects int, \"no\" given",
+            "No matching signature for stuff(): unknown named argument $nope",
+            "No matching signature for stuff(): positional argument after named argument",
+            "No matching signature for stuff(): parameter #1 ($i1) is passed more than once",
+            "No matching signature for join(): missing argument for parameter #2 ($left)",
+            "A constructor cannot be partially applied",
+        ]
+    );
+}
+
+#[test]
 fn a_partial_application_is_a_callable_of_the_open_parameters() {
     let (parsed, analyzed, _) = analyze_source(
         "/partial-application.php",

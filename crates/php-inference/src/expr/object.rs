@@ -55,6 +55,14 @@ impl Fs<'_, '_, '_> {
             _ => {}
         }
         let result = self.named_type(&class_name);
+        if query::is_partial_application(node) {
+            self.report(
+                node,
+                "php.arguments",
+                "A constructor cannot be partially applied".to_owned(),
+            );
+            return result;
+        }
         let (arguments, uncertain_unpack) = self.infer_arguments(node, env);
 
         let relations = self.relations;

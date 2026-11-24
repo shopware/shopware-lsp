@@ -55,7 +55,7 @@ Languages: php. Domain: `php`.
 **`php.arguments`**
 
 - Fix: Pass the arguments the signature in the message expects: the detail after the colon names the parameter and the type given.
-- Exceptions: Arguments of unknown or mixed type match anything. Extra positional arguments to a function declared in the project are accepted, as PHP does. Calls with a spread of unknown shape, first-class callables, partial applications and dynamic callees are not checked.
+- Exceptions: Arguments of unknown or mixed type match anything. Extra positional arguments to a function declared in the project are accepted, as PHP does. Calls with a spread of unknown shape and dynamic callees are not checked. A partial application is checked like a call: a `?` stands for an argument of any type, `...` for all that are left, and more placeholders than parameters are an error.
 
 **`php.deprecated`**
 

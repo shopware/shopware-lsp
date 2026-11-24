@@ -9,7 +9,7 @@ use swlsp_php_types::{Kind, Type};
 use swlsp_syntax::SyntaxNode;
 use swlsp_textutil::{eq_ignore_case, lowercase};
 
-use super::partial::partial_callable;
+use super::partial::{PartialArguments, partial_callable};
 use crate::analyzer::Fs;
 use crate::env::Env;
 use crate::extensions::CallArgument;
@@ -180,6 +180,18 @@ impl Fs<'_, '_, '_> {
     ) -> Type {
         let mut callables = Vec::new();
         let relations = self.relations;
+        let (arguments, uncertain_unpack) = self.infer_arguments(node, env);
+        let given = PartialArguments {
+            arguments: &arguments,
+            rest: query::arguments(node).any(|argument| query::is_variadic_placeholder(&argument)),
+        };
+        let mut accepted = uncertain_unpack;
+        let mut mismatches = Vec::new();
+        let mut check = |symbol: &Symbol| match given.mismatch(relations, symbol) {
+            Some(_) if symbol.flags.has(Flags::GENERATED_STUB) => accepted = true,
+            Some(mismatch) => mismatches.push(mismatch),
+            None => accepted = true,
+        };
         if function {
             let callee = &nodes[0];
             if callee.kind() != PHP_NAME {
@@ -198,11 +210,14 @@ impl Fs<'_, '_, '_> {
             let snapshot = self.snapshot;
             context.visit_function_names(&name, |candidate_name| {
                 snapshot.visit_function_views(candidate_name, |candidate| {
-                    callables.push(partial_callable(&candidate.materialize(), node));
+                    let symbol = candidate.materialize();
+                    check(&symbol);
+                    callables.push(partial_callable(&symbol, node));
                     true
                 });
                 callables.is_empty()
             });
+            self.report_partial_mismatch(node, &name, accepted, &mismatches);
             return join_types(relations, &callables);
         }
         if nodes.len() < 2 {
@@ -214,10 +229,29 @@ impl Fs<'_, '_, '_> {
         members.visit_methods(&receiver, &name, |member| {
             let self_type = self.member_self_type(&member.symbol, &receiver);
             let symbol = resolve_member_special_types(member.symbol, &receiver, &self_type);
+            check(&symbol);
             callables.push(partial_callable(&symbol, node));
             true
         });
+        self.report_partial_mismatch(node, &name, accepted, &mismatches);
         join_types(relations, &callables)
+    }
+
+    /// Reports a partial application none of the declarations accepts.
+    fn report_partial_mismatch(
+        &mut self,
+        node: &SyntaxNode,
+        name: &str,
+        accepted: bool,
+        mismatches: &[String],
+    ) {
+        if !accepted && !mismatches.is_empty() {
+            self.report(
+                node,
+                "php.arguments",
+                no_matching_signature_message(&format!("{name}()"), mismatches),
+            );
+        }
     }
 
     /// The declaring class type of a member, projected for `receiver`.
@@ -273,6 +307,10 @@ impl Fs<'_, '_, '_> {
         let mut result = Vec::with_capacity(arguments.len());
         let mut uncertain_unpack = false;
         for (index, argument) in arguments.iter().enumerate() {
+            if query::is_variadic_placeholder(argument) {
+                // `...` of a partial application passes nothing.
+                continue;
+            }
             let expression = last_node(argument);
             let mut value = Type::UNKNOWN;
             let parameter_types = self.contextual_callback_parameter_types(node, index, env);

@@ -3,8 +3,9 @@
 
 use swlsp_parser_php::query;
 use swlsp_parser_php::syntax::*;
+use swlsp_php_resolver::{Argument, resolve_signature};
 use swlsp_php_semantic::{Flags, Symbol};
-use swlsp_php_types::{CallableParameter, Type};
+use swlsp_php_types::{CallableParameter, Relations, Type};
 use swlsp_syntax::SyntaxNode;
 use swlsp_textutil::eq_ignore_case;
 
@@ -88,4 +89,57 @@ pub(crate) fn partial_callable(symbol: &Symbol, node: &SyntaxNode) -> Type {
         symbol.return_type.clone()
     };
     Type::callable(open_parameters(symbol, node).unwrap_or_default(), result)
+}
+
+/// The arguments of a partial application as the signature check sees
+/// them. `arguments` are the given ones, a `?` among them as a value of
+/// unknown type; `rest` says whether a `...` stands for the others.
+pub(crate) struct PartialArguments<'a> {
+    pub(crate) arguments: &'a [Argument],
+    pub(crate) rest: bool,
+}
+
+impl PartialArguments<'_> {
+    /// Why PHP rejects this partial application of `symbol`; `None` when
+    /// it accepts it.
+    pub(crate) fn mismatch(&self, relations: Relations<'_>, symbol: &Symbol) -> Option<String> {
+        let parameters = &symbol.parameters;
+        let positional = self
+            .arguments
+            .iter()
+            .take_while(|argument| argument.name.is_empty())
+            .count();
+        let variadic = parameters
+            .last()
+            .is_some_and(|parameter| parameter.flags.has(Flags::VARIADIC));
+        // A call of a user function may pass more than is declared; a
+        // partial application may not.
+        if !variadic && positional > parameters.len() {
+            return Some(format!(
+                "partial application expects at most {} arguments, {positional} given",
+                parameters.len()
+            ));
+        }
+        let mut arguments = self.arguments.to_vec();
+        if self.rest {
+            // `...` stands for every parameter that is not given.
+            let named = |parameter: &swlsp_php_semantic::Parameter| {
+                let name = parameter.name.as_str().trim_start_matches('$');
+                self.arguments
+                    .iter()
+                    .any(|argument| argument.name.trim_start_matches('$') == name)
+            };
+            for parameter in parameters.iter().skip(positional) {
+                if !parameter.optional && !parameter.flags.has(Flags::VARIADIC) && !named(parameter)
+                {
+                    arguments.push(Argument {
+                        name: parameter.name.as_str().to_owned(),
+                        ..Argument::default()
+                    });
+                }
+            }
+        }
+        let resolved = resolve_signature(relations, symbol.clone(), &arguments);
+        (!resolved.compatible).then_some(resolved.mismatch)
+    }
 }
